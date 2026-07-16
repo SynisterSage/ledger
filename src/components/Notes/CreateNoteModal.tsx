@@ -1,6 +1,7 @@
 import { ChevronRight, FileText } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { TemplateGallery } from './TemplateGallery';
@@ -42,6 +43,7 @@ export const CreateNoteModal = ({
   onNoteCreated,
 }: CreateNoteModalProps) => {
   const api = useApi();
+  const { activeWorkspace } = useWorkspaceContext();
   const [step, setStep] = useState<Step>('main');
   const [isCreating, setIsCreating] = useState(false);
   const [workspaceTemplates, setWorkspaceTemplates] = useState<Array<{ id: string; name: string }>>(
@@ -370,11 +372,11 @@ export const CreateNoteModal = ({
                     onChange={(e) => setTemplateCategory(e.target.value)}
                     className="mt-1 h-9 w-full rounded-lg border border-gray-200 px-3 text-sm"
                   >
-                    {['meeting', 'internship', 'team', 'project', 'personal', 'reading'].map(
-                      (category) => (
+                    {['meeting', 'internship', 'project', 'personal', 'reading']
+                      .concat(activeWorkspace?.is_personal ? [] : ['team'])
+                      .map((category) => (
                         <option key={category}>{category}</option>
-                      )
-                    )}
+                      ))}
                   </select>
                 </label>
               </div>

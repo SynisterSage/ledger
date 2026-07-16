@@ -30,6 +30,9 @@ export const TEMPLATE_CATEGORIES: TemplateCategory[] = [
   'reading',
 ]
 
+export const isTeamOrientedTemplate = (template: { category?: string | null }) =>
+  String(template.category ?? '').trim().toLowerCase() === 'team'
+
 export const QUICK_TEMPLATE_DEFINITIONS: Array<{
   name: string
   icon: LucideIcon

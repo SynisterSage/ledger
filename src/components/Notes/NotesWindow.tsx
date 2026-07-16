@@ -62,7 +62,7 @@ import {
   type NotesSelectionComposerKind,
 } from './NotesSelectionComposerModal';
 import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
-import { QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
+import { isTeamOrientedTemplate, QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
 import NotesHome from './NotesHome';
 import type { NotesHomeTemplate } from './NotesHome';
 
@@ -1817,12 +1817,15 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const refreshTemplates = useCallback(async () => {
     try {
       const data = await api.getTemplates();
-      setWorkspaceTemplates(Array.isArray(data) ? (data as NotesHomeTemplate[]) : []);
+      const templates = Array.isArray(data) ? (data as NotesHomeTemplate[]) : [];
+      setWorkspaceTemplates(
+        activeWorkspace?.is_personal ? templates.filter((template) => !isTeamOrientedTemplate(template)) : templates
+      );
     } catch (e) {
       console.error('Failed to load templates:', e);
       setWorkspaceTemplates([]);
     }
-  }, [api]);
+  }, [activeWorkspace?.is_personal, api]);
 
   useEffect(() => {
     void refreshTemplates();
@@ -5356,13 +5359,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         )}
                       </div>
                     ) : (
-                      <div className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          No linked project
-                        </p>
-                        <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
-                          Link this note to keep project context close by.
-                        </p>
+                      <div className="px-1 py-1">
+                        <p className="text-sm text-[var(--ledger-text-muted)]">No linked project</p>
                       </div>
                     )
                   ) : (
@@ -5399,24 +5397,28 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       <div className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                         {activeWorkspace?.name?.trim() || 'Current workspace'}
                       </div>
-                      <InspectorInfoRow label="Created by" value={displayUserName(creatorMember)} />
-                      <InspectorInfoRow
-                        label="Last edited by"
-                        value={`${displayUserName(editorMember)} · ${formatRelativeFromNow(
-                          selectedNote.updated_at
-                        )}`}
-                      />
-                      <div className="py-1">
-                        <p className="text-[11px] text-[var(--ledger-text-muted)]">Viewing</p>
-                        <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)]">
-                          {viewingSummary}
-                        </p>
-                      </div>
+                      {!activeWorkspace?.is_personal && (
+                        <>
+                          <InspectorInfoRow label="Created by" value={displayUserName(creatorMember)} />
+                          <InspectorInfoRow
+                            label="Last edited by"
+                            value={`${displayUserName(editorMember)} · ${formatRelativeFromNow(
+                              selectedNote.updated_at
+                            )}`}
+                          />
+                          <div className="py-1">
+                            <p className="text-[11px] text-[var(--ledger-text-muted)]">Viewing</p>
+                            <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)]">
+                              {viewingSummary}
+                            </p>
+                          </div>
+                        </>
+                      )}
                       <InspectorInfoRow label="Notes" value={String(notes.length)} />
                     </div>
                   ) : (
-                    <p className="text-sm text-[var(--ledger-text-muted)]">
-                      Select a note to view workspace details.
+                    <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                      {activeWorkspace?.name?.trim() || 'Current workspace'}
                     </p>
                   )}
                 </div>

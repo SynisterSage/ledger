@@ -22,7 +22,14 @@ import {
   Users,
   FilePlus2,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { useToast } from '../Common/ToastProvider';
 import type { PinRecord } from '../../utils/pins';
@@ -88,7 +95,7 @@ type Props = {
 };
 
 const storageKey = (workspaceId: string | null | undefined, userId?: string | null) =>
-  `notes-home-collapsed:v1:${userId ?? 'anonymous'}:${workspaceId ?? 'none'}`;
+  `notes-home-collapsed:v2:${userId ?? 'anonymous'}:${workspaceId ?? 'none'}`;
 
 const relativeTime = (value: string) => {
   const age = Math.max(0, Date.now() - new Date(value).getTime());
@@ -336,13 +343,18 @@ export const NotesHome = ({
       return new Set();
     }
   });
+  const hasStoredCollapsedStateRef = useRef(false);
+  const folderDefaultsAppliedRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const key = storageKey(workspaceId, userId);
+    folderDefaultsAppliedRef.current = null;
     try {
-      setCollapsed(
-        new Set(JSON.parse(localStorage.getItem(storageKey(workspaceId, userId)) ?? '[]'))
-      );
+      const stored = localStorage.getItem(key);
+      hasStoredCollapsedStateRef.current = stored !== null;
+      setCollapsed(new Set(JSON.parse(stored ?? '[]')));
     } catch {
+      hasStoredCollapsedStateRef.current = false;
       setCollapsed(new Set());
     }
   }, [userId, workspaceId]);
@@ -390,6 +402,24 @@ export const NotesHome = ({
       notes: folderNotes.slice(0, 3),
     }));
   }, [recent, sectionName, sections]);
+
+  useEffect(() => {
+    const key = storageKey(workspaceId, userId);
+    if (
+      hasStoredCollapsedStateRef.current ||
+      folderDefaultsAppliedRef.current === key ||
+      recentFolders.length === 0
+    ) {
+      return;
+    }
+
+    folderDefaultsAppliedRef.current = key;
+    setCollapsed((current) => {
+      const next = new Set(current);
+      recentFolders.forEach((folder) => next.add(`folder:${folder.id}`));
+      return next;
+    });
+  }, [recentFolders, userId, workspaceId]);
   const templateShortcuts = useMemo(() => {
     const ranked = [...templates].sort((a, b) => {
       const rank = (template: NotesHomeTemplate) => {

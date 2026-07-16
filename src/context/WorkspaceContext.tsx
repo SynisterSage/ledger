@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useAuthContext } from './AuthContext';
 import { DEFAULT_API_URL } from '../config/runtime';
 
@@ -38,6 +46,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() => {
     return window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
   });
+  const activeWorkspaceIdRef = useRef(activeWorkspaceId);
+  const workspaceRefreshRequestRef = useRef(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,8 +78,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   );
 
   const refreshWorkspaces = useCallback(async () => {
+    const requestId = ++workspaceRefreshRequestRef.current;
+
     if (!session?.access_token || !user) {
       setWorkspaces([]);
+      activeWorkspaceIdRef.current = null;
       setActiveWorkspaceId(null);
       setIsLoading(false);
       return;
@@ -78,7 +91,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
 
-    const previousActiveWorkspaceId = activeWorkspaceId;
+    const previousActiveWorkspaceId = activeWorkspaceIdRef.current;
 
     try {
       const [workspaceRowsResult, activeResult] = await Promise.allSettled([
@@ -92,6 +105,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : [];
 
       if (workspaceRowsResult.status === 'rejected') {
+        if (requestId !== workspaceRefreshRequestRef.current) return;
         setError(
           workspaceRowsResult.reason instanceof Error
             ? workspaceRowsResult.reason.message
@@ -114,6 +128,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const storedIsValid = !!storedWorkspaceId && rows.some((workspace) => workspace.id === storedWorkspaceId);
       const apiIsValid = !!activeWorkspaceFromApi && rows.some((workspace) => workspace.id === activeWorkspaceFromApi);
 
+      if (requestId !== workspaceRefreshRequestRef.current) return;
+
       const resolvedActiveWorkspaceId =
         rows.length === 0
           ? null
@@ -126,6 +142,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : rows[0]?.id ?? null;
 
       setWorkspaces(rows);
+      activeWorkspaceIdRef.current = resolvedActiveWorkspaceId;
       setActiveWorkspaceId(resolvedActiveWorkspaceId);
 
       if (resolvedActiveWorkspaceId) {
@@ -139,11 +156,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         window.localStorage.removeItem(WORKSPACE_NAME_STORAGE_KEY);
       }
     } catch (fetchError) {
+      if (requestId !== workspaceRefreshRequestRef.current) return;
       setError(fetchError instanceof Error ? fetchError.message : 'Could not load workspaces');
     } finally {
-      setIsLoading(false);
+      if (requestId === workspaceRefreshRequestRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [activeWorkspaceId, authedRequest, session?.access_token, user]);
+  }, [authedRequest, session?.access_token, user]);
 
   useEffect(() => {
     void refreshWorkspaces();
@@ -179,6 +199,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const onStorage = (event: StorageEvent) => {
       if (event.key !== WORKSPACE_STORAGE_KEY) return;
       const nextWorkspaceId = event.newValue ? String(event.newValue).trim() : null;
+      activeWorkspaceIdRef.current = nextWorkspaceId || null;
       setActiveWorkspaceId(nextWorkspaceId || null);
     };
 
@@ -193,7 +214,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
       const normalized = stored ? String(stored).trim() : null;
       const next = normalized || null;
-      if (next !== activeWorkspaceId) {
+      if (next !== activeWorkspaceIdRef.current) {
+        activeWorkspaceIdRef.current = next;
         setActiveWorkspaceId(next);
       }
     };
@@ -216,6 +238,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         throw new Error('Invalid workspace response');
       }
 
+      activeWorkspaceIdRef.current = nextWorkspaceId;
       setActiveWorkspaceId(nextWorkspaceId);
       window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId);
       const nextWorkspaceName =
@@ -228,7 +251,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       );
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
     },
-    [authedRequest]
+    [authedRequest, workspaces]
   );
 
     useEffect(() => {

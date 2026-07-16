@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
-import type { TemplateSummary } from './templateDefinitions';
+import { isTeamOrientedTemplate, type TemplateSummary } from './templateDefinitions';
 
 interface TemplateGalleryProps {
   onSelectTemplate: (templateId: string) => void;
@@ -18,7 +18,7 @@ export const TemplateGallery = ({
   onCreateCustom,
   onEditTemplate,
 }: TemplateGalleryProps) => {
-  const { activeWorkspaceId } = useWorkspaceContext();
+  const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const api = useApi();
   const toast = useToast();
 
@@ -84,9 +84,11 @@ export const TemplateGallery = ({
 
   const categories = useMemo(() => {
     const set = new Set<string>(['meeting', 'personal', 'project', 'reading']);
-    templates.forEach((t) => set.add((t.category || 'personal').toLowerCase()));
+    templates
+      .filter((template) => !activeWorkspace?.is_personal || !isTeamOrientedTemplate(template))
+      .forEach((t) => set.add((t.category || 'personal').toLowerCase()));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [templates]);
+  }, [activeWorkspace?.is_personal, templates]);
 
   const filters = useMemo(
     () => [
@@ -105,7 +107,9 @@ export const TemplateGallery = ({
   );
 
   const filteredTemplates = useMemo(() => {
-    let result = [...templates];
+    let result = templates.filter(
+      (template) => !activeWorkspace?.is_personal || !isTeamOrientedTemplate(template)
+    );
 
     if (selectedFilter === 'ledger') {
       result = result.filter((t) => t.is_system);
@@ -136,7 +140,7 @@ export const TemplateGallery = ({
         return String(b.last_used_at ?? '').localeCompare(String(a.last_used_at ?? ''));
       return a.name.localeCompare(b.name);
     });
-  }, [templates, searchQuery, selectedFilter]);
+  }, [activeWorkspace?.is_personal, templates, searchQuery, selectedFilter]);
 
   const dispatchTemplatesUpdated = useCallback(() => {
     window.dispatchEvent(new CustomEvent('templates:updated'));
@@ -205,12 +209,12 @@ export const TemplateGallery = ({
   useEffect(() => {
     if (!initialTemplateId || isLoading || didOpenInitialTemplateRef.current === initialTemplateId)
       return;
-    const template = templates.find((item) => item.id === initialTemplateId);
+    const template = filteredTemplates.find((item) => item.id === initialTemplateId);
     if (template) {
       didOpenInitialTemplateRef.current = initialTemplateId;
       void handlePreview(template);
     }
-  }, [initialTemplateId, isLoading, templates]);
+  }, [filteredTemplates, initialTemplateId, isLoading]);
 
   if (previewTemplate) {
     return (

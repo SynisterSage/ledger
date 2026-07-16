@@ -1034,10 +1034,10 @@ export const ProjectsWindow = () => {
     return new Map(workspaceMembers.map((member) => [member.user_id, member]));
   }, [workspaceMembers]);
 
+  const availableWorkspaceTeams = isPersonalWorkspace ? [] : workspaceTeams;
   const workspaceTeamById = useMemo(() => {
     return new Map(availableWorkspaceTeams.map((team) => [team.id, team]));
-  }, [workspaceTeams]);
-  const availableWorkspaceTeams = isPersonalWorkspace ? [] : workspaceTeams;
+  }, [availableWorkspaceTeams]);
 
   const getAssignmentValue = useCallback(
     (
@@ -1126,27 +1126,6 @@ export const ProjectsWindow = () => {
     },
     [getAssigneeInitials, workspaceMemberById, workspaceTeamById]
   );
-
-  const createdByMember = useMemo(() => {
-    const id = selectedProject?.created_by ?? null;
-    if (!id) return null;
-    return workspaceMemberById.get(id) ?? null;
-  }, [selectedProject?.created_by, workspaceMemberById]);
-
-  const creatorDisplayName = useMemo(() => {
-    if (createdByMember)
-      return createdByMember.full_name?.trim() || createdByMember.email?.trim() || 'Unknown user';
-    return 'Unknown user';
-  }, [createdByMember]);
-
-  const projectViewingSummary = useMemo(() => {
-    if (!selectedProject?.created_by) return 'Only you';
-    if (selectedProject.created_by === user?.id) return 'Only you';
-
-    const firstName = creatorDisplayName.trim().split(/\s+/)[0]?.trim();
-    if (!firstName) return 'Only you';
-    return firstName;
-  }, [creatorDisplayName, selectedProject?.created_by, user?.id]);
 
   const isSharedWorkspace = workspaceMembers.length > 1;
   const workspaceLabel = activeWorkspace?.name?.trim() || 'Current workspace';
@@ -1860,8 +1839,8 @@ export const ProjectsWindow = () => {
         end_date: null,
         status: 'NotStarted',
         project_type: newProjectType,
-        lead_id: newProjectLeadId || null,
-        owner_team_id: newProjectOwnerTeamId || null,
+        lead_id: isPersonalWorkspace ? null : newProjectLeadId || null,
+        owner_team_id: isPersonalWorkspace ? null : newProjectOwnerTeamId || null,
       });
       const created = data as ProjectRow;
       let linkNoteError: string | null = null;
@@ -2061,7 +2040,9 @@ export const ProjectsWindow = () => {
           priority: newTaskPriority,
           due_date: newTaskDueDate || null,
           due_time: newTaskDueTime || null,
-          ...assignment,
+          ...(isPersonalWorkspace
+            ? { assigned_to_user_id: null, assigned_to_team_id: null }
+            : assignment),
           milestone_id: newTaskMilestoneId || null,
           status: 'todo',
           task_horizon: 'long_term',
@@ -2097,6 +2078,7 @@ export const ProjectsWindow = () => {
       newTaskTitle,
       resetTaskComposer,
       selectedProjectId,
+      isPersonalWorkspace,
       parseAssignmentValue,
     ]
   );
@@ -2171,7 +2153,9 @@ export const ProjectsWindow = () => {
           due_date: actionDraft.dueDate || null,
           due_time: actionDraft.dueTime || null,
           priority: actionDraft.priority,
-          ...parseAssignmentValue(actionDraft.assignee),
+          ...(isPersonalWorkspace
+            ? { assigned_to_user_id: null, assigned_to_team_id: null }
+            : parseAssignmentValue(actionDraft.assignee)),
           milestone_id: actionDraft.milestoneId || null,
           notes: actionDraft.notes.trim() || null,
         })) as TaskRow;
@@ -2185,7 +2169,7 @@ export const ProjectsWindow = () => {
         setIsSavingActionDraft(false);
       }
     },
-    [actionDraft, api, closeActionInlineEditor, parseAssignmentValue]
+    [actionDraft, api, closeActionInlineEditor, isPersonalWorkspace, parseAssignmentValue]
   );
 
   const attachTaskToMilestone = useCallback(
@@ -2716,14 +2700,18 @@ export const ProjectsWindow = () => {
             type: milestoneDraft.type,
             note: milestoneDraft.note.trim() || null,
             project_id: projectId,
-            ...parseAssignmentValue(milestoneDraft.assignee),
+            ...(isPersonalWorkspace
+              ? { assigned_to_user_id: null, assigned_to_team_id: null }
+              : parseAssignmentValue(milestoneDraft.assignee)),
           })) as ProjectMilestoneRow)
         : ((await api.createProjectMilestone(projectId, {
             title,
             milestone_date: date,
             type: milestoneDraft.type,
             note: milestoneDraft.note.trim() || null,
-            ...parseAssignmentValue(milestoneDraft.assignee),
+            ...(isPersonalWorkspace
+              ? { assigned_to_user_id: null, assigned_to_team_id: null }
+              : parseAssignmentValue(milestoneDraft.assignee)),
           })) as ProjectMilestoneRow);
       setWorkspaceMilestones((prev) =>
         [saved, ...prev.filter((milestone) => milestone.id !== saved.id)].sort((left, right) =>
@@ -3679,7 +3667,7 @@ export const ProjectsWindow = () => {
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                 />
               </div>
-              <div className="relative min-w-0">
+              {!isPersonalWorkspace && <div className="relative min-w-0">
                 <select
                   value={actionDraft.assignee}
                   onChange={(event) =>
@@ -3707,7 +3695,7 @@ export const ProjectsWindow = () => {
                   size={12}
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
                 />
-              </div>
+              </div>}
               <div className="relative min-w-0">
                 <select
                   value={actionDraft.milestoneId}
@@ -4051,33 +4039,35 @@ export const ProjectsWindow = () => {
               className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
             />
 
-            <div className="relative min-w-0">
-              <select
-                value={newTaskAssignee}
-                onChange={(e) => setNewTaskAssignee(e.target.value)}
-                className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
-              >
-                <option value="">Unassigned</option>
-                <optgroup label="People">
-                  {workspaceMembers.map((member) => (
-                    <option key={member.user_id} value={`user:${member.user_id}`}>
-                      {displayMemberName(member)}
-                    </option>
-                  ))}
-                </optgroup>
-                {!isPersonalWorkspace && <optgroup label="Teams">
-                  {availableWorkspaceTeams.map((team) => (
-                    <option key={team.id} value={`team:${team.id}`}>
-                      {team.name}
-                    </option>
-                  ))}
-                </optgroup>}
-              </select>
-              <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-              />
-            </div>
+            {!isPersonalWorkspace && (
+              <div className="relative min-w-0">
+                <select
+                  value={newTaskAssignee}
+                  onChange={(e) => setNewTaskAssignee(e.target.value)}
+                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                >
+                  <option value="">Unassigned</option>
+                  <optgroup label="People">
+                    {workspaceMembers.map((member) => (
+                      <option key={member.user_id} value={`user:${member.user_id}`}>
+                        {displayMemberName(member)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Teams">
+                    {availableWorkspaceTeams.map((team) => (
+                      <option key={team.id} value={`team:${team.id}`}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                <ChevronDown
+                  size={14}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                />
+              </div>
+            )}
 
             <div className="relative min-w-0">
               <select
@@ -4683,25 +4673,27 @@ export const ProjectsWindow = () => {
             </label>
           )}
 
-          <label className="flex min-w-0 items-center gap-2">
-            <span className={propertyLabelClass}>Lead</span>
-            <div className="relative min-w-0 flex-1">
-              <select
-                value={projectDraft.leadId}
-                onChange={(e) => updateProjectDraft({ leadId: e.target.value })}
-                onBlur={() => void flushProjectDraft()}
-                className={`${inlineControlClass} w-auto appearance-none pr-5`}
-                title={leadLabel}
-              >
-                <option value="">Unassigned</option>
-                {workspaceMembers.map((member) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    {displayMemberName(member)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </label>
+          {!isPersonalWorkspace && (
+            <label className="flex min-w-0 items-center gap-2">
+              <span className={propertyLabelClass}>Lead</span>
+              <div className="relative min-w-0 flex-1">
+                <select
+                  value={projectDraft.leadId}
+                  onChange={(e) => updateProjectDraft({ leadId: e.target.value })}
+                  onBlur={() => void flushProjectDraft()}
+                  className={`${inlineControlClass} w-auto appearance-none pr-5`}
+                  title={leadLabel}
+                >
+                  <option value="">Unassigned</option>
+                  {workspaceMembers.map((member) => (
+                    <option key={member.user_id} value={member.user_id}>
+                      {displayMemberName(member)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </label>
+          )}
 
           <div className="flex min-w-0 items-center gap-2">
             <span className={propertyLabelClass}>Dates</span>
@@ -6173,7 +6165,9 @@ export const ProjectsWindow = () => {
           <div className="min-w-0">
             <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">New project</p>
             <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-              Add a brief, choose a type, assign the lead, and attach context.
+              {isPersonalWorkspace
+                ? 'Add a brief, choose a type, and attach context.'
+                : 'Add a brief, choose a type, assign the lead, and attach context.'}
             </p>
           </div>
           <ModalCloseButton
@@ -6232,7 +6226,7 @@ export const ProjectsWindow = () => {
               );
             })}
 
-            <select
+            {!isPersonalWorkspace && <select
               value={newProjectLeadId}
               onChange={(e) => setNewProjectLeadId(e.target.value)}
               className="inline-flex h-8 min-w-[144px] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
@@ -6250,7 +6244,7 @@ export const ProjectsWindow = () => {
                     {displayMemberName(member)}
                   </option>
                 ))}
-            </select>
+            </select>}
             {!isPersonalWorkspace && <select
               value={newProjectOwnerTeamId}
               onChange={(e) => setNewProjectOwnerTeamId(e.target.value)}
@@ -6908,12 +6902,14 @@ export const ProjectsWindow = () => {
                             {workspaceLabel}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-[var(--ledger-text-muted)]">Members</span>
-                          <span className="text-[var(--ledger-text-primary)]">
-                            {isSharedWorkspace ? `${workspaceMembers.length} members` : 'Only you'}
-                          </span>
-                        </div>
+                        {isSharedWorkspace && (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[var(--ledger-text-muted)]">Members</span>
+                            <span className="text-[var(--ledger-text-primary)]">
+                              {workspaceMembers.length} members
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </section>
 
@@ -7009,11 +7005,11 @@ export const ProjectsWindow = () => {
                       </div>
                     </section>
 
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
-                        {isSharedWorkspace ? 'Members' : 'Viewing'}
-                      </p>
-                      {isSharedWorkspace ? (
+                    {isSharedWorkspace && (
+                      <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                        <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
+                          Members
+                        </p>
                         <div className="space-y-1.5">
                           {workspaceMembers.slice(0, 6).map((member) => {
                             const name = displayMemberName(member);
@@ -7034,23 +7030,8 @@ export const ProjectsWindow = () => {
                             );
                           })}
                         </div>
-                      ) : (
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[var(--ledger-text-muted)]">Viewing</span>
-                            <span className="text-[var(--ledger-text-primary)]">
-                              {projectViewingSummary}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-[var(--ledger-text-muted)]">Created by</span>
-                            <span className="text-[var(--ledger-text-primary)]">
-                              {creatorDisplayName}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </section>
+                      </section>
+                    )}
 
                     <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                       <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
@@ -7416,35 +7397,37 @@ export const ProjectsWindow = () => {
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
-                Assign to
-              </span>
-              <select
-                value={milestoneDraft.assignee}
-                onChange={(event) => {
-                  setMilestoneDraftTouched(true);
-                  setMilestoneDraft((current) => ({ ...current, assignee: event.target.value }));
-                }}
-                className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-              >
-                <option value="">Unassigned</option>
-                <optgroup label="People">
-                  {workspaceMembers.map((member) => (
-                    <option key={member.user_id} value={`user:${member.user_id}`}>
-                      {displayMemberName(member)}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Teams">
-                  {availableWorkspaceTeams.map((team) => (
-                    <option key={team.id} value={`team:${team.id}`}>
-                      {team.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-            </label>
+            {!isPersonalWorkspace && (
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
+                  Assign to
+                </span>
+                <select
+                  value={milestoneDraft.assignee}
+                  onChange={(event) => {
+                    setMilestoneDraftTouched(true);
+                    setMilestoneDraft((current) => ({ ...current, assignee: event.target.value }));
+                  }}
+                  className="h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                >
+                  <option value="">Unassigned</option>
+                  <optgroup label="People">
+                    {workspaceMembers.map((member) => (
+                      <option key={member.user_id} value={`user:${member.user_id}`}>
+                        {displayMemberName(member)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Teams">
+                    {availableWorkspaceTeams.map((team) => (
+                      <option key={team.id} value={`team:${team.id}`}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+            )}
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-[var(--ledger-text-muted)]">
                 Optional note
@@ -7923,13 +7906,15 @@ export const ProjectsWindow = () => {
             <CheckCircle2 size={14} />
             Mark complete
           </button>
-          <button
-            onClick={() => openProjectOwnerTeamPicker(projectContextMenu.projectId)}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-          >
-            <Users size={14} />
-            Assign to team
-          </button>
+          {!isPersonalWorkspace && (
+            <button
+              onClick={() => openProjectOwnerTeamPicker(projectContextMenu.projectId)}
+              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Users size={14} />
+              Assign to team
+            </button>
+          )}
           <div className="px-4 py-2">
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--ledger-text-muted)]">
               Color

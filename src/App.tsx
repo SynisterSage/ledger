@@ -1113,6 +1113,9 @@ function DashboardContent() {
   useEffect(() => {
     if (isPersonalWorkspace) setOverviewTeamScopeId(null);
   }, [activeWorkspaceId, isPersonalWorkspace]);
+  useEffect(() => {
+    if (isPersonalWorkspace && overviewTab === 'assigned') setOverviewTab('all');
+  }, [isPersonalWorkspace, overviewTab]);
   const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
   const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const [isOverviewDisplayOpen, setIsOverviewDisplayOpen] = useState(false);
@@ -2498,6 +2501,13 @@ function DashboardContent() {
   useEffect(() => {
     if (!isUpcomingQuickCreateOpen || !user || !activeWorkspaceId) return;
 
+    if (isPersonalWorkspace) {
+      setUpcomingQuickTeams([]);
+      setUpcomingQuickTeamId('');
+      setIsLoadingUpcomingQuickTeams(false);
+      return;
+    }
+
     let cancelled = false;
     const loadUpcomingQuickTeams = async () => {
       setIsLoadingUpcomingQuickTeams(true);
@@ -2540,7 +2550,7 @@ function DashboardContent() {
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, api, isUpcomingQuickCreateOpen, user]);
+  }, [activeWorkspaceId, api, isPersonalWorkspace, isUpcomingQuickCreateOpen, user]);
 
   useEffect(() => {
     if (!isUpcomingQuickCreateOpen) return;
@@ -2624,7 +2634,7 @@ function DashboardContent() {
       upcomingQuickCalendars.find((calendar) => calendar.id === upcomingQuickCalendarId) ??
       upcomingQuickCalendars[0] ??
       null;
-    const assignedTeamId = upcomingQuickTeamId.trim() || null;
+    const assignedTeamId = isPersonalWorkspace ? null : upcomingQuickTeamId.trim() || null;
     if (!selectedCalendar) {
       setUpcomingQuickError('Choose a calendar first.');
       return;
@@ -5295,7 +5305,9 @@ function DashboardContent() {
                 <div className="absolute left-0 top-full z-40 mt-2 w-44 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
                   {[
                     { id: 'all', label: 'All', icon: <LayoutList size={10} /> },
-                    { id: 'assigned', label: 'Assigned', icon: <UserCheck size={10} /> },
+                    ...(!isPersonalWorkspace
+                      ? [{ id: 'assigned', label: 'Assigned', icon: <UserCheck size={10} /> }]
+                      : []),
                     { id: 'today', label: 'Today', icon: <MapIcon size={10} /> },
                     { id: 'projects', label: 'Projects', icon: <FolderKanban size={10} /> },
                     { id: 'notes', label: 'Notes', icon: <StickyNote size={10} /> },
@@ -5326,7 +5338,7 @@ function DashboardContent() {
               <ModuleHeaderSegmentedGroup compact>
                 {[
                   ['all', 'All'],
-                  ['assigned', 'Assigned'],
+                  ...(!isPersonalWorkspace ? [['assigned', 'Assigned']] : []),
                   ['today', 'Today'],
                   ['projects', 'Projects'],
                   ['notes', 'Notes'],
@@ -5428,7 +5440,10 @@ function DashboardContent() {
                   <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
                     Group by
                   </p>
-                  {['None', 'Status', 'Type', 'Project', 'Due date', 'Assignee'].map((item) => (
+                  {(isPersonalWorkspace
+                    ? ['None', 'Status', 'Type', 'Project', 'Due date']
+                    : ['None', 'Status', 'Type', 'Project', 'Due date', 'Assignee']
+                  ).map((item) => (
                     <button
                       key={item}
                       type="button"
@@ -5443,16 +5458,19 @@ function DashboardContent() {
                     Properties
                   </p>
                   <div className="grid grid-cols-2 gap-1 px-1 pb-1">
-                    {[
-                      'Priority',
-                      'Project',
-                      'Due date',
-                      'Assignee',
-                      'Members',
-                      'Progress',
-                      'Linked notes',
-                      'Updated',
-                    ].map((item) => (
+                    {(isPersonalWorkspace
+                      ? ['Priority', 'Project', 'Due date', 'Progress', 'Linked notes', 'Updated']
+                      : [
+                          'Priority',
+                          'Project',
+                          'Due date',
+                          'Assignee',
+                          'Members',
+                          'Progress',
+                          'Linked notes',
+                          'Updated',
+                        ]
+                    ).map((item) => (
                       <span
                         key={item}
                         className="rounded-lg px-2 py-1 text-[12px] text-[var(--ledger-text-muted)]"
@@ -5826,7 +5844,9 @@ function DashboardContent() {
                           ],
                           ['Active projects', `${attentionProjects.length} active`],
                           ['Upcoming', `${upcoming.length} events`],
-                        ].map(([label, value], index, rows) => (
+                        ]
+                          .filter(([label]) => !isPersonalWorkspace || label !== 'Assigned to me')
+                          .map(([label, value], index, rows) => (
                           <div
                             key={label}
                             className={`flex items-center justify-between py-1.5 ${
@@ -6290,7 +6310,7 @@ function DashboardContent() {
           />
           <div
             className={
-              overviewTaskMode === 'long_term'
+              overviewTaskMode === 'long_term' && !isPersonalWorkspace
                 ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
                 : 'grid grid-cols-1 gap-3'
             }
@@ -6308,31 +6328,31 @@ function DashboardContent() {
                 />
               </label>
             ) : null}
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">
-                Assign to
-              </span>
-              <select
-                value={overviewTaskAssigneeValue}
-                onChange={(event) => setOverviewTaskAssigneeValue(event.target.value)}
-                className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-              >
-                <option value="">Unassigned</option>
-                <optgroup label="People">
-                  {user?.id ? (
-                    <option value={`user:${user.id}`}>
-                      {getWorkspaceMemberLabel(user.id) || 'Me'}
-                    </option>
-                  ) : null}
-                  {workspaceMembers
-                    .filter((member) => member.user_id !== user?.id)
-                    .map((member) => (
-                      <option key={member.user_id} value={`user:${member.user_id}`}>
-                        {member.full_name?.trim() || member.email?.trim() || 'Unknown'}
+            {!isPersonalWorkspace && (
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">
+                  Assign to
+                </span>
+                <select
+                  value={overviewTaskAssigneeValue}
+                  onChange={(event) => setOverviewTaskAssigneeValue(event.target.value)}
+                  className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+                >
+                  <option value="">Unassigned</option>
+                  <optgroup label="People">
+                    {user?.id ? (
+                      <option value={`user:${user.id}`}>
+                        {getWorkspaceMemberLabel(user.id) || 'Me'}
                       </option>
-                    ))}
-                </optgroup>
-                {!isPersonalWorkspace && (
+                    ) : null}
+                    {workspaceMembers
+                      .filter((member) => member.user_id !== user?.id)
+                      .map((member) => (
+                        <option key={member.user_id} value={`user:${member.user_id}`}>
+                          {member.full_name?.trim() || member.email?.trim() || 'Unknown'}
+                        </option>
+                      ))}
+                  </optgroup>
                   <optgroup label="Teams">
                     {workspaceTeams.map((team) => (
                       <option key={team.id} value={`team:${team.id}`}>
@@ -6340,12 +6360,18 @@ function DashboardContent() {
                       </option>
                     ))}
                   </optgroup>
-                )}
-              </select>
-            </label>
+                </select>
+              </label>
+            )}
           </div>
           <p className="text-sm text-[var(--ledger-text-secondary)]">
-            {overviewTaskMode === 'focus'
+            {isPersonalWorkspace
+              ? overviewTaskMode === 'focus'
+                ? 'Focus items appear in Today.'
+                : overviewTaskMode === 'today'
+                ? 'Short-term tasks stay in Today.'
+                : 'Long-term tasks can carry an end date.'
+              : overviewTaskMode === 'focus'
               ? 'Focus items appear in Today and can be assigned to a person or team.'
               : overviewTaskMode === 'today'
               ? 'Short-term tasks stay in Today and can still be assigned.'
@@ -6481,31 +6507,33 @@ function DashboardContent() {
             />
           </div>
 
-          <div className="relative">
-            <select
-              value={upcomingQuickTeamId}
-              onChange={(e) => setUpcomingQuickTeamId(e.target.value)}
-              disabled={isLoadingUpcomingQuickTeams}
-              className="h-10 w-full appearance-none rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] px-3 pr-9 text-sm text-gray-800 outline-none transition focus:border-gray-400 focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60"
-            >
-              <option value="">No team</option>
-              {isLoadingUpcomingQuickTeams ? (
-                <option value="" disabled>
-                  Loading teams...
-                </option>
-              ) : (
-                upcomingQuickTeams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.name}
+          {!isPersonalWorkspace && (
+            <div className="relative">
+              <select
+                value={upcomingQuickTeamId}
+                onChange={(e) => setUpcomingQuickTeamId(e.target.value)}
+                disabled={isLoadingUpcomingQuickTeams}
+                className="h-10 w-full appearance-none rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] px-3 pr-9 text-sm text-gray-800 outline-none transition focus:border-gray-400 focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60"
+              >
+                <option value="">No team</option>
+                {isLoadingUpcomingQuickTeams ? (
+                  <option value="" disabled>
+                    Loading teams...
                   </option>
-                ))
-              )}
-            </select>
-            <ChevronDown
-              size={16}
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
-            />
-          </div>
+                ) : (
+                  upcomingQuickTeams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <ChevronDown
+                size={16}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+              />
+            </div>
+          )}
 
           <textarea
             value={upcomingQuickNotes}
