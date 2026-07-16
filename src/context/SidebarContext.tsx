@@ -20,7 +20,15 @@ import {
 export type SidebarState = 'minimized' | 'expanded' | 'fullscreen';
 export type ModuleView = 'dashboard' | 'calendar';
 export type SidebarAttachmentMode = 'attached' | 'overlay';
-type WorkspaceShellKind = 'dashboard' | 'calendar' | 'notes' | 'projects' | 'teams' | 'settings';
+type WorkspaceShellKind =
+  | 'new-tab'
+  | 'circle'
+  | 'dashboard'
+  | 'calendar'
+  | 'notes'
+  | 'projects'
+  | 'teams'
+  | 'settings';
 type FloatingDockPayload = {
   isDocked?: boolean;
   side?: SidebarPosition | null;
@@ -40,6 +48,8 @@ export type WorkspaceShellLayout = {
 };
 
 const workspaceShellKinds = new Set<WorkspaceShellKind>([
+  'new-tab',
+  'circle',
   'dashboard',
   'calendar',
   'notes',

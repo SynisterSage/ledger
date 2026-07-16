@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, CalendarDays, FileText, FolderKanban, Funnel, Inbox, LayoutList, Search } from 'lucide-react';
+import { Bell, CalendarDays, FileText, FolderKanban, Funnel, Inbox, LayoutList, Pin, Search } from 'lucide-react';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from './ModuleWindowHeader';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
+import { usePins } from '../../context/PinsContext';
+import { getPinNavigationTarget } from '../../utils/pins';
+import { useSidebar } from '../../context/SidebarContext';
 import {
   searchCategoryLabels,
   searchIconMap,
@@ -36,13 +39,46 @@ const routeLabel = (route: RecentRoute) => {
 export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
+  const { workspaceShellLayout } = useSidebar();
   const api = useApi();
+  const { pins } = usePins();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState('');
   const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [pinnedPersonNames, setPinnedPersonNames] = useState<Record<string, string>>({});
   const { results, isLoading, trimmedQuery } = useWorkspaceSearch(query);
+
+  useEffect(() => {
+    const personPins = pins.filter((pin) => pin.object_type === 'person');
+    if (personPins.length === 0) {
+      setPinnedPersonNames({});
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.all(
+      personPins.map(async (pin) => {
+        try {
+          const payload = (await api.getPerson(pin.object_id)) as {
+            person?: { name?: string | null };
+          };
+          const name = payload?.person?.name?.trim();
+          return name ? [pin.object_id, name] as const : null;
+        } catch {
+          return null;
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setPinnedPersonNames(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry))));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, pins]);
 
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
@@ -91,6 +127,30 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
     void window.desktopWindow?.openModule(kind, { kind, ...(route ?? {}) });
   };
 
+  const openPinnedItem = (pin: (typeof pins)[number]) => {
+    const target = getPinNavigationTarget(pin);
+    if (!target) return;
+    void window.desktopWindow?.openModule(
+      target.module as ModuleWindowKind,
+      target.focus as ModuleFocusPayload
+    );
+  };
+
+  const getPinnedLabel = (pin: (typeof pins)[number]) => {
+    const resolvedName = pinnedPersonNames[pin.object_id];
+    if (pin.object_type === 'person' && resolvedName) return resolvedName;
+    if (pin.object_type !== 'person' || !pin.title.includes('@')) return pin.title;
+    const context = pin.destination.focusContext ?? '';
+    const encodedName = context.startsWith('ledger-person|') ? context.split('|')[2] : '';
+    if (!encodedName) return pin.title;
+    try {
+      const name = decodeURIComponent(encodedName);
+      return name && !name.includes('@') ? name : pin.title;
+    } catch {
+      return pin.title;
+    }
+  };
+
   const openSearchResult = (result: SearchResult) => {
     if (result.type === 'command') {
       const routeByAction: Record<string, { kind: ModuleWindowKind; focus?: ModuleFocusPayload }> = {
@@ -126,12 +186,19 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   };
 
   return (
-    <div className="relative flex h-screen min-h-0 flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none">
+    <div
+      className="relative flex h-screen min-h-0 flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
+      style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
+    >
       <ModuleWindowHeader
         title="Ledger"
         stripTitle="New Tab"
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
         onClose={onClose}
+        minimizeLabel="Minimize New Tab"
+        onMinimize={() => void window.desktopWindow?.minimizeModule('new-tab')}
+        fullscreenLabel="Fullscreen New Tab"
+        onToggleFullscreen={() => void window.desktopWindow?.toggleModuleFullscreen('new-tab')}
         globalActions={
           <>
             <ModuleHeaderStripAction
@@ -178,18 +245,34 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
             />
           </button>
 
-          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
-            {destinations.map(({ label, kind, icon: Icon }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => openDestination(kind)}
-                className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-              >
-                <Icon size={13} />
-                {label}
-              </button>
-            ))}
+          <div className="relative mt-5 min-w-0">
+            <div className="flex min-w-0 items-center gap-x-5 overflow-x-auto whitespace-nowrap pr-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {destinations.map(({ label, kind, icon: Icon }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => openDestination(kind)}
+                  className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Icon size={13} />
+                  {label}
+                </button>
+              ))}
+              {pins.map((pin) => (
+                <button
+                  key={pin.id}
+                  type="button"
+                  onClick={() => openPinnedItem(pin)}
+                  className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+                  title={pin.subtitle ? `${getPinnedLabel(pin)} · ${pin.subtitle}` : getPinnedLabel(pin)}
+                >
+                  <Pin size={13} />
+                  {getPinnedLabel(pin)}
+                </button>
+              ))}
+            </div>
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-[var(--ledger-background)] to-transparent opacity-0" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--ledger-background)] to-transparent" />
           </div>
 
           {trimmedQuery && (
