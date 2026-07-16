@@ -110,6 +110,40 @@ const moduleKind = (windowParams.get('module') as ModuleKind) ?? pathnameModuleK
 const moduleFocusContext = windowParams.get('focusContext')?.trim() ?? '';
 const moduleSection = windowParams.get('section')?.trim() ?? '';
 type WorkspaceShellRoute = Omit<ModuleFocusPayload, 'kind'> & { kind: ModuleKind | null };
+
+type KeepAliveModuleKey =
+  | 'calendar'
+  | 'circle'
+  | 'notes'
+  | 'projects'
+  | 'teams'
+  | 'dashboard'
+  | 'notifications'
+  | 'inbox'
+  | 'settings'
+  | 'team-settings';
+
+const getKeepAliveModuleKey = (
+  kind: ModuleKind | null,
+  focusContext: string
+): KeepAliveModuleKey | null => {
+  if (kind === 'teams' && focusContext.startsWith('team-settings:')) return 'team-settings';
+  if (
+    kind === 'calendar' ||
+    kind === 'circle' ||
+    kind === 'notes' ||
+    kind === 'projects' ||
+    kind === 'teams' ||
+    kind === 'dashboard' ||
+    kind === 'notifications' ||
+    kind === 'inbox' ||
+    kind === 'settings'
+  ) {
+    return kind;
+  }
+  return null;
+};
+
 const getWorkspaceShellRouteFromLocation = (): WorkspaceShellRoute => {
   const params = new URLSearchParams(window.location.search);
   return {
@@ -5645,31 +5679,33 @@ function DashboardContent() {
                                       </span>
                                     )}
                                   </span>
-                                  <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
-                                    {row.title}
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                                      {row.title}
+                                    </span>
                                     {row.contextLabel && (
-                                      <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">
+                                      <span className="inline-flex min-w-0 max-w-[42%] shrink items-center gap-1 truncate text-[11px] font-normal text-[var(--ledger-text-muted)]">
                                         {row.contextIcon}
-                                        <span>{row.contextLabel}</span>
+                                        <span className="truncate">{row.contextLabel}</span>
                                       </span>
                                     )}
                                   </span>
-                                  <span className="flex items-center gap-2">
-                                    <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
+                                  <span className="flex min-w-0 max-w-[58%] items-center justify-end gap-1.5 overflow-hidden sm:gap-2">
+                                    <span className="hidden min-w-0 shrink-0 items-center gap-1.5 sm:flex">
                                       {row.chips.slice(0, 2).map((chip) => (
                                         <span
                                           key={chip}
-                                          className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
+                                          className="max-w-24 truncate rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
                                         >
                                           {chip}
                                         </span>
                                       ))}
                                     </span>
-                                    <span className="hidden max-w-80 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
+                                    <span className="hidden min-w-0 max-w-28 shrink truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline xl:max-w-80">
                                       {row.meta}
                                     </span>
                                     {typeof row.progress === 'number' && (
-                                      <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block">
+                                      <span className="hidden h-1 w-12 shrink-0 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block xl:w-20">
                                         <span
                                           className="block h-full rounded-full bg-[var(--ledger-accent)]"
                                           style={{
@@ -6919,6 +6955,13 @@ function AppShell() {
   const activeModuleFocusContext = isModuleWindow
     ? workspaceShellRoute.focusContext?.trim() ?? ''
     : moduleFocusContext;
+  const activeKeepAliveModuleKey = getKeepAliveModuleKey(
+    activeModuleKind,
+    activeModuleFocusContext
+  );
+  const [visitedModuleKeys, setVisitedModuleKeys] = useState<KeepAliveModuleKey[]>(() =>
+    activeKeepAliveModuleKey ? [activeKeepAliveModuleKey] : []
+  );
 
   useEffect(() => {
     if (window.location.pathname !== '/inbox') return;
@@ -6953,6 +6996,15 @@ function AppShell() {
       window.ipcRenderer?.off('workspace:route-changed', handleWorkspaceRouteChanged as any);
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeKeepAliveModuleKey) return;
+    setVisitedModuleKeys((current) =>
+      current.includes(activeKeepAliveModuleKey)
+        ? current
+        : [...current, activeKeepAliveModuleKey]
+    );
+  }, [activeKeepAliveModuleKey]);
 
   useEffect(() => {
     if (!user || isLoading) return;
@@ -7263,43 +7315,50 @@ function AppShell() {
       );
     }
 
-    if (activeModuleKind === 'calendar') {
-      return <CalendarWindow />;
-    }
-
-    if (activeModuleKind === 'circle') {
-      return <CircleWindow focusContext={activeModuleFocusContext} />;
-    }
-
-    if (activeModuleKind === 'notes') {
-      return <NotesWindow focusContext={activeModuleFocusContext || undefined} />;
-    }
-
-    if (activeModuleKind === 'projects') {
-      return <ProjectsWindow />;
-    }
-
-    if (activeModuleKind === 'teams') {
-      if (activeModuleFocusContext.startsWith('team-settings:')) {
-        return <TeamSettingsWindow focusContext={activeModuleFocusContext || undefined} />;
+    const renderKeepAliveModule = (key: KeepAliveModuleKey) => {
+      switch (key) {
+        case 'calendar':
+          return <CalendarWindow />;
+        case 'circle':
+          return <CircleWindow focusContext={activeModuleFocusContext} />;
+        case 'notes':
+          return <NotesWindow focusContext={activeModuleFocusContext || undefined} />;
+        case 'projects':
+          return <ProjectsWindow />;
+        case 'teams':
+          return <TeamsWindow focusContext={activeModuleFocusContext || undefined} />;
+        case 'team-settings':
+          return <TeamSettingsWindow focusContext={activeModuleFocusContext || undefined} />;
+        case 'dashboard':
+          return <DashboardContent />;
+        case 'notifications':
+          return <NotificationCenterWindow />;
+        case 'inbox':
+          return <IntakeWindow />;
+        case 'settings':
+          return <SettingsWindow />;
       }
-      return <TeamsWindow focusContext={activeModuleFocusContext || undefined} />;
-    }
+    };
 
-    if (activeModuleKind === 'dashboard') {
-      return <DashboardContent />;
-    }
+    if (activeKeepAliveModuleKey) {
+      const renderedModuleKeys = visitedModuleKeys.includes(activeKeepAliveModuleKey)
+        ? visitedModuleKeys
+        : [...visitedModuleKeys, activeKeepAliveModuleKey];
 
-    if (activeModuleKind === 'notifications') {
-      return <NotificationCenterWindow />;
-    }
-
-    if (activeModuleKind === 'inbox') {
-      return <IntakeWindow />;
-    }
-
-    if (activeModuleKind === 'settings') {
-      return <SettingsWindow />;
+      return (
+        <div className="relative h-screen w-screen overflow-hidden">
+          {renderedModuleKeys.map((key) => (
+            <div
+              key={key}
+              className="h-full w-full"
+              style={{ display: key === activeKeepAliveModuleKey ? 'block' : 'none' }}
+              aria-hidden={key !== activeKeepAliveModuleKey}
+            >
+              {renderKeepAliveModule(key)}
+            </div>
+          ))}
+        </div>
+      );
     }
 
     if (

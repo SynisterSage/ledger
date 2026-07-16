@@ -54,8 +54,14 @@ const OVERFLOW_CONTROL_WIDTH = 42;
 const TAB_SESSION_STORAGE_KEY = 'ledger:window-tabs:v1';
 const TAB_TRANSFER_ID = new URLSearchParams(window.location.search).get('tabTransferId');
 
-const routeKey = (route: LedgerRoute) =>
-  [
+const routeKey = (route: LedgerRoute) => {
+  // Notes Home can arrive with transient focus metadata such as `home`.
+  // That metadata changes the view state, not the document tab identity.
+  if (route.kind === 'notes') {
+    return route.focusNoteId ? `notes|note|${route.focusNoteId}` : 'notes|home';
+  }
+
+  return [
     route.kind,
     route.focusDate ?? '',
     route.focusProjectId ?? '',
@@ -64,6 +70,7 @@ const routeKey = (route: LedgerRoute) =>
     route.focusContext ?? '',
     route.focusSection ?? '',
   ].join('|');
+};
 
 const routeLabel = (route: LedgerRoute) => {
   switch (route.kind) {
