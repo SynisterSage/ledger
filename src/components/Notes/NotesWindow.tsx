@@ -3691,7 +3691,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   return (
     <div
-      className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
+          className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <CloseGuardModal

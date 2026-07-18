@@ -28,7 +28,9 @@ type WorkspaceShellKind =
   | 'notes'
   | 'projects'
   | 'teams'
-  | 'settings';
+  | 'settings'
+  | 'inbox'
+  | 'notifications';
 type FloatingDockPayload = {
   isDocked?: boolean;
   side?: SidebarPosition | null;
@@ -56,6 +58,8 @@ const workspaceShellKinds = new Set<WorkspaceShellKind>([
   'projects',
   'teams',
   'settings',
+  'inbox',
+  'notifications',
 ]);
 
 interface SidebarContextType {

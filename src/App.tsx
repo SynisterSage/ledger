@@ -5725,7 +5725,7 @@ function DashboardContent() {
                                       sourceId: row.sourceId,
                                     })
                                   }
-                                  className={`group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 px-3 text-left transition ${
+                                  className={`group grid min-w-0 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 px-3 text-left transition ${
                                     overviewLayout === 'compact'
                                       ? 'min-h-9 py-1'
                                       : 'min-h-10 py-1.5'
@@ -5746,27 +5746,27 @@ function DashboardContent() {
                                       </span>
                                     )}
                                   </span>
-                                  <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
+                                  <span className="min-w-0 overflow-hidden truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
                                     {row.title}
                                     {row.contextLabel && (
-                                      <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">
+                                      <span className="ml-2 inline-flex min-w-0 max-w-full items-center gap-1 truncate text-[11px] font-normal text-[var(--ledger-text-muted)]">
                                         {row.contextIcon}
-                                        <span>{row.contextLabel}</span>
+                                        <span className="truncate">{row.contextLabel}</span>
                                       </span>
                                     )}
                                   </span>
-                                  <span className="flex items-center gap-2">
-                                    <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
+                                  <span className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden">
+                                    <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
                                       {row.chips.slice(0, 2).map((chip) => (
                                         <span
                                           key={chip}
-                                          className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
+                                          className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
                                         >
                                           {chip}
                                         </span>
                                       ))}
                                     </span>
-                                    <span className="hidden max-w-80 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
+                                    <span className="hidden min-w-0 max-w-80 truncate whitespace-nowrap text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
                                       {row.meta}
                                     </span>
                                     {typeof row.progress === 'number' && (
@@ -6716,54 +6716,51 @@ function DashboardContent() {
                       </>
                     )}
                     {canAssign && (
-                      <>
-                        <div className="px-4 pt-2 pb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
-                          Assign to
-                        </div>
-                        <div className="relative px-4 pb-2">
-                          <select
-                            value={assignmentValue}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              if (!nextValue) {
-                                void updateOverviewAssignment(row, { kind: 'clear' });
-                                return;
-                              }
-                              const [kind, id] = nextValue.split(':', 2);
-                              if (!id) return;
-                              void updateOverviewAssignment(
-                                row,
-                                kind === 'team' ? { kind: 'team', id } : { kind: 'user', id }
-                              );
-                            }}
-                            className="h-9 w-full appearance-none rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
-                          >
-                            <option value="">Unassigned</option>
-                            <optgroup label="People">
-                              {workspaceMembers.map((member) => (
-                                <option key={member.user_id} value={`user:${member.user_id}`}>
-                                  {member.user_id === user?.id
-                                    ? 'Me'
-                                    : getWorkspaceMemberLabel(member.user_id) || member.user_id}
+                      <div className="relative mx-2 my-0.5 flex h-8 items-center gap-2 rounded-md px-2 text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+                        <UserRound size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                        <select
+                          aria-label="Assign to"
+                          value={assignmentValue}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            if (!nextValue) {
+                              void updateOverviewAssignment(row, { kind: 'clear' });
+                              return;
+                            }
+                            const [kind, id] = nextValue.split(':', 2);
+                            if (!id) return;
+                            void updateOverviewAssignment(
+                              row,
+                              kind === 'team' ? { kind: 'team', id } : { kind: 'user', id }
+                            );
+                          }}
+                          className="min-w-0 flex-1 cursor-pointer appearance-none border-0 bg-transparent p-0 pr-4 text-sm text-inherit outline-none"
+                        >
+                          <option value="">Assign to</option>
+                          <optgroup label="People">
+                            {workspaceMembers.map((member) => (
+                              <option key={member.user_id} value={`user:${member.user_id}`}>
+                                {member.user_id === user?.id
+                                  ? 'Me'
+                                  : getWorkspaceMemberLabel(member.user_id) || member.user_id}
+                              </option>
+                            ))}
+                          </optgroup>
+                          {!isPersonalWorkspace && (
+                            <optgroup label="Teams">
+                              {workspaceTeams.map((team) => (
+                                <option key={team.id} value={`team:${team.id}`}>
+                                  {team.identifier?.trim() || team.name}
                                 </option>
                               ))}
                             </optgroup>
-                            {!isPersonalWorkspace && (
-                              <optgroup label="Teams">
-                                {workspaceTeams.map((team) => (
-                                  <option key={team.id} value={`team:${team.id}`}>
-                                    {team.identifier?.trim() || team.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                          </select>
-                          <ChevronDown
-                            size={12}
-                            className="pointer-events-none absolute right-7 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                          />
-                        </div>
-                      </>
+                          )}
+                        </select>
+                        <ChevronDown
+                          size={12}
+                          className="pointer-events-none absolute right-2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
                     )}
                     {row.kind === 'project' && (
                       <button

@@ -610,6 +610,16 @@ export const LedgerTabStrip = () => {
     // broadcast for it so it cannot be resurrected by navigation history.
     // Explicit tab selection clears the closed key before opening the route.
     if (currentRoute && nextClosed.has(currentKey ?? '')) {
+      const prunedOrder = nextOrder.filter((route) => !nextClosed.has(routeKey(route)));
+      if (prunedOrder.length !== nextOrder.length) {
+        tabOrderRef.current = prunedOrder;
+        setTabOrder(prunedOrder);
+        try {
+          sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(prunedOrder));
+        } catch {
+          // Keep the in-memory tab state authoritative when storage is unavailable.
+        }
+      }
       return;
     }
 

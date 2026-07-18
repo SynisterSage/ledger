@@ -38,6 +38,15 @@ export const authService = {
     return { data, error };
   },
 
+  // Reauthenticate before changing an existing email/password credential.
+  async verifyCurrentPassword(email: string, password: string): Promise<AuthResponse> {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { data, error };
+  },
+
   // Sign in with OAuth (Google, GitHub, etc.)
   async signInWithOAuth(provider: 'google' | 'github') {
     const { data, error } = await supabase.auth.signInWithOAuth({
