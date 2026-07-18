@@ -355,7 +355,7 @@ const CompactNotificationList = ({
                 </span>
               </div>
               {inlineAction ? (
-                <span className="relative ml-auto hidden h-7 w-16 shrink-0 items-center justify-end text-right sm:flex">
+                <span className="relative ml-auto hidden h-7 w-24 shrink-0 items-center justify-end text-right sm:flex">
                   <span className="text-[11px] font-normal leading-4 text-[var(--ledger-text-muted)] transition group-hover:opacity-0">
                     {display.time}
                   </span>
@@ -365,7 +365,7 @@ const CompactNotificationList = ({
                       event.stopPropagation();
                       void applyAction(item, inlineAction);
                     }}
-                    className="absolute right-0 rounded-md px-2 py-1 text-[11px] font-medium leading-4 text-[var(--ledger-text-secondary)] opacity-0 transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100 focus-visible:opacity-100"
+                    className="absolute right-0 whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-medium leading-4 text-[var(--ledger-text-secondary)] opacity-0 transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100 focus-visible:opacity-100"
                   >
                     {inlineAction === 'open' && item.sourceType === 'inbox'
                       ? 'Review'

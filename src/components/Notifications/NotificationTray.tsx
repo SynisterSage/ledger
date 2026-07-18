@@ -21,7 +21,12 @@ export const NotificationTray: React.FC<NotificationTrayProps> = ({ isOpen, onCl
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (trayRef.current && target && trayRef.current.contains(target)) return;
-      if (target instanceof Element && target.closest('[data-notification-tray-toggle]')) return;
+      if (
+        target instanceof Element &&
+        (target.closest('[data-notification-tray-toggle]') || target.closest('[role="menu"]'))
+      ) {
+        return;
+      }
       onClose();
     };
     const handleKeyDown = (event: KeyboardEvent) => {

@@ -41,7 +41,7 @@ type NotificationCenterContextValue = {
   loading: boolean;
   error: string | null;
   activeCount: number;
-  loadNotifications: (options?: { force?: boolean }) => Promise<void>;
+  loadNotifications: (options?: { force?: boolean; background?: boolean }) => Promise<void>;
   applyAction: (item: NotificationCenterItem, action: NotificationAction) => Promise<void>;
 };
 
@@ -70,7 +70,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
     return status === 429 || /too many requests|429/i.test(message);
   }, []);
 
-  const loadNotifications = useCallback(async (options?: { force?: boolean }) => {
+  const loadNotifications = useCallback(async (options?: { force?: boolean; background?: boolean }) => {
     if (!user || !activeWorkspaceId) {
       setActive([]);
       setEarlier([]);
@@ -88,7 +88,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
 
     notificationLoadInFlightRef.current = true;
     notificationLoadAtRef.current = now;
-    setLoading(true);
+    if (!options?.background) setLoading(true);
     setError(null);
 
     try {
@@ -111,7 +111,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       setEarlier([]);
       setActiveCount(0);
     } finally {
-      setLoading(false);
+      if (!options?.background) setLoading(false);
       notificationLoadInFlightRef.current = false;
     }
   }, [activeWorkspaceId, api, isTooManyRequests, notificationLoadCooldownMs, retryAfterMs, user]);
@@ -121,7 +121,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   }, [loadNotifications]);
 
   useEffect(() => {
-    const handleNotificationsUpdated = () => void loadNotifications();
+    const handleNotificationsUpdated = () => void loadNotifications({ background: true });
     window.addEventListener('ledger:notifications-updated', handleNotificationsUpdated);
     return () => window.removeEventListener('ledger:notifications-updated', handleNotificationsUpdated);
   }, [loadNotifications]);
@@ -156,7 +156,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       }
 
       window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
-      await loadNotifications({ force: true });
+      await loadNotifications({ force: true, background: true });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not update notification');
       toast.show(
@@ -169,7 +169,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
           : 'Could not dismiss notification.',
         { variant: 'error' }
       );
-      await loadNotifications({ force: true });
+      await loadNotifications({ force: true, background: true });
     }
   }, [activeCount, api, defaultSnoozeMinutes, loadNotifications, openTarget, toast]);
 
