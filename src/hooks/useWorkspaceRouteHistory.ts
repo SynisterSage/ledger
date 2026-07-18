@@ -37,9 +37,28 @@ const buildWorkspaceRouteSearch = (route: WorkspaceRoute) => {
 export const useWorkspaceRouteHistory = (route: WorkspaceRoute | null, enabled = true) => {
   const didMountRef = useRef(false);
   const lastRouteKeyRef = useRef('');
+  const activeModuleKindRef = useRef<ModuleWindowKind | null>(
+    new URLSearchParams(window.location.search).get('module') as ModuleWindowKind | null
+  );
+
+  useEffect(() => {
+    const handleWorkspaceRouteChanged = (
+      _event: unknown,
+      nextRoute?: Partial<WorkspaceRoute> | null
+    ) => {
+      if (!nextRoute?.kind) return;
+      activeModuleKindRef.current = nextRoute.kind;
+    };
+
+    window.ipcRenderer?.on?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    return () => {
+      window.ipcRenderer?.off?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    };
+  }, []);
 
   useEffect(() => {
     if (!enabled || !route?.kind) return;
+    if (activeModuleKindRef.current && activeModuleKindRef.current !== route.kind) return;
 
     const nextKey = buildWorkspaceRouteKey(route);
     if (!didMountRef.current) {

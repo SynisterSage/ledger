@@ -806,6 +806,7 @@ const headerDragStarts = new Map<
     bounds: Electron.Rectangle;
     timer: NodeJS.Timeout | null;
     lastPosition: Electron.Point;
+    startedAt: number;
     sidebarLastPosition?: Electron.Point;
   }
 >();
@@ -944,10 +945,6 @@ const MODULE_DEFAULT_WIDTH = 1200;
 const MODULE_DEFAULT_HEIGHT = 760;
 const MODULE_MIN_WIDTH = 960;
 const MODULE_MIN_HEIGHT = 660;
-const NOTIFICATION_CENTER_WIDTH = 480;
-const NOTIFICATION_CENTER_HEIGHT = 680;
-const NOTIFICATION_CENTER_MIN_WIDTH = 420;
-const NOTIFICATION_CENTER_MIN_HEIGHT = 600;
 const QUICK_CAPTURE_WIDTH = 400;
 const QUICK_CAPTURE_HEIGHT = 320;
 const NOTIFICATION_SCHEDULER_INTERVAL_MS = 60_000;
@@ -2345,6 +2342,7 @@ function sendModuleFullscreenState(
 
 function setSidebarAboveWorkspaceWindow(enabled: boolean) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  const wasFocused = sidebarWin.isFocused();
   const parent = sidebarWin.getParentWindow();
   const workspaceWin =
     workspaceModuleWin && !workspaceModuleWin.isDestroyed() ? workspaceModuleWin : null;
@@ -2361,6 +2359,7 @@ function setSidebarAboveWorkspaceWindow(enabled: boolean) {
     if (sidebarWin.isVisible()) {
       sidebarWin.moveTop();
     }
+    if (!wasFocused && sidebarWin.isFocused()) sidebarWin.blur();
     return;
   }
 
@@ -2370,9 +2369,12 @@ function setSidebarAboveWorkspaceWindow(enabled: boolean) {
       currentSidebarMode !== 'auth' &&
       currentSidebarMode !== 'fullscreen' &&
       (sidebarAlwaysOnTop || currentSidebarShellFullscreen);
-    sidebarWin.setAlwaysOnTop(shouldAlwaysOnTop, 'screen-saver');
+    sidebarWin.setAlwaysOnTop(shouldAlwaysOnTop, getSidebarAlwaysOnTopLevel());
   }
 }
+
+const getSidebarAlwaysOnTopLevel = (): 'floating' | 'screen-saver' =>
+  process.platform === 'darwin' ? 'floating' : 'screen-saver';
 
 function syncSidebarWorkspaceFullscreenLayer(kind: ModuleWindowKind, win: BrowserWindow) {
   const isWorkspaceShell = win === workspaceModuleWin && isWorkspaceModuleKind(kind);
@@ -3396,6 +3398,12 @@ function startHeaderDragLoop(webContentsId: number, win: BrowserWindow) {
     const dragStart = headerDragStarts.get(webContentsId);
     if (!dragStart) return;
     if (win.isDestroyed() || win.isFullScreen()) {
+      headerDragStarts.delete(webContentsId);
+      return;
+    }
+    // Never leave a renderer-owned drag loop running forever if macOS loses
+    // the pointer-up event while the cursor crosses another window/display.
+    if (Date.now() - dragStart.startedAt > 30_000) {
       headerDragStarts.delete(webContentsId);
       return;
     }
@@ -4771,19 +4779,6 @@ function resolveModuleBounds(kind: ModuleWindowKind): Electron.Rectangle {
   const minWidth = MODULE_MIN_WIDTH;
   const minHeight = MODULE_MIN_HEIGHT;
 
-  if (kind === 'notifications') {
-    const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
-    const sidebarAnchorPoint = {
-      x: Math.round(sidebarBounds.x + sidebarBounds.width / 2),
-      y: Math.round(sidebarBounds.y + sidebarBounds.height / 2),
-    };
-    const display = screen.getDisplayNearestPoint(sidebarAnchorPoint);
-    const workArea = display.workArea;
-    return clampRectToWorkArea(
-      getCenteredBoundsInWorkArea(NOTIFICATION_CENTER_WIDTH, NOTIFICATION_CENTER_HEIGHT, workArea),
-      workArea
-    );
-  }
   const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
   const sidebarAnchorPoint = {
     x: Math.round(sidebarBounds.x + sidebarBounds.width / 2),
@@ -4953,6 +4948,7 @@ function clampOpenModuleWindowsToDisplays() {
 
 function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
+  const wasFocused = sidebarWin.isFocused();
   const previousMode = currentSidebarMode;
   currentSidebarMode = mode;
   applySidebarOpacity(currentSidebarPreferences.opacity);
@@ -5005,12 +5001,13 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
       ? getDockedBounds(RAIL_SIZE)
       : getDockedBounds(EXPANDED_WIDTH);
   const shouldAlwaysOnTop = sidebarAlwaysOnTop || currentSidebarShellFullscreen;
-  sidebarWin.setAlwaysOnTop(shouldAlwaysOnTop, 'screen-saver');
+  sidebarWin.setAlwaysOnTop(shouldAlwaysOnTop, getSidebarAlwaysOnTopLevel());
   sidebarWin.setResizable(false);
   setWindowButtonVisibility(sidebarWin, false);
   const isOpeningSidebar = mode === 'expanded' && previousMode !== 'expanded';
   syncTouchBar();
   setSidebarBounds(bounds, animate && (!isOpeningSidebar || isHorizontalDock));
+  if (!wasFocused && sidebarWin.isFocused()) sidebarWin.blur();
   if (shouldRefreshLedgerWorkspaceDock) {
     setTimeout(() => {
       if (floatingDockDragActive) return;
@@ -5032,7 +5029,9 @@ function applySidebarAlwaysOnTop(alwaysOnTop: boolean) {
     return;
   }
 
-  sidebarWin.setAlwaysOnTop(alwaysOnTop, 'screen-saver');
+  const wasFocused = sidebarWin.isFocused();
+  sidebarWin.setAlwaysOnTop(alwaysOnTop, getSidebarAlwaysOnTopLevel());
+  if (!wasFocused && sidebarWin.isFocused()) sidebarWin.blur();
 }
 
 function applySidebarOpacity(_opacity: number) {
@@ -5409,7 +5408,8 @@ function isWorkspaceModuleKind(kind: ModuleWindowKind) {
     kind === 'projects' ||
     kind === 'teams' ||
     kind === 'settings' ||
-    kind === 'inbox'
+    kind === 'inbox' ||
+    kind === 'notifications'
   );
 }
 
@@ -5829,7 +5829,6 @@ function openModuleWindow(
     kind === 'quick-note' ||
     kind === 'quick-event' ||
     kind === 'quick-reminder';
-  const isNotificationCenter = kind === 'notifications';
   if (!isDetachedWindow) {
     holdCurrentFloatingDockTarget();
   }
@@ -5851,13 +5850,9 @@ function openModuleWindow(
 
   const minWidth = isQuickCapture
     ? QUICK_CAPTURE_WIDTH
-    : isNotificationCenter
-    ? NOTIFICATION_CENTER_MIN_WIDTH
     : MODULE_MIN_WIDTH;
   const minHeight = isQuickCapture
     ? QUICK_CAPTURE_HEIGHT
-    : isNotificationCenter
-    ? NOTIFICATION_CENTER_MIN_HEIGHT
     : MODULE_MIN_HEIGHT;
 
   const moduleWin = new BrowserWindow({
@@ -5932,7 +5927,9 @@ function openModuleWindow(
       sidebarWin?.webContents.send('module:state-changed', { kind, state: 'minimized' });
       return;
     }
-    if (moduleWin === workspaceModuleWin && isWorkspaceDockTarget()) {
+    const wasDockedWorkspaceShell =
+      moduleWin === workspaceModuleWin && isWorkspaceDockTarget();
+    if (wasDockedWorkspaceShell) {
       minimizeSidebarWithWorkspaceShell();
       suspendWorkspaceWindowDockTarget();
     } else {
@@ -6522,6 +6519,7 @@ ipcMain.handle('window:begin-header-drag', (event) => {
     bounds,
     timer: null,
     lastPosition: { x: bounds.x, y: bounds.y },
+    startedAt: Date.now(),
     sidebarLastPosition:
       win === workspaceModuleWin &&
       isLedgerWindowDockTarget() &&
@@ -6622,6 +6620,24 @@ ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | Modul
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
+    // A focused module navigation must update the shared workspace route
+    // immediately. Waiting for the renderer to publish its selected resource
+    // leaves the tab group one route behind until the page finishes updating.
+    if (existing === workspaceModuleWin && typeof payload !== 'string' && isWorkspaceModuleKind(kind)) {
+      navigateWorkspaceModuleWindow(
+        routeFromModuleArgs(
+          kind,
+          focusDate,
+          focusProjectId,
+          focusNoteId,
+          focusTaskId,
+          focusContext,
+          focusSection
+        )
+      );
+      return;
+    }
+
     if (focusDate || focusProjectId || focusNoteId || focusTaskId) {
       if (existing.isMinimized()) {
         existing.restore();
@@ -6778,9 +6794,11 @@ ipcMain.handle('window:minimize-module', (event, kind: ModuleWindowKind) => {
   }
   const existing = moduleWins.get(kind);
   if (!existing || existing.isDestroyed()) return;
+  const shouldMinimizeDockedSidebar =
+    existing === workspaceModuleWin && isWorkspaceDockTarget();
   suspendCurrentFloatingDockTarget('suspended_minimized');
   existing.minimize();
-  if (existing === workspaceModuleWin && isWorkspaceDockTarget()) {
+  if (shouldMinimizeDockedSidebar) {
     minimizeSidebarWithWorkspaceShell();
   }
 });

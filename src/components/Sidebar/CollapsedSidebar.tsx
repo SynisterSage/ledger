@@ -4,6 +4,7 @@ import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, F
 import { useSearch } from '../../context/SearchContext';
 import { useAuthContext } from '../../context/AuthContext';
 import { sidebarTheme } from './sidebarTheme';
+import { HoldToQuitLogo } from './HoldToQuitLogo';
 
 export const CollapsedSidebar = ({
   onDragHandleMouseDown,
@@ -40,15 +41,12 @@ export const CollapsedSidebar = ({
       {isHorizontal ? (
         <>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
+            <HoldToQuitLogo
               onClick={handleClick}
-              onMouseDown={(e) => e.stopPropagation()}
-              aria-label="Expand sidebar"
               className="flex h-9 w-9 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-            >
-              <img src="./logo-color.svg" alt="Ledger" className="block h-8 w-8 opacity-100" draggable={false} />
-            </button>
+              imageClassName="block h-8 w-8 opacity-100"
+              title="Ledger"
+            />
 
             <button
               aria-label="Open search"
@@ -135,15 +133,12 @@ export const CollapsedSidebar = ({
           </div>
         </>
       ) : (
-        <button
-          type="button"
+        <HoldToQuitLogo
           onClick={handleClick}
-          onMouseDown={(e) => e.stopPropagation()}
-          aria-label="Expand sidebar"
           className="flex h-11 w-11 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-        >
-          <img src="./logo-color.svg" alt="Ledger" className="block h-8 w-8 opacity-100" draggable={false} />
-        </button>
+          imageClassName="block h-8 w-8 opacity-100"
+          title="Ledger"
+        />
       )}
       
     </div>

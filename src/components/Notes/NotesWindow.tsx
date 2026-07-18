@@ -3753,7 +3753,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
-              onClick={() => window.desktopWindow?.openModule('notifications')}
+              notificationTrayToggle
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
@@ -4359,13 +4360,16 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     })}
 
                     {notes.length === 0 && (
-                      <div className="px-3 py-5 text-center">
-                        <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                          No notes yet
-                        </p>
-                        <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
-                          Create a note or drop one into a folder to start organizing.
-                        </p>
+                      <div className="flex items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2.5">
+                        <StickyNote size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-[var(--ledger-text-primary)]">
+                            No notes yet
+                          </p>
+                          <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                            Create a note or drop one into a folder to start organizing.
+                          </p>
+                        </div>
                       </div>
                     )}
 

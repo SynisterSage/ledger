@@ -2796,7 +2796,8 @@ export default function IntakeWindow() {
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
-              onClick={() => window.desktopWindow?.openModule('notifications')}
+              notificationTrayToggle
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />

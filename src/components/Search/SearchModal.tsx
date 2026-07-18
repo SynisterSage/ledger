@@ -62,6 +62,7 @@ const ledgerSearchCommands: Array<
   { id: 'navigate-today', type: 'command', category: 'navigate', title: 'Today', preview: 'Open today\'s focus', icon: '', actionId: 'today', keywords: ['today', 'focus'] },
   { id: 'navigate-tasks', type: 'command', category: 'navigate', title: 'Tasks', preview: 'Open task focus', icon: '', actionId: 'tasks', keywords: ['task', 'todo'] },
   { id: 'navigate-intake', type: 'command', category: 'navigate', title: 'Intake', preview: 'Review captured items', icon: '', actionId: 'intake', keywords: ['capture', 'inbox'] },
+  { id: 'navigate-notifications', type: 'command', category: 'navigate', title: 'Notifications', preview: 'Review notifications and alerts', icon: '', actionId: 'notifications', keywords: ['notifications', 'notification', 'alerts', 'reminders', 'updates'] },
   { id: 'navigate-checkin', type: 'command', category: 'navigate', title: 'Daily Check-In', preview: 'Open your daily review', icon: '', actionId: 'checkin', keywords: ['check-in', 'checkin', 'review'] },
   { id: 'navigate-templates', type: 'command', category: 'navigate', title: 'Templates', preview: 'Browse note templates', icon: '', actionId: 'templates', keywords: ['template'] },
   { id: 'navigate-settings', type: 'command', category: 'navigate', title: 'Settings', preview: 'Open Settings', icon: '', actionId: 'settings', keywords: ['settings', 'preferences'] },
@@ -72,7 +73,6 @@ const ledgerSearchCommands: Array<
   { id: 'action-connect-calendar', type: 'command', category: 'action', title: 'Connect calendar', preview: 'Open calendar integrations', icon: '', actionId: 'integrations', keywords: ['calendar', 'connect', 'sync'] },
   { id: 'action-install-extension', type: 'command', category: 'action', title: 'Install extension', preview: 'Open browser extension settings', icon: '', actionId: 'integrations', keywords: ['browser', 'extension', 'install'] },
   { id: 'action-invite-member', type: 'command', category: 'action', title: 'Invite member', preview: 'Invite someone to this workspace', icon: '', actionId: 'invite-member', keywords: ['invite', 'member', 'team'], personal: false },
-  { id: 'settings-notifications', type: 'command', category: 'settings', title: 'Notifications', preview: 'Notification settings', icon: '', actionId: 'notifications', keywords: ['notification', 'alerts'] },
   { id: 'settings-integrations', type: 'command', category: 'settings', title: 'Integrations', preview: 'Connected services', icon: '', actionId: 'integrations', keywords: ['integration', 'connect'] },
   { id: 'settings-shortcuts', type: 'command', category: 'settings', title: 'Shortcuts', preview: 'Keyboard shortcuts', icon: '', actionId: 'shortcuts', keywords: ['shortcut', 'keyboard'] },
   { id: 'settings-appearance', type: 'command', category: 'settings', title: 'Appearance', preview: 'Workspace appearance settings', icon: '', actionId: 'appearance', keywords: ['appearance', 'theme', 'dark', 'light'] },
@@ -269,6 +269,9 @@ export const SearchModal = () => {
               focusSection: 'unprocessed',
             });
             break;
+          case 'notifications':
+            void window.desktopWindow?.openModule('notifications', { kind: 'notifications' });
+            break;
           case 'templates':
             void window.desktopWindow?.openModule('notes', {
               kind: 'notes',
@@ -285,12 +288,6 @@ export const SearchModal = () => {
             void window.desktopWindow?.openModule('teams', {
               kind: 'teams',
               focusContext: 'try:invite-member',
-            });
-            break;
-          case 'notifications':
-            void window.desktopWindow?.openModule('settings', {
-              kind: 'settings',
-              focusContext: 'notifications',
             });
             break;
           case 'integrations':

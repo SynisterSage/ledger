@@ -3124,7 +3124,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             </button>
             <button
               type="button"
-              onClick={() => window.desktopWindow?.openModule('notifications')}
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
+              data-notification-tray-toggle
               className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Notifications"
               aria-label="Open notifications"
@@ -3234,14 +3235,17 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       ))
                     ) : (
                       <div className="flex min-h-[240px] items-center justify-center px-4 py-8">
-                        <div className="max-w-sm text-center">
-                          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                            No teams yet.
+                        <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
+                          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                            <Users size={15} />
+                          </div>
+                          <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
+                            No teams yet
                           </p>
-                          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
+                          <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
                             Create teams to group people and assign work inside this workspace.
                           </p>
-                          <div className="mt-4 flex justify-center gap-2">
+                          <div className="mt-3 flex justify-center gap-2">
                             <button
                               type="button"
                               onClick={() => setIsNewTeamOpen(true)}

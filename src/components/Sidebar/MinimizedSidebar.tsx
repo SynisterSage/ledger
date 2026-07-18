@@ -14,6 +14,7 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
+import { HoldToQuitLogo } from './HoldToQuitLogo';
 
 export const MinimizedSidebar = ({
   onDragHandleMouseDown,
@@ -52,17 +53,12 @@ export const MinimizedSidebar = ({
             : 'mx-auto flex h-full w-11 flex-col items-center justify-between'
         } shrink-0`}
       >
-        <button
-          type="button"
-          onClick={() => {
-            collapseSidebar();
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          aria-label="Collapse sidebar"
+        <HoldToQuitLogo
+          onClick={() => collapseSidebar()}
           className="flex h-11 w-11 items-center justify-center bg-transparent transition-opacity duration-150 hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-        >
-          <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 opacity-100" draggable={false} />
-        </button>
+          imageClassName="h-7 w-7 opacity-100"
+          title="Ledger"
+        />
 
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>
           <button

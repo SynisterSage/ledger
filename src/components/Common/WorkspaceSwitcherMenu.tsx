@@ -334,11 +334,8 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
       return;
     }
 
-    try {
-      await setActiveWorkspace(workspaceId);
-    } finally {
-      closeAllMenus();
-    }
+    closeAllMenus();
+    void setActiveWorkspace(workspaceId).catch(() => undefined);
   };
 
   const menuButtonRows = menuRef.current
@@ -455,7 +452,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                   }
                   submenuCloseTimerRef.current = window.setTimeout(() => {
                     setSubmenuOpen(false);
-                  }, 140);
+                  }, 300);
                 }}
               >
                 <div className="p-1">
@@ -544,7 +541,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                     }
                     submenuCloseTimerRef.current = window.setTimeout(() => {
                       setSubmenuOpen(false);
-                    }, 140);
+                    }, 300);
                   }}
                 >
                   <div className="p-1">

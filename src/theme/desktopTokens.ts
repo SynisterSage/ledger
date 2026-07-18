@@ -7,6 +7,7 @@ type DesktopColorTokens = {
   surface: string;
   surfaceCard: string;
   surfaceMuted: string;
+  menuBackground: string;
   surfaceSelected: string;
   surfaceHover: string;
   textPrimary: string;
@@ -146,6 +147,7 @@ const lightColors: DesktopColorTokens = {
   surface: '#FFFFFF',
   surfaceCard: '#FAFAFA',
   surfaceMuted: '#F5F5F5',
+  menuBackground: '#FFFFFF',
   surfaceSelected: '#F0F0F0',
   surfaceHover: '#F8F8F8',
 
@@ -202,6 +204,7 @@ const darkColors: DesktopColorTokens = {
   surface: '#1A1A1A',
   surfaceCard: '#1F1F1F',
   surfaceMuted: '#262626',
+  menuBackground: '#242424',
   surfaceSelected: '#2A2A2A',
   surfaceHover: '#202020',
 
@@ -295,6 +298,7 @@ export const getDesktopCssVars = (scheme: DesktopThemeScheme = 'light'): Record<
     '--ledger-surface': colors.surface,
     '--ledger-surface-card': colors.surfaceCard,
     '--ledger-surface-muted': colors.surfaceMuted,
+    '--ledger-menu-background': colors.menuBackground,
     '--ledger-surface-selected': colors.surfaceSelected,
     '--ledger-surface-hover': colors.surfaceHover,
     '--ledger-text-primary': colors.textPrimary,

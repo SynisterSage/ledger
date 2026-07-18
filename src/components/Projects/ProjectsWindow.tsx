@@ -5164,15 +5164,15 @@ export const ProjectsWindow = () => {
         )}
 
         {projects.length === 0 ? (
-          <section className="flex min-h-[360px] items-center justify-center rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-10 text-center">
-            <div className="max-w-sm">
-              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]">
-                <Folder size={18} className="text-[var(--ledger-text-secondary)]" />
+          <section className="flex flex-1 items-center justify-center p-6">
+            <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                <Folder size={15} />
               </div>
-              <h3 className="mt-4 text-xl font-semibold tracking-tight text-[var(--ledger-text-primary)]">
+              <h3 className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
                 Start a project
               </h3>
-              <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-secondary)]">
+              <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
                 Projects keep outcomes, notes, calendar context, and next actions connected.
               </p>
               <button
@@ -5186,9 +5186,9 @@ export const ProjectsWindow = () => {
                   openCreateProjectComposer();
                 }}
                 title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
-                className="mt-5 inline-flex items-center gap-2 rounded-md bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
+                className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
               >
-                <Plus size={16} />
+                <Plus size={14} />
                 {isCreatingProject ? 'Cancel' : 'New project'}
               </button>
             </div>
@@ -5903,7 +5903,8 @@ export const ProjectsWindow = () => {
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
-              onClick={() => window.desktopWindow?.openModule('notifications')}
+              notificationTrayToggle
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
@@ -6456,13 +6457,16 @@ export const ProjectsWindow = () => {
                     ))}
                   </div>
                 ) : visibleProjects.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-5">
-                    <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                      No matching projects.
-                    </p>
-                    <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                      Create one for outcomes, notes, and next actions.
-                    </p>
+                  <div className="flex items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2.5">
+                    <Folder size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-[var(--ledger-text-primary)]">
+                        No matching projects.
+                      </p>
+                      <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
+                        Create one for outcomes, notes, and next actions.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   visibleProjects.map((project) => {

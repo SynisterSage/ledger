@@ -886,6 +886,19 @@ export const NotesHome = ({
             }
           />
         </div>
+        <div className="flex min-h-[260px] items-center justify-center px-6 py-8">
+          <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+              <StickyNote size={15} />
+            </div>
+            <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
+              Nothing to show yet
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
+              Create a note to start filling this workspace.
+            </p>
+          </div>
+        </div>
         {activeMenuGroups && menuState && (
           <ContextMenu
             open

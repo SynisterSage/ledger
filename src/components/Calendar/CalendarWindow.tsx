@@ -16,9 +16,11 @@ import {
   Eye,
   EyeOff,
   Inbox,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
+import { ContextMenu } from '../Common/ContextMenu';
 import * as rruleModule from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
 import { PinActionButton } from '../Common/PinActionButton';
@@ -774,6 +776,11 @@ export const CalendarWindow = () => {
   const [appleSyncMessage, setAppleSyncMessage] = useState<string | null>(null);
   const [isAppleSyncMessageVisible, setIsAppleSyncMessageVisible] = useState(false);
   const [isImportingIcs, setIsImportingIcs] = useState(false);
+  const [calendarHeaderMenu, setCalendarHeaderMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const calendarHeaderMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isImportMessageVisible, setIsImportMessageVisible] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -3493,11 +3500,37 @@ export const CalendarWindow = () => {
             <ModuleHeaderStripAction
               icon={<BellRing size={12} />}
               count={notificationCount}
-              onClick={() => window.desktopWindow?.openModule('notifications')}
+              notificationTrayToggle
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
           </>
+        }
+        secondaryActions={
+          <button
+            type="button"
+            ref={calendarHeaderMenuButtonRef}
+            onClick={() => {
+              const buttonRect = calendarHeaderMenuButtonRef.current?.getBoundingClientRect();
+              if (!buttonRect) return;
+              setCalendarHeaderMenu((current) =>
+                current
+                  ? null
+                  : {
+                      x: buttonRect.left,
+                      y: buttonRect.bottom + 6,
+                    }
+              );
+            }}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+            aria-haspopup="menu"
+            aria-expanded={Boolean(calendarHeaderMenu)}
+            aria-label="More calendar actions"
+            title="More calendar actions"
+          >
+            <MoreHorizontal size={14} />
+          </button>
         }
         viewControls={
           <div className="flex items-center gap-1.5">
@@ -3540,6 +3573,68 @@ export const CalendarWindow = () => {
             </ModuleHeaderSegmentedGroup>
           </div>
         }
+      />
+
+      <ContextMenu
+        open={Boolean(calendarHeaderMenu)}
+        x={calendarHeaderMenu?.x ?? 0}
+        y={calendarHeaderMenu?.y ?? 0}
+        width={210}
+        onClose={() => setCalendarHeaderMenu(null)}
+        ariaLabel="Calendar actions"
+        groupLabelCase="normal"
+        groups={[
+          {
+            label: 'Create',
+            items: [
+              {
+                id: 'new-event',
+                label: 'New Event',
+                icon: <CalendarPlus size={13} />,
+                onClick: () => openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event'),
+              },
+              {
+                id: 'new-reminder',
+                label: 'New Reminder',
+                icon: <BellRing size={13} />,
+                onClick: () => openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'reminder'),
+              },
+            ],
+          },
+          {
+            label: 'Connect',
+            items: [
+              {
+                id: 'import-ics',
+                label: isImportingIcs ? 'Importing…' : 'Import .ics',
+                icon: isImportingIcs ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <ClipboardPaste size={13} />
+                ),
+                disabled: isImportingIcs,
+                onClick: () => importInputRef.current?.click(),
+              },
+              {
+                id: 'sync-apple-calendar',
+                label: 'Sync Apple Calendar',
+                icon: <CalendarDays size={13} />,
+                onClick: () => void syncAppleCalendar(),
+              },
+            ],
+          },
+        ]}
+      />
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".ics,text/calendar"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void importIcsFile(file);
+        }}
       />
 
       {appleSyncMessage && (
@@ -3749,60 +3844,6 @@ export const CalendarWindow = () => {
                     <p className="text-xs text-[var(--ledger-text-muted)]">No calendars yet.</p>
                   )}
                 </div>
-              </div>
-
-              <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                <h2 className="mb-3 text-xs font-medium text-[var(--ledger-text-muted)]">
-                  Quick Actions
-                </h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => {
-                      openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event');
-                    }}
-                    className="h-9 rounded-md bg-[var(--ledger-accent)] text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-                  >
-                    New Event
-                  </button>
-                  <button
-                    onClick={() => {
-                      openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'reminder');
-                    }}
-                    className="h-9 rounded-md bg-[var(--ledger-accent)] text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-                  >
-                    New Reminder
-                  </button>
-                  <button
-                    onClick={() => importInputRef.current?.click()}
-                    disabled={isImportingIcs}
-                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isImportingIcs ? (
-                      <>
-                        <Loader2 size={13} className="animate-spin" />
-                        <span>Importing...</span>
-                      </>
-                    ) : (
-                      <span>Import .ics</span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => void syncAppleCalendar()}
-                    className="h-9 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
-                  >
-                    Sync iCal
-                  </button>
-                </div>
-                <input
-                  ref={importInputRef}
-                  type="file"
-                  accept=".ics,text/calendar"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void importIcsFile(file);
-                  }}
-                />
               </div>
 
               {error && <p className="mt-4 text-xs text-[var(--ledger-danger)]">{error}</p>}

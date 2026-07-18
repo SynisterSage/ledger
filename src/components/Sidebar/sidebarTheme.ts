@@ -11,7 +11,7 @@ export const sidebarTheme = {
   popover:
     'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
   menu:
-    'fixed z-50 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] py-1 shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
+    'fixed z-50 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-menu-background)] py-1 shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
   menuItem:
     'w-full text-left px-4 py-2 text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] flex items-center gap-2',
   menuItemAccent:

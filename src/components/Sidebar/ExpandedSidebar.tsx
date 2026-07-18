@@ -41,6 +41,7 @@ import { PinnedSidebarSection } from './PinnedSidebarSection';
 import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
+import { HoldToQuitLogo } from './HoldToQuitLogo';
 
 type FocusItem = {
   id: string;
@@ -2451,18 +2452,15 @@ export const ExpandedSidebar = ({
           className={`flex h-15 w-full items-center gap-2 px-2.5 backdrop-blur-sm ${sidebarTheme.surface}`}
         >
           <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
+            <HoldToQuitLogo
               onClick={() => {
                 onCollapseRequest?.();
                 collapseToRail();
               }}
-              onMouseDown={(e) => e.stopPropagation()}
               className="flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-[var(--ledger-surface-muted)]"
-              title="Collapse sidebar"
-            >
-              <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 opacity-100" />
-            </button>
+              imageClassName="h-7 w-7 opacity-100"
+              title="Ledger"
+            />
             <WorkspaceSwitcherMenu variant="sidebar" compact />
           </div>
 
@@ -2741,7 +2739,10 @@ export const ExpandedSidebar = ({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5 bg-transparent text-left">
-            <img src="./logo-color.svg" alt="Ledger" className="h-7 w-7 shrink-0" />
+            <HoldToQuitLogo
+              imageClassName="h-7 w-7 shrink-0"
+              title="Ledger"
+            />
           </div>
           <button
             type="button"

@@ -1,25 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Settings, RotateCcw, Inbox, CalendarDays, Folder, CheckCircle2, Clock3 } from 'lucide-react';
-import { useApi } from '../../hooks/useApi';
-import { useAuthContext } from '../../context/AuthContext';
-import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
-
-type NotificationCenterItem = {
-  id: string;
-  sourceType: 'reminder' | 'event' | 'task' | 'project' | 'inbox' | 'workspace_invite';
-  sourceId: string;
-  notificationType: string;
-  title: string | null;
-  body: string | null;
-  context: string | null;
-  workspaceName: string | null;
-  workspaceColor: string | null;
-  moduleKind: 'calendar' | 'dashboard' | 'projects' | 'inbox' | null;
-  focusPayload: Record<string, unknown> | null;
-  actions: Array<'open' | 'dismiss' | 'complete' | 'snooze'>;
-  scheduledFor: string;
-  status: 'active' | 'earlier';
-};
+import { useEffect, useMemo, useState } from 'react';
+import { Bell, RotateCcw, Inbox, CalendarDays, Folder, CheckCircle2, Clock3, MoreHorizontal, ExternalLink, Check, Clock, X } from 'lucide-react';
+import {
+  ModuleHeaderSegmentedButton,
+  ModuleHeaderSegmentedGroup,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from '../Common/ModuleWindowHeader';
+import { useNotificationCenter, type NotificationCenterItem } from './NotificationCenterContext';
+import { useSidebar } from '../../context/SidebarContext';
+import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 
 const isGenericTitle = (title: string | null | undefined, sourceType: NotificationCenterItem['sourceType']) => {
   const normalized = String(title ?? '').trim().toLowerCase();
@@ -102,6 +91,24 @@ const getDisplayData = (item: NotificationCenterItem) => {
   };
 };
 
+const getCompactMetadata = (item: NotificationCenterItem) => {
+  const scheduledAt = parseNotificationDate(item.scheduledFor);
+  const source =
+    item.notificationType === 'overdue_item' && (item.sourceType === 'task' || item.sourceType === 'project')
+      ? 'Overdue'
+      : sourceLabel(item);
+  const workspace = item.workspaceName?.trim() || null;
+  const date = scheduledAt
+    ? item.notificationType === 'overdue_item'
+      ? `Due ${scheduledAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+      : item.sourceType === 'inbox'
+      ? scheduledAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+      : scheduledAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    : null;
+
+  return [source, workspace, date].filter(Boolean).join(' · ');
+};
+
 const iconForItem = (item: NotificationCenterItem) => {
   switch (item.sourceType) {
     case 'reminder':
@@ -122,228 +129,338 @@ const iconForItem = (item: NotificationCenterItem) => {
 
 const actionLabel = (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => {
   if (action === 'open') {
-    if (item.sourceType === 'inbox') return 'Open Intake';
+    if (item.sourceType === 'inbox') return 'Open Intake item';
     if (item.sourceType === 'project') return 'Open project';
     if (item.sourceType === 'task') return 'Open task';
     if (item.sourceType === 'event') return 'Open event';
     if (item.sourceType === 'workspace_invite') return 'Open workspace';
-    return 'Open';
+    return 'Open related item';
   }
   if (action === 'complete') return 'Complete';
   if (action === 'snooze') return 'Snooze';
   return 'Dismiss';
 };
 
-export const NotificationCenterWindow: React.FC = () => {
-  const { user } = useAuthContext();
-  const api = useApi();
-  const [active, setActive] = useState<NotificationCenterItem[]>([]);
-  const [earlier, setEarlier] = useState<NotificationCenterItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeCount, setActiveCount] = useState(0);
-  const [inboxCount, setInboxCount] = useState(0);
-  const notificationLoadInFlightRef = useRef(false);
-  const inboxLoadInFlightRef = useRef(false);
-  const notificationLoadAtRef = useRef(0);
-  const inboxLoadAtRef = useRef(0);
-  const notificationRetryAfterRef = useRef(0);
-  const inboxRetryAfterRef = useRef(0);
+const getNotificationMenuGroups = (
+  item: NotificationCenterItem,
+  applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>
+): ContextMenuGroup[] => {
+  const groups: ContextMenuGroup[] = [];
+  if (item.actions.includes('open')) {
+    groups.push({
+      items: [
+        {
+          id: 'open',
+          label: actionLabel(item, 'open'),
+          icon: <ExternalLink size={13} />,
+          onClick: () => void applyAction(item, 'open'),
+        },
+      ],
+    });
+  }
+  const workflowActions =
+    item.status === 'active'
+      ? item.actions.filter((action) => action === 'complete' || action === 'snooze')
+      : [];
+  if (workflowActions.length > 0) {
+    groups.push({
+      items: workflowActions.map((action) => ({
+        id: action,
+        label: actionLabel(item, action),
+        icon: action === 'complete' ? <Check size={13} /> : <Clock size={13} />,
+        onClick: () => void applyAction(item, action),
+      })),
+    });
+  }
+  if (item.status === 'active' && item.actions.includes('dismiss')) {
+    groups.push({
+      items: [
+        {
+          id: 'dismiss',
+          label: 'Dismiss',
+          icon: <X size={13} />,
+          destructive: true,
+          onClick: () => void applyAction(item, 'dismiss'),
+        },
+      ],
+    });
+  }
+  return groups;
+};
 
-  const notificationLoadCooldownMs = 15_000;
-  const inboxLoadCooldownMs = 30_000;
-  const retryAfterMs = 30_000;
-  const defaultSnoozeMinutes = 10;
+const CompactTrayList = ({
+  items,
+  applyAction,
+  onRequestClose,
+}: {
+  items: NotificationCenterItem[];
+  applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>;
+  onRequestClose?: () => void;
+}) => {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: NotificationCenterItem } | null>(null);
+  const applyTrayAction = async (
+    item: NotificationCenterItem,
+    action: NotificationCenterItem['actions'][number]
+  ) => {
+    await applyAction(item, action);
+    if (action === 'open') onRequestClose?.();
+  };
 
-  const isTooManyRequests = useCallback((nextError: unknown) => {
-    const message = nextError instanceof Error ? nextError.message : String(nextError ?? '');
-    const status = typeof nextError === 'object' && nextError !== null ? (nextError as { status?: number }).status : null;
-    return status === 429 || /too many requests|429/i.test(message);
+  return (
+    <>
+      <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+        {items.map((item) => {
+          const Icon = iconForItem(item);
+          const display = getDisplayData(item);
+          const isEarlier = item.status === 'earlier';
+          const isUnread = item.unread === true && !isEarlier;
+          const isOpenable = item.actions.includes('open');
+          return (
+            <div
+              key={item.id}
+              role={isOpenable ? 'button' : undefined}
+              tabIndex={isOpenable ? 0 : undefined}
+              onClick={async () => {
+                if (!isOpenable) return;
+                await applyTrayAction(item, 'open');
+              }}
+              onKeyDown={(event) => {
+                if (!isOpenable || (event.key !== 'Enter' && event.key !== ' ')) return;
+                event.preventDefault();
+                void applyTrayAction(item, 'open');
+              }}
+              className={`group flex min-h-[50px] items-center gap-2.5 px-3 py-2 outline-none transition ${
+                isOpenable ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)] focus-visible:bg-[var(--ledger-surface-hover)]' : ''
+              } ${isEarlier ? 'text-[var(--ledger-text-muted)]' : ''}`}
+            >
+              <div className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] ${isEarlier ? 'text-[var(--ledger-text-muted)]' : 'text-[var(--ledger-text-secondary)]'}`}>
+                <Icon size={13} />
+                {isUnread && <span className="absolute -left-1 -top-1 h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className={`max-w-[34ch] truncate text-[13px] ${isEarlier ? 'font-normal' : isUnread ? 'font-semibold' : 'font-medium'} ${isEarlier ? 'text-[var(--ledger-text-secondary)]' : 'text-[var(--ledger-text-primary)]'}`}>
+                  {display.title}
+                </p>
+                <p className="max-w-[42ch] truncate text-[11px] text-[var(--ledger-text-muted)]">
+                  {getCompactMetadata(item)}
+                </p>
+              </div>
+              <span className="ml-auto shrink-0 text-right text-[11px] text-[var(--ledger-text-muted)]">
+                {display.time}
+              </span>
+              <button
+                type="button"
+                aria-label={`More actions for ${display.title}`}
+                title="More actions"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setContextMenu({ item, x: rect.right, y: rect.bottom });
+                }}
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <MoreHorizontal size={14} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <ContextMenu
+        open={Boolean(contextMenu)}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        width={208}
+        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyTrayAction) : []}
+        onClose={() => setContextMenu(null)}
+        ariaLabel="Notification actions"
+        groupLabelCase="normal"
+      />
+    </>
+  );
+};
+
+const CompactNotificationList = ({
+  items,
+  sectionLabel,
+  applyAction,
+}: {
+  items: NotificationCenterItem[];
+  sectionLabel: 'Active' | 'Earlier';
+  applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>;
+}) => {
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    item: NotificationCenterItem;
+  } | null>(null);
+
+  const openContextMenu = (item: NotificationCenterItem, x: number, y: number) => {
+    setContextMenu({ item, x, y });
+  };
+
+  const handleRowOpen = (item: NotificationCenterItem) => {
+    if (item.actions.includes('open')) void applyAction(item, 'open');
+  };
+
+  return (
+    <section aria-label={sectionLabel}>
+      <div>
+        {items.map((item) => {
+          const Icon = iconForItem(item);
+          const display = getDisplayData(item);
+          const inlineAction = sectionLabel === 'Active' && item.actions.includes('complete')
+            ? 'complete'
+            : sectionLabel === 'Active' && item.actions.includes('snooze')
+            ? 'snooze'
+            : sectionLabel === 'Active' && item.actions.includes('open')
+            ? 'open'
+            : null;
+          const isUnread = item.unread === true;
+
+          return (
+            <div
+              key={item.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => handleRowOpen(item)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleRowOpen(item);
+                }
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                openContextMenu(item, event.clientX, event.clientY);
+              }}
+              className={`group relative flex min-h-[46px] items-center gap-3 rounded-xl px-3 py-2 text-left outline-none transition hover:bg-[var(--ledger-surface-hover)] focus-visible:bg-[var(--ledger-surface-hover)] ${
+                isUnread ? 'bg-[var(--ledger-surface-hover)]' : ''
+              }`}
+            >
+              <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)]">
+                <Icon size={13} />
+                {isUnread && <span className="absolute -left-1 -top-1 h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`min-w-0 max-w-[42ch] truncate text-[13px] ${isUnread ? 'font-semibold' : 'font-medium'} text-[var(--ledger-text-primary)]`}>
+                    {display.title}
+                  </span>
+                  <span className="hidden min-w-0 truncate text-[11px] text-[var(--ledger-text-muted)] sm:inline">
+                    {getCompactMetadata(item)}
+                  </span>
+                </div>
+                <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)] sm:hidden">
+                  {getCompactMetadata(item)}
+                </span>
+              </div>
+              {inlineAction ? (
+                <span className="relative ml-auto hidden h-7 w-16 shrink-0 items-center justify-end text-right sm:flex">
+                  <span className="text-[11px] font-normal leading-4 text-[var(--ledger-text-muted)] transition group-hover:opacity-0">
+                    {display.time}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void applyAction(item, inlineAction);
+                    }}
+                    className="absolute right-0 rounded-md px-2 py-1 text-[11px] font-medium leading-4 text-[var(--ledger-text-secondary)] opacity-0 transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] group-hover:opacity-100 focus-visible:opacity-100"
+                  >
+                    {inlineAction === 'open' && item.sourceType === 'inbox'
+                      ? 'Review'
+                      : actionLabel(item, inlineAction)}
+                  </button>
+                </span>
+              ) : (
+                <span className="ml-auto hidden shrink-0 text-right text-[11px] text-[var(--ledger-text-muted)] md:inline">
+                  {display.time}
+                </span>
+              )}
+              <div className="relative shrink-0" data-notification-menu>
+                <button
+                  type="button"
+                  aria-label={`More actions for ${display.title}`}
+                  title="More actions"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    openContextMenu(item, rect.right, rect.bottom);
+                  }}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <MoreHorizontal size={14} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <ContextMenu
+        open={Boolean(contextMenu)}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        width={208}
+        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyAction) : []}
+        onClose={() => setContextMenu(null)}
+        ariaLabel="Notification actions"
+        groupLabelCase="normal"
+      />
+    </section>
+  );
+};
+
+type NotificationCenterWindowProps = {
+  mode?: 'window' | 'tray';
+  onRequestClose?: () => void;
+  onViewAll?: () => void;
+};
+
+export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> = ({
+  mode = 'window',
+  onRequestClose,
+  onViewAll,
+}) => {
+  const { active, earlier, loading, error, activeCount, loadNotifications, applyAction } =
+    useNotificationCenter();
+  const { workspaceShellLayout } = useSidebar();
+  const inboxCount = 0;
+  const [filter, setFilter] = useState<'active' | 'earlier'>('active');
+
+  useEffect(() => {
+    const context = new URLSearchParams(window.location.search).get('focusContext') ?? '';
+    setFilter(context === 'notifications:filter:earlier' ? 'earlier' : 'active');
   }, []);
 
-  const loadNotifications = useCallback(async (opts?: { force?: boolean }) => {
-    if (!user) {
-      setActive([]);
-      setEarlier([]);
-      setActiveCount(0);
-      setLoading(false);
-      return;
-    }
-
-    const now = Date.now();
-    if (!opts?.force) {
-      if (notificationLoadInFlightRef.current) return;
-      if (now < notificationRetryAfterRef.current) return;
-      if (now - notificationLoadAtRef.current < notificationLoadCooldownMs) return;
-    }
-
-    notificationLoadInFlightRef.current = true;
-    notificationLoadAtRef.current = now;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const payload = (await api.getNotificationCenter()) as {
-        active?: NotificationCenterItem[];
-        earlier?: NotificationCenterItem[];
-        counts?: { active?: number };
-      };
-      setActive(Array.isArray(payload.active) ? payload.active : []);
-      setEarlier(Array.isArray(payload.earlier) ? payload.earlier : []);
-      setActiveCount(Number(payload.counts?.active ?? 0));
-      window.dispatchEvent(
-        new CustomEvent('ledger:notifications-summary', {
-          detail: { activeCount: Number(payload.counts?.active ?? 0) },
-        })
-      );
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Could not load notifications');
-      if (isTooManyRequests(nextError)) {
-        notificationRetryAfterRef.current = Date.now() + retryAfterMs;
-      }
-      setActive([]);
-      setEarlier([]);
-      setActiveCount(0);
-    } finally {
-      setLoading(false);
-      notificationLoadInFlightRef.current = false;
-    }
-  }, [api, isTooManyRequests, notificationLoadCooldownMs, retryAfterMs, user]);
-
-  useEffect(() => {
-    void loadNotifications();
-  }, [loadNotifications]);
-
-  const loadInboxCount = useCallback(async () => {
-    if (!user) {
-      setInboxCount(0);
-      return;
-    }
-
-    try {
-      const now = Date.now();
-      if (inboxLoadInFlightRef.current) return;
-      if (now < inboxRetryAfterRef.current) return;
-      if (now - inboxLoadAtRef.current < inboxLoadCooldownMs) return;
-
-      inboxLoadInFlightRef.current = true;
-      inboxLoadAtRef.current = now;
-
-      const payload = (await api.getInboxCount()) as { count?: number };
-      setInboxCount(Math.max(0, Number(payload?.count ?? 0)));
-    } catch (nextError) {
-      if (isTooManyRequests(nextError)) {
-        inboxRetryAfterRef.current = Date.now() + retryAfterMs;
-      }
-      setInboxCount(0);
-    } finally {
-      inboxLoadInFlightRef.current = false;
-    }
-  }, [api, inboxLoadCooldownMs, isTooManyRequests, retryAfterMs, user]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    let cancelled = false;
-    void loadInboxCount();
-
-    const handleRefreshInboxCount = () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      if (cancelled) return;
-      void loadInboxCount();
-    };
-
-    const handleInboxItemsUpdated = (_event: unknown, payload?: { delta?: number }) => {
-      if (typeof payload?.delta === 'number' && Number.isFinite(payload.delta)) {
-        setInboxCount((current) => Math.max(0, current + payload.delta!));
-        return;
-      }
-
-      void loadInboxCount();
-    };
-
-    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
-    window.addEventListener('focus', handleRefreshInboxCount);
-    document.addEventListener('visibilitychange', handleRefreshInboxCount);
-
-    const refreshTimer = window.setInterval(() => {
-      if (!cancelled) void loadInboxCount();
-    }, 30_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(refreshTimer);
-      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
-      window.removeEventListener('focus', handleRefreshInboxCount);
-      document.removeEventListener('visibilitychange', handleRefreshInboxCount);
-    };
-  }, [loadInboxCount, user]);
-
-  useEffect(() => {
-    const handleNotificationsUpdated = () => {
-      void loadNotifications();
-    };
-    window.addEventListener('ledger:notifications-updated', handleNotificationsUpdated);
-    return () => window.removeEventListener('ledger:notifications-updated', handleNotificationsUpdated);
-  }, [loadNotifications]);
-
-  const openTarget = useCallback(
-    async (item: NotificationCenterItem) => {
-      const focus = item.focusPayload ?? undefined;
-      const kind = item.moduleKind ?? 'dashboard';
-      await window.desktopWindow?.openModule(kind, focus as any);
-    },
-    []
-  );
-
-  const applyAction = useCallback(
-    async (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => {
-      try {
-        // Optimistically remove the notification from the UI immediately
-        setActive((prev) => prev.filter((n) => n.id !== item.id));
-        setEarlier((prev) => prev.filter((n) => n.id !== item.id));
-
-        // Update the active count optimistically
-        setActiveCount((prev) => Math.max(0, prev - 1));
-        window.dispatchEvent(
-          new CustomEvent('ledger:notifications-summary', {
-            detail: { activeCount: Math.max(0, activeCount - 1) },
-          })
-        );
-
-        // Make the API call
-        if (action === 'open') {
-          await api.updateNotificationAction(item.id, 'open');
-          await openTarget(item);
-        } else if (action === 'complete') {
-          await api.updateNotificationAction(item.id, 'complete');
-        } else if (action === 'snooze') {
-          const snoozeUntil = new Date(Date.now() + defaultSnoozeMinutes * 60_000).toISOString();
-          await api.updateNotificationAction(item.id, 'snooze', {
-            snooze_until: snoozeUntil,
-          });
-        } else {
-          await api.updateNotificationAction(item.id, 'dismiss');
-        }
-
-        window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
-      } catch (nextError) {
-        // On error, reload notifications to get the correct state
-        setError(nextError instanceof Error ? nextError.message : 'Could not update notification');
-        await loadNotifications();
-      }
-    },
-    [api, loadNotifications, openTarget, activeCount, defaultSnoozeMinutes]
-  );
+  const selectFilter = (nextFilter: 'active' | 'earlier') => {
+    setFilter(nextFilter);
+    if (mode === 'tray') return;
+    void window.desktopWindow?.openModule('notifications', {
+      kind: 'notifications',
+      focusContext: `notifications:filter:${nextFilter}`,
+    });
+  };
 
   const headerSubtitle = useMemo(
     () => (activeCount === 1 ? '1 active' : `${activeCount} active`),
     [activeCount]
   );
 
+  const isTray = mode === 'tray';
+  const displayActive = isTray || filter === 'active' ? active : [];
+  const displayEarlier = isTray || filter === 'earlier' ? earlier : [];
+  const trayItems = filter === 'earlier' ? earlier : active;
+
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[#E8DDD4] bg-[#FFF8F1] shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-      <ModuleWindowHeader
+    <div
+      style={!isTray ? { scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle } : undefined}
+      className={
+        isTray
+          ? 'relative flex max-h-[min(680px,calc(100vh-56px))] min-h-0 flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]'
+          : 'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[var(--ledger-shadow)]'
+      }
+    >
+      {!isTray && <ModuleWindowHeader
         eyebrow="Notification Center"
         title="Notifications"
         subtitle={headerSubtitle}
@@ -351,7 +468,28 @@ export const NotificationCenterWindow: React.FC = () => {
         onClose={() => window.desktopWindow?.closeModule('notifications')}
         onMinimize={() => window.desktopWindow?.minimizeModule('notifications')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('notifications')}
-        showWorkspaceNavigation={false}
+        compact
+        showBodyHeader={false}
+        viewControls={
+          !isTray ? (
+            <ModuleHeaderSegmentedGroup compact>
+              {(['active', 'earlier'] as const).map((option) => (
+                <ModuleHeaderSegmentedButton
+                  key={option}
+                  compact
+                  active={filter === option}
+                  title={`Show ${option} notifications`}
+                  onClick={() => selectFilter(option)}
+                >
+                  {option === 'active' ? 'Active' : 'Earlier'}
+                  <span className="ml-1 text-[10px] text-[var(--ledger-text-muted)]">
+                    {option === 'active' ? active.length : earlier.length}
+                  </span>
+                </ModuleHeaderSegmentedButton>
+              ))}
+            </ModuleHeaderSegmentedGroup>
+          ) : null
+        }
         stripActions={
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
@@ -366,167 +504,130 @@ export const NotificationCenterWindow: React.FC = () => {
             <button
               type="button"
               onClick={() => void loadNotifications({ force: true })}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 transition hover:bg-[#FFF4EA]"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              aria-label="Refresh notifications"
+              title="Refresh notifications"
+            >
+              <RotateCcw size={12} />
+            </button>
+          </>
+        }
+      />}
+
+      {isTray && (
+        <div className="flex shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Bell size={15} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+            <span className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+              Notifications
+            </span>
+            <span className="text-xs text-[var(--ledger-text-muted)]">{headerSubtitle}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => void loadNotifications({ force: true })}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              aria-label="Refresh notifications"
+              title="Refresh notifications"
             >
               <RotateCcw size={12} />
             </button>
             <button
               type="button"
-              onClick={() => window.desktopWindow?.toggleModule('settings', { kind: 'settings', focusContext: 'notifications' } as any)}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFFBF7] text-gray-700 transition hover:bg-[#FFF4EA]"
+              onClick={onViewAll}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              aria-label="Open all notifications"
+              title="Open all notifications"
             >
-              <Settings size={12} />
+              <ExternalLink size={13} />
             </button>
-          </>
-        }
-      />
+            <button
+              type="button"
+              onClick={onRequestClose}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              aria-label="Close notifications"
+              title="Close notifications"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+        </div>
+      )}
 
-      <div className="flex-1 min-h-0 overflow-auto bg-[#FFF8F1] px-5 py-4">
+      {isTray && (
+        <div className="flex h-10 shrink-0 items-center gap-1 border-b border-[color:var(--ledger-border-subtle)] px-3">
+          {(['active', 'earlier'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => selectFilter(option)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
+                filter === option
+                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                  : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+              }`}
+            >
+              {option === 'active' ? 'Active' : 'Earlier'}
+              <span className="ml-1 text-[10px] text-[var(--ledger-text-muted)]">
+                {option === 'active' ? active.length : earlier.length}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto ${isTray ? 'bg-[var(--ledger-surface-card)] px-0 py-0' : 'bg-[var(--ledger-background)] px-5 py-4'}`}>
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-20 animate-pulse rounded-2xl border border-[#E8DDD4] bg-[#FFF4EA]"
-              />
+        {loading ? isTray ? (
+          <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+            {Array.from({ length: 7 }).map((_, index) => (
+              <div key={index} className="flex h-[50px] items-center gap-2.5 px-3">
+                <div className="h-7 w-7 animate-pulse rounded-lg bg-[var(--ledger-surface-hover)]" />
+                <div className="h-3 w-2/3 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+              </div>
             ))}
           </div>
-        ) : active.length === 0 && earlier.length === 0 ? (
-          <div className="flex h-[calc(100vh-180px)] items-center justify-center">
+        ) : (
+          <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+            {Array.from({ length: 7 }).map((_, index) => (
+              <div key={index} className="flex h-[46px] items-center gap-3 px-2">
+                <div className="h-7 w-7 animate-pulse rounded-lg bg-[var(--ledger-surface-hover)]" />
+                <div className="h-3 w-2/3 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+              </div>
+            ))}
+          </div>
+        ) : (isTray ? trayItems.length === 0 : displayActive.length === 0 && displayEarlier.length === 0) ? (
+          <div className="flex min-h-[280px] items-center justify-center">
             <div className="max-w-sm text-center">
-              <p className="text-base font-medium text-gray-900">You’re caught up.</p>
-              <p className="mt-1 text-sm text-gray-500">
-                Ledger will let you know when something needs attention.
+              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                {filter === 'earlier' ? 'No earlier notifications' : 'You’re all caught up'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                {filter === 'earlier'
+                  ? 'Completed and dismissed alerts will appear here.'
+                  : 'No active notifications in this workspace.'}
               </p>
             </div>
           </div>
+        ) : isTray ? (
+          <CompactTrayList
+            items={trayItems}
+            applyAction={applyAction}
+            onRequestClose={onRequestClose}
+          />
         ) : (
-          <div className="space-y-6">
-            <section className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-gray-900">Active</h2>
-                <span className="text-xs text-gray-500">{active.length}</span>
-              </div>
-
-              <div className="divide-y divide-[#E8DDD4] rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7]">
-                {active.map((item) => {
-                  const Icon = iconForItem(item);
-                  const display = getDisplayData(item);
-                  return (
-                    <div key={item.id} className="px-4 py-3">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFF4EA] text-gray-600">
-                          <Icon size={14} />
-                        </div>
-
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-gray-900">
-                                {display.title}
-                              </p>
-                              <p className="mt-0.5 text-xs text-gray-500">
-                                {display.detail}
-                              </p>
-                            </div>
-                            <p className="shrink-0 text-[11px] text-gray-400">
-                              {display.time}
-                            </p>
-                          </div>
-
-                          {display.body ? (
-                            <p className="text-sm text-gray-600">{display.body}</p>
-                          ) : null}
-
-                          <div className="flex flex-wrap gap-2 pt-1">
-                            {item.actions.map((action) => (
-                              <button
-                                key={action}
-                                type="button"
-                                onClick={() => void applyAction(item, action)}
-                                className={`text-xs font-medium transition ${
-                                  action === 'dismiss'
-                                    ? 'text-gray-500 hover:text-red-600'
-                                    : 'text-[#FF5F40] hover:underline'
-                                }`}
-                              >
-                                {actionLabel(item, action)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {earlier.length > 0 && (
-              <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-gray-900">Earlier</h2>
-                  <span className="text-xs text-gray-500">{earlier.length}</span>
-                </div>
-
-                <div className="divide-y divide-[#E8DDD4] rounded-2xl border border-[#E8DDD4] bg-[#FFFBF7]">
-                  {earlier.map((item) => {
-                    const Icon = iconForItem(item);
-                    const display = getDisplayData(item);
-                    return (
-                      <div key={item.id} className="px-4 py-3 opacity-80">
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E8DDD4] bg-[#FFF4EA] text-gray-500">
-                            <Icon size={14} />
-                          </div>
-
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium text-gray-700">
-                                  {display.title}
-                                </p>
-                                <p className="mt-0.5 text-xs text-gray-500">
-                                  {display.detail}
-                                </p>
-                              </div>
-                              <p className="shrink-0 text-[11px] text-gray-400">
-                                {display.time}
-                              </p>
-                            </div>
-
-                            {display.body ? <p className="text-sm text-gray-600">{display.body}</p> : null}
-
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => void applyAction(item, 'open')}
-                                className="text-xs font-medium text-[#FF5F40] transition hover:underline"
-                              >
-                                {item.sourceType === 'inbox' ? 'Open Intake' : 'Open'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void applyAction(item, 'dismiss')}
-                                className="text-xs font-medium text-gray-500 transition hover:text-red-600"
-                              >
-                                Dismiss
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+          <div className="space-y-5">
+            <CompactNotificationList
+              items={filter === 'earlier' ? displayEarlier : displayActive}
+              sectionLabel={filter === 'earlier' ? 'Earlier' : 'Active'}
+              applyAction={applyAction}
+            />
           </div>
         )}
       </div>

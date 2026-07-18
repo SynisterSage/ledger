@@ -26,6 +26,7 @@ export const SidebarContainer = () => {
   const autoHideFadeTimerRef = useRef<number | null>(null);
   const autoHideCollapseTimerRef = useRef<number | null>(null);
   const [isAutoHideFading, setIsAutoHideFading] = useState(false);
+  const [isShuttingDown, setIsShuttingDown] = useState(false);
   const isWindowsPlatform =
     typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
   const prefersReducedMotion = useMemo(() => {
@@ -50,6 +51,15 @@ export const SidebarContainer = () => {
   const introFrameRef = useRef<number | null>(null);
   const hasPlayedSidebarIntroRef = useRef(false);
   const [isIntroVisible, setIsIntroVisible] = useState(false);
+
+  useEffect(() => {
+    const handleShutdownState = (event: Event) => {
+      const active = (event as CustomEvent<{ active?: boolean }>).detail?.active === true;
+      setIsShuttingDown(active);
+    };
+    window.addEventListener('ledger:shutdown-state', handleShutdownState);
+    return () => window.removeEventListener('ledger:shutdown-state', handleShutdownState);
+  }, []);
 
   useEffect(() => {
     if (!isHydrated || !isVisible || state === 'fullscreen' || hasPlayedSidebarIntroRef.current) {
@@ -479,6 +489,11 @@ export const SidebarContainer = () => {
       {renderSidebarContent(
         contentView.state as Exclude<typeof state, 'fullscreen'>,
         contentView.isExpanded
+      )}
+      {isShuttingDown && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--ledger-surface-muted)]/92 text-sm font-medium text-[var(--ledger-text-primary)]">
+          Shutting down
+        </div>
       )}
     </div>
   );

@@ -69,6 +69,11 @@ import TeamsWindow from './components/Teams/TeamsWindow';
 import TeamSettingsWindow from './components/Teams/TeamSettingsWindow';
 import IntakeWindow from './components/Inbox/InboxWindow';
 import { NotificationCenterWindow } from './components/Notifications/NotificationCenterWindow';
+import {
+  NotificationTray,
+  NOTIFICATION_TRAY_TOGGLE_EVENT,
+} from './components/Notifications/NotificationTray';
+import { NotificationCenterProvider } from './components/Notifications/NotificationCenterContext';
 import SettingsWindow from './components/Settings/SettingsWindow';
 import { SearchModal } from './components/Search/SearchModal';
 import { SearchProvider } from './context/SearchContext';
@@ -80,6 +85,7 @@ import { useToast } from './components/Common/ToastProvider';
 import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { NewTabWindow } from './components/Common/NewTabWindow';
+import { PageFindBar } from './components/Common/PageFindBar';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace' | 'position';
@@ -5271,7 +5277,8 @@ function DashboardContent() {
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
-              onClick={() => window.desktopWindow?.openModule('notifications')}
+              notificationTrayToggle
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
@@ -5695,11 +5702,21 @@ function DashboardContent() {
                             {group.rows.map((row) => {
                               const isSelected = selectedOverviewRow?.id === row.id;
                               return (
-                                <button
+                                <div
                                   key={row.id}
-                                  type="button"
+                                  role="button"
+                                  tabIndex={0}
                                   onClick={() => setSelectedOverviewRowId(row.id)}
                                   onDoubleClick={() => row.open()}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.preventDefault();
+                                      setSelectedOverviewRowId(row.id);
+                                    } else if (event.key === ' ') {
+                                      event.preventDefault();
+                                      setSelectedOverviewRowId(row.id);
+                                    }
+                                  }}
                                   onContextMenu={(event) =>
                                     openContextMenu(event, {
                                       type: 'overview-row',
@@ -5799,7 +5816,7 @@ function DashboardContent() {
                                       <MoreHorizontal size={14} />
                                     </button>
                                   </span>
-                                </button>
+                                </div>
                               );
                             })}
                           </div>
@@ -8141,14 +8158,30 @@ function AppShell() {
 function App() {
   const { user } = useAuthContext();
   const shouldShowNotificationMonitor = Boolean(user) && !isModuleWindow;
+  const [isNotificationTrayOpen, setIsNotificationTrayOpen] = useState(false);
+
+  useEffect(() => {
+    const handleToggleNotificationTray = () => setIsNotificationTrayOpen((current) => !current);
+    window.addEventListener(NOTIFICATION_TRAY_TOGGLE_EVENT, handleToggleNotificationTray);
+    return () => window.removeEventListener(NOTIFICATION_TRAY_TOGGLE_EVENT, handleToggleNotificationTray);
+  }, []);
 
   return (
     <SearchProvider>
       <ToastProvider>
-        {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
-        <AuthSessionToastReset />
-        <AppShell />
-        <SearchModal />
+        <NotificationCenterProvider>
+          {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
+          <AuthSessionToastReset />
+          <AppShell />
+          {user && isModuleWindow ? (
+            <NotificationTray
+              isOpen={isNotificationTrayOpen}
+              onClose={() => setIsNotificationTrayOpen(false)}
+            />
+          ) : null}
+          {isModuleWindow ? <PageFindBar /> : null}
+          <SearchModal />
+        </NotificationCenterProvider>
       </ToastProvider>
     </SearchProvider>
   );

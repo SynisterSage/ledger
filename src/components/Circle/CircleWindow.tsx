@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ArrowRight,
   Copy,
   CheckCircle2,
@@ -24,10 +25,12 @@ import {
 } from 'react';
 import { ModuleHeaderActionButton, ModuleHeaderSegmentedButton, ModuleHeaderSegmentedGroup, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { PinActionButton } from '../Common/PinActionButton';
+import { ModalOverlay } from '../Common/ModalOverlay';
 import { useApi } from '../../hooks/useApi';
 import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 
 type CirclePersonTeam = {
   id: string;
@@ -157,6 +160,9 @@ type CircleFilters = {
   pinned: boolean;
 };
 
+type CircleComposerMode = 'task' | 'follow-up';
+type CircleTaskType = 'focus' | 'short_term' | 'long_term';
+
 const circleTheme = {
   shell:
     'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
@@ -164,14 +170,14 @@ const circleTheme = {
   leftPane:
     'flex h-full w-[300px] min-w-[260px] max-w-[320px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]',
   leftPaneHeader:
-    'border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-[11px] font-medium text-[var(--ledger-text-muted)]',
-  leftList: 'min-h-0 flex-1 overflow-y-auto px-2 py-2',
+    'border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]',
+  leftList: 'min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 py-2',
   row:
-    'group flex w-full items-start gap-3 rounded-2xl px-3 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]',
-  rowSelected: 'bg-[var(--ledger-surface-selected)] hover:bg-[var(--ledger-surface-selected)]',
-  rowTitle: 'text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]',
-  rowMeta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
-  rowMetaStrong: 'text-[11px] font-medium leading-4 text-[var(--ledger-text-secondary)]',
+    'group flex w-full items-start gap-2 rounded-xl px-2.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]',
+  rowSelected: 'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
+  rowTitle: 'text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]',
+  rowMeta: 'text-[10px] leading-3.5 text-[var(--ledger-text-muted)]',
+  rowMetaStrong: 'text-[10px] font-medium leading-3.5 text-[var(--ledger-text-secondary)]',
   content: 'min-w-0 flex-1 overflow-y-auto px-5 py-5 lg:px-6',
   contentInner: 'mx-auto flex min-h-full w-full max-w-5xl flex-col gap-5',
   panel:
@@ -280,6 +286,21 @@ const titleCase = (value?: string | null) =>
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Member';
 
+const formatActivityLabel = (value?: string | null) => {
+  const normalized = String(value ?? '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return '';
+
+  return normalized
+    .split(' ')
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
+    .join(' ');
+};
+
 const CircleAvatar = ({ person }: { person: CirclePersonSummary }) => {
   const initials = getInitials(person.name, person.email);
   if (person.avatar_url) {
@@ -287,12 +308,12 @@ const CircleAvatar = ({ person }: { person: CirclePersonSummary }) => {
       <img
         src={person.avatar_url}
         alt={person.name}
-        className="h-8 w-8 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] object-cover"
+        className="h-7 w-7 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] object-cover"
       />
     );
   }
   return (
-    <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
+    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
       {initials}
     </span>
   );
@@ -501,12 +522,25 @@ const Row = ({
 const buildPersonContext = (person: CirclePersonSummary) =>
   `ledger-person|${person.id}|${encodeURIComponent(person.name)}`;
 
+type CircleSelectedPersonCache = {
+  person: CirclePersonSummary | null;
+  work: CirclePersonDetailPayload | null;
+  projects: CirclePersonProjectsPayload | null;
+  followUps: CirclePersonFollowUpsPayload | null;
+  activity: CirclePersonActivityPayload | null;
+};
+
+const circlePeopleCache = new Map<string, CirclePersonSummary[]>();
+const circleSelectedPersonCache = new Map<string, CircleSelectedPersonCache>();
+
 export const CircleWindow = ({ focusContext }: { focusContext?: string | null } = {}) => {
   const api = useApi();
   const { workspaceShellLayout } = useSidebar();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
 
-  const [people, setPeople] = useState<CirclePersonSummary[]>([]);
+  const [people, setPeople] = useState<CirclePersonSummary[]>(() =>
+    activeWorkspaceId ? circlePeopleCache.get(activeWorkspaceId) ?? [] : []
+  );
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<CirclePersonSummary | null>(null);
   const [selectedWork, setSelectedWork] = useState<CirclePersonDetailPayload | null>(null);
@@ -541,8 +575,16 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   const [showDisplayMenu, setShowDisplayMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [moreMenuStyle, setMoreMenuStyle] = useState<CSSProperties | null>(null);
+  const [composerMode, setComposerMode] = useState<CircleComposerMode | null>(null);
+  const [circleTaskType, setCircleTaskType] = useState<CircleTaskType>('focus');
+  const [composerTitle, setComposerTitle] = useState('');
+  const [composerDueDate, setComposerDueDate] = useState('');
+  const [isSavingComposer, setIsSavingComposer] = useState(false);
+  const [composerError, setComposerError] = useState<string | null>(null);
 
-  const loadTokenRef = useRef(0);
+  const peopleLoadTokenRef = useRef(0);
+  const selectedLoadTokenRef = useRef(0);
+  const previousFocusContextRef = useRef(focusContext ?? null);
   const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const displayMenuRef = useRef<HTMLDivElement | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
@@ -560,15 +602,18 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       return;
     }
 
-    const token = ++loadTokenRef.current;
+    const token = ++peopleLoadTokenRef.current;
     setIsLoadingPeople(true);
     setError(null);
 
     try {
       const payload = (await api.getPeople(query)) as { people?: CirclePersonSummary[] };
-      if (loadTokenRef.current !== token) return;
+      if (peopleLoadTokenRef.current !== token) return;
 
       const nextPeople = Array.isArray(payload?.people) ? payload.people : [];
+      if (!query?.trim()) {
+        circlePeopleCache.set(activeWorkspaceId, nextPeople);
+      }
       setPeople(nextPeople);
 
       if (selectedPersonId && !nextPeople.some((person) => person.id === selectedPersonId)) {
@@ -580,7 +625,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         setSelectedActivity(null);
       }
     } catch (fetchError) {
-      if (loadTokenRef.current !== token) return;
+      if (peopleLoadTokenRef.current !== token) return;
       setPeople([]);
       setSelectedPersonId(null);
       setSelectedPerson(null);
@@ -590,7 +635,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       setSelectedActivity(null);
       setError(fetchError instanceof Error ? fetchError.message : 'Could not load people.');
     } finally {
-      if (loadTokenRef.current === token) {
+      if (peopleLoadTokenRef.current === token) {
         setIsLoadingPeople(false);
       }
     }
@@ -598,7 +643,16 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
   const loadSelectedPerson = async (personId: string) => {
     if (!activeWorkspaceId) return;
-    const token = ++loadTokenRef.current;
+    const cacheKey = `${activeWorkspaceId}|${personId}`;
+    const cached = circleSelectedPersonCache.get(cacheKey);
+    if (cached) {
+      setSelectedPerson(cached.person);
+      setSelectedWork(cached.work);
+      setSelectedProjects(cached.projects);
+      setSelectedFollowUps(cached.followUps);
+      setSelectedActivity(cached.activity);
+    }
+    const token = ++selectedLoadTokenRef.current;
     setIsLoadingSelected(true);
     setError(null);
 
@@ -612,15 +666,28 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           api.getPersonActivity(personId),
         ]);
 
-      if (loadTokenRef.current !== token) return;
+      if (selectedLoadTokenRef.current !== token) return;
 
-      setSelectedPerson((personPayload as { person?: CirclePersonSummary })?.person ?? null);
-      setSelectedWork(workPayload as CirclePersonDetailPayload);
-      setSelectedProjects(projectsPayload as CirclePersonProjectsPayload);
-      setSelectedFollowUps(followUpsPayload as CirclePersonFollowUpsPayload);
-      setSelectedActivity(activityPayload as CirclePersonActivityPayload);
+      const nextSelectedPerson =
+        (personPayload as { person?: CirclePersonSummary })?.person ?? null;
+      const nextSelectedWork = workPayload as CirclePersonDetailPayload;
+      const nextSelectedProjects = projectsPayload as CirclePersonProjectsPayload;
+      const nextSelectedFollowUps = followUpsPayload as CirclePersonFollowUpsPayload;
+      const nextSelectedActivity = activityPayload as CirclePersonActivityPayload;
+      circleSelectedPersonCache.set(cacheKey, {
+        person: nextSelectedPerson,
+        work: nextSelectedWork,
+        projects: nextSelectedProjects,
+        followUps: nextSelectedFollowUps,
+        activity: nextSelectedActivity,
+      });
+      setSelectedPerson(nextSelectedPerson);
+      setSelectedWork(nextSelectedWork);
+      setSelectedProjects(nextSelectedProjects);
+      setSelectedFollowUps(nextSelectedFollowUps);
+      setSelectedActivity(nextSelectedActivity);
     } catch (fetchError) {
-      if (loadTokenRef.current !== token) return;
+      if (selectedLoadTokenRef.current !== token) return;
       setSelectedPerson(null);
       setSelectedWork(null);
       setSelectedProjects(null);
@@ -628,14 +695,14 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       setSelectedActivity(null);
       setError(fetchError instanceof Error ? fetchError.message : 'Could not load person details.');
     } finally {
-      if (loadTokenRef.current === token) {
+      if (selectedLoadTokenRef.current === token) {
         setIsLoadingSelected(false);
       }
     }
   };
 
   useEffect(() => {
-    setPeople([]);
+    setPeople(activeWorkspaceId ? circlePeopleCache.get(activeWorkspaceId) ?? [] : []);
     setSelectedPersonId(null);
     setSelectedPerson(null);
     setSelectedWork(null);
@@ -671,6 +738,43 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     setSelectedPersonId(personId);
     setActiveTab(tab === 'projects' ? 'projects' : 'overview');
   }, [focusContext]);
+
+  const routePerson = people.find((person) => person.id === selectedPersonId) ?? selectedPerson;
+  useWorkspaceRouteHistory(
+    {
+      kind: 'circle',
+      focusContext: routePerson ? buildPersonContext(routePerson) : null,
+    },
+    Boolean(activeWorkspaceId)
+  );
+
+  useEffect(() => {
+    const previousFocusContext = previousFocusContextRef.current;
+    previousFocusContextRef.current = focusContext ?? null;
+    if (previousFocusContext === (focusContext ?? null)) return;
+    if (!activeWorkspaceId || people.length > 0) return;
+
+    void loadPeople(debouncedSearchQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusContext]);
+
+  useEffect(() => {
+    const handleWorkspaceRouteChanged = (
+      _event: unknown,
+      route?: { kind?: string | null }
+    ) => {
+      if (route?.kind !== 'circle' || !activeWorkspaceId || people.length > 0) return;
+      void loadPeople(debouncedSearchQuery);
+    };
+
+    window.ipcRenderer?.on?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    return () => {
+      window.ipcRenderer?.off?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    };
+    // Circle stays mounted while other tabs are active, so reload an empty
+    // people list whenever the shared workspace route returns to Circle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId, debouncedSearchQuery, people.length]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -760,6 +864,60 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
   const selectedPersonPrimaryTeam = selectedPersonDetails?.teams?.[0]?.name ?? null;
   const selectedPersonDisplayRole = titleCase(selectedPersonDetails?.role ?? 'member');
+
+  const openCircleComposer = (mode: CircleComposerMode) => {
+    if (!selectedPersonDetails) return;
+    setComposerMode(mode);
+    setCircleTaskType(mode === 'follow-up' ? 'long_term' : 'focus');
+    setComposerTitle('');
+    setComposerDueDate('');
+    setComposerError(null);
+  };
+
+  const closeCircleComposer = () => {
+    if (isSavingComposer) return;
+    setComposerMode(null);
+    setComposerError(null);
+  };
+
+  const saveCircleComposer = async () => {
+    if (!selectedPersonDetails || !composerTitle.trim() || !activeWorkspaceId) return;
+
+    setIsSavingComposer(true);
+    setComposerError(null);
+    try {
+      const isFollowUp = composerMode === 'follow-up';
+      const taskType = isFollowUp ? 'long_term' : circleTaskType;
+      await api.createTask({
+        title: composerTitle.trim(),
+        description: isFollowUp
+          ? `Follow-up for ${selectedPersonDetails.name}`
+          : `Assigned from Circle: ${selectedPersonDetails.name}`,
+        notes: isFollowUp ? `Created for ${selectedPersonDetails.name}` : null,
+        due_date:
+          composerDueDate ||
+          (isFollowUp ? new Date().toISOString().slice(0, 10) : taskType === 'long_term' ? null : null),
+        due_time: null,
+        status: 'todo',
+        priority: 'medium',
+        assigned_to_user_id: selectedPersonDetails.id,
+        task_horizon: taskType === 'long_term' ? 'long_term' : 'today',
+        show_in_today: taskType !== 'long_term',
+        is_today_focus: taskType === 'focus',
+      });
+      setComposerMode(null);
+      setComposerTitle('');
+      setComposerDueDate('');
+      if (selectedPersonId) {
+        void loadSelectedPerson(selectedPersonId);
+      }
+      void loadPeople(debouncedSearchQuery);
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : 'Could not create this item.');
+    } finally {
+      setIsSavingComposer(false);
+    }
+  };
   const circleOverviewRows = useMemo(() => {
     const now = Date.now();
     const weekThreshold = now - 1000 * 60 * 60 * 24 * 7;
@@ -866,20 +1024,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
   const sharedProjectFromWork = selectedProjectsRows[0] ?? null;
 
-  const openTaskComposer = (person: CirclePersonSummary) => {
-    void window.desktopWindow?.toggleModule('quick-task' as any, {
-      kind: 'quick-task' as any,
-      focusContext: buildPersonContext(person),
-    } as any);
-  };
-
-  const openFollowUpComposer = (person: CirclePersonSummary) => {
-    void window.desktopWindow?.toggleModule('quick-follow-up' as any, {
-      kind: 'quick-follow-up' as any,
-      focusContext: buildPersonContext(person),
-    } as any);
-  };
-
   const openSharedProject = (projectId: string) => {
     void window.desktopWindow?.toggleModule('projects', {
       kind: 'projects',
@@ -910,6 +1054,20 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     setShowFilterMenu(false);
     setShowDisplayMenu(false);
     setShowMoreMenu(false);
+  };
+
+  const clearPersonWorkspace = () => {
+    selectedLoadTokenRef.current += 1;
+    setSelectedPersonId(null);
+    setSelectedPerson(null);
+    setSelectedWork(null);
+    setSelectedProjects(null);
+    setSelectedFollowUps(null);
+    setSelectedActivity(null);
+    setIsLoadingSelected(false);
+    setActiveTab('overview');
+    setComposerMode(null);
+    setError(null);
   };
 
   const renderCircleOverviewHeader = () => (
@@ -1131,11 +1289,11 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         </div>
 
         <div className="flex flex-wrap gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
-          <button type="button" onClick={() => openTaskComposer(selectedPersonDetails)} className={circleTheme.subtleButton}>
+          <button type="button" onClick={() => openCircleComposer('task')} className={circleTheme.subtleButton}>
             <Plus size={11} />
             Assign task
           </button>
-          <button type="button" onClick={() => openFollowUpComposer(selectedPersonDetails)} className={circleTheme.subtleButton}>
+          <button type="button" onClick={() => openCircleComposer('follow-up')} className={circleTheme.subtleButton}>
             <ArrowRight size={11} />
             Create follow-up
           </button>
@@ -1242,8 +1400,13 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   const renderActivityRow = (activity: CirclePersonActivity) => (
     <CompactWorkRow
       key={activity.id}
-      title={activity.title}
-      meta={[activity.detail, activity.timestamp ? formatActivityDate(activity.timestamp) : null].filter(Boolean).join(' · ')}
+      title={formatActivityLabel(activity.title)}
+      meta={[
+        formatActivityLabel(activity.detail),
+        activity.timestamp ? formatActivityDate(activity.timestamp) : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')}
       right={<p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">{formatRelativeActive(activity.timestamp)}</p>}
       icon={<Clock3 size={13} className="text-[var(--ledger-text-muted)]" />}
       onClick={
@@ -1361,7 +1524,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         <p className="text-sm text-[var(--ledger-text-muted)]">No follow-ups with this person yet.</p>
         <button
           type="button"
-          onClick={() => selectedPersonDetails && openFollowUpComposer(selectedPersonDetails)}
+          onClick={() => openCircleComposer('follow-up')}
           className={circleTheme.subtleButton}
         >
           <Plus size={11} />
@@ -1400,9 +1563,25 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
   const selectedRoleValue = filters.role ?? 'all';
   const selectedTeamValue = filters.teamId ?? 'all';
+  const activeFilterCount =
+    Number(Boolean(filters.teamId)) +
+    Number(Boolean(filters.role)) +
+    Number(filters.hasOpenTasks) +
+    Number(filters.hasSharedProjects) +
+    Number(filters.waitingOn) +
+    Number(filters.pinned);
+
+  const filterSelectClassName =
+    'mt-1 h-8 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 pr-8 text-[11px] text-[var(--ledger-text-primary)] outline-none';
 
   return (
-    <div className={circleTheme.shell} style={workspaceShellLayout.workspaceShellStyle}>
+    <div
+      className={circleTheme.shell}
+      style={{
+        ...workspaceShellLayout.workspaceShellStyle,
+        backgroundColor: 'var(--ledger-background)',
+      }}
+    >
       <ModuleWindowHeader
         title="Circle"
         subtitle="People, shared work, and what is waiting on whom."
@@ -1430,15 +1609,6 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         }
         primaryActions={
           <div className="flex items-center gap-2">
-            <div className="flex h-7 min-w-[178px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5">
-              <Search size={11} className="text-[var(--ledger-text-muted)]" />
-              <input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search Circle"
-                className="w-full bg-transparent text-[11px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
-              />
-            </div>
             <div className="relative" ref={filterMenuRef}>
               <ModuleHeaderActionButton
                 variant="strip"
@@ -1446,7 +1616,16 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                 square
                 title="Filter people"
                 ariaLabel="Filter people"
-                icon={<Filter size={12} />}
+                icon={
+                  <span className="relative inline-flex">
+                    <Filter size={12} />
+                    {activeFilterCount > 0 && (
+                      <span className="absolute -right-2.5 -top-2 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--ledger-text-primary)] px-1 text-[9px] font-semibold leading-none text-[var(--ledger-background)]">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </span>
+                }
                 onClick={() => {
                   setShowFilterMenu((current) => !current);
                   setShowDisplayMenu(false);
@@ -1458,43 +1637,49 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                 <div className="absolute right-0 top-9 z-50 w-72 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
                   <div className="space-y-3">
                     <div>
-                      <label className={circleTheme.sectionLabel}>Team</label>
-                      <select
-                        value={selectedTeamValue}
-                        onChange={(event) =>
-                          setFilters((current) => ({
-                            ...current,
-                            teamId: event.target.value === 'all' ? null : event.target.value,
-                          }))
-                        }
-                        className="mt-1 h-8 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-[11px] text-[var(--ledger-text-primary)] outline-none"
-                      >
-                        <option value="all">All teams</option>
-                        {teamOptions.map(([id, name]) => (
-                          <option key={id} value={id}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">Team</label>
+                      <div className="relative">
+                        <select
+                          value={selectedTeamValue}
+                          onChange={(event) =>
+                            setFilters((current) => ({
+                              ...current,
+                              teamId: event.target.value === 'all' ? null : event.target.value,
+                            }))
+                          }
+                          className={filterSelectClassName}
+                        >
+                          <option value="all">All teams</option>
+                          {teamOptions.map(([id, name]) => (
+                            <option key={id} value={id}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ledger-text-secondary)]" />
+                      </div>
                     </div>
                     <div>
-                      <label className={circleTheme.sectionLabel}>Role</label>
-                      <select
-                        value={selectedRoleValue}
-                        onChange={(event) =>
-                          setFilters((current) => ({
-                            ...current,
-                            role: event.target.value === 'all' ? null : event.target.value,
-                          }))
-                        }
-                        className="mt-1 h-8 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-[11px] text-[var(--ledger-text-primary)] outline-none"
-                      >
-                        <option value="all">All roles</option>
-                        <option value="owner">Owner</option>
-                        <option value="admin">Admin</option>
-                        <option value="member">Member</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
+                      <label className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">Role</label>
+                      <div className="relative">
+                        <select
+                          value={selectedRoleValue}
+                          onChange={(event) =>
+                            setFilters((current) => ({
+                              ...current,
+                              role: event.target.value === 'all' ? null : event.target.value,
+                            }))
+                          }
+                          className={filterSelectClassName}
+                        >
+                          <option value="all">All roles</option>
+                          <option value="owner">Owner</option>
+                          <option value="admin">Admin</option>
+                          <option value="member">Member</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ledger-text-secondary)]" />
+                      </div>
                     </div>
                     {[
                       { key: 'hasOpenTasks', label: 'Has open tasks' },
@@ -1528,7 +1713,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                           pinned: false,
                         })
                       }
-                      className={circleTheme.mutedButton}
+                      className={`${circleTheme.mutedButton} ml-auto`}
                     >
                       <X size={11} />
                       Reset filters
@@ -1576,8 +1761,30 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
       <div className={circleTheme.body}>
         <aside className={circleTheme.leftPane}>
-          <div className={circleTheme.leftPaneHeader}>
-            {isLoadingPeople ? 'Loading people…' : `${visiblePeople.length} people`}
+          <div className={`${circleTheme.leftPaneHeader} flex items-center justify-between gap-2`}>
+            {selectedPersonId ? (
+              <button
+                type="button"
+                onClick={clearPersonWorkspace}
+                className="inline-flex h-7 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <ArrowLeft size={12} />
+                Overview
+              </button>
+            ) : (
+              <span className="shrink-0">
+                {isLoadingPeople ? 'Loading people…' : `${visiblePeople.length} people`}
+              </span>
+            )}
+            <div className="flex h-7 w-[150px] max-w-[48%] shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2">
+              <Search size={11} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search Circle"
+                className="min-w-0 w-full bg-transparent text-[10px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
+              />
+            </div>
           </div>
           <div className={circleTheme.leftList}>
             {visiblePeople.length > 0 ? (
@@ -1601,12 +1808,16 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                     key={person.id}
                     selected={selectedPersonId === person.id}
                     onClick={() => {
-                      openPersonWorkspace(person.id);
+                      if (selectedPersonId === person.id) {
+                        clearPersonWorkspace();
+                      } else {
+                        openPersonWorkspace(person.id);
+                      }
                     }}
                     icon={<CircleAvatar person={person} />}
                     title={person.name}
                     meta={
-                      <div className="space-y-0.5">
+                      <div className="space-y-0">
                         <p className={circleTheme.rowMeta}>
                           {titleCase(person.role)}
                           {teamLabel ? ` · ${teamLabel}` : ''}
@@ -1616,7 +1827,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                     }
                     right={
                       <div className="flex flex-col items-end gap-1">
-                        {person.is_pinned && <Pin size={11} className="text-[var(--ledger-accent)]" />}
+                        {person.is_pinned && (
+                          <Pin size={11} className="text-[var(--ledger-text-muted)]" />
+                        )}
                         <p className={circleTheme.rowMeta}>{formatRelativeActive(person.last_active_at)}</p>
                       </div>
                     }
@@ -1685,6 +1898,136 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           </div>
         </main>
       </div>
+
+      <ModalOverlay
+        isOpen={Boolean(composerMode && selectedPersonDetails)}
+        onClose={closeCircleComposer}
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+              {composerMode === 'follow-up'
+                ? 'New follow-up'
+                : circleTaskType === 'focus'
+                ? 'New focus'
+                : circleTaskType === 'short_term'
+                ? 'New short-term task'
+                : 'New long-term task'}
+            </p>
+            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
+              {composerMode === 'follow-up'
+                ? 'Create a follow-up and assign it to this person.'
+                : circleTaskType === 'focus'
+                ? 'Create a priority for the day and assign it to this person.'
+                : circleTaskType === 'short_term'
+                ? 'Create a short-term task and assign it to this person.'
+                : 'Create a longer-horizon task and assign it to this person.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={closeCircleComposer}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            aria-label="Close task composer"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          {composerMode === 'task' && (
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: 'focus' as const, label: 'Focus' },
+                { id: 'short_term' as const, label: 'Short-term' },
+                { id: 'long_term' as const, label: 'Long-term' },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => {
+                    setCircleTaskType(option.id);
+                    if (option.id !== 'long_term') setComposerDueDate('');
+                  }}
+                  className={
+                    option.id === circleTaskType
+                      ? 'rounded-full border border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)]'
+                      : 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                  }
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+          <input
+            autoFocus
+            value={composerTitle}
+            onChange={(event) => setComposerTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void saveCircleComposer();
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                closeCircleComposer();
+              }
+            }}
+            placeholder="Task title"
+            className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+          />
+          {(composerMode === 'follow-up' || circleTaskType === 'long_term') && (
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">Due date</span>
+              <input
+                type="date"
+                value={composerDueDate}
+                onChange={(event) => setComposerDueDate(event.target.value)}
+                className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+              />
+            </label>
+          )}
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">Assign to</span>
+            <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)]">
+              {selectedPersonDetails?.name}
+            </div>
+          </div>
+          {composerError && (
+            <p className="rounded-lg border border-[color:rgba(255,95,64,0.2)] bg-[color:rgba(255,95,64,0.06)] px-3 py-2 text-xs text-[var(--ledger-accent)]">
+              {composerError}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <button
+            type="button"
+            onClick={closeCircleComposer}
+            className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveCircleComposer()}
+            disabled={!composerTitle.trim() || isSavingComposer}
+            className="rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+          >
+            {isSavingComposer
+              ? 'Saving…'
+              : composerMode === 'follow-up'
+              ? 'Create follow-up'
+              : circleTaskType === 'focus'
+              ? 'Add focus'
+              : circleTaskType === 'short_term'
+              ? 'Add task'
+              : 'Add long-term task'}
+          </button>
+        </div>
+      </ModalOverlay>
 
       {showMoreMenu && selectedPersonDetails && (
         <div

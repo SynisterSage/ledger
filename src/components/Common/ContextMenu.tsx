@@ -25,6 +25,7 @@ type ContextMenuProps = {
   groups: ContextMenuGroup[];
   onClose: () => void;
   ariaLabel?: string;
+  groupLabelCase?: 'uppercase' | 'normal';
 };
 
 const VIEWPORT_PADDING = 8;
@@ -37,6 +38,7 @@ export const ContextMenu = ({
   groups,
   onClose,
   ariaLabel,
+  groupLabelCase = 'uppercase',
 }: ContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -160,7 +162,11 @@ export const ContextMenu = ({
       {visibleGroups.map((group, groupIndex) => (
         <div key={`${group.label ?? 'group'}-${groupIndex}`}>
           {group.label && (
-            <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+            <div
+              className={`px-3 pb-1 pt-2 text-[11px] font-semibold text-[var(--ledger-text-muted)] ${
+                groupLabelCase === 'uppercase' ? 'uppercase tracking-[0.08em]' : ''
+              }`}
+            >
               {group.label}
             </div>
           )}

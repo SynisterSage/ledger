@@ -3,6 +3,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -118,6 +119,7 @@ type ModuleHeaderStripActionProps = {
   onClick: () => void;
   title: string;
   ariaLabel: string;
+  notificationTrayToggle?: boolean;
 };
 
 type WorkspaceNavigationState = {
@@ -223,6 +225,8 @@ const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
         : 'Settings';
     case 'inbox':
       return 'Intake';
+    case 'notifications':
+      return 'Notifications';
     case 'quick-follow-up':
       return 'Quick follow-up';
     case 'quick-task':
@@ -255,6 +259,8 @@ const getWorkspaceRouteIcon = (route: WorkspaceRoute) => {
       return <Settings2 className={iconClassName} />;
     case 'inbox':
       return <Inbox className={iconClassName} />;
+    case 'notifications':
+      return <Bell className={iconClassName} />;
     case 'quick-follow-up':
     case 'quick-task':
     case 'quick-note':
@@ -441,6 +447,7 @@ export const ModuleHeaderStripAction = ({
   onClick,
   title,
   ariaLabel,
+  notificationTrayToggle = false,
 }: ModuleHeaderStripActionProps) => {
   return (
     <button
@@ -448,6 +455,7 @@ export const ModuleHeaderStripAction = ({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
+      {...(notificationTrayToggle ? { 'data-notification-tray-toggle': true } : {})}
       className={`relative inline-flex h-6 w-6 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`}
     >
       {icon}
@@ -511,6 +519,7 @@ export const ModuleWindowHeader = ({
     startY: number;
     isDragging: boolean;
   } | null>(null);
+  const headerDragTargetRef = useRef<HTMLElement | null>(null);
   const [workspaceNavigationState, setWorkspaceNavigationState] =
     useState<WorkspaceNavigationState>({
       canGoBack: false,
@@ -689,6 +698,22 @@ export const ModuleWindowHeader = ({
     (currentRoute.focusContext ?? null) === (route.focusContext ?? null) &&
     (currentRoute.focusSection ?? null) === (route.focusSection ?? null);
 
+  const finishHeaderDragSession = useCallback(() => {
+    const drag = headerDragRef.current;
+    if (!drag) return;
+
+    const target = headerDragTargetRef.current;
+    if (target?.hasPointerCapture(drag.pointerId)) {
+      target.releasePointerCapture(drag.pointerId);
+    }
+    headerDragRef.current = null;
+    headerDragTargetRef.current = null;
+
+    if (drag.isDragging) {
+      void window.desktopWindow?.finishHeaderDrag();
+    }
+  }, []);
+
   const handleHeaderPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
 
@@ -698,6 +723,7 @@ export const ModuleWindowHeader = ({
       startY: event.clientY,
       isDragging: false,
     };
+    headerDragTargetRef.current = event.currentTarget;
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -719,21 +745,32 @@ export const ModuleWindowHeader = ({
   const finishHeaderPointerDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = headerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    headerDragRef.current = null;
-    if (drag.isDragging) {
-      event.preventDefault();
-      void window.desktopWindow?.finishHeaderDrag();
-    }
+    event.preventDefault();
+    finishHeaderDragSession();
   };
+
+  useEffect(() => {
+    const finishFromWindow = () => finishHeaderDragSession();
+    window.addEventListener('pointerup', finishFromWindow, true);
+    window.addEventListener('pointercancel', finishFromWindow, true);
+    window.addEventListener('mouseup', finishFromWindow, true);
+    window.addEventListener('blur', finishFromWindow);
+    document.addEventListener('visibilitychange', finishFromWindow);
+
+    return () => {
+      window.removeEventListener('pointerup', finishFromWindow, true);
+      window.removeEventListener('pointercancel', finishFromWindow, true);
+      window.removeEventListener('mouseup', finishFromWindow, true);
+      window.removeEventListener('blur', finishFromWindow);
+      document.removeEventListener('visibilitychange', finishFromWindow);
+      finishHeaderDragSession();
+    };
+  }, [finishHeaderDragSession]);
 
   return (
     <div
       ref={headerRef}
+      data-ledger-module-header
       className={`w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`}
       style={dragRegionStyle}
       onDoubleClickCapture={handleStripDoubleClick}
@@ -743,8 +780,8 @@ export const ModuleWindowHeader = ({
         style={dragRegionStyle}
         onDoubleClickCapture={handleStripDoubleClick}
       >
-        <div className="flex items-center gap-2" style={noDragRegionStyle}>
-          <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-2" style={noDragRegionStyle}>
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={onClose}
@@ -786,7 +823,7 @@ export const ModuleWindowHeader = ({
             className="mx-1.5 self-stretch border-l border-[color:var(--ledger-border-subtle)]"
           />
 
-          <div className="flex items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5">
             {showWorkspaceNavigation && (
               <>
                 <button
@@ -928,7 +965,7 @@ export const ModuleWindowHeader = ({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-3" style={noDragRegionStyle}>
+        <div className="flex min-w-0 shrink-0 items-center gap-3" style={noDragRegionStyle}>
           {stripLeadingActions && (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripLeadingActions}</div>
           )}

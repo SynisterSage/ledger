@@ -26,6 +26,7 @@ const destinations: Array<{
   { label: 'Notes', kind: 'notes', icon: FileText },
   { label: 'Calendar', kind: 'calendar', icon: CalendarDays },
   { label: 'Intake', kind: 'inbox', icon: Inbox },
+  { label: 'Notifications', kind: 'notifications', icon: Bell },
 ];
 
 const routeLabel = (route: RecentRoute) => {
@@ -43,6 +44,7 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const api = useApi();
   const { pins } = usePins();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const quickNavRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
   const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
@@ -164,7 +166,7 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
         checkin: { kind: 'dashboard', focus: { focusSection: 'today' } },
         tasks: { kind: 'dashboard', focus: { focusSection: 'assigned' } },
         templates: { kind: 'notes', focus: { focusContext: 'try:template' } },
-        notifications: { kind: 'settings', focus: { focusContext: 'notifications' } },
+        notifications: { kind: 'notifications', focus: { kind: 'notifications' } },
         integrations: { kind: 'settings', focus: { focusContext: 'integrations' } },
         shortcuts: { kind: 'settings', focus: { focusContext: 'shortcuts' } },
         workspace: { kind: 'settings', focus: { focusContext: 'workspace' } },
@@ -211,7 +213,8 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
-              onClick={() => void window.desktopWindow?.openModule('notifications')}
+              notificationTrayToggle
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
@@ -246,7 +249,15 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
           </button>
 
           <div className="relative mt-5 min-w-0">
-            <div className="flex min-w-0 items-center gap-x-5 overflow-x-auto whitespace-nowrap pr-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div
+              ref={quickNavRef}
+              onWheel={(event) => {
+                if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+                event.preventDefault();
+                quickNavRef.current?.scrollBy({ left: event.deltaY, behavior: 'auto' });
+              }}
+              className="flex min-w-0 items-center gap-x-5 overflow-x-auto whitespace-nowrap pr-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
               {destinations.map(({ label, kind, icon: Icon }) => (
                 <button
                   key={label}

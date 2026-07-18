@@ -226,30 +226,60 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const setActiveWorkspace = useCallback(
     async (workspaceId: string) => {
+      const nextWorkspaceId = String(workspaceId ?? '').trim();
+      if (!nextWorkspaceId || nextWorkspaceId === activeWorkspaceIdRef.current) return;
+
+      const previousWorkspaceId = activeWorkspaceIdRef.current;
+      const nextWorkspaceName =
+        workspaces.find((workspace) => workspace.id === nextWorkspaceId)?.name?.trim() || '';
+
       setError(null);
 
-      const payload = (await authedRequest('/api/workspaces/active', {
-        method: 'PATCH',
-        body: JSON.stringify({ workspace_id: workspaceId }),
-      })) as { workspace_id?: string };
-
-      const nextWorkspaceId = String(payload?.workspace_id ?? '').trim();
-      if (!nextWorkspaceId) {
-        throw new Error('Invalid workspace response');
-      }
-
+      // Update the renderer immediately so workspace switching does not block on
+      // the network request. The API remains authoritative and we roll back if it
+      // rejects the change.
       activeWorkspaceIdRef.current = nextWorkspaceId;
       setActiveWorkspaceId(nextWorkspaceId);
       window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId);
-      const nextWorkspaceName =
-        workspaces.find((workspace) => workspace.id === nextWorkspaceId)?.name?.trim() || '';
       if (nextWorkspaceName) {
         window.localStorage.setItem(WORKSPACE_NAME_STORAGE_KEY, nextWorkspaceName);
       }
       window.dispatchEvent(
         new CustomEvent('ledger:workspace-changed', { detail: { workspaceId: nextWorkspaceId } })
       );
-      window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
+
+      try {
+        const payload = (await authedRequest('/api/workspaces/active', {
+          method: 'PATCH',
+          body: JSON.stringify({ workspace_id: nextWorkspaceId }),
+        })) as { workspace_id?: string };
+
+        const confirmedWorkspaceId = String(payload?.workspace_id ?? '').trim();
+        if (!confirmedWorkspaceId || confirmedWorkspaceId !== nextWorkspaceId) {
+          throw new Error('Invalid workspace response');
+        }
+      } catch (switchError) {
+        activeWorkspaceIdRef.current = previousWorkspaceId;
+        setActiveWorkspaceId(previousWorkspaceId);
+        if (previousWorkspaceId) {
+          window.localStorage.setItem(WORKSPACE_STORAGE_KEY, previousWorkspaceId);
+          const previousWorkspaceName =
+            workspaces.find((workspace) => workspace.id === previousWorkspaceId)?.name?.trim() || '';
+          if (previousWorkspaceName) {
+            window.localStorage.setItem(WORKSPACE_NAME_STORAGE_KEY, previousWorkspaceName);
+          }
+        } else {
+          window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+          window.localStorage.removeItem(WORKSPACE_NAME_STORAGE_KEY);
+        }
+        window.dispatchEvent(
+          new CustomEvent('ledger:workspace-changed', {
+            detail: { workspaceId: previousWorkspaceId },
+          })
+        );
+        setError(switchError instanceof Error ? switchError.message : 'Could not switch workspace');
+        throw switchError;
+      }
     },
     [authedRequest, workspaces]
   );
