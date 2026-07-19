@@ -136,6 +136,7 @@ interface Window {
       recentRoutes?: ModuleFocusPayload[];
       windowId?: string;
     }>;
+    clearWorkspaceRecent?: () => Promise<boolean>;
     getWindowBounds?: () => Promise<{
       x: number;
       y: number;
@@ -150,6 +151,8 @@ interface Window {
     confirmTabDetach?: (transferId: string) => Promise<boolean>;
     getTabDetachSession?: (transferId: string) => Promise<LedgerTabSession | null>;
     updateWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<void>;
+    selectWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<boolean>;
+    closeWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<boolean>;
     openExternal: (url: string) => Promise<void>;
     openCheckin: () => Promise<void>;
   };

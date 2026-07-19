@@ -16,6 +16,19 @@ import {
 
 type RecentRoute = ModuleFocusPayload & { kind: ModuleWindowKind };
 
+const getRecentRoutesStorageKey = (workspaceId: string) =>
+  `ledger:new-tab-recent-routes:${workspaceId}`;
+
+const normalizeRecentRoutes = (routes: unknown): RecentRoute[] => {
+  if (!Array.isArray(routes)) return [];
+  return routes.filter(
+    (route): route is RecentRoute =>
+      Boolean(route && typeof route === 'object' && 'kind' in route && route.kind !== 'new-tab')
+  );
+};
+
+const visibleRecentRoutes = (routes: RecentRoute[]) => routes.slice(-3).reverse();
+
 const destinations: Array<{
   label: string;
   kind: ModuleWindowKind;
@@ -116,14 +129,56 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   }, [activeWorkspaceId, api, user]);
 
   useEffect(() => {
+    if (!activeWorkspaceId) {
+      setRecentRoutes([]);
+      return;
+    }
+
+    const storageKey = getRecentRoutesStorageKey(activeWorkspaceId);
+    let storedRoutes: RecentRoute[] = [];
+    try {
+      storedRoutes = normalizeRecentRoutes(JSON.parse(localStorage.getItem(storageKey) ?? '[]'));
+      setRecentRoutes(visibleRecentRoutes(storedRoutes));
+    } catch {
+      setRecentRoutes([]);
+    }
+
+    let mounted = true;
+    const applyRecentRoutes = (routes: unknown, preserveStoredWhenEmpty = false) => {
+      const normalizedRoutes = normalizeRecentRoutes(routes);
+      if (normalizedRoutes.length === 0 && preserveStoredWhenEmpty && storedRoutes.length > 0) {
+        return;
+      }
+
+      const nextRoutes = visibleRecentRoutes(normalizedRoutes);
+      if (!mounted) return;
+      setRecentRoutes(nextRoutes);
+      try {
+        if (normalizedRoutes.length > 0) {
+          localStorage.setItem(storageKey, JSON.stringify(nextRoutes));
+        } else {
+          localStorage.removeItem(storageKey);
+        }
+      } catch {
+        // Ignore unavailable storage.
+      }
+    };
+
     inputRef.current?.focus();
     void window.desktopWindow?.getWorkspaceNavigationState?.().then((state) => {
-      const routes = (state?.recentRoutes ?? []).filter(
-        (route): route is RecentRoute => Boolean(route?.kind && route.kind !== 'new-tab')
-      );
-      setRecentRoutes(routes.slice(-3).reverse());
+      applyRecentRoutes(state?.recentRoutes, true);
     });
-  }, []);
+
+    const handleNavigationState = (_event: unknown, state?: { recentRoutes?: unknown[] }) => {
+      applyRecentRoutes(state?.recentRoutes);
+    };
+    window.ipcRenderer?.on?.('workspace:navigation-state', handleNavigationState as any);
+
+    return () => {
+      mounted = false;
+      window.ipcRenderer?.off?.('workspace:navigation-state', handleNavigationState as any);
+    };
+  }, [activeWorkspaceId]);
 
   const openDestination = (kind: ModuleWindowKind, route?: ModuleFocusPayload) => {
     void window.desktopWindow?.openModule(kind, { kind, ...(route ?? {}) });
@@ -325,7 +380,26 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
 
           {!trimmedQuery && recentRoutes.length > 0 && (
             <section className="mt-16">
-              <p className="mb-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">Recent</p>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Recent</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecentRoutes([]);
+                    if (activeWorkspaceId) {
+                      try {
+                        localStorage.removeItem(getRecentRoutesStorageKey(activeWorkspaceId));
+                      } catch {
+                        // Ignore unavailable storage.
+                      }
+                    }
+                    void window.desktopWindow?.clearWorkspaceRecent?.();
+                  }}
+                  className="rounded-md px-1.5 py-1 text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+                >
+                  Clear recent
+                </button>
+              </div>
               <div className="space-y-0.5">
                 {recentRoutes.map((route, index) => (
                   <button
@@ -334,7 +408,7 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
                     onClick={() => openDestination(route.kind, route)}
                     className="flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                   >
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background-muted)] text-[var(--ledger-text-secondary)]">
                       <Search size={13} />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">

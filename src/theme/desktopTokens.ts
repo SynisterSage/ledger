@@ -39,6 +39,7 @@ type DesktopColorTokens = {
   glassSheen: string;
   glassSolidBackground: string;
   glassSolidBorder: string;
+  sidebarSurfaceRgb: string;
   modalBackdrop: string;
   scrollbarThumb: string;
   scrollbarThumbHover: string;
@@ -183,13 +184,13 @@ const lightColors: DesktopColorTokens = {
   glassOutline: 'rgba(0, 0, 0, 0.08)',
   glassShadow:
     '0 30px 90px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(0, 0, 0, 0.04)',
-  glassIconShadow:
-    '0 14px 38px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85)',
+  glassIconShadow: '0 14px 38px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85)',
   glassHighlight: 'rgba(255, 255, 255, 0.75)',
   glassSheen: 'rgba(255, 255, 255, 0.40)',
 
   glassSolidBackground: 'rgba(255, 255, 255, 0.97)',
   glassSolidBorder: 'rgba(229, 229, 229, 0.92)',
+  sidebarSurfaceRgb: '246 247 249',
 
   modalBackdrop: 'rgba(10, 10, 10, 0.4)',
 
@@ -240,13 +241,13 @@ const darkColors: DesktopColorTokens = {
   glassOutline: 'rgba(100, 100, 100, 0.10)',
   glassShadow:
     '0 32px 90px rgba(0, 0, 0, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(100, 100, 100, 0.06)',
-  glassIconShadow:
-    '0 14px 38px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+  glassIconShadow: '0 14px 38px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
   glassHighlight: 'rgba(100, 100, 100, 0.10)',
   glassSheen: 'rgba(100, 100, 100, 0.12)',
 
   glassSolidBackground: 'rgba(26, 26, 26, 0.96)',
   glassSolidBorder: 'rgba(100, 100, 100, 0.18)',
+  sidebarSurfaceRgb: '24 25 27',
 
   modalBackdrop: 'rgba(15, 15, 15, 0.65)',
 
@@ -264,10 +265,11 @@ export const desktopTokens = {
 
 export type DesktopTokens = typeof desktopTokens;
 
-export const getDesktopTokens = (scheme: DesktopThemeScheme = 'light') => ({
-  colors: desktopTokens.colors[scheme],
-  ...sharedStructure,
-} as const);
+export const getDesktopTokens = (scheme: DesktopThemeScheme = 'light') =>
+  ({
+    colors: desktopTokens.colors[scheme],
+    ...sharedStructure,
+  } as const);
 
 export const getSystemDesktopThemeScheme = (): DesktopThemeScheme => {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -338,6 +340,7 @@ export const getDesktopCssVars = (scheme: DesktopThemeScheme = 'light'): Record<
     '--ledger-sidebar-glass-sheen': colors.glassSheen,
     '--ledger-sidebar-glass-solid-background': colors.glassSolidBackground,
     '--ledger-sidebar-glass-solid-border': colors.glassSolidBorder,
+    '--ledger-sidebar-surface-rgb': colors.sidebarSurfaceRgb,
     '--ledger-modal-backdrop': colors.modalBackdrop,
     '--ledger-scrollbar-thumb': colors.scrollbarThumb,
     '--ledger-scrollbar-thumb-hover': colors.scrollbarThumbHover,

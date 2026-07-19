@@ -26,7 +26,7 @@ export type SidebarPreferences = {
 
 export const SIDEBAR_PREFERENCES_STORAGE_KEY = 'ledger:sidebar:v1';
 const clampSidebarOpacity = (value: number) => Math.max(0.7, Math.min(1, value));
-const getDefaultSidebarOpacity = () => 0.95;
+const getDefaultSidebarOpacity = () => 0.9;
 
 export const defaultSidebarPreferences: SidebarPreferences = {
   position: 'right',

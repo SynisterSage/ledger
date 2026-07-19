@@ -939,8 +939,10 @@ const MIN_DOCK_HEIGHT = {
 } as const;
 const DASHBOARD_WIDTH = 1200;
 const DASHBOARD_HEIGHT = 760;
-const AUTH_WIDTH = 1040;
-const AUTH_HEIGHT = 700;
+const AUTH_WIDTH = 1060;
+const AUTH_HEIGHT = 680;
+const AUTH_MIN_WIDTH = 860;
+const AUTH_MIN_HEIGHT = 600;
 const MODULE_DEFAULT_WIDTH = 1200;
 const MODULE_DEFAULT_HEIGHT = 760;
 const MODULE_MIN_WIDTH = 960;
@@ -4974,10 +4976,15 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
     const bounds = getCenteredBoundsForCurrentSidebarDisplay(AUTH_WIDTH, AUTH_HEIGHT);
     sidebarWin.setAlwaysOnTop(false);
     sidebarWin.setResizable(false);
+    sidebarWin.setMinimumSize(AUTH_MIN_WIDTH, AUTH_MIN_HEIGHT);
     setWindowButtonVisibility(sidebarWin, false);
     setSidebarBounds(bounds, false);
     return;
   }
+
+  // Auth has a dedicated minimum size; restore unconstrained bounds when the
+  // same window returns to its normal sidebar/module modes.
+  sidebarWin.setMinimumSize(0, 0);
 
   const isHorizontalDock = currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom';
   const shouldRefreshLedgerWorkspaceDock =
@@ -5235,6 +5242,8 @@ function createSidebarWindow() {
     backgroundColor: '#00000000',
     roundedCorners: process.platform === 'win32',
     resizable: false,
+    minWidth: AUTH_MIN_WIDTH,
+    minHeight: AUTH_MIN_HEIGHT,
     alwaysOnTop: false,
     ...getWindowChromeOptions(),
     webPreferences: {
@@ -5673,6 +5682,18 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
 
   broadcastWorkspaceNavigationState();
   return true;
+}
+
+function removeWorkspaceRouteFromHistory(route: WorkspaceModuleRoute) {
+  const removeMatching = (routes: WorkspaceModuleRoute[]) => {
+    for (let index = routes.length - 1; index >= 0; index -= 1) {
+      if (isSameWorkspaceRoute(routes[index], route)) routes.splice(index, 1);
+    }
+  };
+
+  removeMatching(workspaceModuleBackStack);
+  removeMatching(workspaceModuleForwardStack);
+  removeMatching(workspaceModuleRecentRoutes);
 }
 
 function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute) {
@@ -6861,6 +6882,21 @@ ipcMain.handle('window:workspace-navigation-state', (event) => {
   return getNavigationStateForWindow(BrowserWindow.fromWebContents(event.sender));
 });
 
+ipcMain.handle('window:workspace-clear-recent', (event) => {
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const detachedRecord = getDetachedWindowRecord(senderWindow);
+
+  if (detachedRecord) {
+    detachedRecord.recentRoutes.length = 0;
+    sendNavigationStateToWindow(detachedRecord.win);
+    return true;
+  }
+
+  workspaceModuleRecentRoutes.length = 0;
+  broadcastWorkspaceNavigationState();
+  return true;
+});
+
 ipcMain.handle('window:workspace-route-changed', (event, payload: ModuleFocusPayload) => {
   const kind = payload?.kind;
   if (!kind) return false;
@@ -6890,6 +6926,56 @@ ipcMain.handle('window:workspace-route-changed', (event, payload: ModuleFocusPay
       payload.focusSection
     )
   );
+});
+
+ipcMain.handle('window:workspace-select-route', (event, payload: ModuleFocusPayload) => {
+  const kind = payload?.kind;
+  if (!kind) return false;
+  const route = routeFromModuleArgs(
+    kind,
+    payload.focusDate,
+    payload.focusProjectId,
+    payload.focusNoteId,
+    payload.focusTaskId,
+    payload.focusContext,
+    payload.focusSection
+  );
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const detachedRecord = getDetachedWindowRecord(senderWindow);
+  if (detachedRecord) return navigateDetachedWindow(detachedRecord, route, false);
+  return navigateWorkspaceModuleWindow(route, false);
+});
+
+ipcMain.handle('window:workspace-close-route', (event, payload: ModuleFocusPayload) => {
+  const kind = payload?.kind;
+  if (!kind) return false;
+  const route = routeFromModuleArgs(
+    kind,
+    payload.focusDate,
+    payload.focusProjectId,
+    payload.focusNoteId,
+    payload.focusTaskId,
+    payload.focusContext,
+    payload.focusSection
+  );
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const detachedRecord = getDetachedWindowRecord(senderWindow);
+  if (detachedRecord) {
+    const removeMatching = (routes: WorkspaceModuleRoute[]) => {
+      for (let index = routes.length - 1; index >= 0; index -= 1) {
+        if (isSameWorkspaceRoute(routes[index], route)) routes.splice(index, 1);
+      }
+    };
+    removeMatching(detachedRecord.backStack);
+    removeMatching(detachedRecord.forwardStack);
+    removeMatching(detachedRecord.recentRoutes);
+    sendNavigationStateToWindow(detachedRecord.win);
+    return true;
+  }
+
+  removeWorkspaceRouteFromHistory(route);
+  broadcastWorkspaceNavigationState();
+  return true;
 });
 
 function isValidDetachedTabSession(value: unknown): value is DetachedTabSession {

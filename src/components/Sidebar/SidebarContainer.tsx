@@ -3,7 +3,6 @@ import { useSidebar } from '../../context/SidebarContext';
 import { MinimizedSidebar } from './MinimizedSidebar';
 import { ExpandedSidebar } from './ExpandedSidebar';
 import { CollapsedSidebar } from './CollapsedSidebar';
-import { sidebarTheme } from './sidebarTheme';
 
 export const SidebarContainer = () => {
   const {
@@ -205,20 +204,13 @@ export const SidebarContainer = () => {
       ? '16px'
       : '24px';
   const shellOverflowClass = 'overflow-hidden';
-  const isGlassShell = state === 'expanded' || (state === 'minimized' && isExpanded);
-  const platformClass =
-    typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win')
-      ? 'platform-windows'
-      : typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
-      ? 'platform-macos'
-      : '';
-  const shellSurfaceClass = isGlassShell
-    ? blur
-      ? `sidebar-glass ${platformClass}`
-      : `sidebar-glass sidebar-glass--solid ${platformClass}`
-    : isCollapsedIconMode
-    ? 'sidebar-glass-icon'
-    : sidebarTheme.shellFallback;
+  const glassAttachmentClass =
+    !isFloating && workspaceShellLayout.sidebarMode === 'attached'
+      ? 'sidebar-glass--attached'
+      : 'sidebar-glass--floating';
+  const shellSurfaceClass = blur
+    ? `sidebar-glass ${glassAttachmentClass}`
+    : 'sidebar-glass sidebar-glass--solid';
 
   const scheduleAutoHideHide = () => {
     if (!autoHide) return;
@@ -422,12 +414,11 @@ export const SidebarContainer = () => {
         : 'min(1120px, calc(100vw - 32px))'
       : undefined,
     height: isHorizontal ? (state === 'expanded' ? '144px' : '60px') : undefined,
-    backgroundColor: isGlassShell
-      ? undefined
-      : `rgba(255, 251, 247, ${Math.max(0.7, Math.min(1, opacity))})`,
-    ['--sidebar-glass-white-alpha' as string]: Math.min(0.98, Math.max(0.92, opacity + 0.08)),
-    ['--sidebar-glass-cream-alpha' as string]: Math.min(0.94, Math.max(0.86, opacity + 0.02)),
-    ['--sidebar-glass-icon-alpha' as string]: Math.min(0.84, Math.max(0.74, opacity - 0.06)),
+    backgroundColor: undefined,
+    ['--sidebar-material-alpha' as string]: (() => {
+      const normalizedOpacity = (Math.max(0.7, Math.min(1, opacity)) - 0.7) / 0.3;
+      return isFloating ? 0.9 + normalizedOpacity * 0.1 : 0.84 + normalizedOpacity * 0.16;
+    })(),
     clipPath: `inset(0 round ${shellClipRadius})`,
     contain: 'layout style',
     transitionProperty:

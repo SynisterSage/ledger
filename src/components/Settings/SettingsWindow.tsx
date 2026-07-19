@@ -764,6 +764,7 @@ export const SettingsWindow = () => {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(
     getInitialSettingsSection()
   );
+  const pendingSettingsAnchorRef = useRef<string | null>(null);
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
@@ -781,6 +782,10 @@ export const SettingsWindow = () => {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordStatus, setPasswordStatus] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isAccountDeleteModalOpen, setIsAccountDeleteModalOpen] = useState(false);
+  const [accountDeleteConfirmed, setAccountDeleteConfirmed] = useState(false);
+  const [accountDeleteError, setAccountDeleteError] = useState<string | null>(null);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState<string | null>(null);
   const [workspaceCreateName, setWorkspaceCreateName] = useState('');
   const [workspaceCreateDescription, setWorkspaceCreateDescription] = useState('');
@@ -911,6 +916,35 @@ export const SettingsWindow = () => {
       description: 'Restore the last open or collapsed state.',
     },
   ];
+
+  useEffect(() => {
+    const handleFocusContext = (
+      _event: unknown,
+      payload: { focusContext?: string | null }
+    ) => {
+      const focusContext = payload?.focusContext ?? '';
+      if (focusContext.startsWith('settings-anchor:')) {
+        pendingSettingsAnchorRef.current = focusContext.slice('settings-anchor:'.length);
+      }
+    };
+
+    window.ipcRenderer?.on('module:focus-context', handleFocusContext);
+    return () => {
+      window.ipcRenderer?.off('module:focus-context', handleFocusContext);
+    };
+  }, []);
+
+  useEffect(() => {
+    const anchorId = pendingSettingsAnchorRef.current;
+    if (!anchorId) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(anchorId)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      pendingSettingsAnchorRef.current = null;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeSection]);
 
   useEffect(() => {
     if (activeSection === 'members' && activeWorkspace?.is_personal) {
@@ -1312,6 +1346,36 @@ export const SettingsWindow = () => {
       setPasswordError(err instanceof Error ? err.message : 'Could not update password.');
     } finally {
       setIsUpdatingPassword(false);
+    }
+  };
+
+  const openAccountDeleteModal = () => {
+    setAccountDeleteConfirmed(false);
+    setAccountDeleteError(null);
+    setIsAccountDeleteModalOpen(true);
+  };
+
+  const closeAccountDeleteModal = () => {
+    if (isDeletingAccount) return;
+    setIsAccountDeleteModalOpen(false);
+    setAccountDeleteConfirmed(false);
+    setAccountDeleteError(null);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!accountDeleteConfirmed) return;
+
+    setIsDeletingAccount(true);
+    setAccountDeleteError(null);
+    try {
+      await api.deleteAccount();
+      await signOut().catch(() => undefined);
+      window.location.reload();
+    } catch (err) {
+      setAccountDeleteError(
+        err instanceof Error ? err.message : 'Could not delete your account.'
+      );
+      setIsDeletingAccount(false);
     }
   };
 
@@ -2409,6 +2473,33 @@ export const SettingsWindow = () => {
                         </div>
                       </div>
                     </section>
+
+                    <SettingsDangerGroup>
+                      <section aria-labelledby="settings-account-danger-zone">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="space-y-1">
+                            <h3
+                              id="settings-account-danger-zone"
+                              className={settingsTheme.sectionTitle}
+                            >
+                              Danger zone
+                            </h3>
+                            <p className={settingsTheme.sectionStatus}>
+                              Permanently delete your account and all personal data. Shared
+                              workspaces remain available to their other members.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={openAccountDeleteModal}
+                            disabled={isDeletingAccount}
+                            className={settingsTheme.dangerButton + ' shrink-0'}
+                          >
+                            Delete account
+                          </button>
+                        </div>
+                      </section>
+                    </SettingsDangerGroup>
                   </div>
                 </section>
               )}
@@ -4667,7 +4758,12 @@ export const SettingsWindow = () => {
                   <div className="mt-8 space-y-6">
                     {shortcutSections.map((section) => (
                       <section key={section.id} className={settingsTheme.sectionShell}>
-                        <h3 className={settingsTheme.sectionTitle}>{section.title}</h3>
+                        <h3
+                          id={`shortcut-${section.id}`}
+                          className={settingsTheme.sectionTitle}
+                        >
+                          {section.title}
+                        </h3>
                         <div className={settingsTheme.sectionRows}>
                           {section.shortcuts.map((shortcut) => (
                             <div
@@ -4690,6 +4786,77 @@ export const SettingsWindow = () => {
               )}
 
               </SettingsPage>
+              <ModalOverlay
+                isOpen={isAccountDeleteModalOpen}
+                onClose={closeAccountDeleteModal}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-lg ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <p className={settingsTheme.rowMuted + ' font-medium'}>Permanent action</p>
+                    <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
+                      Delete your Ledger account?
+                    </h3>
+                  </div>
+                  <ModalCloseButton
+                    onClick={closeAccountDeleteModal}
+                    ariaLabel="Close delete account modal"
+                  />
+                </div>
+
+                <div className="space-y-3 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                  <p>
+                    This permanently deletes your account, personal workspaces, notes, tasks,
+                    reminders, sessions, integrations, and other data tied only to you.
+                  </p>
+                  <p>
+                    Shared workspaces are not deleted because another person belongs to them. If
+                    you own a shared workspace, ownership is transferred to an existing admin or
+                    member before your account is removed.
+                  </p>
+                  <label className="flex items-start gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-3 text-[var(--ledger-text-primary)]">
+                    <input
+                      type="checkbox"
+                      checked={accountDeleteConfirmed}
+                      onChange={(event) => setAccountDeleteConfirmed(event.target.checked)}
+                      disabled={isDeletingAccount}
+                      className="mt-1 h-4 w-4 accent-[var(--ledger-danger)]"
+                    />
+                    <span>
+                      I understand this cannot be undone and confirm that I want to delete my
+                      account and all data tied to it.
+                    </span>
+                  </label>
+                </div>
+
+                {accountDeleteError ? (
+                  <p className="px-5 pb-3 text-xs text-[var(--ledger-danger)]" role="alert">
+                    {accountDeleteError}
+                  </p>
+                ) : null}
+
+                <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <button
+                    type="button"
+                    onClick={closeAccountDeleteModal}
+                    disabled={isDeletingAccount}
+                    className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
+                  >
+                    Keep account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteAccount()}
+                    disabled={!accountDeleteConfirmed || isDeletingAccount}
+                    className={settingsTheme.dangerButton + ' rounded-lg'}
+                  >
+                    {isDeletingAccount ? 'Deleting account...' : 'Delete permanently'}
+                  </button>
+                </div>
+              </ModalOverlay>
               <ModalOverlay
                 isOpen={isCreateTeamOpen}
                 onClose={() => setIsCreateTeamOpen(false)}

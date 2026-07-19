@@ -113,6 +113,8 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   );
   const [isHydrated, setIsHydrated] = React.useState(false);
   const saveTimerRef = React.useRef<number | null>(null);
+  const opacityFrameRef = React.useRef<number | null>(null);
+  const pendingOpacityRef = React.useRef<number | null>(null);
   const didNormalizeFloatingStartupRef = React.useRef(false);
   const wasFloatingDockedRef = React.useRef(false);
   const [isFloatingDocked, setIsFloatingDocked] = React.useState(false);
@@ -142,6 +144,14 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       }
     };
   }, [sidebarPreferences, isHydrated, isModuleWindow]);
+
+  useEffect(() => {
+    return () => {
+      if (opacityFrameRef.current !== null) {
+        window.cancelAnimationFrame(opacityFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handlePreferenceSync = (
@@ -407,10 +417,26 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
 
   const setOpacity = (opacity: number) => {
     const clampedOpacity = Math.max(0.7, Math.min(1, opacity));
-    setSidebarPreferences((current) => ({
-      ...current,
-      opacity: clampedOpacity,
-    }));
+    pendingOpacityRef.current = clampedOpacity;
+
+    if (opacityFrameRef.current !== null) return;
+
+    const applyPendingOpacity = () => {
+      opacityFrameRef.current = null;
+      const nextOpacity = pendingOpacityRef.current;
+      pendingOpacityRef.current = null;
+      if (nextOpacity === null) return;
+
+      setSidebarPreferences((current) =>
+        current.opacity === nextOpacity ? current : { ...current, opacity: nextOpacity }
+      );
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      opacityFrameRef.current = window.requestAnimationFrame(applyPendingOpacity);
+    } else {
+      applyPendingOpacity();
+    }
   };
 
   const setBlur = (blur: boolean) => {

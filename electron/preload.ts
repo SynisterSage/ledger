@@ -202,6 +202,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   getWorkspaceNavigationState() {
     return ipcRenderer.invoke('window:workspace-navigation-state');
   },
+  clearWorkspaceRecent() {
+    return ipcRenderer.invoke('window:workspace-clear-recent');
+  },
   getWindowBounds() {
     return ipcRenderer.invoke('window:get-bounds');
   },
@@ -216,6 +219,12 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
   updateWorkspaceRoute(route: ModuleFocusPayload) {
     return ipcRenderer.invoke('window:workspace-route-changed', route);
+  },
+  selectWorkspaceRoute(route: ModuleFocusPayload) {
+    return ipcRenderer.invoke('window:workspace-select-route', route);
+  },
+  closeWorkspaceRoute(route: ModuleFocusPayload) {
+    return ipcRenderer.invoke('window:workspace-close-route', route);
   },
   setHasShadow(enabled: boolean) {
     return ipcRenderer.invoke('window:set-has-shadow', enabled);

@@ -1,13 +1,32 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Accessibility,
+  Bell,
   Briefcase,
+  BriefcaseBusiness,
   CalendarDays,
   Check,
+  CircleAlert,
   FileText,
+  Inbox,
+  Keyboard,
+  LayoutDashboard,
+  ListTree,
   Maximize2,
   Minimize2,
+  Monitor,
+  MousePointer2,
+  Palette,
+  PanelLeft,
+  Plug2,
+  RotateCcw,
   Search,
+  Settings,
+  Shield,
+  SlidersHorizontal,
+  UserRound,
+  Users,
 } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -40,6 +59,126 @@ type SearchResult = {
   actionId?: string;
 };
 
+const settingsSearchEntries: Array<{
+  pageId: string;
+  pageTitle: string;
+  sections: Array<{ id: string; title: string }>;
+}> = [
+  {
+    pageId: 'account',
+    pageTitle: 'Account',
+    sections: [
+      { id: 'settings-profile', title: 'Profile' },
+      { id: 'settings-security', title: 'Security' },
+      { id: 'settings-account-actions', title: 'Account actions' },
+    ],
+  },
+  {
+    pageId: 'sessions',
+    pageTitle: 'Sessions',
+    sections: [
+      { id: 'settings-current-session', title: 'Current session' },
+      { id: 'settings-other-sessions', title: 'Other sessions' },
+    ],
+  },
+  {
+    pageId: 'workspace',
+    pageTitle: 'Workspace',
+    sections: [
+      { id: 'settings-current-workspace', title: 'Current workspace' },
+      { id: 'settings-appearance', title: 'Appearance' },
+      { id: 'settings-defaults', title: 'Defaults' },
+      { id: 'settings-danger-zone', title: 'Danger zone' },
+    ],
+  },
+  {
+    pageId: 'members',
+    pageTitle: 'Members & access',
+    sections: [
+      { id: 'settings-members', title: 'Members' },
+      { id: 'settings-invites', title: 'Invites' },
+      { id: 'settings-teams', title: 'Teams' },
+    ],
+  },
+  {
+    pageId: 'calendar',
+    pageTitle: 'Calendar',
+    sections: [
+      { id: 'calendar-defaults', title: 'Event defaults' },
+      { id: 'calendar-display', title: 'Calendar display' },
+    ],
+  },
+  {
+    pageId: 'notifications',
+    pageTitle: 'Notifications',
+    sections: [
+      { id: 'notification-control', title: 'Control' },
+      { id: 'notification-delivery', title: 'Delivery' },
+      { id: 'notification-sources', title: 'Sources' },
+      { id: 'notification-timing', title: 'Timing' },
+      { id: 'notification-behavior', title: 'Behavior' },
+    ],
+  },
+  {
+    pageId: 'integrations',
+    pageTitle: 'Integrations',
+    sections: [{ id: 'integration-list', title: 'Connected' }],
+  },
+  {
+    pageId: 'sidebar',
+    pageTitle: 'Sidebar',
+    sections: [
+      { id: 'sidebar-placement', title: 'Placement' },
+      { id: 'sidebar-appearance', title: 'Appearance' },
+      { id: 'sidebar-behavior', title: 'Behavior' },
+      { id: 'sidebar-reset', title: 'Reset' },
+    ],
+  },
+  {
+    pageId: 'accessibility',
+    pageTitle: 'Accessibility',
+    sections: [
+      { id: 'accessibility-core', title: 'Accessibility' },
+      { id: 'accessibility-startup', title: 'Startup' },
+    ],
+  },
+  {
+    pageId: 'shortcuts',
+    pageTitle: 'Keyboard shortcuts',
+    sections: [
+      { id: 'shortcut-sidebar', title: 'Sidebar shortcuts' },
+      { id: 'shortcut-search', title: 'Search shortcuts' },
+      { id: 'shortcut-navigation', title: 'Navigation shortcuts' },
+      { id: 'shortcut-general', title: 'General shortcuts' },
+      { id: 'shortcut-mouse-actions', title: 'Mouse actions' },
+    ],
+  },
+];
+
+const settingsSearchCommands: Array<SearchResult & { keywords: string[] }> =
+  settingsSearchEntries.flatMap(({ pageId, pageTitle, sections }) => [
+    {
+      id: `settings-page-${pageId}`,
+      type: 'command' as const,
+      category: 'settings' as const,
+      title: pageTitle,
+      preview: `Open Settings · ${pageTitle}`,
+      icon: '',
+      actionId: `settings-page:${pageId}`,
+      keywords: ['settings', 'preferences', pageTitle.toLowerCase()],
+    },
+    ...sections.map((section) => ({
+      id: `settings-section-${pageId}-${section.id}`,
+      type: 'command' as const,
+      category: 'settings' as const,
+      title: `${pageTitle} · ${section.title}`,
+      preview: `Open Settings · ${pageTitle} · ${section.title}`,
+      icon: '',
+      actionId: `settings-section:${pageId}:${section.id}`,
+      keywords: ['settings', 'preferences', pageTitle.toLowerCase(), section.title.toLowerCase()],
+    })),
+  ]);
+
 const iconMap: Record<SearchResultType, typeof FileText> = {
   note: FileText,
   project: Briefcase,
@@ -52,31 +191,275 @@ const iconMap: Record<SearchResultType, typeof FileText> = {
   command: Search,
 };
 
-const ledgerSearchCommands: Array<
-  SearchResult & { keywords: string[]; personal?: boolean }
-> = [
-  { id: 'navigate-overview', type: 'command', category: 'navigate', title: 'Overview', preview: 'Open Overview', icon: '', actionId: 'overview', keywords: ['home', 'dashboard'] },
-  { id: 'navigate-projects', type: 'command', category: 'navigate', title: 'Projects', preview: 'Open Projects', icon: '', actionId: 'projects', keywords: ['project'] },
-  { id: 'navigate-notes', type: 'command', category: 'navigate', title: 'Notes', preview: 'Open Notes', icon: '', actionId: 'notes', keywords: ['note'] },
-  { id: 'navigate-calendar', type: 'command', category: 'navigate', title: 'Calendar', preview: 'Open Calendar', icon: '', actionId: 'calendar', keywords: ['schedule', 'event'] },
-  { id: 'navigate-today', type: 'command', category: 'navigate', title: 'Today', preview: 'Open today\'s focus', icon: '', actionId: 'today', keywords: ['today', 'focus'] },
-  { id: 'navigate-tasks', type: 'command', category: 'navigate', title: 'Tasks', preview: 'Open task focus', icon: '', actionId: 'tasks', keywords: ['task', 'todo'] },
-  { id: 'navigate-intake', type: 'command', category: 'navigate', title: 'Intake', preview: 'Review captured items', icon: '', actionId: 'intake', keywords: ['capture', 'inbox'] },
-  { id: 'navigate-notifications', type: 'command', category: 'navigate', title: 'Notifications', preview: 'Review notifications and alerts', icon: '', actionId: 'notifications', keywords: ['notifications', 'notification', 'alerts', 'reminders', 'updates'] },
-  { id: 'navigate-checkin', type: 'command', category: 'navigate', title: 'Daily Check-In', preview: 'Open your daily review', icon: '', actionId: 'checkin', keywords: ['check-in', 'checkin', 'review'] },
-  { id: 'navigate-templates', type: 'command', category: 'navigate', title: 'Templates', preview: 'Browse note templates', icon: '', actionId: 'templates', keywords: ['template'] },
-  { id: 'navigate-settings', type: 'command', category: 'navigate', title: 'Settings', preview: 'Open Settings', icon: '', actionId: 'settings', keywords: ['settings', 'preferences'] },
-  { id: 'action-new-note', type: 'command', category: 'action', title: 'New note', preview: 'Create a blank note', icon: '', actionId: 'new-note', keywords: ['new', 'note', 'create'] },
-  { id: 'action-new-task', type: 'command', category: 'action', title: 'New task', preview: 'Create a task', icon: '', actionId: 'new-task', keywords: ['new', 'task', 'create', 'todo'] },
-  { id: 'action-create-project', type: 'command', category: 'action', title: 'Create project', preview: 'Start a new project', icon: '', actionId: 'create-project', keywords: ['new', 'project', 'create'] },
-  { id: 'action-template-gallery', type: 'command', category: 'action', title: 'Open template gallery', preview: 'Browse note templates', icon: '', actionId: 'templates', keywords: ['browse', 'template'] },
-  { id: 'action-connect-calendar', type: 'command', category: 'action', title: 'Connect calendar', preview: 'Open calendar integrations', icon: '', actionId: 'integrations', keywords: ['calendar', 'connect', 'sync'] },
-  { id: 'action-install-extension', type: 'command', category: 'action', title: 'Install extension', preview: 'Open browser extension settings', icon: '', actionId: 'integrations', keywords: ['browser', 'extension', 'install'] },
-  { id: 'action-invite-member', type: 'command', category: 'action', title: 'Invite member', preview: 'Invite someone to this workspace', icon: '', actionId: 'invite-member', keywords: ['invite', 'member', 'team'], personal: false },
-  { id: 'settings-integrations', type: 'command', category: 'settings', title: 'Integrations', preview: 'Connected services', icon: '', actionId: 'integrations', keywords: ['integration', 'connect'] },
-  { id: 'settings-shortcuts', type: 'command', category: 'settings', title: 'Shortcuts', preview: 'Keyboard shortcuts', icon: '', actionId: 'shortcuts', keywords: ['shortcut', 'keyboard'] },
-  { id: 'settings-appearance', type: 'command', category: 'settings', title: 'Appearance', preview: 'Workspace appearance settings', icon: '', actionId: 'appearance', keywords: ['appearance', 'theme', 'dark', 'light'] },
-  { id: 'settings-workspace', type: 'command', category: 'settings', title: 'Workspace settings', preview: 'Workspace identity and defaults', icon: '', actionId: 'workspace', keywords: ['workspace', 'settings'] },
+const commandIconMap: Record<string, typeof FileText> = {
+  overview: LayoutDashboard,
+  projects: Briefcase,
+  notes: FileText,
+  calendar: CalendarDays,
+  today: Check,
+  checkin: Check,
+  tasks: Check,
+  intake: Inbox,
+  notifications: Bell,
+  templates: FileText,
+  settings: Settings,
+  'new-note': FileText,
+  'new-task': Check,
+  'create-project': Briefcase,
+  'template-gallery': FileText,
+  'connect-calendar': CalendarDays,
+  'install-extension': Plug2,
+  'invite-member': Users,
+  integrations: Plug2,
+  shortcuts: Keyboard,
+  workspace: BriefcaseBusiness,
+  appearance: Palette,
+};
+
+const settingsPageIconMap: Record<string, typeof FileText> = {
+  account: UserRound,
+  sessions: Shield,
+  workspace: BriefcaseBusiness,
+  members: Users,
+  calendar: CalendarDays,
+  notifications: Bell,
+  integrations: Plug2,
+  sidebar: PanelLeft,
+  accessibility: Accessibility,
+  shortcuts: Keyboard,
+};
+
+const settingsSectionIconMap: Record<string, typeof FileText> = {
+  'settings-profile': UserRound,
+  'settings-security': Shield,
+  'settings-account-actions': Settings,
+  'settings-current-session': Monitor,
+  'settings-other-sessions': Shield,
+  'settings-current-workspace': BriefcaseBusiness,
+  'settings-appearance': Palette,
+  'settings-defaults': Settings,
+  'settings-danger-zone': CircleAlert,
+  'settings-members': Users,
+  'settings-invites': Users,
+  'settings-teams': ListTree,
+  'calendar-defaults': CalendarDays,
+  'calendar-display': CalendarDays,
+  'notification-control': Bell,
+  'notification-delivery': Bell,
+  'notification-sources': Bell,
+  'notification-timing': Bell,
+  'notification-behavior': Settings,
+  'integration-list': Plug2,
+  'sidebar-placement': PanelLeft,
+  'sidebar-appearance': Palette,
+  'sidebar-behavior': Settings,
+  'sidebar-reset': RotateCcw,
+  'accessibility-core': SlidersHorizontal,
+  'accessibility-startup': Monitor,
+  'shortcut-sidebar': PanelLeft,
+  'shortcut-search': Search,
+  'shortcut-navigation': Keyboard,
+  'shortcut-general': Keyboard,
+  'shortcut-mouse-actions': MousePointer2,
+};
+
+const getSearchResultIcon = (result: SearchResult) => {
+  if (result.type !== 'command') return iconMap[result.type];
+
+  const actionId = result.actionId ?? '';
+  if (actionId.startsWith('settings-section:')) {
+    const anchorId = actionId.split(':')[2];
+    return settingsSectionIconMap[anchorId] ?? Settings;
+  }
+  if (actionId.startsWith('settings-page:')) {
+    return settingsPageIconMap[actionId.slice('settings-page:'.length)] ?? Settings;
+  }
+  return commandIconMap[actionId] ?? Search;
+};
+
+const ledgerSearchCommands: Array<SearchResult & { keywords: string[]; personal?: boolean }> = [
+  {
+    id: 'navigate-overview',
+    type: 'command',
+    category: 'navigate',
+    title: 'Overview',
+    preview: 'Open Overview',
+    icon: '',
+    actionId: 'overview',
+    keywords: ['home', 'dashboard'],
+  },
+  {
+    id: 'navigate-projects',
+    type: 'command',
+    category: 'navigate',
+    title: 'Projects',
+    preview: 'Open Projects',
+    icon: '',
+    actionId: 'projects',
+    keywords: ['project'],
+  },
+  {
+    id: 'navigate-notes',
+    type: 'command',
+    category: 'navigate',
+    title: 'Notes',
+    preview: 'Open Notes',
+    icon: '',
+    actionId: 'notes',
+    keywords: ['note'],
+  },
+  {
+    id: 'navigate-calendar',
+    type: 'command',
+    category: 'navigate',
+    title: 'Calendar',
+    preview: 'Open Calendar',
+    icon: '',
+    actionId: 'calendar',
+    keywords: ['schedule', 'event'],
+  },
+  {
+    id: 'navigate-today',
+    type: 'command',
+    category: 'navigate',
+    title: 'Today',
+    preview: "Open today's focus",
+    icon: '',
+    actionId: 'today',
+    keywords: ['today', 'focus'],
+  },
+  {
+    id: 'navigate-tasks',
+    type: 'command',
+    category: 'navigate',
+    title: 'Tasks',
+    preview: 'Open task focus',
+    icon: '',
+    actionId: 'tasks',
+    keywords: ['task', 'todo'],
+  },
+  {
+    id: 'navigate-intake',
+    type: 'command',
+    category: 'navigate',
+    title: 'Intake',
+    preview: 'Review captured items',
+    icon: '',
+    actionId: 'intake',
+    keywords: ['capture', 'inbox'],
+  },
+  {
+    id: 'navigate-notifications',
+    type: 'command',
+    category: 'navigate',
+    title: 'Notifications',
+    preview: 'Review notifications and alerts',
+    icon: '',
+    actionId: 'notifications',
+    keywords: ['notifications', 'notification', 'alerts', 'reminders', 'updates'],
+  },
+  {
+    id: 'navigate-checkin',
+    type: 'command',
+    category: 'navigate',
+    title: 'Daily Check-In',
+    preview: 'Open your daily review',
+    icon: '',
+    actionId: 'checkin',
+    keywords: ['check-in', 'checkin', 'review'],
+  },
+  {
+    id: 'navigate-templates',
+    type: 'command',
+    category: 'navigate',
+    title: 'Templates',
+    preview: 'Browse note templates',
+    icon: '',
+    actionId: 'templates',
+    keywords: ['template'],
+  },
+  {
+    id: 'navigate-settings',
+    type: 'command',
+    category: 'navigate',
+    title: 'Settings',
+    preview: 'Open Settings',
+    icon: '',
+    actionId: 'settings',
+    keywords: ['settings', 'preferences'],
+  },
+  {
+    id: 'action-new-note',
+    type: 'command',
+    category: 'action',
+    title: 'New note',
+    preview: 'Create a blank note',
+    icon: '',
+    actionId: 'new-note',
+    keywords: ['new', 'note', 'create'],
+  },
+  {
+    id: 'action-new-task',
+    type: 'command',
+    category: 'action',
+    title: 'New task',
+    preview: 'Create a task',
+    icon: '',
+    actionId: 'new-task',
+    keywords: ['new', 'task', 'create', 'todo'],
+  },
+  {
+    id: 'action-create-project',
+    type: 'command',
+    category: 'action',
+    title: 'Create project',
+    preview: 'Start a new project',
+    icon: '',
+    actionId: 'create-project',
+    keywords: ['new', 'project', 'create'],
+  },
+  {
+    id: 'action-template-gallery',
+    type: 'command',
+    category: 'action',
+    title: 'Open template gallery',
+    preview: 'Browse note templates',
+    icon: '',
+    actionId: 'templates',
+    keywords: ['browse', 'template'],
+  },
+  {
+    id: 'action-connect-calendar',
+    type: 'command',
+    category: 'action',
+    title: 'Connect calendar',
+    preview: 'Open calendar integrations',
+    icon: '',
+    actionId: 'integrations',
+    keywords: ['calendar', 'connect', 'sync'],
+  },
+  {
+    id: 'action-install-extension',
+    type: 'command',
+    category: 'action',
+    title: 'Install extension',
+    preview: 'Open browser extension settings',
+    icon: '',
+    actionId: 'integrations',
+    keywords: ['browser', 'extension', 'install'],
+  },
+  {
+    id: 'action-invite-member',
+    type: 'command',
+    category: 'action',
+    title: 'Invite member',
+    preview: 'Invite someone to this workspace',
+    icon: '',
+    actionId: 'invite-member',
+    keywords: ['invite', 'member', 'team'],
+    personal: false,
+  },
+  ...settingsSearchCommands,
 ];
 
 const searchCategoryLabels: Record<SearchCategory, string> = {
@@ -233,6 +616,27 @@ export const SearchModal = () => {
   const jumpToResult = useCallback(
     (result: SearchResult) => {
       if (result.type === 'command') {
+        if (result.actionId?.startsWith('settings-page:')) {
+          const pageId = result.actionId.slice('settings-page:'.length);
+          void window.desktopWindow?.openModule('settings', {
+            kind: 'settings',
+            focusSection: pageId,
+          });
+          closeSearch();
+          return;
+        }
+
+        if (result.actionId?.startsWith('settings-section:')) {
+          const [, pageId, anchorId] = result.actionId.split(':');
+          void window.desktopWindow?.openModule('settings', {
+            kind: 'settings',
+            focusSection: pageId,
+            focusContext: `settings-anchor:${anchorId}`,
+          });
+          closeSearch();
+          return;
+        }
+
         switch (result.actionId) {
           case 'overview':
             void window.desktopWindow?.openModule('dashboard');
@@ -388,113 +792,117 @@ export const SearchModal = () => {
 
   const searchPanel = (
     <div className={panelClassName} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
-            <Search size={16} className="shrink-0 text-[var(--ledger-text-muted)]" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  closeSearch();
-                }
-              }}
-              placeholder="Search everything..."
-              className="w-full bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsFullscreen((current) => !current)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            >
-              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-            <ModalCloseButton onClick={closeSearch} ariaLabel="Close search" />
-          </div>
+      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+          <Search size={16} className="shrink-0 text-[var(--ledger-text-muted)]" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                closeSearch();
+              }
+            }}
+            placeholder="Search everything..."
+            className="w-full bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+          />
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((current) => !current)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+          <ModalCloseButton onClick={closeSearch} ariaLabel="Close search" />
+        </div>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
-          {!trimmedQuery ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-              Start typing to search...
-            </div>
-          ) : trimmedQuery.length < 2 && commandResults.length === 0 ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-              Type at least 2 characters to search.
-            </div>
-          ) : isLoading ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-              Searching…
-            </div>
-          ) : results.length === 0 ? (
-            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-              No results for “{trimmedQuery}”
-            </div>
-          ) : (
-            <div className="space-y-0.5">
-              {results.map((result, index) => {
-                const Icon = iconMap[result.type];
-                const selected = index === selectedIndex;
-                const showCategory = index === 0 || results[index - 1]?.category !== result.category;
+      <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
+        {!trimmedQuery ? (
+          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
+            Start typing to search...
+          </div>
+        ) : trimmedQuery.length < 2 && commandResults.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
+            Type at least 2 characters to search.
+          </div>
+        ) : isLoading ? (
+          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
+            Searching…
+          </div>
+        ) : results.length === 0 ? (
+          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
+            No results for “{trimmedQuery}”
+          </div>
+        ) : (
+          <div className="space-y-0.5">
+            {results.map((result, index) => {
+              const Icon = getSearchResultIcon(result);
+              const selected = index === selectedIndex;
+              const showCategory = index === 0 || results[index - 1]?.category !== result.category;
 
-                return (
-                  <div key={`${result.type}-${result.id}`}>
-                    {showCategory && (
-                      <p className={`${index === 0 ? 'pt-0' : 'pt-3'} px-2 pb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]`}>
-                        {searchCategoryLabels[result.category]}
-                      </p>
-                    )}
-                    <button
-                      ref={(element) => {
-                        itemRefs.current[index] = element;
-                      }}
-                      type="button"
-                      onMouseEnter={() => setSelectedIndex(index)}
-                      onClick={() => jumpToResult(result)}
-                      className={`flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition ${
+              return (
+                <div key={`${result.type}-${result.id}`}>
+                  {showCategory && (
+                    <p
+                      className={`${
+                        index === 0 ? 'pt-0' : 'pt-3'
+                      } px-2 pb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]`}
+                    >
+                      {searchCategoryLabels[result.category]}
+                    </p>
+                  )}
+                  <button
+                    ref={(element) => {
+                      itemRefs.current[index] = element;
+                    }}
+                    type="button"
+                    onMouseEnter={() => setSelectedIndex(index)}
+                    onClick={() => jumpToResult(result)}
+                    className={`flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition ${
+                      selected
+                        ? 'bg-[var(--ledger-surface-hover)]'
+                        : 'hover:bg-[var(--ledger-surface-hover)]'
+                    }`}
+                  >
+                    <span
+                      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
                         selected
-                          ? 'bg-[var(--ledger-surface-hover)]'
-                          : 'hover:bg-[var(--ledger-surface-hover)]'
+                          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)]'
+                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
                       }`}
                     >
-                      <span
-                        className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
-                          selected
-                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)]'
-                            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
-                        }`}
-                      >
-                        <Icon size={13} />
+                      <Icon size={13} />
+                    </span>
+                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                      {result.title}
+                    </p>
+                    {result.type !== 'command' && (
+                      <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
+                        {result.type}
                       </span>
-                      <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                        {result.title}
-                      </p>
-                      {result.type !== 'command' && (
-                        <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
-                          {result.type}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-        <div className="flex items-center gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-[11px] text-[var(--ledger-text-muted)]">
-          <span className="min-w-0 flex-1 truncate">
-            ↑↓ to navigate • Enter to jump • ESC to close
-          </span>
-          <span className="hidden max-w-[42%] shrink-0 truncate text-right min-[460px]:inline">
-            {activeResult ? `${activeResult.type} selected` : ' '}
-          </span>
-        </div>
+      <div className="flex items-center gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-[11px] text-[var(--ledger-text-muted)]">
+        <span className="min-w-0 flex-1 truncate">
+          ↑↓ to navigate • Enter to jump • ESC to close
+        </span>
+        <span className="hidden max-w-[42%] shrink-0 truncate text-right min-[460px]:inline">
+          {activeResult ? `${activeResult.type} selected` : ' '}
+        </span>
+      </div>
     </div>
   );
 

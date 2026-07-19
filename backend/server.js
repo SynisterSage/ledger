@@ -6173,6 +6173,77 @@ app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req
   }
 });
 
+app.delete('/api/account', authMiddleware, rateLimit('write'), async (req, res) => {
+  const userId = req.authUser.id;
+
+  if (req.body?.confirmed !== true) {
+    return res.status(400).json({ error: 'Account deletion requires explicit confirmation.' });
+  }
+
+  try {
+    const ownedWorkspacesResult = await supabase
+      .from('workspaces')
+      .select('id, is_personal')
+      .eq('owner_id', userId);
+
+    if (ownedWorkspacesResult.error) throw ownedWorkspacesResult.error;
+
+    for (const workspace of ownedWorkspacesResult.data ?? []) {
+      if (workspace.is_personal) {
+        const deletePersonalWorkspace = await supabase
+          .from('workspaces')
+          .delete()
+          .eq('id', workspace.id);
+        if (deletePersonalWorkspace.error) throw deletePersonalWorkspace.error;
+        continue;
+      }
+
+      const membersResult = await supabase
+        .from('workspace_members')
+        .select('user_id, role')
+        .eq('workspace_id', workspace.id)
+        .neq('user_id', userId)
+        .order('role', { ascending: true });
+
+      if (membersResult.error) throw membersResult.error;
+
+      const successor = (membersResult.data ?? []).sort((a, b) => {
+        const rank = { admin: 0, member: 1, viewer: 2 };
+        return (rank[a.role] ?? 3) - (rank[b.role] ?? 3);
+      })[0];
+
+      const transferWorkspace = await supabase
+        .from('workspaces')
+        .update({ owner_id: successor?.user_id ?? null })
+        .eq('id', workspace.id);
+      if (transferWorkspace.error) throw transferWorkspace.error;
+
+      if (successor && successor.role !== 'admin') {
+        const promoteSuccessor = await supabase
+          .from('workspace_members')
+          .update({ role: 'admin' })
+          .eq('workspace_id', workspace.id)
+          .eq('user_id', successor.user_id);
+        if (promoteSuccessor.error) throw promoteSuccessor.error;
+      }
+    }
+
+    const removeMemberships = await supabase
+      .from('workspace_members')
+      .delete()
+      .eq('user_id', userId);
+    if (removeMemberships.error) throw removeMemberships.error;
+
+    const deleteUser = await supabase.auth.admin.deleteUser(userId);
+    if (deleteUser.error) throw deleteUser.error;
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('Account deletion failed:', error);
+    return respondWithError(res, error);
+  }
+});
+
 app.get('/api/user/settings', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const { data, error } = await supabase

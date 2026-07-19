@@ -176,6 +176,15 @@ const createNewTabRoute = (): LedgerRoute => ({
   focusContext: `new-tab:${crypto.randomUUID()}`,
 });
 
+const selectWorkspaceTabRoute = (route: LedgerRoute) => {
+  const selector = window.desktopWindow?.selectWorkspaceRoute;
+  if (selector) {
+    void selector(route);
+    return;
+  }
+  void window.desktopWindow?.openModule?.(route.kind, route);
+};
+
 export const LedgerTab = ({
   route,
   active,
@@ -453,6 +462,24 @@ export const LedgerTabStrip = () => {
     closedTabKeysRef.current = closedTabKeys;
   }, [closedTabKeys]);
 
+  // Keep the rendered group in sync even when a hidden keep-alive module sends
+  // a late route update after an inactive tab was closed.
+  useEffect(() => {
+    if (closedTabKeys.size === 0) return;
+
+    setTabOrder((current) => {
+      const next = current.filter((route) => !closedTabKeys.has(routeKey(route)));
+      if (next.length === current.length) return current;
+      tabOrderRef.current = next;
+      try {
+        sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Keep the in-memory tab order authoritative when storage is unavailable.
+      }
+      return next;
+    });
+  }, [closedTabKeys]);
+
   useEffect(() => {
     let mounted = true;
     const initialize = async () => {
@@ -487,7 +514,7 @@ export const LedgerTabStrip = () => {
         } else {
           restored = [createNewTabRoute()];
           suppressInitialRouteRef.current = true;
-          void window.desktopWindow?.openModule?.('new-tab', restored[0]);
+          selectWorkspaceTabRoute(restored[0]);
         }
       }
       tabOrderRef.current = restored;
@@ -804,6 +831,7 @@ export const LedgerTabStrip = () => {
       } catch {
         // The in-memory tab state remains authoritative when storage is unavailable.
       }
+      void window.desktopWindow?.closeWorkspaceRoute?.(route);
 
       if (nextOrder.length === 0) {
         if (isNewTabRoute(route)) {
@@ -827,7 +855,7 @@ export const LedgerTabStrip = () => {
         } catch {
           // Keep the in-memory tab usable when storage is unavailable.
         }
-        void window.desktopWindow?.openModule?.('new-tab', newTab);
+        selectWorkspaceTabRoute(newTab);
         return;
       }
 
@@ -837,14 +865,14 @@ export const LedgerTabStrip = () => {
         // Closing an inactive tab must still re-assert the visible route.
         // Hidden keep-alive modules can otherwise publish their stale route
         // after the close and resurrect the tab that was just removed.
-        void window.desktopWindow?.openModule?.(currentRoute.kind, currentRoute);
+        selectWorkspaceTabRoute(currentRoute);
         return;
       }
       const nextRoute = nextOrder[index - 1] ?? nextOrder[index];
       if (nextRoute) {
         pendingCloseKeyRef.current = key;
         setVisualRouteOverride(nextRoute);
-        void window.desktopWindow?.openModule?.(nextRoute.kind, nextRoute);
+        selectWorkspaceTabRoute(nextRoute);
       }
     }, []);
 
@@ -1039,7 +1067,7 @@ export const LedgerTabStrip = () => {
     }
     setIsOverflowOpen(false);
     setVisualRouteOverride(route);
-    void window.desktopWindow?.openModule?.(route.kind, route);
+    selectWorkspaceTabRoute(route);
   };
 
   const openNewTab = () => {
@@ -1057,7 +1085,7 @@ export const LedgerTabStrip = () => {
     tabOrderRef.current = nextOrder;
     setTabOrder(nextOrder);
     setVisualRouteOverride(created);
-    void window.desktopWindow?.openModule?.('new-tab', created);
+    selectWorkspaceTabRoute(created);
   };
 
   return (

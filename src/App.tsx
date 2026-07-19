@@ -20,12 +20,18 @@ import {
   Plus,
   Palette,
   Funnel,
+  Info,
   SlidersHorizontal,
   StickyNote,
   Trash2,
   FileText,
   Sparkles,
   Map as MapIcon,
+  PanelBottom,
+  PanelLeft,
+  PanelRight,
+  PanelTop,
+  AppWindow,
   Zap,
   UserRound,
   UserCheck,
@@ -88,8 +94,9 @@ import { NewTabWindow } from './components/Common/NewTabWindow';
 import { PageFindBar } from './components/Common/PageFindBar';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
-type OnboardingStep = 'welcome' | 'workspace' | 'position';
+type OnboardingStep = 'welcome' | 'workspace-type' | 'workspace' | 'team-invite' | 'position';
 type OnboardingWorkspaceMode = 'create' | 'join';
+type OnboardingWorkspaceType = 'personal' | 'team';
 type ModuleKind =
   | 'new-tab'
   | 'circle'
@@ -485,6 +492,7 @@ function OnboardingFlow({
   workspaceName,
   inviteValue,
   selectedPosition,
+  selectedWorkspaceType,
   isSaving,
   error,
   onStepChange,
@@ -492,6 +500,10 @@ function OnboardingFlow({
   onWorkspaceNameChange,
   onInviteValueChange,
   onPositionChange,
+  onWorkspaceTypeChange,
+  onSkipSetup,
+  onInviteSubmit,
+  onInviteSkip,
   onWorkspaceSubmit,
   onOpenLedger,
 }: {
@@ -500,6 +512,7 @@ function OnboardingFlow({
   workspaceName: string;
   inviteValue: string;
   selectedPosition: SidebarPosition;
+  selectedWorkspaceType: OnboardingWorkspaceType | null;
   isSaving: boolean;
   error: string | null;
   onStepChange: (step: OnboardingStep) => void;
@@ -507,28 +520,64 @@ function OnboardingFlow({
   onWorkspaceNameChange: (value: string) => void;
   onInviteValueChange: (value: string) => void;
   onPositionChange: (position: SidebarPosition) => void;
+  onWorkspaceTypeChange: (type: OnboardingWorkspaceType) => void;
+  onSkipSetup: () => void;
+  onInviteSubmit: (emails: string[], role: 'admin' | 'member') => Promise<string[]>;
+  onInviteSkip: () => void;
   onWorkspaceSubmit: () => Promise<void>;
   onOpenLedger: (position: SidebarPosition) => Promise<void>;
 }) {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [inviteDraft, setInviteDraft] = useState('');
+  const [inviteEmails, setInviteEmails] = useState<string[]>([]);
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [failedInviteEmails, setFailedInviteEmails] = useState<string[]>([]);
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!mediaQuery) return;
+  const isValidInviteEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
-    const updatePreference = () => setPrefersReducedMotion(mediaQuery.matches);
-    updatePreference();
-    mediaQuery.addEventListener?.('change', updatePreference);
-    return () => mediaQuery.removeEventListener?.('change', updatePreference);
-  }, []);
+  const addInviteEmail = () => {
+    const email = inviteDraft.trim().toLowerCase();
+    if (!email) return;
+    if (!isValidInviteEmail(email)) {
+      setInviteError('Enter a valid email address.');
+      return;
+    }
+    if (inviteEmails.includes(email)) {
+      setInviteError('That email has already been added.');
+      return;
+    }
 
-  const positionOptions: Array<{ value: SidebarPosition; label: string }> = [
-    { value: 'right', label: 'Right' },
-    { value: 'left', label: 'Left' },
-    { value: 'bottom', label: 'Bottom' },
-    { value: 'top', label: 'Top' },
-    { value: 'floating', label: 'Floating' },
-  ];
+    setInviteEmails((current) => [...current, email]);
+    setInviteDraft('');
+    setInviteError(null);
+  };
+
+  const submitInvites = async () => {
+    const draftEmail = inviteDraft.trim().toLowerCase();
+    if (draftEmail) {
+      if (!isValidInviteEmail(draftEmail)) {
+        setInviteError('Enter a valid email address.');
+        return;
+      }
+      if (inviteEmails.includes(draftEmail)) {
+        setInviteError('That email has already been added.');
+        return;
+      }
+    }
+
+    const emails = draftEmail ? [...inviteEmails, draftEmail] : inviteEmails;
+    if (emails.length === 0) return;
+
+    setInviteEmails(draftEmail ? emails : inviteEmails);
+    setInviteDraft('');
+    setInviteError(null);
+    const failed = await onInviteSubmit(emails, inviteRole);
+    setFailedInviteEmails(failed);
+    setInviteEmails(failed);
+    if (failed.length === 0) {
+      onStepChange('position');
+    }
+  };
 
   return (
     <div
@@ -550,84 +599,180 @@ function OnboardingFlow({
 
       <div
         className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-5 py-8 sm:px-8"
-        style={noDragRegionStyle}
+        style={dragRegionStyle}
       >
         <div
           className={`w-full transition-all duration-150 ease-out ${
-            step === 'welcome' ? 'max-w-4xl' : 'max-w-lg'
+            step === 'welcome' ? 'max-w-md' : 'max-w-[460px]'
           }`}
         >
           {step === 'welcome' ? (
-            <div className="grid items-center gap-10 md:grid-cols-[1.18fr_0.82fr]">
-              <div className="overflow-hidden rounded-[26px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_24px_70px_rgba(17,24,39,0.2)]">
-                {prefersReducedMotion ? (
-                  <div className="flex aspect-video items-center justify-center bg-[var(--ledger-background)]">
-                    <img src="./logo-color.svg" alt="Ledger" className="h-16 w-16" />
-                  </div>
-                ) : (
-                  <video
-                    className="block aspect-video h-full w-full object-cover"
-                    src="./onboarding-vid.mp4"
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    preload="auto"
-                  />
-                )}
+            <div className="mx-auto text-center" style={noDragRegionStyle}>
+              <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-5 h-10 w-10" />
+              <h1 className="text-[30px] font-regular leading-tight text-[var(--ledger-text-primary)]">
+                Welcome to Ledger
+              </h1>
+              <p className="mx-auto mt-3 max-w-sm text-base leading-6 text-[var(--ledger-text-secondary)]">
+                Let’s set up a workspace that fits how you work.
+              </p>
+              <div className="mt-7 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onStepChange('workspace-type')}
+                  className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--ledger-accent)] px-6 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
+                >
+                  Get started
+                </button>
+                <button
+                  type="button"
+                  onClick={onSkipSetup}
+                  className="inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  Skip setup
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === 'workspace-type' ? (
+            <div className="mx-auto" style={noDragRegionStyle}>
+              <button
+                type="button"
+                onClick={() => onStepChange('welcome')}
+                className="mb-5 inline-flex h-8 items-center px-0.5 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:underline"
+              >
+                Back
+              </button>
+              <div className="mb-7">
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 1 of 4</p>
+                <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
+                  How will you use Ledger?
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-muted)]">
+                  Choose the workspace type that fits how you work.
+                </p>
               </div>
 
-              <div className="text-center md:text-left">
-                <img
-                  src="./logo-color.svg"
-                  alt="Ledger"
-                  className="mx-auto mb-6 h-11 w-11 md:mx-0"
-                />
-                <h1 className="text-[34px] font-semibold leading-tight text-[var(--ledger-text-primary)] sm:text-[40px]">
-                  Welcome to Ledger
-                </h1>
-                <p className="mt-3 text-xl text-[var(--ledger-text-secondary)]">
-                  Your day, beside your work.
-                </p>
-                <p className="mt-4 max-w-sm text-sm leading-6 text-[var(--ledger-text-muted)] md:max-w-none">
-                  Capture notes, tasks, events, and follow-ups without leaving your flow.
-                </p>
-                <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row md:items-start">
-                  <button
-                    type="button"
-                    onClick={() => onStepChange('workspace')}
-                    className="inline-flex h-11 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-6 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition hover:bg-[var(--ledger-accent-hover)]"
-                  >
-                    Get started
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onStepChange('workspace')}
-                    className="inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
-                  >
-                    Skip
-                  </button>
-                </div>
+              <div className="space-y-3" role="radiogroup" aria-label="Workspace type">
+                {[
+                  {
+                    type: 'personal' as const,
+                    title: 'Personal workspace',
+                    description: 'Organize your own notes, tasks, projects, and calendar.',
+                    icon: UserRound,
+                  },
+                  {
+                    type: 'team' as const,
+                    title: 'Team workspace',
+                    description: 'Collaborate on shared work with your team.',
+                    icon: Users,
+                  },
+                ].map((option) => {
+                  const isSelected = selectedWorkspaceType === option.type;
+                  const Icon = option.icon;
+                  return (
+                    <button
+                      key={option.type}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      tabIndex={selectedWorkspaceType === null || isSelected ? 0 : -1}
+                      onClick={() => onWorkspaceTypeChange(option.type)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                          event.preventDefault();
+                          onWorkspaceTypeChange('team');
+                        }
+                        if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                          event.preventDefault();
+                          onWorkspaceTypeChange('personal');
+                        }
+                      }}
+                      className={`flex min-h-[68px] w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]/40 ${
+                        isSelected
+                          ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-selected)]'
+                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
+                      }`}
+                    >
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                          isSelected
+                            ? 'border-[color:var(--ledger-border-strong)] text-[var(--ledger-text-secondary)]'
+                            : 'border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-muted)]'
+                        }`}
+                      >
+                        <Icon size={16} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className={`block text-sm font-semibold ${
+                            isSelected
+                              ? 'text-[var(--ledger-text-primary)]'
+                              : 'text-[var(--ledger-text-secondary)]'
+                          }`}
+                        >
+                          {option.title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-[var(--ledger-text-muted)]">
+                          {option.description}
+                        </span>
+                      </span>
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                          isSelected
+                            ? 'border-[var(--ledger-accent)]'
+                            : 'border-[color:var(--ledger-border-strong)]'
+                        }`}
+                      >
+                        {isSelected ? (
+                          <span className="h-2 w-2 rounded-full bg-[var(--ledger-accent)]" />
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-8 flex justify-end">
+                <button
+                  type="button"
+                  disabled={selectedWorkspaceType === null}
+                  onClick={() => onStepChange('workspace')}
+                  className="inline-flex h-11 items-center justify-center rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Continue
+                </button>
               </div>
             </div>
           ) : null}
 
           {step === 'workspace' ? (
-            <div className="mx-auto rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-7 shadow-[0_24px_70px_rgba(17,24,39,0.18)] backdrop-blur-xl">
+            <div className="mx-auto" style={noDragRegionStyle}>
+              <button
+                type="button"
+                onClick={() => onStepChange('workspace-type')}
+                className="mb-5 inline-flex h-8 items-center px-0.5 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:underline"
+              >
+                Back
+              </button>
               <div className="mb-7">
-                <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
-                <h1 className="text-[30px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
-                  {mode === 'create' ? 'Create your workspace' : 'Join a workspace'}
-                </h1>
-                <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ledger-text-muted)]">
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 2 of 4</p>
+                <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   {mode === 'create'
-                    ? 'A workspace keeps your notes, projects, calendar, and daily focus together.'
+                    ? selectedWorkspaceType === 'team'
+                      ? 'Name your team workspace'
+                      : 'Name your personal workspace'
+                    : 'Join a workspace'}
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-muted)]">
+                  {mode === 'create'
+                    ? 'You can change this later.'
                     : 'Paste an invite code or link to join an existing Ledger workspace.'}
                 </p>
               </div>
 
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-[var(--ledger-text-secondary)]">
+                <span className="mb-2 block text-xs font-medium text-[var(--ledger-text-secondary)]">
                   {mode === 'create' ? 'Workspace name' : 'Invite code or link'}
                 </span>
                 <input
@@ -638,17 +783,17 @@ function OnboardingFlow({
                       : onInviteValueChange(event.target.value)
                   }
                   placeholder={mode === 'create' ? 'My Workspace' : 'https://ledger.app/invite/...'}
-                  className="h-12 w-full rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-4 text-[15px] text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-accent)]/10"
+                  className="h-11 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-4 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-2 focus:ring-[color:var(--ledger-border-strong)]/20"
                 />
               </label>
 
               <button
                 type="button"
                 onClick={() => onModeChange(mode === 'create' ? 'join' : 'create')}
-                className="mt-3 text-sm font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
+                className="mt-3 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:underline"
               >
                 {mode === 'create'
-                  ? 'Have an invite? Join a workspace'
+                  ? 'Have an invite? Join an existing workspace'
                   : 'Back to create a workspace'}
               </button>
 
@@ -658,77 +803,257 @@ function OnboardingFlow({
                 </div>
               ) : null}
 
+              <div className="mt-8 flex items-center justify-end gap-4">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => {
+                    void onWorkspaceSubmit();
+                  }}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+                >
+                  {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
+                  {isSaving
+                    ? mode === 'create'
+                      ? 'Creating...'
+                      : 'Joining...'
+                    : mode === 'create'
+                    ? 'Continue'
+                    : 'Join workspace'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {step === 'team-invite' ? (
+            <div className="mx-auto" style={noDragRegionStyle}>
               <button
                 type="button"
-                disabled={isSaving}
-                onClick={() => {
-                  void onWorkspaceSubmit();
-                }}
-                className="mt-7 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+                onClick={() => onStepChange('workspace')}
+                className="mb-5 inline-flex h-8 items-center px-0.5 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:underline"
               >
-                {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
-                {isSaving
-                  ? mode === 'create'
-                    ? 'Creating...'
-                    : 'Joining...'
-                  : mode === 'create'
-                  ? 'Continue'
-                  : 'Join workspace'}
+                Back
               </button>
+              <div className="mb-7">
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 3 of 4</p>
+                <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
+                  Invite your team
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-muted)]">
+                  Add people now, or do this later from Members &amp; access.
+                </p>
+              </div>
+
+              <div>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-medium text-[var(--ledger-text-secondary)]">
+                    Email address
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={inviteDraft}
+                      onChange={(event) => {
+                        setInviteDraft(event.target.value);
+                        setInviteError(null);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ',') {
+                          event.preventDefault();
+                          addInviteEmail();
+                        }
+                      }}
+                      placeholder="teammate@example.com"
+                      className="h-11 min-w-0 flex-1 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-4 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-2 focus:ring-[color:var(--ledger-border-strong)]/20"
+                    />
+                    <span className="relative h-11 w-[112px] shrink-0">
+                      <select
+                        value={inviteRole}
+                        onChange={(event) =>
+                          setInviteRole(event.target.value as 'admin' | 'member')
+                        }
+                        aria-label="Invitation role"
+                        className="h-11 w-full appearance-none rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)] focus:ring-2 focus:ring-[color:var(--ledger-border-strong)]/20"
+                      >
+                        <option value="member">Member</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                      <ChevronDown
+                        size={15}
+                        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--ledger-text-secondary)]"
+                      />
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addInviteEmail}
+                      className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:border-[color:var(--ledger-border-strong)] hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]/40"
+                    >
+                      <Plus size={14} />
+                      Add another
+                    </button>
+                  </div>
+                </label>
+
+                {inviteEmails.length > 0 ? (
+                  <div className="mt-3 space-y-2" aria-label="Invited teammates">
+                    {inviteEmails.map((email) => (
+                      <div
+                        key={email}
+                        className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)]"
+                      >
+                        <span className="truncate">{email}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInviteEmails((current) => current.filter((item) => item !== email));
+                            setFailedInviteEmails((current) =>
+                              current.filter((item) => item !== email)
+                            );
+                          }}
+                          aria-label={`Remove ${email}`}
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]/40"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {inviteError ? (
+                  <p className="mt-2 text-xs text-[var(--ledger-danger)]" role="alert">
+                    {inviteError}
+                  </p>
+                ) : null}
+
+                {failedInviteEmails.length > 0 ? (
+                  <p className="mt-3 text-xs leading-5 text-[var(--ledger-danger)]" role="alert">
+                    Could not invite {failedInviteEmails.join(', ')}. You can retry or continue and
+                    invite them later from Members &amp; access.
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="mt-8 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={onInviteSkip}
+                  className="inline-flex h-11 items-center justify-center rounded-lg px-1 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:underline"
+                >
+                  Skip for now
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    isSaving || (inviteEmails.length === 0 && !isValidInviteEmail(inviteDraft))
+                  }
+                  onClick={() => {
+                    void submitInvites();
+                  }}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
+                  {isSaving ? 'Sending...' : 'Continue'}
+                </button>
+              </div>
             </div>
           ) : null}
 
           {step === 'position' ? (
-            <div className="mx-auto rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-7 shadow-[0_24px_70px_rgba(17,24,39,0.18)] backdrop-blur-xl">
+            <div className="mx-auto" style={noDragRegionStyle}>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() =>
+                  onStepChange(selectedWorkspaceType === 'team' ? 'team-invite' : 'workspace')
+                }
+                className="mb-5 inline-flex h-8 items-center px-0.5 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:underline disabled:opacity-60"
+              >
+                Back
+              </button>
               <div className="mb-7">
-                <img src="./logo-color.svg" alt="Ledger" className="mb-5 h-10 w-10" />
-                <h1 className="text-[30px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
-                  Where should Ledger live?
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                  {selectedWorkspaceType === 'team' ? 'Step 4 of 4' : 'Step 3 of 3'}
+                </p>
+                <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
+                  Choose a sidebar position
                 </h1>
-                <p className="mt-3 max-w-md text-sm leading-6 text-[var(--ledger-text-muted)]">
-                  Choose a starting position. You can change this anytime.
+                <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-muted)]">
+                  Choose where Ledger starts. You can change this anytime.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                {positionOptions.map((option) => {
+              <div
+                className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2"
+                role="radiogroup"
+                aria-label="Sidebar position"
+              >
+                {[
+                  { value: 'right' as const, label: 'Right', icon: PanelRight },
+                  { value: 'left' as const, label: 'Left', icon: PanelLeft },
+                  { value: 'bottom' as const, label: 'Bottom', icon: PanelBottom },
+                  { value: 'top' as const, label: 'Top', icon: PanelTop },
+                  { value: 'floating' as const, label: 'Floating', icon: AppWindow },
+                ].map((option, optionIndex, options) => {
                   const isSelected = selectedPosition === option.value;
-                  const isFloating = option.value === 'floating';
+                  const Icon = option.icon;
                   return (
                     <button
                       key={option.value}
                       type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      tabIndex={isSelected ? 0 : -1}
                       onClick={() => onPositionChange(option.value)}
-                      className={`group flex h-20 items-center gap-3 rounded-2xl border px-4 text-left transition ${
-                        isFloating ? 'col-span-2' : ''
+                      onKeyDown={(event) => {
+                        if (
+                          !['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft'].includes(event.key)
+                        ) {
+                          return;
+                        }
+                        event.preventDefault();
+                        const direction =
+                          event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1;
+                        const nextIndex =
+                          (optionIndex + direction + options.length) % options.length;
+                        onPositionChange(options[nextIndex].value);
+                      }}
+                      className={`flex h-[52px] items-center gap-2.5 rounded-lg border px-3.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]/40 ${
+                        option.value === 'floating' ? 'min-[420px]:col-span-2' : ''
                       } ${
                         isSelected
-                          ? 'border-[color:rgba(255,95,64,0.35)] bg-[color:rgba(255,95,64,0.08)] text-[var(--ledger-text-primary)] shadow-[0_8px_18px_rgba(255,95,64,0.08)]'
+                          ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-primary)]'
                           : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)]'
                       }`}
                     >
-                      <span className="relative h-9 w-11 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]">
+                      <Icon
+                        size={18}
+                        strokeWidth={1.8}
+                        className={
+                          isSelected
+                            ? 'text-[var(--ledger-text-secondary)]'
+                            : 'text-[var(--ledger-text-muted)]'
+                        }
+                      />
+                      <span className="text-[13px] font-medium">{option.label}</span>
+                      {option.value === 'floating' ? (
                         <span
-                          className={`absolute rounded-sm bg-[var(--ledger-accent)] ${
-                            option.value === 'right'
-                              ? 'right-1 top-1 h-7 w-2'
-                              : option.value === 'left'
-                              ? 'left-1 top-1 h-7 w-2'
-                              : option.value === 'top'
-                              ? 'left-1 top-1 h-2 w-9'
-                              : option.value === 'bottom'
-                              ? 'bottom-1 left-1 h-2 w-9'
-                              : 'left-1.5 top-1.5 h-6 w-8 rounded-md opacity-95'
+                          tabIndex={0}
+                          aria-label="More information about Floating"
+                          className={`group relative inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--ledger-text-muted)] outline-none hover:text-[var(--ledger-text-secondary)] focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/30 ${
+                            isSelected ? '' : 'ml-auto'
                           }`}
-                        />
-                        {option.value === 'floating' ? (
-                          <>
-                            <span className="absolute left-2 top-2 h-1 w-1 rounded-full bg-[var(--ledger-surface-card)]/90" />
-                            <span className="absolute right-2 top-2 h-1 w-1 rounded-full bg-[var(--ledger-surface-card)]/90" />
-                          </>
-                        ) : null}
-                      </span>
-                      <span className="text-sm font-semibold">{option.label}</span>
+                        >
+                          <Info size={13} />
+                          <span className="pointer-events-none absolute right-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-xs font-normal leading-5 text-[var(--ledger-text-secondary)] shadow-[0_10px_24px_rgba(15,23,42,0.14)] group-hover:block group-focus:block">
+                            Floating keeps Ledger in a movable window that you can place beside your
+                            work.
+                          </span>
+                        </span>
+                      ) : null}
+                      {isSelected ? (
+                        <Check size={15} className="ml-auto text-[var(--ledger-accent)]" />
+                      ) : null}
                     </button>
                   );
                 })}
@@ -740,28 +1065,17 @@ function OnboardingFlow({
                 </div>
               ) : null}
 
-              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+              <div className="mt-8 flex items-center justify-end gap-4">
                 <button
                   type="button"
                   disabled={isSaving}
                   onClick={() => {
                     void onOpenLedger(selectedPosition);
                   }}
-                  className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                 >
                   {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
                   {isSaving ? 'Opening...' : 'Open Ledger'}
-                </button>
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => {
-                    onPositionChange('right');
-                    void onOpenLedger('right');
-                  }}
-                  className="inline-flex h-12 items-center justify-center rounded-2xl px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] disabled:opacity-60"
-                >
-                  Decide later
                 </button>
               </div>
             </div>
@@ -1477,7 +1791,8 @@ function DashboardContent() {
         };
         if (cancelled) return;
         setCalendarScope(
-          !activeWorkspace?.is_personal && payload?.preferences?.calendarScope === 'all_accessible_workspaces'
+          !activeWorkspace?.is_personal &&
+            payload?.preferences?.calendarScope === 'all_accessible_workspaces'
             ? 'all_accessible_workspaces'
             : 'current_workspace'
         );
@@ -5022,9 +5337,7 @@ function DashboardContent() {
         ...section,
         options: section.options.filter(
           (option) =>
-            option.value === 'me' ||
-            option.value === 'assigned' ||
-            option.value === 'unassigned'
+            option.value === 'me' || option.value === 'assigned' || option.value === 'unassigned'
         ),
       };
     });
@@ -5278,7 +5591,9 @@ function DashboardContent() {
               icon={<Bell size={12} />}
               count={notificationCount}
               notificationTrayToggle
-              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))
+              }
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
@@ -5869,22 +6184,22 @@ function DashboardContent() {
                         ]
                           .filter(([label]) => !isPersonalWorkspace || label !== 'Assigned to me')
                           .map(([label, value], index, rows) => (
-                          <div
-                            key={label}
-                            className={`flex items-center justify-between py-1.5 ${
-                              index < rows.length - 1
-                                ? 'border-b border-[color:var(--ledger-border-subtle)]'
-                                : ''
-                            }`}
-                          >
-                            <span className="text-[11px] text-[var(--ledger-text-muted)]">
-                              {label}
-                            </span>
-                            <span className="text-[12px] font-medium text-[var(--ledger-text-primary)]">
-                              {value}
-                            </span>
-                          </div>
-                        ))}
+                            <div
+                              key={label}
+                              className={`flex items-center justify-between py-1.5 ${
+                                index < rows.length - 1
+                                  ? 'border-b border-[color:var(--ledger-border-subtle)]'
+                                  : ''
+                              }`}
+                            >
+                              <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                                {label}
+                              </span>
+                              <span className="text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                                {value}
+                              </span>
+                            </div>
+                          ))}
                       </div>
                     </div>
                     <div className="mt-auto space-y-2 pt-3">
@@ -6997,6 +7312,9 @@ function AppShell() {
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() =>
     getInviteTokenFromLocation()
   );
+  const [isInviteOnboarding, setIsInviteOnboarding] = useState(() =>
+    Boolean(getInviteTokenFromLocation())
+  );
   const [inviteFlowStatus, setInviteFlowStatus] = useState<
     'idle' | 'checking' | 'awaiting-auth' | 'processing' | 'accepted' | 'already-member' | 'error'
   >('idle');
@@ -7005,11 +7323,16 @@ function AppShell() {
   const [inviteWorkspaceId, setInviteWorkspaceId] = useState<string | null>(null);
   const [inviteWorkspaceName, setInviteWorkspaceName] = useState<string | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('welcome');
+  const [onboardingWorkspaceType, setOnboardingWorkspaceType] =
+    useState<OnboardingWorkspaceType | null>(null);
+  const [onboardingWorkspaceId, setOnboardingWorkspaceId] = useState<string | null>(null);
+  const [onboardingInviteEmails, setOnboardingInviteEmails] = useState<string[]>([]);
+  const [onboardingInviteRole, setOnboardingInviteRole] = useState<'admin' | 'member'>('member');
   const [onboardingWorkspaceName, setOnboardingWorkspaceName] = useState('My Workspace');
   const [onboardingMode, setOnboardingMode] = useState<OnboardingWorkspaceMode>('create');
   const [onboardingInviteValue, setOnboardingInviteValue] = useState('');
   const [onboardingSidebarPosition, setOnboardingSidebarPosition] =
-    useState<SidebarPosition>('right');
+    useState<SidebarPosition>('floating');
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const onboardingResetUserRef = useRef<string | null>(null);
   const handledInviteTokenRef = useRef<string | null>(null);
@@ -7077,9 +7400,7 @@ function AppShell() {
   useEffect(() => {
     if (!activeKeepAliveModuleKey) return;
     setVisitedModuleKeys((current) =>
-      current.includes(activeKeepAliveModuleKey)
-        ? current
-        : [...current, activeKeepAliveModuleKey]
+      current.includes(activeKeepAliveModuleKey) ? current : [...current, activeKeepAliveModuleKey]
     );
   }, [activeKeepAliveModuleKey]);
 
@@ -7272,22 +7593,24 @@ function AppShell() {
 
       const forwardToWorkspaceWindow = window.desktopWindow?.openSearchInWorkspaceWindow;
       if (forwardToWorkspaceWindow) {
-        void forwardToWorkspaceWindow().then((wasForwarded) => {
-          if (wasForwarded) return;
-          if (state !== 'expanded') {
-            setState('expanded');
-            window.setTimeout(() => openSearch(), 220);
-            return;
-          }
-          openSearch();
-        }).catch(() => {
-          if (state !== 'expanded') {
-            setState('expanded');
-            window.setTimeout(() => openSearch(), 220);
-            return;
-          }
-          openSearch();
-        });
+        void forwardToWorkspaceWindow()
+          .then((wasForwarded) => {
+            if (wasForwarded) return;
+            if (state !== 'expanded') {
+              setState('expanded');
+              window.setTimeout(() => openSearch(), 220);
+              return;
+            }
+            openSearch();
+          })
+          .catch(() => {
+            if (state !== 'expanded') {
+              setState('expanded');
+              window.setTimeout(() => openSearch(), 220);
+              return;
+            }
+            openSearch();
+          });
         return;
       }
 
@@ -7321,6 +7644,7 @@ function AppShell() {
       if (!token) return;
 
       handledInviteTokenRef.current = null;
+      setIsInviteOnboarding(true);
       setPendingInviteToken(token);
       window.history.replaceState({}, '', `/?token=${encodeURIComponent(token)}`);
     };
@@ -7740,14 +8064,18 @@ function AppShell() {
     if (onboardingResetUserRef.current === currentUserId) return;
     onboardingResetUserRef.current = currentUserId;
 
-    setOnboardingStep('welcome');
+    setOnboardingStep(isInviteOnboarding ? 'position' : 'welcome');
+    setOnboardingWorkspaceType(null);
+    setOnboardingWorkspaceId(null);
+    setOnboardingInviteEmails([]);
+    setOnboardingInviteRole('member');
     setOnboardingWorkspaceName('My Workspace');
     setOnboardingMode('create');
     setOnboardingInviteValue('');
-    setOnboardingSidebarPosition('right');
+    setOnboardingSidebarPosition('floating');
     setOnboardingError(null);
     setIsSavingOnboarding(false);
-  }, [postAuthStage, user?.id]);
+  }, [isInviteOnboarding, postAuthStage, user?.id]);
 
   useEffect(() => {
     const userId = user?.id ?? null;
@@ -8029,24 +8357,15 @@ function AppShell() {
 
       try {
         if (onboardingMode === 'create') {
+          if (!onboardingWorkspaceType) {
+            setOnboardingError('Choose a workspace type to continue.');
+            return;
+          }
+
           const workspaceName = onboardingWorkspaceName.trim();
           if (!workspaceName) {
             setOnboardingError('Workspace name is required.');
             return;
-          }
-
-          if (
-            activeWorkspaceId &&
-            activeWorkspace?.is_personal &&
-            activeWorkspace.owner_id === user.id
-          ) {
-            await api.updateWorkspace(activeWorkspaceId, { name: workspaceName });
-          } else {
-            await api.createWorkspace({
-              name: workspaceName,
-              is_personal: true,
-              color: '#FF5F40',
-            });
           }
         } else {
           const token = getInviteTokenFromInput(onboardingInviteValue);
@@ -8055,11 +8374,18 @@ function AppShell() {
             return;
           }
 
-          await api.acceptWorkspaceInvitation(token);
+          const acceptedWorkspace = (await api.acceptWorkspaceInvitation(token)) as {
+            workspace_id?: string | null;
+          };
+          setOnboardingWorkspaceId(acceptedWorkspace.workspace_id ?? null);
         }
 
         await refreshWorkspaces();
-        setOnboardingStep('position');
+        setOnboardingStep(
+          onboardingWorkspaceType === 'team' && onboardingMode === 'create'
+            ? 'team-invite'
+            : 'position'
+        );
       } catch (error) {
         setOnboardingError(
           error instanceof Error
@@ -8073,6 +8399,22 @@ function AppShell() {
       }
     };
 
+    const sendOnboardingInvites = async (
+      emails: string[],
+      role: 'admin' | 'member'
+    ): Promise<string[]> => {
+      // Keep invite choices in onboarding state. The workspace is created once,
+      // at the final Open Ledger action, before invitations are sent.
+      setOnboardingInviteEmails(emails);
+      setOnboardingInviteRole(role);
+      return [];
+    };
+
+    const skipOnboardingInvites = () => {
+      setOnboardingError(null);
+      setOnboardingStep('position');
+    };
+
     const openLedgerFromOnboarding = async (position: SidebarPosition) => {
       if (isSavingOnboarding) return;
 
@@ -8080,6 +8422,75 @@ function AppShell() {
       setOnboardingError(null);
 
       try {
+        let workspaceId = onboardingWorkspaceId;
+
+        if (onboardingMode === 'create') {
+          if (!onboardingWorkspaceType) {
+            setOnboardingError('Choose a workspace type to continue.');
+            return;
+          }
+
+          const workspaceName = onboardingWorkspaceName.trim();
+          if (!workspaceName) {
+            setOnboardingError('Workspace name is required.');
+            return;
+          }
+
+          if (workspaceId) {
+            await api.updateWorkspace(workspaceId, {
+              name: workspaceName,
+              is_personal: onboardingWorkspaceType === 'personal',
+            });
+          } else if (
+            activeWorkspaceId &&
+            activeWorkspace?.is_personal &&
+            activeWorkspace.owner_id === user.id &&
+            onboardingWorkspaceType === 'personal'
+          ) {
+            await api.updateWorkspace(activeWorkspaceId, { name: workspaceName });
+            workspaceId = activeWorkspaceId;
+          } else {
+            const createdWorkspace = (await api.createWorkspace({
+              name: workspaceName,
+              is_personal: onboardingWorkspaceType === 'personal',
+              color: '#FF5F40',
+            })) as { workspace_id?: string | null };
+            workspaceId = createdWorkspace.workspace_id ?? null;
+          }
+
+          setOnboardingWorkspaceId(workspaceId);
+        }
+
+        if (
+          onboardingWorkspaceType === 'team' &&
+          workspaceId &&
+          onboardingInviteEmails.length > 0
+        ) {
+          const results = await Promise.all(
+            onboardingInviteEmails.map(async (email) => {
+              try {
+                await api.createWorkspaceInvitation(workspaceId as string, {
+                  email,
+                  role: onboardingInviteRole,
+                });
+                return { email, failed: false };
+              } catch {
+                return { email, failed: true };
+              }
+            })
+          );
+          const failedEmails = results
+            .filter((result) => result.failed)
+            .map((result) => result.email);
+
+          if (failedEmails.length > 0) {
+            toast.show('Some invitations could not be sent', {
+              detail: `${failedEmails.join(', ')} can be invited later from Members & access.`,
+              variant: 'error',
+            });
+          }
+        }
+
         setPosition(position);
         saveSidebarPreferences({ ...sidebarPreferences, position });
         await window.desktopWindow?.applySidebarPreferences({ position }).catch(() => undefined);
@@ -8100,6 +8511,7 @@ function AppShell() {
         workspaceName={onboardingWorkspaceName}
         inviteValue={onboardingInviteValue}
         selectedPosition={onboardingSidebarPosition}
+        selectedWorkspaceType={onboardingWorkspaceType}
         isSaving={isSavingOnboarding}
         error={onboardingError}
         onStepChange={(nextStep) => {
@@ -8110,6 +8522,18 @@ function AppShell() {
           setOnboardingError(null);
           setOnboardingMode(nextMode);
         }}
+        onWorkspaceTypeChange={(nextType) => {
+          setOnboardingError(null);
+          setOnboardingWorkspaceType(nextType);
+        }}
+        onSkipSetup={() => {
+          setOnboardingError(null);
+          setOnboardingWorkspaceType('personal');
+          setOnboardingMode('create');
+          setOnboardingStep('workspace');
+        }}
+        onInviteSubmit={sendOnboardingInvites}
+        onInviteSkip={skipOnboardingInvites}
         onWorkspaceNameChange={(value) => {
           setOnboardingError(null);
           setOnboardingWorkspaceName(value);
@@ -8160,7 +8584,8 @@ function App() {
   useEffect(() => {
     const handleToggleNotificationTray = () => setIsNotificationTrayOpen((current) => !current);
     window.addEventListener(NOTIFICATION_TRAY_TOGGLE_EVENT, handleToggleNotificationTray);
-    return () => window.removeEventListener(NOTIFICATION_TRAY_TOGGLE_EVENT, handleToggleNotificationTray);
+    return () =>
+      window.removeEventListener(NOTIFICATION_TRAY_TOGGLE_EVENT, handleToggleNotificationTray);
   }, []);
 
   return (
