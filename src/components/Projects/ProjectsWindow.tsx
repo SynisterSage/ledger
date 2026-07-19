@@ -130,6 +130,16 @@ type TaskRow = {
   updated_at: string;
 };
 
+type ProjectsDataCacheEntry = {
+  updatedAt: number;
+  rows: ProjectRow[];
+};
+
+type TasksDataCacheEntry = {
+  updatedAt: number;
+  rows: TaskRow[];
+};
+
 type ProjectStatusFilter = 'all' | 'active' | 'paused' | 'completed';
 type ProjectSemanticStatus = 'not_started' | 'in_progress' | 'paused' | 'completed';
 type ProjectTab = 'overview' | 'actions' | 'notes' | 'calendar' | 'activity';
@@ -587,6 +597,10 @@ export const ProjectsWindow = () => {
   const milestoneNameInputRef = useRef<HTMLInputElement | null>(null);
   const createProjectInputRef = useRef<HTMLInputElement | null>(null);
   const briefTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const projectsDataCacheRef = useRef(new Map<string, ProjectsDataCacheEntry>());
+  const tasksDataCacheRef = useRef(new Map<string, TasksDataCacheEntry>());
+  const hasLoadedProjectsDataRef = useRef(false);
+  const hasLoadedTasksDataRef = useRef(false);
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [tasks, setTasks] = useState<TaskRow[]>([]);
@@ -1534,6 +1548,7 @@ export const ProjectsWindow = () => {
 
   const loadProjects = useCallback(async () => {
     if (!user || !activeWorkspaceId) {
+      hasLoadedProjectsDataRef.current = false;
       setProjects([]);
       setSelectedProjectId(null);
       setProjectDraft(makeEmptyProjectDraft());
@@ -1541,12 +1556,30 @@ export const ProjectsWindow = () => {
       setError(null);
       return;
     }
-    setIsLoadingProjects(true);
+    const cacheKey = activeWorkspaceId;
+    const cached = projectsDataCacheRef.current.get(cacheKey);
+    const isCacheFresh = Boolean(cached && Date.now() - cached.updatedAt < 45_000);
+    if (cached) {
+      hasLoadedProjectsDataRef.current = true;
+      const cachedRows = cached.rows;
+      setProjects(cachedRows);
+      setSelectedProjectId((currentId) => {
+        if (currentId && cachedRows.some((project) => project.id === currentId)) return currentId;
+        isDirtyRef.current = false;
+        setProjectDraft(makeEmptyProjectDraft());
+        return null;
+      });
+    }
+    if (!cached) setIsLoadingProjects(true);
     setError(null);
+
+    if (isCacheFresh) return;
 
     try {
       const data = await api.getProjects({ includeCompleted: true });
       const rows = (data ?? []) as ProjectRow[];
+      hasLoadedProjectsDataRef.current = true;
+      projectsDataCacheRef.current.set(cacheKey, { updatedAt: Date.now(), rows });
       setProjects(rows);
 
       setSelectedProjectId((currentId) => {
@@ -1569,17 +1602,29 @@ export const ProjectsWindow = () => {
 
   const loadTasks = useCallback(async () => {
     if (!user || !activeWorkspaceId) {
+      hasLoadedTasksDataRef.current = false;
       setTasks([]);
       setIsLoadingTasks(false);
       return;
     }
 
-    setIsLoadingTasks(true);
+    const cacheKey = activeWorkspaceId;
+    const cached = tasksDataCacheRef.current.get(cacheKey);
+    const isCacheFresh = Boolean(cached && Date.now() - cached.updatedAt < 45_000);
+    if (cached) {
+      hasLoadedTasksDataRef.current = true;
+      setTasks(cached.rows);
+    }
+    if (!cached) setIsLoadingTasks(true);
     setTaskError(null);
+
+    if (isCacheFresh) return;
 
     try {
       const data = await api.getTasks();
       const rows = (data ?? []) as TaskRow[];
+      hasLoadedTasksDataRef.current = true;
+      tasksDataCacheRef.current.set(cacheKey, { updatedAt: Date.now(), rows });
       setTasks(rows);
       setSelectedTaskId((current) => {
         if (!selectedProjectId) return null;
@@ -1599,6 +1644,22 @@ export const ProjectsWindow = () => {
       setIsLoadingTasks(false);
     }
   }, [api, activeWorkspaceId, selectedProjectId, user]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !hasLoadedProjectsDataRef.current || isLoadingProjects) return;
+    projectsDataCacheRef.current.set(activeWorkspaceId, {
+      updatedAt: Date.now(),
+      rows: projects,
+    });
+  }, [activeWorkspaceId, isLoadingProjects, projects]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !hasLoadedTasksDataRef.current || isLoadingTasks) return;
+    tasksDataCacheRef.current.set(activeWorkspaceId, {
+      updatedAt: Date.now(),
+      rows: tasks,
+    });
+  }, [activeWorkspaceId, isLoadingTasks, tasks]);
 
   const flushProjectDraft = useCallback(async () => {
     if (!selectedProject) return null;
@@ -5891,15 +5952,13 @@ export const ProjectsWindow = () => {
         stripTitle="Projects"
         globalActions={
           <>
-            {projectsHeaderDensity !== 'compact' && (
-              <ModuleHeaderStripAction
-                icon={<Inbox size={12} />}
-                count={inboxCount}
-                onClick={() => window.desktopWindow?.toggleModule('inbox')}
-                title="Open Intake"
-                ariaLabel="Open Intake"
-              />
-            )}
+            <ModuleHeaderStripAction
+              icon={<Inbox size={12} />}
+              count={inboxCount}
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              title="Open Intake"
+              ariaLabel="Open Intake"
+            />
             <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
@@ -5911,7 +5970,7 @@ export const ProjectsWindow = () => {
           </>
         }
         primaryActions={
-          <div className="flex items-center gap-2">
+          <div className="mr-1 flex items-center gap-1">
             <ModuleHeaderActionButton
               onClick={() => {
                 if (isCreatingProject) {

@@ -58,7 +58,10 @@ const TAB_GAP = 4;
 const TAB_FALLBACK_WIDTH = 132;
 const OVERFLOW_CONTROL_WIDTH = 42;
 const TAB_SESSION_STORAGE_KEY = 'ledger:window-tabs:v1';
+const TAB_ACTIVE_ROUTE_SESSION_KEY = 'ledger:active-tab-route:v1';
 const TAB_TRANSFER_ID = new URLSearchParams(window.location.search).get('tabTransferId');
+
+let immediateRouteHint: LedgerRoute | null = null;
 
 const routeKey = (route: LedgerRoute) => {
   if (route.kind === 'new-tab') return `new-tab|${route.focusContext ?? 'default'}`;
@@ -73,9 +76,8 @@ const routeKey = (route: LedgerRoute) => {
     case 'circle':
       return 'circle';
     case 'teams':
-      return route.focusContext?.startsWith('team:')
-        ? `teams|team|${route.focusContext.slice('team:'.length)}`
-        : 'teams';
+      // Team detail is focus state within the Teams workspace, not a second tab.
+      return 'teams';
     case 'calendar':
     case 'dashboard':
     case 'inbox':
@@ -98,7 +100,8 @@ const routeLabel = (
   route: LedgerRoute,
   projectTitle?: string,
   noteTitle?: string,
-  circlePersonTitle?: string
+  circlePersonTitle?: string,
+  teamTitle?: string
 ) => {
   switch (route.kind) {
     case 'new-tab':
@@ -118,7 +121,7 @@ const routeLabel = (
           : 'Circle'
         : 'Circle';
     case 'teams':
-      return route.focusContext?.startsWith('team:') ? 'Teams · Team' : 'Teams';
+      return route.focusContext?.startsWith('team:') ? teamTitle || 'Team' : 'Teams';
     case 'inbox':
       return 'Intake';
     case 'notifications':
@@ -176,7 +179,54 @@ const createNewTabRoute = (): LedgerRoute => ({
   focusContext: `new-tab:${crypto.randomUUID()}`,
 });
 
+const rememberRouteHint = (route: LedgerRoute) => {
+  immediateRouteHint = route;
+  try {
+    sessionStorage.setItem(TAB_ACTIVE_ROUTE_SESSION_KEY, JSON.stringify(route));
+  } catch {
+    // Keep the in-memory hint authoritative when sessionStorage is unavailable.
+  }
+};
+
+const getInitialRouteHint = (): LedgerRoute | null => {
+  if (immediateRouteHint) return immediateRouteHint;
+  try {
+    return normalizeRoute(
+      JSON.parse(sessionStorage.getItem(TAB_ACTIVE_ROUTE_SESSION_KEY) ?? 'null') as
+        | ModuleFocusPayload
+        | null
+    );
+  } catch {
+    return null;
+  }
+};
+
+const getInitialTabOrder = (): LedgerRoute[] => {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(TAB_SESSION_STORAGE_KEY) ?? 'null');
+    if (!Array.isArray(saved)) return [];
+
+    const seen = new Set<string>();
+    return saved.flatMap((item) => {
+      const route = normalizeRoute(item as ModuleFocusPayload);
+      if (!route) return [];
+      const key = isNewTabRoute(route) ? 'new-tab' : routeKey(route);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [route];
+    });
+  } catch {
+    return [];
+  }
+};
+
 const selectWorkspaceTabRoute = (route: LedgerRoute) => {
+  // Update the local module shell immediately; Electron remains authoritative
+  // for the persisted workspace route and history state.
+  rememberRouteHint(route);
+  window.dispatchEvent(
+    new CustomEvent('ledger:workspace-route-requested', { detail: { ...route } })
+  );
   const selector = window.desktopWindow?.selectWorkspaceRoute;
   if (selector) {
     void selector(route);
@@ -258,19 +308,22 @@ export const LedgerTab = ({
 
 export const LedgerTabStrip = () => {
   const { activeWorkspaceId } = useWorkspaceContext();
-  const { getNotes, getPerson, getProjects } = useApi();
+  const { getNotes, getPerson, getProjects, getTeams } = useApi();
   const toast = useToast();
   const [navigationState, setNavigationState] = useState<NavigationState>({});
-  const [tabOrder, setTabOrder] = useState<LedgerRoute[]>([]);
-  const [visualRouteOverride, setVisualRouteOverride] = useState<LedgerRoute | null>(null);
+  const [tabOrder, setTabOrder] = useState<LedgerRoute[]>(getInitialTabOrder);
+  const [visualRouteOverride, setVisualRouteOverride] = useState<LedgerRoute | null>(
+    getInitialRouteHint
+  );
   const [closedTabKeys, setClosedTabKeys] = useState<Set<string>>(new Set());
   const [stripWidth, setStripWidth] = useState(0);
   const [tabWidths, setTabWidths] = useState<Record<string, number>>({});
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const stripRef = useRef<HTMLDivElement | null>(null);
   const measurementRef = useRef<HTMLDivElement | null>(null);
-  const tabOrderRef = useRef<LedgerRoute[]>([]);
+  const tabOrderRef = useRef<LedgerRoute[]>(getInitialTabOrder());
   const currentRouteRef = useRef<LedgerRoute | null>(null);
+  const visualCurrentRouteRef = useRef<LedgerRoute | null>(null);
   const closedTabKeysRef = useRef<Set<string>>(new Set());
   const pendingCloseKeyRef = useRef<string | null>(null);
   const suppressInitialRouteRef = useRef(false);
@@ -287,6 +340,7 @@ export const LedgerTabStrip = () => {
   const [projectTitles, setProjectTitles] = useState<Record<string, string>>({});
   const [noteTitles, setNoteTitles] = useState<Record<string, string>>({});
   const [circlePersonTitles, setCirclePersonTitles] = useState<Record<string, string>>({});
+  const [teamTitles, setTeamTitles] = useState<Record<string, string>>({});
 
   const currentRoute = normalizeRoute(navigationState.currentRoute);
   const visualCurrentRoute = visualRouteOverride ?? currentRoute;
@@ -320,6 +374,18 @@ export const LedgerTabStrip = () => {
           tabOrder
             .map(getCirclePersonId)
             .filter((personId): personId is string => Boolean(personId))
+        )
+      ),
+    [tabOrder]
+  );
+  const teamIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          tabOrder
+            .filter((route) => route.kind === 'teams' && route.focusContext?.startsWith('team:'))
+            .map((route) => route.focusContext?.slice('team:'.length) ?? '')
+            .filter(Boolean)
         )
       ),
     [tabOrder]
@@ -409,10 +475,12 @@ export const LedgerTabStrip = () => {
             .map((value) => value?.trim())
             .find((value) => {
               const normalized = value?.toLowerCase() ?? '';
-              return Boolean(value) &&
+              return (
+                Boolean(value) &&
                 !isEmailAddress(value as string) &&
                 normalized !== email &&
-                normalized !== emailLocalPart;
+                normalized !== emailLocalPart
+              );
             });
           return name ? ([personId, name] as const) : null;
         } catch {
@@ -433,13 +501,44 @@ export const LedgerTabStrip = () => {
     };
   }, [activeWorkspaceId, circlePersonIds, getPerson]);
 
+  useEffect(() => {
+    if (teamIds.length === 0) {
+      setTeamTitles({});
+      return;
+    }
+
+    let cancelled = false;
+    void getTeams({ includeArchived: true })
+      .then((payload) => {
+        if (cancelled) return;
+        const rows = Array.isArray(payload)
+          ? payload
+          : Array.isArray((payload as { teams?: unknown[] })?.teams)
+          ? (payload as { teams: unknown[] }).teams
+          : [];
+        const titles: Record<string, string> = {};
+        for (const team of rows as Array<{ id?: string; name?: string }>) {
+          if (team.id && team.name?.trim()) titles[team.id] = team.name.trim();
+        }
+        setTeamTitles(titles);
+      })
+      .catch(() => {
+        // Keep the generic team label if metadata is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, getTeams, teamIds]);
+
   const getTabTitle = (route: LedgerRoute) =>
     routeLabel(
       route,
       route.focusProjectId ? projectTitles[route.focusProjectId] : undefined,
       route.focusNoteId ? noteTitles[route.focusNoteId] : undefined,
-      getCirclePersonId(route)
-        ? circlePersonTitles[getCirclePersonId(route) as string]
+      getCirclePersonId(route) ? circlePersonTitles[getCirclePersonId(route) as string] : undefined,
+      route.kind === 'teams' && route.focusContext?.startsWith('team:')
+        ? teamTitles[route.focusContext.slice('team:'.length)]
         : undefined
     );
 
@@ -450,6 +549,10 @@ export const LedgerTabStrip = () => {
   useEffect(() => {
     currentRouteRef.current = currentRoute;
   }, [currentRoute]);
+
+  useEffect(() => {
+    visualCurrentRouteRef.current = visualCurrentRoute;
+  }, [visualCurrentRoute]);
 
   useEffect(() => {
     if (!visualRouteOverride || !currentRoute) return;
@@ -598,12 +701,58 @@ export const LedgerTabStrip = () => {
   }, [tabOrder]);
 
   useEffect(() => {
+    if (tabOrder.length < 2) return;
+    const seen = new Set<string>();
+    const deduped = tabOrder.filter((route) => {
+      const key = routeKey(route);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (deduped.length === tabOrder.length) return;
+    tabOrderRef.current = deduped;
+    setTabOrder(deduped);
+  }, [tabOrder]);
+
+  useEffect(() => {
     const handleState = (_event: unknown, state?: NavigationState) => {
       if (state) setNavigationState(state);
     };
     window.ipcRenderer?.on?.('workspace:navigation-state', handleState as any);
     return () => {
       window.ipcRenderer?.off?.('workspace:navigation-state', handleState as any);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleRouteRequested = (_event: unknown, nextRoute?: ModuleFocusPayload | null) => {
+      const route = normalizeRoute(nextRoute);
+      if (!route) return;
+      rememberRouteHint(route);
+      setVisualRouteOverride(route);
+      const key = routeKey(route);
+      if (!closedTabKeysRef.current.has(key)) return;
+      const nextClosed = new Set(closedTabKeysRef.current);
+      nextClosed.delete(key);
+      closedTabKeysRef.current = nextClosed;
+      setClosedTabKeys(nextClosed);
+    };
+
+    const handleLocalRouteRequested = (event: Event) => {
+      const route = normalizeRoute(
+        (event as CustomEvent<ModuleFocusPayload>).detail as ModuleFocusPayload | undefined
+      );
+      if (route) {
+        rememberRouteHint(route);
+        setVisualRouteOverride(route);
+      }
+    };
+
+    window.ipcRenderer?.on?.('workspace:route-requested', handleRouteRequested as any);
+    window.addEventListener('ledger:workspace-route-requested', handleLocalRouteRequested);
+    return () => {
+      window.ipcRenderer?.off?.('workspace:route-requested', handleRouteRequested as any);
+      window.removeEventListener('ledger:workspace-route-requested', handleLocalRouteRequested);
     };
   }, []);
 
@@ -638,6 +787,8 @@ export const LedgerTabStrip = () => {
     // Explicit tab selection clears the closed key before opening the route.
     if (currentRoute && nextClosed.has(currentKey ?? '')) {
       const prunedOrder = nextOrder.filter((route) => !nextClosed.has(routeKey(route)));
+      const fallbackRoute = prunedOrder[0] ?? createNewTabRoute();
+      if (prunedOrder.length === 0) prunedOrder.push(fallbackRoute);
       if (prunedOrder.length !== nextOrder.length) {
         tabOrderRef.current = prunedOrder;
         setTabOrder(prunedOrder);
@@ -647,6 +798,8 @@ export const LedgerTabStrip = () => {
           // Keep the in-memory tab state authoritative when storage is unavailable.
         }
       }
+      setVisualRouteOverride(fallbackRoute);
+      selectWorkspaceTabRoute(fallbackRoute);
       return;
     }
 
@@ -655,8 +808,7 @@ export const LedgerTabStrip = () => {
       const existingNewTab = nextOrder[existingNewTabIndex];
       nextOrder[existingNewTabIndex] = currentRoute;
       const newTabOrderChanged =
-        nextOrder.length !== tabOrderRef.current.length ||
-        !sameRoute(existingNewTab, currentRoute);
+        nextOrder.length !== tabOrderRef.current.length || !sameRoute(existingNewTab, currentRoute);
       if (newTabOrderChanged) {
         tabOrderRef.current = nextOrder;
         setTabOrder(nextOrder);
@@ -813,68 +965,76 @@ export const LedgerTabStrip = () => {
   }, [stripWidth, tabOrder, tabWidths, visualCurrentRoute]);
 
   const closeTab = useCallback((route: LedgerRoute) => {
-      const key = routeKey(route);
-      const currentTabOrder = tabOrderRef.current;
-      const index = currentTabOrder.findIndex((item) => sameRoute(item, route));
-      if (index < 0) return;
+    const key = routeKey(route);
+    const currentTabOrder = tabOrderRef.current;
+    const index = currentTabOrder.findIndex((item) => sameRoute(item, route));
+    if (index < 0) return;
 
-      const nextOrder = currentTabOrder.filter((item) => !sameRoute(item, route));
-      tabOrderRef.current = nextOrder;
-      setTabOrder(nextOrder);
-      const nextClosed = new Set(closedTabKeysRef.current);
-      nextClosed.add(key);
-      closedTabKeysRef.current = nextClosed;
-      setClosedTabKeys(nextClosed);
-      setIsOverflowOpen(false);
-      try {
-        sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(nextOrder));
-      } catch {
-        // The in-memory tab state remains authoritative when storage is unavailable.
-      }
-      void window.desktopWindow?.closeWorkspaceRoute?.(route);
-
-      if (nextOrder.length === 0) {
-        if (isNewTabRoute(route)) {
-          try {
-            sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
-          } catch {
-            // Keep the sidebar-only state usable when storage is unavailable.
-          }
-          void window.desktopWindow?.closeModule?.(route.kind);
-          return;
-        }
-
-        const newTab = createNewTabRoute();
-        tabOrderRef.current = [newTab];
-        setTabOrder([newTab]);
-        setVisualRouteOverride(newTab);
-        closedTabKeysRef.current = new Set();
-        setClosedTabKeys(closedTabKeysRef.current);
+    const nextOrder = currentTabOrder.filter((item) => !sameRoute(item, route));
+    tabOrderRef.current = nextOrder;
+    setTabOrder(nextOrder);
+    const nextClosed = new Set(closedTabKeysRef.current);
+    nextClosed.add(key);
+    closedTabKeysRef.current = nextClosed;
+    setClosedTabKeys(nextClosed);
+    setIsOverflowOpen(false);
+    try {
+      sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(nextOrder));
+    } catch {
+      // The in-memory tab state remains authoritative when storage is unavailable.
+    }
+    if (nextOrder.length === 0) {
+      if (isNewTabRoute(route)) {
         try {
-          sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify([newTab]));
+          sessionStorage.removeItem(TAB_SESSION_STORAGE_KEY);
         } catch {
-          // Keep the in-memory tab usable when storage is unavailable.
+          // Keep the sidebar-only state usable when storage is unavailable.
         }
-        selectWorkspaceTabRoute(newTab);
+        void window.desktopWindow?.closeModule?.(route.kind);
         return;
       }
 
-      const currentRoute = currentRouteRef.current;
-      if (!currentRoute) return;
-      if (!sameRoute(route, currentRoute)) {
-        // Closing an inactive tab must still re-assert the visible route.
-        // Hidden keep-alive modules can otherwise publish their stale route
-        // after the close and resurrect the tab that was just removed.
-        selectWorkspaceTabRoute(currentRoute);
-        return;
+      const newTab = createNewTabRoute();
+      tabOrderRef.current = [newTab];
+      setTabOrder([newTab]);
+      setVisualRouteOverride(newTab);
+      closedTabKeysRef.current = new Set();
+      setClosedTabKeys(closedTabKeysRef.current);
+      try {
+        sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify([newTab]));
+      } catch {
+        // Keep the in-memory tab usable when storage is unavailable.
       }
-      const nextRoute = nextOrder[index - 1] ?? nextOrder[index];
-      if (nextRoute) {
-        pendingCloseKeyRef.current = key;
-        setVisualRouteOverride(nextRoute);
-        selectWorkspaceTabRoute(nextRoute);
-      }
-    }, []);
+      selectWorkspaceTabRoute(newTab);
+      void window.desktopWindow?.closeWorkspaceRoute?.(route);
+      return;
+    }
+
+    const activeRoute = visualCurrentRouteRef.current ?? currentRouteRef.current;
+    const activeRouteIsStillOpen = Boolean(
+      activeRoute && nextOrder.some((candidate) => sameRoute(candidate, activeRoute))
+    );
+    const nextRoute = [nextOrder[index - 1], nextOrder[index], ...nextOrder].find(
+      (candidate) => candidate && !closedTabKeysRef.current.has(routeKey(candidate))
+    );
+
+    if (activeRoute && !sameRoute(route, activeRoute) && activeRouteIsStillOpen) {
+      // Closing an inactive tab must still re-assert the visible route.
+      // Hidden keep-alive modules can otherwise publish their stale route
+      // after the close and resurrect the tab that was just removed.
+      selectWorkspaceTabRoute(activeRoute);
+      void window.desktopWindow?.closeWorkspaceRoute?.(route);
+      return;
+    }
+    if (nextRoute) {
+      pendingCloseKeyRef.current = key;
+      setVisualRouteOverride(nextRoute);
+      selectWorkspaceTabRoute(nextRoute);
+      void window.desktopWindow?.closeWorkspaceRoute?.(route);
+      return;
+    }
+    void window.desktopWindow?.closeWorkspaceRoute?.(route);
+  }, []);
 
   const finishTabDrag = useCallback(
     async (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -997,21 +1157,19 @@ export const LedgerTabStrip = () => {
   useEffect(() => {
     const handleCloseTabShortcut = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'w') return;
-      if (!currentRoute) return;
+      const routeToClose = visualCurrentRouteRef.current ?? currentRouteRef.current;
+      if (!routeToClose) return;
+      if (!tabOrderRef.current.some((route) => sameRoute(route, routeToClose))) return;
 
       event.preventDefault();
       event.stopPropagation();
 
-      if (tabOrder.length > 1 && tabOrder.some((route) => sameRoute(route, currentRoute))) {
-        closeTab(currentRoute);
-        return;
-      }
-      closeTab(currentRoute);
+      closeTab(routeToClose);
     };
 
-    window.addEventListener('keydown', handleCloseTabShortcut);
-    return () => window.removeEventListener('keydown', handleCloseTabShortcut);
-  }, [closeTab, currentRoute, tabOrder.length]);
+    window.addEventListener('keydown', handleCloseTabShortcut, true);
+    return () => window.removeEventListener('keydown', handleCloseTabShortcut, true);
+  }, [closeTab]);
 
   useEffect(() => {
     const cancelTabDrag = (event: KeyboardEvent) => {
@@ -1036,7 +1194,8 @@ export const LedgerTabStrip = () => {
           ? tabOrderRef.current.findIndex((route) => sameRoute(route, currentRoute))
           : 0;
         const direction = event.shiftKey ? -1 : 1;
-        const nextIndex = (activeIndex + direction + tabOrderRef.current.length) % tabOrderRef.current.length;
+        const nextIndex =
+          (activeIndex + direction + tabOrderRef.current.length) % tabOrderRef.current.length;
         selectTab(tabOrderRef.current[nextIndex]);
         return;
       }
@@ -1081,7 +1240,17 @@ export const LedgerTabStrip = () => {
       return;
     }
     const created = createNewTabRoute();
-    const nextOrder = [...tabOrder, created];
+    const currentOrder = tabOrderRef.current;
+    const activeRoute = visualCurrentRouteRef.current ?? currentRouteRef.current;
+    const activeIndex = activeRoute
+      ? currentOrder.findIndex((route) => sameRoute(route, activeRoute))
+      : -1;
+    const insertAt = activeIndex >= 0 ? activeIndex + 1 : currentOrder.length;
+    const nextOrder = [
+      ...currentOrder.slice(0, insertAt),
+      created,
+      ...currentOrder.slice(insertAt),
+    ];
     tabOrderRef.current = nextOrder;
     setTabOrder(nextOrder);
     setVisualRouteOverride(created);

@@ -6207,10 +6207,22 @@ app.delete('/api/account', authMiddleware, rateLimit('write'), async (req, res) 
 
       if (membersResult.error) throw membersResult.error;
 
-      const successor = (membersResult.data ?? []).sort((a, b) => {
+      const memberRows = membersResult.data ?? [];
+      const memberIds = memberRows.map((member) => member.user_id).filter(Boolean);
+      const existingUsersResult = memberIds.length
+        ? await supabase.from('users').select('id').in('id', memberIds)
+        : { data: [], error: null };
+      if (existingUsersResult.error) throw existingUsersResult.error;
+      const existingUserIds = new Set(
+        (existingUsersResult.data ?? []).map((member) => String(member.id))
+      );
+
+      const successor = memberRows
+        .filter((member) => existingUserIds.has(String(member.user_id)))
+        .sort((a, b) => {
         const rank = { admin: 0, member: 1, viewer: 2 };
         return (rank[a.role] ?? 3) - (rank[b.role] ?? 3);
-      })[0];
+        })[0];
 
       const transferWorkspace = await supabase
         .from('workspaces')
@@ -6228,6 +6240,14 @@ app.delete('/api/account', authMiddleware, rateLimit('write'), async (req, res) 
       }
     }
 
+    // Final defensive detach: no workspace may still reference the account
+    // when Supabase removes public.users through auth.admin.deleteUser().
+    const clearRemainingOwnership = await supabase
+      .from('workspaces')
+      .update({ owner_id: null })
+      .eq('owner_id', userId);
+    if (clearRemainingOwnership.error) throw clearRemainingOwnership.error;
+
     const removeMemberships = await supabase
       .from('workspace_members')
       .delete()
@@ -6235,7 +6255,12 @@ app.delete('/api/account', authMiddleware, rateLimit('write'), async (req, res) 
     if (removeMemberships.error) throw removeMemberships.error;
 
     const deleteUser = await supabase.auth.admin.deleteUser(userId);
-    if (deleteUser.error) throw deleteUser.error;
+    if (deleteUser.error) {
+      // The admin operation can complete before a downstream FK response is
+      // surfaced. Treat an already-absent auth user as an idempotent success.
+      const remainingUser = await supabase.auth.admin.getUserById(userId);
+      if (remainingUser.data?.user) throw deleteUser.error;
+    }
 
     return res.json({ ok: true });
   } catch (error) {

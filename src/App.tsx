@@ -58,6 +58,7 @@ import { useApi } from './hooks/useApi';
 import { useSidebar } from './context/SidebarContext';
 import { MainLayout } from './components/Common/MainLayout';
 import {
+  ModuleHeaderActionButton,
   ModuleHeaderStripAction,
   ModuleHeaderSegmentedButton,
   ModuleHeaderSegmentedGroup,
@@ -248,6 +249,71 @@ const dashboardTheme = {
   hoverRow:
     'transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
 };
+
+type OverviewDensity = 'list' | 'compact';
+type OverviewGroupBy = 'none' | 'status' | 'type' | 'project' | 'dueDate' | 'assignee' | 'team';
+type OverviewProperty =
+  | 'priority'
+  | 'project'
+  | 'dueDate'
+  | 'assignee'
+  | 'team'
+  | 'members'
+  | 'progress'
+  | 'linkedNotes'
+  | 'updated';
+
+type OverviewLayoutPreferences = {
+  density: OverviewDensity;
+  groupBy: OverviewGroupBy;
+  visibleProperties: OverviewProperty[];
+};
+
+const defaultOverviewLayoutPreferences: OverviewLayoutPreferences = {
+  density: 'list',
+  groupBy: 'none',
+  visibleProperties: ['priority', 'project', 'dueDate', 'assignee', 'team', 'members', 'progress'],
+};
+
+const overviewPopoverClassName =
+  'absolute right-0 top-full z-40 mt-2 w-[320px] max-w-[calc(100vw-16px)] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_14px_34px_rgba(15,23,42,0.12)]';
+const overviewPopoverSectionLabelClassName =
+  'px-3 pb-1 pt-2 text-[10px] font-medium text-[var(--ledger-text-muted)]';
+
+const OverviewPopoverRow = ({
+  children,
+  onClick,
+  selected = false,
+  role,
+  ariaChecked,
+  ariaSelected,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  selected?: boolean;
+  role?: 'menuitemradio' | 'menuitemcheckbox';
+  ariaChecked?: boolean;
+  ariaSelected?: boolean;
+}) => (
+  <button
+    type="button"
+    role={role}
+    aria-checked={ariaChecked}
+    aria-selected={ariaSelected}
+    onClick={onClick}
+    className={`flex min-h-8 w-full items-center gap-2 rounded-md px-3 text-left text-[12px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30 ${
+      selected
+        ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+    }`}
+  >
+    {children}
+  </button>
+);
+
+const OverviewPopoverDivider = () => (
+  <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />
+);
 
 const overviewProjectTypeOptions = [
   { id: 'code', label: 'Code', color: '#3B82F6', icon: Code2 },
@@ -1086,6 +1152,14 @@ function OnboardingFlow({
   );
 }
 
+type DashboardCacheState = Record<string, unknown>;
+
+const DASHBOARD_CACHE_MAX_AGE = 45_000;
+const dashboardCache = new Map<
+  string,
+  { updatedAt: number; refreshToken: number; state: DashboardCacheState }
+>();
+
 // Dashboard content component
 function DashboardContent() {
   const { user } = useAuthContext();
@@ -1296,6 +1370,7 @@ function DashboardContent() {
   const overviewFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const overviewCreateMenuRef = useRef<HTMLDivElement | null>(null);
   const overviewViewMenuRef = useRef<HTMLDivElement | null>(null);
+  const overviewDisplayMenuRef = useRef<HTMLDivElement | null>(null);
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [calendarScope, setCalendarScope] = useState<
     'current_workspace' | 'all_accessible_workspaces'
@@ -1408,6 +1483,8 @@ function DashboardContent() {
       }
     | null
   >(null);
+  const [isOverviewRescheduleOpen, setIsOverviewRescheduleOpen] = useState(false);
+  const [overviewRescheduleDate, setOverviewRescheduleDate] = useState('');
   const currentDashboardSection =
     new URLSearchParams(window.location.search).get('section')?.trim() ?? moduleSection;
   type OverviewTab = 'all' | 'assigned' | 'today' | 'projects' | 'notes';
@@ -1441,7 +1518,8 @@ function DashboardContent() {
   useEffect(() => {
     if (isPersonalWorkspace && overviewTab === 'assigned') setOverviewTab('all');
   }, [isPersonalWorkspace, overviewTab]);
-  const [overviewLayout, setOverviewLayout] = useState<'list' | 'compact'>('list');
+  const [overviewLayoutPreferences, setOverviewLayoutPreferences] =
+    useState<OverviewLayoutPreferences>(defaultOverviewLayoutPreferences);
   const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const [isOverviewDisplayOpen, setIsOverviewDisplayOpen] = useState(false);
   const [overviewFilters, setOverviewFilters] = useState<OverviewFilters>(() => ({
@@ -1524,10 +1602,62 @@ function DashboardContent() {
     }
   });
   const hasLoadedDashboardRef = useRef(false);
+  const dashboardHydrationRef = useRef(false);
+  const dashboardCacheWriteTokenRef = useRef(0);
   const dashboardDayRef = useRef(todayKey());
   const handleDashboardWorkspaceRefresh = useCallback(() => {
     setDashboardRefreshToken((current) => current + 1);
   }, []);
+
+  const hydrateDashboardCache = (cached: { state: DashboardCacheState }) => {
+    setDaily(cached.state.daily as typeof daily);
+    setTodayTasks(cached.state.todayTasks as typeof todayTasks);
+    setUpcomingReminders(cached.state.upcomingReminders as typeof upcomingReminders);
+    setWorkspaceTasks(cached.state.workspaceTasks as typeof workspaceTasks);
+    setProjects(cached.state.projects as typeof projects);
+    setUpcoming(cached.state.upcoming as typeof upcoming);
+    setNotes(cached.state.notes as typeof notes);
+    setWorkspaceTeams(cached.state.workspaceTeams as typeof workspaceTeams);
+    setNoteProjectLinks(cached.state.noteProjectLinks as typeof noteProjectLinks);
+    setFollowUpTasks(cached.state.followUpTasks as typeof followUpTasks);
+  };
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !hasLoadedDashboardRef.current || isLoadingDashboard) return;
+    if (dashboardHydrationRef.current) {
+      dashboardHydrationRef.current = false;
+      return;
+    }
+    dashboardCache.set(activeWorkspaceId, {
+      updatedAt: Date.now(),
+      refreshToken: dashboardCacheWriteTokenRef.current,
+      state: {
+        daily,
+        todayTasks,
+        upcomingReminders,
+        workspaceTasks,
+        projects,
+        upcoming,
+        notes,
+        workspaceTeams,
+        noteProjectLinks,
+        followUpTasks,
+      },
+    });
+  }, [
+    activeWorkspaceId,
+    daily,
+    followUpTasks,
+    isLoadingDashboard,
+    noteProjectLinks,
+    notes,
+    projects,
+    todayTasks,
+    upcoming,
+    upcomingReminders,
+    workspaceTasks,
+    workspaceTeams,
+  ]);
 
   const openOverviewLinkProjectModal = useCallback(
     async (noteId: string) => {
@@ -1911,9 +2041,19 @@ function DashboardContent() {
 
     const loadDashboard = async () => {
       const isInitialLoad = !hasLoadedDashboardRef.current;
+      const cached = dashboardCache.get(activeWorkspaceId);
+
+      if (cached && cached.refreshToken === dashboardRefreshToken) {
+        dashboardHydrationRef.current = true;
+        dashboardCacheWriteTokenRef.current = cached.refreshToken;
+        hydrateDashboardCache(cached);
+        hasLoadedDashboardRef.current = true;
+        setIsLoadingDashboard(false);
+        if (Date.now() - cached.updatedAt < DASHBOARD_CACHE_MAX_AGE) return;
+      }
 
       try {
-        if (isInitialLoad) {
+        if (isInitialLoad && !cached) {
           setIsLoadingDashboard(true);
           setDashboardError(null);
         }
@@ -2275,6 +2415,7 @@ function DashboardContent() {
           .slice(0, 8);
         setFollowUpTasks(calendarFollowUps);
         hasLoadedDashboardRef.current = true;
+        dashboardCacheWriteTokenRef.current = dashboardRefreshToken;
         const failedSections = [
           dailyData.status === 'rejected' ? 'daily check-in' : null,
           todayData.status === 'rejected' ? 'today feed' : null,
@@ -2404,7 +2545,10 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!dashboardContextMenu) return;
-    const close = () => setDashboardContextMenu(null);
+    const close = () => {
+      setDashboardContextMenu(null);
+      setIsOverviewRescheduleOpen(false);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') close();
     };
@@ -2472,6 +2616,84 @@ function DashboardContent() {
       // Keep overview filters as a workspace preference when storage is available.
     }
   }, [activeWorkspaceId, overviewFilters]);
+
+  useEffect(() => {
+    const storageKey = activeWorkspaceId ? `ledger:overview:layout:v1:${activeWorkspaceId}` : null;
+    if (!storageKey) {
+      setOverviewLayoutPreferences(defaultOverviewLayoutPreferences);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(
+        window.localStorage.getItem(storageKey) || 'null'
+      ) as Partial<OverviewLayoutPreferences> | null;
+      const validDensities: OverviewDensity[] = ['list', 'compact'];
+      const validGroups: OverviewGroupBy[] = [
+        'none',
+        'status',
+        'type',
+        'project',
+        'dueDate',
+        'assignee',
+        'team',
+      ];
+      const validProperties: OverviewProperty[] = [
+        'priority',
+        'project',
+        'dueDate',
+        'assignee',
+        'team',
+        'members',
+        'progress',
+        'linkedNotes',
+        'updated',
+      ];
+      const visibleProperties = Array.isArray(parsed?.visibleProperties)
+        ? parsed.visibleProperties.filter((value): value is OverviewProperty =>
+            validProperties.includes(value as OverviewProperty)
+          )
+        : defaultOverviewLayoutPreferences.visibleProperties;
+      const previousDefaultProperties: OverviewProperty[] = [
+        'priority',
+        'project',
+        'dueDate',
+        'assignee',
+        'progress',
+      ];
+      const normalizedVisibleProperties = Array.from(new Set(visibleProperties));
+      const usesPreviousDefaultProperties =
+        normalizedVisibleProperties.length === previousDefaultProperties.length &&
+        previousDefaultProperties.every((property) =>
+          normalizedVisibleProperties.includes(property)
+        );
+      setOverviewLayoutPreferences({
+        density: validDensities.includes(parsed?.density as OverviewDensity)
+          ? (parsed?.density as OverviewDensity)
+          : defaultOverviewLayoutPreferences.density,
+        groupBy: validGroups.includes(parsed?.groupBy as OverviewGroupBy)
+          ? (parsed?.groupBy as OverviewGroupBy)
+          : defaultOverviewLayoutPreferences.groupBy,
+        visibleProperties: usesPreviousDefaultProperties
+          ? defaultOverviewLayoutPreferences.visibleProperties
+          : normalizedVisibleProperties,
+      });
+    } catch {
+      setOverviewLayoutPreferences(defaultOverviewLayoutPreferences);
+    }
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    try {
+      window.localStorage.setItem(
+        `ledger:overview:layout:v1:${activeWorkspaceId}`,
+        JSON.stringify(overviewLayoutPreferences)
+      );
+    } catch {
+      // Keep layout as a best-effort workspace preference when storage is unavailable.
+    }
+  }, [activeWorkspaceId, overviewLayoutPreferences]);
 
   useEffect(() => {
     const applyTeamFocusContext = (focusContext: string | null | undefined) => {
@@ -2929,6 +3151,23 @@ function DashboardContent() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOverviewCreateMenuOpen]);
+
+  useEffect(() => {
+    if (!isOverviewDisplayOpen) return;
+    const closeDisplayMenu = (event: MouseEvent | PointerEvent) => {
+      if (overviewDisplayMenuRef.current?.contains(event.target as Node)) return;
+      setIsOverviewDisplayOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOverviewDisplayOpen(false);
+    };
+    window.addEventListener('pointerdown', closeDisplayMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', closeDisplayMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOverviewDisplayOpen]);
 
   useEffect(() => {
     if (!isOverviewViewMenuOpen) return;
@@ -3557,6 +3796,64 @@ function DashboardContent() {
     }
   };
 
+  const rescheduleOverviewTask = async (
+    row: { kind: OverviewActionRowKind; sourceId: string },
+    dueDate: string | null
+  ) => {
+    if (row.kind !== 'task' && row.kind !== 'reminder') return;
+    const target = findOverviewTaskTarget(row.sourceId);
+    if (!target) return;
+
+    const previousTodayTasks = todayTasks;
+    const previousWorkspaceTasks = workspaceTasks;
+    setTodayTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
+    setWorkspaceTasks((prev) =>
+      prev.map((task) =>
+        task.id === row.sourceId
+          ? { ...task, due_date: dueDate, show_in_today: false, is_today_focus: false }
+          : task
+      )
+    );
+    setDashboardContextMenu(null);
+    setIsOverviewRescheduleOpen(false);
+
+    try {
+      if (row.kind === 'reminder') {
+        const existingTime = target.remind_at
+          ? new Date(target.remind_at).toTimeString().slice(0, 5)
+          : '09:00';
+        const remindAt = dueDate ? new Date(`${dueDate}T${existingTime}:00`).toISOString() : null;
+        await api.updateReminder(row.sourceId, {
+          remind_at: remindAt,
+          status: 'active',
+          is_done: false,
+          show_in_today: false,
+          is_today_focus: false,
+        });
+      } else if (target.workspace_id) {
+        await api.updateTaskInWorkspace(row.sourceId, target.workspace_id, {
+          due_date: dueDate,
+          show_in_today: false,
+          is_today_focus: false,
+          ...(target.task_horizon ? { task_horizon: target.task_horizon } : {}),
+        });
+      } else {
+        await api.updateTask(row.sourceId, {
+          due_date: dueDate,
+          show_in_today: false,
+          is_today_focus: false,
+          ...(target.task_horizon ? { task_horizon: target.task_horizon } : {}),
+        });
+      }
+      handleDashboardWorkspaceRefresh();
+      void refreshTodayTasks();
+    } catch (error) {
+      console.error('Failed to reschedule overview row:', error);
+      setTodayTasks(previousTodayTasks);
+      setWorkspaceTasks(previousWorkspaceTasks);
+    }
+  };
+
   const deleteOverviewRow = async (row: { kind: OverviewActionRowKind; sourceId: string }) => {
     if (row.kind === 'project') {
       await deleteDashboardProject(row.sourceId);
@@ -4000,6 +4297,7 @@ function DashboardContent() {
     taskTypeLabel?: string;
     taskStatusLabel?: string;
     isOverdue?: boolean;
+    overdueLabel?: string;
     filterValues: OverviewFilterValues;
     open: () => void;
   };
@@ -4302,6 +4600,9 @@ function DashboardContent() {
         assignmentLabel ? ['Assignment', assignmentLabel] : null,
       ].filter((entry): entry is [string, string] => Boolean(entry)),
       isOverdue: isOverdueTask(resolvedTask),
+      overdueLabel: isOverdueTask(resolvedTask)
+        ? `Overdue since ${dueLabel ?? reminderDateLabel ?? 'an earlier date'}`
+        : undefined,
       filterValues,
       open: () => {
         setSelectedOverviewRowId(`${group}:${task.id}`);
@@ -4406,6 +4707,9 @@ function DashboardContent() {
         leadName ? ['Lead', leadName] : null,
       ].filter((entry): entry is [string, string] => Boolean(entry)),
       isOverdue: isOverdueProject(project),
+      overdueLabel: isOverdueProject(project)
+        ? `Overdue since ${dueLabel ?? 'an earlier date'}`
+        : undefined,
       filterValues,
       open: () =>
         openModule('projects', {
@@ -4520,7 +4824,7 @@ function DashboardContent() {
         .filter(Boolean)
         .join(' · '),
       chips: [isToday ? 'Today' : 'Upcoming'],
-      dateLabel: dayLabel ?? undefined,
+      dateLabel: [dayLabel, timeLabel].filter(Boolean).join(' · ') || undefined,
       group: isToday ? 'Today' : 'Upcoming',
       icon: <CalendarDays size={13} />,
       assignee: eventUserLabel
@@ -4648,20 +4952,118 @@ function DashboardContent() {
     ).values()
   );
 
-  const overviewGroups = [
-    'Needs attention',
-    'Today',
-    'Long-term tasks',
-    'Active projects',
-    'Upcoming',
-    'Recent notes',
-  ]
-    .map((group) => ({
-      id: group,
-      label: group,
-      rows: visibleOverviewRows.filter((row) => row.group === group),
-    }))
-    .filter((group) => group.rows.length > 0);
+  const getOverviewCustomGroup = (row: OverviewRow) => {
+    const groupBy = overviewLayoutPreferences.groupBy;
+    if (groupBy === 'none') return row.group;
+    if (groupBy === 'type') {
+      return row.kind === 'reminder'
+        ? 'Reminder'
+        : row.kind.charAt(0).toUpperCase() + row.kind.slice(1);
+    }
+    if (groupBy === 'status') return row.taskStatusLabel ?? row.chips[0] ?? 'No status';
+    if (groupBy === 'project') {
+      if (row.kind === 'project') return row.title;
+      const linkedProject = row.linkedContext?.find(([label]) => label === 'Project')?.[1];
+      if (linkedProject) return linkedProject;
+      if (row.contextLabel?.startsWith('Linked to ')) return row.contextLabel.slice(10);
+      return 'No project';
+    }
+    if (groupBy === 'assignee') return row.assignee?.name ?? 'Unassigned';
+    if (groupBy === 'team') {
+      return row.assignment?.teamLabel || row.ownerTeam?.name || 'No team';
+    }
+    const dateBucket = row.filterValues.date?.[0];
+    return (
+      (
+        {
+          overdue: 'Overdue',
+          today: 'Today',
+          this_week: 'Upcoming',
+          this_month: 'Later',
+          later: 'Later',
+          no_date: 'No due date',
+        } as Record<string, string>
+      )[dateBucket ?? 'no_date'] ?? 'No due date'
+    );
+  };
+
+  const overviewGroups = (() => {
+    if (overviewLayoutPreferences.groupBy === 'none') {
+      return [
+        'Needs attention',
+        'Today',
+        'Long-term tasks',
+        'Active projects',
+        'Upcoming',
+        'Recent notes',
+      ]
+        .map((group) => ({
+          id: group,
+          label: group,
+          rows: visibleOverviewRows.filter((row) => row.group === group),
+        }))
+        .filter((group) => group.rows.length > 0);
+    }
+
+    const grouped = new Map<string, OverviewRow[]>();
+    visibleOverviewRows.forEach((row) => {
+      const key = getOverviewCustomGroup(row);
+      grouped.set(key, [...(grouped.get(key) ?? []), row]);
+    });
+    const fallbackGroupLabels = new Set([
+      'No status',
+      'No project',
+      'Unassigned',
+      'No team',
+      'No due date',
+    ]);
+    return Array.from(grouped, ([label, rows]) => ({ id: label, label, rows })).sort(
+      (left, right) =>
+        Number(fallbackGroupLabels.has(left.label)) - Number(fallbackGroupLabels.has(right.label))
+    );
+  })();
+
+  const overviewPropertyLabels: Record<OverviewProperty, string> = {
+    priority: 'Priority',
+    project: 'Project',
+    dueDate: 'Due date',
+    assignee: 'Assignee',
+    team: 'Team',
+    members: 'Members',
+    progress: 'Progress',
+    linkedNotes: 'Linked notes',
+    updated: 'Updated',
+  };
+  const overviewPropertyOptions = (
+    Object.keys(overviewPropertyLabels) as OverviewProperty[]
+  ).filter((property) => !(isPersonalWorkspace && property === 'members'));
+  const getOverviewPropertyValue = (row: OverviewRow, property: OverviewProperty) => {
+    if (property === 'priority') {
+      const value = row.filterValues.priority?.[0];
+      if (!value || value === 'no_priority') return null;
+      return value.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+    }
+    if (property === 'project') {
+      return row.linkedContext?.find(([label]) => label === 'Project')?.[1] ?? null;
+    }
+    if (property === 'dueDate') return row.dateLabel ?? null;
+    if (property === 'assignee') {
+      // Assignees are represented by the compact initials/team marker in the row.
+      // Keep team assignment text available, but never duplicate a person's name.
+      return row.assignment?.userLabel ? null : row.assignment?.teamLabel ?? null;
+    }
+    if (property === 'team') {
+      return row.assignment?.teamLabel ?? row.ownerTeam?.name ?? null;
+    }
+    if (property === 'members') return null;
+    if (property === 'progress') {
+      return typeof row.progress === 'number' ? `${row.progress}%` : null;
+    }
+    if (property === 'linkedNotes') {
+      return row.chips.includes('Linked note') ? 'Linked' : null;
+    }
+    return row.dateLabel ?? null;
+  };
 
   const selectedOverviewRow =
     visibleOverviewRows.find((row) => row.id === selectedOverviewRowId) ?? null;
@@ -5371,6 +5773,29 @@ function DashboardContent() {
       [overviewTab]: createEmptyOverviewFilterValues(),
     }));
   };
+  const updateOverviewLayout = (patch: Partial<OverviewLayoutPreferences>) => {
+    setOverviewLayoutPreferences((current) => ({ ...current, ...patch }));
+  };
+  const toggleOverviewProperty = (property: OverviewProperty) => {
+    setOverviewLayoutPreferences((current) => {
+      const visible = new Set(current.visibleProperties);
+      if (visible.has(property)) visible.delete(property);
+      else visible.add(property);
+      return { ...current, visibleProperties: Array.from(visible) };
+    });
+  };
+  const isOverviewLayoutDefault =
+    overviewLayoutPreferences.density === defaultOverviewLayoutPreferences.density &&
+    overviewLayoutPreferences.groupBy === defaultOverviewLayoutPreferences.groupBy &&
+    defaultOverviewLayoutPreferences.visibleProperties.every((property) =>
+      overviewLayoutPreferences.visibleProperties.includes(property)
+    ) &&
+    overviewLayoutPreferences.visibleProperties.every((property) =>
+      defaultOverviewLayoutPreferences.visibleProperties.includes(property)
+    );
+  const resetOverviewLayout = () => {
+    if (!isOverviewLayoutDefault) setOverviewLayoutPreferences(defaultOverviewLayoutPreferences);
+  };
   const toggleOverviewFilterSection = (sectionId: string) => {
     setOverviewFilterOpenSections((current) => {
       const next = new Set(current);
@@ -5414,7 +5839,8 @@ function DashboardContent() {
         <button
           type="button"
           onClick={() => toggleOverviewFilterSection(section.id)}
-          className="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          aria-expanded={isOpen}
+          className="flex min-h-9 w-full items-center justify-between rounded-md px-3 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30"
         >
           <span className="min-w-0 truncate">{section.label}</span>
           <span className="flex items-center gap-2">
@@ -5430,19 +5856,16 @@ function DashboardContent() {
           </span>
         </button>
         {isOpen && (
-          <div className="space-y-0.5 px-2 pb-2">
+          <div className="space-y-0.5 px-1 pb-2">
             {section.options.map((option) => {
               const selected = selectedValues.includes(option.value);
               return (
-                <button
+                <OverviewPopoverRow
                   key={option.value}
-                  type="button"
                   onClick={() => toggleOverviewFilterValue(section.key, option.value)}
-                  className={`flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] transition ${
-                    selected
-                      ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                      : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                  }`}
+                  selected={selected}
+                  role="menuitemcheckbox"
+                  ariaChecked={selected}
                 >
                   <span
                     className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
@@ -5455,7 +5878,7 @@ function DashboardContent() {
                     <Check size={9} />
                   </span>
                   <span className="truncate">{option.label}</span>
-                </button>
+                </OverviewPopoverRow>
               );
             })}
           </div>
@@ -5691,25 +6114,36 @@ function DashboardContent() {
             </div>
 
             <div ref={overviewFilterMenuRef} className="relative">
-              <button
-                type="button"
-                onClick={openOverviewFilterMenu}
-                className="relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                aria-label={overviewFilterButtonLabel}
-                aria-haspopup="menu"
-                aria-expanded={isOverviewFilterOpen}
-                title={overviewFilterButtonLabel}
-              >
-                <SlidersHorizontal size={13} />
-                {activeOverviewFilterCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-[var(--ledger-background)] bg-[var(--ledger-accent)] px-0.5 text-[9px] font-semibold leading-none text-white">
-                    {activeOverviewFilterCount > 9 ? '9+' : activeOverviewFilterCount}
+              <ModuleHeaderActionButton
+                variant="strip"
+                iconOnly
+                square
+                icon={
+                  <span className="relative inline-flex">
+                    <SlidersHorizontal size={14} />
+                    {activeOverviewFilterCount > 0 && (
+                      <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-0.5 text-[9px] font-semibold leading-none text-white">
+                        {activeOverviewFilterCount > 9 ? '9+' : activeOverviewFilterCount}
+                      </span>
+                    )}
                   </span>
-                )}
-              </button>
+                }
+                onClick={openOverviewFilterMenu}
+                active={activeOverviewFilterCount > 0}
+                ariaHasPopup="menu"
+                ariaExpanded={isOverviewFilterOpen}
+                title={overviewFilterButtonLabel}
+                ariaLabel={overviewFilterButtonLabel}
+              >
+                {null}
+              </ModuleHeaderActionButton>
               {isOverviewFilterOpen && (
-                <div className="absolute right-0 top-full z-40 mt-2 w-80 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]">
-                  <div className="flex items-center justify-between px-3 py-1.5">
+                <div
+                  className={`${overviewPopoverClassName} max-h-[min(560px,calc(100vh-56px))]`}
+                  role="dialog"
+                  aria-label="Overview filters"
+                >
+                  <div className="flex items-center justify-between px-4 py-1.5">
                     <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                       Filter
                     </p>
@@ -5723,88 +6157,138 @@ function DashboardContent() {
                       </button>
                     )}
                   </div>
-                  <div className="max-h-[58vh] overflow-auto">
+                  <div className="max-h-[min(480px,calc(100vh-132px))] overflow-y-auto px-1 pb-1">
                     {visibleOverviewFilterSections.map(renderOverviewFilterSection)}
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="relative">
-              <button
-                type="button"
+            <div ref={overviewDisplayMenuRef} className="relative">
+              <ModuleHeaderActionButton
+                variant="strip"
+                iconOnly
+                square
+                icon={<LayoutList size={14} />}
                 onClick={() => {
                   setIsOverviewDisplayOpen((current) => !current);
                   setIsOverviewFilterOpen(false);
                   setIsOverviewCreateMenuOpen(false);
                   setIsOverviewViewMenuOpen(false);
                 }}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                aria-label="Display"
+                active={!isOverviewLayoutDefault}
+                ariaHasPopup="menu"
+                ariaExpanded={isOverviewDisplayOpen}
                 title="Display"
+                ariaLabel="Display"
               >
-                <LayoutList size={13} />
-              </button>
+                {null}
+              </ModuleHeaderActionButton>
               {isOverviewDisplayOpen && (
-                <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[var(--ledger-shadow)]">
-                  <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                    Layout
-                  </p>
-                  {['List', 'Compact list'].map((item) => (
+                <div
+                  className={`${overviewPopoverClassName} max-h-[min(560px,calc(100vh-56px))]`}
+                  role="dialog"
+                  aria-label="Overview layout"
+                >
+                  <div className="max-h-[min(520px,calc(100vh-72px))] overflow-y-auto p-2">
+                    <p className={overviewPopoverSectionLabelClassName}>Density</p>
+                    <div role="radiogroup" aria-label="Density" className="space-y-0.5">
+                      {(['list', 'compact'] as OverviewDensity[]).map((density) => (
+                        <OverviewPopoverRow
+                          key={density}
+                          onClick={() => updateOverviewLayout({ density })}
+                          selected={overviewLayoutPreferences.density === density}
+                          role="menuitemradio"
+                          ariaSelected={overviewLayoutPreferences.density === density}
+                        >
+                          <span
+                            className={`h-3.5 w-3.5 rounded-full border ${
+                              overviewLayoutPreferences.density === density
+                                ? 'border-[var(--ledger-accent)] p-[3px]'
+                                : 'border-[color:var(--ledger-border-subtle)]'
+                            }`}
+                          >
+                            {overviewLayoutPreferences.density === density && (
+                              <span className="block h-full w-full rounded-full bg-[var(--ledger-accent)]" />
+                            )}
+                          </span>
+                          {density === 'list' ? 'List' : 'Compact list'}
+                        </OverviewPopoverRow>
+                      ))}
+                    </div>
+
+                    <OverviewPopoverDivider />
+                    <p className={overviewPopoverSectionLabelClassName}>Group by</p>
+                    <div role="radiogroup" aria-label="Group by" className="space-y-0.5">
+                      {(
+                        [
+                          ['none', 'None'],
+                          ['status', 'Status'],
+                          ['type', 'Type'],
+                          ['project', 'Project'],
+                          ['dueDate', 'Due date'],
+                          ['assignee', 'Assignee'],
+                          ['team', 'Team'],
+                        ] as Array<[OverviewGroupBy, string]>
+                      )
+                        .filter(
+                          ([value]) =>
+                            !(isPersonalWorkspace && (value === 'assignee' || value === 'team'))
+                        )
+                        .map(([value, label]) => (
+                          <OverviewPopoverRow
+                            key={value}
+                            onClick={() => updateOverviewLayout({ groupBy: value })}
+                            selected={overviewLayoutPreferences.groupBy === value}
+                            role="menuitemradio"
+                            ariaSelected={overviewLayoutPreferences.groupBy === value}
+                          >
+                            {label}
+                            <span className="ml-auto">
+                              {overviewLayoutPreferences.groupBy === value && <Check size={14} />}
+                            </span>
+                          </OverviewPopoverRow>
+                        ))}
+                    </div>
+
+                    <OverviewPopoverDivider />
+                    <p className={overviewPopoverSectionLabelClassName}>Visible properties</p>
+                    <div className="grid grid-cols-2 gap-0.5">
+                      {overviewPropertyOptions.map((property) => {
+                        const checked =
+                          overviewLayoutPreferences.visibleProperties.includes(property);
+                        return (
+                          <OverviewPopoverRow
+                            key={property}
+                            onClick={() => toggleOverviewProperty(property)}
+                            selected={checked}
+                            role="menuitemcheckbox"
+                            ariaChecked={checked}
+                          >
+                            <span
+                              className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
+                                checked
+                                  ? 'border-[var(--ledger-accent)] bg-[var(--ledger-accent)] text-white'
+                                  : 'border-[color:var(--ledger-border-subtle)]'
+                              }`}
+                            >
+                              {checked && <Check size={10} />}
+                            </span>
+                            <span className="truncate">{overviewPropertyLabels[property]}</span>
+                          </OverviewPopoverRow>
+                        );
+                      })}
+                    </div>
+
+                    <OverviewPopoverDivider />
                     <button
-                      key={item}
                       type="button"
-                      onClick={() => setOverviewLayout(item === 'List' ? 'list' : 'compact')}
-                      className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      disabled={isOverviewLayoutDefault}
+                      onClick={resetOverviewLayout}
+                      className="flex h-8 w-full items-center rounded-md px-3 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {item}
-                      {overviewLayout === (item === 'List' ? 'list' : 'compact') && (
-                        <CheckCircle2 size={13} />
-                      )}
+                      Reset layout
                     </button>
-                  ))}
-                  <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                  <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                    Group by
-                  </p>
-                  {(isPersonalWorkspace
-                    ? ['None', 'Status', 'Type', 'Project', 'Due date']
-                    : ['None', 'Status', 'Type', 'Project', 'Due date', 'Assignee']
-                  ).map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                    >
-                      {item}
-                      <ChevronRight size={13} className="text-[var(--ledger-text-muted)]" />
-                    </button>
-                  ))}
-                  <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                  <p className="px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                    Properties
-                  </p>
-                  <div className="grid grid-cols-2 gap-1 px-1 pb-1">
-                    {(isPersonalWorkspace
-                      ? ['Priority', 'Project', 'Due date', 'Progress', 'Linked notes', 'Updated']
-                      : [
-                          'Priority',
-                          'Project',
-                          'Due date',
-                          'Assignee',
-                          'Members',
-                          'Progress',
-                          'Linked notes',
-                          'Updated',
-                        ]
-                    ).map((item) => (
-                      <span
-                        key={item}
-                        className="rounded-lg px-2 py-1 text-[12px] text-[var(--ledger-text-muted)]"
-                      >
-                        {item}
-                      </span>
-                    ))}
                   </div>
                 </div>
               )}
@@ -5958,6 +6442,7 @@ function DashboardContent() {
                 <div className="space-y-1.5">
                   {overviewGroups.map((group) => {
                     const isCollapsed = collapsedOverviewGroups.has(group.id);
+                    const canCreateInGroup = overviewLayoutPreferences.groupBy === 'none';
                     return (
                       <section key={group.id} className="overflow-hidden">
                         <div
@@ -5985,37 +6470,58 @@ function DashboardContent() {
                               {group.rows.length}
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            onMouseDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (group.id === 'Active projects') {
-                                openOverviewCreateProjectModal();
-                              } else if (group.id === 'Upcoming') {
-                                openUpcomingQuickCreate('event');
-                              } else if (group.id === 'Recent notes') {
-                                setIsOverviewCreateNoteOpen(true);
-                              } else if (group.id === 'Needs attention') {
-                                openOverviewTaskModal('focus');
-                              } else if (group.id === 'Today') {
-                                openOverviewTaskModal('today');
-                              } else if (group.id === 'Long-term tasks') {
-                                openOverviewTaskModal('long_term');
-                              } else {
-                                openOverviewTaskModal('focus');
-                              }
-                            }}
-                            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] select-none"
-                            title={`Create item in ${group.label}`}
-                          >
-                            <Plus size={13} />
-                          </button>
+                          {canCreateInGroup && (
+                            <button
+                              type="button"
+                              onMouseDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (group.id === 'Active projects') {
+                                  openOverviewCreateProjectModal();
+                                } else if (group.id === 'Upcoming') {
+                                  openUpcomingQuickCreate('event');
+                                } else if (group.id === 'Recent notes') {
+                                  setIsOverviewCreateNoteOpen(true);
+                                } else if (group.id === 'Needs attention') {
+                                  openOverviewTaskModal('focus');
+                                } else if (group.id === 'Today') {
+                                  openOverviewTaskModal('today');
+                                } else if (group.id === 'Long-term tasks') {
+                                  openOverviewTaskModal('long_term');
+                                } else {
+                                  openOverviewTaskModal('focus');
+                                }
+                              }}
+                              className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] select-none"
+                              title={`Create item in ${group.label}`}
+                            >
+                              <Plus size={13} />
+                            </button>
+                          )}
                         </div>
                         {!isCollapsed && (
                           <div className="space-y-1 pb-1 pt-1">
                             {group.rows.map((row) => {
                               const isSelected = selectedOverviewRow?.id === row.id;
+                              const visibleMetadata = overviewLayoutPreferences.visibleProperties
+                                .map((property) => getOverviewPropertyValue(row, property))
+                                .filter((value): value is string => Boolean(value));
+                              const rowAssignee =
+                                row.assignee ??
+                                (row.assignment?.userLabel
+                                  ? {
+                                      kind: 'user' as const,
+                                      label: getMemberInitials(row.assignment.userLabel),
+                                      name: row.assignment.userLabel,
+                                    }
+                                  : row.assignment?.teamLabel
+                                  ? {
+                                      kind: 'team' as const,
+                                      label: row.assignment.teamLabel,
+                                      name: row.assignment.teamLabel,
+                                    }
+                                  : undefined);
+                              const showRowContextLabel = Boolean(row.contextLabel) && !rowAssignee;
                               return (
                                 <div
                                   key={row.id}
@@ -6041,7 +6547,7 @@ function DashboardContent() {
                                     })
                                   }
                                   className={`group grid min-w-0 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 px-3 text-left transition ${
-                                    overviewLayout === 'compact'
+                                    overviewLayoutPreferences.density === 'compact'
                                       ? 'min-h-9 py-1'
                                       : 'min-h-10 py-1.5'
                                   } ${
@@ -6055,7 +6561,8 @@ function DashboardContent() {
                                     {row.isOverdue && (
                                       <span
                                         className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-accent)] text-[8px] font-semibold leading-none text-white shadow-[0_1px_2px_rgba(17,24,39,0.18)]"
-                                        aria-hidden="true"
+                                        title={row.overdueLabel}
+                                        aria-label={row.overdueLabel ?? 'Overdue'}
                                       >
                                         !
                                       </span>
@@ -6063,7 +6570,7 @@ function DashboardContent() {
                                   </span>
                                   <span className="min-w-0 overflow-hidden truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
                                     {row.title}
-                                    {row.contextLabel && (
+                                    {showRowContextLabel && row.contextLabel && (
                                       <span className="ml-2 inline-flex min-w-0 max-w-full items-center gap-1 truncate text-[11px] font-normal text-[var(--ledger-text-muted)]">
                                         {row.contextIcon}
                                         <span className="truncate">{row.contextLabel}</span>
@@ -6081,33 +6588,41 @@ function DashboardContent() {
                                         </span>
                                       ))}
                                     </span>
-                                    <span className="hidden min-w-0 max-w-80 truncate whitespace-nowrap text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
-                                      {row.meta}
-                                    </span>
-                                    {typeof row.progress === 'number' && (
-                                      <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block">
+                                    {visibleMetadata.length > 0 && (
+                                      <span className="hidden min-w-0 max-w-80 truncate whitespace-nowrap text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
+                                        {visibleMetadata.join(' · ')}
+                                      </span>
+                                    )}
+                                    {overviewLayoutPreferences.visibleProperties.includes(
+                                      'progress'
+                                    ) &&
+                                      typeof row.progress === 'number' && (
+                                        <span className="hidden h-1 w-20 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)] lg:block">
+                                          <span
+                                            className="block h-full rounded-full bg-[var(--ledger-accent)]"
+                                            style={{
+                                              width: `${row.progress}%`,
+                                              backgroundColor: row.accent ?? 'var(--ledger-accent)',
+                                            }}
+                                          />
+                                        </span>
+                                      )}
+                                    {overviewLayoutPreferences.visibleProperties.includes(
+                                      'members'
+                                    ) &&
+                                      rowAssignee && (
                                         <span
-                                          className="block h-full rounded-full bg-[var(--ledger-accent)]"
-                                          style={{
-                                            width: `${row.progress}%`,
-                                            backgroundColor: row.accent ?? 'var(--ledger-accent)',
-                                          }}
-                                        />
-                                      </span>
-                                    )}
-                                    {row.assignee && (
-                                      <span
-                                        className={`inline-flex h-5 shrink-0 items-center justify-center border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[9px] font-semibold tracking-normal text-[var(--ledger-text-secondary)] ${
-                                          row.assignee.kind === 'team'
-                                            ? 'rounded-full px-2 min-w-8'
-                                            : 'w-5 rounded-full'
-                                        }`}
-                                        title={row.assignee.name}
-                                        aria-label={row.assignee.name}
-                                      >
-                                        {row.assignee.label}
-                                      </span>
-                                    )}
+                                          className={`inline-flex h-5 shrink-0 items-center justify-center border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[9px] font-semibold tracking-normal text-[var(--ledger-text-secondary)] ${
+                                            rowAssignee.kind === 'team'
+                                              ? 'rounded-full px-2 min-w-8'
+                                              : 'w-5 rounded-full'
+                                          }`}
+                                          title={rowAssignee.name}
+                                          aria-label={rowAssignee.name}
+                                        >
+                                          {rowAssignee.label}
+                                        </span>
+                                      )}
                                     <button
                                       type="button"
                                       onClick={(event) => {
@@ -6928,8 +7443,17 @@ function DashboardContent() {
                 const isFollowUpTask = followUpTasks.some((task) => task.id === row.sourceId);
                 const isTaskRow = row.kind === 'task' || row.kind === 'reminder';
                 const canAddToFocus = isTaskRow && !row.chips.includes('Focus');
+                const target = isTaskRow ? findOverviewTaskTarget(row.sourceId) : null;
+                const dateBucket = target?.due_date ? getOverviewDateBucket(target.due_date) : null;
+                const isOverdueTask = isTaskRow && dateBucket === 'overdue';
+                const hasFutureDueDate = isTaskRow && dateBucket !== null && dateBucket !== 'overdue' && dateBucket !== 'today';
+                const canReschedule = isOverdueTask || hasFutureDueDate;
                 const moveLabel =
-                  row.group === 'Today'
+                  canReschedule
+                    ? hasFutureDueDate
+                      ? 'Change due date'
+                      : 'Reschedule'
+                    : row.group === 'Today'
                     ? 'Move to Long-term'
                     : row.group === 'Long-term tasks'
                     ? 'Move to Today'
@@ -6982,6 +7506,18 @@ function DashboardContent() {
                     setDashboardContextMenu(null);
                   }
                 };
+                const selectRescheduleDate = (dueDate: string | null) => {
+                  void rescheduleOverviewTask(
+                    { kind: row.kind, sourceId: row.sourceId },
+                    dueDate
+                  );
+                };
+                const getRelativeDateKey = (days: number) => {
+                  const date = new Date();
+                  date.setHours(0, 0, 0, 0);
+                  date.setDate(date.getDate() + days);
+                  return date.toISOString().slice(0, 10);
+                };
                 const openRow = () => {
                   row.open();
                   setDashboardContextMenu(null);
@@ -7019,7 +7555,63 @@ function DashboardContent() {
                           <CheckCircle2 size={14} />
                           Mark complete
                         </button>
-                        {moveLabel && (
+                        {moveLabel && canReschedule && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setIsOverviewRescheduleOpen((current) => !current);
+                                setOverviewRescheduleDate(target?.due_date ?? '');
+                              }}
+                              className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                            >
+                              <span className="flex items-center gap-2">
+                                <CalendarDays size={14} />
+                                {moveLabel}
+                              </span>
+                              <ChevronRight size={14} className="text-[var(--ledger-text-muted)]" />
+                            </button>
+                            {isOverviewRescheduleOpen && (
+                              <div className="border-y border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5">
+                                {[
+                                  ['Tomorrow', getRelativeDateKey(1)],
+                                  ['Later this week', getRelativeDateKey(3)],
+                                  ['Next week', getRelativeDateKey(7)],
+                                ].map(([label, value]) => (
+                                  <button
+                                    key={value}
+                                    onClick={() => selectRescheduleDate(value)}
+                                    className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                                <div className="flex items-center gap-2 px-2 py-1.5">
+                                  <input
+                                    type="date"
+                                    value={overviewRescheduleDate}
+                                    onChange={(event) => setOverviewRescheduleDate(event.target.value)}
+                                    className="h-7 min-w-0 flex-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={!overviewRescheduleDate}
+                                    onClick={() => selectRescheduleDate(overviewRescheduleDate)}
+                                    className="rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
+                                  >
+                                    Pick date
+                                  </button>
+                                </div>
+                                <button
+                                  onClick={() => selectRescheduleDate(null)}
+                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                >
+                                  Remove due date
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {moveLabel && !canReschedule && (
                           <button
                             onClick={row.group === 'Today' ? moveToLongTerm : moveToToday}
                             className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
@@ -7375,7 +7967,7 @@ function AppShell() {
   useEffect(() => {
     if (!isModuleWindow) return;
 
-    const handleWorkspaceRouteChanged = (_event: unknown, route?: ModuleFocusPayload) => {
+    const applyWorkspaceRoute = (route?: ModuleFocusPayload | null) => {
       if (!route?.kind) return;
       const nextRoute: WorkspaceShellRoute = {
         kind: route.kind,
@@ -7391,9 +7983,28 @@ function AppShell() {
       setWorkspaceShellRoute(nextRoute);
     };
 
+    const handleWorkspaceRouteChanged = (_event: unknown, route?: ModuleFocusPayload) => {
+      applyWorkspaceRoute(route);
+    };
+    const handleLocalWorkspaceRouteRequested = (event: Event) => {
+      applyWorkspaceRoute(
+        (event as CustomEvent<ModuleFocusPayload>).detail as ModuleFocusPayload | undefined
+      );
+    };
+
     window.ipcRenderer?.on('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    window.ipcRenderer?.on('workspace:route-requested', handleWorkspaceRouteChanged as any);
+    window.addEventListener(
+      'ledger:workspace-route-requested',
+      handleLocalWorkspaceRouteRequested
+    );
     return () => {
       window.ipcRenderer?.off('workspace:route-changed', handleWorkspaceRouteChanged as any);
+      window.ipcRenderer?.off('workspace:route-requested', handleWorkspaceRouteChanged as any);
+      window.removeEventListener(
+        'ledger:workspace-route-requested',
+        handleLocalWorkspaceRouteRequested
+      );
     };
   }, []);
 

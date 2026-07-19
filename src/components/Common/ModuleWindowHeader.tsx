@@ -75,6 +75,9 @@ type ModuleHeaderActionButtonProps = {
   icon?: ReactNode;
   iconOnly?: boolean;
   square?: boolean;
+  buttonRef?: Ref<HTMLButtonElement>;
+  ariaHasPopup?: 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog' | boolean;
+  ariaExpanded?: boolean;
   active?: boolean;
   disabled?: boolean;
   variant?: 'default' | 'strip';
@@ -151,18 +154,20 @@ type AppRegionStyle = CSSProperties & {
 const dragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 const HEADER_DRAG_THRESHOLD_PX = 3;
-const actionButtonClassName = `inline-flex h-9 items-center justify-center gap-1.5 rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-3.5 text-xs font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
+// Keep all module-strip controls on the same compact toolbar grid. Module pages
+// should provide behavior; these primitives own the visual language.
+const actionButtonClassName = `inline-flex h-7 items-center justify-center gap-1.5 rounded-md border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} px-2.5 text-[12px] font-medium ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 disabled:cursor-not-allowed disabled:opacity-40`;
 
-const iconButtonClassName = `inline-flex h-9 w-9 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
+const iconButtonClassName = `inline-flex h-7 w-7 items-center justify-center rounded-md border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
 
-const segmentedGroupClassName = `inline-flex h-9 items-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-0.5`;
-const segmentedGroupCompactClassName = `inline-flex h-7 items-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-[2px]`;
+const segmentedGroupClassName = `inline-flex h-7 items-center rounded-md border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-0.5`;
+const segmentedGroupCompactClassName = `inline-flex h-7 items-center rounded-md border ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} p-0.5`;
 
 const segmentedButtonBaseClassName =
-  'inline-flex h-8 items-center justify-center rounded-full px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
+  'inline-flex h-6 items-center justify-center rounded-[5px] px-2.5 text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
 const segmentedButtonCompactBaseClassName =
-  'inline-flex h-7 items-center justify-center rounded-full px-2.5 text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
-const stripIconButtonClassName = `inline-flex h-7 w-7 items-center justify-center rounded-lg ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`;
+  'inline-flex h-6 items-center justify-center rounded-[5px] px-2.5 text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
+const stripIconButtonClassName = `inline-flex h-7 w-7 items-center justify-center rounded-md ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 disabled:cursor-not-allowed disabled:opacity-40`;
 const stripIconButtonDisabledClassName = `cursor-not-allowed opacity-35 hover:bg-transparent hover:${sidebarTheme.textSecondary}`;
 const historyMenuWidth = 224;
 const historyMenuMaxHeight = 240;
@@ -279,6 +284,9 @@ export const ModuleHeaderActionButton = ({
   icon,
   iconOnly = false,
   square = false,
+  buttonRef,
+  ariaHasPopup,
+  ariaExpanded,
   active = false,
   disabled = false,
   variant = 'default',
@@ -290,8 +298,12 @@ export const ModuleHeaderActionButton = ({
           square || isStripIconOnly
             ? 'inline-flex h-7 w-7 items-center justify-center rounded-md'
             : 'inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium'
-        } text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
-          active ? 'text-[var(--ledger-text-primary)]' : ''
+        } text-[var(--ledger-text-secondary)] transition hover:${
+          sidebarTheme.hoverSurface
+        } hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+          variant !== 'strip' && active
+            ? `${sidebarTheme.selectedSurface} ${sidebarTheme.textPrimary}`
+            : ''
         } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`
       : iconOnly
       ? iconButtonClassName
@@ -304,11 +316,14 @@ export const ModuleHeaderActionButton = ({
       : '';
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       disabled={disabled}
       title={title}
       aria-label={ariaLabel ?? title}
+      aria-haspopup={ariaHasPopup}
+      aria-expanded={ariaExpanded}
       className={`${resolvedClassName} ${resolvedDisabledClassName}`}
     >
       {icon}
@@ -341,6 +356,7 @@ export const ModuleHeaderSegmentedButton = ({
   pill = false,
   compact = false,
 }: ModuleHeaderSegmentedButtonProps) => {
+  void pill;
   const baseClassName = compact
     ? segmentedButtonCompactBaseClassName
     : segmentedButtonBaseClassName;
@@ -354,15 +370,7 @@ export const ModuleHeaderSegmentedButton = ({
         active
           ? `${sidebarTheme.surface} ${sidebarTheme.textPrimary} shadow-[0_1px_2px_rgba(15,23,42,0.08)]`
           : `${sidebarTheme.textSecondary} hover:${sidebarTheme.textPrimary}`
-      } ${iconOnly ? (compact ? 'w-7 px-0' : 'w-8 px-0') : ''} ${
-        pill
-          ? `${
-              compact
-                ? 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-[var(--ledger-text-secondary)] shadow-[0_1px_2px_rgba(17,24,39,0.04)] hover:text-[var(--ledger-text-primary)]'
-                : 'rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 text-[var(--ledger-text-secondary)] shadow-[0_1px_2px_rgba(17,24,39,0.04)] hover:text-[var(--ledger-text-primary)]'
-            }`
-          : ''
-      }`}
+      } ${iconOnly ? (compact ? 'w-7 px-0' : 'w-8 px-0') : ''}`}
     >
       {children}
     </button>
@@ -396,7 +404,11 @@ export const ModuleHeaderStatus = ({
         onClick={onClick}
         title={title ?? label}
         aria-label={ariaLabel ?? label}
-        className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} ${toneClassName}`}
+        className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:${
+          sidebarTheme.hoverSurface
+        } hover:${sidebarTheme.textPrimary} ${
+          state === 'error' ? 'text-[var(--ledger-danger)]' : sidebarTheme.textSecondary
+        }`}
       >
         {icon}
       </button>
@@ -456,9 +468,9 @@ export const ModuleHeaderStripAction = ({
       title={title}
       aria-label={ariaLabel}
       {...(notificationTrayToggle ? { 'data-notification-tray-toggle': true } : {})}
-      className={`relative inline-flex h-6 w-6 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`}
+      className={`relative inline-flex h-7 w-7 items-center justify-center rounded-md ${sidebarTheme.textSecondary} transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20`}
     >
-      {icon}
+      {notificationTrayToggle ? <Bell size={14} strokeWidth={2} /> : icon}
       {typeof count === 'number' && count > 0 && (
         <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-1 py-0.5 text-[9px] font-semibold leading-none text-white">
           {count > 9 ? '9+' : count}
@@ -505,7 +517,7 @@ export const ModuleWindowHeader = ({
   const rightActions = primaryActions ?? actions;
   const panelToggleText = panelToggleLabel ?? 'Hide panels';
   const resolvedStripTitle = stripTitle ?? (compact ? title : null);
-  const stripPageActions = [viewControls, rightActions, secondaryActions, syncStatus].filter(
+  const stripPageActions = [viewControls, secondaryActions, rightActions, syncStatus].filter(
     Boolean
   );
   const panelToggleIcon = panelToggleText.toLowerCase().includes('show') ? (
@@ -824,6 +836,17 @@ export const ModuleWindowHeader = ({
           />
 
           <div className="flex shrink-0 items-center gap-0.5">
+            {onGoBack && !showWorkspaceNavigation && (
+              <button
+                type="button"
+                onClick={handleGoBack}
+                title="Back to Teams"
+                aria-label="Back to Teams"
+                className={stripIconButtonClassName}
+              >
+                <ChevronLeft size={16} />
+              </button>
+            )}
             {showWorkspaceNavigation && (
               <>
                 <button
@@ -944,7 +967,7 @@ export const ModuleWindowHeader = ({
           )}
 
         <div
-          className="ml-3 flex min-w-0 flex-1 items-center gap-3"
+          className="ml-3 flex min-w-0 flex-1 items-center gap-3 overflow-hidden"
           style={noDragRegionStyle}
           onPointerDown={handleHeaderPointerDown}
           onPointerMove={handleHeaderPointerMove}
@@ -954,28 +977,24 @@ export const ModuleWindowHeader = ({
         >
           {resolvedStripTitle ? (
             <div className="min-w-0 max-w-[26vw] flex-none" title={resolvedStripTitle}>
-              <p
-                className={`truncate text-[12px] font-medium leading-none tracking-tight text-[var(--ledger-text-primary)] ${
-                  compact ? 'sm:text-[13px]' : ''
-                }`}
-              >
+              <p className="truncate text-[13px] font-semibold leading-none tracking-tight text-[var(--ledger-text-primary)]">
                 {resolvedStripTitle}
               </p>
             </div>
           ) : null}
         </div>
 
-        <div className="flex min-w-0 shrink-0 items-center gap-3" style={noDragRegionStyle}>
-          {stripLeadingActions && (
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripLeadingActions}</div>
+        <div className="ml-auto flex shrink-0 items-center gap-0" style={noDragRegionStyle}>
+          {(stripLeadingActions || (compact && stripPageActions.length > 0)) && (
+            <div className="flex shrink-0 items-center gap-1">
+              {stripLeadingActions}
+              {compact && stripPageActions}
+            </div>
           )}
-          {compact && stripPageActions.length > 0 && (
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">{stripPageActions}</div>
-          )}
-          {compact && stripPageActions && (
+          {(stripLeadingActions || (compact && stripPageActions.length > 0)) && (
             <div
               aria-hidden="true"
-              className="self-stretch border-l border-[color:var(--ledger-border-subtle)]"
+              className="mx-2 h-5 border-l border-[color:var(--ledger-border-subtle)]"
             />
           )}
           <WorkspaceSwitcherMenu variant="header" />

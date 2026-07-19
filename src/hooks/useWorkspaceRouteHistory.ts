@@ -37,9 +37,13 @@ const buildWorkspaceRouteSearch = (route: WorkspaceRoute) => {
 export const useWorkspaceRouteHistory = (route: WorkspaceRoute | null, enabled = true) => {
   const didMountRef = useRef(false);
   const lastRouteKeyRef = useRef('');
+  const routeRef = useRef(route);
+  const pendingExternalRouteKeyRef = useRef<string | null>(null);
   const activeModuleKindRef = useRef<ModuleWindowKind | null>(
     new URLSearchParams(window.location.search).get('module') as ModuleWindowKind | null
   );
+
+  routeRef.current = route;
 
   useEffect(() => {
     const handleWorkspaceRouteChanged = (
@@ -50,9 +54,37 @@ export const useWorkspaceRouteHistory = (route: WorkspaceRoute | null, enabled =
       activeModuleKindRef.current = nextRoute.kind;
     };
 
+    const handleWorkspaceRouteRequested = (
+      _event: unknown,
+      nextRoute?: Partial<WorkspaceRoute> | null
+    ) => {
+      if (!nextRoute?.kind) return;
+      activeModuleKindRef.current = nextRoute.kind;
+
+      const currentRoute = routeRef.current;
+      if (!currentRoute || currentRoute.kind !== nextRoute.kind) return;
+
+      // A launcher/tab selection may omit focus fields to preserve the page's
+      // current view. Only replace fields that were explicitly supplied.
+      const mergedRoute: WorkspaceRoute = { ...currentRoute };
+      for (const key of [
+        'focusDate',
+        'focusProjectId',
+        'focusNoteId',
+        'focusTaskId',
+        'focusContext',
+        'focusSection',
+      ] as const) {
+        if (nextRoute[key] != null) mergedRoute[key] = nextRoute[key];
+      }
+      pendingExternalRouteKeyRef.current = buildWorkspaceRouteKey(mergedRoute);
+    };
+
     window.ipcRenderer?.on?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    window.ipcRenderer?.on?.('workspace:route-requested', handleWorkspaceRouteRequested as any);
     return () => {
       window.ipcRenderer?.off?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+      window.ipcRenderer?.off?.('workspace:route-requested', handleWorkspaceRouteRequested as any);
     };
   }, []);
 
@@ -67,7 +99,18 @@ export const useWorkspaceRouteHistory = (route: WorkspaceRoute | null, enabled =
       return;
     }
 
+    // A route selected by another tab or by the native module launcher must
+    // win over the kept-alive page's previous local state. The page may apply
+    // the incoming focus shortly after this effect runs, so consume the first
+    // mismatch without publishing it back as a new history entry.
+    if (pendingExternalRouteKeyRef.current) {
+      lastRouteKeyRef.current = pendingExternalRouteKeyRef.current;
+      pendingExternalRouteKeyRef.current = null;
+      return;
+    }
+
     if (lastRouteKeyRef.current === nextKey) return;
+
     lastRouteKeyRef.current = nextKey;
 
     const nextSearch = buildWorkspaceRouteSearch(route);

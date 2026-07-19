@@ -1,12 +1,15 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Bell,
   Copy,
+  Check,
   CheckCircle2,
   Clock3,
   ChevronDown,
-  Filter,
   Folder,
+  Inbox,
+  LayoutList,
   MoreHorizontal,
   Pin,
   Plus,
@@ -15,15 +18,14 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from 'react';
-import { ModuleHeaderActionButton, ModuleHeaderSegmentedButton, ModuleHeaderSegmentedGroup, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+  ModuleHeaderActionButton,
+  ModuleHeaderSegmentedButton,
+  ModuleHeaderSegmentedGroup,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from '../Common/ModuleWindowHeader';
 import { PinActionButton } from '../Common/PinActionButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { useApi } from '../../hooks/useApi';
@@ -172,8 +174,7 @@ const circleTheme = {
   leftPaneHeader:
     'border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]',
   leftList: 'min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 py-2',
-  row:
-    'group flex w-full items-start gap-2 rounded-xl px-2.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]',
+  row: 'group flex w-full items-start gap-2 rounded-xl px-2.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]',
   rowSelected: 'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
   rowTitle: 'text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]',
   rowMeta: 'text-[10px] leading-3.5 text-[var(--ledger-text-muted)]',
@@ -188,8 +189,7 @@ const circleTheme = {
   sectionBody: 'space-y-0',
   emptyText: 'text-sm font-light italic text-[var(--ledger-text-muted)]',
   emptyBody: 'text-sm font-light text-[var(--ledger-text-muted)]',
-  chip:
-    'inline-flex h-6 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
+  chip: 'inline-flex h-6 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
   headerMeta: 'text-[11px] text-[var(--ledger-text-muted)]',
   subtleButton:
     'inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
@@ -232,6 +232,34 @@ const displayModes: Array<{ id: CircleDisplayMode; label: string }> = [
   { id: 'newest_active', label: 'Newest active' },
   { id: 'alphabetical', label: 'Alphabetical' },
 ];
+
+const compareCirclePeople = (
+  a: CirclePersonSummary,
+  b: CirclePersonSummary,
+  displayMode: CircleDisplayMode
+) => {
+  if (displayMode === 'team') {
+    return (
+      String(a.teams[0]?.name ?? '').localeCompare(String(b.teams[0]?.name ?? '')) ||
+      String(a.name).localeCompare(String(b.name))
+    );
+  }
+  if (displayMode === 'role') {
+    return (
+      String(a.role).localeCompare(String(b.role)) || String(a.name).localeCompare(String(b.name))
+    );
+  }
+  if (displayMode === 'open_work') {
+    return b.open_task_count - a.open_task_count || String(a.name).localeCompare(String(b.name));
+  }
+  if (displayMode === 'recent_activity' || displayMode === 'newest_active') {
+    return (
+      String(b.last_active_at ?? '').localeCompare(String(a.last_active_at ?? '')) ||
+      String(a.name).localeCompare(String(b.name))
+    );
+  }
+  return String(a.name).localeCompare(String(b.name));
+};
 
 const getInitials = (name: string, email?: string | null) => {
   const source = String(name ?? '').trim() || String(email ?? '').split('@')[0] || 'Member';
@@ -336,8 +364,14 @@ const SummaryCell = ({
 
   const content = (
     <>
-      <span className="min-w-0 truncate text-[11px] font-medium leading-4 text-[var(--ledger-text-muted)]">{label}</span>
-      <span className={`shrink-0 text-[12px] font-medium leading-4 ${active ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}>
+      <span className="min-w-0 truncate text-[11px] font-medium leading-4 text-[var(--ledger-text-muted)]">
+        {label}
+      </span>
+      <span
+        className={`shrink-0 text-[12px] font-medium leading-4 ${
+          active ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'
+        }`}
+      >
         {value}
       </span>
     </>
@@ -367,7 +401,13 @@ const SummaryStrip = ({
   <div className="overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]">
     <div className="grid grid-cols-2 divide-x divide-[color:var(--ledger-border-subtle)] md:grid-cols-4">
       {items.map((item) => (
-        <SummaryCell key={item.label} label={item.label} value={item.value} active={item.active} onClick={item.onClick} />
+        <SummaryCell
+          key={item.label}
+          label={item.label}
+          value={item.value}
+          active={item.active}
+          onClick={item.onClick}
+        />
       ))}
     </div>
   </div>
@@ -403,9 +443,13 @@ const WorkspaceSection = ({
       <div className="flex min-w-0 items-center gap-2 text-left select-none">
         <ChevronDown
           size={14}
-          className={`shrink-0 text-[var(--ledger-text-muted)] transition ${collapsed ? '-rotate-90' : 'rotate-0'}`}
+          className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
+            collapsed ? '-rotate-90' : 'rotate-0'
+          }`}
         />
-        <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">{title}</span>
+        <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">
+          {title}
+        </span>
         {typeof count === 'number' && (
           <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
             {count}
@@ -442,7 +486,9 @@ const CompactWorkRow = ({
   compact?: boolean;
 }) => {
   const classes = `${circleTheme.sectionRow} rounded-lg border border-transparent bg-transparent ${
-    selected ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]' : 'hover:bg-[var(--ledger-surface-muted)]'
+    selected
+      ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]'
+      : 'hover:bg-[var(--ledger-surface-muted)]'
   } ${onClick ? 'cursor-pointer' : ''} ${compact ? 'min-h-[38px]' : 'min-h-[42px]'}`;
   const content = (
     <>
@@ -451,16 +497,22 @@ const CompactWorkRow = ({
       </div>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">{title}</p>
+          <p className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
+            {title}
+          </p>
           {meta &&
             (typeof meta === 'string' ? (
-              <p className="hidden min-w-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] sm:block">{meta}</p>
+              <p className="hidden min-w-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] sm:block">
+                {meta}
+              </p>
             ) : (
               <div className="hidden min-w-0 sm:block">{meta}</div>
             ))}
         </div>
       </div>
-      {right && <div className="flex shrink-0 items-center justify-end gap-2 text-right">{right}</div>}
+      {right && (
+        <div className="flex shrink-0 items-center justify-end gap-2 text-right">{right}</div>
+      )}
     </>
   );
 
@@ -498,11 +550,7 @@ const Row = ({
         <div className="flex items-center gap-2">
           <p className={circleTheme.rowTitle}>{title}</p>
         </div>
-        {meta && typeof meta === 'string' ? (
-          <p className={circleTheme.rowMeta}>{meta}</p>
-        ) : (
-          meta
-        )}
+        {meta && typeof meta === 'string' ? <p className={circleTheme.rowMeta}>{meta}</p> : meta}
       </div>
       {right && <div className="shrink-0 text-right">{right}</div>}
     </>
@@ -523,6 +571,7 @@ const buildPersonContext = (person: CirclePersonSummary) =>
   `ledger-person|${person.id}|${encodeURIComponent(person.name)}`;
 
 type CircleSelectedPersonCache = {
+  updatedAt: number;
   person: CirclePersonSummary | null;
   work: CirclePersonDetailPayload | null;
   projects: CirclePersonProjectsPayload | null;
@@ -530,7 +579,8 @@ type CircleSelectedPersonCache = {
   activity: CirclePersonActivityPayload | null;
 };
 
-const circlePeopleCache = new Map<string, CirclePersonSummary[]>();
+const CIRCLE_CACHE_MAX_AGE = 45_000;
+const circlePeopleCache = new Map<string, { updatedAt: number; people: CirclePersonSummary[] }>();
 const circleSelectedPersonCache = new Map<string, CircleSelectedPersonCache>();
 
 export const CircleWindow = ({ focusContext }: { focusContext?: string | null } = {}) => {
@@ -539,20 +589,28 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
 
   const [people, setPeople] = useState<CirclePersonSummary[]>(() =>
-    activeWorkspaceId ? circlePeopleCache.get(activeWorkspaceId) ?? [] : []
+    activeWorkspaceId ? circlePeopleCache.get(activeWorkspaceId)?.people ?? [] : []
   );
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<CirclePersonSummary | null>(null);
   const [selectedWork, setSelectedWork] = useState<CirclePersonDetailPayload | null>(null);
-  const [selectedProjects, setSelectedProjects] = useState<CirclePersonProjectsPayload | null>(null);
-  const [selectedFollowUps, setSelectedFollowUps] = useState<CirclePersonFollowUpsPayload | null>(null);
-  const [selectedActivity, setSelectedActivity] = useState<CirclePersonActivityPayload | null>(null);
+  const [selectedProjects, setSelectedProjects] = useState<CirclePersonProjectsPayload | null>(
+    null
+  );
+  const [selectedFollowUps, setSelectedFollowUps] = useState<CirclePersonFollowUpsPayload | null>(
+    null
+  );
+  const [selectedActivity, setSelectedActivity] = useState<CirclePersonActivityPayload | null>(
+    null
+  );
   const [activeTab, setActiveTab] = useState<CircleDetailTab>('overview');
   const [listTab, setListTab] = useState<CircleListTab>('all');
   const [displayMode, setDisplayMode] = useState<CircleDisplayMode>('newest_active');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const [collapsedCircleSections, setCollapsedCircleSections] = useState<Record<CircleWorkspaceSectionId, boolean>>({
+  const [collapsedCircleSections, setCollapsedCircleSections] = useState<
+    Record<CircleWorkspaceSectionId, boolean>
+  >({
     needs_attention: false,
     assigned_work: false,
     shared_projects: false,
@@ -603,8 +661,15 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     }
 
     const token = ++peopleLoadTokenRef.current;
-    setIsLoadingPeople(true);
+    const cached = !query?.trim() ? circlePeopleCache.get(activeWorkspaceId) : undefined;
+    if (cached) setPeople(cached.people);
+    if (!cached) setIsLoadingPeople(true);
     setError(null);
+
+    if (cached && Date.now() - cached.updatedAt < CIRCLE_CACHE_MAX_AGE) {
+      setIsLoadingPeople(false);
+      return;
+    }
 
     try {
       const payload = (await api.getPeople(query)) as { people?: CirclePersonSummary[] };
@@ -612,7 +677,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
       const nextPeople = Array.isArray(payload?.people) ? payload.people : [];
       if (!query?.trim()) {
-        circlePeopleCache.set(activeWorkspaceId, nextPeople);
+        circlePeopleCache.set(activeWorkspaceId, { updatedAt: Date.now(), people: nextPeople });
       }
       setPeople(nextPeople);
 
@@ -653,8 +718,13 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       setSelectedActivity(cached.activity);
     }
     const token = ++selectedLoadTokenRef.current;
-    setIsLoadingSelected(true);
+    if (!cached) setIsLoadingSelected(true);
     setError(null);
+
+    if (cached && Date.now() - cached.updatedAt < CIRCLE_CACHE_MAX_AGE) {
+      setIsLoadingSelected(false);
+      return;
+    }
 
     try {
       const [personPayload, workPayload, projectsPayload, followUpsPayload, activityPayload] =
@@ -675,6 +745,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       const nextSelectedFollowUps = followUpsPayload as CirclePersonFollowUpsPayload;
       const nextSelectedActivity = activityPayload as CirclePersonActivityPayload;
       circleSelectedPersonCache.set(cacheKey, {
+        updatedAt: Date.now(),
         person: nextSelectedPerson,
         work: nextSelectedWork,
         projects: nextSelectedProjects,
@@ -702,7 +773,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   };
 
   useEffect(() => {
-    setPeople(activeWorkspaceId ? circlePeopleCache.get(activeWorkspaceId) ?? [] : []);
+    setPeople(activeWorkspaceId ? circlePeopleCache.get(activeWorkspaceId)?.people ?? [] : []);
     setSelectedPersonId(null);
     setSelectedPerson(null);
     setSelectedWork(null);
@@ -759,10 +830,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   }, [focusContext]);
 
   useEffect(() => {
-    const handleWorkspaceRouteChanged = (
-      _event: unknown,
-      route?: { kind?: string | null }
-    ) => {
+    const handleWorkspaceRouteChanged = (_event: unknown, route?: { kind?: string | null }) => {
       if (route?.kind !== 'circle' || !activeWorkspaceId || people.length > 0) return;
       void loadPeople(debouncedSearchQuery);
     };
@@ -797,7 +865,14 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
-    tables: ['tasks', 'projects', 'workspace_audit_logs', 'workspace_team_members', 'workspace_members', 'person_preferences'],
+    tables: [
+      'tasks',
+      'projects',
+      'workspace_audit_logs',
+      'workspace_team_members',
+      'workspace_members',
+      'person_preferences',
+    ],
     enabled: Boolean(activeWorkspaceId),
     onChange: () => {
       void loadPeople(debouncedSearchQuery);
@@ -856,7 +931,8 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   }, [showMoreMenu]);
 
   const currentWorkspaceName = activeWorkspace?.name ?? 'Workspace';
-  const selectedPersonDetails = selectedPerson ?? people.find((person) => person.id === selectedPersonId) ?? null;
+  const selectedPersonDetails =
+    selectedPerson ?? people.find((person) => person.id === selectedPersonId) ?? null;
   const selectedPersonTasks = selectedWork?.assigned_tasks ?? [];
   const selectedProjectsRows = selectedProjects?.shared_projects ?? [];
   const selectedFollowUpItems = selectedFollowUps?.items ?? [];
@@ -896,7 +972,11 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         notes: isFollowUp ? `Created for ${selectedPersonDetails.name}` : null,
         due_date:
           composerDueDate ||
-          (isFollowUp ? new Date().toISOString().slice(0, 10) : taskType === 'long_term' ? null : null),
+          (isFollowUp
+            ? new Date().toISOString().slice(0, 10)
+            : taskType === 'long_term'
+            ? null
+            : null),
         due_time: null,
         status: 'todo',
         priority: 'medium',
@@ -922,39 +1002,43 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
     const now = Date.now();
     const weekThreshold = now - 1000 * 60 * 60 * 24 * 7;
 
-    const peopleCount = people.length;
-    const activeThisWeek = people.filter((person) => parseCircleTimestamp(person.last_active_at) >= weekThreshold).length;
-    const waitingOnPeople = people.filter((person) => person.waiting_on_count > 0).length;
-    const openFollowUps = people.reduce((total, person) => total + Math.max(0, person.follow_up_count), 0);
+    const overviewPeople = people.filter((person) => {
+      if (filters.teamId && !person.teams.some((team) => team.id === filters.teamId)) return false;
+      if (filters.role && String(person.role ?? '').toLowerCase() !== filters.role) return false;
+      if (filters.hasOpenTasks && person.open_task_count <= 0) return false;
+      if (filters.hasSharedProjects && person.shared_project_count <= 0) return false;
+      if (filters.waitingOn && person.waiting_on_count <= 0) return false;
+      if (filters.pinned && !person.is_pinned) return false;
+      return true;
+    });
 
-    const needsAttention = [...people]
+    const sortForDisplay = (rows: CirclePersonSummary[]) =>
+      [...rows].sort((a, b) => compareCirclePeople(a, b, displayMode));
+
+    const peopleCount = overviewPeople.length;
+    const activeThisWeek = overviewPeople.filter(
+      (person) => parseCircleTimestamp(person.last_active_at) >= weekThreshold
+    ).length;
+    const waitingOnPeople = overviewPeople.filter((person) => person.waiting_on_count > 0).length;
+    const openFollowUps = overviewPeople.reduce(
+      (total, person) => total + Math.max(0, person.follow_up_count),
+      0
+    );
+
+    const needsAttention = sortForDisplay(overviewPeople)
       .filter((person) => person.waiting_on_count > 0 || person.open_task_count > 0)
-      .sort((a, b) => {
-        const aAgeDays = Math.floor((now - parseCircleTimestamp(a.last_active_at)) / (1000 * 60 * 60 * 24));
-        const bAgeDays = Math.floor((now - parseCircleTimestamp(b.last_active_at)) / (1000 * 60 * 60 * 24));
-        const aScore = (a.waiting_on_count > 0 ? 1000 : 0) + a.open_task_count + Math.max(0, 7 - aAgeDays);
-        const bScore = (b.waiting_on_count > 0 ? 1000 : 0) + b.open_task_count + Math.max(0, 7 - bAgeDays);
-        return bScore - aScore || String(a.name).localeCompare(String(b.name));
-      })
       .slice(0, 5);
 
-    const recentlyActive = [...people]
+    const recentlyActive = sortForDisplay(overviewPeople)
       .filter((person) => parseCircleTimestamp(person.last_active_at) >= weekThreshold)
-      .sort((a, b) => parseCircleTimestamp(b.last_active_at) - parseCircleTimestamp(a.last_active_at))
       .slice(0, 5);
 
-    const sharedWork = [...people]
+    const sharedWork = sortForDisplay(overviewPeople)
       .filter((person) => person.shared_project_count > 0 || person.open_task_count > 0)
-      .sort((a, b) => {
-        const sharedDelta = b.shared_project_count - a.shared_project_count;
-        if (sharedDelta !== 0) return sharedDelta;
-        return b.open_task_count - a.open_task_count || String(a.name).localeCompare(String(b.name));
-      })
       .slice(0, 5);
 
-    const pinnedPeople = [...people]
+    const pinnedPeople = sortForDisplay(overviewPeople)
       .filter((person) => person.is_pinned)
-      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
       .slice(0, 5);
 
     return {
@@ -969,7 +1053,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       sharedWork,
       pinnedPeople,
     };
-  }, [people]);
+  }, [displayMode, filters, people]);
 
   const visiblePeople = useMemo(() => {
     const todayThreshold = Date.now() - 1000 * 60 * 60 * 24 * 14;
@@ -984,7 +1068,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
       switch (listTab) {
         case 'active':
-          return person.open_task_count > 0 || Date.parse(person.last_active_at ?? '') >= todayThreshold;
+          return (
+            person.open_task_count > 0 || Date.parse(person.last_active_at ?? '') >= todayThreshold
+          );
         case 'waiting_on':
           return person.waiting_on_count > 0;
         case 'shared_work':
@@ -997,29 +1083,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       }
     };
 
-    const sortPeople = (a: CirclePersonSummary, b: CirclePersonSummary) => {
-      if (displayMode === 'team') {
-        return (
-          String(a.teams[0]?.name ?? '').localeCompare(String(b.teams[0]?.name ?? '')) ||
-          String(a.name).localeCompare(String(b.name))
-        );
-      }
-      if (displayMode === 'role') {
-        return String(a.role).localeCompare(String(b.role)) || String(a.name).localeCompare(String(b.name));
-      }
-      if (displayMode === 'open_work') {
-        return (b.open_task_count - a.open_task_count) || String(a.name).localeCompare(String(b.name));
-      }
-      if (displayMode === 'recent_activity') {
-        return String(b.last_active_at ?? '').localeCompare(String(a.last_active_at ?? '')) || String(a.name).localeCompare(String(b.name));
-      }
-      if (displayMode === 'newest_active') {
-        return String(b.last_active_at ?? '').localeCompare(String(a.last_active_at ?? '')) || String(a.name).localeCompare(String(b.name));
-      }
-      return String(a.name).localeCompare(String(b.name));
-    };
-
-    return [...people].filter(matchesFilters).sort(sortPeople);
+    return [...people]
+      .filter(matchesFilters)
+      .sort((a, b) => compareCirclePeople(a, b, displayMode));
   }, [displayMode, filters, listTab, people]);
 
   const sharedProjectFromWork = selectedProjectsRows[0] ?? null;
@@ -1078,7 +1144,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[var(--ledger-text-muted)]">
               People connected to your work, follow-ups, and shared context.
             </p>
-            <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{currentWorkspaceName}</p>
+            <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">
+              {currentWorkspaceName}
+            </p>
           </div>
         </div>
       </div>
@@ -1142,14 +1210,24 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               collapsed={needsAttention.length === 0 || isCollapsed('needs_attention')}
               onToggle={() => toggleSection('needs_attention', needsAttention.length)}
               count={needsAttention.length}
-              action={<button type="button" onClick={() => setListTab('waiting_on')} className={circleTheme.sectionActionText}>View all</button>}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setListTab('waiting_on')}
+                  className={circleTheme.sectionActionText}
+                >
+                  View all
+                </button>
+              }
             >
               {needsAttention.length > 0 ? (
                 needsAttention.map((person) =>
                   renderOverviewPersonRow(
                     person,
                     person.waiting_on_count > 0
-                      ? `Waiting on ${person.waiting_on_count}${person.open_task_count > 0 ? ` · ${person.open_task_count} open` : ''}`
+                      ? `Waiting on ${person.waiting_on_count}${
+                          person.open_task_count > 0 ? ` · ${person.open_task_count} open` : ''
+                        }`
                       : `${person.open_task_count} open`,
                     <div className="flex items-center gap-2 text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
                       <span>{person.teams[0]?.name ?? 'No team'}</span>
@@ -1159,7 +1237,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                   )
                 )
               ) : (
-                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No people-related items need attention.</p>
+                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">
+                  No people-related items need attention.
+                </p>
               )}
             </WorkspaceSection>
 
@@ -1168,18 +1248,30 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               collapsed={recentlyActive.length === 0 || isCollapsed('recent_activity')}
               onToggle={() => toggleSection('recent_activity', recentlyActive.length)}
               count={recentlyActive.length}
-              action={<button type="button" onClick={() => setListTab('active')} className={circleTheme.sectionActionText}>View all</button>}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setListTab('active')}
+                  className={circleTheme.sectionActionText}
+                >
+                  View all
+                </button>
+              }
             >
               {recentlyActive.length > 0 ? (
                 recentlyActive.map((person) =>
                   renderOverviewPersonRow(
                     person,
                     person.role,
-                    <p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">{formatRelativeActive(person.last_active_at)}</p>
+                    <p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+                      {formatRelativeActive(person.last_active_at)}
+                    </p>
                   )
                 )
               ) : (
-                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">
+                  No recent activity.
+                </p>
               )}
             </WorkspaceSection>
 
@@ -1188,7 +1280,15 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               collapsed={sharedWork.length === 0 || isCollapsed('shared_projects')}
               onToggle={() => toggleSection('shared_projects', sharedWork.length)}
               count={sharedWork.length}
-              action={<button type="button" onClick={() => setListTab('shared_work')} className={circleTheme.sectionActionText}>View all</button>}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setListTab('shared_work')}
+                  className={circleTheme.sectionActionText}
+                >
+                  View all
+                </button>
+              }
             >
               {sharedWork.length > 0 ? (
                 sharedWork.map((person) =>
@@ -1203,7 +1303,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                   )
                 )
               ) : (
-                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No shared work yet.</p>
+                <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">
+                  No shared work yet.
+                </p>
               )}
             </WorkspaceSection>
 
@@ -1212,7 +1314,15 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               collapsed={pinnedPeople.length === 0 || isCollapsed('pinned_people')}
               onToggle={() => toggleSection('pinned_people', pinnedPeople.length)}
               count={pinnedPeople.length}
-              action={<button type="button" onClick={() => setListTab('pinned')} className={circleTheme.sectionActionText}>View all</button>}
+              action={
+                <button
+                  type="button"
+                  onClick={() => setListTab('pinned')}
+                  className={circleTheme.sectionActionText}
+                >
+                  View all
+                </button>
+              }
             >
               {pinnedPeople.length > 0 ? (
                 pinnedPeople.map((person) =>
@@ -1229,7 +1339,11 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               ) : (
                 <div className="px-3 py-3">
                   <p className="text-sm text-[var(--ledger-text-muted)]">No pinned people yet.</p>
-                  <button type="button" onClick={() => setListTab('all')} className="mt-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]">
+                  <button
+                    type="button"
+                    onClick={() => setListTab('all')}
+                    className="mt-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                  >
                     Browse people
                   </button>
                 </div>
@@ -1289,11 +1403,19 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         </div>
 
         <div className="flex flex-wrap gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
-          <button type="button" onClick={() => openCircleComposer('task')} className={circleTheme.subtleButton}>
+          <button
+            type="button"
+            onClick={() => openCircleComposer('task')}
+            className={circleTheme.subtleButton}
+          >
             <Plus size={11} />
             Assign task
           </button>
-          <button type="button" onClick={() => openCircleComposer('follow-up')} className={circleTheme.subtleButton}>
+          <button
+            type="button"
+            onClick={() => openCircleComposer('follow-up')}
+            className={circleTheme.subtleButton}
+          >
             <ArrowRight size={11} />
             Create follow-up
           </button>
@@ -1303,7 +1425,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
               if (sharedProjectFromWork) openSharedProject(sharedProjectFromWork.id);
             }}
             disabled={!sharedProjectFromWork}
-            className={`${circleTheme.subtleButton} ${!sharedProjectFromWork ? 'cursor-not-allowed opacity-40' : ''}`}
+            className={`${circleTheme.subtleButton} ${
+              !sharedProjectFromWork ? 'cursor-not-allowed opacity-40' : ''
+            }`}
           >
             <Folder size={11} />
             Open shared project
@@ -1315,25 +1439,30 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             items={[
               {
                 label: 'Open tasks',
-                value: selectedWork?.summary.open_task_count ?? selectedPersonDetails.open_task_count,
+                value:
+                  selectedWork?.summary.open_task_count ?? selectedPersonDetails.open_task_count,
                 active: activeTab === 'assigned',
                 onClick: () => setActiveTab('assigned'),
               },
               {
                 label: 'Shared projects',
-                value: selectedWork?.summary.shared_project_count ?? selectedPersonDetails.shared_project_count,
+                value:
+                  selectedWork?.summary.shared_project_count ??
+                  selectedPersonDetails.shared_project_count,
                 active: activeTab === 'projects',
                 onClick: () => setActiveTab('projects'),
               },
               {
                 label: 'Follow-ups',
-                value: selectedWork?.summary.follow_up_count ?? selectedPersonDetails.follow_up_count,
+                value:
+                  selectedWork?.summary.follow_up_count ?? selectedPersonDetails.follow_up_count,
                 active: activeTab === 'followups',
                 onClick: () => setActiveTab('followups'),
               },
               {
                 label: 'Waiting on',
-                value: selectedWork?.summary.waiting_on_count ?? selectedPersonDetails.waiting_on_count,
+                value:
+                  selectedWork?.summary.waiting_on_count ?? selectedPersonDetails.waiting_on_count,
                 active: activeTab === 'overview',
                 onClick: () => setActiveTab('overview'),
               },
@@ -1363,7 +1492,14 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           <span>{task.project_status ?? 'Task'}</span>
         </div>
       }
-      icon={<CheckCircle2 size={13} className={task.is_open ? 'text-[var(--ledger-text-muted)]' : 'text-[var(--ledger-accent)]'} />}
+      icon={
+        <CheckCircle2
+          size={13}
+          className={
+            task.is_open ? 'text-[var(--ledger-text-muted)]' : 'text-[var(--ledger-accent)]'
+          }
+        />
+      }
       onClick={() => openTask(task.id)}
     />
   );
@@ -1387,7 +1523,10 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           <div className="hidden h-1.5 w-14 rounded-full bg-[var(--ledger-surface-muted)] sm:block">
             <div
               className="h-1.5 rounded-full"
-              style={{ width: `${Math.max(4, Math.min(100, project.progress))}%`, backgroundColor: project.color }}
+              style={{
+                width: `${Math.max(4, Math.min(100, project.progress))}%`,
+                backgroundColor: project.color,
+              }}
             />
           </div>
         </div>
@@ -1407,14 +1546,18 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       ]
         .filter(Boolean)
         .join(' · ')}
-      right={<p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">{formatRelativeActive(activity.timestamp)}</p>}
+      right={
+        <p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+          {formatRelativeActive(activity.timestamp)}
+        </p>
+      }
       icon={<Clock3 size={13} className="text-[var(--ledger-text-muted)]" />}
       onClick={
         activity.project_id
           ? () => openSharedProject(activity.project_id as string)
           : activity.task_id
-            ? () => openTask(activity.task_id as string)
-            : undefined
+          ? () => openTask(activity.task_id as string)
+          : undefined
       }
     />
   );
@@ -1440,12 +1583,22 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           collapsed={needsAttention.length === 0 || isCollapsed('needs_attention')}
           onToggle={() => toggleSection('needs_attention', needsAttention.length)}
           count={needsAttention.length}
-          action={<button type="button" onClick={() => setActiveTab('assigned')} className={circleTheme.sectionActionText}>View all</button>}
+          action={
+            <button
+              type="button"
+              onClick={() => setActiveTab('assigned')}
+              className={circleTheme.sectionActionText}
+            >
+              View all
+            </button>
+          }
         >
           {needsAttention.length > 0 ? (
             needsAttention.map(renderTaskRow)
           ) : (
-            <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No urgent work right now.</p>
+            <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">
+              No urgent work right now.
+            </p>
           )}
         </WorkspaceSection>
 
@@ -1454,9 +1607,23 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           collapsed={tasks.length === 0 || isCollapsed('assigned_work')}
           onToggle={() => toggleSection('assigned_work', tasks.length)}
           count={tasks.length}
-          action={<button type="button" onClick={() => setActiveTab('assigned')} className={circleTheme.sectionActionText}>View all</button>}
+          action={
+            <button
+              type="button"
+              onClick={() => setActiveTab('assigned')}
+              className={circleTheme.sectionActionText}
+            >
+              View all
+            </button>
+          }
         >
-          {tasks.length > 0 ? tasks.map(renderTaskRow) : <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No open work assigned.</p>}
+          {tasks.length > 0 ? (
+            tasks.map(renderTaskRow)
+          ) : (
+            <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">
+              No open work assigned.
+            </p>
+          )}
         </WorkspaceSection>
 
         <WorkspaceSection
@@ -1464,9 +1631,23 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           collapsed={sharedProjects.length === 0 || isCollapsed('shared_projects')}
           onToggle={() => toggleSection('shared_projects', sharedProjects.length)}
           count={sharedProjects.length}
-          action={<button type="button" onClick={() => setActiveTab('projects')} className={circleTheme.sectionActionText}>View all</button>}
+          action={
+            <button
+              type="button"
+              onClick={() => setActiveTab('projects')}
+              className={circleTheme.sectionActionText}
+            >
+              View all
+            </button>
+          }
         >
-          {sharedProjects.length > 0 ? sharedProjects.map(renderProjectRow) : <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No shared projects yet.</p>}
+          {sharedProjects.length > 0 ? (
+            sharedProjects.map(renderProjectRow)
+          ) : (
+            <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">
+              No shared projects yet.
+            </p>
+          )}
         </WorkspaceSection>
 
         <WorkspaceSection
@@ -1474,13 +1655,25 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           collapsed={selectedFollowUpItems.length === 0 || isCollapsed('follow_ups')}
           onToggle={() => toggleSection('follow_ups', selectedFollowUpItems.length)}
           count={selectedFollowUpItems.length}
-          action={<button type="button" onClick={() => setActiveTab('followups')} className={circleTheme.sectionActionText}>View all</button>}
+          action={
+            <button
+              type="button"
+              onClick={() => setActiveTab('followups')}
+              className={circleTheme.sectionActionText}
+            >
+              View all
+            </button>
+          }
         >
           <div className="px-3 py-3">
             {selectedFollowUpItems.length > 0 ? (
-              <p className="text-sm text-[var(--ledger-text-muted)]">Follow-up records will appear here once that system is available.</p>
+              <p className="text-sm text-[var(--ledger-text-muted)]">
+                Follow-up records will appear here once that system is available.
+              </p>
             ) : (
-              <p className="text-sm text-[var(--ledger-text-muted)]">No follow-ups with this person yet.</p>
+              <p className="text-sm text-[var(--ledger-text-muted)]">
+                No follow-ups with this person yet.
+              </p>
             )}
           </div>
         </WorkspaceSection>
@@ -1490,9 +1683,21 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           collapsed={activity.length === 0 || isCollapsed('recent_activity')}
           onToggle={() => toggleSection('recent_activity', activity.length)}
           count={activity.length}
-          action={<button type="button" onClick={() => setActiveTab('activity')} className={circleTheme.sectionActionText}>View all</button>}
+          action={
+            <button
+              type="button"
+              onClick={() => setActiveTab('activity')}
+              className={circleTheme.sectionActionText}
+            >
+              View all
+            </button>
+          }
         >
-          {activity.length > 0 ? activity.map(renderActivityRow) : <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>}
+          {activity.length > 0 ? (
+            activity.map(renderActivityRow)
+          ) : (
+            <p className="px-3 py-3 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+          )}
         </WorkspaceSection>
       </div>
     );
@@ -1521,7 +1726,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
   const renderFollowUps = () => (
     <div className="space-y-3 px-3 py-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-[var(--ledger-text-muted)]">No follow-ups with this person yet.</p>
+        <p className="text-sm text-[var(--ledger-text-muted)]">
+          No follow-ups with this person yet.
+        </p>
         <button
           type="button"
           onClick={() => openCircleComposer('follow-up')}
@@ -1592,6 +1799,25 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
         onClose={() => window.desktopWindow?.closeModule('circle')}
         onMinimize={() => window.desktopWindow?.minimizeModule('circle')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('circle')}
+        globalActions={
+          <>
+            <ModuleHeaderStripAction
+              icon={<Inbox size={14} />}
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              title="Open Intake"
+              ariaLabel="Open Intake"
+            />
+            <ModuleHeaderStripAction
+              icon={<Bell size={14} />}
+              notificationTrayToggle
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))
+              }
+              title="Open notifications"
+              ariaLabel="Open notifications"
+            />
+          </>
+        }
         viewControls={
           <ModuleHeaderSegmentedGroup compact>
             {circleTabs.map((tab) => (
@@ -1618,10 +1844,10 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                 ariaLabel="Filter people"
                 icon={
                   <span className="relative inline-flex">
-                    <Filter size={12} />
+                    <SlidersHorizontal size={14} />
                     {activeFilterCount > 0 && (
-                      <span className="absolute -right-2.5 -top-2 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--ledger-text-primary)] px-1 text-[9px] font-semibold leading-none text-[var(--ledger-background)]">
-                        {activeFilterCount}
+                      <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-0.5 text-[9px] font-semibold leading-none text-white">
+                        {activeFilterCount > 9 ? '9+' : activeFilterCount}
                       </span>
                     )}
                   </span>
@@ -1637,7 +1863,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                 <div className="absolute right-0 top-9 z-50 w-72 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
                   <div className="space-y-3">
                     <div>
-                      <label className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">Team</label>
+                      <label className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">
+                        Team
+                      </label>
                       <div className="relative">
                         <select
                           value={selectedTeamValue}
@@ -1660,7 +1888,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                       </div>
                     </div>
                     <div>
-                      <label className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">Role</label>
+                      <label className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">
+                        Role
+                      </label>
                       <div className="relative">
                         <select
                           value={selectedRoleValue}
@@ -1687,7 +1917,10 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                       { key: 'waitingOn', label: 'Waiting on' },
                       { key: 'pinned', label: 'Pinned' },
                     ].map((item) => (
-                      <label key={item.key} className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-[11px] text-[var(--ledger-text-secondary)]">
+                      <label
+                        key={item.key}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-[11px] text-[var(--ledger-text-secondary)]"
+                      >
                         <span>{item.label}</span>
                         <input
                           type="checkbox"
@@ -1729,7 +1962,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                 square
                 title="Display options"
                 ariaLabel="Display options"
-                icon={<SlidersHorizontal size={12} />}
+                icon={<LayoutList size={14} />}
                 onClick={() => {
                   setShowDisplayMenu((current) => !current);
                   setShowFilterMenu(false);
@@ -1738,20 +1971,36 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                 Display
               </ModuleHeaderActionButton>
               {showDisplayMenu && (
-                <div className="absolute right-0 top-9 z-50 w-56 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
-                  {displayModes.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setDisplayMode(option.id)}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[11px] transition hover:bg-[var(--ledger-surface-hover)] ${
-                        displayMode === option.id ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'
-                      }`}
-                    >
-                      <span>{option.label}</span>
-                      {displayMode === option.id && <span className="text-[var(--ledger-accent)]">•</span>}
-                    </button>
-                  ))}
+                <div className="absolute right-0 top-full z-50 mt-2 w-[240px] max-w-[calc(100vw-16px)] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_14px_34px_rgba(15,23,42,0.12)]">
+                  <div className="max-h-[min(420px,calc(100vh-56px))] overflow-y-auto p-2">
+                    <p className="px-3 pb-1 pt-2 text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                      Display
+                    </p>
+                    <div role="radiogroup" aria-label="Display" className="space-y-0.5">
+                      {displayModes.map((option) => {
+                        const selected = displayMode === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={selected}
+                            onClick={() => setDisplayMode(option.id)}
+                            className={`flex h-8 w-full items-center justify-between rounded-md px-3 text-left text-[12px] font-medium transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ledger-accent)]/30 ${
+                              selected
+                                ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+                                : 'text-[var(--ledger-text-secondary)]'
+                            }`}
+                          >
+                            <span>{option.label}</span>
+                            {selected && (
+                              <Check size={14} className="text-[var(--ledger-text-primary)]" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1794,14 +2043,14 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                   listTab === 'waiting_on'
                     ? `Waiting on ${person.waiting_on_count}`
                     : displayMode === 'role'
-                      ? `${person.role} · ${teamLabel}`
-                      : displayMode === 'team'
-                        ? `${teamLabel} · ${person.role}`
-                        : displayMode === 'open_work'
-                          ? `${person.open_task_count} open`
-                          : displayMode === 'recent_activity'
-                            ? formatRelativeActive(person.last_active_at)
-                            : `${teamLabel} · ${person.open_task_count} open`;
+                    ? `${person.role} · ${teamLabel}`
+                    : displayMode === 'team'
+                    ? `${teamLabel} · ${person.role}`
+                    : displayMode === 'open_work'
+                    ? `${person.open_task_count} open`
+                    : displayMode === 'recent_activity'
+                    ? formatRelativeActive(person.last_active_at)
+                    : `${teamLabel} · ${person.open_task_count} open`;
 
                 return (
                   <Row
@@ -1830,7 +2079,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                         {person.is_pinned && (
                           <Pin size={11} className="text-[var(--ledger-text-muted)]" />
                         )}
-                        <p className={circleTheme.rowMeta}>{formatRelativeActive(person.last_active_at)}</p>
+                        <p className={circleTheme.rowMeta}>
+                          {formatRelativeActive(person.last_active_at)}
+                        </p>
                       </div>
                     }
                   />
@@ -1877,7 +2128,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
                   </div>
                   <div className="px-4 py-4">
                     {isLoadingSelected ? (
-                      <p className="text-sm text-[var(--ledger-text-muted)]">Loading person details…</p>
+                      <p className="text-sm text-[var(--ledger-text-muted)]">
+                        Loading person details…
+                      </p>
                     ) : activeTab === 'overview' ? (
                       <div className="space-y-4">{renderOverview()}</div>
                     ) : activeTab === 'assigned' ? (
@@ -1981,7 +2234,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           />
           {(composerMode === 'follow-up' || circleTaskType === 'long_term') && (
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">Due date</span>
+              <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">
+                Due date
+              </span>
               <input
                 type="date"
                 value={composerDueDate}
@@ -1991,7 +2246,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
             </label>
           )}
           <div className="space-y-1">
-            <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">Assign to</span>
+            <span className="text-xs font-medium text-[var(--ledger-text-secondary)]">
+              Assign to
+            </span>
             <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)]">
               {selectedPersonDetails?.name}
             </div>

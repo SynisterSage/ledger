@@ -5467,6 +5467,18 @@ function broadcastWorkspaceNavigationState() {
   }
 }
 
+function broadcastWorkspaceRouteRequested(route: WorkspaceModuleRoute) {
+  const targets = new Set<BrowserWindow>();
+  if (sidebarWin && !sidebarWin.isDestroyed()) targets.add(sidebarWin);
+  if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) targets.add(workspaceModuleWin);
+  for (const win of moduleWins.values()) {
+    if (!win.isDestroyed()) targets.add(win);
+  }
+  for (const win of targets) {
+    win.webContents.send('workspace:route-requested', { ...route });
+  }
+}
+
 function sendDetachedRouteChanged(record: DetachedWindowRecord) {
   if (record.win.isDestroyed()) return;
   sendWorkspaceRouteChanged(record.win, record.route);
@@ -6722,23 +6734,26 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
   const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
   const focusSection = typeof payload === 'string' ? undefined : payload.focusSection;
+  const requestedRoute = routeFromModuleArgs(
+    kind,
+    focusDate,
+    focusProjectId,
+    focusNoteId,
+    focusTaskId,
+    focusContext,
+    focusSection
+  );
   if (detachedRecord) {
+    senderWindow?.webContents.send('workspace:route-requested', { ...requestedRoute });
     navigateDetachedWindow(
       detachedRecord,
-      routeFromModuleArgs(
-        kind,
-        focusDate,
-        focusProjectId,
-        focusNoteId,
-        focusTaskId,
-        focusContext,
-        focusSection
-      )
+      requestedRoute
     );
     senderWindow?.show();
     senderWindow?.focus();
     return;
   }
+  broadcastWorkspaceRouteRequested(requestedRoute);
   const existing = moduleWins.get(kind);
 
   if (existing && !existing.isDestroyed()) {
@@ -6942,7 +6957,11 @@ ipcMain.handle('window:workspace-select-route', (event, payload: ModuleFocusPayl
   );
   const senderWindow = BrowserWindow.fromWebContents(event.sender);
   const detachedRecord = getDetachedWindowRecord(senderWindow);
-  if (detachedRecord) return navigateDetachedWindow(detachedRecord, route, false);
+  if (detachedRecord) {
+    senderWindow?.webContents.send('workspace:route-requested', { ...route });
+    return navigateDetachedWindow(detachedRecord, route, false);
+  }
+  broadcastWorkspaceRouteRequested(route);
   return navigateWorkspaceModuleWindow(route, false);
 });
 

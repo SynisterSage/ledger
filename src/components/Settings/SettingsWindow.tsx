@@ -25,6 +25,7 @@ import {
   Plus,
   Hash,
   Info,
+  Inbox,
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -50,7 +51,7 @@ import {
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { buildInviteUrl } from '../../config/invite';
-import { ModuleHeaderActionButton, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import authService from '../../services/auth';
@@ -2197,17 +2198,22 @@ export const SettingsWindow = () => {
         onClose={attemptCloseSettings}
         compact
         showBodyHeader={false}
-        actions={
-          <ModuleHeaderActionButton
-            title="Sign out"
-            ariaLabel="Sign out"
-            onClick={() => {
-              void signOut();
-            }}
-            variant="strip"
-          >
-            Sign out
-          </ModuleHeaderActionButton>
+        globalActions={
+          <>
+            <ModuleHeaderStripAction
+              icon={<Inbox size={14} />}
+              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              title="Open Intake"
+              ariaLabel="Open Intake"
+            />
+            <ModuleHeaderStripAction
+              icon={<Bell size={14} />}
+              notificationTrayToggle
+              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
+              title="Open notifications"
+              ariaLabel="Open notifications"
+            />
+          </>
         }
       />
 

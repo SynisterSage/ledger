@@ -39,6 +39,7 @@ import {
   type SmartDateComposerContext,
 } from '../Notes/smartDateUtils';
 import {
+  ModuleHeaderActionButton,
   ModuleHeaderSegmentedButton,
   ModuleHeaderSegmentedGroup,
   ModuleHeaderStripAction,
@@ -177,6 +178,16 @@ type ProjectRow = {
   id: string;
   name: string;
   color?: string;
+};
+
+type CalendarDataCacheEntry = {
+  updatedAt: number;
+  calendars: CalendarRow[];
+  events: EventRow[];
+  reminders: ReminderRow[];
+  projects: ProjectRow[];
+  notes: NoteRow[];
+  followUpTasksByEvent: Record<string, TaskRow[]>;
 };
 
 type NoteRow = {
@@ -722,6 +733,7 @@ export const CalendarWindow = () => {
   const viewportWidth = useViewportWidth();
   const centerScrollRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedDataRef = useRef(false);
+  const calendarDataCacheRef = useRef(new Map<string, CalendarDataCacheEntry>());
   const hasAppliedInitialFocusContextRef = useRef(false);
   const initialFocusDate = new URLSearchParams(window.location.search).get('focusDate');
   const initialFocusContext =
@@ -1941,10 +1953,34 @@ export const CalendarWindow = () => {
       }
 
       const isInitialLoad = !hasLoadedDataRef.current;
-      if (isInitialLoad) {
+      const cacheKey = [
+        activeWorkspaceId,
+        effectiveCalendarScope,
+        viewConfig.start.toISOString(),
+        viewConfig.end.toISOString(),
+        String(calendarRefreshToken),
+      ].join(':');
+      const cached = calendarDataCacheRef.current.get(cacheKey);
+      const hasCachedData = Boolean(cached);
+      const isCacheFresh = Boolean(cached && Date.now() - cached.updatedAt < 45_000);
+
+      if (cached) {
+        setCalendars(cached.calendars);
+        setEvents(cached.events);
+        setReminders(cached.reminders);
+        setProjects(cached.projects);
+        setNotes(cached.notes);
+        setFollowUpTasksByEvent(cached.followUpTasksByEvent);
+        hasLoadedDataRef.current = true;
+        setHasLoadedData(true);
+      }
+
+      if (isInitialLoad && !hasCachedData) {
         setIsLoading(true);
       }
       setError(null);
+
+      if (isCacheFresh) return;
 
       try {
         const loadedCalendars = await api.getCalendars({
@@ -1982,12 +2018,11 @@ export const CalendarWindow = () => {
         if (cancelled) return;
 
         setEvents((eventRows ?? []) as EventRow[]);
-        setReminders(
-          ((reminderRows ?? []) as ReminderRow[]).filter((reminder) => {
+        const filteredReminders = ((reminderRows ?? []) as ReminderRow[]).filter((reminder) => {
             const remindAt = new Date(reminder.remind_at).getTime();
             return remindAt >= viewConfig.start.getTime() && remindAt < viewConfig.end.getTime();
-          })
-        );
+          });
+        setReminders(filteredReminders);
 
         const eventRowsById = new Set(((eventRows ?? []) as EventRow[]).map((event) => event.id));
         const reminderRowsById = new Set(
@@ -2020,8 +2055,8 @@ export const CalendarWindow = () => {
             ? (noteResult.value as { notes: NoteRow[] }).notes ?? []
             : []
         );
+        let followUpMap: Record<string, TaskRow[]> = {};
         if (taskResult.status === 'fulfilled' && Array.isArray(taskResult.value)) {
-          const followUpMap: Record<string, TaskRow[]> = {};
           for (const task of taskResult.value as TaskRow[]) {
             const marker = String(task.description ?? '');
             if (!marker.startsWith('calendar_followup:')) continue;
@@ -2038,6 +2073,23 @@ export const CalendarWindow = () => {
           });
           setFollowUpTasksByEvent(followUpMap);
         }
+        calendarDataCacheRef.current.set(cacheKey, {
+          updatedAt: Date.now(),
+          calendars: finalCalendars,
+          events: (eventRows ?? []) as EventRow[],
+          reminders: filteredReminders,
+          projects:
+            projectResult.status === 'fulfilled' && Array.isArray(projectResult.value)
+              ? (projectResult.value as ProjectRow[])
+              : [],
+          notes:
+            noteResult.status === 'fulfilled' &&
+            noteResult.value &&
+            Array.isArray((noteResult.value as { notes?: NoteRow[] }).notes)
+              ? (noteResult.value as { notes: NoteRow[] }).notes ?? []
+              : [],
+          followUpTasksByEvent: followUpMap,
+        });
         hasLoadedDataRef.current = true;
         setHasLoadedData(true);
       } catch (error) {
@@ -3508,9 +3560,11 @@ export const CalendarWindow = () => {
           </>
         }
         secondaryActions={
-          <button
-            type="button"
-            ref={calendarHeaderMenuButtonRef}
+          <ModuleHeaderActionButton
+            iconOnly
+            square
+            variant="strip"
+            buttonRef={calendarHeaderMenuButtonRef}
             onClick={() => {
               const buttonRect = calendarHeaderMenuButtonRef.current?.getBoundingClientRect();
               if (!buttonRect) return;
@@ -3523,17 +3577,16 @@ export const CalendarWindow = () => {
                     }
               );
             }}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
             aria-haspopup="menu"
             aria-expanded={Boolean(calendarHeaderMenu)}
             aria-label="More calendar actions"
             title="More calendar actions"
-          >
-            <MoreHorizontal size={14} />
-          </button>
+            >
+              <MoreHorizontal size={14} />
+            </ModuleHeaderActionButton>
         }
         viewControls={
-          <div className="flex items-center gap-1.5">
+          <div className="relative left-4 -mr-4 flex items-center gap-1.5">
             <ModuleHeaderSegmentedGroup compact>
               <ModuleHeaderSegmentedButton
                 compact

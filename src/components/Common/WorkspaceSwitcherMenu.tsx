@@ -55,7 +55,7 @@ const getWorkspaceInitials = (name: string) => {
 };
 
 const triggerBaseClass =
-  'inline-flex min-w-0 items-center gap-1.5 rounded-xl px-2 py-1 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
+  'inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md px-2 text-left text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
 
 export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: WorkspaceSwitcherMenuProps) => {
   const { signOut } = useAuthContext();
@@ -93,7 +93,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
 
   const primaryButtonClass =
     variant === 'header'
-      ? `${triggerBaseClass} ${compact ? 'max-w-56' : 'max-w-60'} text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]`
+      ? `${triggerBaseClass} ${compact ? 'max-w-56' : 'max-w-60'} text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]`
       : `${triggerBaseClass} ${compact ? 'max-w-52' : 'max-w-56'} px-0 text-[var(--ledger-text-secondary)]`;
 
   const openSettingsSection = (focusSection: 'account' | 'workspace' | 'integrations' | 'sidebar') => {

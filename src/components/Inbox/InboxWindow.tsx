@@ -2,6 +2,7 @@ import {
   Archive,
   Calendar,
   Bell,
+  Check,
   CalendarDays,
   CheckSquare,
   ChevronDown,
@@ -12,11 +13,12 @@ import {
   FolderKanban,
   Inbox,
   Loader2,
+  LayoutList,
   Mail,
   MessageSquare,
-  PanelRight,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Sparkles,
   FilePenLine,
   Clock3,
@@ -649,6 +651,9 @@ const snoozeOffset = (
   return picked.toISOString();
 };
 
+const INTAKE_CACHE_MAX_AGE = 45_000;
+const intakeItemsCache = new Map<string, { updatedAt: number; items: InboxItem[] }>();
+
 export default function IntakeWindow() {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
@@ -657,15 +662,6 @@ export default function IntakeWindow() {
   const api = useApi();
   const toast = useToast();
 
-  useEffect(() => {
-    if (!isPersonalWorkspace) return;
-    setFilters(defaultFilters);
-    setDisplay((current) => ({ ...current, showAssignee: false }));
-    setSelectedAssigneeId('');
-    setSelectedTeamId('');
-    setProjectLeadId('');
-    setProjectOwnerTeamId('');
-  }, [isPersonalWorkspace]);
   const initialFocusContext =
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
   const initialFocusSection =
@@ -706,6 +702,8 @@ export default function IntakeWindow() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
   const displayButtonRef = useRef<HTMLButtonElement | null>(null);
+  const intakePopoverRef = useRef<HTMLDivElement | null>(null);
+  const intakePreferencesHydratedRef = useRef(false);
   const loadInboxInFlightRef = useRef(false);
   const loadInboxAtRef = useRef(0);
   const loadNotificationAtRef = useRef(0);
@@ -729,6 +727,61 @@ export default function IntakeWindow() {
   const [projectStatus, setProjectStatus] = useState('not_started');
   const [projectOwnerTeamId, setProjectOwnerTeamId] = useState('');
   const [projectLeadId, setProjectLeadId] = useState('');
+
+  useEffect(() => {
+    if (!isPersonalWorkspace) return;
+    setFilters(defaultFilters);
+    setDisplay((current) => ({ ...current, showAssignee: false }));
+    setSelectedAssigneeId('');
+    setSelectedTeamId('');
+    setProjectLeadId('');
+    setProjectOwnerTeamId('');
+  }, [isPersonalWorkspace]);
+
+  useEffect(() => {
+    intakePreferencesHydratedRef.current = false;
+    if (!activeWorkspaceId) {
+      setFilters(defaultFilters);
+      setDisplay(defaultDisplayState);
+      return;
+    }
+
+    try {
+      const stored = JSON.parse(
+        window.localStorage.getItem(`ledger:intake:preferences:v1:${activeWorkspaceId}`) || 'null'
+      ) as { filters?: Partial<IntakeFilterState>; display?: Partial<IntakeDisplayState> } | null;
+      const nextFilters: IntakeFilterState = { ...defaultFilters, ...(stored?.filters ?? {}) };
+      const nextDisplay: IntakeDisplayState = {
+        ...defaultDisplayState,
+        ...(stored?.display ?? {}),
+      };
+      if (!['all', 'today', 'week', 'older'].includes(nextFilters.created)) {
+        nextFilters.created = 'all';
+      }
+      if (!['newest', 'oldest'].includes(nextDisplay.order)) {
+        nextDisplay.order = 'newest';
+      }
+      setFilters(nextFilters);
+      setDisplay(isPersonalWorkspace ? { ...nextDisplay, showAssignee: false } : nextDisplay);
+    } catch {
+      setFilters(defaultFilters);
+      setDisplay(defaultDisplayState);
+    } finally {
+      intakePreferencesHydratedRef.current = true;
+    }
+  }, [activeWorkspaceId, isPersonalWorkspace]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !intakePreferencesHydratedRef.current) return;
+    try {
+      window.localStorage.setItem(
+        `ledger:intake:preferences:v1:${activeWorkspaceId}`,
+        JSON.stringify({ filters, display })
+      );
+    } catch {
+      // Keep Intake preferences usable when browser storage is unavailable.
+    }
+  }, [activeWorkspaceId, display, filters]);
 
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.id, project] as const)),
@@ -762,6 +815,14 @@ export default function IntakeWindow() {
 
     const now = Date.now();
     const inboxCooldownMs = 120_000;
+    const cached = intakeItemsCache.get(activeWorkspaceId);
+    if (cached) {
+      setItems(cached.items);
+      if (!opts?.force && now - cached.updatedAt < INTAKE_CACHE_MAX_AGE) {
+        setIsLoading(false);
+        return;
+      }
+    }
     if (!opts?.force) {
       if (loadInboxInFlightRef.current) return;
       if (now - loadInboxAtRef.current < inboxCooldownMs) return;
@@ -770,7 +831,7 @@ export default function IntakeWindow() {
     loadInboxAtRef.current = now;
 
     if (showSpinner) setRefreshing(true);
-    else setIsLoading(true);
+    else if (!cached) setIsLoading(true);
     setError(null);
 
     try {
@@ -780,12 +841,14 @@ export default function IntakeWindow() {
         api.getInboxItems({ status: 'snoozed' }),
         api.getInboxItems({ status: 'archived' }),
       ]);
-      setItems([
+      const nextItems = [
         ...(Array.isArray(unprocessed) ? unprocessed : []),
         ...(Array.isArray(converted) ? converted : []),
         ...(Array.isArray(snoozed) ? snoozed : []),
         ...(Array.isArray(archived) ? archived : []),
-      ] as InboxItem[]);
+      ] as InboxItem[];
+      intakeItemsCache.set(activeWorkspaceId, { updatedAt: Date.now(), items: nextItems });
+      setItems(nextItems);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't load Intake.");
     } finally {
@@ -1036,6 +1099,10 @@ export default function IntakeWindow() {
       setDisplayMenu(null);
       setSnoozeMenu(null);
     };
+    const closeMenusOnScroll = (event: Event) => {
+      if (intakePopoverRef.current?.contains(event.target as Node)) return;
+      closeMenus();
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (snoozePicker) {
@@ -1046,12 +1113,12 @@ export default function IntakeWindow() {
       }
     };
     window.addEventListener('mousedown', closeMenus);
-    window.addEventListener('scroll', closeMenus, true);
+    window.addEventListener('scroll', closeMenusOnScroll, true);
     window.addEventListener('resize', closeMenus);
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('mousedown', closeMenus);
-      window.removeEventListener('scroll', closeMenus, true);
+      window.removeEventListener('scroll', closeMenusOnScroll, true);
       window.removeEventListener('resize', closeMenus);
       window.removeEventListener('keydown', onKeyDown);
     };
@@ -1538,16 +1605,31 @@ export default function IntakeWindow() {
   const openFilterMenu = () => {
     const rect = filterButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setFilterMenu({ x: rect.left, y: rect.bottom + 8 });
+    setFilterMenu({ x: rect.right, y: rect.bottom + 8 });
     setDisplayMenu(null);
   };
 
   const openDisplayMenu = () => {
     const rect = displayButtonRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setDisplayMenu({ x: rect.left, y: rect.bottom + 8 });
+    setDisplayMenu({ x: rect.right, y: rect.bottom + 8 });
     setFilterMenu(null);
   };
+
+  const activeFilterCount = [
+    filters.source !== 'all',
+    filters.type !== 'all',
+    filters.project !== 'all',
+    filters.assignee !== 'all',
+    filters.created !== 'all',
+  ].filter(Boolean).length;
+  const isDisplayCustomized =
+    display.order !== defaultDisplayState.order ||
+    display.showSource !== defaultDisplayState.showSource ||
+    display.showStatus !== defaultDisplayState.showStatus ||
+    display.showProject !== defaultDisplayState.showProject ||
+    display.showAssignee !== defaultDisplayState.showAssignee ||
+    display.showCreated !== defaultDisplayState.showCreated;
 
   const intakeStatusTabs = (
     <ModuleHeaderSegmentedGroup compact>
@@ -1616,8 +1698,19 @@ export default function IntakeWindow() {
       <ModuleHeaderActionButton
         variant="strip"
         iconOnly
-        icon={<Funnel size={12} />}
+        buttonRef={filterButtonRef}
+        icon={
+          <span className="relative inline-flex">
+            <SlidersHorizontal size={14} />
+            {activeFilterCount > 0 && (
+              <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-0.5 text-[9px] font-semibold leading-none text-white">
+                {activeFilterCount > 9 ? '9+' : activeFilterCount}
+              </span>
+            )}
+          </span>
+        }
         onClick={openFilterMenu}
+        active={activeFilterCount > 0}
         title="Filter intake"
         ariaLabel="Filter intake"
       >
@@ -1626,8 +1719,10 @@ export default function IntakeWindow() {
       <ModuleHeaderActionButton
         variant="strip"
         iconOnly
-        icon={<PanelRight size={12} />}
+        buttonRef={displayButtonRef}
+        icon={<LayoutList size={14} />}
         onClick={openDisplayMenu}
+        active={isDisplayCustomized}
         title="Display intake"
         ariaLabel="Display intake"
       >
@@ -1764,13 +1859,17 @@ export default function IntakeWindow() {
           <div
             className="fixed z-260"
             style={{
-              left: Math.min(state.x, window.innerWidth - width - 12),
+              left: Math.min(Math.max(12, state.x - width), window.innerWidth - width - 12),
               top: Math.min(state.y, window.innerHeight - 12),
             }}
             onMouseDown={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
           >
-            <div className={sidebarTheme.menu} style={{ width }}>
+            <div
+              ref={intakePopoverRef}
+              className="max-h-[min(560px,calc(100vh-24px))] overflow-y-auto overflow-x-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_14px_34px_rgba(15,23,42,0.12)]"
+              style={{ width }}
+            >
               {children}
             </div>
           </div>,
@@ -1966,9 +2065,7 @@ export default function IntakeWindow() {
               key={team.id}
               label={team.name}
               active={filters.assignee === `team:${team.id}`}
-              onClick={() =>
-                setFilters((current) => ({ ...current, assignee: `team:${team.id}` }))
-              }
+              onClick={() => setFilters((current) => ({ ...current, assignee: `team:${team.id}` }))}
             />
           ))}
         </>
@@ -2205,7 +2302,7 @@ export default function IntakeWindow() {
                       />
                     </div>
                   </label>
-                  </div>
+                </div>
                 <label className="block space-y-1">
                   <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Brief</span>
                   <textarea
@@ -2241,50 +2338,50 @@ export default function IntakeWindow() {
 
                 {!isPersonalWorkspace && (
                   <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
-                      Owner team
-                    </span>
-                    <div className="relative">
-                      <select
-                        value={projectOwnerTeamId}
-                        onChange={(event) => setProjectOwnerTeamId(event.target.value)}
-                        className={inboxTheme.select}
-                      >
-                        <option value="">No team</option>
-                        {workspaceTeams.map((team) => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={14}
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                      />
-                    </div>
-                  </label>
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Lead</span>
-                    <div className="relative">
-                      <select
-                        value={projectLeadId}
-                        onChange={(event) => setProjectLeadId(event.target.value)}
-                        className={inboxTheme.select}
-                      >
-                        <option value="">No lead</option>
-                        {workspaceMembers.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={14}
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                      />
-                    </div>
-                  </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                        Owner team
+                      </span>
+                      <div className="relative">
+                        <select
+                          value={projectOwnerTeamId}
+                          onChange={(event) => setProjectOwnerTeamId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No team</option>
+                          {workspaceTeams.map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                    </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Lead</span>
+                      <div className="relative">
+                        <select
+                          value={projectLeadId}
+                          onChange={(event) => setProjectLeadId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No lead</option>
+                          {workspaceMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                    </label>
                   </div>
                 )}
               </div>
@@ -2332,7 +2429,7 @@ export default function IntakeWindow() {
                       />
                     </div>
                   </label>
-                  </div>
+                </div>
 
                 {draft.type === 'note' && (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -2362,48 +2459,50 @@ export default function IntakeWindow() {
 
                 {!isPersonalWorkspace && (
                   <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Assignee</span>
-                    <div className="relative">
-                      <select
-                        value={selectedAssigneeId}
-                        onChange={(event) => setSelectedAssigneeId(event.target.value)}
-                        className={inboxTheme.select}
-                      >
-                        <option value="">No assignee</option>
-                        {workspaceMembers.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={14}
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                      />
-                    </div>
-                  </label>
-                  <label className="block space-y-1">
-                    <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Team</span>
-                    <div className="relative">
-                      <select
-                        value={selectedTeamId}
-                        onChange={(event) => setSelectedTeamId(event.target.value)}
-                        className={inboxTheme.select}
-                      >
-                        <option value="">No team</option>
-                        {workspaceTeams.map((team) => (
-                          <option key={team.id} value={team.id}>
-                            {team.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={14}
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
-                      />
-                    </div>
-                  </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>
+                        Assignee
+                      </span>
+                      <div className="relative">
+                        <select
+                          value={selectedAssigneeId}
+                          onChange={(event) => setSelectedAssigneeId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No assignee</option>
+                          {workspaceMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                    </label>
+                    <label className="block space-y-1">
+                      <span className={`text-xs font-medium ${inboxTheme.mutedText}`}>Team</span>
+                      <div className="relative">
+                        <select
+                          value={selectedTeamId}
+                          onChange={(event) => setSelectedTeamId(event.target.value)}
+                          className={inboxTheme.select}
+                        >
+                          <option value="">No team</option>
+                          {workspaceTeams.map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.name}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={14}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+                        />
+                      </div>
+                    </label>
                   </div>
                 )}
 
@@ -2782,26 +2881,26 @@ export default function IntakeWindow() {
         globalActions={
           <div className="flex items-center gap-1.5">
             <ModuleHeaderStripAction
-              icon={
-                refreshing ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <RefreshCw size={12} />
-                )
-              }
-              onClick={() => void loadInbox(true, { force: true })}
-              title="Refresh Intake"
-              ariaLabel="Refresh Intake"
-            />
-            <ModuleHeaderStripAction
               icon={<Bell size={12} />}
               count={notificationCount}
               notificationTrayToggle
-              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))
+              }
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
           </div>
+        }
+        secondaryActions={
+          <ModuleHeaderStripAction
+            icon={
+              refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />
+            }
+            onClick={() => void loadInbox(true, { force: true })}
+            title="Refresh Intake"
+            ariaLabel="Refresh Intake"
+          />
         }
       />
 
@@ -3028,7 +3127,7 @@ export default function IntakeWindow() {
 
 function MenuSectionLabel({ label }: { label: string }) {
   return (
-    <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+    <div className="px-3 pb-1 pt-2 text-[10px] font-medium text-[var(--ledger-text-muted)]">
       {label}
     </div>
   );
@@ -3051,14 +3150,16 @@ function MenuOption({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
+      role="menuitemradio"
+      aria-checked={active}
+      className={`flex h-8 w-full items-center justify-between rounded-md px-3 text-left text-[12px] font-medium transition ${
         active
-          ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+          ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
           : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
       }`}
     >
       <span>{label}</span>
-      {active ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}
+      {active ? <Check size={14} className="text-[var(--ledger-text-primary)]" /> : null}
     </button>
   );
 }
@@ -3076,22 +3177,24 @@ function ToggleOption({
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      className={`flex h-8 w-full items-center gap-2 rounded-md px-3 text-left text-[12px] font-medium transition ${
+        checked
+          ? 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-primary)]'
+          : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+      }`}
     >
-      <span>{label}</span>
       <span
-        className={`inline-flex h-4 w-7 items-center rounded-full border px-0.5 transition ${
+        className={`flex h-3.5 w-3.5 items-center justify-center rounded border ${
           checked
-            ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
-            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]'
+            ? 'border-[var(--ledger-accent)] bg-[var(--ledger-accent)] text-white'
+            : 'border-[color:var(--ledger-border-subtle)]'
         }`}
       >
-        <span
-          className={`h-2.5 w-2.5 rounded-full bg-white transition ${
-            checked ? 'translate-x-2.5' : 'translate-x-0'
-          }`}
-        />
+        {checked && <Check size={10} />}
       </span>
+      <span>{label}</span>
     </button>
   );
 }

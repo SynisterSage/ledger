@@ -26,9 +26,16 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
-import { ModuleHeaderActionButton, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
+import {
+  ModuleHeaderActionButton,
+  ModuleHeaderSegmentedButton,
+  ModuleHeaderSegmentedGroup,
+  ModuleHeaderStripAction,
+  ModuleWindowHeader,
+} from '../Common/ModuleWindowHeader';
 import { PinActionButton } from '../Common/PinActionButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
@@ -517,6 +524,28 @@ const formatRelativeTime = (value?: string | null) => {
   return `${deltaDays}d ago`;
 };
 
+const TEAMS_CACHE_MAX_AGE = 45_000;
+
+type TeamsWorkspaceCacheEntry = {
+  updatedAt: number;
+  members: TeamMember[];
+  projects: WorkspaceProjectRow[];
+  tasks: WorkspaceTaskRow[];
+  milestones: WorkspaceMilestoneRow[];
+  notes: WorkspaceNoteRow[];
+  teams: Team[];
+};
+
+type TeamOverviewCacheEntry = {
+  updatedAt: number;
+  overview: TeamOverviewResponse;
+};
+
+type TeamNotesCacheEntry = {
+  updatedAt: number;
+  notes: TeamOverviewResponse['recent_notes'];
+};
+
 export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) => {
   const api = useApi();
   const { user } = useAuthContext();
@@ -537,6 +566,12 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [workspaceMilestones, setWorkspaceMilestones] = useState<WorkspaceMilestoneRow[]>([]);
   const [workspaceNotes, setWorkspaceNotes] = useState<WorkspaceNoteRow[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const workspaceCacheRef = useRef(new Map<string, TeamsWorkspaceCacheEntry>());
+  const workspaceMembersCacheRef = useRef(
+    new Map<string, { updatedAt: number; members: TeamMember[] }>()
+  );
+  const teamOverviewCacheRef = useRef(new Map<string, TeamOverviewCacheEntry>());
+  const teamNotesCacheRef = useRef(new Map<string, TeamNotesCacheEntry>());
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [openedTeamId, setOpenedTeamId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>('Overview');
@@ -642,6 +677,12 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         return;
       }
 
+      const cached = workspaceMembersCacheRef.current.get(activeWorkspaceId);
+      if (cached) {
+        setWorkspaceMembers(cached.members);
+        if (Date.now() - cached.updatedAt < TEAMS_CACHE_MAX_AGE) return;
+      }
+
       try {
         const payload = (await api.getWorkspaceMembers(activeWorkspaceId)) as {
           members?: WorkspaceMemberPayload[];
@@ -662,6 +703,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             })
           : [];
 
+        workspaceMembersCacheRef.current.set(activeWorkspaceId, {
+          updatedAt: Date.now(),
+          members,
+        });
         setWorkspaceMembers(members);
       } catch {
         setWorkspaceMembers([]);
@@ -684,6 +729,15 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         setWorkspaceMilestones([]);
         setWorkspaceNotes([]);
         return;
+      }
+
+      const cached = workspaceCacheRef.current.get(activeWorkspaceId);
+      if (cached) {
+        setWorkspaceProjects(cached.projects);
+        setWorkspaceTasks(cached.tasks);
+        setWorkspaceMilestones(cached.milestones);
+        setWorkspaceNotes(cached.notes);
+        if (Date.now() - cached.updatedAt < TEAMS_CACHE_MAX_AGE) return;
       }
 
       try {
@@ -742,6 +796,16 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         setWorkspaceTasks(tasks);
         setWorkspaceMilestones(milestones);
         setWorkspaceNotes(notes);
+        const currentTeamsCache = workspaceCacheRef.current.get(activeWorkspaceId);
+        workspaceCacheRef.current.set(activeWorkspaceId, {
+          updatedAt: Date.now(),
+          members: currentTeamsCache?.members ?? workspaceMembers,
+          projects,
+          tasks,
+          milestones,
+          notes,
+          teams: currentTeamsCache?.teams ?? teams,
+        });
       } catch {
         if (!cancelled) {
           setWorkspaceProjects([]);
@@ -770,6 +834,21 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         return;
       }
 
+      const cached = workspaceCacheRef.current.get(activeWorkspaceId);
+      if (cached && cached.teams.length > 0) {
+        setTeams(cached.teams);
+        setSelectedTeamId((current) => {
+          if (current && cached.teams.some((team) => team.id === current)) return current;
+          if (focusTeamId && cached.teams.some((team) => team.id === focusTeamId))
+            return focusTeamId;
+          return null;
+        });
+        setOpenedTeamId(
+          focusTeamId && cached.teams.some((team) => team.id === focusTeamId) ? focusTeamId : null
+        );
+        if (Date.now() - cached.updatedAt < TEAMS_CACHE_MAX_AGE && !focusTeamId) return;
+      }
+
       try {
         const payload = (await api.getTeams({ includeArchived: Boolean(focusTeamId) })) as
           | { teams?: Team[] }
@@ -781,6 +860,16 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           : Array.isArray(payload?.teams)
           ? payload.teams
           : [];
+        const currentCache = workspaceCacheRef.current.get(activeWorkspaceId);
+        workspaceCacheRef.current.set(activeWorkspaceId, {
+          updatedAt: Date.now(),
+          members: currentCache?.members ?? workspaceMembers,
+          projects: currentCache?.projects ?? workspaceProjects,
+          tasks: currentCache?.tasks ?? workspaceTasks,
+          milestones: currentCache?.milestones ?? workspaceMilestones,
+          notes: currentCache?.notes ?? workspaceNotes,
+          teams: nextTeams,
+        });
         setTeams(nextTeams);
         setSelectedTeamId((current) => {
           if (current && nextTeams.some((team) => team.id === current)) return current;
@@ -817,13 +906,29 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
 
     let cancelled = false;
-    setTeamOverviewLoading(true);
+    const cached = teamOverviewCacheRef.current.get(openedTeamId);
+    if (cached) {
+      setTeamOverview(cached.overview);
+      setTeamOverviewLoading(false);
+    } else {
+      setTeamOverviewLoading(true);
+    }
     setTeamOverviewError(null);
+
+    if (cached && Date.now() - cached.updatedAt < TEAMS_CACHE_MAX_AGE) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const loadOverview = async () => {
       try {
         const payload = (await api.getTeamOverview(openedTeamId)) as TeamOverviewResponse;
         if (cancelled) return;
+        teamOverviewCacheRef.current.set(openedTeamId, {
+          updatedAt: Date.now(),
+          overview: payload,
+        });
         setTeamOverview(payload);
       } catch (error) {
         if (!cancelled) {
@@ -849,7 +954,20 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
 
     let cancelled = false;
-    setTeamNotesLoading(true);
+    const notesCacheKey = `${openedTeamId}:${teamNotesQuery.trim().toLowerCase()}`;
+    const cached = teamNotesCacheRef.current.get(notesCacheKey);
+    if (cached) {
+      setTeamNotes(cached.notes);
+      setTeamNotesLoading(false);
+    } else {
+      setTeamNotesLoading(true);
+    }
+
+    if (cached && Date.now() - cached.updatedAt < TEAMS_CACHE_MAX_AGE) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const loadNotes = async () => {
       try {
@@ -866,6 +984,10 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           : Array.isArray(payload?.notes)
           ? payload.notes
           : [];
+        teamNotesCacheRef.current.set(notesCacheKey, {
+          updatedAt: Date.now(),
+          notes: nextNotes,
+        });
         setTeamNotes(nextNotes);
       } catch {
         if (!cancelled) setTeamNotes([]);
@@ -1293,6 +1415,18 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       : Array.isArray(payload?.teams)
       ? payload.teams
       : [];
+    if (activeWorkspaceId) {
+      const currentCache = workspaceCacheRef.current.get(activeWorkspaceId);
+      workspaceCacheRef.current.set(activeWorkspaceId, {
+        updatedAt: Date.now(),
+        members: currentCache?.members ?? workspaceMembers,
+        projects: currentCache?.projects ?? workspaceProjects,
+        tasks: currentCache?.tasks ?? workspaceTasks,
+        milestones: currentCache?.milestones ?? workspaceMilestones,
+        notes: currentCache?.notes ?? workspaceNotes,
+        teams: nextTeams,
+      });
+    }
     setTeams(nextTeams);
     if (focusTeamId) {
       setSelectedTeamId(focusTeamId);
@@ -3085,10 +3219,24 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         icon={<Users size={17} />}
         compact
         showBodyHeader={false}
-        onGoBack={goBackToTeamsList}
         onClose={() => window.desktopWindow?.closeModule('teams')}
         onMinimize={() => window.desktopWindow?.minimizeModule('teams')}
         onToggleFullscreen={() => window.desktopWindow?.toggleModuleFullscreen('teams')}
+        viewControls={
+          openedTeam ? (
+            <ModuleHeaderSegmentedGroup compact>
+              <ModuleHeaderSegmentedButton
+                compact
+                title="Return to all teams"
+                ariaLabel="Return to all teams"
+                onClick={goBackToTeamsList}
+                active={false}
+              >
+                Teams
+              </ModuleHeaderSegmentedButton>
+            </ModuleHeaderSegmentedGroup>
+          ) : undefined
+        }
         primaryActions={
           <>
             <ModuleHeaderActionButton
@@ -3111,27 +3259,23 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             </ModuleHeaderActionButton>
           </>
         }
-        stripActions={
+        globalActions={
           <>
-            <button
-              type="button"
+            <ModuleHeaderStripAction
+              icon={<Inbox size={14} />}
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Intake"
-              aria-label="Open Intake"
-            >
-              <Inbox size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
-              data-notification-tray-toggle
-              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              ariaLabel="Open Intake"
+            />
+            <ModuleHeaderStripAction
+              icon={<Bell size={14} />}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))
+              }
+              notificationTrayToggle
               title="Notifications"
-              aria-label="Open notifications"
-            >
-              <Bell size={14} />
-            </button>
+              ariaLabel="Open notifications"
+            />
           </>
         }
       />
