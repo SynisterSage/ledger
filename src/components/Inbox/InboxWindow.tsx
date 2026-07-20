@@ -40,6 +40,7 @@ import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import { FigmaMark } from '../Common/FigmaMark';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
@@ -610,6 +611,8 @@ const getTypeDisplayLabel = (item: InboxItem) => {
 
 const getRowIcon = (item: InboxItem) => {
   const sourceBucket = getItemSourceBucket(item);
+  const figmaSource = normalizeForSearch(item.source_provider).includes('figma') || normalizeForSearch(item.source).includes('figma');
+  if (figmaSource) return FigmaMark;
   if (sourceBucket === 'browser') return Globe;
   if (sourceBucket === 'meeting') return Calendar;
   if (sourceBucket === 'calendar') return CalendarDays;
@@ -1301,20 +1304,25 @@ export default function IntakeWindow() {
 
   const getInspectorPlacement = (item: InboxItem) => {
     const raw = getRawPayload(item);
+    const isFigmaSource = normalizeForSearch(item.source_provider).includes('figma') || normalizeForSearch(item.source).includes('figma');
+    // Figma plugin context is stored in the raw payload for traceability, but it
+    // is not placement data. Do not let values such as "figma-plugin" appear as
+    // a project, owner, or due date suggestion.
+    const placementRaw = isFigmaSource ? {} : raw;
     const fallback = 'Not suggested';
 
     const projectId =
       item.suggested_project_id ||
-      findDeepString(raw, ['suggested_project_id', 'project_id', 'linked_project_id']);
+      findDeepString(placementRaw, ['suggested_project_id', 'project_id', 'linked_project_id']);
     const ownerId =
       item.suggested_assignee_id ||
-      findDeepString(raw, [
+      findDeepString(placementRaw, [
         'suggested_assignee_id',
         'assigned_to_user_id',
         'owner_id',
         'assignee_id',
       ]);
-    const teamId = findDeepString(raw, [
+    const teamId = findDeepString(placementRaw, [
       'suggested_team_id',
       'suggested_owner_team_id',
       'assigned_to_team_id',
@@ -1322,35 +1330,39 @@ export default function IntakeWindow() {
       'team_id',
     ]);
     const calendarId =
-      item.suggested_calendar_id || findDeepString(raw, ['suggested_calendar_id', 'calendar_id']);
+      item.suggested_calendar_id || findDeepString(placementRaw, ['suggested_calendar_id', 'calendar_id']);
     const sectionId =
       item.suggested_note_section_id ||
-      findDeepString(raw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
+      findDeepString(placementRaw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
     const dueDate =
       item.suggested_due_at ||
       item.suggested_date ||
-      findDeepString(raw, ['suggested_due_at', 'due_at', 'due_date', 'date']);
-    const startDate = findDeepString(raw, ['start_date', 'project_start_date', 'start_at']);
-    const targetDate = findDeepString(raw, [
+      findDeepString(placementRaw, ['suggested_due_at', 'due_at', 'due_date', 'date']);
+    const startDate = findDeepString(placementRaw, ['start_date', 'project_start_date', 'start_at']);
+    const targetDate = findDeepString(placementRaw, [
       'end_date',
       'project_end_date',
       'target_date',
       'end_at',
     ]);
     const projectName =
-      findDeepString(raw, [
+      findDeepString(placementRaw, [
         'project_name',
         'project_title',
         'linked_project_name',
         'project_label',
       ]) || fallback;
     const ownerName =
-      findDeepString(raw, ['owner_name', 'assigned_to_name', 'assignee_name', 'user_name']) ||
+      findDeepString(placementRaw, ['owner_name', 'assigned_to_name', 'assignee_name', 'user_name']) ||
       fallback;
     const teamName =
-      findDeepString(raw, ['team_name', 'owner_team_name', 'assigned_team_name']) || fallback;
-    const calendarName = findDeepString(raw, ['calendar_name', 'calendar_title']) || fallback;
-    const sectionName = findDeepString(raw, ['section_name', 'note_section_name']) || fallback;
+      findDeepString(placementRaw, ['team_name', 'owner_team_name', 'assigned_team_name']) || fallback;
+    const calendarName = findDeepString(placementRaw, ['calendar_name', 'calendar_title']) || fallback;
+    const sectionName = findDeepString(placementRaw, ['section_name', 'note_section_name']) || fallback;
+    const formatPlacementDate = (value?: string | null) => {
+      if (!value || Number.isNaN(new Date(value).getTime())) return null;
+      return formatDateTime(value) || value;
+    };
 
     return {
       project: projectId ? getProjectOptionLabel(projectId) : projectName,
@@ -1358,9 +1370,9 @@ export default function IntakeWindow() {
       team: teamId ? getTeamOptionLabel(teamId) : teamName,
       calendar: calendarId ? getCalendarOptionLabel(calendarId) : calendarName,
       section: sectionId ? getNoteSectionOptionLabel(sectionId) : sectionName,
-      dueDate: dueDate ? formatDateTime(dueDate) || dueDate : fallback,
-      startDate: startDate ? formatDateTime(startDate) || startDate : fallback,
-      targetDate: targetDate ? formatDateTime(targetDate) || targetDate : fallback,
+      dueDate: formatPlacementDate(dueDate),
+      startDate: formatPlacementDate(startDate),
+      targetDate: formatPlacementDate(targetDate),
     };
   };
 
@@ -2824,9 +2836,9 @@ export default function IntakeWindow() {
         if (selectedItemTypeBucket === 'event') {
           rows.push(
             { label: 'Calendar', value: selectedItemPlacement?.calendar ?? 'Not suggested' },
-            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' },
-            { label: 'Date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' }
+            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' }
           );
+          if (selectedItemPlacement?.dueDate) rows.push({ label: 'Date', value: selectedItemPlacement.dueDate });
           return rows;
         }
         if (selectedItemTypeBucket === 'note') {
@@ -2837,10 +2849,8 @@ export default function IntakeWindow() {
           return rows;
         }
         if (selectedItemTypeBucket === 'reminder') {
-          rows.push(
-            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' },
-            { label: 'Due date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' }
-          );
+          rows.push({ label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' });
+          if (selectedItemPlacement?.dueDate) rows.push({ label: 'Due date', value: selectedItemPlacement.dueDate });
           return rows;
         }
         rows.push({
@@ -2853,7 +2863,7 @@ export default function IntakeWindow() {
             { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' }
           );
         }
-        rows.push({ label: 'Due date', value: selectedItemPlacement?.dueDate ?? 'Not suggested' });
+        if (selectedItemPlacement?.dueDate) rows.push({ label: 'Due date', value: selectedItemPlacement.dueDate });
         return rows;
       })()
     : [];
@@ -3055,15 +3065,29 @@ export default function IntakeWindow() {
 
                   <div className="sticky bottom-0 z-10 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-3">
                     {selectedItem ? (
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
+                        <div className="flex min-w-max items-center gap-1.5">
+                          {selectedItemPrimaryAction && (
+                            <button
+                              type="button"
+                              onClick={selectedItemPrimaryAction.onClick}
+                              disabled={selectedItemPrimaryDisabled}
+                              className="inline-flex h-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {selectedItemPrimaryLoading ? (
+                                <Loader2 size={11} className="animate-spin" />
+                              ) : (
+                                selectedItemPrimaryAction.label
+                              )}
+                            </button>
+                          )}
                           {selectedItemSecondaryActions.map((action) => (
                             <button
                               key={action.label}
                               type="button"
                               onClick={action.onClick}
                               disabled={action.disabled}
-                              className="inline-flex h-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex h-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {action.loading ? (
                                 <Loader2 size={11} className="animate-spin" />
@@ -3077,33 +3101,12 @@ export default function IntakeWindow() {
                               type="button"
                               onClick={selectedItemDangerAction.onClick}
                               disabled={selectedItemDangerAction.disabled}
-                              className="inline-flex h-8 items-center justify-center rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.08)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex h-8 items-center justify-center rounded-md border border-[color:rgba(217,45,32,0.18)] bg-transparent px-2.5 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {selectedItemDangerAction.loading ? (
                                 <Loader2 size={11} className="animate-spin" />
                               ) : (
                                 selectedItemDangerAction.label
-                              )}
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-end gap-2">
-                          {selectedItemPrimaryAction && (
-                            <button
-                              type="button"
-                              onClick={selectedItemPrimaryAction.onClick}
-                              disabled={selectedItemPrimaryDisabled}
-                              className={`inline-flex h-8 items-center justify-center rounded-full px-4 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                selectedItem.status === 'archived'
-                                  ? 'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                                  : 'bg-[var(--ledger-accent)] text-white hover:bg-[var(--ledger-accent-hover)]'
-                              }`}
-                            >
-                              {selectedItemPrimaryLoading ? (
-                                <Loader2 size={11} className="animate-spin" />
-                              ) : (
-                                selectedItemPrimaryAction.label
                               )}
                             </button>
                           )}

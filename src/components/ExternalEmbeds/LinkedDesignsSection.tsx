@@ -5,14 +5,14 @@ import { useToast } from '../Common/ToastProvider';
 import type { ExternalEmbedTargetType } from './ExternalEmbedNode';
 
 export type LinkedDesignTarget = { workspaceId: string; targetType: ExternalEmbedTargetType; targetId: string };
-type Reference = { id: string; external_url?: string; normalized_url?: string; external_type?: string; metadata?: Record<string, unknown>; access_status?: string };
+type Reference = { id: string; provider?: string; external_url?: string; normalized_url?: string; external_type?: string; metadata?: Record<string, unknown>; access_status?: string };
 type Link = { id: string; external_reference_id: string; sources?: string[]; external_references?: Reference | Reference[] };
 type Preview = { url?: string | null; capturedAt?: string | null };
 
 const openExternal = (url: string) => window.desktopWindow?.openExternal ? void window.desktopWindow.openExternal(url) : window.open(url, '_blank', 'noopener,noreferrer');
 const formatDate = (value?: string | null) => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric' }) : null;
-const resourceLabel = (reference: Reference) => String(reference.metadata?.nodeType ?? reference.external_type ?? 'File').replace(/_/g, ' ').replace(/\b\w/g, (v) => v.toUpperCase());
-const referenceTitle = (reference: Reference) => String(reference.metadata?.nodeName ?? reference.metadata?.fileName ?? reference.normalized_url ?? reference.external_url ?? 'Figma design');
+const resourceLabel = (reference: Reference) => { const value = String(reference.metadata?.nodeType ?? reference.external_type ?? 'File').trim(); return !value || value.toLowerCase() === 'unknown' ? 'Design' : value.replace(/_/g, ' ').replace(/\b\w/g, (v) => v.toUpperCase()); };
+const referenceTitle = (reference: Reference) => String(reference.metadata?.nodeName ?? reference.metadata?.fileName ?? 'Figma design');
 
 export function LinkedDesignsSection({ target, canEdit = true, canInsert = false, onInsert }: { target: LinkedDesignTarget; canEdit?: boolean; canInsert?: boolean; onInsert?: (reference: { id: string; url: string }) => void }) {
   const api = useApi();
@@ -34,12 +34,25 @@ export function LinkedDesignsSection({ target, canEdit = true, canInsert = false
     setLoading(true);
     try {
       const rows = await api.getExternalReferencesForTarget(target.targetType, target.targetId) as Link[];
-      setLinks(rows);
-      const entries = await Promise.all(rows.map(async (link) => {
-        try { return [link.external_reference_id, (await api.getExternalReferencePreview(link.external_reference_id, target.targetType, target.targetId) as { preview?: Preview | null }).preview ?? null] as const; }
-        catch { return [link.external_reference_id, null] as const; }
+      const hydrated = await Promise.all(rows.map(async (link) => {
+        let current = link;
+        let reference = (Array.isArray(link.external_references) ? link.external_references[0] : link.external_references) as Reference | undefined;
+        if (reference?.provider === 'figma' && !reference.metadata?.nodeName && !reference.metadata?.fileName) {
+          try {
+            const resolved = await api.resolveExternalReference(link.external_reference_id) as Reference;
+            current = { ...link, external_references: resolved };
+            reference = resolved;
+          } catch { /* Keep metadata-limited references visible. */ }
+        }
+        let preview: Preview | null = null;
+        try { preview = (await api.getExternalReferencePreview(link.external_reference_id, target.targetType, target.targetId) as { preview?: Preview | null }).preview ?? null; } catch { /* Preview may be unavailable. */ }
+        if (!preview && reference?.provider === 'figma') {
+          try { preview = (await api.createExternalReferencePreview(link.external_reference_id, target.targetType, target.targetId) as { preview?: Preview | null }).preview ?? null; } catch { /* Consent or connection may still be required. */ }
+        }
+        return { link: current, preview };
       }));
-      setPreviews(Object.fromEntries(entries));
+      setLinks(hydrated.map((entry) => entry.link));
+      setPreviews(Object.fromEntries(hydrated.map((entry) => [entry.link.external_reference_id, entry.preview])));
     } catch { toast.show('Could not load linked designs.', { variant: 'error' }); }
     finally { setLoading(false); }
   };

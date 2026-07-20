@@ -5685,6 +5685,75 @@ const getPluginDesktopUrl = (targetType, targetId) => {
   return route ? `ledger://${route}/${encodeURIComponent(targetId)}` : undefined;
 };
 const mapPluginTarget = (row) => ({ id: row.id, type: row.type, title: row.title, subtitle: row.subtitle ?? undefined, status: row.status ?? undefined, url: getPluginUrl(row.type, row.id), open_url: getPluginDesktopUrl(row.type, row.id) });
+const searchPluginWorkContent = async ({ workspaceId, rawQuery = '' }) => {
+  const query = String(rawQuery ?? '').trim();
+  const like = `%${query}%`;
+  const applySearch = (builder, columns) => query
+    ? builder.or(columns.map((column) => `${column}.ilike.${like}`).join(','))
+    : builder;
+
+  const [tasksResult, projectsResult, notesResult, intakeResult] = await Promise.all([
+    applySearch(
+      supabase.from('tasks').select('id, title, status, due_date, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(20),
+      ['title']
+    ),
+    applySearch(
+      supabase.from('projects').select('id, name, status, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(20),
+      ['name']
+    ),
+    applySearch(
+      supabase.from('notes').select('id, title, mode, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(20),
+      ['title']
+    ),
+    applySearch(
+      supabase.from('inbox_items').select('id, title, status, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(20),
+      ['title']
+    ),
+  ]);
+
+  for (const result of [tasksResult, projectsResult, notesResult, intakeResult]) {
+    if (result.error) throw result.error;
+  }
+
+  const rows = [
+    ...(tasksResult.data ?? []).map((row) => ({
+      id: row.id,
+      type: 'task',
+      title: row.title || 'Untitled task',
+      status: row.status,
+      subtitle: [titleCaseLabel(row.status || 'task'), row.due_date ? new Date(`${row.due_date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : null].filter(Boolean).join(' · '),
+      updatedAt: row.updated_at || row.created_at,
+    })),
+    ...(projectsResult.data ?? []).map((row) => ({
+      id: row.id,
+      type: 'project',
+      title: row.name || 'Untitled project',
+      status: row.status,
+      subtitle: `Project · ${titleCaseLabel(row.status || 'active')}`,
+      updatedAt: row.updated_at || row.created_at,
+    })),
+    ...(notesResult.data ?? []).map((row) => ({
+      id: row.id,
+      type: row.mode === 'meeting_note' ? 'meetingNote' : 'note',
+      title: row.title || 'Untitled note',
+      subtitle: row.mode === 'meeting_note' ? 'Meeting note' : 'Note',
+      updatedAt: row.updated_at || row.created_at,
+    })),
+    ...(intakeResult.data ?? []).map((row) => ({
+      id: row.id,
+      type: 'intake',
+      title: row.title || 'Untitled intake item',
+      status: row.status,
+      subtitle: `Intake · ${titleCaseLabel(row.status || 'new')}`,
+      updatedAt: row.updated_at || row.created_at,
+    })),
+  ];
+
+  return rows
+    .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')))
+    .slice(0, query ? 20 : 12)
+    .map(mapPluginTarget);
+};
 const preparePluginReference = async ({ req, workspaceId, body }) => {
   requirePluginScope(req, 'external-reference:create');
   const selection = validatePluginSelection(body?.selection);
@@ -5816,6 +5885,24 @@ const getPluginEditOptions = async ({ req, workspaceId, targetType, targetId }) 
   }
   return options;
 };
+const getPluginTaskCreateOptions = async ({ req, workspaceId }) => {
+  const options = {
+    assignees: [],
+    projects: [],
+  };
+  const workspace = await supabase.from('workspaces').select('owner_id').eq('id', workspaceId).maybeSingle();
+  if (workspace.error) throw workspace.error;
+  const memberRows = await supabase.from('workspace_members').select('user_id').eq('workspace_id', workspaceId);
+  if (memberRows.error) throw memberRows.error;
+  const ids = [...new Set([workspace.data?.owner_id, ...(memberRows.data ?? []).map((row) => row.user_id)].filter(Boolean))];
+  const users = ids.length ? await supabase.from('users').select('id, full_name, email, avatar_url').in('id', ids).order('full_name', { ascending: true }) : { data: [], error: null };
+  if (users.error) throw users.error;
+  options.assignees = (users.data ?? []).map((user) => ({ id: user.id, name: user.full_name || user.email || 'Workspace member', ...(user.avatar_url ? { avatarUrl: user.avatar_url } : {}) }));
+  const projects = await supabase.from('projects').select('id, name, status').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(50);
+  if (projects.error) throw projects.error;
+  options.projects = (projects.data ?? []).filter((project) => !isCompletedProjectStatus(project.status)).map((project) => ({ id: project.id, name: project.name }));
+  return options;
+};
 const updatePluginWorkProperty = async ({ req, workspaceId, targetType, targetId, property, value, expectedUpdatedAt }) => {
   const scope = pluginPropertyScopes[property];
   if (!scope || !['status', 'assignee', 'priority', 'project', 'dueDate'].includes(property)) throw pluginError('Unsupported property.');
@@ -5922,9 +6009,14 @@ app.get('/api/figma-plugin/search', pluginAuthMiddleware, rateLimit('read'), asy
     requirePluginScope(req, 'work:search');
     const workspaceId = await requirePluginWorkspace(req, 'viewer');
     const query = String(req.query?.q ?? '').trim();
-    if (query.length < 2) return res.json([]);
-    const rows = await searchWorkspaceContent({ workspaceId, rawQuery: query });
-    res.json(rows.filter((row) => pluginTargetTypes.has(row.type)).slice(0, 20).map((row) => mapPluginTarget({ id: row.id, type: row.type, title: row.title, status: row.status, subtitle: row.preview || titleCaseLabel(row.type) })));
+    res.json(await searchPluginWorkContent({ workspaceId, rawQuery: query }));
+  } catch (error) { return respondWithError(res, error); }
+});
+app.get('/api/figma-plugin/recent-work', pluginAuthMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'work:search');
+    const workspaceId = await requirePluginWorkspace(req, 'viewer');
+    res.json(await searchPluginWorkContent({ workspaceId, rawQuery: '' }));
   } catch (error) { return respondWithError(res, error); }
 });
 
@@ -5975,6 +6067,13 @@ app.get('/api/figma-plugin/work/:type/:id/edit-options', pluginAuthMiddleware, r
     const targetType = String(req.params.type ?? '').trim();
     const targetId = String(req.params.id ?? '').trim();
     res.json(await getPluginEditOptions({ req, workspaceId, targetType, targetId }));
+  } catch (error) { return respondWithError(res, error); }
+});
+app.get('/api/figma-plugin/task-options', pluginAuthMiddleware, rateLimit('figma_linked'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'workspace:read');
+    const workspaceId = await requirePluginWorkspace(req, 'member');
+    res.json(await getPluginTaskCreateOptions({ req, workspaceId }));
   } catch (error) { return respondWithError(res, error); }
 });
 app.patch('/api/figma-plugin/work/:type/:id', pluginAuthMiddleware, rateLimit('figma_update'), async (req, res) => {

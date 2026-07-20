@@ -1,6 +1,7 @@
 import { CircleAlert, Check, Loader2, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useApi } from '../../hooks/useApi';
+import { FigmaMark } from '../Common/FigmaMark';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 
 export type FigmaIntegrationStatus = {
@@ -67,19 +68,3 @@ const MetaRow = ({ label, value, icon }: { label: string; value: string; icon?: 
 const Capability = ({ title, detail }: { title: string; detail: string }) => <div className="flex items-start justify-between gap-3 py-2"><div><p className="text-[13px] font-medium">{title}</p><p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">{detail}</p></div><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">Coming next</span></div>;
 const ToggleRow = ({ label, detail, checked, disabled, onChange }: { label: string; detail: string; checked: boolean; disabled: boolean; onChange: (value: boolean) => void }) => <label className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] py-3 last:border-b-0"><span><span className="block text-[13px] font-medium">{label}</span><span className="mt-0.5 block text-xs leading-5 text-[var(--ledger-text-muted)]">{detail}</span></span><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--ledger-accent)]" /></label>;
 const LoadingRow = ({ label, detail, action }: { label: string; detail?: string; action?: ReactNode }) => <div className="flex items-start gap-3"><Loader2 size={16} className="mt-0.5 animate-spin text-[var(--ledger-accent)]" aria-hidden="true" /><div className="min-w-0 flex-1"><p className="text-[13px] font-medium" role="status" aria-live="polite">{label}</p>{detail && <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{detail}</p>}{action && <div className="mt-3 flex gap-2">{action}</div>}</div></div>;
-const FigmaMark = () => (
-  <svg
-    width="400"
-    height="600"
-    viewBox="0 0 400 600"
-    className="h-4 w-4"
-    aria-hidden="true"
-    xmlns="http://www.w3.org/2000/svg"
-  >
-    <path d="M0 500C0 444.772 44.772 400 100 400H200V500C200 555.228 155.228 600 100 600C44.772 600 0 555.228 0 500Z" fill="#24CB71"/>
-    <path d="M200 0V200H300C355.228 200 400 155.228 400 100C400 44.772 355.228 0 300 0H200Z" fill="#FF7237"/>
-    <path d="M299.167 400C354.395 400 399.167 355.228 399.167 300C399.167 244.772 354.395 200 299.167 200C243.939 200 199.167 244.772 199.167 300C199.167 355.228 243.939 400 299.167 400Z" fill="#00B6FF"/>
-    <path d="M0 100C0 155.228 44.772 200 100 200H200V0H100C44.772 0 0 44.772 0 100Z" fill="#FF3737"/>
-    <path d="M0 300C0 355.228 44.772 400 100 400H200V200H100C44.772 200 0 244.772 0 300Z" fill="#874FFF"/>
-  </svg>
-);

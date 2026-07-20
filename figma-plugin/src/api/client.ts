@@ -1,4 +1,4 @@
-import type { ExternalReferenceChangeState, LinkedWorkResponse, LinkedWorkSummary, PluginResult, PluginTarget, PluginWorkEditOptions, UserSummary, Workspace } from '../types';
+import type { ExternalReferenceChangeState, LinkedWorkResponse, LinkedWorkSummary, PluginResult, PluginTarget, PluginTaskCreateOptions, PluginWorkEditOptions, UserSummary, Workspace } from '../types';
 
 declare const __LEDGER_API_ORIGIN__: string;
 const API_ORIGIN = __LEDGER_API_ORIGIN__.replace(/\/$/, '');
@@ -21,8 +21,10 @@ export const revokePluginSession = (credential: string) => request('/api/figma-p
 const pluginRequest = <T,>(path: string, credential: string, workspaceId: string, body?: unknown, method = 'POST', idempotencyKey?: string) => request<T>(path, { method, headers: { 'X-Workspace-Id': workspaceId, ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, credential);
 export const resolvePluginIdentity = (credential: string, workspaceId: string, figmaUrl: string, selection: unknown) => pluginRequest<{ canonical_url: string; node_id: string }>('/api/figma-plugin/identity', credential, workspaceId, { figma_url: figmaUrl, selection });
 export const searchPluginWork = (credential: string, workspaceId: string, query: string) => pluginRequest<PluginTarget[]>(`/api/figma-plugin/search?q=${encodeURIComponent(query)}`, credential, workspaceId, undefined, 'GET');
+export const getPluginRecentWork = (credential: string, workspaceId: string) => pluginRequest<PluginTarget[]>('/api/figma-plugin/recent-work', credential, workspaceId, undefined, 'GET');
 export const createPluginIntake = (credential: string, workspaceId: string, body: unknown, key: string) => pluginRequest<PluginResult>('/api/figma-plugin/intake', credential, workspaceId, body, 'POST', key);
 export const createPluginTask = (credential: string, workspaceId: string, body: unknown, key: string) => pluginRequest<PluginResult>('/api/figma-plugin/tasks', credential, workspaceId, body, 'POST', key);
+export const getPluginTaskOptions = (credential: string, workspaceId: string) => pluginRequest<PluginTaskCreateOptions>('/api/figma-plugin/task-options', credential, workspaceId, undefined, 'GET');
 export const linkPluginWork = (credential: string, workspaceId: string, body: unknown) => pluginRequest<PluginResult>('/api/figma-plugin/links', credential, workspaceId, body);
 export const getPluginLinkedWork = (credential: string, workspaceId: string, body: unknown) => pluginRequest<LinkedWorkResponse>('/api/figma-plugin/linked-work', credential, workspaceId, body);
 export const checkPluginChangeState = (credential: string, workspaceId: string, body: unknown) => pluginRequest<ExternalReferenceChangeState & { canonical_url?: string; external_reference_id?: string | null }>('/api/figma-plugin/change-state', credential, workspaceId, body);
