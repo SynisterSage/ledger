@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 export default defineConfig({
   plugins: [react()],
   root: 'src/ui',
+  base: './',
   build: { outDir: '../../dist', emptyOutDir: true, rollupOptions: { input: fileURLToPath(new URL('./src/ui/ui.html', import.meta.url)) } },
   define: { __LEDGER_API_ORIGIN__: JSON.stringify(process.env.VITE_API_URL || 'https://api.ledgerworkspace.com') },
 });

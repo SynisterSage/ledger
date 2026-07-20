@@ -11,3 +11,15 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: PUBLIC_BACKEND_URL
+        value: https://api.ledgerworkspace.com
+      - key: FIGMA_CLIENT_ID
+        sync: false
+      - key: FIGMA_CLIENT_SECRET
+        sync: false
+      - key: FIGMA_REDIRECT_URI
+        value: https://api.ledgerworkspace.com/api/integrations/figma/oauth/callback
+      - key: FIGMA_STATE_SECRET
+        sync: false
+      - key: INTEGRATION_TOKEN_ENCRYPTION_KEY
+        sync: false

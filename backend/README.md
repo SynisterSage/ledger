@@ -22,6 +22,11 @@ npm run dev
 - `PUBLIC_BACKEND_URL` - Public HTTPS backend URL for integration callbacks during local testing or production
 - `FRONTEND_URL` - Public website URL for `ledgerworkspace.com`
 - `INVITE_BASE_URL` - Public invite landing base. Use `https://ledgerworkspace.com` in production.
+- `FIGMA_CLIENT_ID` - Figma OAuth app client ID
+- `FIGMA_CLIENT_SECRET` - Figma OAuth app client secret
+- `FIGMA_REDIRECT_URI` - Figma OAuth callback URL; register the exact URL in the Figma app
+- `FIGMA_STATE_SECRET` - Secret used to sign Figma OAuth state values
+- `INTEGRATION_TOKEN_ENCRYPTION_KEY` - Server-side key used to protect stored integration tokens
 - `SLACK_CLIENT_ID` - Slack app client id
 - `SLACK_CLIENT_SECRET` - Slack app client secret
 - `SLACK_SIGNING_SECRET` - Slack request signing secret
@@ -43,6 +48,11 @@ Invite links should be generated from `INVITE_BASE_URL` or `FRONTEND_URL`, not t
 4. Add environment variables:
    - `VITE_SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `FIGMA_CLIENT_ID`
+   - `FIGMA_CLIENT_SECRET`
+   - `FIGMA_REDIRECT_URI=https://api.ledgerworkspace.com/api/integrations/figma/oauth/callback`
+   - `FIGMA_STATE_SECRET`
+   - `INTEGRATION_TOKEN_ENCRYPTION_KEY`
    - Slack variables above if Slack integration is enabled
 5. Build command: `cd backend && npm install`
 6. Start command: `cd backend && npm start`

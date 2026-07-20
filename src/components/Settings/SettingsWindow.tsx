@@ -1730,6 +1730,14 @@ export const SettingsWindow = () => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      setWorkspaceUserRole('member');
+      return;
+    }
+    if (activeWorkspace?.role) setWorkspaceUserRole(activeWorkspace.role);
+  }, [activeWorkspace?.role, activeWorkspaceId]);
+
   const canManageWorkspace = workspaceUserRole === 'owner' || workspaceUserRole === 'admin';
   const canUseWorkspaceIntegrations = workspaceUserRole !== 'viewer';
 

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "../node_modules/.bin/vite build && ../node_modules/.bin/esbuild src/code.ts --bundle --outfile=dist/code.js --platform=browser --format=iife",
+    "build": "../node_modules/.bin/vite build && node scripts/inline-ui.mjs && ../node_modules/.bin/esbuild src/code.ts --bundle --outfile=dist/code.js --platform=browser --format=iife && test -s dist/ui.html && test -s dist/code.js",
     "typecheck": "../node_modules/.bin/tsc -p tsconfig.json --noEmit",
     "manifest:check": "node scripts/validate-manifest.mjs",
     "test": "node --test tests/*.test.mjs"

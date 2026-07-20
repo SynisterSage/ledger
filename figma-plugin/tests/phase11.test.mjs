@@ -6,6 +6,7 @@ const main = await readFile(new URL('../src/ui/main.tsx', import.meta.url), 'utf
 const client = await readFile(new URL('../src/api/client.ts', import.meta.url), 'utf8');
 const server = await readFile(new URL('../../backend/server.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../../migrations/087_figma_change_awareness.sql', import.meta.url), 'utf8');
+const viteConfig = await readFile(new URL('../vite.config.ts', import.meta.url), 'utf8');
 
 test('Phase 11 exposes server-side change checks and manual preview refresh', () => {
   assert.match(main, /VERSION_SCOPES/);
@@ -27,4 +28,8 @@ test('Phase 11 persists provider-neutral state and safe automation defaults', ()
   assert.match(migration, /integration_webhook_events/);
   assert.match(main, /schemaVersion/);
   assert.doesNotMatch(main, /set\(.*version/);
+});
+
+test('production UI assets remain loadable from the Figma bundle', () => {
+  assert.match(viteConfig, /base:\s*['"]\.\/['"]/);
 });
