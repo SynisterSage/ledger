@@ -28,7 +28,12 @@ figma.ui.onmessage = (message) => {
     })();
   }
   if (message.type === 'open-external' && typeof (message as { url?: unknown }).url === 'string') {
-    try { const url = new URL(String((message as unknown as { url: string }).url)); if (['https:', 'http:'].includes(url.protocol) && ['ledgerworkspace.com', 'www.ledgerworkspace.com', 'api.ledgerworkspace.com', 'localhost', '127.0.0.1'].includes(url.hostname)) figma.openExternal(url.toString()); } catch { /* reject arbitrary URLs */ }
+    try {
+      const url = new URL(String((message as unknown as { url: string }).url));
+      const trustedWeb = ['ledgerworkspace.com', 'www.ledgerworkspace.com', 'api.ledgerworkspace.com', 'localhost', '127.0.0.1'].includes(url.hostname);
+      const trustedDesktop = url.protocol === 'ledger:' && ['task', 'project', 'note', 'inbox'].includes(url.hostname) && /^[0-9a-f-]{16,}$/i.test(url.pathname.slice(1));
+      if ((['https:', 'http:'].includes(url.protocol) && trustedWeb) || trustedDesktop) figma.openExternal(url.toString());
+    } catch { /* reject arbitrary URLs */ }
   }
   if (message.type === 'close') figma.closePlugin();
 };

@@ -197,7 +197,33 @@ const handleLedgerProtocolUrl = (url: string) => {
         sidebarWin.focus();
       }
       openModuleWindow('settings', null, null, null, null, null, section);
+      return;
     }
+
+    const targetRoutes: Record<string, { kind: ModuleWindowKind; focus: 'task' | 'project' | 'note' | 'none' }> = {
+      task: { kind: 'projects', focus: 'task' },
+      project: { kind: 'projects', focus: 'project' },
+      note: { kind: 'notes', focus: 'note' },
+      inbox: { kind: 'inbox', focus: 'none' },
+    };
+    const target = targetRoutes[host];
+    const targetId = pathnameParts[0];
+    if (!target || !targetId || !/^[0-9a-f-]{16,}$/i.test(targetId)) return;
+
+    if (!sidebarWin || sidebarWin.isDestroyed()) {
+      createSidebarWindow();
+    } else {
+      if (!sidebarWin.isVisible()) sidebarWin.show();
+      sidebarWin.focus();
+    }
+
+    openModuleWindow(
+      target.kind,
+      null,
+      target.focus === 'project' ? targetId : null,
+      target.focus === 'note' ? targetId : null,
+      target.focus === 'task' ? targetId : null
+    );
   } catch (error) {
     console.warn('[electron] Failed to handle ledger protocol URL', error);
   }

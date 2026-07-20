@@ -4045,7 +4045,7 @@ const buildFigmaAuthorizeUrl = ({ workspaceId, userId, state }) => {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: 'current_user:read',
+    scope: 'current_user:read,file_content:read',
     state: state || createFigmaOAuthState({ workspaceId, userId }),
     response_type: 'code',
   });
@@ -5558,7 +5558,7 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
 
 const buildFigmaOAuthCompleteHtml = (success, message = '') => {
   const safeMessage = escapeHtml(message);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Figma connection</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fffbf7;color:#111827;font:15px system-ui,-apple-system,sans-serif}.card{max-width:420px;margin:24px;padding:28px;border:1px solid rgba(17,24,39,.1);border-radius:20px;background:#fff;box-shadow:0 18px 50px rgba(17,24,39,.08)}h1{margin:0 0 10px;font-size:24px}p{color:#6b7280;line-height:1.5}.button{display:inline-flex;margin-top:12px;padding:10px 16px;border-radius:999px;background:#ff5f40;color:white;text-decoration:none;font-weight:600}</style></head><body><main class="card"><h1>${success ? 'Figma connected' : 'Figma wasn’t connected'}</h1><p>${safeMessage || (success ? 'Return to Ledger to manage the connection.' : 'Authorization was cancelled or denied.')}</p><a class="button" href="ledger://settings/integrations">Open Ledger</a></main>${success ? '<script>setTimeout(()=>{try{window.location.href="ledger://settings/integrations"}catch{}} ,120)</script>' : ''}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Figma connection</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fffbf7;color:#111827;font:14px system-ui,-apple-system,sans-serif}.content{width:min(320px,calc(100vw - 40px));text-align:center}h1{margin:0 0 8px;font-size:22px;letter-spacing:-.02em}p{margin:0;color:#6b7280;line-height:1.5}.button{display:inline-flex;margin-top:18px;padding:9px 15px;border-radius:999px;background:#ff5f40;color:white;text-decoration:none;font-weight:600}.button:hover{background:#f45135}</style></head><body><main class="content"><h1>${success ? 'Figma connected' : 'Figma wasn’t connected'}</h1><p>${safeMessage || (success ? 'Return to Ledger to manage the connection.' : 'Authorization was cancelled or denied.')}</p><a class="button" href="ledger://settings/integrations">Open Ledger</a></main>${success ? '<script>setTimeout(()=>{try{window.location.href="ledger://settings/integrations"}catch{}} ,120)</script>' : ''}</body></html>`;
 };
 
 app.post('/api/figma-plugin/auth/sessions', rateLimit('auth'), async (req, res) => {
@@ -5679,7 +5679,12 @@ const getPluginUrl = (targetType, targetId) => {
   const routes = { task: 'tasks', project: 'projects', note: 'notes', meetingNote: 'notes', intake: 'inbox' };
   return `${base}/${routes[targetType]}/${encodeURIComponent(targetId)}`;
 };
-const mapPluginTarget = (row) => ({ id: row.id, type: row.type, title: row.title, subtitle: row.subtitle ?? undefined, status: row.status ?? undefined, url: getPluginUrl(row.type, row.id) });
+const getPluginDesktopUrl = (targetType, targetId) => {
+  const routes = { task: 'task', project: 'project', note: 'note', meetingNote: 'note', intake: 'inbox' };
+  const route = routes[targetType];
+  return route ? `ledger://${route}/${encodeURIComponent(targetId)}` : undefined;
+};
+const mapPluginTarget = (row) => ({ id: row.id, type: row.type, title: row.title, subtitle: row.subtitle ?? undefined, status: row.status ?? undefined, url: getPluginUrl(row.type, row.id), open_url: getPluginDesktopUrl(row.type, row.id) });
 const preparePluginReference = async ({ req, workspaceId, body }) => {
   requirePluginScope(req, 'external-reference:create');
   const selection = validatePluginSelection(body?.selection);
@@ -5707,7 +5712,8 @@ const pluginTargetSummary = async (workspaceId, targetType, targetId) => {
   const table = externalTargetTables[targetType];
   if (!table) return null;
   const column = table === 'projects' ? 'name' : 'title';
-  const result = await supabase.from(table).select(`id, ${column}, status`).eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
+  const statusColumnTypes = new Set(['task', 'project', 'intake']);
+  const result = await supabase.from(table).select(`id, ${column}${statusColumnTypes.has(targetType) ? ', status' : ''}`).eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
   if (result.error) throw result.error;
   if (!result.data) return null;
   return mapPluginTarget({ id: result.data.id, type: targetType, title: result.data[column] || 'Untitled', status: result.data.status, subtitle: targetType === 'intake' ? 'Intake item' : targetType === 'meetingNote' ? 'Meeting note' : titleCaseLabel(targetType) });
@@ -5720,7 +5726,9 @@ const getPluginLinkedTargetSummary = async (workspaceId, targetType, targetId) =
     ? 'id, title, status, priority, assigned_to, assigned_to_user_id, project_id, due_date, updated_at'
     : targetType === 'project'
     ? 'id, name, status, lead_id, end_date, updated_at'
-    : 'id, title, status, updated_at';
+    : targetType === 'intake'
+    ? 'id, title, status, updated_at'
+    : 'id, title, updated_at';
   const result = await supabase.from(table).select(columns).eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
   if (result.error) throw result.error;
   if (!result.data) return null;
@@ -5750,6 +5758,7 @@ const getPluginLinkedTargetSummary = async (workspaceId, targetType, targetId) =
     ...((row.due_date || row.end_date) ? { dueDate: row.due_date || row.end_date } : {}),
     ...(row.priority ? { priority: String(row.priority) } : {}),
     ledgerUrl: getPluginUrl(targetType, row.id),
+    openUrl: getPluginDesktopUrl(targetType, row.id),
     updatedAt: row.updated_at || null,
   };
 };
@@ -6202,7 +6211,7 @@ app.get('/api/integrations/figma/oauth/callback', rateLimit('auth'), async (req,
       provider_team_id: profile.id, provider_team_name: profile.handle || null,
       access_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.access_token),
       refresh_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.refresh_token),
-      scopes: ['current_user:read'], installed_by: statePayload.user_id,
+      scopes: ['current_user:read', 'file_content:read'], installed_by: statePayload.user_id,
       connection_status: 'connected', connection_error: null, last_checked_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     const existing = await supabase.from('integration_accounts').select('id').eq('workspace_id', statePayload.workspace_id).eq('provider', 'figma').maybeSingle();

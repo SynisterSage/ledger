@@ -13,6 +13,8 @@ services:
         sync: false
       - key: PUBLIC_BACKEND_URL
         value: https://api.ledgerworkspace.com
+      - key: PUBLIC_FRONTEND_URL
+        value: https://ledgerworkspace.com
       - key: FIGMA_CLIENT_ID
         sync: false
       - key: FIGMA_CLIENT_SECRET
