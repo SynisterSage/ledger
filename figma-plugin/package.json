@@ -1,0 +1,11 @@
+{
+  "name": "ledger-figma-plugin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "../node_modules/.bin/vite build && ../node_modules/.bin/esbuild src/code.ts --bundle --outfile=dist/code.js --platform=browser --format=iife",
+    "typecheck": "../node_modules/.bin/tsc -p tsconfig.json --noEmit",
+    "manifest:check": "node scripts/validate-manifest.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

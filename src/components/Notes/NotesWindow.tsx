@@ -65,6 +65,7 @@ import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
 import { isTeamOrientedTemplate, QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
 import NotesHome from './NotesHome';
 import type { NotesHomeTemplate } from './NotesHome';
+import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 
 type NoteRow = {
   id: string;
@@ -4922,6 +4923,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       <RichTextEditor
                         editorKey={`${selectedNote.id}:${editorRefreshTick}`}
                         noteId={selectedNote.id}
+                        targetType={/meeting/i.test(selectedNote.source ?? '') ? 'meetingNote' : 'note'}
                         noteTitle={selectedNote.title}
                         noteProjectId={selectedNoteProjectLinks[0]?.project_id ?? null}
                         initialValue={draftContent}
@@ -5259,6 +5261,16 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     )}
                   </div>
                 </div>
+
+                {selectedNote && activeWorkspaceId ? (
+                  <LinkedDesignsSection
+                    target={{
+                      workspaceId: activeWorkspaceId,
+                      targetType: /meeting/i.test(selectedNote.source ?? '') ? 'meetingNote' : 'note',
+                      targetId: selectedNote.id,
+                    }}
+                  />
+                ) : null}
 
                 <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                   <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Details</p>

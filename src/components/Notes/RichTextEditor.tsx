@@ -21,7 +21,7 @@ import {
   ChevronDown,
   SpellCheck,
 } from 'lucide-react';
-import { AutoLinkNode, LinkNode } from '@lexical/link';
+import { AutoLinkNode, LinkNode, $createLinkNode } from '@lexical/link';
 import { TOGGLE_LINK_COMMAND } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
 import { INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from '@lexical/list';
@@ -39,8 +39,10 @@ import {
   $getPreviousSelection,
   $getSelection,
   $isRangeSelection,
+  $isElementNode,
   $setSelection,
   $createParagraphNode,
+  $createTextNode,
   COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
   PASTE_COMMAND,
@@ -60,6 +62,8 @@ import { $createImageNode, $isImageNode, ImageNode } from './nodes/ImageNode';
 import { SmartDateNode } from './nodes/SmartDateNode';
 import { SmartDatePlugin } from './SmartDatePlugin';
 import { SmartPersonNode } from './nodes/SmartPersonNode';
+import { $createExternalEmbedNode, ExternalEmbedNode, ExternalEmbedProvider } from '../ExternalEmbeds/ExternalEmbedNode';
+import { useApi } from '../../hooks/useApi';
 import { SmartPersonPlugin } from './SmartPersonPlugin';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -72,6 +76,7 @@ type Props = {
   initialValue?: string | null;
   editorKey?: string;
   noteId?: string | null;
+  targetType?: 'note' | 'meetingNote';
   noteTitle?: string | null;
   noteProjectId?: string | null;
   onChange: (html: string) => void;
@@ -106,6 +111,7 @@ const editorConfig = {
     ImageNode,
     SmartDateNode,
     SmartPersonNode,
+    ExternalEmbedNode,
   ],
   theme: {
     text: {
@@ -797,6 +803,80 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
   return null;
 };
 
+const isLikelyFigmaUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    const route = url.pathname.split('/').filter(Boolean)[0]?.toLowerCase();
+    return url.protocol === 'https:' && (host === 'figma.com' || host === 'www.figma.com') && ['design', 'file', 'board'].includes(route ?? '');
+  } catch { return false; }
+};
+
+const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | null; targetType?: 'note' | 'meetingNote' }) => {
+  const [editor] = useLexicalComposerContext();
+  const api = useApi();
+  const toast = useToast();
+  const [prompt, setPrompt] = useState<{ url: string; nodeKey: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!prompt) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPrompt(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [prompt]);
+
+  useEffect(() => editor.registerCommand(PASTE_COMMAND, (event: ClipboardEvent) => {
+    if (!noteId) return false;
+    const text = event.clipboardData?.getData('text/plain')?.trim() ?? '';
+    if (!text || !isLikelyFigmaUrl(text)) return false;
+    event.preventDefault();
+    let nodeKey: string | null = null;
+    editor.update(() => {
+      const selection = $getSelection();
+      if (!$isRangeSelection(selection)) return;
+      const linkNode = $createLinkNode(text);
+      linkNode.append($createTextNode(text));
+      selection.insertNodes([linkNode]);
+      nodeKey = linkNode.getKey();
+    });
+    if (nodeKey) setPrompt({ url: text, nodeKey });
+    return true;
+  }, COMMAND_PRIORITY_HIGH), [editor, noteId, targetType]);
+
+  const embed = async () => {
+    if (!prompt || !noteId || busy) return;
+    setBusy(true);
+    try {
+      const created = await api.createExternalReference('figma', prompt.url) as { id: string; normalized_url?: string; external_url?: string };
+      await api.linkExternalReference(created.id, targetType, noteId, 'embed');
+      await api.resolveExternalReference(created.id);
+      await api.createExternalReferencePreview(created.id, targetType, noteId);
+      const canonicalUrl = created.normalized_url || created.external_url || prompt.url;
+      editor.update(() => {
+        const original = $getNodeByKey(prompt.nodeKey);
+        if (!original) return;
+        const embedNode = $createExternalEmbedNode({ externalReferenceId: created.id, externalUrl: canonicalUrl });
+        const topLevel = original.getTopLevelElementOrThrow();
+        if (!$isElementNode(topLevel)) return;
+        if (topLevel.getChildrenSize() === 1) topLevel.replace(embedNode);
+        else {
+          original.remove();
+          topLevel.insertAfter(embedNode);
+        }
+      });
+      setPrompt(null);
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not embed this Figma design.', { variant: 'error' });
+    } finally { setBusy(false); }
+  };
+
+  if (!prompt) return null;
+  return <div className="absolute right-4 top-3 z-20 flex max-w-[min(420px,calc(100%-2rem))] items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)] shadow-[0_12px_30px_rgba(15,23,42,0.12)]" role="dialog" aria-label="Figma link detected"><div className="min-w-0"><span className="font-medium">Figma link detected</span><span className="mt-0.5 block text-[10px] leading-4 text-[var(--ledger-text-muted)]">Saved previews can be visible to people who can access this note.</span></div><button type="button" onClick={() => void embed()} disabled={busy} className="h-7 shrink-0 rounded-full bg-[var(--ledger-accent)] px-2.5 text-[11px] font-medium text-white disabled:opacity-60">{busy ? 'Embedding…' : 'Embed design'}</button><button type="button" onClick={() => setPrompt(null)} disabled={busy} className="h-7 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] px-2.5 text-[11px] font-medium hover:bg-[var(--ledger-surface-hover)]">Keep as link</button></div>;
+};
+
 const ResizableImagePlugin = () => {
   const [editor] = useLexicalComposerContext();
   const observersRef = useRef(
@@ -1125,6 +1205,7 @@ export function RichTextEditor({
   initialValue,
   editorKey,
   noteId,
+  targetType = 'note',
   noteTitle,
   noteProjectId,
   onChange,
@@ -1215,6 +1296,7 @@ export function RichTextEditor({
 
   return (
     <LexicalComposer initialConfig={editorConfig}>
+      <ExternalEmbedProvider targetType={targetType} targetId={noteId ?? null} canEdit>
       <div>
         <ToolbarPlugin onAutoCorrect={onAutoCorrect} />
         <div className="relative mt-2">
@@ -1259,11 +1341,13 @@ export function RichTextEditor({
           <TabIndentationPlugin />
           <ListPlugin />
           <ImagePasteDropPlugin noteId={noteId} />
+          <FigmaPastePlugin noteId={noteId} targetType={targetType} />
           <ResizableImagePlugin />
           <ImageCopyPlugin />
           <OnChangePlugin onChange={handleChange} />
         </div>
       </div>
+      </ExternalEmbedProvider>
     </LexicalComposer>
   );
 }

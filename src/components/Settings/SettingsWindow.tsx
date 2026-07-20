@@ -56,6 +56,7 @@ import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import authService from '../../services/auth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegrationPage';
 
 type UserPreferences = {
   weekStartsOn: 'sunday' | 'monday';
@@ -602,6 +603,23 @@ const SlackMark = () => (
   </svg>
 );
 
+const FigmaMark = () => (
+  <svg
+    width="400"
+    height="600"
+    viewBox="0 0 400 600"
+    className="h-4 w-4"
+    aria-hidden="true"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path d="M0 500C0 444.772 44.772 400 100 400H200V500C200 555.228 155.228 600 100 600C44.772 600 0 555.228 0 500Z" fill="#24CB71"/>
+    <path d="M200 0V200H300C355.228 200 400 155.228 400 100C400 44.772 355.228 0 300 0H200Z" fill="#FF7237"/>
+    <path d="M299.167 400C354.395 400 399.167 355.228 399.167 300C399.167 244.772 354.395 200 299.167 200C243.939 200 199.167 244.772 199.167 300C199.167 355.228 243.939 400 299.167 400Z" fill="#00B6FF"/>
+    <path d="M0 100C0 155.228 44.772 200 100 200H200V0H100C44.772 0 0 44.772 0 100Z" fill="#FF3737"/>
+    <path d="M0 300C0 355.228 44.772 400 100 400H200V200H100C44.772 200 0 244.772 0 300Z" fill="#874FFF"/>
+  </svg>
+);
+
 const SettingsPageHeader = ({
   id,
   title,
@@ -836,6 +854,8 @@ export const SettingsWindow = () => {
   const [isDisconnectingSlack, setIsDisconnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
   const [slackRefreshToken, setSlackRefreshToken] = useState(0);
+  const [figmaStatus, setFigmaStatus] = useState<FigmaIntegrationStatus>({ status: 'disconnected' });
+  const [figmaDetailOpen, setFigmaDetailOpen] = useState(false);
   const [extensionTokenStatus, setExtensionTokenStatus] = useState<ExtensionTokenStatus | null>(
     null
   );
@@ -1463,6 +1483,17 @@ export const SettingsWindow = () => {
       cancelled = true;
     };
   }, [activeSection, activeWorkspaceId, api, slackRefreshToken]);
+
+  useEffect(() => {
+    if (activeSection !== 'integrations' || !activeWorkspaceId) return;
+    let cancelled = false;
+    void api.getFigmaIntegrationStatus(activeWorkspaceId).then((payload) => {
+      if (!cancelled) setFigmaStatus(payload as FigmaIntegrationStatus);
+    }).catch(() => {
+      if (!cancelled) setFigmaStatus({ status: 'error', error: 'Could not load Figma connection status.' });
+    });
+    return () => { cancelled = true; };
+  }, [activeSection, activeWorkspaceId, api]);
 
   useEffect(() => {
     if (activeSection !== 'integrations' || !activeWorkspaceId) return;
@@ -4313,7 +4344,14 @@ export const SettingsWindow = () => {
                 </section>
               )}
 
-              {activeSection === 'integrations' && (
+              {activeSection === 'integrations' && figmaDetailOpen ? (
+                <FigmaIntegrationPage
+                  workspaceId={activeWorkspaceId}
+                  canManage={canManageWorkspace}
+                  onBack={() => setFigmaDetailOpen(false)}
+                  onStatusChange={setFigmaStatus}
+                />
+              ) : activeSection === 'integrations' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-integrations">
                   <div className="space-y-2">
                     <h2 id="settings-integrations" className={settingsTheme.pageTitle}>
@@ -4333,6 +4371,11 @@ export const SettingsWindow = () => {
                         Connected
                       </h3>
                       <div className={settingsTheme.sectionRows}>
+                        <div className="flex items-center gap-3 px-4 py-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><FigmaMark /></span>
+                          <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma</p><p className={settingsTheme.help}>Attach designs to Ledger work and preview them without leaving your workspace.</p><p className={settingsTheme.sectionStatus + ' mt-1'}>{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</p></div>
+                          <button type="button" onClick={() => setFigmaDetailOpen(true)} className={figmaStatus.status === 'connected' ? settingsTheme.controlButtonNeutral : 'h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white hover:bg-[var(--ledger-accent-hover)]'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
+                        </div>
                         <div className="flex items-center gap-3 px-4 py-3">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4A154B]/10 text-[#611f69] dark:text-[#E01E5A]">
                             <SlackMark />

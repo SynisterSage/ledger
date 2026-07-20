@@ -1,0 +1,14 @@
+export type PluginAppState = 'loading' | 'signed_out' | 'authorizing' | 'workspace_required' | 'ready' | 'expired' | 'offline' | 'error';
+export type Workspace = { id: string; name: string; is_personal?: boolean; color?: string | null; role: string; figma_status?: string };
+export type UserSummary = { id: string; email?: string | null; full_name?: string | null };
+export type FigmaSelectionContext = { nodes: Array<{ id: string; name: string; type: string }>; pageId: string; pageName: string; fileName?: string; fileKey?: string; fileKeyAvailable: boolean };
+export type PluginTarget = { id: string; type: 'task' | 'project' | 'note' | 'meetingNote' | 'intake'; title: string; subtitle?: string; status?: string; url?: string };
+export type PluginAction = 'intake' | 'task' | 'link' | 'property';
+export type PluginResult = { target: PluginTarget; reference_id: string; canonical_url: string; preview?: { error?: string; accessStatus?: string; consentRequired?: boolean } | null; partial?: boolean; already_linked?: boolean };
+export type EditableProperty = 'status' | 'assignee' | 'priority' | 'project' | 'dueDate';
+export type EditCapabilities = { canEdit: boolean; editableProperties: EditableProperty[] };
+export type PluginEditOption = { id: string; name: string; category?: string; avatarUrl?: string };
+export type PluginWorkEditOptions = { capabilities: EditCapabilities; statuses?: PluginEditOption[]; assignees?: PluginEditOption[]; priorities?: PluginEditOption[]; projects?: PluginEditOption[]; dueDateRules?: { supported: boolean; allowClear: boolean } };
+export type LinkedWorkSummary = { id: string; type: 'task' | 'project' | 'note' | 'meetingNote' | 'intake'; title: string; status?: string; assignee?: { id: string; name: string; avatarUrl?: string }; projectId?: string; projectName?: string; dueDate?: string; priority?: string; ledgerUrl: string; relationshipId: string; relationshipSources: string[]; updatedAt?: string | null; canUnlink?: boolean; editCapabilities?: EditCapabilities };
+export type ExternalReferenceChangeState = { external_reference_id?: string; workspace_id?: string; change_state: 'unknown' | 'current' | 'updated' | 'checking' | 'unavailable' | 'error'; last_checked_at?: string | null; source_last_modified_at?: string | null; preview_captured_at?: string | null; preview_source_modified_at?: string | null };
+export type LinkedWorkResponse = { canonical_url: string; external_reference_id: string | null; linked_work: LinkedWorkSummary[]; change_state?: ExternalReferenceChangeState };

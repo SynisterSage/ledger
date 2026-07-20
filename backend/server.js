@@ -3,6 +3,22 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import crypto from 'node:crypto';
+import {
+  parseExternalUrl,
+  createOrGetExternalReference,
+  resolveExternalReference,
+  linkExternalReference,
+  unlinkExternalReference,
+  getExternalReferencesForTarget,
+  searchExternalReferences,
+} from './integrations/external-references.js';
+import {
+  generateExternalReferencePreview,
+  getExternalReferencePreview,
+  getFigmaPreviewConsent,
+} from './integrations/external-previews.js';
+import { assertFigmaCapability, getFigmaCapabilityMinimumRole } from './integrations/figma/figma-policy.js';
+import { checkExternalReferenceChange, getExternalReferenceChangeState, getFigmaAutomationSettings, markFigmaReferencesForCheck, updateFigmaAutomationSettings } from './integrations/external-change-awareness.js';
 
 dotenv.config();
 
@@ -69,6 +85,14 @@ const RATE_LIMITS = {
   // for normal paging while still protecting against sustained scraping or abuse.
   read: { max: 600 },
   write: { max: 60 },
+  figma_resolve: { max: 30 },
+  figma_preview: { max: 12 },
+  figma_linked: { max: 120 },
+  figma_unlink: { max: 30 },
+  figma_update: { max: 60 },
+  figma_change_check: { max: 30 },
+  figma_webhook: { max: 120 },
+  figma_cleanup: { max: 2 },
 };
 
 const rateBuckets = new Map();
@@ -243,6 +267,63 @@ const authMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Auth failed' });
+  }
+};
+
+const FIGMA_PLUGIN_CLIENT_ID = 'ledger-figma-plugin';
+const FIGMA_PLUGIN_SCOPES = [
+  'workspace:read',
+  'figma-context:read',
+  'external-reference:create',
+  'external-reference:link',
+  'external-reference:unlink',
+  'intake:create',
+  'task:create',
+  'work:search',
+  'work:update:status',
+  'work:update:assignee',
+  'work:update:priority',
+  'work:update:project',
+  'work:update:due-date',
+  'external-reference:check-version',
+  'external-reference:refresh-preview',
+];
+const FIGMA_PLUGIN_CLIENT_SCOPES = new Set(FIGMA_PLUGIN_SCOPES);
+const hashPluginValue = (value) => crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
+const pluginValueMatches = (value, hash) => {
+  const actual = Buffer.from(hashPluginValue(value));
+  const expected = Buffer.from(String(hash ?? ''));
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+};
+const getPluginAuthorizeUrl = (sessionId, code) => {
+  const base = process.env.FIGMA_PLUGIN_AUTH_URL?.trim() || process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/?figmaPluginAuth=${encodeURIComponent(sessionId)}&code=${encodeURIComponent(code)}`;
+};
+
+const loadPluginCredential = async (req) => {
+  const token = getBearerToken(req);
+  if (!token || !token.startsWith('ledger_figma_plugin_')) return null;
+  const result = await supabase.from('figma_plugin_credentials').select('id, user_id, client_id, scopes, expires_at, revoked_at').eq('token_hash', hashPluginValue(token)).maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data || result.data.revoked_at || new Date(result.data.expires_at).getTime() <= Date.now() || result.data.client_id !== FIGMA_PLUGIN_CLIENT_ID) return null;
+  void supabase.from('figma_plugin_credentials').update({ last_used_at: new Date().toISOString() }).eq('id', result.data.id);
+  return { token, credential: result.data };
+};
+
+const pluginAuthMiddleware = async (req, res, next) => {
+  try {
+    const loaded = await loadPluginCredential(req);
+    if (!loaded) return res.status(401).json({ error: 'Your Ledger session expired.' });
+    req.pluginCredential = loaded.credential;
+    req.authUser = { id: loaded.credential.user_id };
+    next();
+  } catch (error) { return respondWithError(res, error); }
+};
+const requirePluginScope = (req, scope) => {
+  if (!req.pluginCredential?.scopes?.includes(scope)) {
+    const error = new Error('Plugin permission denied.');
+    error.statusCode = 403;
+    throw error;
   }
 };
 
@@ -3915,6 +3996,62 @@ const getSlackRedirectUri = () => {
   return null;
 };
 
+const getFigmaRedirectUri = () => {
+  const explicit = process.env.FIGMA_REDIRECT_URI?.trim();
+  if (explicit) return explicit;
+  const publicBackendUrl = process.env.PUBLIC_BACKEND_URL?.trim();
+  return publicBackendUrl
+    ? `${publicBackendUrl.replace(/\/$/, '')}/api/integrations/figma/oauth/callback`
+    : null;
+};
+
+const getFigmaStateSecret = () =>
+  process.env.FIGMA_STATE_SECRET?.trim() || process.env.SLACK_STATE_SECRET?.trim() || 'ledger-figma-dev-state';
+
+const createFigmaOAuthState = ({ workspaceId, userId }) => {
+  const payload = {
+    workspace_id: workspaceId,
+    user_id: userId,
+    nonce: crypto.randomBytes(24).toString('hex'),
+    iat: Math.floor(Date.now() / 1000),
+  };
+  const encoded = base64UrlEncode(JSON.stringify(payload));
+  const signature = crypto.createHmac('sha256', getFigmaStateSecret()).update(encoded).digest('base64url');
+  return `${encoded}.${signature}`;
+};
+
+const verifyFigmaOAuthState = (state) => {
+  const [encoded, signature] = String(state ?? '').split('.');
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac('sha256', getFigmaStateSecret()).update(encoded).digest('base64url');
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(signature);
+  if (expectedBuffer.length !== actualBuffer.length || !crypto.timingSafeEqual(expectedBuffer, actualBuffer)) return null;
+  const payload = safeJson(Buffer.from(encoded, 'base64url').toString('utf8'), null);
+  const issuedAt = Number(payload?.iat ?? 0);
+  if (!payload?.workspace_id || !payload?.user_id || !payload?.nonce || !issuedAt) return null;
+  if (Math.floor(Date.now() / 1000) - issuedAt > 10 * 60) return null;
+  return { ...payload, state_hash: crypto.createHash('sha256').update(String(state)).digest('hex') };
+};
+
+const buildFigmaAuthorizeUrl = ({ workspaceId, userId, state }) => {
+  const clientId = process.env.FIGMA_CLIENT_ID?.trim();
+  const redirectUri = getFigmaRedirectUri();
+  if (!clientId || !redirectUri) {
+    const error = new Error('Figma OAuth is not configured');
+    error.statusCode = 500;
+    throw error;
+  }
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: 'current_user:read',
+    state: state || createFigmaOAuthState({ workspaceId, userId }),
+    response_type: 'code',
+  });
+  return `https://www.figma.com/oauth?${params.toString()}`;
+};
+
 const getSlackStateSecret = () =>
   process.env.SLACK_STATE_SECRET?.trim() ||
   process.env.SLACK_SIGNING_SECRET?.trim() ||
@@ -4138,9 +4275,34 @@ const verifySlackRequest = (req) => {
   );
 };
 
+const getIntegrationTokenKey = () => {
+  const raw = process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY?.trim() || process.env.FIGMA_TOKEN_ENCRYPTION_KEY?.trim();
+  if (!raw) throw new Error('Integration token encryption is not configured');
+  const key = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, 'hex') : Buffer.from(raw, 'base64');
+  if (key.length !== 32) throw new Error('Integration token encryption key must be 32 bytes');
+  return key;
+};
+
 const protectIntegrationTokenForStorage = (token) => {
-  // TODO: replace with envelope encryption before production Slack installs.
-  return token || null;
+  if (!token) return null;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getIntegrationTokenKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(token), 'utf8'), cipher.final()]);
+  return `enc:v1:${iv.toString('base64url')}:${cipher.getAuthTag().toString('base64url')}:${encrypted.toString('base64url')}`;
+};
+
+const readIntegrationToken = (stored) => {
+  if (!stored) return null;
+  if (!String(stored).startsWith('enc:v1:')) return String(stored);
+  const [, version, ivValue, tagValue, encryptedValue] = String(stored).split(':');
+  if (version !== 'v1' || !ivValue || !tagValue || !encryptedValue) return null;
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', getIntegrationTokenKey(), Buffer.from(ivValue, 'base64url'));
+    decipher.setAuthTag(Buffer.from(tagValue, 'base64url'));
+    return Buffer.concat([decipher.update(Buffer.from(encryptedValue, 'base64url')), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
 };
 
 const parseSlackMessageTimestamp = (timestamp) => {
@@ -5393,6 +5555,987 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
     res.status(statusCode).type('text').send(message);
   }
 });
+
+const buildFigmaOAuthCompleteHtml = (success, message = '') => {
+  const safeMessage = escapeHtml(message);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Figma connection</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fffbf7;color:#111827;font:15px system-ui,-apple-system,sans-serif}.card{max-width:420px;margin:24px;padding:28px;border:1px solid rgba(17,24,39,.1);border-radius:20px;background:#fff;box-shadow:0 18px 50px rgba(17,24,39,.08)}h1{margin:0 0 10px;font-size:24px}p{color:#6b7280;line-height:1.5}.button{display:inline-flex;margin-top:12px;padding:10px 16px;border-radius:999px;background:#ff5f40;color:white;text-decoration:none;font-weight:600}</style></head><body><main class="card"><h1>${success ? 'Figma connected' : 'Figma wasn’t connected'}</h1><p>${safeMessage || (success ? 'Return to Ledger to manage the connection.' : 'Authorization was cancelled or denied.')}</p><a class="button" href="ledger://settings/integrations">Open Ledger</a></main>${success ? '<script>setTimeout(()=>{try{window.location.href="ledger://settings/integrations"}catch{}} ,120)</script>' : ''}</body></html>`;
+};
+
+app.post('/api/figma-plugin/auth/sessions', rateLimit('auth'), async (req, res) => {
+  try {
+    const clientId = String(req.body?.client_id ?? '').trim();
+    const pluginSession = String(req.body?.plugin_session ?? '').trim();
+    if (clientId !== FIGMA_PLUGIN_CLIENT_ID || pluginSession.length < 16 || pluginSession.length > 200) return res.status(400).json({ error: 'Invalid plugin client.' });
+    const requestedScopes = Array.isArray(req.body?.scopes) && req.body.scopes.length
+      ? [...new Set(req.body.scopes.map((scope) => String(scope).trim()))]
+      : FIGMA_PLUGIN_SCOPES;
+    if (requestedScopes.some((scope) => !FIGMA_PLUGIN_CLIENT_SCOPES.has(scope))) return res.status(400).json({ error: 'Invalid plugin permission request.' });
+    const sessionId = crypto.randomUUID();
+    const code = `${crypto.randomBytes(2).toString('hex').toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+    const pollSecret = crypto.randomBytes(24).toString('base64url');
+    const result = await supabase.from('figma_plugin_authorization_sessions').insert({ id: sessionId, client_id: clientId, plugin_session_hash: hashPluginValue(pluginSession), poll_secret_hash: hashPluginValue(pollSecret), verification_code_hash: hashPluginValue(code), scopes: requestedScopes, expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }).select('id, expires_at').single();
+    if (result.error) throw result.error;
+    res.json({ session_id: result.data.id, verification_code: code, poll_secret: pollSecret, expires_at: result.data.expires_at, authorization_url: getPluginAuthorizeUrl(result.data.id, code) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/figma-plugin/auth/authorize', async (req, res) => {
+  const sessionId = String(req.query?.session_id ?? '').trim();
+  const code = String(req.query?.code ?? '').trim().toUpperCase();
+  res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Ledger to Figma</title><style>body{font:15px system-ui;max-width:420px;margin:48px auto;padding:0 20px;color:#111827}button{background:#ff5f40;color:white;border:0;border-radius:8px;padding:10px 14px;font-weight:600}p{color:#4b5563;line-height:1.5}</style><h1>Connect Ledger to Figma</h1><p>Return to Ledger to approve this plugin connection. Verification code: <strong>${code.replace(/[^A-Z0-9-]/g, '')}</strong></p><p>Open Ledger in your browser if it is not already open, then approve the request there.</p><a href="${getPluginAuthorizeUrl(sessionId, code)}"><button>Open Ledger</button></a>`);
+});
+
+app.post('/api/figma-plugin/auth/approve', authMiddleware, rateLimit('auth'), async (req, res) => {
+  try {
+    const sessionId = String(req.body?.session_id ?? '').trim();
+    const code = String(req.body?.verification_code ?? '').trim().toUpperCase();
+    const session = await supabase.from('figma_plugin_authorization_sessions').select('id, client_id, verification_code_hash, status, expires_at, scopes').eq('id', sessionId).maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data || session.data.client_id !== FIGMA_PLUGIN_CLIENT_ID || session.data.status !== 'pending' || new Date(session.data.expires_at).getTime() <= Date.now() || !pluginValueMatches(code, session.data.verification_code_hash)) return res.status(400).json({ error: 'This authorization request is invalid or expired.' });
+    const credential = `ledger_figma_plugin_${crypto.randomBytes(32).toString('base64url')}`;
+    const credentialRow = await supabase.from('figma_plugin_credentials').insert({ token_hash: hashPluginValue(credential), user_id: req.authUser.id, client_id: FIGMA_PLUGIN_CLIENT_ID, scopes: session.data.scopes?.length ? session.data.scopes : FIGMA_PLUGIN_SCOPES, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }).select('id').single();
+    if (credentialRow.error) throw credentialRow.error;
+    const updated = await supabase.from('figma_plugin_authorization_sessions').update({ status: 'approved', user_id: req.authUser.id, credential_encrypted: protectIntegrationTokenForStorage(credential), approved_at: new Date().toISOString() }).eq('id', sessionId).eq('status', 'pending').select('id').maybeSingle();
+    if (updated.error || !updated.data) { await supabase.from('figma_plugin_credentials').delete().eq('id', credentialRow.data.id); return res.status(409).json({ error: 'This authorization request was already completed.' }); }
+    res.json({ approved: true });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/figma-plugin/auth/poll', rateLimit('auth'), async (req, res) => {
+  try {
+    const sessionId = String(req.body?.session_id ?? '').trim();
+    const pollSecret = String(req.body?.poll_secret ?? '').trim();
+    const session = await supabase.from('figma_plugin_authorization_sessions').select('id, poll_secret_hash, status, expires_at, credential_encrypted, credential_returned_at, scopes').eq('id', sessionId).maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data || !pluginValueMatches(pollSecret, session.data.poll_secret_hash) || new Date(session.data.expires_at).getTime() <= Date.now()) return res.status(400).json({ status: 'expired' });
+    if (session.data.status === 'pending') return res.json({ status: 'pending' });
+    if (session.data.status !== 'approved' || session.data.credential_returned_at) return res.json({ status: 'cancelled' });
+    const token = readIntegrationToken(session.data.credential_encrypted);
+    if (!token) return res.status(500).json({ error: 'Could not complete Ledger authorization.' });
+    const updated = await supabase.from('figma_plugin_authorization_sessions').update({ credential_returned_at: new Date().toISOString() }).eq('id', sessionId).is('credential_returned_at', null).select('id').maybeSingle();
+    if (updated.error || !updated.data) return res.json({ status: 'cancelled' });
+    res.json({ status: 'approved', credential: token, scopes: session.data.scopes });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/figma-plugin/auth/cancel', rateLimit('auth'), async (req, res) => {
+  const sessionId = String(req.body?.session_id ?? '').trim();
+  await supabase.from('figma_plugin_authorization_sessions').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', sessionId).eq('status', 'pending');
+  res.json({ cancelled: true });
+});
+
+app.get('/api/figma-plugin/session', pluginAuthMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'workspace:read');
+    const user = await supabase.from('users').select('id, email, full_name, avatar_url').eq('id', req.pluginCredential.user_id).maybeSingle();
+    if (user.error) throw user.error;
+    res.json({ user: user.data, scopes: req.pluginCredential.scopes, expires_at: req.pluginCredential.expires_at });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/figma-plugin/workspaces', pluginAuthMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'workspace:read');
+    const workspaceIds = [...(await getUserWorkspaceIds(req.pluginCredential.user_id))];
+    if (!workspaceIds.length) return res.json([]);
+    const rows = await supabase.from('workspaces').select('id, name, description, is_personal, color, owner_id').in('id', workspaceIds);
+    if (rows.error) throw rows.error;
+    const members = await supabase.from('workspace_members').select('workspace_id, role').eq('user_id', req.pluginCredential.user_id).in('workspace_id', workspaceIds);
+    if (members.error) throw members.error;
+    const roleById = new Map((members.data ?? []).map((row) => [row.workspace_id, row.role]));
+    const figma = await supabase.from('integration_accounts').select('workspace_id, connection_status').eq('provider', 'figma').in('workspace_id', workspaceIds);
+    if (figma.error) throw figma.error;
+    const figmaById = new Map((figma.data ?? []).map((row) => [row.workspace_id, row.connection_status]));
+    res.json((rows.data ?? []).map((row) => ({ ...row, role: row.owner_id === req.pluginCredential.user_id ? 'owner' : roleById.get(row.id) ?? 'member', figma_status: figmaById.get(row.id) ?? 'disconnected' })));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+const pluginSupportedNodeTypes = new Set(['FRAME', 'SECTION', 'COMPONENT', 'COMPONENT_SET', 'GROUP', 'PAGE']);
+const pluginTargetTypes = new Set(['task', 'project', 'note', 'meetingNote', 'intake']);
+const pluginError = (message, statusCode = 400) => { const error = new Error(message); error.statusCode = statusCode; return error; };
+const requirePluginWorkspace = async (req, minimumRole = 'member') => {
+  const workspaceId = getRequestedWorkspaceId(req);
+  if (!workspaceId) throw pluginError('Choose a Ledger workspace.', 400);
+  await requireWorkspaceAccess(req.pluginCredential.user_id, workspaceId, minimumRole);
+  return workspaceId;
+};
+const validatePluginSelection = (selection) => {
+  const nodeId = String(selection?.node_id ?? '').trim();
+  const nodeType = String(selection?.node_type ?? '').trim().toUpperCase();
+  if (!nodeId || !/^\d+[:-]\d+$/.test(nodeId) || !pluginSupportedNodeTypes.has(nodeType)) throw pluginError('Select one supported Figma layer.');
+  if (!String(selection?.page_name ?? '').trim()) throw pluginError('Figma page context is required.');
+  return { nodeId: nodeId.replace('-', ':'), nodeType };
+};
+const resolvePluginFigmaUrl = ({ url, nodeId }) => {
+  const parsed = parseExternalUrl({ provider: 'figma', url });
+  if (parsed.nodeId && parsed.nodeId !== nodeId) throw pluginError('This link points to a different Figma selection.');
+  if (parsed.nodeId) return parsed.normalizedUrl;
+  const canonical = new URL(parsed.normalizedUrl);
+  canonical.searchParams.set('node-id', nodeId);
+  return canonical.toString();
+};
+const getPluginUrl = (targetType, targetId) => {
+  const base = (process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'https://ledgerworkspace.com').replace(/\/$/, '');
+  const routes = { task: 'tasks', project: 'projects', note: 'notes', meetingNote: 'notes', intake: 'inbox' };
+  return `${base}/${routes[targetType]}/${encodeURIComponent(targetId)}`;
+};
+const mapPluginTarget = (row) => ({ id: row.id, type: row.type, title: row.title, subtitle: row.subtitle ?? undefined, status: row.status ?? undefined, url: getPluginUrl(row.type, row.id) });
+const preparePluginReference = async ({ req, workspaceId, body }) => {
+  requirePluginScope(req, 'external-reference:create');
+  const selection = validatePluginSelection(body?.selection);
+  const canonicalUrl = resolvePluginFigmaUrl({ url: String(body?.figma_url ?? '').trim(), nodeId: selection.nodeId });
+  const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'figma', url: canonicalUrl, createdByUserId: req.pluginCredential.user_id });
+  try {
+    await resolveExternalReference({ supabase, workspaceId, referenceId: created.reference.id, requestedByUserId: req.pluginCredential.user_id, getConnection: getFigmaConnectionForReference });
+  } catch { /* Metadata is best effort; the canonical reference is already safe. */ }
+  return { ...created, canonicalUrl, selection };
+};
+const finishPluginReference = async ({ req, workspaceId, referenceId, targetType, targetId }) => {
+  requirePluginScope(req, 'external-reference:link');
+  if (!pluginTargetTypes.has(targetType)) throw pluginError('Unsupported Ledger target.');
+  await requireFigmaCapability({ userId: req.pluginCredential.user_id, workspaceId, capability: 'link_reference', targetType, targetId });
+  const prior = await supabase.from('external_reference_links').select('id').eq('workspace_id', workspaceId).eq('external_reference_id', referenceId).eq('target_type', targetType).eq('target_id', targetId).maybeSingle();
+  if (prior.error) throw prior.error;
+  const link = await linkExternalReference({ supabase, workspaceId, referenceId, targetType, targetId, source: 'integration', createdByUserId: req.pluginCredential.user_id, ensureTarget: ensureExternalTarget });
+  let preview = null;
+  try {
+    preview = await generateExternalReferencePreview({ supabase, workspaceId, referenceId, createdByUserId: req.pluginCredential.user_id, getConnection: getFigmaConnectionForReference });
+  } catch { preview = { accessStatus: 'error', error: 'Ledger couldn’t load this Figma preview.' }; }
+  return { link, preview, alreadyLinked: Boolean(prior.data) };
+};
+const pluginTargetSummary = async (workspaceId, targetType, targetId) => {
+  const table = externalTargetTables[targetType];
+  if (!table) return null;
+  const column = table === 'projects' ? 'name' : 'title';
+  const result = await supabase.from(table).select(`id, ${column}, status`).eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) return null;
+  return mapPluginTarget({ id: result.data.id, type: targetType, title: result.data[column] || 'Untitled', status: result.data.status, subtitle: targetType === 'intake' ? 'Intake item' : targetType === 'meetingNote' ? 'Meeting note' : titleCaseLabel(targetType) });
+};
+const pluginLinkedTypeOrder = { task: 0, project: 1, intake: 2, meetingNote: 3, note: 4 };
+const getPluginLinkedTargetSummary = async (workspaceId, targetType, targetId) => {
+  const table = externalTargetTables[targetType];
+  if (!table) return null;
+  const columns = targetType === 'task'
+    ? 'id, title, status, priority, assigned_to, assigned_to_user_id, project_id, due_date, updated_at'
+    : targetType === 'project'
+    ? 'id, name, status, lead_id, end_date, updated_at'
+    : 'id, title, status, updated_at';
+  const result = await supabase.from(table).select(columns).eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) return null;
+  const row = result.data;
+  const title = targetType === 'project' ? row.name : row.title;
+  const assigneeId = row.assigned_to_user_id || row.assigned_to || row.lead_id || null;
+  let assignee = null;
+  if (assigneeId) {
+    const member = await supabase.from('users').select('id, full_name, email, avatar_url').eq('id', assigneeId).maybeSingle();
+    if (member.error) throw member.error;
+    if (member.data) assignee = { id: member.data.id, name: member.data.full_name || member.data.email || 'Assigned user', ...(member.data.avatar_url ? { avatarUrl: member.data.avatar_url } : {}) };
+  }
+  let projectName;
+  if (targetType === 'task' && row.project_id) {
+    const project = await supabase.from('projects').select('id, name').eq('workspace_id', workspaceId).eq('id', row.project_id).maybeSingle();
+    if (project.error) throw project.error;
+    projectName = project.data?.name || undefined;
+  }
+  return {
+    id: row.id,
+    type: targetType,
+    title: String(title || 'Untitled'),
+    ...(row.status ? { status: String(row.status) } : {}),
+    ...(assignee ? { assignee } : {}),
+    ...(row.project_id ? { projectId: row.project_id } : {}),
+    ...(projectName ? { projectName } : {}),
+    ...((row.due_date || row.end_date) ? { dueDate: row.due_date || row.end_date } : {}),
+    ...(row.priority ? { priority: String(row.priority) } : {}),
+    ledgerUrl: getPluginUrl(targetType, row.id),
+    updatedAt: row.updated_at || null,
+  };
+};
+const pluginPropertyScopes = {
+  status: 'work:update:status',
+  assignee: 'work:update:assignee',
+  priority: 'work:update:priority',
+  project: 'work:update:project',
+  dueDate: 'work:update:due-date',
+};
+const taskStatuses = [
+  { id: 'todo', name: 'Todo', category: 'open' },
+  { id: 'in_progress', name: 'In progress', category: 'open' },
+  { id: 'completed', name: 'Completed', category: 'closed' },
+  { id: 'cancelled', name: 'Cancelled', category: 'closed' },
+];
+const taskPriorities = [
+  { id: 'urgent', name: 'Urgent' },
+  { id: 'high', name: 'High' },
+  { id: 'medium', name: 'Medium' },
+  { id: 'low', name: 'Low' },
+];
+const getPluginEditCapabilities = async ({ req, workspaceId, targetType, targetId }) => {
+  if (!pluginTargetTypes.has(targetType) || !(await ensureExternalTarget({ workspaceId, targetType, targetId }))) return { canEdit: false, editableProperties: [] };
+  let member = false;
+  try { await requireWorkspaceAccess(req.pluginCredential.user_id, workspaceId, 'member'); member = true; } catch { return { canEdit: false, editableProperties: [] }; }
+  if (!member || !['task', 'project'].includes(targetType)) return { canEdit: false, editableProperties: [] };
+  const properties = targetType === 'task' ? ['status', 'assignee', 'priority', 'project', 'dueDate'] : ['status', 'assignee', 'dueDate'];
+  return { canEdit: true, editableProperties: properties };
+};
+const getPluginEditOptions = async ({ req, workspaceId, targetType, targetId }) => {
+  const capabilities = await getPluginEditCapabilities({ req, workspaceId, targetType, targetId });
+  if (!capabilities.canEdit && !['task', 'project'].includes(targetType)) return { capabilities };
+  const options = { capabilities, dueDateRules: { supported: capabilities.editableProperties.includes('dueDate'), allowClear: true } };
+  if (targetType === 'task') {
+    options.statuses = taskStatuses;
+    options.priorities = taskPriorities;
+  } else {
+    options.statuses = Object.entries(projectStatusAliases).map(([, values]) => ({ id: values[0], name: String(values[0]).replace(/([a-z])([A-Z])/g, '$1 $2') }));
+  }
+  if (capabilities.editableProperties.includes('assignee')) {
+    const workspace = await supabase.from('workspaces').select('owner_id').eq('id', workspaceId).maybeSingle();
+    if (workspace.error) throw workspace.error;
+    const memberRows = await supabase.from('workspace_members').select('user_id').eq('workspace_id', workspaceId);
+    if (memberRows.error) throw memberRows.error;
+    const ids = [...new Set([workspace.data?.owner_id, ...(memberRows.data ?? []).map((row) => row.user_id)].filter(Boolean))];
+    const users = ids.length ? await supabase.from('users').select('id, full_name, email, avatar_url').in('id', ids).order('full_name', { ascending: true }) : { data: [], error: null };
+    if (users.error) throw users.error;
+    options.assignees = (users.data ?? []).map((user) => ({ id: user.id, name: user.full_name || user.email || 'Workspace member', ...(user.avatar_url ? { avatarUrl: user.avatar_url } : {}) }));
+  }
+  if (capabilities.editableProperties.includes('project')) {
+    const projects = await supabase.from('projects').select('id, name, status').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(50);
+    if (projects.error) throw projects.error;
+    options.projects = (projects.data ?? []).filter((project) => !isCompletedProjectStatus(project.status)).map((project) => ({ id: project.id, name: project.name }));
+  }
+  return options;
+};
+const updatePluginWorkProperty = async ({ req, workspaceId, targetType, targetId, property, value, expectedUpdatedAt }) => {
+  const scope = pluginPropertyScopes[property];
+  if (!scope || !['status', 'assignee', 'priority', 'project', 'dueDate'].includes(property)) throw pluginError('Unsupported property.');
+  requirePluginScope(req, scope);
+  const capabilities = await getPluginEditCapabilities({ req, workspaceId, targetType, targetId });
+  if (!capabilities.editableProperties.includes(property)) throw pluginError('You don’t have permission to update this property.', 403);
+  const table = targetType === 'task' ? 'tasks' : targetType === 'project' ? 'projects' : null;
+  if (!table) throw pluginError('This Ledger item is read-only.', 400);
+  const current = await supabase.from(table).select('*').eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
+  if (current.error) throw current.error;
+  if (!current.data) throw pluginError('Ledger item not found.', 404);
+  if (expectedUpdatedAt && String(current.data.updated_at ?? '') !== String(expectedUpdatedAt)) throw pluginError('This item changed in Ledger.', 409);
+  const update = {};
+  if (targetType === 'task') {
+    if (property === 'status') {
+      const next = String(value ?? '').trim();
+      if (!taskStatuses.some((status) => status.id === next)) throw pluginError('This item can’t move to that status.');
+      update.status = next;
+      if (next === 'completed' && current.data.status !== 'completed') update.completed_at = new Date().toISOString();
+      if (next !== 'completed' && current.data.status === 'completed') update.completed_at = null;
+    } else if (property === 'priority') {
+      const next = normalizeNullableText(value) || 'medium';
+      if (!taskPriorities.some((priority) => priority.id === next)) throw pluginError('That priority is not available.');
+      update.priority = next;
+    } else if (property === 'assignee') {
+      const next = normalizeNullableText(value);
+      if (next && !(await ensureWorkspaceMemberTarget(workspaceId, next))) throw pluginError('That person can no longer be assigned to this item.', 404);
+      Object.assign(update, buildAssignmentPersistenceFields({ assigned_to_user_id: next, assigned_to_team_id: null }, req.pluginCredential.user_id, new Date().toISOString()));
+    } else if (property === 'project') {
+      const next = normalizeNullableText(value);
+      if (next && !(await ensureWorkspaceResource('projects', next, workspaceId))) throw pluginError('That project is no longer available.', 404);
+      update.project_id = next;
+    } else if (property === 'dueDate') update.due_date = normalizeNullableDate(value, 'due date');
+  } else if (targetType === 'project') {
+    if (property === 'status') {
+      const semantic = normalizeProjectSemanticStatus(value);
+      update.status = projectStatusAliases[semantic][0];
+    } else if (property === 'assignee') {
+      const next = normalizeNullableText(value);
+      if (next && !(await ensureWorkspaceMemberTarget(workspaceId, next))) throw pluginError('That person can no longer lead this project.', 404);
+      update.lead_id = next;
+    } else if (property === 'dueDate') update.end_date = normalizeNullableDate(value, 'target date');
+  }
+  update.updated_at = new Date().toISOString();
+  const updated = await supabase.from(table).update(update).eq('workspace_id', workspaceId).eq('id', targetId).select('*').single();
+  if (updated.error) throw updated.error;
+  return getPluginLinkedTargetSummary(workspaceId, targetType, targetId);
+};
+const resolvePluginReferenceForRequest = async ({ req, workspaceId, body }) => {
+  requirePluginScope(req, 'figma-context:read');
+  const selection = validatePluginSelection(body?.selection);
+  const canonicalUrl = resolvePluginFigmaUrl({ url: String(body?.figma_url ?? '').trim(), nodeId: selection.nodeId });
+  const parsed = parseExternalUrl({ provider: 'figma', url: canonicalUrl });
+  const identity = ['figma', parsed.fileKey, parsed.nodeId || 'file', parsed.branchKey || ''].join(':');
+  const result = await supabase.from('external_references').select('id, external_identity').eq('workspace_id', workspaceId).eq('provider', 'figma').eq('external_identity', identity).maybeSingle();
+  if (result.error) throw result.error;
+  return { canonicalUrl, reference: result.data || null };
+};
+const listPluginLinkedWork = async ({ req, workspaceId, body }) => {
+  const resolved = await resolvePluginReferenceForRequest({ req, workspaceId, body });
+  if (!resolved.reference) return { canonical_url: resolved.canonicalUrl, external_reference_id: null, linked_work: [], change_state: { change_state: 'unknown' } };
+  const links = await supabase.from('external_reference_links').select('id, target_type, target_id, sources, created_at').eq('workspace_id', workspaceId).eq('external_reference_id', resolved.reference.id);
+  if (links.error) throw links.error;
+  const summaries = [];
+  for (const link of links.data ?? []) {
+    if (!pluginTargetTypes.has(link.target_type)) continue;
+    try { await requireFigmaCapability({ userId: req.pluginCredential.user_id, workspaceId, capability: 'view_reference', targetType: link.target_type, targetId: link.target_id }); } catch { continue; }
+    const target = await getPluginLinkedTargetSummary(workspaceId, link.target_type, link.target_id);
+    if (!target) continue;
+    const editCapabilities = await getPluginEditCapabilities({ req, workspaceId, targetType: link.target_type, targetId: link.target_id });
+    let canUnlink = false;
+    if (req.pluginCredential.scopes?.includes('external-reference:unlink')) {
+      try { await requireFigmaCapability({ userId: req.pluginCredential.user_id, workspaceId, capability: 'unlink_reference', targetType: link.target_type, targetId: link.target_id }); canUnlink = true; } catch { /* visible but not editable */ }
+    }
+    summaries.push({ ...target, relationshipId: link.id, relationshipSources: link.sources ?? ['manual'], canUnlink, editCapabilities });
+  }
+  summaries.sort((left, right) => (pluginLinkedTypeOrder[left.type] ?? 99) - (pluginLinkedTypeOrder[right.type] ?? 99) || String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')));
+  const changeState = await getExternalReferenceChangeState({ supabase, workspaceId, referenceId: resolved.reference.id });
+  return { canonical_url: resolved.canonicalUrl, external_reference_id: resolved.reference.id, linked_work: summaries, change_state: changeState };
+};
+const pluginCreateIdempotency = async ({ req, workspaceId, key, action }) => {
+  const safeKey = String(key ?? '').trim();
+  if (!safeKey || safeKey.length > 160) throw pluginError('A valid idempotency key is required.');
+  const reservation = await supabase.from('figma_plugin_action_keys').insert({ workspace_id: workspaceId, user_id: req.pluginCredential.user_id, action, idempotency_key: safeKey, result: null }).select('id, result').maybeSingle();
+  if (!reservation.error && reservation.data) return { key: safeKey, reservationId: reservation.data.id, existing: null };
+  if (reservation.error?.code !== '23505') throw reservation.error;
+  const existing = await supabase.from('figma_plugin_action_keys').select('id, result').eq('workspace_id', workspaceId).eq('user_id', req.pluginCredential.user_id).eq('action', action).eq('idempotency_key', safeKey).maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data?.result) return { key: safeKey, existing: existing.data.result };
+  throw pluginError('This Ledger action is already in progress.', 409);
+};
+
+app.post('/api/figma-plugin/identity', pluginAuthMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'figma-context:read');
+    await requirePluginWorkspace(req, 'viewer');
+    const selection = validatePluginSelection(req.body?.selection);
+    res.json({ canonical_url: resolvePluginFigmaUrl({ url: String(req.body?.figma_url ?? '').trim(), nodeId: selection.nodeId }), node_id: selection.nodeId });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/figma-plugin/search', pluginAuthMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'work:search');
+    const workspaceId = await requirePluginWorkspace(req, 'viewer');
+    const query = String(req.query?.q ?? '').trim();
+    if (query.length < 2) return res.json([]);
+    const rows = await searchWorkspaceContent({ workspaceId, rawQuery: query });
+    res.json(rows.filter((row) => pluginTargetTypes.has(row.type)).slice(0, 20).map((row) => mapPluginTarget({ id: row.id, type: row.type, title: row.title, status: row.status, subtitle: row.preview || titleCaseLabel(row.type) })));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/figma-plugin/linked-work', pluginAuthMiddleware, rateLimit('figma_linked'), async (req, res) => {
+  try {
+    const workspaceId = await requirePluginWorkspace(req, 'viewer');
+    const result = await listPluginLinkedWork({ req, workspaceId, body: req.body });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.pluginCredential.user_id, action: 'figma_linked_work_viewed', targetType: 'external_reference', targetId: result.external_reference_id, metadata: { source: 'figma-plugin', count: result.linked_work.length } });
+    res.json(result);
+  } catch (error) { return respondWithError(res, error); }
+});
+app.get('/api/figma-plugin/linked-work', pluginAuthMiddleware, rateLimit('figma_linked'), async (req, res) => {
+  try {
+    const workspaceId = await requirePluginWorkspace(req, 'viewer');
+    const body = { figma_url: req.query?.figma_url, selection: { node_id: req.query?.node_id, node_type: req.query?.node_type, page_name: req.query?.page_name || 'Figma page' } };
+    res.json(await listPluginLinkedWork({ req, workspaceId, body }));
+  } catch (error) { return respondWithError(res, error); }
+});
+app.post('/api/figma-plugin/change-state', pluginAuthMiddleware, rateLimit('figma_change_check'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'external-reference:check-version');
+    const workspaceId = await requirePluginWorkspace(req, 'viewer');
+    const resolved = await resolvePluginReferenceForRequest({ req, workspaceId, body: req.body });
+    if (!resolved.reference) return res.json({ change_state: 'unknown', external_reference_id: null, canonical_url: resolved.canonicalUrl });
+    const changeState = await checkExternalReferenceChange({ supabase, workspaceId, referenceId: resolved.reference.id, requestedByUserId: req.pluginCredential.user_id, getConnection: getFigmaConnectionForReference });
+    res.json({ ...changeState, canonical_url: resolved.canonicalUrl, external_reference_id: resolved.reference.id });
+  } catch (error) { return respondWithError(res, error); }
+});
+app.post('/api/figma-plugin/preview/refresh', pluginAuthMiddleware, rateLimit('figma_preview'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'external-reference:refresh-preview');
+    const workspaceId = await requirePluginWorkspace(req, 'member');
+    const resolved = await resolvePluginReferenceForRequest({ req, workspaceId, body: req.body });
+    if (!resolved.reference) throw pluginError('This design is not linked in Ledger.', 404);
+    const targetType = String(req.body?.target_type ?? '').trim();
+    const targetId = String(req.body?.target_id ?? '').trim();
+    if (targetType && targetId) await requireFigmaCapability({ userId: req.pluginCredential.user_id, workspaceId, capability: 'refresh_preview', targetType, targetId });
+    const changeState = await checkExternalReferenceChange({ supabase, workspaceId, referenceId: resolved.reference.id, requestedByUserId: req.pluginCredential.user_id, getConnection: getFigmaConnectionForReference });
+    const refreshed = await generateExternalReferencePreview({ supabase, workspaceId, referenceId: resolved.reference.id, createdByUserId: req.pluginCredential.user_id, force: true, getConnection: getFigmaConnectionForReference });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.pluginCredential.user_id, action: 'figma_preview_refreshed_from_plugin', targetType: 'external_reference', targetId: resolved.reference.id, metadata: { source: 'figma-plugin', change_state: changeState.change_state } });
+    res.json({ ...refreshed, change_state: refreshed.error ? (changeState.change_state || 'updated') : (refreshed.changeState || 'current'), canonical_url: resolved.canonicalUrl });
+  } catch (error) { return respondWithError(res, error); }
+});
+app.get('/api/figma-plugin/work/:type/:id/edit-options', pluginAuthMiddleware, rateLimit('figma_linked'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'workspace:read');
+    const workspaceId = await requirePluginWorkspace(req, 'viewer');
+    const targetType = String(req.params.type ?? '').trim();
+    const targetId = String(req.params.id ?? '').trim();
+    res.json(await getPluginEditOptions({ req, workspaceId, targetType, targetId }));
+  } catch (error) { return respondWithError(res, error); }
+});
+app.patch('/api/figma-plugin/work/:type/:id', pluginAuthMiddleware, rateLimit('figma_update'), async (req, res) => {
+  try {
+    const workspaceId = await requirePluginWorkspace(req, 'member');
+    const targetType = String(req.params.type ?? '').trim();
+    const targetId = String(req.params.id ?? '').trim();
+    const property = String(req.body?.property ?? '').trim();
+    const value = req.body?.value ?? null;
+    const selectionReference = await resolvePluginReferenceForRequest({ req, workspaceId, body: req.body });
+    if (!selectionReference.reference) throw pluginError('This design is no longer linked to that item.', 404);
+    const relationship = await supabase.from('external_reference_links').select('id').eq('workspace_id', workspaceId).eq('external_reference_id', selectionReference.reference.id).eq('target_type', targetType).eq('target_id', targetId).maybeSingle();
+    if (relationship.error) throw relationship.error;
+    if (!relationship.data) throw pluginError('This design is no longer linked to that item.', 404);
+    const idempotency = await pluginCreateIdempotency({ req, workspaceId, key: req.headers['idempotency-key'] || req.body?.idempotency_key, action: `property:${targetType}:${targetId}:${property}` });
+    if (idempotency.existing) return res.json(idempotency.existing);
+    const target = await updatePluginWorkProperty({ req, workspaceId, targetType, targetId, property, value, expectedUpdatedAt: req.body?.expected_updated_at });
+    const result = { target, property, updated_at: target.updatedAt ?? null };
+    const saved = await supabase.from('figma_plugin_action_keys').update({ result }).eq('id', idempotency.reservationId).eq('workspace_id', workspaceId);
+    if (saved.error) throw saved.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.pluginCredential.user_id, action: `figma_${property}_updated`, targetType, targetId, metadata: { source: 'figma-plugin', property } });
+    res.json(result);
+  } catch (error) { return respondWithError(res, error); }
+});
+app.post('/api/figma-plugin/unlink', pluginAuthMiddleware, rateLimit('figma_unlink'), async (req, res) => {
+  try {
+    requirePluginScope(req, 'external-reference:unlink');
+    const workspaceId = await requirePluginWorkspace(req, 'member');
+    const targetType = String(req.body?.target_type ?? '').trim();
+    const targetId = String(req.body?.target_id ?? '').trim();
+    if (!pluginTargetTypes.has(targetType) || !targetId) throw pluginError('Unsupported Ledger target.');
+    const resolved = await resolvePluginReferenceForRequest({ req, workspaceId, body: req.body });
+    if (!resolved.reference) return res.json({ removed: false, relationship_exists: false, canonical_url: resolved.canonicalUrl });
+    const lookup = await supabase.from('external_reference_links').select('id, sources').eq('workspace_id', workspaceId).eq('external_reference_id', resolved.reference.id).eq('target_type', targetType).eq('target_id', targetId).maybeSingle();
+    if (lookup.error) throw lookup.error;
+    if (!lookup.data) return res.json({ removed: false, relationship_exists: false, canonical_url: resolved.canonicalUrl });
+    await requireFigmaCapability({ userId: req.pluginCredential.user_id, workspaceId, capability: 'unlink_reference', targetType, targetId });
+    const result = await unlinkExternalReference({ supabase, workspaceId, referenceId: resolved.reference.id, linkId: lookup.data.id, source: 'integration' });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.pluginCredential.user_id, action: result.removed ? 'figma_design_unlinked_through_plugin' : 'figma_plugin_integration_source_removed', targetType, targetId, metadata: { external_reference_id: resolved.reference.id, source: 'figma-plugin' } });
+    res.json({ ...result, removed: Boolean(result.removed || result.sourceRemoved), relationship_exists: !result.removed, canonical_url: resolved.canonicalUrl, remaining_sources: result.removed ? [] : (lookup.data.sources ?? []).filter((source) => source !== 'integration') });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+const executePluginCreate = async ({ req, res, action, createTarget }) => {
+  try {
+    requirePluginScope(req, action === 'intake' ? 'intake:create' : 'task:create');
+    requirePluginScope(req, 'external-reference:create');
+    requirePluginScope(req, 'external-reference:link');
+    const workspaceId = await requirePluginWorkspace(req, 'member');
+    const idempotency = await pluginCreateIdempotency({ req, workspaceId, key: req.headers['idempotency-key'] || req.body?.idempotency_key, action });
+    if (idempotency.existing) return res.json(idempotency.existing);
+    const prepared = await preparePluginReference({ req, workspaceId, body: req.body });
+    let target = await createTarget({ workspaceId, userId: req.pluginCredential.user_id, body: req.body, prepared });
+    const completed = await finishPluginReference({ req, workspaceId, referenceId: prepared.reference.id, targetType: action === 'intake' ? 'intake' : 'task', targetId: target.id });
+    const result = { target: mapPluginTarget({ id: target.id, type: action === 'intake' ? 'intake' : 'task', title: target.title, status: target.status, subtitle: action === 'intake' ? 'Intake item' : `${titleCaseLabel(target.status || 'todo')}` }), reference_id: prepared.reference.id, canonical_url: prepared.canonicalUrl, preview: completed.preview, partial: Boolean(completed.preview?.error || completed.preview?.consentRequired || completed.preview?.accessStatus === 'connection_required') };
+    const saved = await supabase.from('figma_plugin_action_keys').update({ result }).eq('id', idempotency.reservationId).eq('workspace_id', workspaceId);
+    if (saved.error) throw saved.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.pluginCredential.user_id, action: action === 'intake' ? 'figma_selection_sent_to_intake' : 'figma_task_created', targetType: result.target.type, targetId: target.id, metadata: { external_reference_id: prepared.reference.id, source: 'figma-plugin', partial: result.partial } });
+    return res.status(201).json(result);
+  } catch (error) { return respondWithError(res, error); }
+};
+
+app.post('/api/figma-plugin/intake', pluginAuthMiddleware, rateLimit('write'), (req, res) => executePluginCreate({ req, res, action: 'intake', createTarget: async ({ workspaceId, userId, body, prepared }) => { const result = await supabase.from('inbox_items').insert({ workspace_id: workspaceId, user_id: userId, source: 'figma', source_provider: 'figma', source_id: prepared.reference.id, source_url: prepared.canonicalUrl, title: String(body?.title ?? prepared.selection.nodeId).trim() || 'Figma design', body: normalizeNullableText(body?.details), raw_payload: { source: 'figma-plugin', node_id: prepared.selection.nodeId, node_name: String(body?.selection?.node_name ?? '').slice(0, 200), page_name: String(body?.selection?.page_name ?? '').slice(0, 200) }, suggested_type: 'unknown', status: 'unprocessed' }).select('id, title, status').single(); if (result.error) throw result.error; return result.data; } }));
+app.post('/api/figma-plugin/tasks', pluginAuthMiddleware, rateLimit('write'), (req, res) => executePluginCreate({ req, res, action: 'task', createTarget: async ({ workspaceId, userId, body }) => { const projectId = body?.project_id ? String(body.project_id) : null; if (projectId && !(await ensureWorkspaceResource('projects', projectId, workspaceId))) throw pluginError('Project not found.', 404); const assignee = body?.assignee_id ? String(body.assignee_id) : null; if (assignee && !(await ensureWorkspaceMemberTarget(workspaceId, assignee))) throw pluginError('Assignee not found.', 404); const result = await supabase.from('tasks').insert({ workspace_id: workspaceId, project_id: projectId, assigned_to: assignee, title: String(body?.title ?? '').trim(), due_date: body?.due_date ? normalizeNullableDate(body.due_date, 'due date') : null, status: 'todo', priority: 'medium', tags: [], source: 'figma', source_platform: 'figma-plugin' }).select('id, title, status').single(); if (result.error) throw result.error; return result.data; } }));
+app.post('/api/figma-plugin/links', pluginAuthMiddleware, rateLimit('write'), async (req, res) => { try { requirePluginScope(req, 'external-reference:link'); const workspaceId = await requirePluginWorkspace(req, 'member'); const targetType = String(req.body?.target_type ?? '').trim(); const targetId = String(req.body?.target_id ?? '').trim(); if (!pluginTargetTypes.has(targetType)) throw pluginError('Unsupported Ledger target.'); const prepared = await preparePluginReference({ req, workspaceId, body: req.body }); const completed = await finishPluginReference({ req, workspaceId, referenceId: prepared.reference.id, targetType, targetId }); const target = await pluginTargetSummary(workspaceId, targetType, targetId); if (!target) throw pluginError('Target object not found.', 404); const result = { target, reference_id: prepared.reference.id, canonical_url: prepared.canonicalUrl, preview: completed.preview, already_linked: Boolean(completed.link?.sources?.includes('integration')) }; await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.pluginCredential.user_id, action: result.already_linked ? 'figma_plugin_duplicate_link_reused' : 'figma_design_linked_through_plugin', targetType, targetId, metadata: { external_reference_id: prepared.reference.id, source: 'figma-plugin' } }); res.status(201).json(result); } catch (error) { return respondWithError(res, error); } });
+
+app.post('/api/figma-plugin/auth/revoke', pluginAuthMiddleware, rateLimit('auth'), async (req, res) => {
+  const revoked = await supabase.from('figma_plugin_credentials').update({ revoked_at: new Date().toISOString() }).eq('id', req.pluginCredential.id).is('revoked_at', null);
+  if (revoked.error) return respondWithError(res, revoked.error);
+  res.json({ revoked: true });
+});
+
+app.get('/api/integrations/figma/status', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase
+      .from('integration_accounts')
+      .select('id, provider_user_id, provider_team_name, access_token_encrypted, scopes, installed_by, created_at, updated_at, connection_status, last_checked_at, connection_error')
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'figma')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (result.error) {
+      if (isMissingRelationError(result.error, 'integration_accounts')) return res.json({ status: 'disconnected' });
+      throw result.error;
+    }
+    const account = result.data;
+    if (!account?.id) return res.json({ status: 'disconnected' });
+    let connectionStatus = account.connection_status || 'connected';
+    let lastCheckedAt = new Date().toISOString();
+    const accessToken = readIntegrationToken(account.access_token_encrypted);
+    if (accessToken && connectionStatus === 'connected') {
+      try {
+        const healthResponse = await fetch('https://api.figma.com/v1/me', { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (healthResponse.status === 401 || healthResponse.status === 403) connectionStatus = 'revoked';
+        else if (!healthResponse.ok) connectionStatus = 'error';
+      } catch {
+        connectionStatus = 'error';
+      }
+      await supabase.from('integration_accounts').update({ connection_status: connectionStatus, last_checked_at: lastCheckedAt, connection_error: connectionStatus === 'error' ? 'health_check_failed' : null }).eq('id', account.id);
+    }
+    let connectedBy = null;
+    if (account.installed_by) {
+      const userResult = await supabase.from('users').select('id, full_name, email').eq('id', account.installed_by).maybeSingle();
+      connectedBy = userResult.data ? { name: userResult.data.full_name || userResult.data.email || 'Ledger member', email: userResult.data.email || null } : null;
+    }
+    const automation = await getFigmaAutomationSettings({ supabase, workspaceId });
+    res.json({
+      status: connectionStatus,
+      connected_account: { name: account.provider_team_name || null, id: account.provider_user_id || null },
+      scopes: account.scopes || [],
+      connected_by: connectedBy,
+      connected_on: account.created_at || null,
+      updated_at: account.updated_at || null,
+      last_checked_at: lastCheckedAt || account.last_checked_at || null,
+      error: connectionStatus === 'error' ? 'We couldn’t check Figma right now. Try again in a moment.' : null,
+      change_detection: { enabled: automation.change_detection_enabled, health: automation.webhook_health, last_checked_at: lastCheckedAt || account.last_checked_at || null },
+      automation: { notify_linked_work: automation.notify_linked_work, automatically_refresh_previews: automation.automatically_refresh_previews, create_intake_on_change: automation.create_intake_on_change },
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/integrations/figma/install-url', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'manage_connection' });
+    const state = createFigmaOAuthState({ workspaceId, userId: req.authUser.id });
+    const attempt = await supabase.from('integration_oauth_attempts').insert({
+      provider: 'figma', workspace_id: workspaceId, user_id: req.authUser.id,
+      state_hash: crypto.createHash('sha256').update(state).digest('hex'),
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
+    if (attempt.error && !isMissingRelationError(attempt.error, 'integration_oauth_attempts')) throw attempt.error;
+    res.json({ url: buildFigmaAuthorizeUrl({ workspaceId, userId: req.authUser.id, state }) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/integrations/figma/automation', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    res.json(await getFigmaAutomationSettings({ supabase, workspaceId }));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/integrations/figma/automation', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const values = req.body ?? {};
+    if (values.automatically_refresh_previews === true && values.confirm_automatic_refresh !== true) return res.status(400).json({ error: 'Confirm automatic preview refresh before enabling it.' });
+    const settings = await updateFigmaAutomationSettings({ supabase, workspaceId, values });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_automation_settings_updated', targetType: 'workspace', targetId: workspaceId, metadata: { change_detection_enabled: settings.change_detection_enabled, notify_linked_work: settings.notify_linked_work, automatically_refresh_previews: settings.automatically_refresh_previews, create_intake_on_change: settings.create_intake_on_change } });
+    res.json(settings);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/figma/webhooks/register', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const webhookId = String(req.body?.webhook_id ?? '').trim().slice(0, 160);
+    const eventType = String(req.body?.event_type ?? 'FILE_VERSION_UPDATE').trim().slice(0, 120);
+    const passcode = String(req.body?.passcode ?? '').trim();
+    if (!webhookId || passcode.length < 12) return res.status(400).json({ error: 'A valid Figma webhook registration is required.' });
+    const result = await supabase.from('figma_workspace_automation_settings').upsert({ workspace_id: workspaceId, webhook_id: webhookId, webhook_event_type: eventType, webhook_passcode_hash: crypto.createHash('sha256').update(passcode).digest('hex'), webhook_health: 'active', updated_at: new Date().toISOString() }, { onConflict: 'workspace_id' }).select('workspace_id, webhook_health, webhook_event_type, updated_at').single();
+    if (result.error) throw result.error;
+    res.json(result.data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/figma/webhook', rateLimit('figma_webhook'), async (req, res) => {
+  try {
+    if (Buffer.byteLength(String(req.rawBody ?? ''), 'utf8') > 256 * 1024) return res.status(413).json({ error: 'Webhook payload is too large.' });
+    const webhookId = String(req.query?.webhook_id ?? req.headers['x-figma-webhook-id'] ?? '').trim();
+    const passcode = String(req.headers['x-figma-webhook-passcode'] ?? req.body?.passcode ?? '').trim();
+    if (!webhookId || !passcode || passcode.length > 512) return res.status(401).json({ error: 'Invalid webhook authorization.' });
+    const settings = await supabase.from('figma_workspace_automation_settings').select('workspace_id, webhook_id, webhook_event_type, webhook_passcode_hash').eq('webhook_id', webhookId).maybeSingle();
+    if (settings.error) throw settings.error;
+    const stored = Buffer.from(String(settings.data?.webhook_passcode_hash ?? ''));
+    const supplied = Buffer.from(crypto.createHash('sha256').update(passcode).digest('hex'));
+    if (!settings.data || stored.length !== supplied.length || !crypto.timingSafeEqual(stored, supplied)) return res.status(401).json({ error: 'Invalid webhook authorization.' });
+    const eventType = String(req.body?.event_type ?? req.body?.eventType ?? '').trim();
+    if (!eventType || (settings.data.webhook_event_type && eventType !== settings.data.webhook_event_type)) return res.status(200).json({ accepted: true, ignored: true });
+    const providerEventId = String(req.body?.event_id ?? req.body?.id ?? '').trim().slice(0, 200) || null;
+    const resourceId = String(req.body?.file_key ?? req.body?.fileKey ?? req.body?.resource_id ?? '').trim().slice(0, 200) || null;
+    const inserted = await supabase.from('integration_webhook_events').insert({ workspace_id: settings.data.workspace_id, provider: 'figma', provider_event_id: providerEventId, event_type: eventType, external_resource_id: resourceId, status: 'pending' }).select('id').maybeSingle();
+    if (inserted.error?.code === '23505') return res.status(200).json({ accepted: true, duplicate: true });
+    if (inserted.error) throw inserted.error;
+    if (resourceId) await markFigmaReferencesForCheck({ supabase, workspaceId: settings.data.workspace_id, fileKey: resourceId });
+    await supabase.from('figma_workspace_automation_settings').update({ webhook_health: 'active', last_webhook_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', settings.data.workspace_id);
+    if (inserted.data?.id) await supabase.from('integration_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('id', inserted.data.id);
+    res.status(202).json({ accepted: true });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/figma/oauth/callback', rateLimit('auth'), async (req, res) => {
+  try {
+    const code = String(req.query?.code ?? '').trim();
+    const state = String(req.query?.state ?? '').trim();
+    const errorCode = String(req.query?.error ?? '').trim();
+    if (errorCode || !code) return res.status(400).type('html').send(buildFigmaOAuthCompleteHtml(false));
+    const statePayload = verifyFigmaOAuthState(state);
+    if (!statePayload) return res.status(400).type('html').send(buildFigmaOAuthCompleteHtml(false, 'This authorization attempt expired. Start again in Ledger.'));
+    const attempt = await supabase.from('integration_oauth_attempts').select('id, user_id, workspace_id, consumed_at, expires_at').eq('state_hash', statePayload.state_hash).eq('provider', 'figma').maybeSingle();
+    if (attempt.error && !isMissingRelationError(attempt.error, 'integration_oauth_attempts')) throw attempt.error;
+    if (!attempt.data || attempt.data.user_id !== statePayload.user_id || attempt.data.workspace_id !== statePayload.workspace_id || attempt.data.consumed_at || new Date(attempt.data.expires_at).getTime() < Date.now()) {
+      return res.status(400).type('html').send(buildFigmaOAuthCompleteHtml(false, 'This authorization attempt is no longer valid. Start again in Ledger.'));
+    }
+    const consumed = await supabase.from('integration_oauth_attempts').update({ consumed_at: new Date().toISOString() }).eq('id', attempt.data.id).is('consumed_at', null).select('id').maybeSingle();
+    if (consumed.error || !consumed.data) return res.status(400).type('html').send(buildFigmaOAuthCompleteHtml(false, 'This authorization attempt is no longer valid. Start again in Ledger.'));
+    await requireWorkspaceAccess(statePayload.user_id, statePayload.workspace_id, 'admin');
+    const clientId = process.env.FIGMA_CLIENT_ID?.trim();
+    const clientSecret = process.env.FIGMA_CLIENT_SECRET?.trim();
+    const redirectUri = getFigmaRedirectUri();
+    if (!clientId || !clientSecret || !redirectUri) throw new Error('Figma OAuth is not configured');
+    const tokenResponse = await fetch('https://api.figma.com/v1/oauth/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, code, grant_type: 'authorization_code' }),
+    });
+    const tokenPayload = await tokenResponse.json();
+    if (!tokenResponse.ok || !tokenPayload?.access_token) return res.status(400).type('html').send(buildFigmaOAuthCompleteHtml(false, 'We couldn’t finish connecting Figma. Try again in a moment.'));
+    const profileResponse = await fetch('https://api.figma.com/v1/me', { headers: { Authorization: `Bearer ${tokenPayload.access_token}` } });
+    const profile = await profileResponse.json();
+    if (!profileResponse.ok || !profile?.id) return res.status(400).type('html').send(buildFigmaOAuthCompleteHtml(false, 'We couldn’t load your Figma account. Try again in a moment.'));
+    const accountPayload = {
+      workspace_id: statePayload.workspace_id, provider: 'figma', provider_user_id: profile.id,
+      provider_team_id: profile.id, provider_team_name: profile.handle || null,
+      access_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.access_token),
+      refresh_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.refresh_token),
+      scopes: ['current_user:read'], installed_by: statePayload.user_id,
+      connection_status: 'connected', connection_error: null, last_checked_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    };
+    const existing = await supabase.from('integration_accounts').select('id').eq('workspace_id', statePayload.workspace_id).eq('provider', 'figma').maybeSingle();
+    if (existing.error) throw existing.error;
+    const accountResult = existing.data?.id
+      ? await supabase.from('integration_accounts').update(accountPayload).eq('id', existing.data.id)
+      : await supabase.from('integration_accounts').insert(accountPayload);
+    if (accountResult.error) throw accountResult.error;
+    res.status(200).type('html').send(buildFigmaOAuthCompleteHtml(true, `Connected as ${profile.handle || profile.email || 'your Figma account'}.`));
+  } catch (error) {
+    console.error('Figma OAuth callback failed', { message: error instanceof Error ? error.message : 'unknown_error' });
+    return res.status(400).type('html').send(buildFigmaOAuthCompleteHtml(false, 'We couldn’t finish connecting Figma. Try again in a moment.'));
+  }
+});
+
+app.delete('/api/integrations/figma/disconnect', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'manage_connection' });
+    const result = await supabase.from('integration_accounts').select('id, access_token_encrypted').eq('workspace_id', workspaceId).eq('provider', 'figma').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data?.id) return res.json({ status: 'disconnected' });
+    // Figma revocation is best-effort; Ledger still invalidates its credential immediately.
+    const accessToken = readIntegrationToken(result.data.access_token_encrypted);
+    if (accessToken && process.env.FIGMA_CLIENT_ID && process.env.FIGMA_CLIENT_SECRET) {
+      await fetch('https://api.figma.com/v1/oauth/revoke', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: process.env.FIGMA_CLIENT_ID, client_secret: process.env.FIGMA_CLIENT_SECRET, token: accessToken }) }).catch(() => null);
+    }
+    const deleted = await supabase.from('integration_accounts').delete().eq('id', result.data.id);
+    if (deleted.error) throw deleted.error;
+    await supabase.from('figma_workspace_automation_settings').update({ webhook_health: 'not_configured', webhook_id: null, webhook_event_type: null, webhook_passcode_hash: null, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId);
+    res.json({ status: 'disconnected' });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/integrations/figma/data/remove', authMiddleware, rateLimit('figma_cleanup'), async (req, res) => {
+  const workspaceId = await resolveWorkspaceIdForRequest(req);
+  try {
+    const access = await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'delete_workspace_figma_data' });
+    const workspaceName = String(access.workspace?.name ?? '').trim();
+    if (!workspaceName || String(req.body?.workspace_name ?? '').trim() !== workspaceName) return res.status(400).json({ error: 'Type the workspace name exactly to remove stored Figma data.' });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_data_removal_started', targetType: 'workspace', targetId: workspaceId, metadata: { scope: 'figma' } });
+    const refsResult = await supabase.from('external_references').select('id, external_url, normalized_url').eq('workspace_id', workspaceId).eq('provider', 'figma').is('deleted_at', null);
+    if (refsResult.error) throw refsResult.error;
+    const refs = refsResult.data ?? [];
+    const refIds = refs.map((ref) => ref.id);
+    if (refIds.length) {
+      const notesResult = await supabase.from('notes').select('id, content_html').eq('workspace_id', workspaceId);
+      if (notesResult.error) throw notesResult.error;
+      for (const note of notesResult.data ?? []) {
+        let html = String(note.content_html ?? '');
+        for (const ref of refs) {
+          const escaped = String(ref.id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const url = String(ref.normalized_url ?? ref.external_url ?? '');
+          html = html.replace(new RegExp(`<div[^>]*data-external-reference-id=["']${escaped}["'][^>]*>\\s*</div>`, 'gi'), `<p><a href="${url}">${url}</a></p>`);
+        }
+        if (html !== String(note.content_html ?? '')) {
+          const updated = await supabase.from('notes').update({ content_html: html }).eq('id', note.id).eq('workspace_id', workspaceId);
+          if (updated.error) throw updated.error;
+        }
+      }
+      const previews = await supabase.from('external_reference_previews').select('storage_key').eq('workspace_id', workspaceId).in('external_reference_id', refIds);
+      if (previews.error) throw previews.error;
+      const keys = (previews.data ?? []).map((row) => row.storage_key).filter(Boolean);
+      if (keys.length) await supabase.storage.from('note-images').remove(keys);
+      const linksDeleted = await supabase.from('external_reference_links').delete().eq('workspace_id', workspaceId).in('external_reference_id', refIds);
+      if (linksDeleted.error) throw linksDeleted.error;
+      const previewsDeleted = await supabase.from('external_reference_previews').delete().eq('workspace_id', workspaceId).in('external_reference_id', refIds);
+      if (previewsDeleted.error) throw previewsDeleted.error;
+      const statesDeleted = await supabase.from('external_reference_change_states').delete().eq('workspace_id', workspaceId).in('external_reference_id', refIds);
+      if (statesDeleted.error) throw statesDeleted.error;
+      const refsDeleted = await supabase.from('external_references').delete().eq('workspace_id', workspaceId).in('id', refIds);
+      if (refsDeleted.error) throw refsDeleted.error;
+    }
+    await supabase.from('figma_workspace_automation_settings').delete().eq('workspace_id', workspaceId);
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_data_removal_completed', targetType: 'workspace', targetId: workspaceId, metadata: { references: refs.length } });
+    res.json({ removed: true, references: refs.length });
+  } catch (error) {
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_data_removal_failed', targetType: 'workspace', targetId: workspaceId, metadata: { reason: 'safe_failure' } }).catch(() => null);
+    return respondWithError(res, error);
+  }
+});
+
+const externalTargetTables = {
+  task: 'tasks',
+  project: 'projects',
+  note: 'notes',
+  meetingNote: 'notes',
+  meetingNote: 'notes',
+  intake: 'inbox_items',
+  event: 'events',
+  reminder: 'reminders',
+};
+
+const ensureExternalTarget = async ({ workspaceId, targetType, targetId }) => {
+  const table = externalTargetTables[targetType];
+  if (!table || !targetId) return false;
+  return ensureWorkspaceResource(table, targetId, workspaceId);
+};
+
+const getFigmaConnectionForReference = async ({ workspaceId }) => {
+  const result = await supabase
+    .from('integration_accounts')
+    .select('id, access_token_encrypted, connection_status')
+    .eq('workspace_id', workspaceId)
+    .eq('provider', 'figma')
+    .maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data || result.data.connection_status !== 'connected') return null;
+  const accessToken = readIntegrationToken(result.data.access_token_encrypted);
+  if (!accessToken) return null;
+  return { ...result.data, access_token_encrypted: accessToken };
+};
+
+const requireFigmaCapability = async ({ userId, workspaceId, capability, targetType = null, targetId = null }) => {
+  const minimumRole = getFigmaCapabilityMinimumRole(capability);
+  const access = await requireWorkspaceAccess(userId, workspaceId, minimumRole || 'viewer');
+  let targetExists = true;
+  if (targetType && targetId) targetExists = await ensureExternalTarget({ workspaceId, targetType, targetId });
+  assertFigmaCapability({ capability, workspaceRole: access.role, targetExists, targetEditable: roleAtLeast(access.role, 'member') });
+  return access;
+};
+
+app.get('/api/integrations/figma/privacy', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'view_reference' });
+    res.json(await getFigmaPreviewConsent({ supabase, workspaceId }));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/figma/privacy/accept', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'manage_connection' });
+    const result = await supabase.from('figma_workspace_settings').upsert({ workspace_id: workspaceId, preview_sharing_accepted: true, preview_sharing_policy_version: '2026-07-20', preview_sharing_accepted_by: req.authUser.id, preview_sharing_accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select('*').single();
+    if (result.error) throw result.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_privacy_disclosure_accepted', targetType: 'workspace', targetId: workspaceId, metadata: { policy_version: '2026-07-20' } });
+    res.json(result.data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/external-references/parse', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const provider = String(req.body?.provider ?? '').trim().toLowerCase();
+    const url = String(req.body?.url ?? '').trim();
+    res.json(parseExternalUrl({ provider, url }));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/external-references', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const provider = String(req.body?.provider ?? '').trim().toLowerCase();
+    const url = String(req.body?.url ?? '').trim();
+    const result = await createOrGetExternalReference({ supabase, workspaceId, provider, url, createdByUserId: req.authUser.id });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: result.reused ? 'external_reference_reused' : 'external_reference_created', targetType: 'external_reference', targetId: result.reference.id, metadata: { provider } });
+    res.status(result.reused ? 200 : 201).json(result.reference);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/external-references/:id/resolve', authMiddleware, rateLimit('figma_resolve'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const reference = await resolveExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), requestedByUserId: req.authUser.id, getConnection: getFigmaConnectionForReference });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'external_reference_resolved', targetType: 'external_reference', targetId: reference.id, metadata: { provider: reference.provider, access_status: reference.access_status } });
+    res.json(reference);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/external-references/:id/links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const targetType = String(req.body?.target_type ?? '').trim();
+    const targetId = String(req.body?.target_id ?? '').trim();
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'link_reference', targetType, targetId });
+    const source = String(req.body?.source ?? 'manual').trim();
+    const link = await linkExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), targetType, targetId, source, createdByUserId: req.authUser.id, ensureTarget: ensureExternalTarget });
+    const referenceProvider = await supabase.from('external_references').select('provider').eq('workspace_id', workspaceId).eq('id', String(req.params.id)).maybeSingle();
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: referenceProvider.data?.provider === 'figma' ? 'figma_design_linked' : 'external_reference_linked', targetType, targetId, metadata: { source } });
+    res.status(201).json(link);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/external-references/:id/links/:linkId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const linkLookup = await supabase.from('external_reference_links').select('target_type, target_id').eq('workspace_id', workspaceId).eq('external_reference_id', String(req.params.id)).eq('id', String(req.params.linkId)).maybeSingle();
+    if (linkLookup.error) throw linkLookup.error;
+    if (!linkLookup.data || !(await ensureExternalTarget({ workspaceId, targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id }))) return res.status(404).json({ error: 'External reference link not found' });
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'unlink_reference', targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id });
+    const source = String(req.query?.source ?? '').trim() || null;
+    const result = await unlinkExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), linkId: String(req.params.linkId), source });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_design_unlinked', targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id, metadata: { source: source || 'all' } });
+    res.json(result);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/external-references', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const targetType = String(req.query?.targetType ?? '').trim();
+    const targetId = String(req.query?.targetId ?? '').trim();
+    if (!targetType || !targetId || !(await ensureExternalTarget({ workspaceId, targetType, targetId }))) return res.status(404).json({ error: 'Target object not found' });
+    res.json(await getExternalReferencesForTarget({ supabase, workspaceId, targetType, targetId }));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/external-references/search', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    res.json(await searchExternalReferences({ supabase, workspaceId, query: req.query?.query ?? '', limit: req.query?.limit }));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/external-references/:id/linked-targets', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const linksResult = await supabase.from('external_reference_links').select('id, target_type, target_id, sources, created_at').eq('workspace_id', workspaceId).eq('external_reference_id', String(req.params.id));
+    if (linksResult.error) throw linksResult.error;
+    const visible = [];
+    for (const link of linksResult.data ?? []) {
+      if (!(await ensureExternalTarget({ workspaceId, targetType: link.target_type, targetId: link.target_id }))) continue;
+      const table = externalTargetTables[link.target_type];
+      const titleColumn = table === 'projects' ? 'name' : 'title';
+      const targetResult = await supabase.from(table).select(`id, ${titleColumn}`).eq('workspace_id', workspaceId).eq('id', link.target_id).maybeSingle();
+      if (!targetResult.error && targetResult.data) visible.push({ ...link, title: targetResult.data[titleColumn] ?? 'Untitled' });
+    }
+    res.json(visible);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/external-references/:id/preview', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'view_saved_preview', targetType: String(req.query?.targetType ?? '').trim(), targetId: String(req.query?.targetId ?? '').trim() });
+    const targetType = String(req.query?.targetType ?? '').trim();
+    const targetId = String(req.query?.targetId ?? '').trim();
+    if (!targetType || !targetId || !(await ensureExternalTarget({ workspaceId, targetType, targetId }))) return res.status(404).json({ error: 'Target object not found' });
+    const referenceAllowed = await supabase.from('external_references').select('id').eq('workspace_id', workspaceId).eq('id', String(req.params.id)).maybeSingle();
+    if (referenceAllowed.error) throw referenceAllowed.error;
+    if (!referenceAllowed.data) return res.status(404).json({ error: 'External reference not found' });
+    res.json({ preview: await getExternalReferencePreview({ supabase, workspaceId, referenceId: String(req.params.id) }) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/external-references/:id/change-state', authMiddleware, rateLimit('figma_change_check'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const targetType = String(req.query?.targetType ?? '').trim();
+    const targetId = String(req.query?.targetId ?? '').trim();
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'view_saved_preview', targetType, targetId });
+    if (!targetType || !targetId || !(await ensureExternalTarget({ workspaceId, targetType, targetId }))) return res.status(404).json({ error: 'Target object not found' });
+    const referenceId = String(req.params.id);
+    const allowed = await supabase.from('external_references').select('id').eq('workspace_id', workspaceId).eq('id', referenceId).maybeSingle();
+    if (allowed.error) throw allowed.error;
+    if (!allowed.data) return res.status(404).json({ error: 'External reference not found' });
+    const state = await checkExternalReferenceChange({ supabase, workspaceId, referenceId, requestedByUserId: req.authUser.id, getConnection: getFigmaConnectionForReference });
+    res.json({ change_state: state });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/external-references/:id/preview', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const targetType = String(req.body?.target_type ?? '').trim();
+    const targetId = String(req.body?.target_id ?? '').trim();
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'delete_saved_preview', targetType, targetId });
+    const previews = await supabase.from('external_reference_previews').select('id, storage_key').eq('workspace_id', workspaceId).eq('external_reference_id', String(req.params.id)).eq('status', 'ready');
+    if (previews.error) throw previews.error;
+    const keys = (previews.data ?? []).map((row) => row.storage_key).filter(Boolean);
+    if (keys.length) await supabase.storage.from('note-images').remove(keys);
+    if (previews.data?.length) {
+      const deleted = await supabase.from('external_reference_previews').delete().eq('workspace_id', workspaceId).in('id', previews.data.map((row) => row.id));
+      if (deleted.error) throw deleted.error;
+    }
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_saved_preview_deleted', targetType, targetId, metadata: { preview_count: previews.data?.length ?? 0 } });
+    res.json({ removed: previews.data?.length ?? 0 });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+const generateExternalReferencePreviewForTarget = async (req, res, force) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const targetType = String(req.body?.target_type ?? '').trim();
+    const targetId = String(req.body?.target_id ?? '').trim();
+    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'refresh_preview', targetType, targetId });
+    if (!targetType || !targetId) return res.status(400).json({ error: 'target_type and target_id are required' });
+    if (!(await ensureExternalTarget({ workspaceId, targetType, targetId }))) return res.status(404).json({ error: 'Target object not found' });
+    if (force) await checkExternalReferenceChange({ supabase, workspaceId, referenceId: String(req.params.id), requestedByUserId: req.authUser.id, getConnection: getFigmaConnectionForReference });
+    const result = await generateExternalReferencePreview({
+      supabase,
+      workspaceId,
+      referenceId: String(req.params.id),
+      createdByUserId: req.authUser.id,
+      force,
+      getConnection: getFigmaConnectionForReference,
+    });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: force ? 'figma_preview_refreshed' : 'figma_preview_captured', targetType: 'external_reference', targetId: String(req.params.id), metadata: { access_status: result.accessStatus, consent_required: Boolean(result.consentRequired) } });
+    res.json(result);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+};
+
+app.post('/api/external-references/:id/preview', authMiddleware, rateLimit('figma_preview'), (req, res) => generateExternalReferencePreviewForTarget(req, res, false));
+app.post('/api/external-references/:id/preview/refresh', authMiddleware, rateLimit('figma_preview'), (req, res) => generateExternalReferencePreviewForTarget(req, res, true));
 
 app.post('/api/integrations/slack/interactivity', rateLimit('write'), async (req, res) => {
   if (!verifySlackRequest(req)) {

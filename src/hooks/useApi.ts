@@ -261,6 +261,74 @@ export const useApi = () => {
           method: 'DELETE',
           skipWorkspaceHeader: true,
         }),
+      getFigmaIntegrationStatus: (workspaceId: string) =>
+        request(`/api/integrations/figma/status?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          skipWorkspaceHeader: true,
+        }),
+      getFigmaAutomationSettings: (workspaceId: string) =>
+        request(`/api/integrations/figma/automation?workspaceId=${encodeURIComponent(workspaceId)}`),
+      updateFigmaAutomationSettings: (workspaceId: string, body: unknown) =>
+        request(`/api/integrations/figma/automation?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+      getFigmaInstallUrl: (workspaceId: string) =>
+        request(`/api/integrations/figma/install-url?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          skipWorkspaceHeader: true,
+        }),
+      disconnectFigmaIntegration: (workspaceId: string) =>
+        request(`/api/integrations/figma/disconnect?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'DELETE',
+          skipWorkspaceHeader: true,
+        }),
+      getFigmaPrivacySettings: () => request('/api/integrations/figma/privacy'),
+      acceptFigmaPrivacySettings: () => request('/api/integrations/figma/privacy/accept', { method: 'POST' }),
+      removeFigmaWorkspaceData: (workspaceName: string) => request('/api/integrations/figma/data/remove', { method: 'POST', body: JSON.stringify({ workspace_name: workspaceName }) }),
+      approveFigmaPluginAuthorization: (sessionId: string, verificationCode: string) => request('/api/figma-plugin/auth/approve', { method: 'POST', body: JSON.stringify({ session_id: sessionId, verification_code: verificationCode }) }),
+      parseExternalReferenceUrl: (provider: string, url: string) =>
+        request('/api/external-references/parse', {
+          method: 'POST',
+          body: JSON.stringify({ provider, url }),
+        }),
+      createExternalReference: (provider: string, url: string) =>
+        request('/api/external-references', {
+          method: 'POST',
+          body: JSON.stringify({ provider, url }),
+        }),
+      resolveExternalReference: (referenceId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/resolve`, {
+          method: 'POST',
+        }),
+      linkExternalReference: (referenceId: string, targetType: string, targetId: string, source = 'manual') =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/links`, {
+          method: 'POST',
+          body: JSON.stringify({ target_type: targetType, target_id: targetId, source }),
+        }),
+      unlinkExternalReference: (referenceId: string, linkId: string, source?: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/links/${encodeURIComponent(linkId)}${source ? `?source=${encodeURIComponent(source)}` : ''}`, {
+          method: 'DELETE',
+        }),
+      getExternalReferencesForTarget: (targetType: string, targetId: string) =>
+        request(`/api/external-references?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
+      getExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/preview?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
+      getExternalReferenceChangeState: (referenceId: string, targetType: string, targetId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/change-state?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
+      checkExternalReferenceChangeState: (referenceId: string, targetType: string, targetId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/change-state?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
+      searchExternalReferences: (query = '') =>
+        request(`/api/external-references/search?provider=figma&query=${encodeURIComponent(query)}`),
+      getExternalReferenceLinkedTargets: (referenceId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/linked-targets`),
+      deleteExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/preview`, { method: 'DELETE', body: JSON.stringify({ target_type: targetType, target_id: targetId }) }),
+      createExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/preview`, {
+          method: 'POST',
+          body: JSON.stringify({ target_type: targetType, target_id: targetId }),
+        }),
+      refreshExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/preview/refresh`, {
+          method: 'POST',
+          body: JSON.stringify({ target_type: targetType, target_id: targetId }),
+        }),
       getExtensionTokenStatus: (workspaceId: string) =>
         request(`/api/extension/token/status?workspaceId=${encodeURIComponent(workspaceId)}`, {
           skipWorkspaceHeader: true,

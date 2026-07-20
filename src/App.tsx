@@ -93,6 +93,7 @@ import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { NewTabWindow } from './components/Common/NewTabWindow';
 import { PageFindBar } from './components/Common/PageFindBar';
+import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace-type' | 'workspace' | 'team-invite' | 'position';
@@ -9189,6 +9190,8 @@ function AppShell() {
 
 function App() {
   const { user } = useAuthContext();
+  const figmaPluginAuthSession = windowParams.get('figmaPluginAuth');
+  const figmaPluginAuthCode = windowParams.get('code');
   const shouldShowNotificationMonitor = Boolean(user) && !isModuleWindow;
   const [isNotificationTrayOpen, setIsNotificationTrayOpen] = useState(false);
 
@@ -9205,7 +9208,7 @@ function App() {
         <NotificationCenterProvider>
           {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
           <AuthSessionToastReset />
-          <AppShell />
+          {figmaPluginAuthSession && figmaPluginAuthCode && user ? <FigmaPluginAuthorizationPage sessionId={figmaPluginAuthSession} code={figmaPluginAuthCode} /> : <AppShell />}
           {user && isModuleWindow ? (
             <NotificationTray
               isOpen={isNotificationTrayOpen}

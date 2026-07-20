@@ -64,6 +64,7 @@ import {
   projectTypeOptions,
   type ProjectTypeKind,
 } from '../../utils/projectTypes';
+import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 
 const parseProjectsSection = (
   value: string
@@ -6774,6 +6775,11 @@ export const ProjectsWindow = () => {
 
                   {renderProjectProperties()}
                   {renderProjectResources()}
+                  {activeWorkspaceId ? (
+                    <LinkedDesignsSection
+                      target={{ workspaceId: activeWorkspaceId, targetType: 'project', targetId: selectedProject.id }}
+                    />
+                  ) : null}
                 </section>
 
                 <div className="mt-7">

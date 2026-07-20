@@ -11,6 +11,9 @@
     "dev:extension": "npm --prefix apps/browser-extension run dev",
     "build": "tsc -p tsconfig.json && vite build && electron-builder",
     "build:extension": "npm --prefix apps/browser-extension run build",
+    "build:figma-plugin": "npm --prefix figma-plugin run build",
+    "typecheck:figma-plugin": "npm --prefix figma-plugin run typecheck",
+    "test:figma-plugin": "npm --prefix figma-plugin test",
     "preview": "vite preview",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

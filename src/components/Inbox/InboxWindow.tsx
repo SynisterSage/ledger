@@ -39,6 +39,7 @@ import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
+import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
@@ -3032,6 +3033,11 @@ export default function IntakeWindow() {
                             ))}
                           </div>
                         </section>
+                        {activeWorkspaceId ? (
+                          <LinkedDesignsSection
+                            target={{ workspaceId: activeWorkspaceId, targetType: 'intake', targetId: selectedItem.id }}
+                          />
+                        ) : null}
                       </div>
                     ) : (
                       <div className="flex h-full min-h-[240px] items-center justify-center text-center">
