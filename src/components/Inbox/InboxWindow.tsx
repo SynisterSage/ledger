@@ -2682,6 +2682,14 @@ export default function IntakeWindow() {
   const selectedItemPlacement = selectedItem ? getInspectorPlacement(selectedItem) : null;
   const selectedItemSourceUrl =
     selectedItem && isValidExternalUrl(selectedItem.source_url) ? selectedItem.source_url : null;
+  const selectedItemIsFigma = Boolean(
+    selectedItem &&
+      (normalizeForSearch(selectedItem.source_provider).includes('figma') ||
+        normalizeForSearch(selectedItem.source).includes('figma'))
+  );
+  const selectedFigmaPayload = selectedItemIsFigma && selectedItem ? getRawPayload(selectedItem) : {};
+  const selectedFigmaNodeName = findDeepString(selectedFigmaPayload, ['node_name', 'nodeName']);
+  const selectedFigmaFileName = findDeepString(selectedFigmaPayload, ['file_name', 'fileName']);
   const selectedItemStatusLabel = selectedItem ? getStatusLabel(selectedItem.status) : '';
   const selectedItemTypeLabel = selectedItem ? getTypeDisplayLabel(selectedItem) : '';
   const selectedItemOpenAction =
@@ -3029,8 +3037,8 @@ export default function IntakeWindow() {
                               }
                               className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
                             >
-                              <ExternalLink size={12} />
-                              Open source
+                              {selectedItemIsFigma ? <FigmaMark size={14} /> : <ExternalLink size={12} />}
+                              {selectedItemIsFigma ? 'Open in Figma' : 'Open source'}
                             </button>
                           ) : null}
                         </section>
@@ -3046,6 +3054,8 @@ export default function IntakeWindow() {
                         {activeWorkspaceId ? (
                           <LinkedDesignsSection
                             target={{ workspaceId: activeWorkspaceId, targetType: 'intake', targetId: selectedItem.id }}
+                            fallbackNodeName={selectedFigmaNodeName}
+                            fallbackFileName={selectedFigmaFileName}
                           />
                         ) : null}
                       </div>
