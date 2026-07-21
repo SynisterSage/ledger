@@ -44,6 +44,12 @@ test('OAuth persistence separates clients, codes, access tokens, and refresh tok
   assert.match(migration, /code_challenge_method TEXT NOT NULL CHECK \(code_challenge_method = 'S256'\)/);
 });
 
+test('DCR public-client responses omit a nullable client secret', () => {
+  assert.match(serverSource, /const registration = \{ \.\.\.inserted\.data, client_id_issued_at/);
+  assert.match(serverSource, /if \(clientSecret\) registration\.client_secret = clientSecret/);
+  assert.doesNotMatch(serverSource, /client_secret: clientSecret, client_id_issued_at/);
+});
+
 test('OAuth redirect validation rejects wildcard, fragment, and non-HTTPS production callbacks', () => {
   assert.match(serverSource, /parsed\.hash/);
   assert.match(serverSource, /parsed\.hostname\.includes\('\*'\)/);

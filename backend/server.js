@@ -5852,7 +5852,9 @@ app.post('/oauth/register', rateLimit('mcp_auth'), async (req, res) => {
     const clientSecret = authMethod === 'none' ? null : createMcpOAuthSecret('ledger_mcp_secret');
     const inserted = await supabase.from('mcp_oauth_clients').insert({ client_id: clientId, client_secret_hash: clientSecret ? hashMcpOAuthSecret(clientSecret) : null, client_name: clampText(body.client_name || body.client_name, 120) || 'MCP client', redirect_uris: redirectUris, grant_types: grantTypes, response_types: responseTypes, token_endpoint_auth_method: authMethod, metadata: { logo_uri: clampText(body.logo_uri, 500) || null } }).select('client_id, client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method').single();
     if (inserted.error) throw inserted.error;
-    return res.status(201).json({ ...inserted.data, client_secret: clientSecret, client_id_issued_at: Math.floor(Date.now() / 1000) });
+    const registration = { ...inserted.data, client_id_issued_at: Math.floor(Date.now() / 1000) };
+    if (clientSecret) registration.client_secret = clientSecret;
+    return res.status(201).json(registration);
   } catch (error) { return respondWithError(res, error); }
 });
 
