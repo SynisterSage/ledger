@@ -14,7 +14,7 @@ services:
       - key: PUBLIC_BACKEND_URL
         value: https://api.ledgerworkspace.com
       - key: PUBLIC_FRONTEND_URL
-        value: https://ledgerworkspace.com
+        value: https://www.ledgerworkspace.com
       - key: OPENAI_APPS_CHALLENGE_TOKEN
         sync: false
       - key: FIGMA_CLIENT_ID
