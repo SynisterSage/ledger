@@ -356,7 +356,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     return textResult(result.payload);
   });
 
-  const taskUpdateSchema = z.object({ taskId: uuidSchema, title: z.string().min(1).max(300).optional(), description: z.string().max(20_000).nullable().optional(), projectId: uuidSchema.nullable().optional(), assigneeId: uuidSchema.nullable().optional(), priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(), status: z.enum(['todo', 'in_progress', 'completed', 'cancelled']).optional(), dueDate: z.string().date().nullable().optional(), dueTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/).nullable().optional(), expectedUpdatedAt: z.string().datetime().optional() }).strict();
+  const taskUpdateSchema = z.object({ taskId: uuidSchema, title: z.string().min(1).max(255).optional(), description: z.string().max(20_000).nullable().optional(), projectId: uuidSchema.nullable().optional(), assigneeId: uuidSchema.nullable().optional(), priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(), status: z.enum(['todo', 'in_progress', 'completed', 'cancelled']).optional(), dueDate: z.string().date().nullable().optional(), dueTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/).nullable().optional(), expectedUpdatedAt: z.string().datetime().optional() }).strict();
 
   const updateTaskRecord = async (args, operation = 'update_task') => {
     const existing = await query('tasks', 'id, title, status, priority, due_date, due_time, project_id, assigned_to, updated_at, completed_at').eq('id', args.taskId).maybeSingle();
