@@ -21,6 +21,7 @@ npm run dev
 - `PORT` - Server port (default: 3000)
 - `PUBLIC_BACKEND_URL` - Public HTTPS backend URL for integration callbacks during local testing or production
 - `PUBLIC_FRONTEND_URL` - Public Ledger web app URL used for browser approval flows such as Figma plugin authorization
+- `PUBLIC_BACKEND_URL` - Canonical public API origin used for MCP OAuth discovery and the protected resource (production: `https://api.ledgerworkspace.com`)
 - `FRONTEND_URL` - Public website URL for `ledgerworkspace.com`
 - `INVITE_BASE_URL` - Public invite landing base. Use `https://ledgerworkspace.com` in production.
 - `FIGMA_CLIENT_ID` - Figma OAuth app client ID

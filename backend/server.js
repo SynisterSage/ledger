@@ -2906,6 +2906,60 @@ const getMcpScopeUpgradeAuthorizeUrl = (sessionId, code) => {
   return `${base.replace(/\/$/, '')}/?mcpScopeUpgrade=${encodeURIComponent(sessionId)}&code=${encodeURIComponent(code)}`;
 };
 
+const MCP_OAUTH_RESOURCE = `${(process.env.PUBLIC_BACKEND_URL?.trim() || 'https://api.ledgerworkspace.com').replace(/\/$/, '')}/mcp`;
+const MCP_OAUTH_ISSUER = (process.env.PUBLIC_BACKEND_URL?.trim() || 'https://api.ledgerworkspace.com').replace(/\/$/, '');
+const MCP_OAUTH_FRONTEND = (process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'https://ledgerworkspace.com').replace(/\/$/, '');
+const MCP_OAUTH_SCOPES = new Set(MCP_SCOPES);
+const MCP_OAUTH_WRITE_SCOPES = new Set(MCP_WRITE_SCOPES);
+const MCP_OAUTH_ACCESS_TTL_SECONDS = 15 * 60;
+const MCP_OAUTH_REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60;
+const MCP_OAUTH_AUTH_TTL_SECONDS = 10 * 60;
+const createMcpOAuthSecret = (prefix) => `${prefix}_${crypto.randomBytes(32).toString('base64url')}`;
+const hashMcpOAuthSecret = (value) => hashMcpValue(value);
+const mcpOAuthJson = (res, status, payload) => res.status(status).type('application/json').json(payload);
+const oauthScopes = (value) => [...new Set(String(value ?? '').split(/[\s]+/).map((scope) => scope.trim()).filter(Boolean))];
+const oauthScopeString = (scopes) => [...new Set(scopes)].join(' ');
+
+const validateMcpRedirectUris = (redirectUris) => {
+  if (!Array.isArray(redirectUris) || redirectUris.length < 1 || redirectUris.length > 20) throw Object.assign(new Error('redirect_uris must contain 1 to 20 URLs.'), { statusCode: 400 });
+  return redirectUris.map((value) => {
+    if (typeof value !== 'string' || value.length > 2_048) throw Object.assign(new Error('Invalid redirect URI.'), { statusCode: 400 });
+    let parsed;
+    try { parsed = new URL(value); } catch { throw Object.assign(new Error('Invalid redirect URI.'), { statusCode: 400 }); }
+    const localhost = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+    if (parsed.hash || parsed.username || parsed.password || parsed.hostname.includes('*') || (!localhost && parsed.protocol !== 'https:') || (localhost && !['http:', 'https:'].includes(parsed.protocol))) throw Object.assign(new Error('Redirect URIs must use HTTPS and cannot contain fragments or wildcards.'), { statusCode: 400 });
+    return parsed.toString();
+  });
+};
+
+const oauthClientAuthentication = (req, body) => {
+  const header = String(req.headers.authorization ?? '');
+  if (/^Basic\s+/i.test(header)) {
+    try {
+      const decoded = Buffer.from(header.replace(/^Basic\s+/i, ''), 'base64').toString('utf8');
+      const separator = decoded.indexOf(':');
+      return { clientId: decodeURIComponent(separator >= 0 ? decoded.slice(0, separator) : decoded), clientSecret: separator >= 0 ? decodeURIComponent(decoded.slice(separator + 1)) : '' };
+    } catch { return { clientId: '', clientSecret: '' }; }
+  }
+  return { clientId: String(body.client_id ?? ''), clientSecret: String(body.client_secret ?? '') };
+};
+
+const loadMcpOAuthClient = async (clientId) => {
+  if (!clientId) return null;
+  const result = await supabase.from('mcp_oauth_clients').select('id, client_id, client_secret_hash, client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method, disabled_at').eq('client_id', clientId).maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data || result.data.disabled_at) return null;
+  return result.data;
+};
+
+const mcpOAuthRedirect = (redirectUri, params) => {
+  const target = new URL(redirectUri);
+  Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== null) target.searchParams.set(key, String(value)); });
+  return target.toString();
+};
+
+const mcpOAuthError = (code, description) => Object.assign(new Error(description), { statusCode: 400, oauthCode: code });
+
 const writeMcpAuditLog = async ({ connectionId = null, userId = null, workspaceId = null, action, toolName = null, metadata = {} }) => {
   const result = await supabase.from('mcp_audit_logs').insert({
     connection_id: connectionId,
@@ -2940,11 +2994,34 @@ const loadMcpConnection = async (token) => {
   return { connection, userId: connection.user_id, workspaceId: workspaceIds[0], role: access.role, scopes: (scopeResult.data ?? []).map((row) => row.scope) };
 };
 
+const loadMcpOAuthAccessToken = async (token) => {
+  if (!token || !token.startsWith('ledger_mcp_access_')) return null;
+  const result = await supabase.from('mcp_oauth_access_tokens').select('id, connection_id, client_id, user_id, workspace_id, scopes, resource, expires_at, revoked_at').eq('token_hash', hashMcpOAuthSecret(token)).maybeSingle();
+  if (result.error) throw result.error;
+  const row = result.data;
+  if (!row || row.resource !== MCP_OAUTH_RESOURCE || row.revoked_at || new Date(row.expires_at).getTime() <= Date.now()) return null;
+  const [connection, client, access, connectionScopes] = await Promise.all([
+    supabase.from('mcp_connections').select('id, client_name, status, expires_at, revoked_at').eq('id', row.connection_id).maybeSingle(),
+    supabase.from('mcp_oauth_clients').select('id, client_name, disabled_at').eq('id', row.client_id).maybeSingle(),
+    getWorkspaceAccess(row.user_id, row.workspace_id),
+    supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', row.connection_id),
+  ]);
+  if (connection.error || client.error || connectionScopes.error || access === null) throw connection.error || client.error || connectionScopes.error || Object.assign(new Error('Workspace access is no longer available.'), { statusCode: 401 });
+  if (!connection.data || connection.data.status !== 'active' || connection.data.revoked_at || new Date(connection.data.expires_at).getTime() <= Date.now() || !client.data || client.data.disabled_at) return null;
+  void supabase.from('mcp_oauth_access_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', row.id);
+  void supabase.from('mcp_connections').update({ last_used_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', row.connection_id);
+  const scopes = (row.scopes ?? []).filter((scope) => (connectionScopes.data ?? []).some((current) => current.scope === scope));
+  return { connection: { ...connection.data, client_name: client.data.client_name }, userId: row.user_id, workspaceId: row.workspace_id, role: access.role, scopes, oauthClientId: row.client_id, oauthTokenId: row.id };
+};
+
 const mcpAuthMiddleware = async (req, res, next) => {
   try {
     const token = getBearerToken(req);
-    const context = await loadMcpConnection(token);
-    if (!context) return res.status(401).json({ error: 'Connection expired or revoked.' });
+    const context = await loadMcpOAuthAccessToken(token) || await loadMcpConnection(token);
+    if (!context) {
+      res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${MCP_OAUTH_ISSUER}/.well-known/oauth-protected-resource"`);
+      return res.status(401).json({ error: 'Not authenticated.' });
+    }
     req.mcpContext = context;
     req.authUser = { id: context.userId };
     await writeMcpAuditLog({ connectionId: context.connection.id, userId: context.userId, workspaceId: context.workspaceId, action: 'credential.used' });
@@ -5692,6 +5769,169 @@ app.get('/api/figma-plugin/auth/authorize', async (req, res) => {
   const sessionId = String(req.query?.session_id ?? '').trim();
   const code = String(req.query?.code ?? '').trim().toUpperCase();
   res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Ledger to Figma</title><style>body{font:15px system-ui;max-width:420px;margin:48px auto;padding:0 20px;color:#111827}button{background:#ff5f40;color:white;border:0;border-radius:8px;padding:10px 14px;font-weight:600}p{color:#4b5563;line-height:1.5}</style><h1>Connect Ledger to Figma</h1><p>Return to Ledger to approve this plugin connection. Verification code: <strong>${code.replace(/[^A-Z0-9-]/g, '')}</strong></p><p>Open Ledger in your browser if it is not already open, then approve the request there.</p><a href="${getPluginAuthorizeUrl(sessionId, code)}"><button>Open Ledger</button></a>`);
+});
+
+app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({ resource: MCP_OAUTH_RESOURCE, authorization_servers: [MCP_OAUTH_ISSUER], scopes_supported: MCP_SCOPES });
+});
+
+app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({ resource: MCP_OAUTH_RESOURCE, authorization_servers: [MCP_OAUTH_ISSUER], scopes_supported: MCP_SCOPES });
+});
+
+app.get('/.well-known/oauth-authorization-server', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json({ issuer: MCP_OAUTH_ISSUER, authorization_endpoint: `${MCP_OAUTH_ISSUER}/oauth/authorize`, token_endpoint: `${MCP_OAUTH_ISSUER}/oauth/token`, registration_endpoint: `${MCP_OAUTH_ISSUER}/oauth/register`, revocation_endpoint: `${MCP_OAUTH_ISSUER}/oauth/revoke`, scopes_supported: MCP_SCOPES, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'] });
+});
+
+app.post('/oauth/register', rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const redirectUris = validateMcpRedirectUris(body.redirect_uris);
+    const grantTypes = Array.isArray(body.grant_types) && body.grant_types.length ? body.grant_types.map(String) : ['authorization_code', 'refresh_token'];
+    const responseTypes = Array.isArray(body.response_types) && body.response_types.length ? body.response_types.map(String) : ['code'];
+    if (grantTypes.some((grant) => !['authorization_code', 'refresh_token'].includes(grant)) || responseTypes.some((type) => type !== 'code')) return mcpOAuthJson(res, 400, { error: 'invalid_client_metadata' });
+    const authMethod = String(body.token_endpoint_auth_method || 'none');
+    if (!['none', 'client_secret_post', 'client_secret_basic'].includes(authMethod)) return mcpOAuthJson(res, 400, { error: 'invalid_client_metadata' });
+    const clientId = `ledger_mcp_client_${crypto.randomBytes(18).toString('base64url')}`;
+    const clientSecret = authMethod === 'none' ? null : createMcpOAuthSecret('ledger_mcp_secret');
+    const inserted = await supabase.from('mcp_oauth_clients').insert({ client_id: clientId, client_secret_hash: clientSecret ? hashMcpOAuthSecret(clientSecret) : null, client_name: clampText(body.client_name || body.client_name, 120) || 'MCP client', redirect_uris: redirectUris, grant_types: grantTypes, response_types: responseTypes, token_endpoint_auth_method: authMethod, metadata: { logo_uri: clampText(body.logo_uri, 500) || null } }).select('client_id, client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method').single();
+    if (inserted.error) throw inserted.error;
+    return res.status(201).json({ ...inserted.data, client_secret: clientSecret, client_id_issued_at: Math.floor(Date.now() / 1000) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/oauth/authorize', rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const clientId = String(req.query.client_id ?? '');
+    const redirectUri = String(req.query.redirect_uri ?? '');
+    const client = await loadMcpOAuthClient(clientId);
+    if (!client || !client.response_types?.includes('code') || !client.redirect_uris?.includes(redirectUri)) return mcpOAuthJson(res, 400, { error: 'invalid_request', error_description: 'The OAuth client or redirect URI is invalid.' });
+    if (String(req.query.response_type ?? '') !== 'code') return mcpOAuthJson(res, 400, { error: 'unsupported_response_type' });
+    const scopes = oauthScopes(req.query.scope);
+    if (!scopes.length || scopes.some((scope) => !MCP_OAUTH_SCOPES.has(scope))) return mcpOAuthJson(res, 400, { error: 'invalid_scope' });
+    if (String(req.query.code_challenge_method ?? '') !== 'S256' || !/^[A-Za-z0-9._~-]{43,128}$/.test(String(req.query.code_challenge ?? ''))) return mcpOAuthJson(res, 400, { error: 'invalid_request', error_description: 'S256 PKCE is required.' });
+    if (String(req.query.resource ?? MCP_OAUTH_RESOURCE) !== MCP_OAUTH_RESOURCE) return mcpOAuthJson(res, 400, { error: 'invalid_target' });
+    const request = await supabase.from('mcp_oauth_authorization_requests').insert({ client_id: client.id, redirect_uri: redirectUri, response_type: 'code', requested_scopes: scopes, state: String(req.query.state ?? '').slice(0, 2048) || null, code_challenge: String(req.query.code_challenge), code_challenge_method: 'S256', resource: MCP_OAUTH_RESOURCE, expires_at: new Date(Date.now() + MCP_OAUTH_AUTH_TTL_SECONDS * 1000).toISOString() }).select('id').single();
+    if (request.error) throw request.error;
+    const consentUrl = `${MCP_OAUTH_FRONTEND}/integrations/mcp/authorize?request_id=${encodeURIComponent(request.data.id)}`;
+    return res.redirect(302, consentUrl);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/oauth/authorize/requests/:id', authMiddleware, rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const request = await supabase.from('mcp_oauth_authorization_requests').select('id, client_id, requested_scopes, resource, expires_at, status').eq('id', req.params.id).maybeSingle();
+    if (request.error || !request.data || request.data.status !== 'pending' || new Date(request.data.expires_at).getTime() <= Date.now()) return res.status(404).json({ error: 'This authorization request is invalid or expired.' });
+    const [client, workspaces] = await Promise.all([
+      supabase.from('mcp_oauth_clients').select('client_name').eq('id', request.data.client_id).maybeSingle(),
+      getAccessibleWorkspaces(req.authUser.id),
+    ]);
+    if (client.error || !client.data) return res.status(404).json({ error: 'This authorization request is invalid or expired.' });
+    res.json({ id: request.data.id, client_name: client.data.client_name, resource: request.data.resource, requested_scopes: request.data.requested_scopes, expires_at: request.data.expires_at, workspaces: workspaces.map(({ id, name, is_personal }) => ({ id, name, type: is_personal ? 'personal' : 'team' })) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/oauth/authorize/requests/:id/approve', authMiddleware, rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const request = await supabase.from('mcp_oauth_authorization_requests').select('id, client_id, redirect_uri, requested_scopes, state, code_challenge, code_challenge_method, resource, status, expires_at').eq('id', req.params.id).maybeSingle();
+    if (request.error || !request.data || request.data.status !== 'pending' || new Date(request.data.expires_at).getTime() <= Date.now()) return res.status(400).json({ error: 'This authorization request is invalid or expired.' });
+    const workspaceId = String(req.body?.workspace_id ?? '');
+    const access = await getWorkspaceAccess(req.authUser.id, workspaceId);
+    if (!access) return res.status(403).json({ error: 'Workspace access is no longer available.' });
+    if (request.data.requested_scopes.some((scope) => MCP_OAUTH_WRITE_SCOPES.has(scope))) await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const rawCode = createMcpOAuthSecret('ledger_mcp_code');
+    const code = await supabase.from('mcp_oauth_authorization_codes').insert({ client_id: request.data.client_id, request_id: request.data.id, code_hash: hashMcpOAuthSecret(rawCode), redirect_uri: request.data.redirect_uri, user_id: req.authUser.id, workspace_id: workspaceId, scopes: request.data.requested_scopes, resource: request.data.resource, code_challenge: request.data.code_challenge, code_challenge_method: request.data.code_challenge_method, expires_at: new Date(Date.now() + 60 * 1000).toISOString() }).select('id').single();
+    if (code.error) throw code.error;
+    const updated = await supabase.from('mcp_oauth_authorization_requests').update({ user_id: req.authUser.id, workspace_id: workspaceId, status: 'approved', approved_at: new Date().toISOString() }).eq('id', request.data.id).eq('status', 'pending').select('id').maybeSingle();
+    if (updated.error || !updated.data) return res.status(409).json({ error: 'This authorization request was already completed.' });
+    await writeMcpAuditLog({ userId: req.authUser.id, workspaceId, action: 'oauth.authorization.approved', metadata: { client_id: request.data.client_id, scopes: request.data.requested_scopes } });
+    return res.json({ redirect_uri: mcpOAuthRedirect(request.data.redirect_uri, { code: rawCode, state: request.data.state }) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/oauth/authorize/requests/:id/deny', authMiddleware, rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const request = await supabase.from('mcp_oauth_authorization_requests').select('id, redirect_uri, state, status, expires_at').eq('id', req.params.id).maybeSingle();
+    if (request.error || !request.data || request.data.status !== 'pending' || new Date(request.data.expires_at).getTime() <= Date.now()) return res.status(400).json({ error: 'This authorization request is invalid or expired.' });
+    const updated = await supabase.from('mcp_oauth_authorization_requests').update({ status: 'denied' }).eq('id', request.data.id).eq('status', 'pending').select('id').maybeSingle();
+    if (updated.error || !updated.data) return res.status(409).json({ error: 'This authorization request was already completed.' });
+    return res.json({ redirect_uri: mcpOAuthRedirect(request.data.redirect_uri, { error: 'access_denied', error_description: 'The Ledger connection was cancelled.', state: request.data.state }) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/oauth/token', rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const auth = oauthClientAuthentication(req, body);
+    const client = await loadMcpOAuthClient(auth.clientId);
+    if (!client || (client.token_endpoint_auth_method === 'none' && auth.clientSecret) || (client.token_endpoint_auth_method !== 'none' && !mcpValueMatches(auth.clientSecret, client.client_secret_hash))) return mcpOAuthJson(res, 401, { error: 'invalid_client' });
+    if (body.grant_type === 'authorization_code') {
+      if (!client.grant_types?.includes('authorization_code')) return mcpOAuthJson(res, 400, { error: 'unauthorized_client' });
+      const rawCode = String(body.code ?? '');
+      const row = await supabase.from('mcp_oauth_authorization_codes').select('id, client_id, redirect_uri, user_id, workspace_id, scopes, resource, code_challenge, code_challenge_method, expires_at, consumed_at').eq('code_hash', hashMcpOAuthSecret(rawCode)).maybeSingle();
+      if (row.error || !row.data || row.data.client_id !== client.id || row.data.consumed_at || new Date(row.data.expires_at).getTime() <= Date.now() || row.data.redirect_uri !== String(body.redirect_uri ?? '') || row.data.resource !== String(body.resource ?? MCP_OAUTH_RESOURCE)) return mcpOAuthJson(res, 400, { error: 'invalid_grant' });
+      const verifier = String(body.code_verifier ?? '');
+      const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+      if (!verifier || challenge !== row.data.code_challenge) return mcpOAuthJson(res, 400, { error: 'invalid_grant' });
+      const consumed = await supabase.from('mcp_oauth_authorization_codes').update({ consumed_at: new Date().toISOString() }).eq('id', row.data.id).is('consumed_at', null).select('id').maybeSingle();
+      if (consumed.error || !consumed.data) return mcpOAuthJson(res, 400, { error: 'invalid_grant' });
+      const connectionSecret = createMcpCredential();
+      const connection = await supabase.from('mcp_connections').insert({ user_id: row.data.user_id, client_name: client.client_name, credential_hash: hashMcpValue(connectionSecret), oauth_client_id: client.id, expires_at: new Date(Date.now() + MCP_OAUTH_REFRESH_TTL_SECONDS * 1000).toISOString() }).select('id').single();
+      if (connection.error) throw connection.error;
+      const [scopeInsert, workspaceInsert] = await Promise.all([
+        supabase.from('mcp_connection_scopes').insert(row.data.scopes.map((scope) => ({ connection_id: connection.data.id, scope }))),
+        supabase.from('mcp_connection_workspaces').insert({ connection_id: connection.data.id, workspace_id: row.data.workspace_id }),
+      ]);
+      if (scopeInsert.error || workspaceInsert.error) throw scopeInsert.error || workspaceInsert.error;
+      const accessToken = createMcpOAuthSecret('ledger_mcp_access');
+      const refreshToken = createMcpOAuthSecret('ledger_mcp_refresh');
+      const access = await supabase.from('mcp_oauth_access_tokens').insert({ token_hash: hashMcpOAuthSecret(accessToken), connection_id: connection.data.id, client_id: client.id, user_id: row.data.user_id, workspace_id: row.data.workspace_id, scopes: row.data.scopes, resource: MCP_OAUTH_RESOURCE, expires_at: new Date(Date.now() + MCP_OAUTH_ACCESS_TTL_SECONDS * 1000).toISOString() });
+      const refresh = await supabase.from('mcp_oauth_refresh_tokens').insert({ token_hash: hashMcpOAuthSecret(refreshToken), family_id: crypto.randomUUID(), connection_id: connection.data.id, client_id: client.id, user_id: row.data.user_id, workspace_id: row.data.workspace_id, scopes: row.data.scopes, resource: MCP_OAUTH_RESOURCE, expires_at: new Date(Date.now() + MCP_OAUTH_REFRESH_TTL_SECONDS * 1000).toISOString() });
+      if (access.error || refresh.error) throw access.error || refresh.error;
+      await writeMcpAuditLog({ connectionId: connection.data.id, userId: row.data.user_id, workspaceId: row.data.workspace_id, action: 'oauth.credential.issued', metadata: { client_id: client.id, scopes: row.data.scopes } });
+      return res.json({ access_token: accessToken, token_type: 'Bearer', expires_in: MCP_OAUTH_ACCESS_TTL_SECONDS, refresh_token: refreshToken, scope: oauthScopeString(row.data.scopes), resource: MCP_OAUTH_RESOURCE });
+    }
+    if (body.grant_type === 'refresh_token') {
+      const old = await supabase.from('mcp_oauth_refresh_tokens').select('id, family_id, connection_id, client_id, user_id, workspace_id, scopes, resource, expires_at, used_at, revoked_at').eq('token_hash', hashMcpOAuthSecret(String(body.refresh_token ?? ''))).maybeSingle();
+      if (old.error || !old.data || old.data.client_id !== client.id || old.data.resource !== String(body.resource ?? MCP_OAUTH_RESOURCE) || new Date(old.data.expires_at).getTime() <= Date.now() || old.data.revoked_at) return mcpOAuthJson(res, 400, { error: 'invalid_grant' });
+      const [connection, membership] = await Promise.all([
+        supabase.from('mcp_connections').select('status, revoked_at, expires_at').eq('id', old.data.connection_id).maybeSingle(),
+        getWorkspaceAccess(old.data.user_id, old.data.workspace_id),
+      ]);
+      if (connection.error || !connection.data || connection.data.status !== 'active' || connection.data.revoked_at || new Date(connection.data.expires_at).getTime() <= Date.now() || !membership) return mcpOAuthJson(res, 400, { error: 'invalid_grant' });
+      if (old.data.used_at) { await supabase.from('mcp_oauth_refresh_tokens').update({ revoked_at: new Date().toISOString() }).eq('family_id', old.data.family_id); await supabase.from('mcp_oauth_access_tokens').update({ revoked_at: new Date().toISOString() }).eq('connection_id', old.data.connection_id); return mcpOAuthJson(res, 400, { error: 'invalid_grant' }); }
+      const marked = await supabase.from('mcp_oauth_refresh_tokens').update({ used_at: new Date().toISOString() }).eq('id', old.data.id).is('used_at', null).select('id').maybeSingle();
+      if (marked.error || !marked.data) return mcpOAuthJson(res, 400, { error: 'invalid_grant' });
+      const currentScopes = await supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', old.data.connection_id);
+      if (currentScopes.error) throw currentScopes.error;
+      const effectiveScopes = (old.data.scopes ?? []).filter((scope) => (currentScopes.data ?? []).some((current) => current.scope === scope));
+      const accessToken = createMcpOAuthSecret('ledger_mcp_access');
+      const refreshToken = createMcpOAuthSecret('ledger_mcp_refresh');
+      const access = await supabase.from('mcp_oauth_access_tokens').insert({ token_hash: hashMcpOAuthSecret(accessToken), connection_id: old.data.connection_id, client_id: client.id, user_id: old.data.user_id, workspace_id: old.data.workspace_id, scopes: effectiveScopes, resource: MCP_OAUTH_RESOURCE, expires_at: new Date(Date.now() + MCP_OAUTH_ACCESS_TTL_SECONDS * 1000).toISOString() });
+      const refresh = await supabase.from('mcp_oauth_refresh_tokens').insert({ token_hash: hashMcpOAuthSecret(refreshToken), family_id: old.data.family_id, connection_id: old.data.connection_id, client_id: client.id, user_id: old.data.user_id, workspace_id: old.data.workspace_id, scopes: effectiveScopes, resource: MCP_OAUTH_RESOURCE, expires_at: new Date(Date.now() + MCP_OAUTH_REFRESH_TTL_SECONDS * 1000).toISOString() });
+      if (access.error || refresh.error) throw access.error || refresh.error;
+      return res.json({ access_token: accessToken, token_type: 'Bearer', expires_in: MCP_OAUTH_ACCESS_TTL_SECONDS, refresh_token: refreshToken, scope: oauthScopeString(effectiveScopes), resource: MCP_OAUTH_RESOURCE });
+    }
+    return mcpOAuthJson(res, 400, { error: 'unsupported_grant_type' });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/oauth/revoke', rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    const auth = oauthClientAuthentication(req, body);
+    const client = await loadMcpOAuthClient(auth.clientId);
+    if (!client || (client.token_endpoint_auth_method !== 'none' && !mcpValueMatches(auth.clientSecret, client.client_secret_hash))) return mcpOAuthJson(res, 401, { error: 'invalid_client' });
+    const hash = hashMcpOAuthSecret(String(body.token ?? ''));
+    await Promise.all([
+      supabase.from('mcp_oauth_access_tokens').update({ revoked_at: new Date().toISOString() }).eq('token_hash', hash).eq('client_id', client.id),
+      supabase.from('mcp_oauth_refresh_tokens').update({ revoked_at: new Date().toISOString() }).eq('token_hash', hash).eq('client_id', client.id),
+    ]);
+    res.status(200).json({});
+  } catch (error) { return respondWithError(res, error); }
 });
 
 app.post('/api/mcp/authorization/sessions', rateLimit('mcp_auth'), async (req, res) => {
