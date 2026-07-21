@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const serverSource = await readFile(new URL('../server.js', import.meta.url), 'utf8');
+const mcpSource = await readFile(new URL('./server.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../../migrations/091_mcp_oauth_connectivity.sql', import.meta.url), 'utf8');
 
 test('MCP OAuth discovery and bearer challenge are backend-owned', () => {
@@ -33,4 +34,28 @@ test('OAuth redirect validation rejects wildcard, fragment, and non-HTTPS produc
   assert.match(serverSource, /parsed\.hostname\.includes\('\*'\)/);
   assert.match(serverSource, /parsed\.protocol !== 'https:'/);
   assert.match(serverSource, /localhost/);
+});
+
+test('MCP exposes workspace-scoped bounded note search', () => {
+  assert.match(mcpSource, /server\.registerTool\('search_notes'/);
+  assert.match(mcpSource, /requireScope\('notes:read'\)/);
+  assert.match(mcpSource, /queryTable\('notes'/);
+  assert.match(mcpSource, /content_html\.ilike/);
+  assert.match(mcpSource, /dateFrom/);
+  assert.match(mcpSource, /nextCursor/);
+});
+
+test('MCP exposes append-only note writing with note scope and concurrency controls', () => {
+  assert.match(mcpSource, /server\.registerTool\('append_to_note'/);
+  assert.match(mcpSource, /mutation\('append_to_note', 'notes:write'/);
+  assert.match(mcpSource, /expectedUpdatedAt/);
+  assert.match(mcpSource, /The resulting note is too long/);
+  assert.match(mcpSource, /content_html: contentHtml/);
+});
+
+test('MCP exposes project metadata reads and explicit project creation', () => {
+  assert.match(mcpSource, /server\.registerTool\('get_project'/);
+  assert.match(mcpSource, /server\.registerTool\('create_project'/);
+  assert.match(mcpSource, /mutation\('create_project', 'projects:write'/);
+  assert.match(serverSource, /'projects:write'/);
 });

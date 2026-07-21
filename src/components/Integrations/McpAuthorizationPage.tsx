@@ -23,6 +23,7 @@ const scopeLabels: Record<string, string> = {
   'tasks:write': 'Create and update tasks',
   'notes:write': 'Create notes',
   'daily:write': 'Update Today’s focus',
+  'projects:write': 'Create projects',
 };
 
 export const McpAuthorizationPage = ({ sessionId, code }: { sessionId: string; code: string }) => {

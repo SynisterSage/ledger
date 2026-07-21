@@ -7,7 +7,7 @@ const MAX_LIMIT = 100;
 const MAX_NOTE_CONTENT = 20_000;
 const MAX_DATE_RANGE_DAYS = 90;
 const mutationBuckets = new Map();
-const mutationLimits = { send_to_intake: 20, create_task: 20, create_note: 20, update_task: 60, complete_task: 60, reschedule_task: 60, add_to_focus: 30 };
+const mutationLimits = { send_to_intake: 20, create_task: 20, create_note: 20, append_to_note: 20, create_project: 20, update_task: 60, complete_task: 60, reschedule_task: 60, add_to_focus: 30 };
 
 const decodeCursor = (cursor) => {
   if (!cursor) return 0;
@@ -54,6 +54,16 @@ const validateDateRange = (from, to) => {
 
 const textResult = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 
+const searchSnippet = (value, rawQuery, maxLength = 600) => {
+  const text = plainText(value);
+  if (!text) return '';
+  const query = plainText(rawQuery).toLowerCase();
+  const index = query ? text.toLowerCase().indexOf(query) : -1;
+  if (index < 0) return text.slice(0, maxLength);
+  const start = Math.max(0, index - Math.floor(maxLength * 0.3));
+  return `${start > 0 ? '…' : ''}${text.slice(start, start + maxLength)}${start + maxLength < text.length ? '…' : ''}`;
+};
+
 export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, audit, requestScopeUpgrade }) => {
   const workspaceId = context.workspaceId;
   const userId = context.userId;
@@ -63,6 +73,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
   };
 
   const query = (table, columns) => supabase.from(table).select(columns).eq('workspace_id', workspaceId);
+  const queryTable = query;
 
   const safeError = (message, statusCode = 400) => {
     const error = new Error(message);
@@ -168,6 +179,40 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     return assigneeId;
   };
 
+  const ensureProjectLead = async (leadId) => {
+    if (!leadId) return null;
+    await ensureAssignee(leadId);
+    return leadId;
+  };
+
+  const ensureOwnerTeam = async (teamId) => {
+    if (!teamId) return null;
+    const result = await supabase.from('workspace_teams').select('id, name').eq('id', teamId).eq('workspace_id', workspaceId).is('archived_at', null).maybeSingle();
+    if (result.error || !result.data) throw safeError('The project team is not available in this workspace.', 404);
+    return result.data;
+  };
+
+  const projectStatusValues = { not_started: 'NotStarted', in_progress: 'InProgress', paused: 'Paused', completed: 'Completed' };
+  const projectSummary = (row, metadata = {}) => ({
+    id: row.id,
+    title: row.name,
+    description: row.description ? plainText(row.description).slice(0, 2_000) : undefined,
+    status: row.status,
+    progress: row.completeness ?? 0,
+    projectType: row.project_type ?? undefined,
+    color: row.color ?? undefined,
+    startDate: row.start_date ?? undefined,
+    dueDate: row.end_date ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lead: metadata.lead ?? (row.lead_id ? { id: row.lead_id } : undefined),
+    ownerTeam: metadata.ownerTeam ?? (row.owner_team_id ? { id: row.owner_team_id } : undefined),
+    taskCount: metadata.taskCount ?? 0,
+    linkedNoteCount: metadata.linkedNoteCount ?? 0,
+    descriptionPreview: row.description ? plainText(row.description).slice(0, 320) : undefined,
+    url: `ledger://projects/${encodeURIComponent(row.id)}`,
+  });
+
   const taskSummary = (row) => ({ id: row.id, title: row.title, status: row.status, priority: row.priority ?? undefined, dueDate: row.due_date ?? undefined, dueTime: row.due_time ?? undefined, updatedAt: row.updated_at, url: `ledger://tasks/${encodeURIComponent(row.id)}` });
 
   const fetchWorkspace = async () => {
@@ -205,20 +250,94 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
   });
 
   server.registerTool('list_projects', {
-    description: 'List compact project summaries in the approved Ledger workspace.',
+    description: 'List project summaries and bounded attached metadata in the approved Ledger workspace, including dates, lead, owner team, task count, and linked note count.',
     annotations: readAnnotations,
     inputSchema: { status: z.string().max(50).optional(), limit: limitSchema, cursor: z.string().max(100).optional() },
   }, async ({ status, limit, cursor }) => {
     requireScope('projects:read');
     const offset = decodeCursor(cursor);
     if (offset === null) throw new Error('Invalid cursor.');
-    let request = query('projects', 'id, name, status, completeness, end_date, updated_at').order('updated_at', { ascending: false }).range(offset, offset + limit);
+    let request = query('projects', 'id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_at, updated_at').order('updated_at', { ascending: false }).range(offset, offset + limit);
     if (status) request = request.eq('status', status);
     const result = await request;
     if (result.error) throw new Error('Could not load projects.');
     const rows = result.data ?? [];
+    const projectIds = rows.map((row) => row.id).filter(Boolean);
+    const [taskRows, linkRows] = projectIds.length ? await Promise.all([
+      query('tasks', 'id, project_id').in('project_id', projectIds),
+      query('project_note_links', 'id, project_id').in('project_id', projectIds),
+    ]) : [{ data: [], error: null }, { data: [], error: null }];
+    if (taskRows.error || linkRows.error) throw new Error('Could not load project metadata.');
+    const leadIds = [...new Set(rows.map((row) => row.lead_id).filter(Boolean))];
+    const teamIds = [...new Set(rows.map((row) => row.owner_team_id).filter(Boolean))];
+    const [leads, teams] = await Promise.all([
+      leadIds.length ? supabase.from('users').select('id, full_name').in('id', leadIds) : { data: [], error: null },
+      teamIds.length ? supabase.from('workspace_teams').select('id, name, identifier').eq('workspace_id', workspaceId).in('id', teamIds) : { data: [], error: null },
+    ]);
+    if (leads.error || teams.error) throw new Error('Could not load project metadata.');
+    const leadById = new Map((leads.data ?? []).map((lead) => [lead.id, lead]));
+    const teamById = new Map((teams.data ?? []).map((team) => [team.id, team]));
     await audit('tool.invoked', { toolName: 'list_projects' });
-    return textResult({ projects: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.name, status: row.status ?? undefined, progress: row.completeness ?? undefined, dueDate: row.end_date ?? undefined, updatedAt: row.updated_at })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
+    return textResult({ projects: rows.slice(0, limit).map((row) => projectSummary(row, { lead: row.lead_id ? { id: row.lead_id, name: leadById.get(row.lead_id)?.full_name ?? undefined } : undefined, ownerTeam: row.owner_team_id ? { id: row.owner_team_id, name: teamById.get(row.owner_team_id)?.name ?? undefined, identifier: teamById.get(row.owner_team_id)?.identifier ?? undefined } : undefined, taskCount: (taskRows.data ?? []).filter((task) => task.project_id === row.id).length, linkedNoteCount: (linkRows.data ?? []).filter((link) => link.project_id === row.id).length })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
+  });
+
+  server.registerTool('get_project', {
+    description: 'Get one project with bounded project context, linked notes, next actions, lead, owner team, and dates from the approved Ledger workspace.',
+    annotations: readAnnotations,
+    inputSchema: { projectId: uuidSchema },
+  }, async ({ projectId }) => {
+    requireScope('projects:read');
+    const result = await query('projects', 'id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_by, created_at, updated_at').eq('id', projectId).maybeSingle();
+    if (result.error || !result.data) throw new Error('Object not found or inaccessible.');
+    const project = result.data;
+    const [tasks, links, lead, team] = await Promise.all([
+      query('tasks', 'id, title, status, priority, due_date, due_time, assigned_to_user_id, assigned_to_team_id, updated_at').eq('project_id', projectId).order('due_date', { ascending: true, nullsFirst: false }).limit(50),
+      query('project_note_links', 'id, note_id, created_at').eq('project_id', projectId).order('created_at', { ascending: false }).limit(25),
+      project.lead_id ? supabase.from('users').select('id, full_name').eq('id', project.lead_id).maybeSingle() : { data: null, error: null },
+      project.owner_team_id ? supabase.from('workspace_teams').select('id, name, identifier').eq('id', project.owner_team_id).eq('workspace_id', workspaceId).maybeSingle() : { data: null, error: null },
+    ]);
+    if (tasks.error || links.error || lead.error || team.error) throw new Error('Could not load project context.');
+    const noteIds = (links.data ?? []).map((link) => link.note_id).filter(Boolean);
+    const notes = noteIds.length ? await query('notes', 'id, title, date, content, content_html, updated_at').in('id', noteIds) : { data: [], error: null };
+    if (notes.error) throw new Error('Could not load linked project notes.');
+    const taskAssigneeIds = [...new Set((tasks.data ?? []).map((task) => task.assigned_to_user_id).filter(Boolean))];
+    const taskTeamIds = [...new Set((tasks.data ?? []).map((task) => task.assigned_to_team_id).filter(Boolean))];
+    const [taskAssignees, taskTeams] = await Promise.all([
+      taskAssigneeIds.length ? supabase.from('users').select('id, full_name').in('id', taskAssigneeIds) : { data: [], error: null },
+      taskTeamIds.length ? supabase.from('workspace_teams').select('id, name, identifier').eq('workspace_id', workspaceId).in('id', taskTeamIds) : { data: [], error: null },
+    ]);
+    if (taskAssignees.error || taskTeams.error) throw new Error('Could not load project assignments.');
+    const notesById = new Map((notes.data ?? []).map((note) => [note.id, note]));
+    const taskAssigneeById = new Map((taskAssignees.data ?? []).map((assignee) => [assignee.id, assignee]));
+    const taskTeamById = new Map((taskTeams.data ?? []).map((teamRow) => [teamRow.id, teamRow]));
+    await audit('tool.invoked', { toolName: 'get_project' });
+    return textResult({ project: projectSummary(project, { lead: lead.data ? { id: lead.data.id, name: lead.data.full_name ?? undefined } : undefined, ownerTeam: team.data ? { id: team.data.id, name: team.data.name, identifier: team.data.identifier ?? undefined } : undefined, taskCount: (tasks.data ?? []).length, linkedNoteCount: (links.data ?? []).length }), linkedNotes: (links.data ?? []).map((link) => { const note = notesById.get(link.note_id); return note ? { id: note.id, title: note.title, date: note.date, snippet: searchSnippet(note.content_html || note.content, '', 400), updatedAt: note.updated_at, url: `ledger://notes/${encodeURIComponent(note.id)}` } : null; }).filter(Boolean), nextActions: (tasks.data ?? []).map((task) => ({ id: task.id, title: task.title, status: task.status, priority: task.priority ?? undefined, dueDate: task.due_date ?? undefined, dueTime: task.due_time ?? undefined, assignee: task.assigned_to_user_id ? { id: task.assigned_to_user_id, name: taskAssigneeById.get(task.assigned_to_user_id)?.full_name ?? undefined } : undefined, team: task.assigned_to_team_id ? { id: task.assigned_to_team_id, name: taskTeamById.get(task.assigned_to_team_id)?.name ?? undefined, identifier: taskTeamById.get(task.assigned_to_team_id)?.identifier ?? undefined } : undefined, updatedAt: task.updated_at, url: `ledger://tasks/${encodeURIComponent(task.id)}` })) });
+  });
+
+  server.registerTool('search_notes', {
+    description: 'Search note titles and content within the approved Ledger workspace. Returns bounded sanitized snippets; use get_note for explicitly requested content.',
+    annotations: readAnnotations,
+    inputSchema: z.object({ query: z.string().trim().min(2).max(200), dateFrom: z.string().date().optional(), dateTo: z.string().date().optional(), limit: limitSchema, cursor: z.string().max(100).optional() }).strict(),
+  }, async ({ query: rawQuery, dateFrom, dateTo, limit, cursor }) => {
+    requireScope('notes:read');
+    validateDateRange(dateFrom, dateTo);
+    const offset = decodeCursor(cursor);
+    if (offset === null) throw new Error('Invalid cursor.');
+    const searchTerm = rawQuery.replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (searchTerm.length < 2) throw new Error('Search query must be at least 2 characters.');
+    const like = `%${searchTerm}%`;
+    let request = queryTable('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html')
+      .or(`title.ilike.${like},content.ilike.${like},content_html.ilike.${like}`)
+      .order('date', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .range(offset, offset + limit);
+    if (dateFrom) request = request.gte('date', dateFrom);
+    if (dateTo) request = request.lte('date', dateTo);
+    const result = await request;
+    if (result.error) throw new Error('Could not search notes.');
+    const rows = result.data ?? [];
+    await audit('tool.invoked', { toolName: 'search_notes' });
+    return textResult({ notes: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.title, date: row.date, mode: row.mode ?? undefined, sectionId: row.section_id ?? undefined, parentId: row.parent_id ?? undefined, snippet: searchSnippet(row.content_html || row.content, rawQuery), createdAt: row.created_at, updatedAt: row.updated_at, url: `ledger://notes/${encodeURIComponent(row.id)}` })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
   });
 
   server.registerTool('list_tasks', {
@@ -310,12 +429,34 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
   server.registerTool('request_scope_upgrade', {
     description: 'Request explicit browser approval for additional non-destructive Ledger write permissions. No data is changed until the user approves.',
     annotations: writeAnnotations,
-    inputSchema: z.object({ scopes: z.array(z.enum(['intake:write', 'tasks:write', 'notes:write', 'daily:write'])).min(1).max(4) }).strict(),
+    inputSchema: z.object({ scopes: z.array(z.enum(['intake:write', 'tasks:write', 'notes:write', 'daily:write', 'projects:write'])).min(1).max(5) }).strict(),
   }, async ({ scopes }) => {
     if (!requestScopeUpgrade) throw safeError('Scope upgrades are unavailable.');
     const upgrade = await requestScopeUpgrade({ connectionId: context.connection.id, userId, requestedScopes: scopes });
     await audit('scope_upgrade.requested', { toolName: 'request_scope_upgrade', requestedScopes: upgrade.requestedScopes });
     return textResult({ authorizationUrl: upgrade.authorizationUrl, sessionId: upgrade.sessionId, pollSecret: upgrade.pollSecret, expiresAt: upgrade.expiresAt, requestedScopes: upgrade.requestedScopes, message: 'Open the authorization URL in Ledger, then poll the scope-upgrade endpoint after approval.' });
+  });
+
+  server.registerTool('create_project', {
+    description: 'Create a shared Ledger project in the approved workspace. This creates a project container and does not create tasks or modify existing projects.',
+    annotations: writeAnnotations,
+    inputSchema: z.object({ title: z.string().trim().min(1).max(255), description: z.string().max(20_000).optional(), status: z.enum(['not_started', 'in_progress', 'paused', 'completed']).optional(), progress: z.number().int().min(0).max(100).optional(), startDate: z.string().date().nullable().optional(), dueDate: z.string().date().nullable().optional(), projectType: z.enum(['code', 'design', 'personal', 'ops', 'writing', 'other']).optional(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(), leadId: uuidSchema.nullable().optional(), ownerTeamId: uuidSchema.nullable().optional(), idempotencyKey: z.string().min(8).max(160) }).strict(),
+  }, async (args) => {
+    const result = await mutation('create_project', 'projects:write', () => withIdempotency('create_project', args, async () => {
+      const title = boundedText(args.title, 255, 'Project title', true);
+      const existing = await query('projects', 'id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_at, updated_at').ilike('name', title).maybeSingle();
+      if (existing.error) throw safeError('Could not check existing projects.');
+      if (existing.data) return { resultType: 'project', resultId: existing.data.id, targetType: 'project', payload: { project: projectSummary(existing.data), message: 'A project with that title already exists.' } };
+      await ensureProjectLead(args.leadId);
+      const ownerTeam = await ensureOwnerTeam(args.ownerTeamId);
+      const startDate = args.startDate === undefined ? null : args.startDate === null ? null : validDate(args.startDate, 'start date');
+      const dueDate = args.dueDate === undefined ? null : args.dueDate === null ? null : validDate(args.dueDate, 'due date');
+      if (startDate && dueDate && startDate > dueDate) throw safeError('The project due date cannot be before its start date.');
+      const inserted = await supabase.from('projects').insert({ workspace_id: workspaceId, created_by: userId, name: title, description: boundedText(args.description, 20_000, 'Description'), status: projectStatusValues[args.status ?? 'not_started'], completeness: args.progress ?? 0, color: args.color ?? '#007AFF', start_date: startDate, end_date: dueDate, project_type: args.projectType ?? 'other', lead_id: args.leadId ?? null, owner_team_id: ownerTeam?.id ?? null }).select('id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_at, updated_at').single();
+      if (inserted.error) throw safeError('Could not create project.');
+      return { resultType: 'project', resultId: inserted.data.id, targetType: 'project', changedFields: ['project'], payload: { project: projectSummary(inserted.data, { ownerTeam: ownerTeam ? { id: ownerTeam.id, name: ownerTeam.name } : undefined }), message: 'Project created.' } };
+    }));
+    return textResult(result.payload);
   });
 
   server.registerTool('send_to_intake', {
@@ -411,6 +552,28 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
       if (note.error) throw safeError('Could not create note.');
       if (args.projectId) { const link = await supabase.from('project_note_links').insert({ workspace_id: workspaceId, project_id: args.projectId, note_id: note.data.id, created_by: userId }).select('id').single(); if (link.error) throw safeError('Could not link note to project.'); }
       return { resultType: 'note', resultId: note.data.id, targetType: 'note', payload: { note: { id: note.data.id, title: note.data.title, date: note.data.date, createdAt: note.data.created_at, updatedAt: note.data.updated_at, url: `ledger://notes/${encodeURIComponent(note.data.id)}` }, message: 'Note created.' } };
+    }));
+    return textResult(result.payload);
+  });
+
+  server.registerTool('append_to_note', {
+    description: 'Append plain-text content to an existing shared Ledger note in the approved workspace. This preserves the existing note and does not replace or delete prior content.',
+    annotations: writeAnnotations,
+    inputSchema: z.object({ noteId: uuidSchema, content: z.string().min(1).max(20_000), expectedUpdatedAt: z.string().datetime().optional(), idempotencyKey: z.string().min(8).max(160) }).strict(),
+  }, async (args) => {
+    const result = await mutation('append_to_note', 'notes:write', () => withIdempotency('append_to_note', args, async () => {
+      const existing = await query('notes', 'id, title, date, mode, content, content_html, updated_at').eq('id', args.noteId).maybeSingle();
+      if (existing.error || !existing.data) throw safeError('Object not found or inaccessible.', 404);
+      if (args.expectedUpdatedAt && existing.data.updated_at !== args.expectedUpdatedAt) throw safeError('The note changed since it was last read.', 409);
+      const addition = boundedText(args.content, MAX_NOTE_CONTENT, 'Content', true);
+      const current = plainText(existing.data.content_html || existing.data.content);
+      const combined = current ? `${current}\n\n${addition}` : addition;
+      if (combined.length > MAX_NOTE_CONTENT) throw safeError('The resulting note is too long.');
+      const now = new Date().toISOString();
+      const contentHtml = combined.split(/\r?\n/).map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+      const saved = await supabase.from('notes').update({ content: combined, content_html: contentHtml, updated_by: userId, updated_at: now }).eq('id', args.noteId).eq('workspace_id', workspaceId).select('id, title, date, updated_at').single();
+      if (saved.error) throw safeError('Could not update note.');
+      return { resultType: 'note', resultId: saved.data.id, targetType: 'note', changedFields: ['content'], payload: { note: { id: saved.data.id, title: saved.data.title, date: saved.data.date, updatedAt: saved.data.updated_at, url: `ledger://notes/${encodeURIComponent(saved.data.id)}` }, message: 'Note updated.' } };
     }));
     return textResult(result.payload);
   });

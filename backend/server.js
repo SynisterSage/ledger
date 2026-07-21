@@ -2886,7 +2886,7 @@ const requireWorkspaceAccess = async (userId, workspaceId, minimumRole = 'member
 
 const MCP_CLIENT_ID = 'ledger-mcp';
 const MCP_READ_SCOPES = ['workspace:read', 'projects:read', 'tasks:read', 'notes:read', 'calendar:read', 'daily:read'];
-const MCP_WRITE_SCOPES = ['intake:write', 'tasks:write', 'notes:write', 'daily:write'];
+const MCP_WRITE_SCOPES = ['intake:write', 'tasks:write', 'notes:write', 'daily:write', 'projects:write'];
 const MCP_SCOPES = [...MCP_READ_SCOPES, ...MCP_WRITE_SCOPES];
 const mcpEphemeralCredentials = new Map();
 const hashMcpValue = (value) => crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
