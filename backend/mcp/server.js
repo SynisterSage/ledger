@@ -64,13 +64,14 @@ const searchSnippet = (value, rawQuery, maxLength = 600) => {
   return `${start > 0 ? '…' : ''}${text.slice(start, start + maxLength)}${start + maxLength < text.length ? '…' : ''}`;
 };
 
-export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, audit, requestScopeUpgrade }) => {
+export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, audit, requestScopeUpgrade, requestWorkspaceSwitch }) => {
   const workspaceId = context.workspaceId;
   const userId = context.userId;
 
   const requireScope = (scope) => {
     if (!context.scopes.includes(scope)) throw new Error('Required scope is missing.');
   };
+  const hasScope = (scope) => context.scopes.includes(scope);
 
   const query = (table, columns) => supabase.from(table).select(columns).eq('workspace_id', workspaceId);
   const queryTable = query;
@@ -227,23 +228,73 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
   const readAnnotations = { readOnlyHint: true, destructiveHint: false };
 
   server.registerResource('ledger-workspace-context', 'ledger://workspace/current/context', {
-    description: 'A bounded overview of the approved Ledger workspace.',
+    description: 'A bounded, workspace-scoped snapshot of Ledger context for planning and answering questions.',
     mimeType: 'application/json',
   }, async () => {
     requireScope('workspace:read');
     const workspace = await fetchWorkspace();
-    const [projects, tasks, events, accountability] = await Promise.all([
-      query('projects', 'id, name, status, completeness, end_date, updated_at').neq('status', 'Completed').limit(100),
-      query('tasks', 'id, due_date, status').neq('status', 'completed').limit(500),
-      query('events', 'id, start_at').gte('start_at', new Date().toISOString()).limit(100),
-      supabase.from('daily_accountability').select('focus_items, entry_date').eq('user_id', userId).eq('entry_date', new Date().toISOString().slice(0, 10)).maybeSingle(),
-    ]);
     const today = new Date().toISOString().slice(0, 10);
+    const [projects, tasks, events, reminders, accountability, notes] = await Promise.all([
+      hasScope('projects:read') ? query('projects', 'id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_at, updated_at').neq('status', 'Completed').order('updated_at', { ascending: false }).limit(25) : { data: [], error: null },
+      hasScope('tasks:read') ? query('tasks', 'id, project_id, title, description, due_date, due_time, status, priority, assigned_to, assigned_to_user_id, completed_at, is_today_focus, updated_at').neq('status', 'completed').order('due_date', { ascending: true, nullsFirst: false }).limit(200) : { data: [], error: null },
+      hasScope('calendar:read') ? query('events', 'id, title, description, start_at, end_at, all_day, status, project_id, note_id').gte('start_at', new Date().toISOString()).order('start_at', { ascending: true }).limit(30) : { data: [], error: null },
+      hasScope('calendar:read') ? query('reminders', 'id, title, remind_at, status, project_id, note_id').gte('remind_at', `${today}T00:00:00.000Z`).neq('status', 'completed').order('remind_at', { ascending: true }).limit(30) : { data: [], error: null },
+      hasScope('daily:read') ? supabase.from('daily_accountability').select('focus_items, entry_date, checkin_finished, checkin_blocked, checkin_first_task_tomorrow, updated_at').eq('user_id', userId).eq('entry_date', today).maybeSingle() : { data: null, error: null },
+      hasScope('notes:read') ? query('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html').order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(20) : { data: [], error: null },
+    ]);
+    if (projects.error || tasks.error || events.error || reminders.error || accountability.error || notes.error) throw new Error('Could not load workspace context.');
+
+    const projectRows = projects.data ?? [];
+    const taskRows = tasks.data ?? [];
+    const eventRows = events.data ?? [];
+    const reminderRows = reminders.data ?? [];
+    const noteRows = notes.data ?? [];
     const overdueCount = (tasks.data ?? []).filter((task) => task.due_date && task.due_date < today).length;
+    const focusItems = Array.isArray(accountability.data?.focus_items)
+      ? accountability.data.focus_items
+      : taskRows.filter((task) => task.is_today_focus).map((task) => ({ id: task.id, title: task.title, projectId: task.project_id ?? undefined }));
+    const projectIds = projectRows.map((project) => project.id);
+    const [projectLinks, leads, teams] = await Promise.all([
+      projectIds.length && hasScope('projects:read') ? query('project_note_links', 'id, project_id, note_id').in('project_id', projectIds) : { data: [], error: null },
+      [...new Set(projectRows.map((project) => project.lead_id).filter(Boolean))].length
+        ? supabase.from('users').select('id, full_name').in('id', [...new Set(projectRows.map((project) => project.lead_id).filter(Boolean))])
+        : { data: [], error: null },
+      [...new Set(projectRows.map((project) => project.owner_team_id).filter(Boolean))].length
+        ? supabase.from('workspace_teams').select('id, name, identifier').eq('workspace_id', workspaceId).in('id', [...new Set(projectRows.map((project) => project.owner_team_id).filter(Boolean))])
+        : { data: [], error: null },
+    ]);
+    if (projectLinks.error || leads.error || teams.error) throw new Error('Could not load workspace project context.');
+    const leadById = new Map((leads.data ?? []).map((lead) => [lead.id, lead]));
+    const teamById = new Map((teams.data ?? []).map((team) => [team.id, team]));
+    const noteCountByProject = new Map();
+    for (const link of projectLinks.data ?? []) noteCountByProject.set(link.project_id, (noteCountByProject.get(link.project_id) ?? 0) + 1);
+    const compactTask = (task) => ({ id: task.id, title: task.title, status: task.status, priority: task.priority ?? undefined, dueDate: task.due_date ?? undefined, dueTime: task.due_time ?? undefined, assignedTo: task.assigned_to_user_id ?? task.assigned_to ?? undefined, updatedAt: task.updated_at, url: `ledger://tasks/${encodeURIComponent(task.id)}` });
+    const compactEvent = (event) => ({ id: event.id, title: event.title, startAt: event.start_at, endAt: event.end_at ?? undefined, allDay: Boolean(event.all_day), projectId: event.project_id ?? undefined, noteId: event.note_id ?? undefined, url: `ledger://events/${encodeURIComponent(event.id)}` });
+    const compactReminder = (reminder) => ({ id: reminder.id, title: reminder.title, remindAt: reminder.remind_at, projectId: reminder.project_id ?? undefined, noteId: reminder.note_id ?? undefined, url: `ledger://reminders/${encodeURIComponent(reminder.id)}` });
     const payload = {
-      workspace: { id: workspace.id, name: workspace.name, type: workspace.is_personal ? 'personal' : 'team' },
-      today: { focusCount: Array.isArray(accountability.data?.focus_items) ? accountability.data.focus_items.length : 0, taskCount: (tasks.data ?? []).filter((task) => task.due_date === today).length, overdueCount, upcomingEventCount: (events.data ?? []).length },
-      activeProjects: (projects.data ?? []).slice(0, 25).map((project) => ({ id: project.id, title: project.name, status: project.status ?? undefined, progress: project.completeness ?? undefined })),
+      workspace: { id: workspace.id, name: workspace.name, type: workspace.is_personal ? 'personal' : 'team', contextDate: today },
+      today: {
+        focusCount: focusItems.length,
+        focusItems: focusItems.slice(0, 10),
+        taskCount: taskRows.filter((task) => task.due_date === today).length,
+        dueToday: taskRows.filter((task) => task.due_date === today).slice(0, 25).map(compactTask),
+        overdueCount,
+        overdueTasks: taskRows.filter((task) => task.due_date && task.due_date < today).slice(0, 25).map(compactTask),
+        upcomingEventCount: eventRows.length,
+        upcomingEvents: eventRows.slice(0, 15).map(compactEvent),
+        reminders: reminderRows.slice(0, 15).map(compactReminder),
+        checkIn: accountability.data ? { finished: accountability.data.checkin_finished, blocked: accountability.data.checkin_blocked, firstTaskTomorrow: accountability.data.checkin_first_task_tomorrow } : null,
+      },
+      activeProjects: projectRows.map((project) => ({
+        ...projectSummary(project, {
+          lead: project.lead_id ? { id: project.lead_id, name: leadById.get(project.lead_id)?.full_name ?? undefined } : undefined,
+          ownerTeam: project.owner_team_id ? { id: project.owner_team_id, name: teamById.get(project.owner_team_id)?.name ?? undefined, identifier: teamById.get(project.owner_team_id)?.identifier ?? undefined } : undefined,
+          taskCount: taskRows.filter((task) => task.project_id === project.id).length,
+          linkedNoteCount: noteCountByProject.get(project.id) ?? 0,
+        }),
+        nextActions: taskRows.filter((task) => task.project_id === project.id).slice(0, 5).map(compactTask),
+      })),
+      recentNotes: noteRows.slice(0, 20).map((note) => ({ id: note.id, title: note.title, date: note.date, mode: note.mode ?? undefined, sectionId: note.section_id ?? undefined, parentId: note.parent_id ?? undefined, preview: searchSnippet(note.content_html || note.content, '', 360), createdAt: note.created_at, updatedAt: note.updated_at, url: `ledger://notes/${encodeURIComponent(note.id)}` })),
     };
     await audit('resource.read', { resource: 'ledger://workspace/current/context' });
     return { contents: [{ uri: 'ledger://workspace/current/context', mimeType: 'application/json', text: JSON.stringify(payload) }] };
@@ -455,6 +506,17 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     const upgrade = await requestScopeUpgrade({ connectionId: context.connection.id, userId, requestedScopes: scopes });
     await audit('scope_upgrade.requested', { toolName: 'request_scope_upgrade', requestedScopes: upgrade.requestedScopes });
     return textResult({ authorizationUrl: upgrade.authorizationUrl, sessionId: upgrade.sessionId, pollSecret: upgrade.pollSecret, expiresAt: upgrade.expiresAt, requestedScopes: upgrade.requestedScopes, message: 'Open the authorization URL in Ledger, then poll the scope-upgrade endpoint after approval.' });
+  });
+
+  server.registerTool('switch_workspace', {
+    description: 'Request browser approval to switch this MCP connection to another Ledger workspace. The user must choose and approve the destination workspace in Ledger; the client cannot switch it directly.',
+    annotations: writeAnnotations,
+    inputSchema: z.object({ workspaceId: uuidSchema.optional() }).strict(),
+  }, async ({ workspaceId: requestedWorkspaceId }) => {
+    if (!requestWorkspaceSwitch) throw safeError('Workspace switching is unavailable.');
+    const switchRequest = await requestWorkspaceSwitch({ connectionId: context.connection.id, userId, requestedWorkspaceId: requestedWorkspaceId ?? null });
+    await audit('workspace_switch.requested', { toolName: 'switch_workspace', requestedWorkspaceId: switchRequest.requestedWorkspaceId ?? null });
+    return textResult({ authorizationUrl: switchRequest.authorizationUrl, sessionId: switchRequest.sessionId, pollSecret: switchRequest.pollSecret, expiresAt: switchRequest.expiresAt, currentWorkspaceId: switchRequest.currentWorkspaceId, requestedWorkspaceId: switchRequest.requestedWorkspaceId, message: 'Open the authorization URL in Ledger and approve a destination workspace, then poll the workspace-switch endpoint.' });
   });
 
   server.registerTool('create_project', {

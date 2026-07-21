@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const serverSource = await readFile(new URL('../server.js', import.meta.url), 'utf8');
 const mcpSource = await readFile(new URL('./server.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../../migrations/091_mcp_oauth_connectivity.sql', import.meta.url), 'utf8');
+const workspaceSwitchMigration = await readFile(new URL('../../migrations/093_mcp_workspace_switch_sessions.sql', import.meta.url), 'utf8');
 
 test('MCP OAuth discovery and bearer challenge are backend-owned', () => {
   assert.match(serverSource, /\.well-known\/oauth-protected-resource/);
@@ -59,4 +60,22 @@ test('MCP exposes project metadata reads and explicit project creation', () => {
   assert.match(mcpSource, /server\.registerTool\('create_project'/);
   assert.match(mcpSource, /mutation\('create_project', 'projects:write'/);
   assert.match(serverSource, /'projects:write'/);
+});
+
+test('MCP workspace switching requires a browser-approved one-time session', () => {
+  assert.match(mcpSource, /server\.registerTool\('switch_workspace'/);
+  assert.match(serverSource, /createMcpWorkspaceSwitchSession/);
+  assert.match(serverSource, /workspace-switches\/.*approve/);
+  assert.match(serverSource, /mcp_connection_workspaces.*update/);
+  assert.match(workspaceSwitchMigration, /mcp_workspace_switch_sessions/);
+  assert.match(workspaceSwitchMigration, /user_code_hash/);
+});
+
+test('Ledger workspace context includes bounded planning context', () => {
+  assert.match(mcpSource, /recentNotes:/);
+  assert.match(mcpSource, /dueToday:/);
+  assert.match(mcpSource, /overdueTasks:/);
+  assert.match(mcpSource, /nextActions:/);
+  assert.match(mcpSource, /upcomingEvents:/);
+  assert.match(mcpSource, /hasScope\('notes:read'\)/);
 });
