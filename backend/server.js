@@ -92,7 +92,7 @@ app.use((req, res, next) => {
 });
 
 const TIER_LIMITS = {
-  free: { projects: 3, events: 100, notes: 100, reminders: 100 },
+  free: { projects: 5, events: 100, notes: 100, reminders: 100 },
   pro: { projects: Infinity, events: Infinity, notes: Infinity, reminders: Infinity },
 };
 

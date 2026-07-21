@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ledger Workspace Manager"
+  short_description: "Plan and organize work in Ledger"
+  default_prompt: "Use $ledger-workspace-manager to plan and organize work in Ledger."

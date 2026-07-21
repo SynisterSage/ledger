@@ -135,7 +135,7 @@ values ('<user-uuid>', '<workspace-uuid-or-null>', 'Browser Extension', '<sha256
 
 **Free:**
 
-- 3 projects
+- 5 projects
 - 50 tasks
 - 100 events
 - 100 notes
