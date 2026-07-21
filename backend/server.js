@@ -74,6 +74,23 @@ const REQUEST_BODY_LIMIT = '5mb';
 app.use(express.json({ limit: REQUEST_BODY_LIMIT, verify: captureRawBody }));
 app.use(express.urlencoded({ extended: false, limit: REQUEST_BODY_LIMIT, verify: captureRawBody }));
 
+// Keep OAuth/MCP scan diagnostics visible in Render without logging credentials,
+// request bodies, authorization codes, or bearer tokens.
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/oauth') && req.path !== '/mcp') return next();
+  const startedAt = Date.now();
+  res.on('finish', () => console.log(JSON.stringify({
+    type: 'mcp_oauth_request',
+    method: req.method,
+    path: req.path,
+    status: res.statusCode,
+    duration_ms: Date.now() - startedAt,
+    user_agent: req.get('user-agent') || null,
+    origin: req.get('origin') || null,
+  })));
+  next();
+});
+
 const TIER_LIMITS = {
   free: { projects: 3, events: 100, notes: 100, reminders: 100 },
   pro: { projects: Infinity, events: Infinity, notes: Infinity, reminders: Infinity },
