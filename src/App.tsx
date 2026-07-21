@@ -94,6 +94,8 @@ import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { NewTabWindow } from './components/Common/NewTabWindow';
 import { PageFindBar } from './components/Common/PageFindBar';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
+import { McpAuthorizationPage } from './components/Integrations/McpAuthorizationPage';
+import { McpScopeUpgradeAuthorizationPage } from './components/Integrations/McpScopeUpgradeAuthorizationPage';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'workspace-type' | 'workspace' | 'team-invite' | 'position';
@@ -9192,6 +9194,10 @@ function App() {
   const { user } = useAuthContext();
   const figmaPluginAuthSession = windowParams.get('figmaPluginAuth');
   const figmaPluginAuthCode = windowParams.get('code');
+  const mcpAuthSession = windowParams.get('mcpAuth');
+  const mcpAuthCode = windowParams.get('code');
+  const mcpScopeUpgradeSession = windowParams.get('mcpScopeUpgrade');
+  const mcpScopeUpgradeCode = windowParams.get('code');
   const shouldShowNotificationMonitor = Boolean(user) && !isModuleWindow;
   const [isNotificationTrayOpen, setIsNotificationTrayOpen] = useState(false);
 
@@ -9208,7 +9214,7 @@ function App() {
         <NotificationCenterProvider>
           {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
           <AuthSessionToastReset />
-          {figmaPluginAuthSession && figmaPluginAuthCode && user ? <FigmaPluginAuthorizationPage sessionId={figmaPluginAuthSession} code={figmaPluginAuthCode} /> : <AppShell />}
+          {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? <McpScopeUpgradeAuthorizationPage sessionId={mcpScopeUpgradeSession} code={mcpScopeUpgradeCode} /> : mcpAuthSession && mcpAuthCode && user ? <McpAuthorizationPage sessionId={mcpAuthSession} code={mcpAuthCode} /> : figmaPluginAuthSession && figmaPluginAuthCode && user ? <FigmaPluginAuthorizationPage sessionId={figmaPluginAuthSession} code={figmaPluginAuthCode} /> : <AppShell />}
           {user && isModuleWindow ? (
             <NotificationTray
               isOpen={isNotificationTrayOpen}

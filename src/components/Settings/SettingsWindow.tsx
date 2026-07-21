@@ -170,6 +170,16 @@ type ExtensionTokenResponse = {
   status?: ExtensionTokenStatus;
 };
 
+type McpConnection = {
+  id: string;
+  client_name: string;
+  status: 'active' | 'revoked' | 'expired';
+  expires_at: string;
+  last_used_at?: string | null;
+  scopes: string[];
+  workspaces: Array<{ id: string; name: string }>;
+};
+
 type AccountSessionPlatform = 'desktop' | 'ios' | 'android' | 'web' | 'extension';
 
 type AccountSessionRow = {
@@ -868,6 +878,11 @@ export const SettingsWindow = () => {
     'regenerate' | 'revoke' | null
   >(null);
   const [extensionTokenCopyStatus, setExtensionTokenCopyStatus] = useState<string | null>(null);
+  const [mcpConnections, setMcpConnections] = useState<McpConnection[]>([]);
+  const [isLoadingMcpConnections, setIsLoadingMcpConnections] = useState(false);
+  const [mcpConnectionError, setMcpConnectionError] = useState<string | null>(null);
+  const [mcpConnectionActionId, setMcpConnectionActionId] = useState<string | null>(null);
+  const [mcpScopeActionId, setMcpScopeActionId] = useState<string | null>(null);
   const [accountSessions, setAccountSessions] = useState<AccountSessionRow[]>([]);
   const [isLoadingAccountSessions, setIsLoadingAccountSessions] = useState(false);
   const [accountSessionsError, setAccountSessionsError] = useState<string | null>(null);
@@ -1494,6 +1509,74 @@ export const SettingsWindow = () => {
     });
     return () => { cancelled = true; };
   }, [activeSection, activeWorkspaceId, api]);
+
+  useEffect(() => {
+    if (activeSection !== 'integrations') return;
+    let cancelled = false;
+    setIsLoadingMcpConnections(true);
+    void api.getMcpConnections().then((payload) => {
+      if (!cancelled) setMcpConnections((payload as McpConnection[]) ?? []);
+    }).catch((error) => {
+      if (!cancelled) setMcpConnectionError(error instanceof Error ? error.message : 'Could not load MCP connections.');
+    }).finally(() => {
+      if (!cancelled) setIsLoadingMcpConnections(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeSection, api]);
+
+  const handleRevokeMcpConnection = async (connectionId: string) => {
+    setMcpConnectionActionId(connectionId);
+    setMcpConnectionError(null);
+    try {
+      await api.revokeMcpConnection(connectionId);
+      setMcpConnections((current) => current.map((connection) => connection.id === connectionId ? { ...connection, status: 'revoked' } : connection));
+    } catch (error) {
+      setMcpConnectionError(error instanceof Error ? error.message : 'Could not revoke MCP connection.');
+    } finally {
+      setMcpConnectionActionId(null);
+    }
+  };
+
+  const handleRenameMcpConnection = async (connection: McpConnection) => {
+    const name = window.prompt('Name this MCP connection', connection.client_name)?.trim();
+    if (!name || name === connection.client_name) return;
+    setMcpConnectionActionId(connection.id);
+    setMcpConnectionError(null);
+    try {
+      const updated = await api.renameMcpConnection(connection.id, name) as { client_name?: string };
+      setMcpConnections((current) => current.map((item) => item.id === connection.id ? { ...item, client_name: updated.client_name ?? name } : item));
+    } catch (error) {
+      setMcpConnectionError(error instanceof Error ? error.message : 'Could not rename MCP connection.');
+    } finally {
+      setMcpConnectionActionId(null);
+    }
+  };
+
+  const handleRequestMcpScope = async (connection: McpConnection, scope: string) => {
+    setMcpScopeActionId(`${connection.id}:${scope}`);
+    setMcpConnectionError(null);
+    try {
+      const response = await api.requestMcpScopeUpgrade(connection.id, [scope]) as { authorization_url?: string };
+      if (response.authorization_url) await openExternalUrl(response.authorization_url);
+    } catch (error) {
+      setMcpConnectionError(error instanceof Error ? error.message : 'Could not request additional MCP access.');
+    } finally {
+      setMcpScopeActionId(null);
+    }
+  };
+
+  const handleRemoveMcpScope = async (connection: McpConnection, scope: string) => {
+    setMcpScopeActionId(`${connection.id}:${scope}`);
+    setMcpConnectionError(null);
+    try {
+      await api.removeMcpScope(connection.id, scope);
+      setMcpConnections((current) => current.map((item) => item.id === connection.id ? { ...item, scopes: item.scopes.filter((itemScope) => itemScope !== scope) } : item));
+    } catch (error) {
+      setMcpConnectionError(error instanceof Error ? error.message : 'Could not remove MCP access.');
+    } finally {
+      setMcpScopeActionId(null);
+    }
+  };
 
   useEffect(() => {
     if (activeSection !== 'integrations' || !activeWorkspaceId) return;
@@ -4524,9 +4607,23 @@ export const SettingsWindow = () => {
                             )}
                           </div>
                         </div>
+
+                        <div className="flex items-start gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]"><Plug2 size={16} /></span>
+                          <div className="min-w-0 flex-1">
+                            <p className={settingsTheme.label}>MCP connections</p>
+                            <p className={settingsTheme.help}>Read-only AI access to one explicitly approved workspace.</p>
+                            {isLoadingMcpConnections ? <p className={settingsTheme.sectionStatus + ' mt-1'}>Checking connections…</p> : mcpConnections.filter((connection) => connection.status === 'active').length === 0 ? <p className={settingsTheme.sectionStatus + ' mt-1'}>No active connections</p> : <div className="mt-2 space-y-2">{mcpConnections.filter((connection) => connection.status === 'active').map((connection) => <div key={connection.id} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--ledger-surface-muted)] px-3 py-2"><div className="min-w-0"><p className={settingsTheme.label}>{connection.client_name}</p><p className={settingsTheme.help}>{connection.workspaces[0]?.name ?? 'Workspace'} · {connection.scopes.some((scope) => scope.endsWith(':write')) ? 'Read + write access' : 'Read only'}{connection.last_used_at ? ` · Last used ${formatIntegrationDate(connection.last_used_at) ?? 'recently'}` : ''}</p></div><div className="flex shrink-0 items-center gap-1.5"><button type="button" onClick={() => void handleRenameMcpConnection(connection)} disabled={mcpConnectionActionId === connection.id || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral}>{mcpConnectionActionId === connection.id ? 'Saving…' : 'Rename'}</button><button type="button" onClick={() => void handleRevokeMcpConnection(connection.id)} disabled={mcpConnectionActionId === connection.id || !canUseWorkspaceIntegrations} className={settingsTheme.dangerButton}>{mcpConnectionActionId === connection.id ? 'Revoking…' : 'Revoke'}</button></div></div>)}</div>}
+                            {mcpConnections.filter((connection) => connection.status === 'active').map((connection) => {
+                              const writeScopes = connection.scopes.filter((scope) => scope.endsWith(':write'));
+                              const missingWrites = ['intake:write', 'tasks:write', 'notes:write', 'daily:write'].filter((scope) => !connection.scopes.includes(scope));
+                              return <div key={`${connection.id}-access`} className="mt-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2"><p className={settingsTheme.help}>Can change: {writeScopes.length ? writeScopes.map((scope) => scope.split(':')[0]).join(', ') : 'Nothing yet'}</p><div className="mt-2 flex flex-wrap gap-1.5">{writeScopes.map((scope) => <button key={scope} type="button" onClick={() => void handleRemoveMcpScope(connection, scope)} disabled={Boolean(mcpScopeActionId) || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral}>Remove {scope.split(':')[0]}</button>)}{missingWrites.map((scope) => <button key={scope} type="button" onClick={() => void handleRequestMcpScope(connection, scope)} disabled={Boolean(mcpScopeActionId) || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral}>Add {scope.split(':')[0]}</button>)}</div></div>;
+                            })}
+                          </div>
+                        </div>
                       </div>
 
-                      {(slackError || extensionTokenError || extensionTokenCopyStatus) && (
+                      {(slackError || extensionTokenError || extensionTokenCopyStatus || mcpConnectionError) && (
                         <p
                           className={`mt-4 flex items-center gap-1.5 text-xs ${
                             slackError || extensionTokenError
@@ -4535,7 +4632,7 @@ export const SettingsWindow = () => {
                           }`}
                         >
                           {(slackError || extensionTokenError) && <CircleAlert size={12} />}
-                          {slackError || extensionTokenError || extensionTokenCopyStatus}
+                          {slackError || extensionTokenError || extensionTokenCopyStatus || mcpConnectionError}
                         </p>
                       )}
                     </section>

@@ -66,6 +66,17 @@ Invite links should be generated from `INVITE_BASE_URL` or `FRONTEND_URL`, not t
 - `GET /api/extension/workspaces` - Return accessible workspaces for the token user
 - `POST /api/inbox/browser` - Save a browser capture into Ledger Intake
 
+### MCP (Phase 1, read only)
+
+- `POST /api/mcp/authorization/sessions` - Start browser approval for an MCP client
+- `POST /api/mcp/authorization/approve` - Approve one workspace and explicit read scopes
+- `POST /api/mcp/authorization/poll` - Consume the one-time MCP credential
+- `POST /mcp` - Streamable HTTP MCP endpoint; requires a Ledger-issued MCP credential
+- `GET /api/mcp/connections` - List the signed-in user's MCP connections
+- `POST /api/mcp/connections/:id/revoke` - Revoke one MCP connection
+
+MCP credentials are separate from Figma and browser-extension credentials. Only credential hashes are persisted; the raw credential is returned once through the authorization poll and held ephemerally until consumed. Every MCP request rechecks current workspace membership and the connection's single workspace binding before creating a server instance.
+
 ### Projects
 
 - `GET /api/projects` - List active projects

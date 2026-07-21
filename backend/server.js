@@ -19,6 +19,8 @@ import {
 } from './integrations/external-previews.js';
 import { assertFigmaCapability, getFigmaCapabilityMinimumRole } from './integrations/figma/figma-policy.js';
 import { checkExternalReferenceChange, getExternalReferenceChangeState, getFigmaAutomationSettings, markFigmaReferencesForCheck, updateFigmaAutomationSettings } from './integrations/external-change-awareness.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createMcpServer } from './mcp/server.js';
 
 dotenv.config();
 
@@ -93,11 +95,17 @@ const RATE_LIMITS = {
   figma_change_check: { max: 30 },
   figma_webhook: { max: 120 },
   figma_cleanup: { max: 2 },
+  mcp_auth: { max: 20 },
+  mcp_poll: { max: 60 },
+  mcp_request: { max: 120 },
+  mcp_write_create: { max: 20 },
+  mcp_write_task: { max: 60 },
+  mcp_write_focus: { max: 30 },
 };
 
 const rateBuckets = new Map();
 
-const getBucketKey = (scope, req, userId) => `${scope}:${userId ?? req.ip}`;
+const getBucketKey = (scope, req, userId) => `${scope}:${scope.startsWith('mcp') ? (req.mcpContext?.connection?.id ?? userId ?? req.ip) : (userId ?? req.ip)}`;
 
 const getBearerToken = (req) => {
   const authorization = req.headers.authorization;
@@ -2876,6 +2884,107 @@ const requireWorkspaceAccess = async (userId, workspaceId, minimumRole = 'member
   return access;
 };
 
+const MCP_CLIENT_ID = 'ledger-mcp';
+const MCP_READ_SCOPES = ['workspace:read', 'projects:read', 'tasks:read', 'notes:read', 'calendar:read', 'daily:read'];
+const MCP_WRITE_SCOPES = ['intake:write', 'tasks:write', 'notes:write', 'daily:write'];
+const MCP_SCOPES = [...MCP_READ_SCOPES, ...MCP_WRITE_SCOPES];
+const mcpEphemeralCredentials = new Map();
+const hashMcpValue = (value) => crypto.createHash('sha256').update(String(value ?? '')).digest('hex');
+const mcpValueMatches = (value, hash) => {
+  const actual = Buffer.from(hashMcpValue(value));
+  const expected = Buffer.from(String(hash ?? ''));
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+};
+const createMcpCredential = () => `ledger_mcp_${crypto.randomBytes(32).toString('base64url')}`;
+const createMcpCode = () => `${crypto.randomBytes(3).toString('hex').toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+const getMcpAuthorizeUrl = (sessionId, code) => {
+  const base = process.env.MCP_AUTH_URL?.trim() || process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/?mcpAuth=${encodeURIComponent(sessionId)}&code=${encodeURIComponent(code)}`;
+};
+const getMcpScopeUpgradeAuthorizeUrl = (sessionId, code) => {
+  const base = process.env.MCP_AUTH_URL?.trim() || process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/?mcpScopeUpgrade=${encodeURIComponent(sessionId)}&code=${encodeURIComponent(code)}`;
+};
+
+const writeMcpAuditLog = async ({ connectionId = null, userId = null, workspaceId = null, action, toolName = null, metadata = {} }) => {
+  const result = await supabase.from('mcp_audit_logs').insert({
+    connection_id: connectionId,
+    user_id: userId,
+    workspace_id: workspaceId,
+    action,
+    tool_name: toolName,
+    metadata,
+  });
+  if (result.error) console.error('Failed to write MCP audit log:', result.error.message);
+};
+
+const loadMcpConnection = async (token) => {
+  if (!token || !token.startsWith('ledger_mcp_')) return null;
+  const result = await supabase.from('mcp_connections')
+    .select('id, user_id, client_name, status, expires_at, revoked_at')
+    .eq('credential_hash', hashMcpValue(token)).maybeSingle();
+  if (result.error) throw result.error;
+  const connection = result.data;
+  if (!connection || connection.status !== 'active' || connection.revoked_at || new Date(connection.expires_at).getTime() <= Date.now()) return null;
+
+  const [scopeResult, workspaceResult] = await Promise.all([
+    supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', connection.id),
+    supabase.from('mcp_connection_workspaces').select('workspace_id').eq('connection_id', connection.id),
+  ]);
+  if (scopeResult.error || workspaceResult.error) throw scopeResult.error || workspaceResult.error;
+  const workspaceIds = (workspaceResult.data ?? []).map((row) => row.workspace_id).filter(Boolean);
+  if (workspaceIds.length !== 1) return null;
+  const access = await getWorkspaceAccess(connection.user_id, workspaceIds[0]);
+  if (!access) return null;
+  void supabase.from('mcp_connections').update({ last_used_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', connection.id);
+  return { connection, userId: connection.user_id, workspaceId: workspaceIds[0], role: access.role, scopes: (scopeResult.data ?? []).map((row) => row.scope) };
+};
+
+const mcpAuthMiddleware = async (req, res, next) => {
+  try {
+    const token = getBearerToken(req);
+    const context = await loadMcpConnection(token);
+    if (!context) return res.status(401).json({ error: 'Connection expired or revoked.' });
+    req.mcpContext = context;
+    req.authUser = { id: context.userId };
+    await writeMcpAuditLog({ connectionId: context.connection.id, userId: context.userId, workspaceId: context.workspaceId, action: 'credential.used' });
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Not authenticated.' });
+  }
+};
+
+const requireMcpScope = (req, scope) => {
+  if (!req.mcpContext?.scopes?.includes(scope)) {
+    const error = new Error('Required scope is missing.');
+    error.statusCode = 403;
+    throw error;
+  }
+};
+
+const createMcpScopeUpgradeSession = async ({ connectionId, userId, requestedScopes }) => {
+  if (!Array.isArray(requestedScopes) || !requestedScopes.length || requestedScopes.some((scope) => !MCP_WRITE_SCOPES.includes(scope))) throw new Error('Only supported write permissions can be requested.');
+  const connection = await supabase.from('mcp_connections').select('id, user_id, client_name, status, expires_at').eq('id', connectionId).eq('user_id', userId).maybeSingle();
+  if (connection.error) throw connection.error;
+  if (!connection.data || connection.data.status !== 'active' || new Date(connection.data.expires_at).getTime() <= Date.now()) { const error = new Error('Connection expired or revoked.'); error.statusCode = 401; throw error; }
+  const [scopes, bindings] = await Promise.all([
+    supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', connectionId),
+    supabase.from('mcp_connection_workspaces').select('workspace_id').eq('connection_id', connectionId),
+  ]);
+  if (scopes.error || bindings.error) throw scopes.error || bindings.error;
+  const currentScopes = (scopes.data ?? []).map((row) => row.scope);
+  const newScopes = [...new Set(requestedScopes)].filter((scope) => !currentScopes.includes(scope));
+  if (!newScopes.length || (bindings.data ?? []).length !== 1) { const error = new Error('No additional permissions are available.'); error.statusCode = 409; throw error; }
+  const workspaceId = bindings.data[0].workspace_id;
+  await requireWorkspaceAccess(userId, workspaceId, 'member');
+  const code = createMcpCode();
+  const pollSecret = crypto.randomBytes(24).toString('base64url');
+  const session = await supabase.from('mcp_scope_upgrade_sessions').insert({ connection_id: connectionId, user_id: userId, workspace_id: workspaceId, user_code_hash: hashMcpValue(code), poll_secret_hash: hashMcpValue(pollSecret), requested_scopes: newScopes, expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }).select('id, expires_at').single();
+  if (session.error) throw session.error;
+  await writeMcpAuditLog({ connectionId, userId, workspaceId, action: 'scope_upgrade.initiated', metadata: { requested_scopes: newScopes } });
+  return { sessionId: session.data.id, verificationCode: code, pollSecret, clientName: connection.data.client_name, currentScopes, requestedScopes: newScopes, authorizationUrl: getMcpScopeUpgradeAuthorizeUrl(session.data.id, code), expiresAt: session.data.expires_at };
+};
+
 const getUserActiveWorkspaceId = async (userId) => {
   const result = await supabase
     .from('users')
@@ -5583,6 +5692,250 @@ app.get('/api/figma-plugin/auth/authorize', async (req, res) => {
   const sessionId = String(req.query?.session_id ?? '').trim();
   const code = String(req.query?.code ?? '').trim().toUpperCase();
   res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Ledger to Figma</title><style>body{font:15px system-ui;max-width:420px;margin:48px auto;padding:0 20px;color:#111827}button{background:#ff5f40;color:white;border:0;border-radius:8px;padding:10px 14px;font-weight:600}p{color:#4b5563;line-height:1.5}</style><h1>Connect Ledger to Figma</h1><p>Return to Ledger to approve this plugin connection. Verification code: <strong>${code.replace(/[^A-Z0-9-]/g, '')}</strong></p><p>Open Ledger in your browser if it is not already open, then approve the request there.</p><a href="${getPluginAuthorizeUrl(sessionId, code)}"><button>Open Ledger</button></a>`);
+});
+
+app.post('/api/mcp/authorization/sessions', rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const clientName = clampText(req.body?.client_name, 120);
+    const requestedScopes = Array.isArray(req.body?.scopes) && req.body.scopes.length
+      ? [...new Set(req.body.scopes.map((scope) => String(scope).trim()))]
+      : MCP_READ_SCOPES;
+    const requestedWorkspaceId = normalizeNullableText(req.body?.workspace_id);
+    if (!clientName || clientName.length < 2) return res.status(400).json({ error: 'Client name is required.' });
+    if (requestedScopes.some((scope) => !MCP_SCOPES.includes(scope))) return res.status(400).json({ error: 'Invalid MCP permission request.' });
+    if (requestedWorkspaceId && !isUuidLike(requestedWorkspaceId)) return res.status(400).json({ error: 'Invalid workspace.' });
+    const code = createMcpCode();
+    const pollSecret = crypto.randomBytes(24).toString('base64url');
+    const session = await supabase.from('mcp_authorization_sessions').insert({
+      user_code_hash: hashMcpValue(code),
+      poll_secret_hash: hashMcpValue(pollSecret),
+      client_name: clientName,
+      requested_scopes: requestedScopes,
+      requested_workspace_id: requestedWorkspaceId,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    }).select('id, client_name, requested_scopes, requested_workspace_id, expires_at').single();
+    if (session.error) throw session.error;
+    await writeMcpAuditLog({ action: 'authorization.initiated', metadata: { client_name: clientName, requested_scopes: requestedScopes } });
+    res.json({ session_id: session.data.id, verification_code: code, poll_secret: pollSecret, ...session.data, authorization_url: getMcpAuthorizeUrl(session.data.id, code) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/mcp/authorization/sessions/:id', rateLimit('mcp_poll'), async (req, res) => {
+  const session = await supabase.from('mcp_authorization_sessions').select('id, client_name, requested_scopes, requested_workspace_id, status, expires_at').eq('id', req.params.id).maybeSingle();
+  if (session.error || !session.data) return res.status(404).json({ error: 'Authorization request not found.' });
+  if (new Date(session.data.expires_at).getTime() <= Date.now() && session.data.status === 'pending') return res.json({ ...session.data, status: 'expired' });
+  res.json(session.data);
+});
+
+app.get('/api/mcp/authorization/authorize', async (req, res) => {
+  const sessionId = String(req.query?.session_id ?? '').trim();
+  const code = String(req.query?.code ?? '').trim().toUpperCase();
+  res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Ledger to an AI client</title><style>body{font:15px system-ui;max-width:420px;margin:48px auto;padding:0 20px;color:#111827}button{background:#ff5f40;color:white;border:0;border-radius:8px;padding:10px 14px;font-weight:600}p{color:#4b5563;line-height:1.5}</style><h1>Connect Ledger to an AI client</h1><p>Return to Ledger to review this read-only connection. Verification code: <strong>${code.replace(/[^A-Z0-9-]/g, '')}</strong></p><a href="${getMcpAuthorizeUrl(sessionId, code)}"><button>Open Ledger</button></a>`);
+});
+
+app.post('/api/mcp/authorization/approve', authMiddleware, rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const sessionId = String(req.body?.session_id ?? '').trim();
+    const code = String(req.body?.verification_code ?? '').trim().toUpperCase();
+    const workspaceId = normalizeNullableText(req.body?.workspace_id);
+    if (!isUuidLike(sessionId) || !isUuidLike(workspaceId)) return res.status(400).json({ error: 'Choose a workspace to continue.' });
+    const session = await supabase.from('mcp_authorization_sessions').select('id, client_name, user_code_hash, requested_scopes, requested_workspace_id, status, expires_at').eq('id', sessionId).maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data || session.data.status !== 'pending' || new Date(session.data.expires_at).getTime() <= Date.now() || !mcpValueMatches(code, session.data.user_code_hash)) return res.status(400).json({ error: 'This authorization request is invalid or expired.' });
+    if (session.data.requested_workspace_id && session.data.requested_workspace_id !== workspaceId) return res.status(403).json({ error: 'The requested workspace does not match.' });
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const credential = createMcpCredential();
+    const connection = await supabase.from('mcp_connections').insert({ user_id: req.authUser.id, client_name: session.data.client_name, credential_hash: hashMcpValue(credential), expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString() }).select('id, expires_at').single();
+    if (connection.error) throw connection.error;
+    const scopes = [...new Set(session.data.requested_scopes ?? MCP_SCOPES)];
+    const [scopeResult, workspaceResult, updateResult] = await Promise.all([
+      supabase.from('mcp_connection_scopes').insert(scopes.map((scope) => ({ connection_id: connection.data.id, scope }))),
+      supabase.from('mcp_connection_workspaces').insert({ connection_id: connection.data.id, workspace_id: workspaceId }),
+      supabase.from('mcp_authorization_sessions').update({ status: 'approved', approved_by: req.authUser.id, approved_at: new Date().toISOString() }).eq('id', sessionId).eq('status', 'pending').select('id').maybeSingle(),
+    ]);
+    if (scopeResult.error || workspaceResult.error || updateResult.error || !updateResult.data) {
+      await supabase.from('mcp_connections').delete().eq('id', connection.data.id);
+      return res.status(409).json({ error: 'This authorization request was already completed.' });
+    }
+    mcpEphemeralCredentials.set(sessionId, { credential, connectionId: connection.data.id, expiresAt: Date.now() + 10 * 60 * 1000 });
+    await writeMcpAuditLog({ connectionId: connection.data.id, userId: req.authUser.id, workspaceId, action: 'connection.approved', metadata: { scopes } });
+    res.json({ approved: true });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/mcp/authorization/poll', rateLimit('mcp_poll'), async (req, res) => {
+  try {
+    const sessionId = String(req.body?.session_id ?? '').trim();
+    const pollSecret = String(req.body?.poll_secret ?? '').trim();
+    const session = await supabase.from('mcp_authorization_sessions').select('id, poll_secret_hash, status, expires_at, consumed_at').eq('id', sessionId).maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data || !mcpValueMatches(pollSecret, session.data.poll_secret_hash) || new Date(session.data.expires_at).getTime() <= Date.now()) return res.json({ status: 'expired' });
+    if (session.data.status === 'pending') return res.json({ status: 'pending' });
+    const pendingCredential = mcpEphemeralCredentials.get(sessionId);
+    if (session.data.status !== 'approved' || session.data.consumed_at || !pendingCredential || pendingCredential.expiresAt <= Date.now()) return res.json({ status: 'cancelled' });
+    const consumed = await supabase.from('mcp_authorization_sessions').update({ consumed_at: new Date().toISOString() }).eq('id', sessionId).eq('status', 'approved').is('consumed_at', null).select('id').maybeSingle();
+    if (consumed.error || !consumed.data) return res.json({ status: 'cancelled' });
+    mcpEphemeralCredentials.delete(sessionId);
+    const scopes = await supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', pendingCredential.connectionId);
+    res.json({ status: 'approved', credential: pendingCredential.credential, scopes: (scopes.data ?? []).map((row) => row.scope) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/mcp/authorization/cancel', rateLimit('mcp_auth'), async (req, res) => {
+  await supabase.from('mcp_authorization_sessions').update({ status: 'cancelled' }).eq('id', String(req.body?.session_id ?? '')).eq('status', 'pending');
+  res.json({ cancelled: true });
+});
+
+app.post('/api/mcp/connections/:id/scope-upgrades', authMiddleware, rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const connectionId = String(req.params.id ?? '').trim();
+    const requestedScopes = Array.isArray(req.body?.scopes) ? [...new Set(req.body.scopes.map((scope) => String(scope).trim()))] : [];
+    if (!requestedScopes.length || requestedScopes.some((scope) => !MCP_WRITE_SCOPES.includes(scope))) return res.status(400).json({ error: 'Only supported write permissions can be requested.' });
+    const connection = await supabase.from('mcp_connections').select('id, user_id, client_name, status, expires_at').eq('id', connectionId).eq('user_id', req.authUser.id).maybeSingle();
+    if (connection.error) throw connection.error;
+    if (!connection.data || connection.data.status !== 'active' || new Date(connection.data.expires_at).getTime() <= Date.now()) return res.status(404).json({ error: 'Connection not found.' });
+    const [scopes, bindings] = await Promise.all([
+      supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', connectionId),
+      supabase.from('mcp_connection_workspaces').select('workspace_id').eq('connection_id', connectionId),
+    ]);
+    if (scopes.error || bindings.error) throw scopes.error || bindings.error;
+    const currentScopes = (scopes.data ?? []).map((row) => row.scope);
+    const newScopes = requestedScopes.filter((scope) => !currentScopes.includes(scope));
+    if (!newScopes.length || (bindings.data ?? []).length !== 1) return res.status(409).json({ error: 'No additional permissions are available.' });
+    const workspaceId = bindings.data[0].workspace_id;
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const code = createMcpCode();
+    const pollSecret = crypto.randomBytes(24).toString('base64url');
+    const session = await supabase.from('mcp_scope_upgrade_sessions').insert({ connection_id: connectionId, user_id: req.authUser.id, workspace_id: workspaceId, user_code_hash: hashMcpValue(code), poll_secret_hash: hashMcpValue(pollSecret), requested_scopes: newScopes, expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }).select('id, expires_at').single();
+    if (session.error) throw session.error;
+    await writeMcpAuditLog({ connectionId, userId: req.authUser.id, workspaceId, action: 'scope_upgrade.initiated', metadata: { requested_scopes: newScopes } });
+    res.json({ session_id: session.data.id, verification_code: code, poll_secret: pollSecret, client_name: connection.data.client_name, current_scopes: currentScopes, requested_scopes: newScopes, authorization_url: getMcpScopeUpgradeAuthorizeUrl(session.data.id, code), expires_at: session.data.expires_at });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/mcp/scope-upgrades/:id', rateLimit('mcp_poll'), async (req, res) => {
+  const session = await supabase.from('mcp_scope_upgrade_sessions').select('id, connection_id, requested_scopes, status, expires_at').eq('id', req.params.id).maybeSingle();
+  if (session.error || !session.data) return res.status(404).json({ error: 'Permission request not found.' });
+  if (new Date(session.data.expires_at).getTime() <= Date.now() && session.data.status === 'pending') return res.json({ ...session.data, status: 'expired' });
+  const connection = await supabase.from('mcp_connections').select('client_name').eq('id', session.data.connection_id).maybeSingle();
+  if (connection.error) return res.status(404).json({ error: 'Permission request not found.' });
+  const scopes = await supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', session.data.connection_id);
+  if (scopes.error) return res.status(404).json({ error: 'Permission request not found.' });
+  res.json({ ...session.data, client_name: connection.data?.client_name ?? 'MCP connection', current_scopes: (scopes.data ?? []).map((row) => row.scope) });
+});
+
+app.post('/api/mcp/scope-upgrades/approve', authMiddleware, rateLimit('mcp_auth'), async (req, res) => {
+  try {
+    const sessionId = String(req.body?.session_id ?? '').trim();
+    const code = String(req.body?.verification_code ?? '').trim().toUpperCase();
+    const session = await supabase.from('mcp_scope_upgrade_sessions').select('id, connection_id, user_id, workspace_id, user_code_hash, requested_scopes, status, expires_at').eq('id', sessionId).maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data || session.data.user_id !== req.authUser.id || session.data.status !== 'pending' || new Date(session.data.expires_at).getTime() <= Date.now() || !mcpValueMatches(code, session.data.user_code_hash)) return res.status(400).json({ error: 'This permission request is invalid or expired.' });
+    const connection = await supabase.from('mcp_connections').select('id, status, expires_at').eq('id', session.data.connection_id).eq('user_id', req.authUser.id).maybeSingle();
+    if (connection.error) throw connection.error;
+    if (!connection.data || connection.data.status !== 'active' || new Date(connection.data.expires_at).getTime() <= Date.now()) return res.status(401).json({ error: 'Connection expired or revoked.' });
+    await requireWorkspaceAccess(req.authUser.id, session.data.workspace_id, 'member');
+    const existing = await supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', session.data.connection_id);
+    if (existing.error) throw existing.error;
+    const newScopes = (session.data.requested_scopes ?? []).filter((scope) => !(existing.data ?? []).some((row) => row.scope === scope));
+    const added = newScopes.length ? await supabase.from('mcp_connection_scopes').insert(newScopes.map((scope) => ({ connection_id: session.data.connection_id, scope }))) : { error: null };
+    if (added.error) throw added.error;
+    const updated = await supabase.from('mcp_scope_upgrade_sessions').update({ status: 'approved', approved_at: new Date().toISOString() }).eq('id', sessionId).eq('status', 'pending').select('id').maybeSingle();
+    if (updated.error || !updated.data) return res.status(409).json({ error: 'This permission request was already completed.' });
+    await writeMcpAuditLog({ connectionId: session.data.connection_id, userId: req.authUser.id, workspaceId: session.data.workspace_id, action: 'scope_upgrade.approved', metadata: { added_scopes: newScopes } });
+    res.json({ approved: true, scopes: [...(existing.data ?? []).map((row) => row.scope), ...newScopes] });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/mcp/scope-upgrades/poll', rateLimit('mcp_poll'), async (req, res) => {
+  try {
+    const sessionId = String(req.body?.session_id ?? '').trim();
+    const pollSecret = String(req.body?.poll_secret ?? '').trim();
+    const session = await supabase.from('mcp_scope_upgrade_sessions').select('id, connection_id, poll_secret_hash, status, requested_scopes, expires_at, consumed_at').eq('id', sessionId).maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data || !mcpValueMatches(pollSecret, session.data.poll_secret_hash) || new Date(session.data.expires_at).getTime() <= Date.now()) return res.json({ status: 'expired' });
+    if (session.data.status === 'pending') return res.json({ status: 'pending' });
+    if (session.data.status !== 'approved' || session.data.consumed_at) return res.json({ status: 'cancelled' });
+    const consumed = await supabase.from('mcp_scope_upgrade_sessions').update({ consumed_at: new Date().toISOString() }).eq('id', sessionId).eq('status', 'approved').is('consumed_at', null).select('id').maybeSingle();
+    if (consumed.error || !consumed.data) return res.json({ status: 'cancelled' });
+    const scopes = await supabase.from('mcp_connection_scopes').select('scope').eq('connection_id', session.data.connection_id);
+    res.json({ status: 'approved', scopes: (scopes.data ?? []).map((row) => row.scope) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/mcp/scope-upgrades/cancel', rateLimit('mcp_auth'), async (req, res) => {
+  const sessionId = String(req.body?.session_id ?? '');
+  const session = await supabase.from('mcp_scope_upgrade_sessions').select('connection_id, user_id, workspace_id').eq('id', sessionId).eq('status', 'pending').maybeSingle();
+  await supabase.from('mcp_scope_upgrade_sessions').update({ status: 'cancelled' }).eq('id', sessionId).eq('status', 'pending');
+  if (session.data) await writeMcpAuditLog({ connectionId: session.data.connection_id, userId: session.data.user_id, workspaceId: session.data.workspace_id, action: 'scope_upgrade.denied', metadata: { reason: 'cancelled' } });
+  res.json({ cancelled: true });
+});
+
+app.delete('/api/mcp/connections/:id/scopes/:scope', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const scope = String(req.params.scope ?? '').trim();
+    if (!MCP_WRITE_SCOPES.includes(scope)) return res.status(400).json({ error: 'Only optional write permissions can be removed.' });
+    const connection = await supabase.from('mcp_connections').select('id').eq('id', req.params.id).eq('user_id', req.authUser.id).maybeSingle();
+    if (connection.error) throw connection.error;
+    if (!connection.data) return res.status(404).json({ error: 'Connection not found.' });
+    const removed = await supabase.from('mcp_connection_scopes').delete().eq('connection_id', connection.data.id).eq('scope', scope).select('scope').maybeSingle();
+    if (removed.error) throw removed.error;
+    await writeMcpAuditLog({ connectionId: connection.data.id, userId: req.authUser.id, action: 'scope.removed', metadata: { scope } });
+    res.json({ removed: Boolean(removed.data), scope });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/mcp', mcpAuthMiddleware, rateLimit('mcp_request'), async (req, res) => {
+  const context = req.mcpContext;
+  req.authUser = { id: context.userId };
+  try {
+    const server = createMcpServer({ context, supabase, requireWorkspaceAccess, requestScopeUpgrade: createMcpScopeUpgradeSession, audit: (action, metadata) => writeMcpAuditLog({ connectionId: context.connection.id, userId: context.userId, workspaceId: context.workspaceId, action, toolName: metadata?.toolName ?? null, metadata }) });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+    res.on('close', () => { void transport.close(); void server.close(); });
+  } catch (error) {
+    console.error('MCP request failed:', error);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/mcp', mcpAuthMiddleware, rateLimit('mcp_request'), (_req, res) => res.status(405).json({ error: 'Method not allowed.' }));
+app.delete('/mcp', mcpAuthMiddleware, rateLimit('mcp_request'), (_req, res) => res.status(405).json({ error: 'Method not allowed.' }));
+
+app.get('/api/mcp/connections', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const connections = await supabase.from('mcp_connections').select('id, client_name, status, expires_at, last_used_at, revoked_at, created_at, updated_at').eq('user_id', req.authUser.id).order('created_at', { ascending: false });
+    if (connections.error) throw connections.error;
+    const ids = (connections.data ?? []).map((row) => row.id);
+    const [scopes, workspaces] = await Promise.all([
+      ids.length ? supabase.from('mcp_connection_scopes').select('connection_id, scope').in('connection_id', ids) : { data: [], error: null },
+      ids.length ? supabase.from('mcp_connection_workspaces').select('connection_id, workspace_id').in('connection_id', ids) : { data: [], error: null },
+    ]);
+    if (scopes.error || workspaces.error) throw scopes.error || workspaces.error;
+    const workspaceIds = [...new Set((workspaces.data ?? []).map((row) => row.workspace_id))];
+    const workspaceRows = workspaceIds.length ? await supabase.from('workspaces').select('id, name').in('id', workspaceIds) : { data: [], error: null };
+    if (workspaceRows.error) throw workspaceRows.error;
+    const workspaceById = new Map((workspaceRows.data ?? []).map((row) => [row.id, row]));
+    res.json((connections.data ?? []).map((connection) => ({ ...connection, scopes: (scopes.data ?? []).filter((row) => row.connection_id === connection.id).map((row) => row.scope), workspaces: (workspaces.data ?? []).filter((row) => row.connection_id === connection.id).map((row) => workspaceById.get(row.workspace_id)).filter(Boolean) })));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/mcp/connections/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  const name = clampText(req.body?.client_name, 120);
+  if (!name) return res.status(400).json({ error: 'Client name is required.' });
+  const result = await supabase.from('mcp_connections').update({ client_name: name, updated_at: new Date().toISOString() }).eq('id', req.params.id).eq('user_id', req.authUser.id).select('id, client_name').maybeSingle();
+  if (result.error) return respondWithError(res, result.error);
+  if (!result.data) return res.status(404).json({ error: 'Connection not found.' });
+  res.json(result.data);
+});
+
+app.post('/api/mcp/connections/:id/revoke', authMiddleware, rateLimit('write'), async (req, res) => {
+  const result = await supabase.from('mcp_connections').update({ status: 'revoked', revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', req.params.id).eq('user_id', req.authUser.id).is('revoked_at', null).select('id').maybeSingle();
+  if (result.error) return respondWithError(res, result.error);
+  if (!result.data) return res.status(404).json({ error: 'Connection not found.' });
+  await writeMcpAuditLog({ connectionId: result.data.id, userId: req.authUser.id, action: 'credential.revoked' });
+  res.json({ revoked: true });
 });
 
 app.post('/api/figma-plugin/auth/approve', authMiddleware, rateLimit('auth'), async (req, res) => {

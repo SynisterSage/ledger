@@ -282,6 +282,17 @@ export const useApi = () => {
       acceptFigmaPrivacySettings: () => request('/api/integrations/figma/privacy/accept', { method: 'POST' }),
       removeFigmaWorkspaceData: (workspaceName: string) => request('/api/integrations/figma/data/remove', { method: 'POST', body: JSON.stringify({ workspace_name: workspaceName }) }),
       approveFigmaPluginAuthorization: (sessionId: string, verificationCode: string) => request('/api/figma-plugin/auth/approve', { method: 'POST', body: JSON.stringify({ session_id: sessionId, verification_code: verificationCode }) }),
+      getMcpAuthorizationSession: (sessionId: string) => request(`/api/mcp/authorization/sessions/${encodeURIComponent(sessionId)}`, { skipWorkspaceHeader: true }),
+      approveMcpAuthorization: (sessionId: string, verificationCode: string, workspaceId: string) => request('/api/mcp/authorization/approve', { method: 'POST', body: JSON.stringify({ session_id: sessionId, verification_code: verificationCode, workspace_id: workspaceId }), skipWorkspaceHeader: true }),
+      cancelMcpAuthorization: (sessionId: string) => request('/api/mcp/authorization/cancel', { method: 'POST', body: JSON.stringify({ session_id: sessionId }), skipWorkspaceHeader: true }),
+      getMcpConnections: () => request('/api/mcp/connections', { skipWorkspaceHeader: true }),
+      renameMcpConnection: (connectionId: string, clientName: string) => request(`/api/mcp/connections/${encodeURIComponent(connectionId)}`, { method: 'PATCH', body: JSON.stringify({ client_name: clientName }), skipWorkspaceHeader: true }),
+      revokeMcpConnection: (connectionId: string) => request(`/api/mcp/connections/${encodeURIComponent(connectionId)}/revoke`, { method: 'POST', skipWorkspaceHeader: true }),
+      getMcpScopeUpgradeSession: (sessionId: string) => request(`/api/mcp/scope-upgrades/${encodeURIComponent(sessionId)}`, { skipWorkspaceHeader: true }),
+      approveMcpScopeUpgrade: (sessionId: string, verificationCode: string) => request('/api/mcp/scope-upgrades/approve', { method: 'POST', body: JSON.stringify({ session_id: sessionId, verification_code: verificationCode }), skipWorkspaceHeader: true }),
+      cancelMcpScopeUpgrade: (sessionId: string) => request('/api/mcp/scope-upgrades/cancel', { method: 'POST', body: JSON.stringify({ session_id: sessionId }), skipWorkspaceHeader: true }),
+      requestMcpScopeUpgrade: (connectionId: string, scopes: string[]) => request(`/api/mcp/connections/${encodeURIComponent(connectionId)}/scope-upgrades`, { method: 'POST', body: JSON.stringify({ scopes }), skipWorkspaceHeader: true }),
+      removeMcpScope: (connectionId: string, scope: string) => request(`/api/mcp/connections/${encodeURIComponent(connectionId)}/scopes/${encodeURIComponent(scope)}`, { method: 'DELETE', skipWorkspaceHeader: true }),
       parseExternalReferenceUrl: (provider: string, url: string) =>
         request('/api/external-references/parse', {
           method: 'POST',
