@@ -340,6 +340,26 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     return textResult({ notes: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.title, date: row.date, mode: row.mode ?? undefined, sectionId: row.section_id ?? undefined, parentId: row.parent_id ?? undefined, snippet: searchSnippet(row.content_html || row.content, rawQuery), createdAt: row.created_at, updatedAt: row.updated_at, url: `ledger://notes/${encodeURIComponent(row.id)}` })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
   });
 
+  server.registerTool('list_notes', {
+    description: 'List bounded note metadata from the approved Ledger workspace for browsing before choosing a note to read.',
+    annotations: readAnnotations,
+    inputSchema: z.object({ dateFrom: z.string().date().optional(), dateTo: z.string().date().optional(), sectionId: uuidSchema.optional(), limit: limitSchema, cursor: z.string().max(100).optional() }).strict(),
+  }, async ({ dateFrom, dateTo, sectionId, limit, cursor }) => {
+    requireScope('notes:read');
+    validateDateRange(dateFrom, dateTo);
+    const offset = decodeCursor(cursor);
+    if (offset === null) throw new Error('Invalid cursor.');
+    let request = queryTable('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html').order('date', { ascending: false }).order('updated_at', { ascending: false }).range(offset, offset + limit);
+    if (dateFrom) request = request.gte('date', dateFrom);
+    if (dateTo) request = request.lte('date', dateTo);
+    if (sectionId) request = request.eq('section_id', sectionId);
+    const result = await request;
+    if (result.error) throw new Error('Could not load notes.');
+    const rows = result.data ?? [];
+    await audit('tool.invoked', { toolName: 'list_notes' });
+    return textResult({ notes: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.title, date: row.date, mode: row.mode ?? undefined, sectionId: row.section_id ?? undefined, parentId: row.parent_id ?? undefined, preview: searchSnippet(row.content_html || row.content, '', 280), createdAt: row.created_at, updatedAt: row.updated_at, url: `ledger://notes/${encodeURIComponent(row.id)}` })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
+  });
+
   server.registerTool('list_tasks', {
     description: 'List bounded task summaries in the approved Ledger workspace.',
     annotations: readAnnotations,

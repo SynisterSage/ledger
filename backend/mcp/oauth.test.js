@@ -43,6 +43,7 @@ test('MCP exposes workspace-scoped bounded note search', () => {
   assert.match(mcpSource, /content_html\.ilike/);
   assert.match(mcpSource, /dateFrom/);
   assert.match(mcpSource, /nextCursor/);
+  assert.match(mcpSource, /server\.registerTool\('list_notes'/);
 });
 
 test('MCP exposes append-only note writing with note scope and concurrency controls', () => {
