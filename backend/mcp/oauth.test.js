@@ -10,6 +10,7 @@ const workspaceSwitchMigration = await readFile(new URL('../../migrations/093_mc
 test('MCP OAuth discovery and bearer challenge are backend-owned', () => {
   assert.match(serverSource, /\.well-known\/oauth-protected-resource/);
   assert.match(serverSource, /\.well-known\/oauth-authorization-server/);
+  assert.match(serverSource, /\.well-known\/openai-apps-challenge/);
   assert.match(serverSource, /WWW-Authenticate/);
   assert.match(serverSource, /MCP_OAUTH_RESOURCE/);
   assert.match(serverSource, /app\.post\('\/mcp'/);

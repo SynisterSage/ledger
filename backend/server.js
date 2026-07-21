@@ -5801,6 +5801,16 @@ app.get('/.well-known/oauth-protected-resource', (_req, res) => {
   res.json({ resource: MCP_OAUTH_RESOURCE, authorization_servers: [MCP_OAUTH_ISSUER], scopes_supported: MCP_SCOPES });
 });
 
+// OpenAI verifies ownership of the MCP hostname by reading the token generated
+// in the app-publishing form. Keep this server-side and return the token as
+// plain text only; it must never be exposed through the website bundle.
+app.get('/.well-known/openai-apps-challenge', (_req, res) => {
+  const token = process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim();
+  if (!token) return res.status(404).type('text/plain').send('Not found');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.type('text/plain').send(token);
+});
+
 app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=300');
   res.json({ resource: MCP_OAUTH_RESOURCE, authorization_servers: [MCP_OAUTH_ISSUER], scopes_supported: MCP_SCOPES });
