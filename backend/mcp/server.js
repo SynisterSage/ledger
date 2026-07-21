@@ -225,7 +225,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
   const server = new McpServer({ name: 'ledger', version: '1.0.0' }, {
     instructions: 'Ledger context and narrowly scoped non-destructive planning mutations. Results and writes are restricted to the approved workspace and current user permissions.',
   });
-  const readAnnotations = { readOnlyHint: true, destructiveHint: false };
+  const readAnnotations = { readOnlyHint: true, openWorldHint: false, destructiveHint: false };
 
   server.registerResource('ledger-workspace-context', 'ledger://workspace/current/context', {
     description: 'A bounded, workspace-scoped snapshot of Ledger context for planning and answering questions.',
@@ -495,7 +495,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     return textResult({ date: day, focusItems: accountability.data?.focus_items ?? (tasks.data ?? []).filter((row) => row.is_today_focus).map((row) => ({ id: row.id, title: row.title, projectId: row.project_id ?? undefined })), tasks: tasks.data ?? [], reminders: reminders.data ?? [], events: events.data ?? [], checkIn: accountability.data ? { finished: accountability.data.checkin_finished, blocked: accountability.data.checkin_blocked, firstTaskTomorrow: accountability.data.checkin_first_task_tomorrow } : null });
   });
 
-  const writeAnnotations = { readOnlyHint: false, destructiveHint: false };
+  const writeAnnotations = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
 
   server.registerTool('request_scope_upgrade', {
     description: 'Request explicit browser approval for additional non-destructive Ledger write permissions. No data is changed until the user approves.',

@@ -1,0 +1,272 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "Ledger",
+    "subtitle": "Plan and follow through",
+    "description": "Ledger gives users workspace-scoped access to projects, tasks, notes, calendars, Intake, and Today. It helps people find context, plan work, capture information, and make narrowly bounded non-destructive updates through an authenticated Ledger connection.",
+    "category": "PRODUCTIVITY"
+  },
+  "tools": {
+    "list_projects": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves bounded project summaries and attached metadata from the approved Ledger workspace.",
+        "open_world_justification": "It reads private Ledger workspace data and does not access or modify public web resources.",
+        "destructive_justification": "It does not create, update, delete, archive, or otherwise change projects or related records."
+      }
+    },
+    "get_project": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves one authorized project with bounded context, linked notes, and next actions.",
+        "open_world_justification": "It reads private Ledger workspace data and does not access or modify public web resources.",
+        "destructive_justification": "It does not change the project or any linked record."
+      }
+    },
+    "search_notes": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Searches note titles and content only within the approved workspace and returns bounded sanitized snippets.",
+        "open_world_justification": "It searches private Ledger notes and does not access external websites or public systems.",
+        "destructive_justification": "It does not edit, create, delete, or publish notes."
+      }
+    },
+    "list_notes": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only lists bounded note metadata and previews from the approved Ledger workspace.",
+        "open_world_justification": "It reads private Ledger notes and does not access external websites or public systems.",
+        "destructive_justification": "It does not modify or remove notes."
+      }
+    },
+    "list_tasks": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves bounded task summaries using explicit workspace-safe filters.",
+        "open_world_justification": "It reads private Ledger workspace data and does not access external websites or public systems.",
+        "destructive_justification": "It does not create, update, complete, delete, or archive tasks."
+      }
+    },
+    "get_task": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves one task that belongs to the approved Ledger workspace.",
+        "open_world_justification": "It reads private Ledger workspace data and does not access external websites or public systems.",
+        "destructive_justification": "It does not change or remove the task."
+      }
+    },
+    "get_note": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves authorized note metadata or explicitly requested bounded sanitized plain text.",
+        "open_world_justification": "It reads private Ledger notes and does not access external websites or public systems.",
+        "destructive_justification": "It does not edit, create, delete, or publish notes."
+      }
+    },
+    "list_upcoming_events": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves bounded upcoming Ledger events and reminders within an explicit date range.",
+        "open_world_justification": "It reads private Ledger calendar data and does not access external calendars or public systems.",
+        "destructive_justification": "It does not create, update, or delete calendar items."
+      }
+    },
+    "get_today": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Only retrieves the approved user’s bounded Today planning context, tasks, reminders, events, and check-in.",
+        "open_world_justification": "It reads private Ledger workspace data and does not access external websites or public systems.",
+        "destructive_justification": "It does not change Today, tasks, reminders, events, or check-in data."
+      }
+    },
+    "request_scope_upgrade": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It starts a browser approval request for additional Ledger write permissions but does not change data by itself.",
+        "open_world_justification": "It affects only permissions for the user’s Ledger connection and does not access public systems.",
+        "destructive_justification": "It does not delete or overwrite data; additional permissions require explicit browser approval."
+      }
+    },
+    "switch_workspace": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It starts a browser approval request to change the connection’s selected Ledger workspace and does not switch it without approval.",
+        "open_world_justification": "It affects only the user’s Ledger connection and approved workspace binding.",
+        "destructive_justification": "It does not delete or modify workspace records; the user must approve the destination workspace in Ledger."
+      }
+    },
+    "create_project": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It creates one bounded project container in the user-approved Ledger workspace.",
+        "open_world_justification": "It writes only to private Ledger workspace state and does not publish to public or third-party systems.",
+        "destructive_justification": "It creates a project but does not delete, archive, or overwrite existing projects."
+      }
+    },
+    "send_to_intake": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It creates one bounded Intake capture in the user-approved Ledger workspace.",
+        "open_world_justification": "It writes only to private Ledger workspace state; an optional source URL is stored as user-provided context and is not fetched.",
+        "destructive_justification": "It creates an Intake item and does not delete, archive, or overwrite existing records."
+      }
+    },
+    "create_task": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It creates one task with bounded fields in the user-approved Ledger workspace.",
+        "open_world_justification": "It writes only to private Ledger workspace state and does not publish to public or third-party systems.",
+        "destructive_justification": "It creates a task but does not delete, archive, or overwrite existing tasks."
+      }
+    },
+    "update_task": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It changes only explicitly supplied editable planning fields on one authorized Ledger task.",
+        "open_world_justification": "It writes only to private Ledger workspace state and does not publish to public or third-party systems.",
+        "destructive_justification": "It is limited to non-destructive task planning changes and cannot delete, archive, or reassign workspace ownership."
+      }
+    },
+    "complete_task": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It changes one authorized Ledger task to the completed state while preserving the task record.",
+        "open_world_justification": "It writes only to private Ledger workspace state and does not publish to public or third-party systems.",
+        "destructive_justification": "It does not delete or archive the task and safely returns the existing state if already completed."
+      }
+    },
+    "reschedule_task": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It changes or clears the due date and optional due time for one authorized Ledger task.",
+        "open_world_justification": "It writes only to private Ledger workspace state and does not publish to public or third-party systems.",
+        "destructive_justification": "It changes planning dates only and does not delete, archive, or overwrite the task itself."
+      }
+    },
+    "create_note": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It creates one bounded plain-text note in the user-approved Ledger workspace.",
+        "open_world_justification": "It writes only to private Ledger workspace state and does not publish to public or third-party systems.",
+        "destructive_justification": "It creates a note but does not delete, overwrite, or perform rich-text editing on existing notes."
+      }
+    },
+    "append_to_note": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It appends bounded plain text to one authorized Ledger note using concurrency checks.",
+        "open_world_justification": "It writes only to private Ledger workspace state and does not publish to public or third-party systems.",
+        "destructive_justification": "It is append-only and does not delete or replace existing note content."
+      }
+    },
+    "add_to_focus": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "It adds one authorized Ledger task to the user’s Today focus using existing focus limits.",
+        "open_world_justification": "It writes only to private Ledger workspace and daily-planning state.",
+        "destructive_justification": "It adds or returns an existing focus entry and does not delete or alter the underlying task."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Search private workspace notes for meeting context.",
+      "user_prompt": "Search my Ledger notes for what Hannah said in the meeting two days ago.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_notes, get_note",
+      "expected_output": "Returns matching workspace-scoped note snippets and, when requested, bounded sanitized note content.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Review projects and their next actions.",
+      "user_prompt": "What projects are active, what are they due, and what should happen next?",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_projects, get_project",
+      "expected_output": "Returns compact project metadata, dates, linked-note counts, and next actions from the approved workspace.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Review the user’s current day.",
+      "user_prompt": "What needs my attention today? Include focus items, overdue tasks, reminders, and upcoming events.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_today",
+      "expected_output": "Returns bounded Today context from Ledger’s existing daily-planning data.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Create a task after explicit user intent.",
+      "user_prompt": "Create a task in Ledger called Review the meeting notes, due Friday.",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_task",
+      "expected_output": "Creates one task in the approved workspace and returns a compact confirmation with its Ledger URL.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Capture an ambiguous item without converting it into a task.",
+      "user_prompt": "Send this idea to my Ledger Intake: ask the team about the launch timeline.",
+      "file_attachment_urls": null,
+      "tools_triggered": "send_to_intake",
+      "expected_output": "Creates one bounded Intake item and returns a compact confirmation.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Add an existing task to Today’s focus.",
+      "user_prompt": "Add the launch review task to my focus for today.",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_tasks, add_to_focus",
+      "expected_output": "Adds or returns the existing focus entry while preserving Ledger focus limits.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Make a bounded task-planning change.",
+      "user_prompt": "Move the launch review task to next Monday and mark it high priority.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_notes, list_tasks, update_task",
+      "expected_output": "Updates only the requested task planning fields and reports the changed task summary.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Request a workspace change through browser approval.",
+      "user_prompt": "Switch this Ledger connection to my Work workspace.",
+      "file_attachment_urls": null,
+      "tools_triggered": "switch_workspace",
+      "expected_output": "Returns a Ledger browser approval URL; no workspace change occurs without explicit user approval.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not invoke Ledger for unrelated general knowledge.",
+      "user_prompt": "Explain how photosynthesis works.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because the request is unrelated to Ledger workspace context.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not perform destructive workspace operations that are out of scope.",
+      "user_prompt": "Delete all completed tasks from Ledger.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should refuse because Ledger exposes no delete or bulk-mutation tools.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not access another workspace without an approved switch.",
+      "user_prompt": "Read notes from my other Ledger workspace without asking me.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should refuse and require the browser-approved workspace switch flow.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not use Ledger as an arbitrary external search engine.",
+      "user_prompt": "Search the entire public internet for Ledger competitors.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because its tools are restricted to the approved Ledger workspace.",
+      "expected_output_url": null
+    }
+  ]
+}

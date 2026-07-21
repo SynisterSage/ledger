@@ -6,14 +6,22 @@ const serverSource = await readFile(new URL('../server.js', import.meta.url), 'u
 const mcpSource = await readFile(new URL('./server.js', import.meta.url), 'utf8');
 const migration = await readFile(new URL('../../migrations/091_mcp_oauth_connectivity.sql', import.meta.url), 'utf8');
 const workspaceSwitchMigration = await readFile(new URL('../../migrations/093_mcp_workspace_switch_sessions.sql', import.meta.url), 'utf8');
+const challengeModule = await import('./openai-challenge.js');
 
 test('MCP OAuth discovery and bearer challenge are backend-owned', () => {
   assert.match(serverSource, /\.well-known\/oauth-protected-resource/);
   assert.match(serverSource, /\.well-known\/oauth-authorization-server/);
-  assert.match(serverSource, /\.well-known\/openai-apps-challenge/);
+  assert.match(serverSource, /OPENAI_APPS_CHALLENGE_PATH/);
   assert.match(serverSource, /WWW-Authenticate/);
+  assert.match(serverSource, /oauth-protected-resource\/mcp/);
   assert.match(serverSource, /MCP_OAUTH_RESOURCE/);
   assert.match(serverSource, /app\.post\('\/mcp'/);
+});
+
+test('OpenAI domain challenge returns exactly the configured token', () => {
+  assert.equal(challengeModule.getOpenAiAppsChallengeToken({ OPENAI_APPS_CHALLENGE_TOKEN: '  openai-token-123  ' }), 'openai-token-123');
+  assert.equal(challengeModule.getOpenAiAppsChallengeToken({ OPENAI_APPS_CHALLENGE_TOKEN: '' }), null);
+  assert.equal(challengeModule.OPENAI_APPS_CHALLENGE_PATH, '/.well-known/openai-apps-challenge');
 });
 
 test('MCP OAuth advertises only implemented PKCE and grants', () => {
