@@ -22,7 +22,7 @@ export const ExternalEmbedProvider = ({ targetType = 'note', targetId, canEdit, 
   <ExternalEmbedContext.Provider value={{ targetType, targetId, canEdit }}>{children}</ExternalEmbedContext.Provider>
 );
 
-type ExternalReference = { id: string; normalized_url?: string; external_url?: string; metadata?: Record<string, unknown>; access_status?: string };
+type ExternalReference = { id: string; provider?: string; normalized_url?: string; external_url?: string; metadata?: Record<string, unknown>; access_status?: string };
 type ExternalPreview = { url?: string | null; capturedAt?: string | null; sourceLastModifiedAt?: string | null; status?: string };
 
 const openExternal = (url: string) => {
@@ -59,7 +59,20 @@ export const ExternalEmbedRenderer = ({ nodeKey, externalReferenceId, externalUr
       const value = Array.isArray(link?.external_references) ? link?.external_references[0] : link?.external_references;
       if (value) { setReference(value); setAccessStatus(value.access_status ?? 'unresolved'); }
       const result = await api.getExternalReferencePreview(externalReferenceId, targetType, targetId) as { preview?: ExternalPreview | null };
-      setPreview(result.preview ?? null);
+      let nextPreview = result.preview ?? null;
+      // A newly linked design has no saved snapshot yet. Use the existing
+      // server-side capture endpoint rather than leaving the embed in a
+      // permanent "preview unavailable" state. Consent and connection
+      // requirements are returned by the server and remain non-blocking.
+      if (!nextPreview?.url && value?.provider === 'figma') {
+        try {
+          const capture = await api.createExternalReferencePreview(externalReferenceId, targetType, targetId) as { preview?: ExternalPreview | null; accessStatus?: string; consentRequired?: boolean };
+          nextPreview = capture.preview ?? null;
+          if (capture.accessStatus) setAccessStatus(capture.accessStatus);
+          if (capture.consentRequired) setAccessStatus('consent_required');
+        } catch { /* The saved-link state remains visible when capture is unavailable. */ }
+      }
+      setPreview(nextPreview);
       const change = await api.getExternalReferenceChangeState(externalReferenceId, targetType, targetId) as { change_state?: { change_state?: typeof changeState } };
       setChangeState(change.change_state?.change_state || 'unknown');
     } catch { setAccessStatus('error'); }
@@ -118,7 +131,7 @@ export const ExternalEmbedRenderer = ({ nodeKey, externalReferenceId, externalUr
   const fileName = String(metadata.fileName ?? 'Figma design');
   const nodeName = metadata.nodeName ? String(metadata.nodeName) : null;
   const nodeType = metadata.nodeType ? String(metadata.nodeType).toLowerCase().replace(/_/g, ' ') : 'File';
-  const statusMessage = accessStatus === 'connection_required' ? 'Figma is not connected for this workspace.' : accessStatus === 'revoked' || accessStatus === 'expired' ? 'The Figma connection needs to be renewed.' : accessStatus === 'inaccessible' ? 'This Figma design is not accessible to the connected account.' : accessStatus === 'not_found' ? 'This Figma design or frame is no longer available.' : accessStatus === 'error' ? 'Ledger couldn’t load this Figma preview.' : null;
+  const statusMessage = accessStatus === 'connection_required' ? 'Figma is not connected for this workspace.' : accessStatus === 'consent_required' ? 'Preview sharing is not enabled for this workspace.' : accessStatus === 'revoked' || accessStatus === 'expired' ? 'The Figma connection needs to be renewed.' : accessStatus === 'inaccessible' ? 'This Figma design is not accessible to the connected account.' : accessStatus === 'not_found' ? 'This Figma design or frame is no longer available.' : accessStatus === 'error' ? 'Ledger couldn’t load this Figma preview.' : null;
 
   return <ExternalEmbedShell nodeKey={nodeKey} loading={loading} preview={preview} previewAlt={nodeName || fileName} statusMessage={statusMessage || 'Preview unavailable for this file-level link.'} onPreviewClick={() => setExpanded(true)}>
     <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-3 py-2.5"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]"><Plug2 size={15} /></span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">{nodeName || fileName}</p><p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Figma · {nodeType}{preview?.capturedAt ? ` · Preview captured ${formatCapturedAt(preview.capturedAt)}` : ''}</p></div><button type="button" onClick={() => openExternal(externalUrl)} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Open in Figma <ExternalLink size={12} /></button><button type="button" aria-label="Figma embed actions" onClick={() => setMenuOpen((value) => !value)} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={15} /></button></div>

@@ -6577,7 +6577,24 @@ app.get('/api/external-references/:id/preview', authMiddleware, rateLimit('read'
     const referenceAllowed = await supabase.from('external_references').select('id').eq('workspace_id', workspaceId).eq('id', String(req.params.id)).maybeSingle();
     if (referenceAllowed.error) throw referenceAllowed.error;
     if (!referenceAllowed.data) return res.status(404).json({ error: 'External reference not found' });
-    res.json({ preview: await getExternalReferencePreview({ supabase, workspaceId, referenceId: String(req.params.id) }) });
+    let preview = await getExternalReferencePreview({ supabase, workspaceId, referenceId: String(req.params.id) });
+    // A newly linked reference may not have a snapshot yet. Let an editor
+    // recover it through the existing server-side capture service; viewers
+    // still receive only already-saved previews.
+    if (!preview?.url) {
+      try {
+        await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'refresh_preview', targetType, targetId });
+        const captured = await generateExternalReferencePreview({
+          supabase,
+          workspaceId,
+          referenceId: String(req.params.id),
+          createdByUserId: req.authUser.id,
+          getConnection: getFigmaConnectionForReference,
+        });
+        preview = captured.preview ?? preview;
+      } catch { /* Preview capture remains best-effort and never blocks the target. */ }
+    }
+    res.json({ preview });
   } catch (error) {
     return respondWithError(res, error);
   }

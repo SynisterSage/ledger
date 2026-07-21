@@ -47,7 +47,7 @@ export function LinkedDesignsSection({ target, canEdit = true, canInsert = false
         }
         let preview: Preview | null = null;
         try { preview = (await api.getExternalReferencePreview(link.external_reference_id, target.targetType, target.targetId) as { preview?: Preview | null }).preview ?? null; } catch { /* Preview may be unavailable. */ }
-        if (!preview && reference?.provider === 'figma') {
+        if (!preview?.url && reference?.provider === 'figma') {
           try {
             const capture = await api.createExternalReferencePreview(link.external_reference_id, target.targetType, target.targetId) as { preview?: Preview | null; consentRequired?: boolean };
             preview = capture.preview ?? null;

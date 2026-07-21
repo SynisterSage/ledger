@@ -6,6 +6,7 @@ const PREVIEW_BUCKET = 'note-images';
 const MAX_PREVIEW_AGE_MS = 10 * 60 * 1000;
 const inFlight = new Map();
 const FIGMA_PREVIEW_POLICY_VERSION = '2026-07-20';
+const isMissingPreviewVersionColumn = (error) => error?.code === 'PGRST204' || error?.code === '42703';
 
 export const getFigmaPreviewConsent = async ({ supabase, workspaceId }) => {
   const result = await supabase.from('figma_workspace_settings').select('*').eq('workspace_id', workspaceId).maybeSingle();
@@ -55,11 +56,14 @@ const getLatestReady = async (supabase, workspaceId, referenceId) => {
 export const mapPreviewResponse = async (supabase, preview) => {
   if (!preview) return null;
   const signed = await supabase.storage.from(PREVIEW_BUCKET).createSignedUrl(preview.storage_key, 300);
+  const publicUrl = signed.error
+    ? supabase.storage.from(PREVIEW_BUCKET).getPublicUrl(preview.storage_key)?.data?.publicUrl ?? null
+    : null;
   return {
     id: preview.id,
     workspaceId: preview.workspace_id,
     externalReferenceId: preview.external_reference_id,
-    url: signed.error ? null : signed.data?.signedUrl ?? null,
+    url: signed.error ? publicUrl : signed.data?.signedUrl ?? null,
     mimeType: preview.mime_type,
     width: preview.width ?? null,
     height: preview.height ?? null,
@@ -100,44 +104,51 @@ export const generateExternalReferencePreview = async ({
     }
     const reference = referenceResult.data;
     const previous = await getLatestReady(supabase, workspaceId, referenceId);
-    if (!force && previous && Date.now() - new Date(previous.captured_at).getTime() < MAX_PREVIEW_AGE_MS) {
-      return { preview: await mapPreviewResponse(supabase, previous), reused: true, accessStatus: reference.access_status };
+    const previousResponse = await mapPreviewResponse(supabase, previous);
+    if (!force && previous && previousResponse?.url && Date.now() - new Date(previous.captured_at).getTime() < MAX_PREVIEW_AGE_MS) {
+      return { preview: previousResponse, reused: true, accessStatus: reference.access_status };
     }
     const connection = await getConnection({ workspaceId, provider: 'figma', requestedByUserId: createdByUserId });
-    if (!connection?.access_token_encrypted) return { preview: await mapPreviewResponse(supabase, previous), reused: false, accessStatus: 'connection_required' };
+    if (!connection?.access_token_encrypted) return { preview: previousResponse, reused: false, accessStatus: 'connection_required' };
     const consent = await getFigmaPreviewConsent({ supabase, workspaceId });
-    if (!consent.preview_sharing_accepted || consent.preview_sharing_policy_version !== FIGMA_PREVIEW_POLICY_VERSION) return { preview: await mapPreviewResponse(supabase, previous), reused: false, accessStatus: reference.access_status, consentRequired: true };
+    if (!consent.preview_sharing_accepted || consent.preview_sharing_policy_version !== FIGMA_PREVIEW_POLICY_VERSION) return { preview: previousResponse, reused: false, accessStatus: reference.access_status, consentRequired: true };
     const parsed = parseFigmaUrl(reference.external_url);
-    if (!parsed.nodeId) return { preview: await mapPreviewResponse(supabase, previous), reused: false, accessStatus: reference.access_status || 'accessible', noPreview: true };
+    if (!parsed.nodeId) return { preview: previousResponse, reused: false, accessStatus: reference.access_status || 'accessible', noPreview: true };
 
-    const pending = await supabase
-      .from('external_reference_previews')
-      .insert({ workspace_id: workspaceId, external_reference_id: referenceId, storage_key: `pending/${referenceId}`, mime_type: 'image/png', file_size: 0, captured_at: new Date().toISOString(), source_last_modified_at: reference.metadata?.lastModifiedAt ?? null, source_version: reference.metadata?.version ?? reference.metadata?.fileVersion ?? null, created_by_user_id: createdByUserId, status: 'pending' })
-      .select('*')
-      .single();
+    const sourceVersion = reference.metadata?.version ?? reference.metadata?.fileVersion ?? null;
+    const pendingPayload = { workspace_id: workspaceId, external_reference_id: referenceId, storage_key: `pending/${referenceId}`, mime_type: 'image/png', file_size: 0, captured_at: new Date().toISOString(), source_last_modified_at: reference.metadata?.lastModifiedAt ?? null, source_version: sourceVersion, created_by_user_id: createdByUserId, status: 'pending' };
+    let pending = await supabase.from('external_reference_previews').insert(pendingPayload).select('*').single();
+    // Keep preview capture usable while a deployment is waiting for the
+    // Phase 11 source_version migration. The richer version state will be
+    // populated automatically on the next capture after migration.
+    if (pending.error && isMissingPreviewVersionColumn(pending.error)) {
+      const { source_version: _sourceVersion, ...legacyPayload } = pendingPayload;
+      pending = await supabase.from('external_reference_previews').insert(legacyPayload).select('*').single();
+    }
     if (pending.error) throw pending.error;
     try {
       const image = await fetchFigmaPreviewImage(parsed, { accessToken: connection.access_token_encrypted, fetchImpl });
-      if (!image) return { preview: await mapPreviewResponse(supabase, previous), reused: false, accessStatus: reference.access_status || 'accessible', noPreview: true };
+      if (!image) return { preview: previousResponse, reused: false, accessStatus: reference.access_status || 'accessible', noPreview: true };
       const extension = image.contentType === 'image/jpeg' ? 'jpg' : image.contentType.split('/')[1];
       const storageKey = `workspaces/${workspaceId}/external-previews/${referenceId}/${Date.now()}.${extension}`;
       const upload = await supabase.storage.from(PREVIEW_BUCKET).upload(storageKey, image.buffer, { contentType: image.contentType, cacheControl: '31536000', upsert: false });
       if (upload.error) throw new Error('Preview storage failed');
-      const ready = await supabase
-        .from('external_reference_previews')
-        .update({ storage_key: storageKey, mime_type: image.contentType, file_size: image.buffer.length, captured_at: new Date().toISOString(), source_last_modified_at: reference.metadata?.lastModifiedAt ?? null, source_version: reference.metadata?.version ?? reference.metadata?.fileVersion ?? null, status: 'ready' })
-        .eq('id', pending.data.id)
-        .eq('workspace_id', workspaceId)
-        .select('*')
-        .single();
+      const readyPayload = { storage_key: storageKey, mime_type: image.contentType, file_size: image.buffer.length, captured_at: new Date().toISOString(), source_last_modified_at: reference.metadata?.lastModifiedAt ?? null, source_version: sourceVersion, status: 'ready' };
+      let ready = await supabase.from('external_reference_previews').update(readyPayload).eq('id', pending.data.id).eq('workspace_id', workspaceId).select('*').single();
+      if (ready.error && isMissingPreviewVersionColumn(ready.error)) {
+        const { source_version: _sourceVersion, ...legacyPayload } = readyPayload;
+        ready = await supabase.from('external_reference_previews').update(legacyPayload).eq('id', pending.data.id).eq('workspace_id', workspaceId).select('*').single();
+      }
       if (ready.error) throw ready.error;
-      await markExternalReferenceCurrent({ supabase, workspaceId, referenceId, preview: ready.data });
+      // A preview is valid even when the optional change-awareness tables are
+      // temporarily unavailable during rollout.
+      try { await markExternalReferenceCurrent({ supabase, workspaceId, referenceId, preview: ready.data }); } catch { /* version state can be repaired by the next check */ }
       return { preview: await mapPreviewResponse(supabase, ready.data), reused: false, accessStatus: 'accessible', changeState: 'current' };
     } catch (error) {
       const status = error instanceof FigmaProviderError ? error.accessStatus : 'error';
       await supabase.from('external_reference_previews').update({ status: 'error' }).eq('id', pending.data.id).eq('workspace_id', workspaceId);
       await supabase.from('external_references').update({ access_status: status }).eq('id', referenceId).eq('workspace_id', workspaceId);
-      return { preview: await mapPreviewResponse(supabase, previous), reused: false, accessStatus: status, error: status === 'revoked' ? 'Figma authorization needs to be renewed.' : 'Ledger couldn’t load this Figma preview.' };
+      return { preview: previousResponse, reused: false, accessStatus: status, error: status === 'revoked' ? 'Figma authorization needs to be renewed.' : 'Ledger couldn’t load this Figma preview.' };
     }
   })();
   inFlight.set(key, work);
