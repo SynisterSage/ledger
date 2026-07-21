@@ -78,4 +78,5 @@ test('Ledger workspace context includes bounded planning context', () => {
   assert.match(mcpSource, /nextActions:/);
   assert.match(mcpSource, /upcomingEvents:/);
   assert.match(mcpSource, /hasScope\('notes:read'\)/);
+  assert.doesNotMatch(mcpSource, /events', 'id, title, description,/);
 });
