@@ -146,6 +146,7 @@ export const generateExternalReferencePreview = async ({
       return { preview: await mapPreviewResponse(supabase, ready.data), reused: false, accessStatus: 'accessible', changeState: 'current' };
     } catch (error) {
       const status = error instanceof FigmaProviderError ? error.accessStatus : 'error';
+      console.error('Figma preview capture failed', { workspaceId, referenceId, accessStatus: status, error: error instanceof Error ? error.message : 'unknown_error' });
       await supabase.from('external_reference_previews').update({ status: 'error' }).eq('id', pending.data.id).eq('workspace_id', workspaceId);
       await supabase.from('external_references').update({ access_status: status }).eq('id', referenceId).eq('workspace_id', workspaceId);
       return { preview: previousResponse, reused: false, accessStatus: status, error: status === 'revoked' ? 'Figma authorization needs to be renewed.' : 'Ledger couldn’t load this Figma preview.' };

@@ -5759,6 +5759,20 @@ const preparePluginReference = async ({ req, workspaceId, body }) => {
   const selection = validatePluginSelection(body?.selection);
   const canonicalUrl = resolvePluginFigmaUrl({ url: String(body?.figma_url ?? '').trim(), nodeId: selection.nodeId });
   const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'figma', url: canonicalUrl, createdByUserId: req.pluginCredential.user_id });
+  // Keep the plugin context as a display fallback until the connected Figma
+  // account resolves authoritative metadata. This also keeps a valid link
+  // useful when Figma metadata access is temporarily unavailable.
+  const pluginMetadata = {
+    ...(String(body?.selection?.node_name ?? '').trim() ? { nodeName: String(body.selection.node_name).trim().slice(0, 200) } : {}),
+    ...(String(body?.selection?.node_type ?? '').trim() ? { nodeType: String(body.selection.node_type).trim().slice(0, 64) } : {}),
+    ...(String(body?.selection?.page_name ?? '').trim() ? { pageName: String(body.selection.page_name).trim().slice(0, 200) } : {}),
+    ...(String(body?.selection?.file_name ?? '').trim() ? { fileName: String(body.selection.file_name).trim().slice(0, 200) } : {}),
+  };
+  if (Object.keys(pluginMetadata).length) {
+    const metadata = { ...(created.reference.metadata ?? {}), ...pluginMetadata };
+    const updated = await supabase.from('external_references').update({ metadata }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('*').single();
+    if (!updated.error) created.reference = updated.data;
+  }
   try {
     await resolveExternalReference({ supabase, workspaceId, referenceId: created.reference.id, requestedByUserId: req.pluginCredential.user_id, getConnection: getFigmaConnectionForReference });
   } catch { /* Metadata is best effort; the canonical reference is already safe. */ }
@@ -5774,7 +5788,7 @@ const finishPluginReference = async ({ req, workspaceId, referenceId, targetType
   let preview = null;
   try {
     preview = await generateExternalReferencePreview({ supabase, workspaceId, referenceId, createdByUserId: req.pluginCredential.user_id, getConnection: getFigmaConnectionForReference });
-  } catch { preview = { accessStatus: 'error', error: 'Ledger couldn’t load this Figma preview.' }; }
+  } catch (error) { console.error('Plugin Figma preview capture failed', { workspaceId, referenceId, error: error instanceof Error ? error.message : 'unknown_error' }); preview = { accessStatus: 'error', error: 'Ledger couldn’t load this Figma preview.' }; }
   return { link, preview, alreadyLinked: Boolean(prior.data) };
 };
 const pluginTargetSummary = async (workspaceId, targetType, targetId) => {
