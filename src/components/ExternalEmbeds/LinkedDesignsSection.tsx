@@ -3,6 +3,8 @@ import {
   CalendarDays,
   Check,
   FileImage,
+  FileText,
+  Folder,
   ListChecks,
   Link2,
   Loader2,
@@ -83,6 +85,7 @@ export function LinkedDesignsSection({
   fallbackNodeName,
   fallbackFileName,
   compact = false,
+  compactExternalOnly = false,
   notes,
   isLoadingNotes,
   selectedNoteIds,
@@ -104,6 +107,7 @@ export function LinkedDesignsSection({
   fallbackNodeName?: string | null;
   fallbackFileName?: string | null;
   compact?: boolean;
+  compactExternalOnly?: boolean;
   onLinkNote?: () => void;
   notes?: Array<{ id: string; title: string; preview: string }>;
   isLoadingNotes?: boolean;
@@ -140,9 +144,6 @@ export function LinkedDesignsSection({
   >(null);
   const [menuLink, setMenuLink] = useState<Link | null>(null);
   const [consentReference, setConsentReference] = useState<Reference | null>(null);
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [projectPickerId, setProjectPickerId] = useState('');
-  const [projectOptions, setProjectOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [provider, setProvider] = useState<'figma' | 'github'>('figma');
   const [contextSource, setContextSource] = useState<LinkedContextSource>('figma');
   const [githubRepositories, setGithubRepositories] = useState<
@@ -276,7 +277,15 @@ export function LinkedDesignsSection({
         const currentTargetField = target.targetType === 'project' ? 'project_id' : 'note_id';
         const allEvents = events.map((item) => ({ id: String(item.id), title: String(item.title ?? 'Untitled event'), kind: 'event' as const, startsAt: String(item.start_at), endsAt: item.end_at ?? null, status: item.status ?? null, calendarName: item.calendar_name ?? null, projectName: item.project_name ?? null, linkedTargetId: item[currentTargetField] }));
         const allReminders = reminders.map((item) => ({ id: String(item.id), title: String(item.title ?? 'Untitled reminder'), kind: 'reminder' as const, startsAt: String(item.remind_at), status: item.status ?? null, calendarName: item.calendar_name ?? null, projectName: item.project_name ?? null, linkedTargetId: item[currentTargetField] }));
-        setLinkableCalendarItems([...allEvents, ...allReminders].filter((item) => item.linkedTargetId !== target.targetId).map(({ linkedTargetId: _linkedTargetId, ...item }) => item));
+        setLinkableCalendarItems(
+          [...allEvents, ...allReminders]
+            .filter((item) => item.linkedTargetId !== target.targetId)
+            .filter((item) => {
+              const timestamp = new Date(item.startsAt).getTime();
+              return Number.isFinite(timestamp) && timestamp >= Date.now();
+            })
+            .map(({ linkedTargetId: _linkedTargetId, ...item }) => item)
+        );
       } else {
         setCalendarItems([]);
         setLinkableCalendarItems([]);
@@ -480,28 +489,6 @@ export function LinkedDesignsSection({
       setBusyId(null);
     }
   };
-  const openProjectPicker = async () => {
-    setProjectPickerOpen(true);
-    try {
-      const projects = await api.getProjects({ includeCompleted: false });
-      setProjectOptions(Array.isArray(projects) ? projects.map((project: any) => ({ id: String(project.id), name: String(project.name ?? 'Project') })) : []);
-    } catch {
-      setProjectOptions([]);
-    }
-  };
-  const attachGithubToProject = async () => {
-    if (!projectPickerId || target.targetType !== 'intake') return;
-    setBusyId('attach-project');
-    try {
-      await api.attachGithubIntakeToProject(target.targetId, projectPickerId);
-      toast.show('GitHub work attached to project.', { variant: 'success' });
-      setProjectPickerOpen(false);
-    } catch (error) {
-      toast.show(error instanceof Error ? error.message : 'Could not attach GitHub work to project.', { variant: 'error' });
-    } finally {
-      setBusyId(null);
-    }
-  };
   const selectGithubResource = async (resource: GithubResourcePickerResult) => {
     if (!canEdit || !resource.canonicalUrl) return;
     const existingGithubRepositories = links.filter((link) => {
@@ -655,14 +642,22 @@ export function LinkedDesignsSection({
         .filter((row) => row.reference),
     [links]
   );
-  const sectionLabel = rows.some(({ reference }) => isGithub(reference)) ? 'Linked work' : 'Linked designs';
+  const sectionLabel = target.targetType === 'intake' || rows.some(({ reference }) => isGithub(reference)) ? 'Linked work' : 'Linked designs';
   const hasGithubWork = rows.some(({ reference }) => isGithub(reference) && ['issue', 'pullRequest'].includes(String(reference?.external_type ?? '')));
   const githubIssues = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'issue' && String(reference?.metadata?.state ?? '').toLowerCase() === 'open').length;
   const githubPullRequests = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'pullRequest' && !['closed', 'merged'].includes(String(reference?.metadata?.state ?? '').toLowerCase())).length;
   const githubAttention = rows.filter(({ reference }) => isGithub(reference) && (Number((reference?.metadata as any)?.reviewSummary?.reviewRequestedCount ?? 0) > 0 || Number((reference?.metadata as any)?.reviewSummary?.changesRequestedCount ?? 0) > 0 || String((reference?.metadata as any)?.checksSummary?.overallState ?? '') === 'failing')).length;
+  const isIntakeTarget = target.targetType === 'intake';
+  const visibleRows = compactExternalOnly
+    ? rows.filter(({ reference }) => isGithub(reference) || reference?.provider === 'figma')
+    : rows;
+  const visibleContextLinks = compactExternalOnly
+    ? contextLinks.filter((link) => link.resource.type === 'project')
+    : contextLinks;
+  const visibleCalendarItems = compactExternalOnly ? [] : calendarItems;
   return (
     <section
-      className={compact ? 'flex flex-wrap items-center gap-2' : 'space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4'}
+      className={compact ? 'flex flex-wrap items-center gap-2' : `space-y-2 pt-2 ${isIntakeTarget ? '' : 'border-t border-[color:var(--ledger-border-subtle)]'}`}
       aria-labelledby={`linked-designs-${target.targetId}`}
     >
       {!compact && <div className="flex items-center justify-between gap-3">
@@ -684,16 +679,14 @@ export function LinkedDesignsSection({
           <button
             type="button"
             onClick={() => setDialogOpen(true)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-[var(--ledger-accent)] hover:text-[var(--ledger-accent-hover)]"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            title="Add linked context"
+            aria-label="Add linked context"
           >
             <Link2 size={12} />
-            Add context
           </button>
         )}
-        {canEdit && target.targetType === 'intake' && hasGithubWork && (
-          <button type="button" onClick={() => void openProjectPicker()} className="text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Attach to project</button>
-        )}
-        {canEdit && <GithubResourcePicker onSelect={selectGithubResource} existingReferenceIds={links.map((link) => link.external_reference_id)} />}
+        {canEdit && !isIntakeTarget && <GithubResourcePicker onSelect={selectGithubResource} existingReferenceIds={links.map((link) => link.external_reference_id)} />}
       </div>}
       {loading ? (
         compact ? (
@@ -712,35 +705,45 @@ export function LinkedDesignsSection({
             Loading linked work…
           </div>
         )
-      ) : rows.length === 0 && calendarItems.length === 0 && contextLinks.length === 0 ? (
+      ) : visibleRows.length === 0 && visibleCalendarItems.length === 0 && visibleContextLinks.length === 0 ? (
         compact ? (
           <>
             {canEdit && <button type="button" onClick={() => setDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={12} />Link</button>}
           </>
         ) : (
-        <div className="rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] px-3 py-3 text-xs text-[var(--ledger-text-muted)]">
-          Link events or reminders to keep related work and scheduling connected.
+        <div className={isIntakeTarget ? 'flex items-center gap-2 py-2 text-xs text-[var(--ledger-text-muted)]' : 'rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] px-3 py-3 text-xs text-[var(--ledger-text-muted)]'}>
+          {isIntakeTarget ? 'No linked context' : 'Link events or reminders to keep related work and scheduling connected.'}
           {canEdit && (
             <button
               type="button"
-              className="ml-1 font-medium text-[var(--ledger-accent)]"
+              className="rounded-md p-1 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               onClick={() => setDialogOpen(true)}
+              title="Add linked context"
+              aria-label="Add linked context"
             >
-              Add context
+              <Link2 size={12} />
             </button>
           )}
         </div>
         )
       ) : (
         <div className={compact ? 'contents' : 'space-y-1'}>
-          {contextLinks.filter((link) => link.resource.type === 'task').map((link) => (
+          {visibleContextLinks.filter((link) => ['note', 'project'].includes(link.resource.type)).map((link) => {
+            const isNote = link.resource.type === 'note';
+            return <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : isIntakeTarget ? 'relative flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]">{isNote ? <FileText size={14} /> : <Folder size={14} />}</span>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => window.desktopWindow?.openModule(isNote ? 'notes' : 'projects', isNote ? { kind: 'notes', focusNoteId: link.resource.id } as any : { kind: 'projects', focusProjectId: link.resource.id } as any)}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{isNote ? 'Note' : 'Project'}</p>}</button>
+              {canEdit && <button type="button" aria-label={`Unlink ${isNote ? 'note' : 'project'}`} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" onClick={() => void unlinkContextLink(link.id)}><MoreHorizontal size={14} /></button>}
+            </div>;
+          })}
+          {visibleContextLinks.filter((link) => link.resource.type === 'task').map((link) => (
             <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
               <ListChecks size={compact ? 13 : 15} className="shrink-0 text-[var(--ledger-text-muted)]" />
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => window.desktopWindow?.openModule('projects', { kind: 'projects', focusTaskId: link.resource.id } as any)}><p className={`truncate text-xs font-medium text-[var(--ledger-text-primary)] ${link.resource.status === 'completed' ? 'line-through opacity-70' : ''}`}>{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Task{link.resource.dueDate ? ` · Due ${link.resource.dueDate}` : ''}{link.resource.assignee ? ` · ${link.resource.assignee}` : ''}{link.resource.status === 'completed' ? ' · Completed' : ''}</p>}</button>
               {canEdit && <button type="button" aria-label="Unlink task" className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" onClick={() => void unlinkContextLink(link.id)}><MoreHorizontal size={14} /></button>}
             </div>
           ))}
-          {calendarItems.map((item) => (
+          {visibleCalendarItems.map((item) => (
             <div key={`calendar-${item.kind}-${item.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]"><CalendarDays size={14} /></div>
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => void window.desktopWindow?.openModule('calendar', { kind: 'calendar', focusContext: `${item.kind === 'event' ? 'focus-event' : 'focus-reminder'}:${item.id}`, focusDate: item.startsAt.slice(0, 10) } as any)}>
@@ -750,7 +753,7 @@ export function LinkedDesignsSection({
               {canEdit && <button type="button" aria-label={`Unlink ${item.kind}`} onClick={() => { void (item.kind === 'event' ? api.updateEvent(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null }) : api.updateReminder(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null })).then(load); }} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>}
             </div>
           ))}
-          {rows.map(({ link, reference }) => {
+          {visibleRows.map(({ link, reference }) => {
             const github = isGithub(reference);
             const githubMetadata = (reference?.metadata ?? {}) as Record<string, any>;
             const preview = previews[link.external_reference_id];
@@ -784,9 +787,9 @@ export function LinkedDesignsSection({
             return (
               <div
                 key={link.id}
-                className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}
+                className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : isIntakeTarget ? 'relative flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}
               >
-                <div className={compact ? 'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-sm' : 'flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--ledger-surface-muted)]'}>
+                <div className={compact ? 'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-sm' : 'flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--ledger-surface-muted)]'}>
                   {github ? (
                     <img src="/github-mark.svg" alt="" className="h-4 w-4" />
                   ) : compact ? (
@@ -1232,15 +1235,6 @@ export function LinkedDesignsSection({
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-      )}
-      {projectPickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4" role="dialog" aria-modal="true" aria-label="Attach GitHub work to project" onMouseDown={(event) => { if (event.target === event.currentTarget) setProjectPickerOpen(false); }}>
-          <div className="w-full max-w-sm rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-4 shadow-[var(--ledger-shadow)]">
-            <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-[var(--ledger-text-primary)]">Attach to project</h3><button type="button" onClick={() => setProjectPickerOpen(false)} aria-label="Close"><X size={15} /></button></div>
-            <select value={projectPickerId} onChange={(event) => setProjectPickerId(event.target.value)} className="mt-3 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-secondary)]"><option value="">Choose a project</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
-            <div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setProjectPickerOpen(false)} className="h-8 rounded-md px-3 text-xs text-[var(--ledger-text-secondary)]">Cancel</button><button type="button" disabled={!projectPickerId || Boolean(busyId)} onClick={() => void attachGithubToProject()} className="h-8 rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50">{busyId === 'attach-project' ? 'Attaching…' : 'Attach'}</button></div>
           </div>
         </div>
       )}

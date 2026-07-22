@@ -438,7 +438,7 @@ export const useApi = () => {
       convertIntakeItem: (
         id: string,
         payload: {
-          type: 'task' | 'note' | 'reminder' | 'event' | 'project';
+          type: 'capture' | 'task' | 'note' | 'reminder' | 'event' | 'project';
           title?: string;
           body?: string | null;
           project_id?: string | null;

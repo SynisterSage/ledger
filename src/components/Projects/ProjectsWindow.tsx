@@ -303,7 +303,7 @@ const projectStatusCandidates: Record<ProjectSemanticStatus, string[]> = {
 const statusOrder: ProjectStatusFilter[] = ['all', 'active', 'paused', 'completed'];
 const projectTabs: Array<{ id: ProjectTab; label: string }> = [
   { id: 'overview', label: 'Overview' },
-  { id: 'actions', label: 'Actions' },
+  { id: 'actions', label: 'Next actions' },
   { id: 'notes', label: 'Notes' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'activity', label: 'Activity' },
@@ -743,6 +743,14 @@ export const ProjectsWindow = () => {
   const [selectedLinkNoteIds, setSelectedLinkNoteIds] = useState<string[]>([]);
   const [linkableNotes, setLinkableNotes] = useState<NoteOption[]>([]);
   const [isLoadingLinkableNotes, setIsLoadingLinkableNotes] = useState(false);
+  const [isCreateProjectNoteModalOpen, setIsCreateProjectNoteModalOpen] = useState(false);
+  const [newProjectNoteTitle, setNewProjectNoteTitle] = useState('');
+  const [isCreateProjectCalendarModalOpen, setIsCreateProjectCalendarModalOpen] = useState(false);
+  const [newProjectCalendarKind, setNewProjectCalendarKind] = useState<CalendarLinkKind>('event');
+  const [newProjectCalendarTitle, setNewProjectCalendarTitle] = useState('');
+  const [newProjectCalendarDate, setNewProjectCalendarDate] = useState(todayKey());
+  const [newProjectCalendarTime, setNewProjectCalendarTime] = useState('09:00');
+  const [isCreatingProjectContext, setIsCreatingProjectContext] = useState(false);
   const [projectEvents, setProjectEvents] = useState<ProjectCalendarEvent[]>([]);
   const [projectReminders, setProjectReminders] = useState<ProjectCalendarReminder[]>([]);
   const [isLoadingProjectCalendarItems, setIsLoadingProjectCalendarItems] = useState(false);
@@ -2495,6 +2503,42 @@ export const ProjectsWindow = () => {
     },
     [loadLinkableNotes, selectedProjectId]
   );
+
+  const createProjectNote = useCallback(async () => {
+    if (!selectedProjectId || !newProjectNoteTitle.trim()) return;
+    setIsCreatingProjectContext(true);
+    try {
+      const note = (await api.createNote(newProjectNoteTitle.trim(), '', { source: 'project' })) as { id: string };
+      await api.linkProjectNote(selectedProjectId, note.id);
+      setIsCreateProjectNoteModalOpen(false);
+      setNewProjectNoteTitle('');
+      await loadLinkedNotes(selectedProjectId);
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : 'Could not create project note.');
+    } finally {
+      setIsCreatingProjectContext(false);
+    }
+  }, [api, loadLinkedNotes, newProjectNoteTitle, selectedProjectId]);
+
+  const createProjectCalendarItem = useCallback(async () => {
+    if (!selectedProjectId || !newProjectCalendarTitle.trim() || !newProjectCalendarDate) return;
+    setIsCreatingProjectContext(true);
+    try {
+      const startsAt = `${newProjectCalendarDate}T${newProjectCalendarTime || '09:00'}:00`;
+      if (newProjectCalendarKind === 'event') {
+        await api.createEvent({ title: newProjectCalendarTitle.trim(), start_at: startsAt, end_at: null, project_id: selectedProjectId });
+      } else {
+        await api.createReminder({ title: newProjectCalendarTitle.trim(), remind_at: startsAt, project_id: selectedProjectId });
+      }
+      setIsCreateProjectCalendarModalOpen(false);
+      setNewProjectCalendarTitle('');
+      await loadProjectCalendarItems(selectedProjectId);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not create calendar item.');
+    } finally {
+      setIsCreatingProjectContext(false);
+    }
+  }, [api, loadProjectCalendarItems, newProjectCalendarDate, newProjectCalendarKind, newProjectCalendarTime, newProjectCalendarTitle, selectedProjectId]);
 
   const loadNotesForLinkedContext = useCallback(async () => {
     if (!selectedProjectId) return;
@@ -4252,8 +4296,7 @@ export const ProjectsWindow = () => {
     count?: number,
     action?: ReactNode
   ) => {
-    const isEmpty = typeof count === 'number' && count === 0;
-    const collapsed = isEmpty || collapsedProjectGroups[groupId];
+    const collapsed = collapsedProjectGroups[groupId];
     return (
       <div className="min-w-0">
         <div
@@ -4311,7 +4354,15 @@ export const ProjectsWindow = () => {
 
     if (selectedProjectTasks.length === 0 && selectedProjectMilestones.length === 0) {
       return (
-        <div className="py-2 text-sm text-[var(--ledger-text-muted)]">No next actions yet.</div>
+        <div className="space-y-2">
+          {renderGroupShell(
+            'actions',
+            'Next actions',
+            <div className="flex items-center gap-2 px-2 py-2 text-sm text-[var(--ledger-text-muted)]"><span>No actions yet.</span><button type="button" onClick={() => openTaskComposer()} className="font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">+</button></div>,
+            0,
+            <button type="button" onClick={() => openTaskComposer()} className={sectionHeaderPlusButtonClass}>+</button>
+          )}
+        </div>
       );
     }
 
@@ -4330,7 +4381,7 @@ export const ProjectsWindow = () => {
       <div className="space-y-2">
         {renderGroupShell(
           'actions',
-          'Actions',
+          'Next actions',
           visibleActiveTasks.length === 0 ? (
             <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
               No active next actions.
@@ -4399,27 +4450,19 @@ export const ProjectsWindow = () => {
     renderSectionShell(
       'notes',
       'Notes',
-      <button
-        type="button"
-        onClick={() => {
-          void openLinkNoteModal();
-        }}
-        className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-      >
-        Link note
-      </button>,
+      <button type="button" onClick={() => setIsCreateProjectNoteModalOpen(true)} className="text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]">+</button>,
       <>
         {isLoadingLinkedNotes ? (
           <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
         ) : linkedNotes.length === 0 ? (
           <div className="flex items-center gap-3 py-2 text-sm text-[var(--ledger-text-muted)]">
-            <span>No notes linked yet.</span>
+            <span>No project notes yet.</span>
             <button
               type="button"
-              onClick={() => void openLinkNoteModal()}
+              onClick={() => setIsCreateProjectNoteModalOpen(true)}
               className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
             >
-              Link note
+              +
             </button>
           </div>
         ) : (
@@ -4467,9 +4510,7 @@ export const ProjectsWindow = () => {
             'calendarUpcoming',
             'Upcoming',
             projectCalendarAgenda.upcoming.length === 0 ? (
-              <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
-                No upcoming dates.
-              </p>
+              <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">No upcoming dates.</p>
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.upcoming.map((item) => (
@@ -4491,28 +4532,13 @@ export const ProjectsWindow = () => {
               </div>
             ),
             projectCalendarAgenda.upcoming.length,
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => void openLinkCalendarModal('event')}
-                className={sectionHeaderPlusButtonClass}
-              >
-                + Event
-              </button>
-              <button
-                type="button"
-                onClick={() => void openLinkCalendarModal('reminder')}
-                className={sectionHeaderPlusButtonClass}
-              >
-                + Deadline
-              </button>
-            </div>
+            <button type="button" onClick={() => void openLinkCalendarModal('event')} className={sectionHeaderPlusButtonClass}>+</button>
           )}
           {renderGroupShell(
             'calendarPast',
             'Past',
             projectCalendarAgenda.past.length === 0 ? (
-              <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">No past dates.</p>
+              <div className="flex items-center gap-2 px-2 py-2 text-sm text-[var(--ledger-text-muted)]"><span>No past dates.</span><button type="button" onClick={() => void openLinkCalendarModal('event')} className="font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">+</button></div>
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.past.map((item) => (
@@ -4841,47 +4867,10 @@ export const ProjectsWindow = () => {
   };
 
   const renderProjectResources = () => {
-    const resources = [
-      ...linkedNotes.slice(0, 3).map((link) => ({
-        id: `note-${link.id}`,
-        label: link.note.title || 'Untitled note',
-        meta: 'Note',
-        icon: FileText,
-        action: () => openLinkedNoteInNotesModule(link.note_id),
-      })),
-      ...projectEvents.slice(0, 2).map((event) => ({
-        id: `event-${event.id}`,
-        label: event.title,
-        meta: formatEventDateLabel(event),
-        icon: CalendarDays,
-        action: () => setActiveTab('calendar'),
-      })),
-      ...activeProjectTasks.slice(0, 2).map((task) => ({
-        id: `task-${task.id}`,
-        label: task.title,
-        meta: 'Action',
-        icon: CircleDot,
-        action: () => {
-          setActiveTab('actions');
-          window.setTimeout(
-            () => document.getElementById(`task-row-${task.id}`)?.scrollIntoView(),
-            0
-          );
-        },
-      })),
-      ...selectedProjectMilestones.slice(0, 2).map((milestone) => ({
-        id: `milestone-${milestone.id}`,
-        label: milestone.title,
-        meta: formatShortDate(milestone.milestone_date),
-        icon: Flag,
-        action: () => openMilestoneDetail(milestone.id, window.innerWidth / 2, 220),
-      })),
-    ].slice(0, 8);
-
     return (
       <section className="mt-8 space-y-3">
         <div className="flex items-center gap-4">
-          <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Resources</p>
+          <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Linked context</p>
         </div>
         {isLoadingProjectResources ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -4895,26 +4884,12 @@ export const ProjectsWindow = () => {
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            {resources.map((resource) => {
-              const Icon = resource.icon;
-              return (
-                <button
-                  key={resource.id}
-                  type="button"
-                  onClick={resource.action}
-                  title={`${resource.label} · ${resource.meta}`}
-                  className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                >
-                  <Icon size={11} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                  <span className="max-w-44 truncate">{resource.label}</span>
-                </button>
-              );
-            })}
             {activeWorkspaceId && selectedProject ? (
               <LinkedDesignsSection
                 target={{ workspaceId: activeWorkspaceId, targetType: 'project', targetId: selectedProject.id }}
                 canEdit={activeWorkspace?.role !== 'viewer'}
                 compact
+                compactExternalOnly
                 notes={linkableNotes}
                 isLoadingNotes={isLoadingLinkableNotes}
                 selectedNoteIds={selectedLinkNoteIds}
@@ -4972,15 +4947,6 @@ export const ProjectsWindow = () => {
       'nextActions',
       'Next actions',
       <div className="flex items-center gap-3">
-        {activeProjectTasks.length > 4 && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('actions')}
-            className={sectionHeaderPlusButtonClass}
-          >
-            View all
-          </button>
-        )}
         <button
           type="button"
           onClick={() => openTaskComposer()}
@@ -5021,13 +4987,7 @@ export const ProjectsWindow = () => {
     renderDocumentSection(
       'notes',
       'Recent notes',
-      <button
-        type="button"
-        onClick={() => void openLinkNoteModal()}
-        className={sectionHeaderPlusButtonClass}
-      >
-        +
-      </button>,
+      <button type="button" onClick={() => setIsCreateProjectNoteModalOpen(true)} className={sectionHeaderPlusButtonClass}>+</button>,
       isLoadingLinkedNotes ? (
         <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
       ) : linkedNotes.length === 0 ? (
@@ -5035,10 +4995,10 @@ export const ProjectsWindow = () => {
           <span>No notes linked yet.</span>
           <button
             type="button"
-            onClick={() => void openLinkNoteModal()}
+              onClick={() => void openLinkNoteModal()}
             className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
           >
-            Link note
+              Link note
           </button>
         </div>
       ) : (
@@ -5113,11 +5073,67 @@ export const ProjectsWindow = () => {
       recentProjectActivity.length
     );
 
+  const renderCalendarPreviewSection = () => {
+    const calendarItems = [
+      ...projectEvents.map((event) => ({
+        id: event.id,
+        title: event.title,
+        meta: `Event · ${formatEventDateLabel(event)}`,
+        date: event.start_at,
+        kind: 'event' as const,
+      })),
+      ...projectReminders.map((reminder) => ({
+        id: reminder.id,
+        title: reminder.title,
+        meta: `Reminder · ${formatReminderDateLabel(reminder)}`,
+        date: reminder.remind_at,
+        kind: 'reminder' as const,
+      })),
+    ].sort((left, right) => String(left.date).localeCompare(String(right.date)));
+
+    return renderDocumentSection(
+      'calendar',
+      'Calendar',
+      <button type="button" onClick={() => { setNewProjectCalendarKind('event'); setNewProjectCalendarDate(todayKey()); setIsCreateProjectCalendarModalOpen(true); }} className={sectionHeaderPlusButtonClass}>+</button>,
+      isLoadingProjectCalendarItems ? (
+        <div className="space-y-1">{renderCompactRowSkeletons(2)}</div>
+      ) : calendarItems.length === 0 ? (
+        <p className="py-2 text-sm text-[var(--ledger-text-muted)]">No events or reminders linked yet.</p>
+      ) : (
+        <div className="space-y-1">
+          {calendarItems.slice(0, 4).map((item) => (
+            <button
+              key={`${item.kind}-${item.id}`}
+              type="button"
+              onClick={() => void window.desktopWindow?.toggleModule('calendar', {
+                focusContext: `focus-${item.kind}:${item.id}`,
+                focusDate: String(item.date).slice(0, 10),
+              } as any)}
+              className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[38px]`}
+            >
+              <span className={compactIconClass}>
+                <CalendarDays size={12} />
+              </span>
+              <span className="min-w-0 truncate text-[13px] font-medium leading-5 text-[var(--ledger-text-primary)]">
+                {item.title}
+              </span>
+              <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                {item.meta}
+              </span>
+            </button>
+          ))}
+        </div>
+      ),
+      calendarItems.length
+    );
+  };
+
   const renderProjectOverviewDocument = () => (
     <div className="space-y-3">
       {renderMilestonesDocumentSection()}
       {renderNextActionsPreviewSection()}
       {renderRecentNotesPreviewSection()}
+      {renderCalendarPreviewSection()}
       {renderActivityPreviewSection()}
     </div>
   );
@@ -7683,6 +7699,37 @@ export const ProjectsWindow = () => {
           </div>
         </div>
       )}
+
+      <ModalOverlay
+        isOpen={isCreateProjectNoteModalOpen}
+        onClose={() => setIsCreateProjectNoteModalOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[460px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+          <div><p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Create project note</p><p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">Start a note already linked to this project.</p></div>
+          <ModalCloseButton onClick={() => setIsCreateProjectNoteModalOpen(false)} ariaLabel="Close create project note modal" />
+        </div>
+        <div className="space-y-4 p-5">
+          <input autoFocus value={newProjectNoteTitle} onChange={(event) => setNewProjectNoteTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createProjectNote(); }} placeholder="Note title" className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)]" />
+        </div>
+        <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3"><button type="button" onClick={() => setIsCreateProjectNoteModalOpen(false)} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)]">Cancel</button><button type="button" disabled={isCreatingProjectContext || !newProjectNoteTitle.trim()} onClick={() => void createProjectNote()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Create note</button></div>
+      </ModalOverlay>
+
+      <ModalOverlay
+        isOpen={isCreateProjectCalendarModalOpen}
+        onClose={() => setIsCreateProjectCalendarModalOpen(false)}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[460px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex items-start justify-between border-b border-[color:var(--ledger-border-subtle)] px-5 py-4"><div><p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Create {newProjectCalendarKind}</p><p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">Add it directly to this project’s calendar context.</p></div><ModalCloseButton onClick={() => setIsCreateProjectCalendarModalOpen(false)} ariaLabel="Close create calendar item modal" /></div>
+        <div className="space-y-3 p-5"><div className="flex gap-1 rounded-lg bg-[var(--ledger-surface-muted)] p-1"><button type="button" onClick={() => setNewProjectCalendarKind('event')} className={`flex-1 rounded-md px-3 py-2 text-sm ${newProjectCalendarKind === 'event' ? 'bg-[var(--ledger-surface-card)] font-medium text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-muted)]'}`}>Event</button><button type="button" onClick={() => setNewProjectCalendarKind('reminder')} className={`flex-1 rounded-md px-3 py-2 text-sm ${newProjectCalendarKind === 'reminder' ? 'bg-[var(--ledger-surface-card)] font-medium text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-muted)]'}`}>Reminder</button></div><input autoFocus value={newProjectCalendarTitle} onChange={(event) => setNewProjectCalendarTitle(event.target.value)} placeholder={`${newProjectCalendarKind === 'event' ? 'Event' : 'Reminder'} title`} className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)]" /><div className="grid grid-cols-2 gap-3"><input type="date" value={newProjectCalendarDate} onChange={(event) => setNewProjectCalendarDate(event.target.value)} className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" /><input type="time" value={newProjectCalendarTime} onChange={(event) => setNewProjectCalendarTime(event.target.value)} className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none" /></div></div>
+        <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3"><button type="button" onClick={() => setIsCreateProjectCalendarModalOpen(false)} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)]">Cancel</button><button type="button" disabled={isCreatingProjectContext || !newProjectCalendarTitle.trim()} onClick={() => void createProjectCalendarItem()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Create {newProjectCalendarKind}</button></div>
+      </ModalOverlay>
 
       <LinkNoteModal
         isOpen={isLinkNoteModalOpen}

@@ -44,6 +44,7 @@ import { FigmaMark } from '../Common/FigmaMark';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
+type DestinationType = 'capture' | 'task' | 'note' | 'event' | 'reminder';
 
 type InboxItem = {
   id: string;
@@ -300,19 +301,6 @@ const isValidExternalUrl = (value?: string | null) => {
   } catch {
     return false;
   }
-};
-
-const getResolvedOptionLabel = <T extends { id: string }>(
-  id: string | null | undefined,
-  optionsById: Map<string, T>,
-  resolveLabel: (entry: T) => string | null | undefined,
-  fallback = 'Not suggested'
-) => {
-  const requestedId = String(id ?? '').trim();
-  if (!requestedId) return fallback;
-  const entry = optionsById.get(requestedId);
-  if (!entry) return 'Unavailable';
-  return resolveLabel(entry)?.trim() || 'Unavailable';
 };
 
 type IntakeFilterState = {
@@ -709,6 +697,8 @@ export default function IntakeWindow() {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);
   const [notes, setNotes] = useState<NoteOption[]>([]);
+  const [selectedLinkedNoteIds, setSelectedLinkedNoteIds] = useState<string[]>([]);
+  const [selectedLinkedProjectIds, setSelectedLinkedProjectIds] = useState<string[]>([]);
   const [noteSections, setNoteSections] = useState<NoteSectionOption[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberOption[]>([]);
   const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeamOption[]>([]);
@@ -730,6 +720,7 @@ export default function IntakeWindow() {
   const [selectedCalendarId, setSelectedCalendarId] = useState('');
   const [selectedAssigneeId, setSelectedAssigneeId] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [destinationType, setDestinationType] = useState<DestinationType>('capture');
   const [showInToday, setShowInToday] = useState(false);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('09:00');
@@ -1253,6 +1244,28 @@ export default function IntakeWindow() {
   }, [filteredItems, items, selectedItemId]);
 
   useEffect(() => {
+    if (!selectedItem) return;
+    const raw = getRawPayload(selectedItem);
+    const suggested = normalizeForSearch(selectedItem.suggested_type || '');
+    const nextDestination: DestinationType = ['capture', 'task', 'note', 'event', 'reminder'].includes(suggested)
+      ? suggested as DestinationType
+      : 'capture';
+    const projectId = selectedItem.suggested_project_id || findDeepString(raw, ['suggested_project_id', 'project_id', 'linked_project_id']) || '';
+    const assigneeId = selectedItem.suggested_assignee_id || findDeepString(raw, ['suggested_assignee_id', 'assigned_to_user_id', 'assignee_id', 'owner_id']) || '';
+    const teamId = findDeepString(raw, ['suggested_team_id', 'suggested_owner_team_id', 'assigned_to_team_id', 'owner_team_id']) || '';
+    const calendarId = selectedItem.suggested_calendar_id || findDeepString(raw, ['suggested_calendar_id', 'calendar_id']) || '';
+    const noteId = findDeepString(raw, ['note_id', 'linked_note_id']) || '';
+    setDestinationType(nextDestination);
+    setSelectedProjectId(projectId && projectsById.has(projectId) ? projectId : '');
+    setSelectedAssigneeId(assigneeId && membersById.has(assigneeId) ? assigneeId : '');
+    setSelectedTeamId(teamId && teamsById.has(teamId) ? teamId : '');
+    setSelectedCalendarId(calendarId && calendarsById.has(calendarId) ? calendarId : '');
+    setSelectedNoteId(noteId && notesById.has(noteId) ? noteId : '');
+    setReminderDate(selectedItem.suggested_due_at?.slice(0, 10) || selectedItem.suggested_date?.slice(0, 10) || '');
+    setEventDate(selectedItem.suggested_date?.slice(0, 10) || selectedItem.suggested_due_at?.slice(0, 10) || '');
+  }, [selectedItem?.id, projectsById, membersById, teamsById, calendarsById, notesById]);
+
+  useEffect(() => {
     if (!filteredItems.length) {
       if (selectedItemId && !items.some((item) => item.id === selectedItemId)) {
         setSelectedItemId(null);
@@ -1264,17 +1277,6 @@ export default function IntakeWindow() {
       setSelectedItemId(filteredItems[0].id);
     }
   }, [filteredItems, items, selectedItemId]);
-
-  const getProjectOptionLabel = (id?: string | null) =>
-    getResolvedOptionLabel(id, projectsById, (project) => project.name || project.title || null);
-  const getMemberOptionLabel = (id?: string | null) =>
-    getResolvedOptionLabel(id, membersById, (member) => member.name || member.email || null);
-  const getTeamOptionLabel = (id?: string | null) =>
-    getResolvedOptionLabel(id, teamsById, (team) => team.name || team.identifier || null);
-  const getCalendarOptionLabel = (id?: string | null) =>
-    getResolvedOptionLabel(id, calendarsById, (calendar) => calendar.name || null);
-  const getNoteSectionOptionLabel = (id?: string | null) =>
-    getResolvedOptionLabel(id, noteSectionsById, (section) => section.name || null);
 
   const getInspectorSourceLabel = (item: InboxItem) => {
     const explicitLabel = String(item.source_label ?? '').trim();
@@ -1313,80 +1315,6 @@ export default function IntakeWindow() {
     const createdAt = formatDateTime(item.created_at);
     if (createdAt) parts.push(createdAt);
     return parts;
-  };
-
-  const getInspectorPlacement = (item: InboxItem) => {
-    const raw = getRawPayload(item);
-    const isFigmaSource = normalizeForSearch(item.source_provider).includes('figma') || normalizeForSearch(item.source).includes('figma');
-    // Figma plugin context is stored in the raw payload for traceability, but it
-    // is not placement data. Do not let values such as "figma-plugin" appear as
-    // a project, owner, or due date suggestion.
-    const placementRaw = isFigmaSource ? {} : raw;
-    const fallback = 'Not suggested';
-
-    const projectId =
-      item.suggested_project_id ||
-      findDeepString(placementRaw, ['suggested_project_id', 'project_id', 'linked_project_id']);
-    const ownerId =
-      item.suggested_assignee_id ||
-      findDeepString(placementRaw, [
-        'suggested_assignee_id',
-        'assigned_to_user_id',
-        'owner_id',
-        'assignee_id',
-      ]);
-    const teamId = findDeepString(placementRaw, [
-      'suggested_team_id',
-      'suggested_owner_team_id',
-      'assigned_to_team_id',
-      'owner_team_id',
-      'team_id',
-    ]);
-    const calendarId =
-      item.suggested_calendar_id || findDeepString(placementRaw, ['suggested_calendar_id', 'calendar_id']);
-    const sectionId =
-      item.suggested_note_section_id ||
-      findDeepString(placementRaw, ['suggested_note_section_id', 'section_id', 'note_section_id']);
-    const dueDate =
-      item.suggested_due_at ||
-      item.suggested_date ||
-      findDeepString(placementRaw, ['suggested_due_at', 'due_at', 'due_date', 'date']);
-    const startDate = findDeepString(placementRaw, ['start_date', 'project_start_date', 'start_at']);
-    const targetDate = findDeepString(placementRaw, [
-      'end_date',
-      'project_end_date',
-      'target_date',
-      'end_at',
-    ]);
-    const projectName =
-      findDeepString(placementRaw, [
-        'project_name',
-        'project_title',
-        'linked_project_name',
-        'project_label',
-      ]) || fallback;
-    const ownerName =
-      findDeepString(placementRaw, ['owner_name', 'assigned_to_name', 'assignee_name', 'user_name']) ||
-      fallback;
-    const teamName =
-      findDeepString(placementRaw, ['team_name', 'owner_team_name', 'assigned_team_name']) || fallback;
-    const calendarName = findDeepString(placementRaw, ['calendar_name', 'calendar_title']) || fallback;
-    const sectionName = findDeepString(placementRaw, ['section_name', 'note_section_name']) || fallback;
-    const formatPlacementDate = (value?: string | null) => {
-      if (!value || Number.isNaN(new Date(value).getTime())) return null;
-      return formatDateTime(value) || value;
-    };
-
-    return {
-      project: projectId ? getProjectOptionLabel(projectId) : projectName,
-      owner: ownerId ? getMemberOptionLabel(ownerId) : ownerName,
-      team: teamId ? getTeamOptionLabel(teamId) : teamName,
-      calendar: calendarId ? getCalendarOptionLabel(calendarId) : calendarName,
-      section: sectionId ? getNoteSectionOptionLabel(sectionId) : sectionName,
-      dueDate: formatPlacementDate(dueDate),
-      startDate: formatPlacementDate(startDate),
-      targetDate: formatPlacementDate(targetDate),
-    };
   };
 
   const openConversion = (item: InboxItem, type?: ConversionType) => {
@@ -2707,7 +2635,6 @@ export default function IntakeWindow() {
 
   const selectedItemSourceLabel = selectedItem ? getInspectorSourceLabel(selectedItem) : '';
   const selectedItemMetadata = selectedItem ? getInspectorMetadata(selectedItem) : [];
-  const selectedItemPlacement = selectedItem ? getInspectorPlacement(selectedItem) : null;
   const selectedItemSourceUrl =
     selectedItem && isValidExternalUrl(selectedItem.source_url) ? selectedItem.source_url : null;
   const selectedItemIsFigma = Boolean(
@@ -2715,11 +2642,58 @@ export default function IntakeWindow() {
       (normalizeForSearch(selectedItem.source_provider).includes('figma') ||
         normalizeForSearch(selectedItem.source).includes('figma'))
   );
+  const selectedItemIsGithub = Boolean(
+    selectedItem &&
+      (normalizeForSearch(selectedItem.source_provider).includes('github') ||
+        normalizeForSearch(selectedItem.source).includes('github'))
+  );
   const selectedFigmaPayload = selectedItemIsFigma && selectedItem ? getRawPayload(selectedItem) : {};
   const selectedFigmaNodeName = findDeepString(selectedFigmaPayload, ['node_name', 'nodeName']);
   const selectedFigmaFileName = findDeepString(selectedFigmaPayload, ['file_name', 'fileName']);
   const selectedItemStatusLabel = selectedItem ? getStatusLabel(selectedItem.status) : '';
   const selectedItemTypeLabel = selectedItem ? getTypeDisplayLabel(selectedItem) : '';
+  const destinationNeedsSchedule = destinationType === 'event' || destinationType === 'reminder';
+  const destinationValidationError =
+    destinationType === 'event' && (!eventDate || !eventTime)
+      ? 'Choose an event date and start time.'
+      : destinationType === 'reminder' && (!reminderDate || !reminderTime)
+      ? 'Choose a reminder date and time.'
+      : null;
+  const selectedItemPreview = selectedItem
+    ? (() => {
+        const raw = getRawPayload(selectedItem);
+        const source = normalizeForSearch(selectedItem.source_provider || selectedItem.source);
+        const isGithubSource = source.includes('github');
+        const isFigmaSource = source.includes('figma');
+        const title = getDisplayTitle(selectedItem).replace(
+          /^(github|figma)\s+(issue|pull request|repository|file|design)\s*[·:-]\s*/i,
+          ''
+        );
+        const repository = findDeepString(raw, [
+          'repository_full_name',
+          'repositoryFullName',
+          'full_name',
+          'repository',
+        ]);
+        const number = findDeepString(raw, ['number', 'issue_number', 'pull_request_number']);
+        const state = findDeepString(raw, ['state', 'status']);
+        const sourceMeta = isGithubSource
+          ? [repository, number ? `#${number}` : '', state].filter(Boolean)
+          : isFigmaSource
+          ? [
+              findDeepString(raw, ['file_name', 'fileName']),
+              findDeepString(raw, ['page_name', 'pageName']),
+              findDeepString(raw, ['node_name', 'nodeName']),
+            ].filter(Boolean)
+          : [getSourceContext(selectedItem), selectedItem.author_name].filter(Boolean);
+        const description = cleanSlackText(
+          (isFigmaSource ? findDeepString(raw, ['description', 'text', 'message', 'content']) : selectedItem.body) ||
+            findDeepString(raw, ['description', 'text', 'message', 'content']) ||
+            (isFigmaSource ? '' : getItemReason(selectedItem) || '')
+        );
+        return { title, sourceMeta, description };
+      })()
+    : null;
   const selectedItemOpenAction =
     selectedItem && selectedItem.status === 'converted'
       ? (() => {
@@ -2774,6 +2748,86 @@ export default function IntakeWindow() {
           return null;
         })()
       : null;
+  const acceptAsCapture = async (item: InboxItem) => {
+    setActiveActionId(item.id);
+    try {
+      const updated = (await api.convertIntakeItem(item.id, {
+        type: 'capture',
+        title: getDisplayTitle(item),
+        body: item.body || null,
+      })) as InboxItem;
+      setItems((current) => current.map((entry) => (entry.id === item.id ? updated : entry)));
+      emitInboxItemsUpdated(item.status === 'unprocessed' ? -1 : 0);
+      toast.show('Kept intake item as a capture.', { variant: 'success' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not keep capture.';
+      setError(message);
+      toast.show(message, { variant: 'error' });
+    } finally {
+      setActiveActionId(null);
+    }
+  };
+  const acceptAsDestination = async (
+    item: InboxItem,
+    type: Exclude<DestinationType, 'capture'>
+  ) => {
+    setActiveActionId(item.id);
+    try {
+      const body = buildDefaultBody(item).trim();
+      const basePayload = {
+        title: getDisplayTitle(item),
+        body,
+        project_id: selectedProjectId || null,
+        note_id: selectedNoteId || null,
+        calendar_id: selectedCalendarId || null,
+        assigned_to_user_id: isPersonalWorkspace ? null : selectedAssigneeId || null,
+        assigned_to_team_id: isPersonalWorkspace ? null : selectedTeamId || null,
+      };
+      if (type === 'task') {
+        await api.convertIntakeItem(item.id, {
+          ...basePayload,
+          type,
+          notes: body,
+          show_in_today: showInToday,
+          task_horizon: showInToday ? 'today' : 'long_term',
+        });
+      } else if (type === 'note') {
+        await api.convertIntakeItem(item.id, {
+          ...basePayload,
+          type,
+          body,
+          section_id: selectedNoteSectionId || null,
+        });
+      } else if (type === 'reminder') {
+        if (!reminderDate || !reminderTime) throw new Error('Choose a reminder date and time.');
+        await api.convertIntakeItem(item.id, {
+          ...basePayload,
+          type,
+          remind_at: new Date(`${reminderDate}T${reminderTime}:00`).toISOString(),
+          notes: body,
+        });
+      } else {
+        if (!eventDate || !eventTime) throw new Error('Choose an event date and start time.');
+        const startAt = new Date(`${eventDate}T${eventTime}:00`);
+        await api.convertIntakeItem(item.id, {
+          ...basePayload,
+          type,
+          start_at: startAt.toISOString(),
+          end_at: new Date(startAt.getTime() + 30 * 60 * 1000).toISOString(),
+          notes: body,
+        });
+      }
+      await loadInbox(true, { force: true });
+      emitInboxItemsUpdated(item.status === 'unprocessed' ? -1 : 0);
+      toast.show(`Created ${type} from ${getSourceLabel(item)} intake item.`, { variant: 'success' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : `Could not create ${type}.`;
+      setError(message);
+      toast.show(message, { variant: 'error' });
+    } finally {
+      setActiveActionId(null);
+    }
+  };
   const selectedItemPrimaryAction: InspectorAction | null = selectedItem
     ? selectedItem.status === 'archived'
       ? {
@@ -2790,7 +2844,12 @@ export default function IntakeWindow() {
         }
       : {
           label: 'Accept',
-          onClick: () => openConversion(selectedItem, getDefaultConversionType(selectedItem)),
+          onClick: () =>
+            destinationType === 'capture'
+              ? void acceptAsCapture(selectedItem)
+              : void acceptAsDestination(selectedItem, destinationType),
+          loading: activeActionId === selectedItem.id,
+          disabled: Boolean(destinationValidationError) || activeActionId === selectedItem.id,
         }
     : null;
   const selectedItemSecondaryActions: InspectorAction[] = selectedItem
@@ -2850,60 +2909,6 @@ export default function IntakeWindow() {
       'disabled' in selectedItemPrimaryAction &&
       selectedItemPrimaryAction.disabled
   );
-  const selectedItemTypeBucket = selectedItem ? getItemTypeBucket(selectedItem) : null;
-  const selectedItemPlacementRows = selectedItem
-    ? (() => {
-        const rows: Array<{ label: string; value: string }> = [
-          { label: 'Type', value: selectedItemTypeLabel },
-        ];
-        if (selectedItemTypeBucket === 'project') {
-          if (!isPersonalWorkspace) {
-            rows.push(
-              { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
-              { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' }
-            );
-          }
-          rows.push(
-            { label: 'Start date', value: selectedItemPlacement?.startDate ?? 'Not suggested' },
-            { label: 'Target date', value: selectedItemPlacement?.targetDate ?? 'Not suggested' }
-          );
-          return rows;
-        }
-        if (selectedItemTypeBucket === 'event') {
-          rows.push(
-            { label: 'Calendar', value: selectedItemPlacement?.calendar ?? 'Not suggested' },
-            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' }
-          );
-          if (selectedItemPlacement?.dueDate) rows.push({ label: 'Date', value: selectedItemPlacement.dueDate });
-          return rows;
-        }
-        if (selectedItemTypeBucket === 'note') {
-          rows.push(
-            { label: 'Section', value: selectedItemPlacement?.section ?? 'Not suggested' },
-            { label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' }
-          );
-          return rows;
-        }
-        if (selectedItemTypeBucket === 'reminder') {
-          rows.push({ label: 'Project', value: selectedItemPlacement?.project ?? 'Not suggested' });
-          if (selectedItemPlacement?.dueDate) rows.push({ label: 'Due date', value: selectedItemPlacement.dueDate });
-          return rows;
-        }
-        rows.push({
-          label: 'Project',
-          value: selectedItemPlacement?.project ?? 'Not suggested',
-        });
-        if (!isPersonalWorkspace) {
-          rows.push(
-            { label: 'Owner', value: selectedItemPlacement?.owner ?? 'Not suggested' },
-            { label: 'Team', value: selectedItemPlacement?.team ?? 'Not suggested' }
-          );
-        }
-        if (selectedItemPlacement?.dueDate) rows.push({ label: 'Due date', value: selectedItemPlacement.dueDate });
-        return rows;
-      })()
-    : [];
-
   return (
     <div
       className={inboxTheme.shell}
@@ -3039,7 +3044,7 @@ export default function IntakeWindow() {
                           </p>
                           <div className="mt-1 flex items-start justify-between gap-3">
                             <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
-                              {getDisplayTitle(selectedItem)}
+                              {selectedItemPreview?.title || getDisplayTitle(selectedItem)}
                             </h2>
                             <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
                               {selectedItemTypeLabel}
@@ -3054,8 +3059,13 @@ export default function IntakeWindow() {
 
                         <section className="space-y-2">
                           <p className={inboxTheme.inspectorLabel}>Preview</p>
+                          {selectedItemPreview?.sourceMeta.length ? (
+                            <p className="truncate text-xs text-[var(--ledger-text-muted)]">
+                              {selectedItemPreview.sourceMeta.join(' · ')}
+                            </p>
+                          ) : null}
                           <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ledger-text-secondary)]">
-                            {getDisplayPreview(selectedItem) || 'No preview available.'}
+                            {selectedItemPreview?.description || 'No preview available.'}
                           </p>
                           {selectedItemSourceUrl ? (
                             <button
@@ -3063,21 +3073,120 @@ export default function IntakeWindow() {
                               onClick={() =>
                                 window.open(selectedItemSourceUrl, '_blank', 'noopener,noreferrer')
                               }
-                              className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                             >
-                              {selectedItemIsFigma ? <FigmaMark size={14} /> : <ExternalLink size={12} />}
-                              {selectedItemIsFigma ? 'Open in Figma' : 'Open source'}
+                              {selectedItemIsFigma ? <FigmaMark size={14} /> : selectedItemIsGithub ? <img src="/github-mark.svg" alt="" className="h-3.5 w-3.5" /> : <ExternalLink size={12} />}
+                              {selectedItemIsFigma ? 'Open in Figma' : selectedItemIsGithub ? 'Open in GitHub' : 'Open source'}
                             </button>
                           ) : null}
                         </section>
 
-                        <section className="space-y-2">
-                          <p className={inboxTheme.inspectorLabel}>Suggested placement</p>
-                          <div className="space-y-1">
-                            {selectedItemPlacementRows.map((row) => (
-                              <InspectorRow key={row.label} label={row.label} value={row.value} />
-                            ))}
+                        <section className="space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className={inboxTheme.inspectorLabel}>Destination</p>
+                              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                                Choose where this item should enter Ledger.
+                              </p>
+                            </div>
                           </div>
+
+                          <div className="space-y-2.5">
+                            <DestinationProperty
+                              label="Create as"
+                              value={destinationType}
+                              onChange={(value) => setDestinationType(value as DestinationType)}
+                              options={[
+                                { value: 'capture', label: 'Capture' },
+                                { value: 'task', label: 'Task' },
+                                { value: 'note', label: 'Note' },
+                                { value: 'event', label: 'Event' },
+                                { value: 'reminder', label: 'Reminder' },
+                              ]}
+                            />
+
+                            {(destinationType === 'task' || destinationType === 'note' || destinationNeedsSchedule) && (
+                              <DestinationProperty
+                                label="Project"
+                                value={selectedProjectId}
+                                placeholder="No project"
+                                onChange={setSelectedProjectId}
+                                options={projects.map((project) => ({
+                                  value: project.id,
+                                  label: project.name || project.title || 'Untitled project',
+                                }))}
+                              />
+                            )}
+
+                            {destinationType === 'task' && !isPersonalWorkspace && (
+                              <>
+                                <DestinationProperty
+                                  label="Owner"
+                                  value={selectedAssigneeId}
+                                  placeholder="Unassigned"
+                                  onChange={setSelectedAssigneeId}
+                                  options={workspaceMembers.map((member) => ({ value: member.id, label: member.name }))}
+                                />
+                                <DestinationProperty
+                                  label="Team"
+                                  value={selectedTeamId}
+                                  placeholder="Choose team"
+                                  onChange={setSelectedTeamId}
+                                  options={workspaceTeams.map((team) => ({ value: team.id, label: team.name }))}
+                                />
+                              </>
+                            )}
+
+                            {destinationType === 'note' && !isPersonalWorkspace && (
+                              <DestinationProperty
+                                label="Team"
+                                value={selectedTeamId}
+                                placeholder="Choose team"
+                                onChange={setSelectedTeamId}
+                                options={workspaceTeams.map((team) => ({ value: team.id, label: team.name }))}
+                              />
+                            )}
+
+                            {destinationNeedsSchedule && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <DestinationInput
+                                  label={destinationType === 'event' ? 'Date' : 'Remind on'}
+                                  type="date"
+                                  value={destinationType === 'event' ? eventDate : reminderDate}
+                                  onChange={destinationType === 'event' ? setEventDate : setReminderDate}
+                                />
+                                <DestinationInput
+                                  label="Time"
+                                  type="time"
+                                  value={destinationType === 'event' ? eventTime : reminderTime}
+                                  onChange={destinationType === 'event' ? setEventTime : setReminderTime}
+                                />
+                              </div>
+                            )}
+
+                            {destinationNeedsSchedule && (
+                              <DestinationProperty
+                                label="Calendar"
+                                value={selectedCalendarId}
+                                placeholder="Default calendar"
+                                onChange={setSelectedCalendarId}
+                                options={calendars.map((calendar) => ({ value: calendar.id, label: calendar.name || 'Calendar' }))}
+                              />
+                            )}
+
+                            {(destinationType === 'note' || destinationNeedsSchedule) && notes.length > 0 && (
+                              <DestinationProperty
+                                label="Linked note"
+                                value={selectedNoteId}
+                                placeholder="No note"
+                                onChange={setSelectedNoteId}
+                                options={notes.map((note) => ({ value: note.id, label: note.title || 'Untitled note' }))}
+                              />
+                            )}
+                          </div>
+                          {destinationValidationError && (
+                            <p className="text-xs text-[var(--ledger-danger)]">{destinationValidationError}</p>
+                          )}
                         </section>
                         {activeWorkspaceId ? (
                           <LinkedDesignsSection
@@ -3085,6 +3194,20 @@ export default function IntakeWindow() {
                             canEdit={activeWorkspace?.role !== 'viewer'}
                             fallbackNodeName={selectedFigmaNodeName}
                             fallbackFileName={selectedFigmaFileName}
+                            notes={notes.map((note) => ({ id: note.id, title: note.title ?? 'Untitled note', preview: '' }))}
+                            selectedNoteIds={selectedLinkedNoteIds}
+                            onToggleNote={(noteId) => setSelectedLinkedNoteIds((current) => current.includes(noteId) ? current.filter((id) => id !== noteId) : [...current, noteId])}
+                            onLinkNotes={async (noteIds) => {
+                              for (const noteId of noteIds) await api.createContextLink('intake', selectedItem.id, 'note', noteId);
+                              setSelectedLinkedNoteIds([]);
+                            }}
+                            projects={projects.map((project) => ({ id: project.id, name: project.name ?? project.title ?? 'Untitled project' }))}
+                            selectedProjectIds={selectedLinkedProjectIds}
+                            onToggleProject={(projectId) => setSelectedLinkedProjectIds((current) => current.includes(projectId) ? current.filter((id) => id !== projectId) : [...current, projectId])}
+                            onLinkProjects={async (projectIds) => {
+                              for (const projectId of projectIds) await api.createContextLink('intake', selectedItem.id, 'project', projectId);
+                              setSelectedLinkedProjectIds([]);
+                            }}
                           />
                         ) : null}
                       </div>
@@ -3104,14 +3227,14 @@ export default function IntakeWindow() {
 
                   <div className="sticky bottom-0 z-10 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-3">
                     {selectedItem ? (
-                      <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
-                        <div className="flex min-w-max items-center gap-1.5">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <div className="flex min-w-0 w-full items-center gap-1.5">
                           {selectedItemPrimaryAction && (
                             <button
                               type="button"
                               onClick={selectedItemPrimaryAction.onClick}
                               disabled={selectedItemPrimaryDisabled}
-                              className="inline-flex h-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex h-8 min-w-0 flex-1 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {selectedItemPrimaryLoading ? (
                                 <Loader2 size={11} className="animate-spin" />
@@ -3126,7 +3249,7 @@ export default function IntakeWindow() {
                               type="button"
                               onClick={action.onClick}
                               disabled={action.disabled}
-                              className="inline-flex h-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex h-8 min-w-0 flex-1 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {action.loading ? (
                                 <Loader2 size={11} className="animate-spin" />
@@ -3140,7 +3263,7 @@ export default function IntakeWindow() {
                               type="button"
                               onClick={selectedItemDangerAction.onClick}
                               disabled={selectedItemDangerAction.disabled}
-                              className="inline-flex h-8 items-center justify-center rounded-md border border-[color:rgba(217,45,32,0.18)] bg-transparent px-2.5 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex h-8 min-w-0 flex-1 items-center justify-center rounded-md border border-[color:rgba(217,45,32,0.18)] bg-transparent px-2 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {selectedItemDangerAction.loading ? (
                                 <Loader2 size={11} className="animate-spin" />
@@ -3247,14 +3370,65 @@ function ToggleOption({
   );
 }
 
-function InspectorRow({ label, value }: { label: string; value: string }) {
+function DestinationProperty({
+  label,
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] py-1.5 last:border-b-0">
-      <span className="text-[12px] text-[var(--ledger-text-muted)]">{label}</span>
-      <span className="min-w-0 truncate text-[12px] text-[var(--ledger-text-secondary)]">
-        {value}
+    <label className="flex items-center justify-between gap-4">
+      <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">{label}</span>
+      <span className="relative min-w-0 flex-1">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-8 w-full appearance-none rounded-lg border border-transparent bg-[var(--ledger-surface-muted)] px-2.5 pr-7 text-right text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:border-[color:var(--ledger-border-subtle)] focus:border-[color:var(--ledger-border-strong)] focus:text-[var(--ledger-text-primary)]"
+        >
+          <option value="">{placeholder || 'Choose'}</option>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={13}
+          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--ledger-text-muted)]"
+        />
       </span>
-    </div>
+    </label>
+  );
+}
+
+function DestinationInput({
+  label,
+  type,
+  value,
+  onChange,
+}: {
+  label: string;
+  type: 'date' | 'time';
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="min-w-0 space-y-1">
+      <span className="block text-[11px] text-[var(--ledger-text-muted)]">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-8 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
+      />
+    </label>
   );
 }
 

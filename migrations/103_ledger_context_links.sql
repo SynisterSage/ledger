@@ -8,11 +8,11 @@ create table if not exists public.ledger_context_links (
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint ledger_context_links_types check (resource_a_type in ('note','project','task','event','reminder') and resource_b_type in ('note','project','task','event','reminder')),
+  constraint ledger_context_links_types check (resource_a_type in ('note','project','task','event','reminder','intake') and resource_b_type in ('note','project','task','event','reminder','intake')),
   constraint ledger_context_links_distinct check (resource_a_type <> resource_b_type or resource_a_id <> resource_b_id),
   constraint ledger_context_links_ordered check (
-    case resource_a_type when 'event' then 1 when 'note' then 2 when 'project' then 3 when 'reminder' then 4 when 'task' then 5 end <
-    case resource_b_type when 'event' then 1 when 'note' then 2 when 'project' then 3 when 'reminder' then 4 when 'task' then 5 end
+    case resource_a_type when 'event' then 1 when 'intake' then 2 when 'note' then 3 when 'project' then 4 when 'reminder' then 5 when 'task' then 6 end <
+    case resource_b_type when 'event' then 1 when 'intake' then 2 when 'note' then 3 when 'project' then 4 when 'reminder' then 5 when 'task' then 6 end
     or (
       resource_a_type = resource_b_type
       and resource_a_id::text < resource_b_id::text
@@ -26,12 +26,15 @@ create index if not exists idx_ledger_context_links_b on public.ledger_context_l
 
 alter table public.ledger_context_links enable row level security;
 
+alter table public.ledger_context_links drop constraint if exists ledger_context_links_types;
+alter table public.ledger_context_links add constraint ledger_context_links_types check (resource_a_type in ('note','project','task','event','reminder','intake') and resource_b_type in ('note','project','task','event','reminder','intake'));
+
 -- Keep this migration safe to rerun if the table was created before the
 -- explicit type ordering was corrected.
 alter table public.ledger_context_links drop constraint if exists ledger_context_links_ordered;
 alter table public.ledger_context_links add constraint ledger_context_links_ordered check (
-  case resource_a_type when 'event' then 1 when 'note' then 2 when 'project' then 3 when 'reminder' then 4 when 'task' then 5 end <
-  case resource_b_type when 'event' then 1 when 'note' then 2 when 'project' then 3 when 'reminder' then 4 when 'task' then 5 end
+  case resource_a_type when 'event' then 1 when 'intake' then 2 when 'note' then 3 when 'project' then 4 when 'reminder' then 5 when 'task' then 6 end <
+  case resource_b_type when 'event' then 1 when 'intake' then 2 when 'note' then 3 when 'project' then 4 when 'reminder' then 5 when 'task' then 6 end
   or (resource_a_type = resource_b_type and resource_a_id::text < resource_b_id::text)
 );
 

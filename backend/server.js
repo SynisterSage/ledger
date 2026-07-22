@@ -8541,6 +8541,29 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       }
     }
 
+    if (type === 'capture') {
+      const { data, error } = await supabase
+        .from('inbox_items')
+        .update({
+          status: 'converted',
+          converted_type: 'capture',
+          converted_id: null,
+          converted_at: convertedAt,
+          converted_by: convertedBy,
+          snoozed_until: null,
+          archived_at: null,
+          archived_by: null,
+          updated_by: convertedBy,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('workspace_id', workspaceId)
+        .eq('id', inboxItem.id)
+        .select(inboxItemSelectColumns)
+        .single();
+      if (error) throw error;
+      return res.json({ inbox_item: mapInboxItemResponse(data), created: null });
+    }
+
     if (type === 'task') {
       const showInToday = Boolean(req.body?.show_in_today ?? false);
       const isTodayFocus = Boolean(req.body?.is_today_focus ?? false);
@@ -15450,10 +15473,10 @@ app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
   }
 });
 
-const contextLinkTypes = new Set(['note', 'project', 'task', 'event', 'reminder']);
-const contextLinkTables = { note: 'notes', project: 'projects', task: 'tasks', event: 'events', reminder: 'reminders' };
-const contextLinkTitleColumns = { note: 'title', project: 'name', task: 'title', event: 'title', reminder: 'title' };
-const contextLinkTypeRank = { event: 1, note: 2, project: 3, reminder: 4, task: 5 };
+const contextLinkTypes = new Set(['note', 'project', 'task', 'event', 'reminder', 'intake']);
+const contextLinkTables = { note: 'notes', project: 'projects', task: 'tasks', event: 'events', reminder: 'reminders', intake: 'inbox_items' };
+const contextLinkTitleColumns = { note: 'title', project: 'name', task: 'title', event: 'title', reminder: 'title', intake: 'title' };
+const contextLinkTypeRank = { event: 1, intake: 2, note: 3, project: 4, reminder: 5, task: 6 };
 const contextLinkCanonical = (type, id, otherType, otherId) => {
   const leftRank = contextLinkTypeRank[type];
   const rightRank = contextLinkTypeRank[otherType];
