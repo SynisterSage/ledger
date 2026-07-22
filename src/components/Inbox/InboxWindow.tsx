@@ -2770,7 +2770,7 @@ export default function IntakeWindow() {
         ]);
         const rawNumber = findDeepString(raw, ['issue_number', 'pull_request_number', 'number']);
         const number = rawNumber && /^\d+$/.test(rawNumber) ? rawNumber : '';
-        const state = findDeepString(raw, ['state', 'status']);
+        const state = getGithubLifecycleLabel(selectedItem) || findDeepString(raw, ['state', 'status']);
         const sourceMeta = isGithubSource
           ? [repository, number ? `#${number}` : '', state].filter(Boolean)
           : isFigmaSource

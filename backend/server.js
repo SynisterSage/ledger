@@ -7094,6 +7094,8 @@ const applyGithubLifecycleToLinkedIntake = async ({ workspaceId, reference, meta
         github_lifecycle_state: lifecycleState,
         github_lifecycle_state_reason: metadata?.stateReason ?? null,
         github_lifecycle_updated_at: metadata?.updatedAt ?? now,
+        state: lifecycleState,
+        stateReason: metadata?.stateReason ?? null,
       },
       updated_by: updatedBy ?? null,
       updated_at: now,
@@ -7519,7 +7521,11 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
             const parsed = parseGithubUrl(reference.external_url);
             const token = await createInstallationToken({ installationId });
             const resolved = await resolveGithubMetadata(parsed, { accessToken: token.token, approvedRepository: repo.data });
-            const metadata = { ...reference.metadata, ...resolved.metadata };
+            const webhookState = pull?.merged ? 'merged' : String((pull ?? issue)?.state ?? '').trim().toLowerCase();
+            const webhookLifecycle = ['open', 'closed', 'merged', 'draft'].includes(webhookState)
+              ? { state: webhookState, stateReason: (pull ?? issue)?.state_reason ?? null }
+              : {};
+            const metadata = { ...reference.metadata, ...resolved.metadata, ...webhookLifecycle };
             const updated = await supabase.from('external_references').update({ metadata, access_status: resolved.accessStatus, external_id: `${metadata.githubRepositoryId}:${reference.external_type}:${metadata.githubId ?? metadata.number}`, external_identity: `github:${metadata.githubRepositoryId}:${reference.external_type}:${metadata.githubId ?? metadata.number}`, last_resolved_at: now, updated_at: now }).eq('id', reference.id).eq('workspace_id', row.data.workspace_id).select('id, workspace_id, provider, external_type, metadata, access_status').single();
             if (!updated.error) {
               const updatedReference = { ...reference, ...updated.data, metadata, access_status: resolved.accessStatus };

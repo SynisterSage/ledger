@@ -65,6 +65,10 @@ import {
 } from './components/Common/ModuleWindowHeader';
 import { CloseGuardModal } from './components/Common/CloseGuardModal';
 import { ModalCloseButton } from './components/Common/ModalCloseButton';
+import {
+  IntegrationProviderMark,
+  normalizeIntegrationProvider,
+} from './components/Common/IntegrationProviderMark';
 import { ModalOverlay } from './components/Common/ModalOverlay';
 import LoginForm from './components/Common/LoginForm';
 import CalendarWindow from './components/Calendar/CalendarWindow';
@@ -4919,7 +4923,10 @@ function DashboardContent() {
     kind: signal.target_type === 'project' ? 'project' : signal.target_type === 'note' ? 'note' : 'task',
     title: signal.title,
     meta: [signal.reason, signal.metadata?.repositoryFullName].filter(Boolean).join(' · '),
-    chips: ['GitHub'],
+    chips: [
+      'GitHub',
+      signal.attention_type === 'github_issue_closed_task_open' ? 'Closed' : '',
+    ].filter(Boolean),
     group: 'Needs attention',
     icon: <CircleAlert size={13} />,
     filterValues: buildOverviewFilterValues({ type: ['task'], status: ['needs_attention'], assignment: [], team: [], project: [], date: ['no_date'], priority: ['no_priority'], progress: [], has: ['linked_context'] }),
@@ -5258,7 +5265,7 @@ function DashboardContent() {
           disabled: boolean;
         }> = [
           {
-            label: 'Mark done',
+            label: selectedOverviewRow.chips.includes('Closed') ? 'Mark task done' : 'Mark done',
             icon: <CheckCircle2 size={13} />,
             action: () =>
               void completeOverviewRow({
@@ -6619,14 +6626,29 @@ function DashboardContent() {
                                   </span>
                                   <span className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden">
                                     <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
-                                      {row.chips.slice(0, 2).map((chip) => (
-                                        <span
-                                          key={chip}
-                                          className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
-                                        >
-                                          {chip}
-                                        </span>
-                                      ))}
+                                      {row.chips
+                                        .slice(0, 2)
+                                        .sort((left, right) => Number(left !== 'Closed') - Number(right !== 'Closed'))
+                                        .map((chip) => {
+                                        const provider = normalizeIntegrationProvider(chip);
+                                        return provider ? (
+                                          <span
+                                            key={chip}
+                                            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
+                                            aria-label={chip}
+                                            title={chip}
+                                          >
+                                            <IntegrationProviderMark provider={provider} size={12} />
+                                          </span>
+                                        ) : (
+                                          <span
+                                            key={chip}
+                                            className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
+                                          >
+                                            {chip}
+                                          </span>
+                                        );
+                                      })}
                                     </span>
                                     {visibleMetadata.length > 0 && (
                                       <span className="hidden min-w-0 max-w-80 truncate whitespace-nowrap text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
@@ -6818,7 +6840,7 @@ function DashboardContent() {
                       </section>
                     ))}
 
-                    <section className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-2.5 pb-1">
+                    <section className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] pt-2.5 pb-1">
                       <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                         Quick actions
                       </p>
