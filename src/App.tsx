@@ -52,7 +52,6 @@ import {
 import { createPortal } from 'react-dom';
 import { useAuthContext } from './context/AuthContext';
 import { useWorkspaceContext } from './context/WorkspaceContext';
-import { useWorkspaceInit } from './hooks/useWorkspaceInit';
 import { useWorkspaceRealtimeRefresh } from './hooks/useWorkspaceRealtimeRefresh';
 import { useApi } from './hooks/useApi';
 import { useSidebar } from './context/SidebarContext';
@@ -1305,6 +1304,7 @@ function DashboardContent() {
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [githubAttention, setGithubAttention] = useState<Array<{ id: string; target_type?: string | null; target_id?: string | null; attention_type: string; title: string; reason: string; metadata?: { canonicalUrl?: string | null; repositoryFullName?: string | null } }>>([]);
   const [overviewTaskMode, setOverviewTaskMode] = useState<'focus' | 'today' | 'long_term'>(
     'focus'
   );
@@ -1338,6 +1338,21 @@ function DashboardContent() {
   const [upcomingQuickTeams, setUpcomingQuickTeams] = useState<
     Array<{ id: string; name: string; identifier?: string | null }>
   >([]);
+  useEffect(() => {
+    if (!user || !activeWorkspaceId) {
+      setGithubAttention([]);
+      return;
+    }
+    let cancelled = false;
+    void api.getGithubAttention()
+      .then((rows) => {
+        if (!cancelled) setGithubAttention(Array.isArray(rows) ? (rows as typeof githubAttention) : []);
+      })
+      .catch(() => {
+        if (!cancelled) setGithubAttention([]);
+      });
+    return () => { cancelled = true; };
+  }, [activeWorkspaceId, api, dashboardRefreshToken, user]);
   const [isLoadingUpcomingQuickTeams, setIsLoadingUpcomingQuickTeams] = useState(false);
   const [isOverviewLinkProjectOpen, setIsOverviewLinkProjectOpen] = useState(false);
   const [overviewLinkTargetNoteId, setOverviewLinkTargetNoteId] = useState<string | null>(null);
@@ -4898,7 +4913,25 @@ function DashboardContent() {
       open: () => openFollowUpEvent(task.id),
     }));
 
+  const githubAttentionRows = githubAttention.slice(0, 8).map<OverviewRow>((signal) => ({
+    id: `GitHub attention:${signal.id}`,
+    sourceId: signal.target_id ?? signal.id,
+    kind: signal.target_type === 'project' ? 'project' : signal.target_type === 'note' ? 'note' : 'task',
+    title: signal.title,
+    meta: [signal.reason, signal.metadata?.repositoryFullName].filter(Boolean).join(' · '),
+    chips: ['GitHub'],
+    group: 'Needs attention',
+    icon: <CircleAlert size={13} />,
+    filterValues: buildOverviewFilterValues({ type: ['task'], status: ['needs_attention'], assignment: [], team: [], project: [], date: ['no_date'], priority: ['no_priority'], progress: [], has: ['linked_context'] }),
+    open: () => {
+      if (signal.target_type === 'project' && signal.target_id) openModule('projects', { kind: 'projects', focusProjectId: signal.target_id });
+      else if (signal.target_type === 'note' && signal.target_id) openModule('notes', { kind: 'notes', focusNoteId: signal.target_id });
+      else if (signal.target_id) setSelectedOverviewRowId(`GitHub attention:${signal.id}`);
+    },
+  }));
+
   const overviewRows: OverviewRow[] = [
+    ...githubAttentionRows,
     ...focusTasksForDisplay.map((task) => buildTaskRow(task, 'Needs attention', ['Focus'])),
     ...followUpRows,
     ...activeTodayTasks.slice(0, 6).map((task) => buildTaskRow(task, 'Today')),
@@ -7964,7 +7997,6 @@ function AppShell() {
   }, []);
 
   // Initialize workspace for authenticated users
-  useWorkspaceInit();
   const effectiveUiMode: 'auth' | 'app' = user ? 'app' : uiMode;
 
   useEffect(() => {

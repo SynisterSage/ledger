@@ -811,12 +811,13 @@ const isLikelyFigmaUrl = (value: string) => {
     return url.protocol === 'https:' && (host === 'figma.com' || host === 'www.figma.com') && ['design', 'file', 'board'].includes(route ?? '');
   } catch { return false; }
 };
+const isLikelyGithubUrl = (value: string) => { try { const url = new URL(value); return url.protocol === 'https:' && ['github.com', 'www.github.com'].includes(url.hostname.toLowerCase()) && url.pathname.split('/').filter(Boolean).length >= 2; } catch { return false; } };
 
 const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | null; targetType?: 'note' | 'meetingNote' }) => {
   const [editor] = useLexicalComposerContext();
   const api = useApi();
   const toast = useToast();
-  const [prompt, setPrompt] = useState<{ url: string; nodeKey: string } | null>(null);
+  const [prompt, setPrompt] = useState<{ url: string; nodeKey: string; provider: 'figma' | 'github' } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -831,7 +832,8 @@ const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | n
   useEffect(() => editor.registerCommand(PASTE_COMMAND, (event: ClipboardEvent) => {
     if (!noteId) return false;
     const text = event.clipboardData?.getData('text/plain')?.trim() ?? '';
-    if (!text || !isLikelyFigmaUrl(text)) return false;
+    const provider = isLikelyFigmaUrl(text) ? 'figma' : isLikelyGithubUrl(text) ? 'github' : null;
+    if (!provider) return false;
     event.preventDefault();
     let nodeKey: string | null = null;
     editor.update(() => {
@@ -842,7 +844,7 @@ const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | n
       selection.insertNodes([linkNode]);
       nodeKey = linkNode.getKey();
     });
-    if (nodeKey) setPrompt({ url: text, nodeKey });
+    if (nodeKey) setPrompt({ url: text, nodeKey, provider });
     return true;
   }, COMMAND_PRIORITY_HIGH), [editor, noteId, targetType]);
 
@@ -850,10 +852,10 @@ const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | n
     if (!prompt || !noteId || busy) return;
     setBusy(true);
     try {
-      const created = await api.createExternalReference('figma', prompt.url) as { id: string; normalized_url?: string; external_url?: string };
-      await api.linkExternalReference(created.id, targetType, noteId, 'embed');
-      await api.resolveExternalReference(created.id);
-      await api.createExternalReferencePreview(created.id, targetType, noteId);
+      const created = await api.createExternalReference(prompt.provider, prompt.url) as { id: string; normalized_url?: string; external_url?: string };
+      if (prompt.provider === 'github') await api.resolveExternalReference(created.id);
+      await api.linkExternalReferenceWithMetadata(created.id, targetType, noteId, undefined, 'embed');
+      if (prompt.provider === 'figma') { await api.resolveExternalReference(created.id); await api.createExternalReferencePreview(created.id, targetType, noteId); }
       const canonicalUrl = created.normalized_url || created.external_url || prompt.url;
       editor.update(() => {
         const original = $getNodeByKey(prompt.nodeKey);
@@ -869,12 +871,12 @@ const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | n
       });
       setPrompt(null);
     } catch (error) {
-      toast.show(error instanceof Error ? error.message : 'Could not embed this Figma design.', { variant: 'error' });
+      toast.show(error instanceof Error ? error.message : `Could not embed this ${prompt.provider === 'github' ? 'GitHub item' : 'Figma design'}.`, { variant: 'error' });
     } finally { setBusy(false); }
   };
 
   if (!prompt) return null;
-  return <div className="absolute right-4 top-3 z-20 flex max-w-[min(420px,calc(100%-2rem))] items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)] shadow-[0_12px_30px_rgba(15,23,42,0.12)]" role="dialog" aria-label="Figma link detected"><div className="min-w-0"><span className="font-medium">Figma link detected</span><span className="mt-0.5 block text-[10px] leading-4 text-[var(--ledger-text-muted)]">Saved previews can be visible to people who can access this note.</span></div><button type="button" onClick={() => void embed()} disabled={busy} className="h-7 shrink-0 rounded-full bg-[var(--ledger-accent)] px-2.5 text-[11px] font-medium text-white disabled:opacity-60">{busy ? 'Embedding…' : 'Embed design'}</button><button type="button" onClick={() => setPrompt(null)} disabled={busy} className="h-7 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] px-2.5 text-[11px] font-medium hover:bg-[var(--ledger-surface-hover)]">Keep as link</button></div>;
+  return <div className="absolute right-4 top-3 z-20 flex max-w-[min(420px,calc(100%-2rem))] items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)] shadow-[0_12px_30px_rgba(15,23,42,0.12)]" role="dialog" aria-label="External link detected"><div className="min-w-0"><span className="font-medium">{prompt.provider === 'github' ? 'GitHub link detected' : 'Figma link detected'}</span><span className="mt-0.5 block text-[10px] leading-4 text-[var(--ledger-text-muted)]">Add a compact linked reference to this note.</span></div><button type="button" onClick={() => void embed()} disabled={busy} className="h-7 shrink-0 rounded-full bg-[var(--ledger-accent)] px-2.5 text-[11px] font-medium text-white disabled:opacity-60">{busy ? 'Embedding…' : prompt.provider === 'github' ? 'Embed item' : 'Embed design'}</button><button type="button" onClick={() => setPrompt(null)} disabled={busy} className="h-7 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] px-2.5 text-[11px] font-medium hover:bg-[var(--ledger-surface-hover)]">Keep as link</button></div>;
 };
 
 const ResizableImagePlugin = () => {

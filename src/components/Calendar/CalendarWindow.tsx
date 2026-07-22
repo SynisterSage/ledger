@@ -2118,6 +2118,7 @@ export const CalendarWindow = () => {
     window.ipcRenderer?.on('calendar:items-updated', handleCalendarItemsUpdated);
 
     const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       void loadCalendarData();
     }, 60_000);
 

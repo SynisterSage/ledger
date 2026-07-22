@@ -3054,6 +3054,7 @@ export default function IntakeWindow() {
                         {activeWorkspaceId ? (
                           <LinkedDesignsSection
                             target={{ workspaceId: activeWorkspaceId, targetType: 'intake', targetId: selectedItem.id }}
+                            canEdit={activeWorkspace?.role !== 'viewer'}
                             fallbackNodeName={selectedFigmaNodeName}
                             fallbackFileName={selectedFigmaFileName}
                           />

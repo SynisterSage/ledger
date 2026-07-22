@@ -241,6 +241,25 @@ export const useApi = () => {
         }),
 
       // Integrations
+      getGithubIntegrationStatus: (workspaceId: string) =>
+        request('/api/integrations/github/status', { headers: { 'X-Workspace-Id': workspaceId } }),
+      connectGithubIntegration: (workspaceId: string) =>
+        request('/api/integrations/github/connect', { method: 'POST', headers: { 'X-Workspace-Id': workspaceId } }),
+      refreshGithubIntegration: (workspaceId: string) =>
+        request('/api/integrations/github/refresh', { method: 'POST', headers: { 'X-Workspace-Id': workspaceId } }),
+      disconnectGithubIntegration: (workspaceId: string) =>
+        request('/api/integrations/github', { method: 'DELETE', headers: { 'X-Workspace-Id': workspaceId }, body: JSON.stringify({ confirmed: true }) }),
+      getGithubRepositories: () => request('/api/integrations/github/repositories'),
+      getGithubAttention: (params: { targetType?: string; targetId?: string } = {}) => {
+        const search = new URLSearchParams();
+        if (params.targetType) search.set('targetType', params.targetType);
+        if (params.targetId) search.set('targetId', params.targetId);
+        return request(`/api/integrations/github/attention${search.toString() ? `?${search}` : ''}`);
+      },
+      searchGithubWork: (params: { repositoryId: string; type: 'issue' | 'pull_request'; query?: string; state?: 'open' | 'closed' | 'all'; limit?: number }) =>
+        request(`/api/integrations/github/search?${new URLSearchParams({ repositoryId: params.repositoryId, type: params.type, query: params.query ?? '', state: params.state ?? 'open', limit: String(params.limit ?? 20) })}`),
+      linkExternalReferenceWithMetadata: (referenceId: string, targetType: string, targetId: string, linkMetadata?: Record<string, unknown>, source = 'manual') =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/links`, { method: 'POST', body: JSON.stringify({ target_type: targetType, target_id: targetId, source, link_metadata: linkMetadata ?? {} }) }),
       getSlackIntegrationStatus: (workspaceId: string) =>
         request(`/api/integrations/slack/status?workspaceId=${encodeURIComponent(workspaceId)}`, {
           skipWorkspaceHeader: true,

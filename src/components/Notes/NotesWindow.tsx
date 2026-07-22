@@ -137,7 +137,7 @@ type WorkspaceProjectNoteLink = {
   created_at: string;
 };
 
-const POLL_INTERVAL_MS = 15000;
+const POLL_INTERVAL_MS = 60000;
 const NOTE_VIEWERS_POLL_MS = 30_000;
 const LEFT_PANE_MIN_WIDTH = 260;
 const LEFT_PANE_MAX_WIDTH = 380;
@@ -607,6 +607,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -1334,7 +1335,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     if (!term) return notes;
 
     const filtered = notes.filter((note) => {
-      const haystack = [note.title, htmlToPlainText(note.content), note.mood ?? '', note.date]
+      const haystack = [note.title, htmlToPlainText(note.content ?? ''), note.mood ?? '', note.date]
         .join(' ')
         .toLowerCase();
       return haystack.includes(term);
@@ -1724,7 +1725,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     hydrationNoteIdRef.current = note.id;
     setIsHydratingNote(true);
     setDraftTitle(note.title);
-    setDraftContent(normalizeEditorHtml(note.content));
+    setDraftContent(normalizeEditorHtml(note.content ?? ''));
     setDraftDate(note.date || todayKey());
     setDraftMood(note.mood ?? '');
     setDraftMode(note.mode || 'text');
@@ -2102,7 +2103,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       if (opts?.silent) {
         setIsRefreshing(true);
       } else {
-        if (!hasLoadedOnce) {
+        if (!hasLoadedOnceRef.current) {
           setIsLoading(true);
         }
       }
@@ -2171,10 +2172,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
+        hasLoadedOnceRef.current = true;
         setHasLoadedOnce(true);
       }
     },
-    [api, activeWorkspaceId, hasLoadedOnce, initialFocusNoteId, syncDraftFromNote, user]
+    [api, activeWorkspaceId, initialFocusNoteId, syncDraftFromNote, user]
   );
 
   const refreshCurrentNoteFromServer = useCallback(
@@ -2756,12 +2758,26 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         if (!saved) return;
       }
       if (navigationRequest !== noteNavigationRequestRef.current) return;
+      let noteToOpen = note;
+      if (typeof note.content !== 'string') {
+        setIsHydratingNote(true);
+        setHasHydratedNote(false);
+        try {
+          noteToOpen = (await api.getNoteById(note.id)) as NoteRow;
+          if (navigationRequest !== noteNavigationRequestRef.current) return;
+          setNotes((prev) => prev.map((row) => (row.id === noteToOpen.id ? noteToOpen : row)));
+        } catch (error) {
+          setIsHydratingNote(false);
+          setError(error instanceof Error ? error.message : 'Could not load note.');
+          return;
+        }
+      }
       setSelectedNoteId(note.id);
       if (!bulkSidebarSelectionRef.current) {
         setSelectedNoteIds([note.id]);
         selectionAnchorNoteIdRef.current = note.id;
       }
-      syncDraftFromNote(note);
+      syncDraftFromNote(noteToOpen);
       recordNoteOpened(note.id);
     },
     [
@@ -2769,6 +2785,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       isDirty,
       recordNoteOpened,
       selectedNoteId,
+      api,
       selectedNoteIds.length,
       syncDraftFromNote,
     ]
@@ -3367,6 +3384,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   useEffect(() => {
     void loadNotes();
     const poll = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       if (isEditingRef.current || isDirty) return;
       void loadNotes({ silent: true });
     }, POLL_INTERVAL_MS);
@@ -4543,7 +4561,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                         {childNotes.map((child) => {
                                           const childActive = selectedNoteIdSet.has(child.id);
                                           const childPreview =
-                                            htmlToPlainText(child.content).slice(0, 50) ||
+                                            htmlToPlainText(child.content ?? '').slice(0, 50) ||
                                             'No content';
                                           return (
                                             <button
@@ -5269,6 +5287,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       targetType: /meeting/i.test(selectedNote.source ?? '') ? 'meetingNote' : 'note',
                       targetId: selectedNote.id,
                     }}
+                    canEdit={activeWorkspace?.role !== 'viewer'}
                   />
                 ) : null}
 

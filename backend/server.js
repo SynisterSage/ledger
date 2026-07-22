@@ -22,6 +22,11 @@ import { checkExternalReferenceChange, getExternalReferenceChangeState, getFigma
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpServer } from './mcp/server.js';
 import { OPENAI_APPS_CHALLENGE_PATH, getOpenAiAppsChallengeToken } from './mcp/openai-challenge.js';
+import { createGithubAppJwt, createGithubState, exchangeGithubCode, getAccessibleInstallations, getCanonicalInstallation, getGithubUser, createInstallationToken, listInstallationRepositories, normalizeGithubError, normalizeGithubRepository, revokeGithubUserToken, hashGithubState, verifyGithubWebhookSignature } from './integrations/github/github-app.js';
+import { findGithubPullRequestsForCommit, resolveGithubMetadata, searchGithubWork, githubSafeMessage, GithubProviderError } from './integrations/github/github-adapter.js';
+import { parseGithubUrl } from './integrations/github/github-url-parser.js';
+import { findLinkedGithubReferences, listGithubAttention, reconcileGithubAttention } from './integrations/github/github-live-awareness.js';
+import { createSupabaseTraceFetch } from './request-instrumentation.js';
 
 dotenv.config();
 
@@ -45,6 +50,7 @@ const allowedCorsOrigins = new Set(
 
 const supabase = createClient(supabaseUrl, supabaseServiceRole, {
   auth: { persistSession: false },
+  global: { fetch: createSupabaseTraceFetch() },
 });
 
 const captureRawBody = (req, _res, buffer) => {
@@ -113,6 +119,11 @@ const RATE_LIMITS = {
   figma_change_check: { max: 30 },
   figma_webhook: { max: 120 },
   figma_cleanup: { max: 2 },
+  github_connect: { max: 10 },
+  github_callback: { max: 20 },
+  github_refresh: { max: 20 },
+  github_disconnect: { max: 10 },
+  github_webhook: { max: 120 },
   mcp_auth: { max: 20 },
   mcp_poll: { max: 60 },
   mcp_request: { max: 120 },
@@ -744,6 +755,8 @@ const mapNoteResponse = (row) => {
 
 const noteSelectColumns =
   'id, workspace_id, user_id, updated_by, title, content, content_html, date, mood, source, source_platform, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at';
+const noteSummarySelectColumns =
+  'id, workspace_id, user_id, updated_by, title, preview, date, mood, source, source_platform, mode, parent_id, section_id, sort_order, depth, created_at, updated_at';
 
 const NOTE_VERSION_LIMIT = 25;
 const NOTE_AUTOSAVE_CHECKPOINT_INTERVAL_MS = 10 * 60 * 1000;
@@ -3629,7 +3642,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .limit(500),
       supabase
         .from('notes')
-        .select('id, workspace_id, title, content, content_html, updated_at, created_at')
+        .select('id, workspace_id, title, preview, updated_at, created_at')
         .in('workspace_id', workspaceIds)
         .order('updated_at', { ascending: false })
         .limit(10),
@@ -4145,7 +4158,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
   const notes = noteRows
     .filter((row) => Boolean(row?.id) && Boolean(row?.workspace_id))
     .map((row) => {
-      const body = htmlToPlainText(row.content_html || row.content || '');
+      const body = String(row.preview ?? '');
       return {
         id: `note:${row.id}`,
         type: 'note',
@@ -6478,7 +6491,7 @@ const preparePluginReference = async ({ req, workspaceId, body }) => {
   };
   if (Object.keys(pluginMetadata).length) {
     const metadata = { ...(created.reference.metadata ?? {}), ...pluginMetadata };
-    const updated = await supabase.from('external_references').update({ metadata }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('*').single();
+    const updated = await supabase.from('external_references').update({ metadata }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('id, workspace_id, provider, external_type, external_url, normalized_url, metadata, access_status, created_at, updated_at').single();
     if (!updated.error) created.reference = updated.data;
   }
   try {
@@ -6633,7 +6646,10 @@ const updatePluginWorkProperty = async ({ req, workspaceId, targetType, targetId
   if (!capabilities.editableProperties.includes(property)) throw pluginError('You don’t have permission to update this property.', 403);
   const table = targetType === 'task' ? 'tasks' : targetType === 'project' ? 'projects' : null;
   if (!table) throw pluginError('This Ledger item is read-only.', 400);
-  const current = await supabase.from(table).select('*').eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
+  const currentColumns = table === 'tasks'
+    ? 'id, status, updated_at'
+    : 'id, status, updated_at';
+  const current = await supabase.from(table).select(currentColumns).eq('workspace_id', workspaceId).eq('id', targetId).maybeSingle();
   if (current.error) throw current.error;
   if (!current.data) throw pluginError('Ledger item not found.', 404);
   if (expectedUpdatedAt && String(current.data.updated_at ?? '') !== String(expectedUpdatedAt)) throw pluginError('This item changed in Ledger.', 409);
@@ -6669,7 +6685,7 @@ const updatePluginWorkProperty = async ({ req, workspaceId, targetType, targetId
     } else if (property === 'dueDate') update.end_date = normalizeNullableDate(value, 'target date');
   }
   update.updated_at = new Date().toISOString();
-  const updated = await supabase.from(table).update(update).eq('workspace_id', workspaceId).eq('id', targetId).select('*').single();
+  const updated = await supabase.from(table).update(update).eq('workspace_id', workspaceId).eq('id', targetId);
   if (updated.error) throw updated.error;
   return getPluginLinkedTargetSummary(workspaceId, targetType, targetId);
 };
@@ -6866,6 +6882,228 @@ app.post('/api/figma-plugin/auth/revoke', pluginAuthMiddleware, rateLimit('auth'
   const revoked = await supabase.from('figma_plugin_credentials').update({ revoked_at: new Date().toISOString() }).eq('id', req.pluginCredential.id).is('revoked_at', null);
   if (revoked.error) return respondWithError(res, revoked.error);
   res.json({ revoked: true });
+});
+
+const githubFrontendRedirect = (result) => {
+  const base = (process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  return `${base}/?settings=integrations&github=${encodeURIComponent(result)}`;
+};
+const githubManagementUrl = (installationId) => `https://github.com/settings/installations/${encodeURIComponent(installationId)}`;
+const githubManageAccess = (role) => ['owner', 'admin'].includes(String(role ?? '').toLowerCase());
+const githubStatusPayload = ({ installation, repositories, canManage }) => ({
+  connected: Boolean(installation),
+  account: installation ? { login: installation.github_account_login, type: installation.github_account_type } : null,
+  repository_selection: installation?.repository_selection ?? null,
+  installation_status: installation?.status ?? 'disconnected',
+  management_url: installation?.management_url ?? null,
+  last_synced_at: installation?.last_synced_at ?? null,
+  can_manage: canManage,
+  repositories: (repositories ?? []).map((repo) => ({ id: repo.github_repository_id, owner_login: repo.owner_login, name: repo.name, full_name: repo.full_name, html_url: repo.html_url, is_private: repo.is_private, is_archived: repo.is_archived, is_disabled: repo.is_disabled, default_branch: repo.default_branch })),
+});
+const githubInstallationRows = async (workspaceId) => {
+  const installation = await supabase.from('github_installations').select('id, workspace_id, installation_id, github_account_id, github_account_login, github_account_type, repository_selection, permissions, events, management_url, installed_by_user_id, installed_by_github_user_id, installed_by_github_login, status, last_synced_at, created_at, updated_at').eq('workspace_id', workspaceId).maybeSingle();
+  if (installation.error) throw installation.error;
+  if (!installation.data) return { installation: null, repositories: [] };
+  const repos = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('github_installation_id', installation.data.id).order('full_name');
+  if (repos.error) throw repos.error;
+  return { installation: installation.data, repositories: repos.data ?? [] };
+};
+const syncGithubRepositories = async ({ installationRow, repositories }) => {
+  const values = repositories.map((repo) => ({ workspace_id: installationRow.workspace_id, ...normalizeGithubRepository(repo, installationRow.id), updated_at: new Date().toISOString() }));
+  if (values.length) {
+    const upserted = await supabase.from('github_repositories').upsert(values, { onConflict: 'github_installation_id,github_repository_id' });
+    if (upserted.error) throw upserted.error;
+  }
+  const ids = values.map((repo) => repo.github_repository_id);
+  let query = supabase.from('github_repositories').delete().eq('workspace_id', installationRow.workspace_id).eq('github_installation_id', installationRow.id);
+  if (ids.length) query = query.not('github_repository_id', 'in', `(${ids.join(',')})`);
+  const removed = await query;
+  if (removed.error) throw removed.error;
+  const updated = await supabase.from('github_installations').update({ last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', installationRow.id);
+  if (updated.error) throw updated.error;
+};
+
+app.get('/api/integrations/github/status', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const rows = await githubInstallationRows(workspaceId);
+    res.json(githubStatusPayload({ ...rows, canManage: githubManageAccess(access.role) }));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/github/connect', authMiddleware, rateLimit('github_connect'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const config = { appId: process.env.GITHUB_APP_ID?.trim(), slug: process.env.GITHUB_APP_SLUG?.trim() };
+    if (!config.appId || !config.slug || !process.env.GITHUB_APP_CLIENT_ID || !process.env.GITHUB_APP_CLIENT_SECRET || !process.env.GITHUB_APP_PRIVATE_KEY) throw Object.assign(new Error('GitHub integration is not configured.'), { statusCode: 503 });
+    const state = createGithubState();
+    const inserted = await supabase.from('github_installation_sessions').insert({ workspace_id: workspaceId, requested_by_user_id: req.authUser.id, state_hash: hashGithubState(state), expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }).select('id').single();
+    if (inserted.error) throw inserted.error;
+    res.json({ url: `https://github.com/apps/${encodeURIComponent(config.slug)}/installations/new?state=${encodeURIComponent(state)}` });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/github/callback', rateLimit('github_callback'), async (req, res) => {
+  let userToken = null;
+  try {
+    const state = String(req.query?.state ?? '').trim();
+    const code = String(req.query?.code ?? '').trim();
+    const installationId = String(req.query?.installation_id ?? '').trim();
+    if (!state || !code || !/^\d+$/.test(installationId)) return res.redirect(githubFrontendRedirect('error'));
+    const now = new Date().toISOString();
+    const session = await supabase.from('github_installation_sessions').select('id, workspace_id, requested_by_user_id, expires_at, consumed_at').eq('state_hash', hashGithubState(state)).is('consumed_at', null).gt('expires_at', now).maybeSingle();
+    if (session.error || !session.data) return res.redirect(githubFrontendRedirect('expired'));
+    const consumed = await supabase.from('github_installation_sessions').update({ consumed_at: now }).eq('id', session.data.id).is('consumed_at', null).select('id').maybeSingle();
+    if (consumed.error || !consumed.data) return res.redirect(githubFrontendRedirect('expired'));
+    await requireWorkspaceAccess(session.data.requested_by_user_id, session.data.workspace_id, 'admin');
+    const exchanged = await exchangeGithubCode({ code });
+    userToken = exchanged.access_token;
+    const [githubUser, accessible] = await Promise.all([getGithubUser({ token: userToken }), getAccessibleInstallations({ token: userToken })]);
+    const accessibleInstallation = (accessible.installations ?? []).find((item) => String(item.id) === installationId);
+    if (!accessibleInstallation) return res.redirect(githubFrontendRedirect('error'));
+    const canonical = await getCanonicalInstallation({ installationId });
+    const configuredAppId = String(process.env.GITHUB_APP_ID ?? '').trim();
+    if (String(canonical.app_id ?? configuredAppId) !== configuredAppId) return res.redirect(githubFrontendRedirect('error'));
+    const existing = await supabase.from('github_installations').select('id, workspace_id').eq('installation_id', Number(installationId)).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data && existing.data.workspace_id !== session.data.workspace_id) return res.redirect(githubFrontendRedirect('already_connected'));
+    const saved = await supabase.from('github_installations').upsert({ workspace_id: session.data.workspace_id, installation_id: Number(installationId), github_account_id: Number(canonical.account?.id ?? accessibleInstallation.account?.id), github_account_login: String(canonical.account?.login ?? accessibleInstallation.account?.login ?? ''), github_account_type: canonical.account?.type === 'Organization' ? 'Organization' : 'User', repository_selection: canonical.repository_selection === 'all' ? 'all' : 'selected', permissions: canonical.permissions ?? {}, events: canonical.events ?? [], management_url: canonical.html_url ?? githubManagementUrl(installationId), installed_by_user_id: session.data.requested_by_user_id, installed_by_github_user_id: Number(githubUser.id), installed_by_github_login: String(githubUser.login ?? ''), status: 'active', updated_at: now }, { onConflict: 'workspace_id' }).select('id, workspace_id, installation_id').single();
+    if (saved.error) throw saved.error;
+    const token = await createInstallationToken({ installationId });
+    const repositories = await listInstallationRepositories({ token: token.token });
+    await syncGithubRepositories({ installationRow: saved.data, repositories: repositories.repositories ?? [] });
+    return res.redirect(githubFrontendRedirect('success'));
+  } catch (error) {
+    console.error('GitHub callback failed:', normalizeGithubError(error));
+    return res.redirect(githubFrontendRedirect('error'));
+  } finally { if (userToken) await revokeGithubUserToken({ token: userToken }); }
+});
+
+app.post('/api/integrations/github/refresh', authMiddleware, rateLimit('github_refresh'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const rows = await githubInstallationRows(workspaceId);
+    if (!rows.installation) return res.status(404).json({ error: 'GitHub is not connected.' });
+    const token = await createInstallationToken({ installationId: rows.installation.installation_id });
+    const repositories = await listInstallationRepositories({ token: token.token });
+    await syncGithubRepositories({ installationRow: rows.installation, repositories: repositories.repositories ?? [] });
+    const latest = await githubInstallationRows(workspaceId);
+    res.json(githubStatusPayload({ ...latest, canManage: githubManageAccess(access.role) }));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/integrations/github', authMiddleware, rateLimit('github_disconnect'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    if (req.body?.confirmed !== true) return res.status(400).json({ error: 'Confirm disconnecting GitHub from Ledger.' });
+    const deleted = await supabase.from('github_installations').delete().eq('workspace_id', workspaceId);
+    if (deleted.error) throw deleted.error;
+    res.json({ disconnected: true });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async (req, res) => {
+  const deliveryId = String(req.headers['x-github-delivery'] ?? '').trim().slice(0, 180);
+  const event = String(req.headers['x-github-event'] ?? '').trim().slice(0, 80);
+  const action = String(req.body?.action ?? '').trim().slice(0, 80);
+  let eventRecordId = null;
+  try {
+    if (Buffer.byteLength(String(req.rawBody ?? ''), 'utf8') > 512 * 1024) return res.status(413).json({ error: 'Webhook payload is too large.' });
+    if (!verifyGithubWebhookSignature({ rawBody: req.rawBody, signature: String(req.headers['x-hub-signature-256'] ?? ''), secret: process.env.GITHUB_APP_WEBHOOK_SECRET })) return res.status(401).json({ error: 'Invalid webhook signature.' });
+    if (!deliveryId) return res.status(400).json({ error: 'Missing webhook delivery.' });
+    const installationId = Number(req.body?.installation?.id ?? req.body?.installation_id);
+    const repositoryId = String(req.body?.repository?.id ?? '').trim();
+    const eventRecord = await supabase.from('integration_webhook_events').insert({ provider: 'github', provider_event_id: deliveryId, event_type: action ? `${event}:${action}` : event, external_resource_id: repositoryId || null, status: 'pending' }).select('id').maybeSingle();
+    if (eventRecord.error?.code === '23505') return res.status(202).json({ accepted: true, duplicate: true });
+    if (eventRecord.error) throw eventRecord.error;
+    eventRecordId = eventRecord.data?.id ?? null;
+    if (!Number.isSafeInteger(installationId)) {
+      if (eventRecord.data?.id) await supabase.from('integration_webhook_events').update({ status: 'ignored', processed_at: new Date().toISOString() }).eq('id', eventRecord.data.id);
+      return res.status(202).json({ accepted: true, ignored: true });
+    }
+    const row = await supabase.from('github_installations').select('*').eq('installation_id', installationId).maybeSingle();
+    if (row.error) throw row.error;
+    if (!row.data) {
+      if (eventRecord.data?.id) await supabase.from('integration_webhook_events').update({ status: 'ignored', processed_at: new Date().toISOString(), error_code: 'installation_not_connected' }).eq('id', eventRecord.data.id);
+      return res.status(202).json({ accepted: true, ignored: true });
+    }
+    const now = new Date().toISOString();
+    if (event === 'installation') {
+      const status = action === 'suspend' ? 'suspended' : action === 'unsuspend' ? 'active' : action === 'deleted' ? 'deleted' : row.data.status;
+      await supabase.from('github_installations').update({ status, updated_at: now }).eq('id', row.data.id);
+      if (['suspend', 'deleted'].includes(action)) {
+        const refs = await supabase.from('external_references').select('id, metadata, access_status, external_type').eq('workspace_id', row.data.workspace_id).eq('provider', 'github').limit(500);
+        for (const reference of refs.data ?? []) {
+          const updated = { ...reference.metadata, unavailableReason: action === 'suspend' ? 'installation_suspended' : 'installation_deleted' };
+          await supabase.from('external_references').update({ metadata: updated, access_status: 'inaccessible', updated_at: now }).eq('id', reference.id).eq('workspace_id', row.data.workspace_id);
+        }
+      }
+    } else if (event === 'installation_repositories' && ['added', 'removed'].includes(action)) {
+      const removed = (req.body?.repositories_removed ?? []).map((repo) => String(repo?.id ?? '')).filter(Boolean);
+      if (removed.length) {
+        const refs = await supabase.from('external_references').select('id, metadata').eq('workspace_id', row.data.workspace_id).eq('provider', 'github').limit(500);
+        for (const reference of refs.data ?? []) if (removed.includes(String(reference.metadata?.githubRepositoryId ?? ''))) {
+          const metadata = { ...reference.metadata, unavailableReason: 'repository_access_removed' };
+          await supabase.from('external_references').update({ access_status: 'inaccessible', metadata, updated_at: now }).eq('id', reference.id);
+          const linked = await supabase.from('external_reference_links').select('id, external_reference_id, target_type, target_id, link_metadata').eq('workspace_id', row.data.workspace_id).eq('external_reference_id', reference.id);
+          if (linked.data?.length) await reconcileGithubAttention({ supabase, workspaceId: row.data.workspace_id, reference: { ...reference, metadata, access_status: 'inaccessible', links: linked.data }, eventTime: now });
+        }
+      }
+      const token = await createInstallationToken({ installationId });
+      const repositories = await listInstallationRepositories({ token: token.token });
+      await syncGithubRepositories({ installationRow: row.data, repositories: repositories.repositories ?? [] });
+    } else if (event === 'repository') {
+      const repo = req.body?.repository;
+      const repoId = String(repo?.id ?? repositoryId);
+      const lifecycleUpdate = { owner_login: String(repo?.owner?.login ?? '').slice(0, 100), name: String(repo?.name ?? '').slice(0, 100), full_name: String(repo?.full_name ?? '').slice(0, 220), html_url: String(repo?.html_url ?? '').slice(0, 500), is_private: Boolean(repo?.private), is_archived: Boolean(repo?.archived), is_disabled: Boolean(repo?.disabled) || action === 'deleted', default_branch: String(repo?.default_branch ?? '').slice(0, 120), updated_at: now };
+      await supabase.from('github_repositories').update(lifecycleUpdate).eq('workspace_id', row.data.workspace_id).eq('github_installation_id', row.data.id).eq('github_repository_id', repoId);
+      const refs = await supabase.from('external_references').select('id, metadata').eq('workspace_id', row.data.workspace_id).eq('provider', 'github').limit(500);
+      for (const reference of refs.data ?? []) if (String(reference.metadata?.githubRepositoryId ?? '') === repoId) {
+        const metadata = { ...reference.metadata, repositoryFullName: lifecycleUpdate.full_name, canonicalUrl: lifecycleUpdate.html_url, ownerLogin: lifecycleUpdate.owner_login, name: lifecycleUpdate.name, isPrivate: lifecycleUpdate.is_private, isArchived: lifecycleUpdate.is_archived, isDisabled: lifecycleUpdate.is_disabled, unavailableReason: action === 'deleted' ? 'repository_deleted' : null };
+        await supabase.from('external_references').update({ metadata, access_status: action === 'deleted' ? 'inaccessible' : 'accessible', updated_at: now }).eq('id', reference.id);
+        const linked = await supabase.from('external_reference_links').select('id, external_reference_id, target_type, target_id, link_metadata').eq('workspace_id', row.data.workspace_id).eq('external_reference_id', reference.id);
+        if (linked.data?.length) await reconcileGithubAttention({ supabase, workspaceId: row.data.workspace_id, reference: { ...reference, metadata, access_status: action === 'deleted' ? 'inaccessible' : 'accessible', links: linked.data }, eventTime: now });
+      }
+    } else if (row.data.status === 'active' && ['issues', 'pull_request', 'pull_request_review', 'check_run', 'check_suite', 'status'].includes(event)) {
+      const repo = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', row.data.workspace_id).eq('github_repository_id', repositoryId).maybeSingle();
+      if (repo.data) {
+        const issue = req.body?.issue;
+        const pull = req.body?.pull_request ?? issue?.pull_request;
+        const check = req.body?.check_run;
+        let candidates = pull ?? issue ?? check?.pull_requests?.[0] ?? null;
+        if (!candidates && ['check_run', 'check_suite', 'status'].includes(event)) {
+          const sha = String(check?.head_sha ?? req.body?.sha ?? '').trim();
+          if (sha) candidates = await findGithubPullRequestsForCommit({ repository: repo.data, sha, installationId }).catch(() => []);
+        }
+        const candidateRows = Array.isArray(candidates) ? candidates : candidates ? [candidates] : [];
+        const kind = pull || check?.pull_requests?.length || ['check_run', 'check_suite', 'status'].includes(event) ? 'pullRequest' : 'issue';
+        const refs = (await Promise.all(candidateRows.map((candidate) => findLinkedGithubReferences({ supabase, workspaceId: row.data.workspace_id, repositoryId, githubId: candidate.id, nodeId: candidate.node_id, number: candidate.number, resourceKind: kind })))).flat().filter((reference, index, array) => array.findIndex((item) => item.id === reference.id) === index);
+        for (const reference of refs) {
+          try {
+            const parsed = parseGithubUrl(reference.external_url);
+            const token = await createInstallationToken({ installationId });
+            const resolved = await resolveGithubMetadata(parsed, { accessToken: token.token, approvedRepository: repo.data });
+            const metadata = { ...reference.metadata, ...resolved.metadata };
+            const updated = await supabase.from('external_references').update({ metadata, access_status: resolved.accessStatus, external_id: `${metadata.githubRepositoryId}:${reference.external_type}:${metadata.githubId ?? metadata.number}`, external_identity: `github:${metadata.githubRepositoryId}:${reference.external_type}:${metadata.githubId ?? metadata.number}`, last_resolved_at: now, updated_at: now }).eq('id', reference.id).eq('workspace_id', row.data.workspace_id).select('id, workspace_id, provider, external_type, metadata, access_status').single();
+            if (!updated.error) await reconcileGithubAttention({ supabase, workspaceId: row.data.workspace_id, reference: { ...reference, ...updated.data, metadata, access_status: resolved.accessStatus }, eventTime: now });
+          } catch (error) {
+            const accessStatus = error instanceof GithubProviderError && ['not_found', 'inaccessible', 'revoked'].includes(error.accessStatus) ? 'inaccessible' : 'error';
+            await supabase.from('external_references').update({ access_status: accessStatus, updated_at: now }).eq('id', reference.id).eq('workspace_id', row.data.workspace_id);
+          }
+        }
+      }
+    }
+    if (eventRecord.data?.id) await supabase.from('integration_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('id', eventRecord.data.id);
+    await writeWorkspaceAuditLog({ workspaceId: row.data.workspace_id, actorUserId: row.data.installed_by_user_id, action: 'github_webhook_delivery_processed', targetType: 'github_webhook', targetId: deliveryId, metadata: { event, action, repository_id: repositoryId || null } });
+    res.status(202).json({ accepted: true });
+  } catch (error) {
+    if (eventRecordId) await supabase.from('integration_webhook_events').update({ status: 'failed', processed_at: new Date().toISOString(), error_code: 'safe_processing_failure' }).eq('id', eventRecordId);
+    return res.status(202).json({ accepted: true });
+  }
 });
 
 app.get('/api/integrations/figma/status', authMiddleware, rateLimit('read'), async (req, res) => {
@@ -7128,6 +7366,23 @@ const externalTargetTables = {
   reminder: 'reminders',
 };
 
+const transferInboxExternalReferences = async ({ workspaceId, inboxId, targetType, targetId, userId }) => {
+  const sourceLinks = await supabase.from('external_reference_links').select('external_reference_id, sources, link_metadata').eq('workspace_id', workspaceId).eq('target_type', 'intake').eq('target_id', inboxId);
+  if (sourceLinks.error) throw sourceLinks.error;
+  for (const source of sourceLinks.data ?? []) {
+    const existing = await supabase.from('external_reference_links').select('id, sources').eq('workspace_id', workspaceId).eq('external_reference_id', source.external_reference_id).eq('target_type', targetType).eq('target_id', targetId).maybeSingle();
+    if (existing.error) throw existing.error;
+    const sources = Array.from(new Set([...(existing.data?.sources ?? []), ...(source.sources ?? []), 'conversion']));
+    if (existing.data) {
+      const updated = await supabase.from('external_reference_links').update({ sources }).eq('id', existing.data.id).eq('workspace_id', workspaceId);
+      if (updated.error) throw updated.error;
+    } else {
+      const inserted = await supabase.from('external_reference_links').insert({ workspace_id: workspaceId, external_reference_id: source.external_reference_id, target_type: targetType, target_id: targetId, created_by_user_id: userId, sources, link_metadata: source.link_metadata ?? {} });
+      if (inserted.error && inserted.error.code !== '23505') throw inserted.error;
+    }
+  }
+};
+
 const ensureExternalTarget = async ({ workspaceId, targetType, targetId }) => {
   const table = externalTargetTables[targetType];
   if (!table || !targetId) return false;
@@ -7147,6 +7402,85 @@ const getFigmaConnectionForReference = async ({ workspaceId }) => {
   if (!accessToken) return null;
   return { ...result.data, access_token_encrypted: accessToken };
 };
+
+const getGithubConnectionForReference = async ({ workspaceId, reference, parsed }) => {
+  const installationResult = await supabase.from('github_installations').select('id, installation_id, status').eq('workspace_id', workspaceId).maybeSingle();
+  if (installationResult.error) throw installationResult.error;
+  if (!installationResult.data || installationResult.data.status !== 'active') return null;
+  const target = parsed ?? parseGithubUrl(reference?.external_url);
+  const repositoryResult = await supabase.from('github_repositories').select('id, github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).ilike('owner_login', target.owner).ilike('name', target.repository).maybeSingle();
+  if (repositoryResult.error) throw repositoryResult.error;
+  if (!repositoryResult.data) {
+    const error = new GithubProviderError('repository_not_approved');
+    throw error;
+  }
+  const token = await createInstallationToken({ installationId: installationResult.data.installation_id });
+  return { id: installationResult.data.id, access_token_encrypted: token.token, approvedRepository: repositoryResult.data };
+};
+
+const getConnectionForExternalReference = async (args) => args.provider === 'github' ? getGithubConnectionForReference(args) : getFigmaConnectionForReference(args);
+const requireExternalReferenceEdit = async ({ userId, workspaceId, targetType, targetId }) => {
+  const access = await requireWorkspaceAccess(userId, workspaceId, 'member');
+  if (!await ensureExternalTarget({ workspaceId, targetType, targetId })) {
+    const error = new Error('Target object not found'); error.statusCode = 404; throw error;
+  }
+  return access;
+};
+const assertGithubReferenceApproved = async ({ workspaceId, referenceId }) => {
+  const reference = await supabase.from('external_references').select('id, provider, external_type, metadata, normalized_url, external_url, access_status').eq('workspace_id', workspaceId).eq('id', referenceId).maybeSingle();
+  if (reference.error) throw reference.error;
+  if (!reference.data) { const error = new Error('External reference not found'); error.statusCode = 404; throw error; }
+  if (reference.data.provider !== 'github') return reference.data;
+  const repoId = reference.data.metadata?.githubRepositoryId;
+  const parsed = parseGithubUrl(reference.data.external_url);
+  const repo = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name').eq('workspace_id', workspaceId).eq('github_repository_id', String(repoId ?? '')).maybeSingle();
+  if (repo.error) throw repo.error;
+  if (!repo.data || repo.data.owner_login.toLowerCase() !== parsed.owner.toLowerCase() || repo.data.name.toLowerCase() !== parsed.repository.toLowerCase()) { const error = new GithubProviderError('repository_not_approved'); throw error; }
+  return reference.data;
+};
+
+app.get('/api/integrations/github/repositories', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const installation = await supabase.from('github_installations').select('status').eq('workspace_id', workspaceId).maybeSingle();
+    if (installation.error) throw installation.error;
+    if (!installation.data || installation.data.status !== 'active') return res.json([]);
+    const result = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch, last_synced_at').eq('workspace_id', workspaceId).order('full_name').limit(100);
+    if (result.error) throw result.error;
+    res.json(result.data ?? []);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/github/search', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const repositoryId = String(req.query?.repositoryId ?? '').trim();
+    const type = String(req.query?.type ?? '').trim();
+    const query = String(req.query?.query ?? '').trim();
+    if (!repositoryId || !['issue', 'pull_request'].includes(type)) return res.status(400).json({ error: 'repositoryId and a valid type are required.' });
+    if (query && query.length < 2) return res.status(400).json({ error: 'Search requires at least two characters.' });
+    const repo = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name').eq('workspace_id', workspaceId).eq('github_repository_id', repositoryId).maybeSingle();
+    if (repo.error) throw repo.error;
+    if (!repo.data) return res.status(404).json({ error: 'Repository access changed.' });
+    const installation = await supabase.from('github_installations').select('installation_id, status').eq('workspace_id', workspaceId).maybeSingle();
+    if (installation.error) throw installation.error;
+    if (!installation.data || installation.data.status !== 'active') return res.status(409).json({ error: 'GitHub is not connected.' });
+    const results = await searchGithubWork({ repository: repo.data, type, query, state: String(req.query?.state ?? 'open'), limit: req.query?.limit, installationId: installation.data.installation_id });
+    res.json(results);
+  } catch (error) { return res.status(error instanceof GithubProviderError ? 502 : (error.statusCode || 500)).json({ error: error instanceof GithubProviderError ? githubSafeMessage(error) : (error.message || 'GitHub search failed.') }); }
+});
+
+app.get('/api/integrations/github/attention', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const targetType = String(req.query?.targetType ?? '').trim() || null;
+    const targetId = String(req.query?.targetId ?? '').trim() || null;
+    res.json(await listGithubAttention({ supabase, workspaceId, targetType, targetId }));
+  } catch (error) { return respondWithError(res, error); }
+});
 
 const requireFigmaCapability = async ({ userId, workspaceId, capability, targetType = null, targetId = null }) => {
   const minimumRole = getFigmaCapabilityMinimumRole(capability);
@@ -7169,7 +7503,7 @@ app.post('/api/integrations/figma/privacy/accept', authMiddleware, rateLimit('wr
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'manage_connection' });
-    const result = await supabase.from('figma_workspace_settings').upsert({ workspace_id: workspaceId, preview_sharing_accepted: true, preview_sharing_policy_version: '2026-07-20', preview_sharing_accepted_by: req.authUser.id, preview_sharing_accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select('*').single();
+    const result = await supabase.from('figma_workspace_settings').upsert({ workspace_id: workspaceId, preview_sharing_accepted: true, preview_sharing_policy_version: '2026-07-20', preview_sharing_accepted_by: req.authUser.id, preview_sharing_accepted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).select('workspace_id, preview_sharing_accepted, preview_sharing_policy_version, preview_sharing_accepted_by, preview_sharing_accepted_at, updated_at').single();
     if (result.error) throw result.error;
     await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_privacy_disclosure_accepted', targetType: 'workspace', targetId: workspaceId, metadata: { policy_version: '2026-07-20' } });
     res.json(result.data);
@@ -7206,7 +7540,7 @@ app.post('/api/external-references/:id/resolve', authMiddleware, rateLimit('figm
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
-    const reference = await resolveExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), requestedByUserId: req.authUser.id, getConnection: getFigmaConnectionForReference });
+    const reference = await resolveExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), requestedByUserId: req.authUser.id, getConnection: getConnectionForExternalReference });
     await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'external_reference_resolved', targetType: 'external_reference', targetId: reference.id, metadata: { provider: reference.provider, access_status: reference.access_status } });
     res.json(reference);
   } catch (error) {
@@ -7219,9 +7553,18 @@ app.post('/api/external-references/:id/links', authMiddleware, rateLimit('write'
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const targetType = String(req.body?.target_type ?? '').trim();
     const targetId = String(req.body?.target_id ?? '').trim();
-    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'link_reference', targetType, targetId });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType, targetId });
+    const referenceForLink = await assertGithubReferenceApproved({ workspaceId, referenceId: String(req.params.id) });
     const source = String(req.body?.source ?? 'manual').trim();
-    const link = await linkExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), targetType, targetId, source, createdByUserId: req.authUser.id, ensureTarget: ensureExternalTarget });
+    let linkMetadata = req.body?.link_metadata && typeof req.body.link_metadata === 'object' ? req.body.link_metadata : null;
+    if (referenceForLink.provider === 'github' && referenceForLink.external_type === 'repository') {
+      linkMetadata = { role: linkMetadata?.role === 'supporting' ? 'supporting' : 'primary' };
+    }
+    const link = await linkExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), targetType, targetId, source, linkMetadata, createdByUserId: req.authUser.id, ensureTarget: ensureExternalTarget });
+    if (linkMetadata?.role === 'primary') {
+      const primary = await supabase.rpc('set_primary_external_reference_link', { p_workspace_id: workspaceId, p_link_id: link.id });
+      if (primary.error) throw primary.error;
+    }
     const referenceProvider = await supabase.from('external_references').select('provider').eq('workspace_id', workspaceId).eq('id', String(req.params.id)).maybeSingle();
     await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: referenceProvider.data?.provider === 'figma' ? 'figma_design_linked' : 'external_reference_linked', targetType, targetId, metadata: { source } });
     res.status(201).json(link);
@@ -7236,10 +7579,10 @@ app.delete('/api/external-references/:id/links/:linkId', authMiddleware, rateLim
     const linkLookup = await supabase.from('external_reference_links').select('target_type, target_id').eq('workspace_id', workspaceId).eq('external_reference_id', String(req.params.id)).eq('id', String(req.params.linkId)).maybeSingle();
     if (linkLookup.error) throw linkLookup.error;
     if (!linkLookup.data || !(await ensureExternalTarget({ workspaceId, targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id }))) return res.status(404).json({ error: 'External reference link not found' });
-    await requireFigmaCapability({ userId: req.authUser.id, workspaceId, capability: 'unlink_reference', targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id });
     const source = String(req.query?.source ?? '').trim() || null;
     const result = await unlinkExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), linkId: String(req.params.linkId), source });
-    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'figma_design_unlinked', targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id, metadata: { source: source || 'all' } });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'external_reference_unlinked', targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id, metadata: { source: source || 'all' } });
     res.json(result);
   } catch (error) {
     return respondWithError(res, error);
@@ -7263,7 +7606,7 @@ app.get('/api/external-references/search', authMiddleware, rateLimit('read'), as
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
-    res.json(await searchExternalReferences({ supabase, workspaceId, query: req.query?.query ?? '', limit: req.query?.limit }));
+    res.json(await searchExternalReferences({ supabase, workspaceId, provider: req.query?.provider, query: req.query?.query ?? '', limit: req.query?.limit }));
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -7724,6 +8067,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
+      await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'task', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: createdTask,
@@ -7790,6 +8134,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
+      await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'note', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
@@ -8020,6 +8365,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           .select(inboxItemSelectColumns)
           .single();
         if (inboxUpdate.error) throw inboxUpdate.error;
+        await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: existingProject.id, userId: req.authUser.id });
         return res.json({
           inbox_item: mapInboxItemResponse(inboxUpdate.data),
           created: existingProject,
@@ -8066,6 +8412,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
+      await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
@@ -9705,7 +10052,7 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
   const noteIds = [...new Set((noteLinksResult.data ?? []).map((row) => row.note_id).filter(Boolean))];
   const notesResult =
     noteIds.length > 0
-      ? await supabase.from('notes').select('id, title, updated_at, content_html, content').eq('workspace_id', workspaceId).in('id', noteIds)
+      ? await supabase.from('notes').select('id, title, updated_at, preview').eq('workspace_id', workspaceId).in('id', noteIds)
       : { data: [], error: null };
   if (notesResult.error) throw notesResult.error;
   const noteMap = new Map((notesResult.data ?? []).map((note) => [note.id, note]));
@@ -12713,7 +13060,7 @@ app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async
     if (noteIds.length > 0) {
       const notesResult = await supabase
         .from('notes')
-        .select('id, title, content, content_html, updated_at')
+        .select('id, title, preview, updated_at')
         .eq('workspace_id', workspaceId)
         .in('id', noteIds);
       if (notesResult.error) throw notesResult.error;
@@ -12724,7 +13071,6 @@ app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async
       .map((row) => {
         const note = noteById.get(row.note_id);
         if (!note) return null;
-        const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '');
         return {
           id: row.id,
           note_id: row.note_id,
@@ -12732,7 +13078,7 @@ app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async
           note: {
             id: note.id,
             title: note.title || 'Untitled note',
-            preview: htmlToPlainText(previewSource).slice(0, 160),
+            preview: String(note.preview ?? '').slice(0, 160),
             updated_at: note.updated_at ?? null,
           },
         };
@@ -12845,13 +13191,12 @@ app.post('/api/projects/:id/note-links', authMiddleware, rateLimit('write'), asy
 
     const noteResult = await supabase
       .from('notes')
-      .select('id, title, content, content_html, updated_at')
+      .select('id, title, preview, updated_at')
       .eq('workspace_id', workspaceId)
       .eq('id', noteId)
       .single();
     if (noteResult.error) throw noteResult.error;
     const note = noteResult.data;
-    const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '');
 
     res.json({
       id: data.id,
@@ -12860,7 +13205,7 @@ app.post('/api/projects/:id/note-links', authMiddleware, rateLimit('write'), asy
       note: {
         id: note.id,
         title: note.title || 'Untitled note',
-        preview: htmlToPlainText(previewSource).slice(0, 160),
+        preview: String(note.preview ?? '').slice(0, 160),
         updated_at: note.updated_at ?? null,
       },
     });
@@ -12947,13 +13292,12 @@ app.post('/api/teams/:teamId/notes', authMiddleware, rateLimit('write'), async (
 
     const noteResult = await supabase
       .from('notes')
-      .select('id, title, content, content_html, updated_at')
+      .select('id, title, preview, updated_at')
       .eq('workspace_id', workspaceId)
       .eq('id', noteId)
       .single();
     if (noteResult.error) throw noteResult.error;
     const note = noteResult.data;
-    const previewSource = note.content_html || plainTextToParagraphHtml(note.content ?? '');
 
     res.json({
       id: data.id,
@@ -12962,7 +13306,7 @@ app.post('/api/teams/:teamId/notes', authMiddleware, rateLimit('write'), async (
       note: {
         id: note.id,
         title: note.title || 'Untitled note',
-        preview: htmlToPlainText(previewSource).slice(0, 160),
+        preview: String(note.preview ?? '').slice(0, 160),
         updated_at: note.updated_at ?? null,
       },
     });
@@ -13120,7 +13464,7 @@ app.get('/api/teams/:teamId/overview', authMiddleware, rateLimit('read'), async 
     const notesResult = noteIds.length
       ? await supabase
           .from('notes')
-          .select('id, workspace_id, user_id, updated_by, title, content, content_html, section_id, parent_id, updated_at, created_at')
+          .select('id, workspace_id, user_id, updated_by, title, preview, section_id, parent_id, updated_at, created_at')
           .eq('workspace_id', workspaceId)
           .in('id', noteIds)
       : { data: [], error: null };
@@ -13134,7 +13478,7 @@ app.get('/api/teams/:teamId/overview', authMiddleware, rateLimit('read'), async 
         return {
           id: note.id,
           title: note.title || 'Untitled note',
-          preview: htmlToPlainText(note.content_html || plainTextToParagraphHtml(note.content ?? '')).slice(0, 160),
+          preview: String(note.preview ?? '').slice(0, 160),
           created_by: note.user_id ?? null,
           updated_by: note.updated_by ?? null,
           linked_project: link.project_id ? { id: link.project_id, title: projectById.get(link.project_id)?.name ?? 'Untitled project' } : null,
@@ -13752,7 +14096,7 @@ app.get('/api/teams/:teamId/notes', authMiddleware, rateLimit('read'), async (re
     const notesResult = noteIds.length
       ? await supabase
           .from('notes')
-          .select('id, workspace_id, user_id, updated_by, title, content, content_html, section_id, parent_id, created_at, updated_at')
+          .select('id, workspace_id, user_id, updated_by, title, preview, section_id, parent_id, created_at, updated_at')
           .eq('workspace_id', workspaceId)
           .in('id', noteIds)
       : { data: [], error: null };
@@ -13768,7 +14112,7 @@ app.get('/api/teams/:teamId/notes', authMiddleware, rateLimit('read'), async (re
         return {
           id: note.id,
           title: note.title || 'Untitled note',
-          preview: htmlToPlainText(note.content_html || plainTextToParagraphHtml(note.content ?? '')).slice(0, 160),
+          preview: String(note.preview ?? '').slice(0, 160),
           created_by: note.user_id ?? null,
           updated_by: note.updated_by ?? null,
           linked_project: project ? { id: project.id, title: project.name ?? 'Untitled project' } : null,
@@ -15737,9 +16081,9 @@ async function searchWorkspaceContent({
   const [notesResult, projectsResult, tasksResult, eventsResult, remindersResult, inboxResult, teamsResult, membersResult, workspaceResult] = await Promise.all([
     supabase
       .from('notes')
-      .select('id, title, content, content_html, mode, updated_at, created_at')
+      .select('id, title, preview, mode, updated_at, created_at')
       .eq('workspace_id', workspaceId)
-      .or(`title.ilike.${like},content.ilike.${like}`)
+      .or(`title.ilike.${like},content.ilike.${like},content_html.ilike.${like}`)
       .order('updated_at', { ascending: false })
       .limit(25),
     supabase
@@ -15823,7 +16167,7 @@ async function searchWorkspaceContent({
   if (usersResult.error) throw usersResult.error;
 
   const notes = (notesResult.data ?? []).map((row) => {
-    const preview = truncatePreview(htmlToPlainText(row.content_html || row.content || ''), 80);
+    const preview = truncatePreview(String(row.preview ?? ''), 80);
     return {
       type: 'note',
       id: row.id,
@@ -15840,7 +16184,7 @@ async function searchWorkspaceContent({
         row.title,
         normalizedQuery,
         preview,
-        normalizeSearchTerm(row.content || row.content_html || '').includes(normalizedQuery)
+        normalizeSearchTerm(row.preview || '').includes(normalizedQuery)
       ),
     };
   });
@@ -16748,14 +17092,12 @@ app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
     const { data, error } = await supabase
       .from('notes')
-      .select(
-        noteSelectColumns
-      )
+      .select(noteSummarySelectColumns)
       .eq('workspace_id', workspaceId)
       .limit(500);
 
     if (error) throw error;
-    const mapped = (data ?? []).map((row) => mapNoteResponse(row));
+    const mapped = data ?? [];
     const tree = buildNotesTree(mapped);
     const flat = flattenNotesTree(tree, []);
     res.json({ notes: flat, tree });

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test integrations/external-references.test.js integrations/external-change-awareness.test.js integrations/figma/*.test.js mcp/*.test.js"
+    "test": "node --test integrations/external-references.test.js integrations/external-change-awareness.test.js integrations/figma/*.test.js integrations/github/*.test.js mcp/*.test.js request-instrumentation.test.js egress-regression.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

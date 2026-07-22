@@ -3,6 +3,8 @@ import {
   BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ChevronsDown,
   ChevronsUp,
   CircleAlert,
@@ -26,6 +28,7 @@ import {
   Hash,
   Info,
   Inbox,
+  MoreHorizontal,
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -57,6 +60,7 @@ import { ModalCloseButton } from '../Common/ModalCloseButton';
 import authService from '../../services/auth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegrationPage';
+import { GithubIntegrationCard } from './GithubIntegrationCard';
 
 type UserPreferences = {
   weekStartsOn: 'sunday' | 'monday';
@@ -175,6 +179,7 @@ type McpConnection = {
   client_name: string;
   status: 'active' | 'revoked' | 'expired';
   expires_at: string;
+  created_at?: string | null;
   last_used_at?: string | null;
   scopes: string[];
   workspaces: Array<{ id: string; name: string }>;
@@ -339,6 +344,23 @@ const formatIntegrationDate = (value?: string | null) => {
     month: 'short',
     day: 'numeric',
   });
+};
+
+const MCP_WRITE_PERMISSION_ROWS = [
+  { scope: 'intake:write', label: 'Intake' },
+  { scope: 'tasks:write', label: 'Tasks' },
+  { scope: 'notes:write', label: 'Notes' },
+  { scope: 'daily:write', label: 'Today' },
+  { scope: 'projects:write', label: 'Projects' },
+] as const;
+
+const MCP_READ_SCOPE_LABELS: Record<string, string> = {
+  'workspace:read': 'Workspace',
+  'projects:read': 'projects',
+  'tasks:read': 'tasks',
+  'notes:read': 'notes',
+  'calendar:read': 'calendar',
+  'daily:read': 'today',
 };
 
 const shortcutSections: Array<{
@@ -883,6 +905,9 @@ export const SettingsWindow = () => {
   const [mcpConnectionError, setMcpConnectionError] = useState<string | null>(null);
   const [mcpConnectionActionId, setMcpConnectionActionId] = useState<string | null>(null);
   const [mcpScopeActionId, setMcpScopeActionId] = useState<string | null>(null);
+  const [expandedMcpConnectionId, setExpandedMcpConnectionId] = useState<string | null>(null);
+  const [openMcpConnectionMenuId, setOpenMcpConnectionMenuId] = useState<string | null>(null);
+  const [openMcpPermissionsId, setOpenMcpPermissionsId] = useState<string | null>(null);
   const [accountSessions, setAccountSessions] = useState<AccountSessionRow[]>([]);
   const [isLoadingAccountSessions, setIsLoadingAccountSessions] = useState(false);
   const [accountSessionsError, setAccountSessionsError] = useState<string | null>(null);
@@ -1823,6 +1848,42 @@ export const SettingsWindow = () => {
 
   const canManageWorkspace = workspaceUserRole === 'owner' || workspaceUserRole === 'admin';
   const canUseWorkspaceIntegrations = workspaceUserRole !== 'viewer';
+
+  useEffect(() => {
+    if (!openMcpConnectionMenuId) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest('[data-mcp-menu]')) {
+        setOpenMcpConnectionMenuId(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMcpConnectionMenuId(null);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openMcpConnectionMenuId]);
+
+  useEffect(() => {
+    if (!openMcpPermissionsId) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest('[data-mcp-permissions]')) {
+        setOpenMcpPermissionsId(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenMcpPermissionsId(null);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openMcpPermissionsId]);
 
   useEffect(() => {
     const nextWorkspaceId = activeWorkspace?.id ?? null;
@@ -4462,33 +4523,30 @@ export const SettingsWindow = () => {
                         Connected
                       </h3>
                       <div className={settingsTheme.sectionRows}>
-                        <div className="flex items-center gap-3 px-4 py-3">
+                        <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><FigmaMark /></span>
-                          <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma</p><p className={settingsTheme.help}>Attach designs to Ledger work and preview them without leaving your workspace.</p><p className={settingsTheme.sectionStatus + ' mt-1'}>{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</p></div>
+                          <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Attach designs to Ledger work and preview them without leaving your workspace.</p></div>
                           <button type="button" onClick={() => setFigmaDetailOpen(true)} className={figmaStatus.status === 'connected' ? settingsTheme.controlButtonNeutral : 'h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white hover:bg-[var(--ledger-accent-hover)]'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
                         </div>
-                        <div className="flex items-center gap-3 px-4 py-3">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#4A154B]/10 text-[#611f69] dark:text-[#E01E5A]">
+                        <div className="flex items-center gap-3 px-4 py-2.5">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]">
                             <SlackMark />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className={settingsTheme.label}>Slack</p>
-                            <p className={settingsTheme.help}>
-                              Save Slack messages to Intake.
-                            </p>
-                            <p className={settingsTheme.sectionStatus + ' mt-1'}>
-                              {isLoadingSlackStatus
-                                ? 'Checking status'
-                                : slackStatus?.connected
-                                ? `Connected to ${slackStatus.team_name || 'Slack'}${
-                                    slackStatus.updated_at
-                                      ? ` · Updated ${formatIntegrationDate(
-                                          slackStatus.updated_at
-                                        )}`
-                                      : ''
-                                  }`
-                                : 'Not connected'}
-                            </p>
+                            <p className={settingsTheme.label}>Slack <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">
+                                {isLoadingSlackStatus
+                                  ? 'Checking status'
+                                  : slackStatus?.connected
+                                  ? `Connected to ${slackStatus.team_name || 'Slack'}${
+                                      slackStatus.updated_at
+                                        ? ` · Updated ${formatIntegrationDate(
+                                            slackStatus.updated_at
+                                          )}`
+                                        : ''
+                                    }`
+                                  : 'Not connected'}
+                            </span></p>
+                            <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Save Slack messages to Intake.</p>
                           </div>
 
                           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -4524,34 +4582,32 @@ export const SettingsWindow = () => {
                             )}
                           </div>
                         </div>
+                        <GithubIntegrationCard workspaceId={activeWorkspaceId} canManage={canManageWorkspace} />
 
-                        <div className="flex items-center gap-3 px-4 py-3">
+                        <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
                             <Globe2 size={16} />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className={settingsTheme.label}>Browser Extension</p>
-                            <p className={settingsTheme.help}>
-                              Capture links, selected text, and quick notes from Chrome.
-                            </p>
-                            <p className={settingsTheme.sectionStatus + ' mt-1'}>
-                              {isLoadingExtensionTokenStatus
-                                ? 'Checking status'
-                                : extensionTokenStatus?.exists
-                                ? [
-                                    'Token active',
-                                    extensionTokenStatus.last_used_at
-                                      ? `Last used ${
-                                          formatIntegrationDate(
-                                            extensionTokenStatus.last_used_at
-                                          ) ?? 'recently'
-                                        }`
-                                      : null,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' · ')
-                                : 'No token created'}
-                            </p>
+                            <p className={settingsTheme.label}>Browser Extension <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">
+                                {isLoadingExtensionTokenStatus
+                                  ? 'Checking status'
+                                  : extensionTokenStatus?.exists
+                                  ? [
+                                      'Token active',
+                                      extensionTokenStatus.last_used_at
+                                        ? `Last used ${
+                                            formatIntegrationDate(
+                                              extensionTokenStatus.last_used_at
+                                            ) ?? 'recently'
+                                          }`
+                                        : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')
+                                  : 'No token created'}
+                            </span></p>
+                            <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Capture links, selected text, and quick notes from Chrome.</p>
                           </div>
 
                           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -4608,17 +4664,67 @@ export const SettingsWindow = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-start gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]"><Plug2 size={16} /></span>
+                        <div className="flex items-start gap-3 px-4 py-2.5">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]" aria-hidden="true">
+                            <img src="/mcp-icons/mpc.svg" alt="" className="h-5 w-5 dark:invert" />
+                          </span>
                           <div className="min-w-0 flex-1">
                             <p className={settingsTheme.label}>MCP connections</p>
-                            <p className={settingsTheme.help}>Read-only AI access to one explicitly approved workspace.</p>
-                            {isLoadingMcpConnections ? <p className={settingsTheme.sectionStatus + ' mt-1'}>Checking connections…</p> : mcpConnections.filter((connection) => connection.status === 'active').length === 0 ? <p className={settingsTheme.sectionStatus + ' mt-1'}>No active connections</p> : <div className="mt-2 space-y-2">{mcpConnections.filter((connection) => connection.status === 'active').map((connection) => <div key={connection.id} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--ledger-surface-muted)] px-3 py-2"><div className="min-w-0"><p className={settingsTheme.label}>{connection.client_name}</p><p className={settingsTheme.help}>{connection.workspaces[0]?.name ?? 'Workspace'} · {connection.scopes.some((scope) => scope.endsWith(':write')) ? 'Read + write access' : 'Read only'}{connection.last_used_at ? ` · Last used ${formatIntegrationDate(connection.last_used_at) ?? 'recently'}` : ''}</p></div><div className="flex shrink-0 items-center gap-1.5"><button type="button" onClick={() => void handleRenameMcpConnection(connection)} disabled={mcpConnectionActionId === connection.id || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral}>{mcpConnectionActionId === connection.id ? 'Saving…' : 'Rename'}</button><button type="button" onClick={() => void handleRevokeMcpConnection(connection.id)} disabled={mcpConnectionActionId === connection.id || !canUseWorkspaceIntegrations} className={settingsTheme.dangerButton}>{mcpConnectionActionId === connection.id ? 'Revoking…' : 'Revoke'}</button></div></div>)}</div>}
-                            {mcpConnections.filter((connection) => connection.status === 'active').map((connection) => {
-                              const writeScopes = connection.scopes.filter((scope) => scope.endsWith(':write'));
-                              const missingWrites = ['intake:write', 'tasks:write', 'notes:write', 'daily:write', 'projects:write'].filter((scope) => !connection.scopes.includes(scope));
-                              return <div key={`${connection.id}-access`} className="mt-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2"><p className={settingsTheme.help}>Can change: {writeScopes.length ? writeScopes.map((scope) => scope.split(':')[0]).join(', ') : 'Nothing yet'}</p><div className="mt-2 flex flex-wrap gap-1.5">{writeScopes.map((scope) => <button key={scope} type="button" onClick={() => void handleRemoveMcpScope(connection, scope)} disabled={Boolean(mcpScopeActionId) || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral}>Remove {scope.split(':')[0]}</button>)}{missingWrites.map((scope) => <button key={scope} type="button" onClick={() => void handleRequestMcpScope(connection, scope)} disabled={Boolean(mcpScopeActionId) || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral}>Add {scope.split(':')[0]}</button>)}</div></div>;
-                            })}
+                            <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Connect AI tools to an explicitly approved Ledger workspace.</p>
+                            {isLoadingMcpConnections ? <p className={settingsTheme.sectionStatus + ' mt-1'}>Checking connections…</p> : mcpConnections.filter((connection) => connection.status === 'active').length === 0 ? <p className={settingsTheme.sectionStatus + ' mt-1'}>No active connections</p> : (
+                              <div className="mt-2 overflow-visible rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                                {mcpConnections.filter((connection) => connection.status === 'active').map((connection) => {
+                                  const isExpanded = expandedMcpConnectionId === connection.id;
+                                  const isMenuOpen = openMcpConnectionMenuId === connection.id;
+                                  const hasWriteAccess = connection.scopes.some((scope) => scope.endsWith(':write'));
+                                  const readAreas = connection.scopes.filter((scope) => scope.endsWith(':read')).map((scope) => MCP_READ_SCOPE_LABELS[scope] ?? scope.split(':')[0]);
+                                  const writeAreas = MCP_WRITE_PERMISSION_ROWS.filter(({ scope }) => connection.scopes.includes(scope)).map(({ label }, index) => index === 0 ? label : label.toLowerCase());
+                                  const provider = connection.client_name.toLowerCase().includes('claude') || connection.client_name.toLowerCase().includes('anthropic') ? 'Anthropic' : connection.client_name.toLowerCase().includes('chatgpt') || connection.client_name.toLowerCase().includes('openai') ? 'OpenAI' : null;
+                                  return <div key={connection.id} className="relative border-b border-[color:var(--ledger-border-subtle)] last:border-b-0">
+                                    <div className="flex min-h-14 cursor-pointer items-center gap-2.5 px-3 py-2.5 transition hover:bg-[var(--ledger-surface-hover)]" onClick={() => { setExpandedMcpConnectionId(isExpanded ? null : connection.id); setOpenMcpConnectionMenuId(null); setOpenMcpPermissionsId(null); }}>
+                                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]" aria-hidden="true">
+                                        {provider === 'Anthropic' ? <img src="/mcp-icons/Claude.svg" alt="" className="h-4 w-4" /> : provider === 'OpenAI' ? <img src="/mcp-icons/Openai.svg" alt="" className="h-4 w-4 dark:invert" /> : <img src="/mcp-icons/mpc.svg" alt="" className="h-5 w-5 dark:invert" />}
+                                      </span>
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex min-w-0 items-center gap-2">
+                                          <p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">{connection.client_name}</p>
+                                          {provider && <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{provider}</span>}
+                                        </div>
+                                        <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">{connection.workspaces[0]?.name ?? 'Workspace'}</p>
+                                      </div>
+                                      <span className="hidden shrink-0 text-[11px] text-[var(--ledger-text-muted)] sm:inline">{hasWriteAccess ? 'Read + write' : 'Read only'}</span>
+                                      <span className="shrink-0 text-[var(--ledger-text-muted)]" aria-hidden="true">{isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
+                                      <div className="relative shrink-0" data-mcp-menu onClick={(event) => event.stopPropagation()}>
+                                        <button type="button" onClick={() => setOpenMcpConnectionMenuId(isMenuOpen ? null : connection.id)} aria-label={`More actions for ${connection.client_name}`} aria-expanded={isMenuOpen} className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><MoreHorizontal size={16} /></button>
+                                        {isMenuOpen && <div className="absolute bottom-8 right-0 z-20 w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[0_12px_30px_rgba(15,23,42,0.14)]">
+                                          <button type="button" onClick={() => { setOpenMcpConnectionMenuId(null); void handleRenameMcpConnection(connection); }} disabled={mcpConnectionActionId === connection.id || !canUseWorkspaceIntegrations} className="block w-full rounded-lg px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50">Rename connection</button>
+                                          <button type="button" onClick={() => { setOpenMcpConnectionMenuId(null); window.alert('Workspace switching is requested by the connected AI tool and requires browser approval.'); }} className="block w-full rounded-lg px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Switch workspace</button>
+                                          <button type="button" onClick={() => { setOpenMcpConnectionMenuId(null); void handleRevokeMcpConnection(connection.id); }} disabled={mcpConnectionActionId === connection.id || !canUseWorkspaceIntegrations} className="block w-full rounded-lg px-2.5 py-2 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50">Revoke connection</button>
+                                        </div>}
+                                      </div>
+                                    </div>
+                                    {isExpanded && <div className="space-y-2.5 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-xs text-[var(--ledger-text-secondary)]">
+                                      <p>View: {readAreas.length ? readAreas.join(', ') : 'none'}</p>
+                                      <p>Change: {writeAreas.length ? writeAreas.join(', ') : 'none'}</p>
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-[var(--ledger-text-muted)]">
+                                        <span>Workspace: <span className="text-[var(--ledger-text-secondary)]">{connection.workspaces[0]?.name ?? 'Workspace'}</span></span>
+                                        <span>Connected {formatIntegrationDate(connection.created_at) ?? 'Unknown'} · {connection.last_used_at ? `Last used ${formatIntegrationDate(connection.last_used_at) ?? 'recently'}` : 'Not used yet'}</span>
+                                      </div>
+                                      <div className="relative" data-mcp-permissions onClick={(event) => event.stopPropagation()}>
+                                        <button type="button" onClick={() => setOpenMcpPermissionsId(openMcpPermissionsId === connection.id ? null : connection.id)} disabled={!canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral + ' h-7 rounded-lg px-2.5 text-[11px]'}>Manage permissions</button>
+                                        {openMcpPermissionsId === connection.id && <div className="absolute bottom-9 left-0 z-20 w-56 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[0_12px_30px_rgba(15,23,42,0.14)]">
+                                          {MCP_WRITE_PERMISSION_ROWS.map(({ scope, label }) => {
+                                            const enabled = connection.scopes.includes(scope);
+                                            const actionId = `${connection.id}:${scope}`;
+                                            return <button key={scope} type="button" role="checkbox" aria-checked={enabled} onClick={() => { if (enabled) { if (window.confirm(`Remove ${label} access from this connection?`)) void handleRemoveMcpScope(connection, scope); } else void handleRequestMcpScope(connection, scope); }} disabled={Boolean(mcpScopeActionId) || !canUseWorkspaceIntegrations} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"><span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border text-[10px] ${enabled ? 'border-[var(--ledger-accent)] bg-[var(--ledger-accent)] text-white' : 'border-[color:var(--ledger-border-strong)]'}`}>{enabled && '✓'}</span><span>{label}</span>{mcpScopeActionId === actionId && <span className="ml-auto text-[10px] text-[var(--ledger-text-muted)]">Opening…</span>}</button>;
+                                          })}
+                                        </div>}
+                                      </div>
+                                    </div>}
+                                  </div>;
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

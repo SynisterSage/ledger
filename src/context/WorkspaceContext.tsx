@@ -48,6 +48,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   const workspaceRefreshRequestRef = useRef(0);
+  const workspaceBootstrapKeyRef = useRef<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -166,6 +167,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [authedRequest, session?.access_token, user]);
 
   useEffect(() => {
+    const bootstrapKey = session?.access_token && user?.id ? `${user.id}:${session.access_token}` : null;
+    if (!bootstrapKey) {
+      workspaceBootstrapKeyRef.current = null;
+      return;
+    }
+    if (workspaceBootstrapKeyRef.current === bootstrapKey) return;
+    workspaceBootstrapKeyRef.current = bootstrapKey;
     void refreshWorkspaces();
   }, [session?.access_token, user]);
 

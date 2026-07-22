@@ -1978,6 +1978,7 @@ export const ProjectsWindow = () => {
             ): row is {
               id: string;
               title?: string;
+              preview?: string;
               content?: string;
               content_html?: string;
               updated_at?: string | null;
@@ -1986,7 +1987,7 @@ export const ProjectsWindow = () => {
           .map((row) => ({
             id: String(row.id),
             title: String(row.title ?? 'Untitled note').trim(),
-            preview: String(row.content ?? row.content_html ?? '')
+            preview: String(row.preview ?? row.content ?? row.content_html ?? '')
               .replace(/<[^>]*>/g, ' ')
               .replace(/\s+/g, ' ')
               .trim()
@@ -2422,9 +2423,10 @@ export const ProjectsWindow = () => {
         );
         const payload = notesPayload as {
           notes?: Array<{
-            id: string;
-            title?: string;
-            content?: string;
+              id: string;
+              title?: string;
+              preview?: string;
+              content?: string;
             content_html?: string;
             updated_at?: string | null;
           }>;
@@ -2435,7 +2437,7 @@ export const ProjectsWindow = () => {
           .map((row) => ({
             id: row.id,
             title: (row.title || 'Untitled note').trim(),
-            preview: String(row.content ?? '')
+            preview: String(row.preview ?? row.content ?? '')
               .replace(/<[^>]*>/g, ' ')
               .replace(/\s+/g, ' ')
               .trim()
@@ -3076,6 +3078,7 @@ export const ProjectsWindow = () => {
     document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       void loadInboxCount();
     }, 10_000);
 
@@ -6776,9 +6779,10 @@ export const ProjectsWindow = () => {
                   {renderProjectProperties()}
                   {renderProjectResources()}
                   {activeWorkspaceId ? (
-                    <LinkedDesignsSection
+                    <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--ledger-text-primary)]">Development</p><LinkedDesignsSection
                       target={{ workspaceId: activeWorkspaceId, targetType: 'project', targetId: selectedProject.id }}
-                    />
+                      canEdit={activeWorkspace?.role !== 'viewer'}
+                    /></div>
                   ) : null}
                 </section>
 
@@ -7330,6 +7334,7 @@ export const ProjectsWindow = () => {
                 placeholder="Capture details, links, blockers, or handoff notes for this task."
                 className="h-48 w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
+              {activeWorkspaceId && taskNotesTask ? <LinkedDesignsSection target={{ workspaceId: activeWorkspaceId, targetType: 'task', targetId: taskNotesTask.id }} canEdit={activeWorkspace?.role !== 'viewer'} /> : null}
               <div className="mt-4 flex items-center justify-end gap-2">
                 <button
                   onClick={() => {

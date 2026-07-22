@@ -1,11 +1,18 @@
 import { parseFigmaUrl, getFigmaExternalIdentity } from './figma/figma-url-parser.js';
 import { resolveFigmaMetadata, FigmaProviderError } from './figma/figma-adapter.js';
+import { parseGithubUrl, getGithubExternalIdentity } from './github/github-url-parser.js';
+import { resolveGithubMetadata, GithubProviderError } from './github/github-adapter.js';
 
 const adapters = {
   figma: {
     parse: parseFigmaUrl,
     getExternalIdentity: getFigmaExternalIdentity,
     resolveMetadata: resolveFigmaMetadata,
+  },
+  github: {
+    parse: parseGithubUrl,
+    getExternalIdentity: getGithubExternalIdentity,
+    resolveMetadata: resolveGithubMetadata,
   },
 };
 const allowedTargetTypes = new Set([
@@ -54,6 +61,17 @@ export const createOrGetExternalReference = async ({
     .maybeSingle();
   if (existing.error) throw existing.error;
   if (existing.data) return { reference: existing.data, reused: true, parsed };
+  if (provider === 'github') {
+    const candidates = await supabase.from('external_references').select('*').eq('workspace_id', workspaceId).eq('provider', 'github').eq('external_type', parsed.resourceKind).limit(100);
+    if (candidates.error) throw candidates.error;
+    const match = (candidates.data ?? []).find((candidate) => {
+      const metadata = candidate.metadata ?? {};
+      return String(metadata.owner ?? '').toLowerCase() === parsed.owner.toLowerCase()
+        && String(metadata.repository ?? '').toLowerCase() === parsed.repository.toLowerCase()
+        && (parsed.resourceKind === 'repository' || Number(metadata.number) === parsed.number);
+    });
+    if (match) return { reference: match, reused: true, parsed };
+  }
   const insert = await supabase
     .from('external_references')
     .insert({
@@ -62,12 +80,13 @@ export const createOrGetExternalReference = async ({
       external_type: parsed.resourceKind,
       external_id: externalIdentity,
       external_identity: externalIdentity,
-      external_url: url,
+      external_url: parsed.provider === 'github' ? parsed.normalizedUrl : url,
       normalized_url: parsed.normalizedUrl,
       metadata: {
         fileKey: parsed.fileKey,
         ...(parsed.nodeId ? { nodeId: parsed.nodeId } : {}),
         ...(parsed.branchKey ? { branchKey: parsed.branchKey } : {}),
+        ...(parsed.provider === 'github' ? { owner: parsed.owner, repository: parsed.repository, ...(parsed.number ? { number: parsed.number } : {}) } : {}),
       },
       access_status: 'unresolved',
       created_by_user_id: createdByUserId,
@@ -113,6 +132,8 @@ export const resolveExternalReference = async ({
     workspaceId,
     requestedByUserId,
     provider: reference.provider,
+    reference,
+    parsed: getAdapter(reference.provider).parse(reference.external_url),
   });
   if (!connection?.access_token_encrypted) {
     const updated = await supabase
@@ -131,6 +152,7 @@ export const resolveExternalReference = async ({
     const result = await adapter.resolveMetadata(parsed, {
       accessToken: connection.access_token_encrypted,
       connectionId: connection.id,
+      approvedRepository: connection.approvedRepository,
     });
     const mergedMetadata = { ...(reference.metadata ?? {}), ...(result.metadata ?? {}) };
     const nodeType = String(result.metadata?.nodeType ?? '').toUpperCase();
@@ -141,12 +163,18 @@ export const resolveExternalReference = async ({
       COMPONENT: 'component',
       COMPONENT_SET: 'componentSet',
     };
-    const externalType = resourceKindByNodeType[nodeType] ?? reference.external_type;
+    const externalType = reference.provider === 'figma'
+      ? resourceKindByNodeType[nodeType] ?? reference.external_type
+      : parsed.resourceKind;
+    const immutableIdentity = reference.provider === 'github'
+      ? `github:${String(result.metadata?.githubRepositoryId ?? parsed.owner + '/' + parsed.repository)}:${externalType}:${String(result.metadata?.githubId ?? 'repository')}`
+      : null;
     const updated = await supabase
       .from('external_references')
       .update({
         metadata: mergedMetadata,
         external_type: externalType,
+        ...(immutableIdentity ? { external_identity: immutableIdentity, external_id: immutableIdentity } : {}),
         access_status: result.accessStatus,
         last_resolved_at: new Date().toISOString(),
       })
@@ -157,7 +185,7 @@ export const resolveExternalReference = async ({
     if (updated.error) throw updated.error;
     return updated.data;
   } catch (error) {
-    const status = error instanceof FigmaProviderError ? error.accessStatus : 'error';
+    const status = error instanceof FigmaProviderError || error instanceof GithubProviderError ? error.accessStatus : 'error';
     const updated = await supabase
       .from('external_references')
       .update({ access_status: status })
@@ -178,6 +206,7 @@ export const linkExternalReference = async ({
   targetId,
   createdByUserId,
   source = 'manual',
+  linkMetadata = null,
   ensureTarget,
 }) => {
   if (!allowedTargetTypes.has(targetType)) {
@@ -198,7 +227,7 @@ export const linkExternalReference = async ({
   }
   const reference = await supabase
     .from('external_references')
-    .select('id')
+    .select('id, provider, external_type')
     .eq('workspace_id', workspaceId)
     .eq('id', referenceId)
     .maybeSingle();
@@ -207,6 +236,17 @@ export const linkExternalReference = async ({
     const error = new Error('External reference not found');
     error.statusCode = 404;
     throw error;
+  }
+  if (reference.data.provider === 'github') {
+    if (reference.data.external_type === 'repository' && targetType !== 'project') {
+      const error = new Error('GitHub repositories can only be linked to projects'); error.statusCode = 400; throw error;
+    }
+    if (['issue', 'pullRequest'].includes(reference.data.external_type) && !['project', 'task', 'note', 'intake'].includes(targetType)) {
+      const error = new Error('GitHub work can only be linked to projects, tasks, notes, or Intake'); error.statusCode = 400; throw error;
+    }
+    if (linkMetadata?.role && !['primary', 'supporting'].includes(String(linkMetadata.role))) {
+      const error = new Error('Unsupported GitHub repository link role'); error.statusCode = 400; throw error;
+    }
   }
   const existing = await supabase
     .from('external_reference_links')
@@ -219,8 +259,8 @@ export const linkExternalReference = async ({
   if (existing.error) throw existing.error;
   if (existing.data) {
     const sources = Array.from(new Set([...(existing.data.sources ?? ['manual']), source]));
-    if (sources.length !== (existing.data.sources ?? []).length) {
-      const updated = await supabase.from('external_reference_links').update({ sources }).eq('id', existing.data.id).eq('workspace_id', workspaceId).select('*').single();
+    if (sources.length !== (existing.data.sources ?? []).length || linkMetadata) {
+      const updated = await supabase.from('external_reference_links').update({ sources, ...(linkMetadata ? { link_metadata: linkMetadata } : {}) }).eq('id', existing.data.id).eq('workspace_id', workspaceId).select('*').single();
       if (updated.error) throw updated.error;
       return updated.data;
     }
@@ -235,6 +275,7 @@ export const linkExternalReference = async ({
       target_id: targetId,
       created_by_user_id: createdByUserId,
       sources: [source],
+      link_metadata: linkMetadata ?? {},
     })
     .select('*')
     .single();
@@ -297,16 +338,16 @@ export const getExternalReferencesForTarget = async ({
   return links.data ?? [];
 };
 
-export const searchExternalReferences = async ({ supabase, workspaceId, query = '', limit = 30 }) => {
+export const searchExternalReferences = async ({ supabase, workspaceId, provider = null, query = '', limit = 30 }) => {
   let request = supabase
     .from('external_references')
     .select('id, workspace_id, provider, external_type, external_url, normalized_url, metadata, access_status, last_resolved_at, created_at')
     .eq('workspace_id', workspaceId)
-    .eq('provider', 'figma')
     .order('updated_at', { ascending: false })
     .limit(Math.min(Math.max(Number(limit) || 30, 1), 50));
+  if (provider) request = request.eq('provider', String(provider).trim().toLowerCase());
   const trimmed = String(query ?? '').trim();
-  if (trimmed) request = request.or(`normalized_url.ilike.%${trimmed}%,external_url.ilike.%${trimmed}%,metadata->>fileName.ilike.%${trimmed}%,metadata->>nodeName.ilike.%${trimmed}%`);
+  if (trimmed) request = request.or(`normalized_url.ilike.%${trimmed}%,external_url.ilike.%${trimmed}%,metadata->>fileName.ilike.%${trimmed}%,metadata->>nodeName.ilike.%${trimmed}%,metadata->>fullName.ilike.%${trimmed}%,metadata->>title.ilike.%${trimmed}%`);
   const result = await request;
   if (result.error) throw result.error;
   return result.data ?? [];
