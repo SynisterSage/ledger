@@ -69,7 +69,7 @@ export const githubCaptureEventType = ({ event, action, payload = {} }) => {
   }
   if (['check_run', 'check_suite', 'status'].includes(normalizedEvent)) {
     const conclusion = String(payload.check_run?.conclusion ?? payload.check_suite?.conclusion ?? payload.state ?? '').toLowerCase();
-    if (['failure', 'failed', 'error', 'cancelled', 'timed_out', 'action_required'].includes(conclusion)) return 'checks_failing';
+    if (['failure', 'failed', 'error', 'action_required', 'startup_failure'].includes(conclusion)) return 'checks_failing';
   }
   return null;
 };
@@ -111,6 +111,7 @@ export const buildGithubIntakePayload = ({ eventType, repository, object }) => {
     number,
     title,
     state: clean(object?.state, 40) || null,
+    stateReason: clean(object?.state_reason, 80) || null,
     draft: isPullRequest ? Boolean(object?.draft) : null,
     merged: isPullRequest ? Boolean(object?.merged ?? object?.merged_at) : null,
     author: compactPerson(object?.user),

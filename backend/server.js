@@ -30,6 +30,7 @@ import { GITHUB_CAPTURE_EVENT_TYPES, buildGithubIntakePayload, githubCaptureEven
 import { findActiveGithubTasks, githubTaskDescription, projectRepositoryRole } from './integrations/github/github-project-workflows.js';
 import { githubConnectionHealth, githubSafeErrorCode, githubSafeErrorMessage, isStaleGithubEvent } from './integrations/github/github-health.js';
 import { createSupabaseTraceFetch } from './request-instrumentation.js';
+import { getAllowedCorsOrigins, isAllowedCorsOrigin } from './cors-origins.js';
 
 dotenv.config();
 
@@ -37,19 +38,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const allowedCorsOrigins = new Set(
-  [
-    'https://ledgerworkspace.com',
-    'https://www.ledgerworkspace.com',
-    process.env.FRONTEND_URL?.trim(),
-    process.env.PUBLIC_FRONTEND_URL?.trim(),
-    process.env.DEV_FRONTEND_URL?.trim(),
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:4173',
-    'http://127.0.0.1:4173',
-  ].filter((origin) => typeof origin === 'string' && origin.length > 0)
-);
+const allowedCorsOrigins = getAllowedCorsOrigins();
 
 const supabase = createClient(supabaseUrl, supabaseServiceRole, {
   auth: { persistSession: false },
@@ -65,15 +54,9 @@ const captureRawBody = (req, _res, buffer) => {
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || origin === 'null') {
-        return callback(null, true);
-      }
-
-      if (allowedCorsOrigins.has(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error('CORS origin not allowed'));
+      return isAllowedCorsOrigin(origin, allowedCorsOrigins)
+        ? callback(null, true)
+        : callback(new Error('CORS origin not allowed'));
     },
     credentials: true,
   })
@@ -7070,9 +7053,10 @@ const captureGithubWebhookEvent = async ({ workspaceId, eventType, action, repos
     if (existing.data) continue;
     const reference = await createOrUpdateGithubCaptureReference({ workspaceId, objectType, repository, object, userId });
     const intakePayload = reference && objectType !== 'repository' ? buildGithubIntakePayload({ eventType, repository, object }) : null;
+    const lifecycleClosed = ['issue_closed', 'pull_request_closed_without_merge', 'pull_request_merged'].includes(eventType);
     let intakeId = null;
     if (rule.create_intake_item && intakePayload) {
-      const inserted = await supabase.from('inbox_items').insert({ workspace_id: workspaceId, user_id: userId, updated_by: userId, source: 'github', source_provider: 'github', source_id: intakePayload.source_id, source_url: intakePayload.source_url, title: intakePayload.title, body: intakePayload.body, raw_payload: { ...intakePayload.raw_payload, capture_rule_id: rule.id, capture_rule_name: rule.name, suggested_team_id: rule.destination_type === 'team_intake' ? rule.destination_team_id : null }, suggested_type: intakePayload.suggested_type, status: intakePayload.status }).select('id').single();
+      const inserted = await supabase.from('inbox_items').insert({ workspace_id: workspaceId, user_id: userId, updated_by: userId, source: 'github', source_provider: 'github', source_id: intakePayload.source_id, source_url: intakePayload.source_url, title: intakePayload.title, body: intakePayload.body, raw_payload: { ...intakePayload.raw_payload, capture_rule_id: rule.id, capture_rule_name: rule.name, suggested_team_id: rule.destination_type === 'team_intake' ? rule.destination_team_id : null }, suggested_type: intakePayload.suggested_type, status: lifecycleClosed ? 'archived' : intakePayload.status, archived_at: lifecycleClosed ? new Date().toISOString() : null, archived_by: lifecycleClosed ? userId : null }).select('id').single();
       if (inserted.error?.code === '23505') {
         const existingIntake = await supabase.from('inbox_items').select('id').eq('workspace_id', workspaceId).eq('source', 'github').eq('source_id', intakePayload.source_id).maybeSingle();
         if (existingIntake.error) throw existingIntake.error;
@@ -7091,6 +7075,40 @@ const captureGithubWebhookEvent = async ({ workspaceId, eventType, action, repos
     captured += 1;
   }
   return { matched: (rulesResult.data ?? []).length, captured };
+};
+
+const applyGithubLifecycleToLinkedIntake = async ({ workspaceId, reference, metadata, now, updatedBy }) => {
+  const lifecycleState = String(metadata?.state ?? '').trim().toLowerCase();
+  if (!['open', 'closed', 'merged', 'draft'].includes(lifecycleState)) return;
+
+  const intakeLinks = (reference.links ?? []).filter((link) => ['intake', 'inbox'].includes(String(link.target_type ?? '').toLowerCase()) && link.target_id);
+  for (const link of intakeLinks) {
+    const current = await supabase.from('inbox_items').select('id, status, raw_payload').eq('workspace_id', workspaceId).eq('id', link.target_id).maybeSingle();
+    if (current.error) throw current.error;
+    if (!current.data) continue;
+
+    const rawPayload = current.data.raw_payload && typeof current.data.raw_payload === 'object' && !Array.isArray(current.data.raw_payload) ? current.data.raw_payload : {};
+    const update = {
+      raw_payload: {
+        ...rawPayload,
+        github_lifecycle_state: lifecycleState,
+        github_lifecycle_state_reason: metadata?.stateReason ?? null,
+        github_lifecycle_updated_at: metadata?.updatedAt ?? now,
+      },
+      updated_by: updatedBy ?? null,
+      updated_at: now,
+    };
+
+    // Closed/merged external work leaves review only when it has not already
+    // been accepted into a Ledger resource. Converted items retain their own
+    // lifecycle and continue to surface the external state through the link.
+    if (['closed', 'merged'].includes(lifecycleState) && ['unprocessed', 'snoozed'].includes(String(current.data.status ?? ''))) {
+      Object.assign(update, { status: 'archived', archived_at: now, archived_by: updatedBy ?? null, snoozed_until: null });
+    }
+
+    const result = await supabase.from('inbox_items').update(update).eq('workspace_id', workspaceId).eq('id', current.data.id);
+    if (result.error) throw result.error;
+  }
 };
 
 const getApprovedGithubRepository = async (workspaceId, repositoryId) => {
@@ -7503,7 +7521,11 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
             const resolved = await resolveGithubMetadata(parsed, { accessToken: token.token, approvedRepository: repo.data });
             const metadata = { ...reference.metadata, ...resolved.metadata };
             const updated = await supabase.from('external_references').update({ metadata, access_status: resolved.accessStatus, external_id: `${metadata.githubRepositoryId}:${reference.external_type}:${metadata.githubId ?? metadata.number}`, external_identity: `github:${metadata.githubRepositoryId}:${reference.external_type}:${metadata.githubId ?? metadata.number}`, last_resolved_at: now, updated_at: now }).eq('id', reference.id).eq('workspace_id', row.data.workspace_id).select('id, workspace_id, provider, external_type, metadata, access_status').single();
-            if (!updated.error) await reconcileGithubAttention({ supabase, workspaceId: row.data.workspace_id, reference: { ...reference, ...updated.data, metadata, access_status: resolved.accessStatus }, eventTime: now });
+            if (!updated.error) {
+              const updatedReference = { ...reference, ...updated.data, metadata, access_status: resolved.accessStatus };
+              await applyGithubLifecycleToLinkedIntake({ workspaceId: row.data.workspace_id, reference: updatedReference, metadata, now, updatedBy: row.data.installed_by_user_id });
+              await reconcileGithubAttention({ supabase, workspaceId: row.data.workspace_id, reference: updatedReference, eventTime: now });
+            }
           } catch (error) {
             const accessStatus = error instanceof GithubProviderError && ['not_found', 'inaccessible', 'revoked'].includes(error.accessStatus) ? 'inaccessible' : 'error';
             await supabase.from('external_references').update({ access_status: accessStatus, updated_at: now }).eq('id', reference.id).eq('workspace_id', row.data.workspace_id);
@@ -17110,6 +17132,7 @@ async function searchWorkspaceContent({
       workspace_name: workspaceName,
       source_type: 'intake',
       source_id: row.id,
+      provider: row.source_provider ?? row.source ?? null,
       updated_at: row.updated_at ?? row.created_at ?? null,
       icon: 'FileText',
       score: scoreSearchResult(row.title, normalizedQuery, `${row.body ?? ''} ${row.source ?? ''}`, false),
@@ -17133,6 +17156,7 @@ async function searchWorkspaceContent({
       workspace_name: workspaceName,
       source_type: 'external_reference',
       source_id: row.id,
+      provider: 'github',
       external_url: row.normalized_url ?? row.external_url,
       external_type: row.external_type,
       icon: 'Github',

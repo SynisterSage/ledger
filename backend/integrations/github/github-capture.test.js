@@ -31,6 +31,8 @@ test('supported webhook actions map to focused capture event types', () => {
   assert.equal(githubCaptureEventType({ event: 'pull_request', action: 'closed', payload: { pull_request: { merged: false } } }), 'pull_request_closed_without_merge');
   assert.equal(githubCaptureEventType({ event: 'pull_request_review', action: 'submitted', payload: { review: { state: 'changes_requested' } } }), 'changes_requested');
   assert.equal(githubCaptureEventType({ event: 'issues', action: 'edited' }), null);
+  assert.equal(githubCaptureEventType({ event: 'check_suite', action: 'completed', payload: { check_suite: { conclusion: 'cancelled' } } }), null);
+  assert.equal(githubCaptureEventType({ event: 'check_run', action: 'completed', payload: { check_run: { conclusion: 'failure' } } }), 'checks_failing');
 });
 
 test('capture fingerprints are stable for webhook retries', () => {
@@ -49,4 +51,15 @@ test('GitHub Intake payload is compact and keeps canonical metadata', () => {
   assert.equal(payload.raw_payload.githubRepositoryId, '42');
   assert.equal(payload.raw_payload.labels[0], 'bug');
   assert.equal(payload.source_url, 'https://github.com/synistersage/ledger/issues/214');
+});
+
+test('closed GitHub issues preserve lifecycle metadata for Intake', () => {
+  const payload = buildGithubIntakePayload({
+    eventType: 'issue_closed',
+    repository: { id: 42, full_name: 'synistersage/ledger', html_url: 'https://github.com/synistersage/ledger' },
+    object: { id: 214, number: 214, title: 'Lifecycle', state: 'closed', state_reason: 'completed', html_url: 'https://github.com/synistersage/ledger/issues/214' },
+  });
+  assert.equal(payload.raw_payload.state, 'closed');
+  assert.equal(payload.raw_payload.stateReason, 'completed');
+  assert.equal(githubCaptureEventType({ event: 'issues', action: 'closed' }), 'issue_closed');
 });

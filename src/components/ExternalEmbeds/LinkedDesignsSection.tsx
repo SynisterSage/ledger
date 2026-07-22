@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   Check,
-  FileImage,
   FileText,
   Folder,
   ListChecks,
@@ -455,17 +454,43 @@ export function LinkedDesignsSection({
     }
   };
   const linkApprovedRepository = async (repository: (typeof githubRepositories)[number]) => {
-    if (target.targetType !== 'project') return;
+    if (!canEdit || !repository?.github_repository_id) return;
     setBusyId(repository.github_repository_id);
     try {
       const existingRepositoryLinks = links.filter((link) => {
         const reference = (Array.isArray(link.external_references) ? link.external_references[0] : link.external_references) as Reference | undefined;
         return isGithub(reference) && reference?.external_type === 'repository';
       });
-      await api.linkProjectGithubRepository(target.targetId, repository.github_repository_id, existingRepositoryLinks.length ? 'supporting' : 'primary');
+      const alreadyLinked = existingRepositoryLinks.some((link) => {
+        const reference = (Array.isArray(link.external_references) ? link.external_references[0] : link.external_references) as Reference | undefined;
+        return String(reference?.metadata?.githubRepositoryId ?? '') === String(repository.github_repository_id);
+      });
+      if (alreadyLinked) {
+        toast.show('Already attached', { variant: 'info' });
+        setDialogOpen(false);
+        return;
+      }
+
+      if (target.targetType === 'project') {
+        await api.linkProjectGithubRepository(target.targetId, repository.github_repository_id, existingRepositoryLinks.length ? 'supporting' : 'primary');
+      } else {
+        const canonicalUrl = `https://github.com/${repository.full_name}`;
+        let reference = (await api.createExternalReference('github', canonicalUrl)) as Reference;
+        reference = (await api.resolveExternalReference(reference.id)) as Reference;
+        await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
+      }
       setDialogOpen(false);
       await load();
     } catch (error) {
+      if (import.meta.env.DEV) {
+        console.debug('[linked-context] GitHub repository attachment failed', {
+          operation: 'link-github-repository',
+          provider: 'github',
+          targetType: target.targetType,
+          success: false,
+          error: error instanceof Error ? error.message : 'unknown_error',
+        });
+      }
       toast.show(error instanceof Error ? error.message : 'Could not link this repository.', { variant: 'error' });
     } finally {
       setBusyId(null);
@@ -764,7 +789,13 @@ export function LinkedDesignsSection({
             const fileName = referenceFileName(reference!, fallbackFileName);
             const context = github
               ? [
-                  reference?.metadata?.state,
+                  reference?.metadata?.state === 'merged'
+                    ? 'Merged'
+                    : reference?.metadata?.state === 'closed'
+                    ? 'Closed'
+                    : reference?.metadata?.state === 'open'
+                    ? 'Open'
+                    : reference?.metadata?.state,
                   githubMetadata.reviewSummary?.reviewRequestedCount > 0 ? 'Review requested' : '',
                   githubMetadata.reviewSummary?.changesRequestedCount > 0 ? 'Changes requested' : '',
                   githubMetadata.checksSummary?.overallState && githubMetadata.checksSummary?.overallState !== 'none'
@@ -792,12 +823,12 @@ export function LinkedDesignsSection({
                 <div className={compact ? 'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-sm' : 'flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--ledger-surface-muted)]'}>
                   {github ? (
                     <img src="/github-mark.svg" alt="" className="h-4 w-4" />
-                  ) : compact ? (
-                    <FigmaMark size={13} />
-                  ) : preview?.url ? (
-                    <img src={preview.url} alt={title} className="h-full w-full object-cover" />
                   ) : (
-                    <FileImage size={15} className="text-[var(--ledger-text-muted)]" />
+                    <FigmaResourceIcon
+                      url={compact ? null : preview?.url}
+                      alt={title}
+                      size={compact ? 13 : 15}
+                    />
                   )}
                 </div>
                 <button
@@ -1272,5 +1303,27 @@ export function LinkedDesignsSection({
         </div>
       )}
     </section>
+  );
+}
+
+function FigmaResourceIcon({
+  url,
+  alt,
+  size,
+}: {
+  url?: string | null;
+  alt: string;
+  size: number;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (!url || failed) return <FigmaMark size={size} />;
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className="h-full w-full object-cover"
+      onError={() => setFailed(true)}
+    />
   );
 }

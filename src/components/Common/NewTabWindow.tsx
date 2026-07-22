@@ -13,6 +13,7 @@ import {
   type SearchResult,
   useWorkspaceSearch,
 } from '../Search/useWorkspaceSearch';
+import { IntegrationProviderMark, normalizeIntegrationProvider } from './IntegrationProviderMark';
 
 type RecentRoute = ModuleFocusPayload & { kind: ModuleWindowKind };
 
@@ -369,6 +370,13 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
                           <Icon size={13} />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">{result.title}</span>
+                        {normalizeIntegrationProvider(result.provider, result.source_provider) && (
+                          <IntegrationProviderMark
+                            provider={normalizeIntegrationProvider(result.provider, result.source_provider)}
+                            size={13}
+                            className="shrink-0"
+                          />
+                        )}
                         {result.type !== 'command' && <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">{result.type}</span>}
                       </button>
                     </div>

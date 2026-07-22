@@ -25,6 +25,8 @@ export type SearchResult = {
   project_id?: string | null;
   focusDate?: string | null;
   actionId?: string;
+  provider?: string | null;
+  source_provider?: string | null;
 };
 
 export const searchIconMap: Record<SearchResultType, typeof FileText> = {

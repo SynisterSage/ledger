@@ -22,6 +22,8 @@ import {
   Sparkles,
   FilePenLine,
   Clock3,
+  User,
+  Users,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
@@ -44,7 +46,7 @@ import { FigmaMark } from '../Common/FigmaMark';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
-type DestinationType = 'capture' | 'task' | 'note' | 'event' | 'reminder';
+type DestinationType = 'task' | 'note' | 'event' | 'reminder';
 
 type InboxItem = {
   id: string;
@@ -227,6 +229,18 @@ const getStatusLabel = (status: InboxStatus) =>
 const getSourceLabel = (item: InboxItem) => {
   if (item.source === 'slack') return 'Slack';
   return item.source_label || item.source.replace(/_/g, ' ');
+};
+
+const getGithubLifecycleLabel = (item: InboxItem) => {
+  const source = normalizeForSearch(item.source_provider || item.source);
+  if (!source.includes('github')) return null;
+  const raw = getRawPayload(item);
+  const state = normalizeForSearch(findDeepString(raw, ['github_lifecycle_state', 'state', 'status']));
+  if (state === 'closed') return 'Closed';
+  if (state === 'merged') return 'Merged';
+  if (state === 'open') return 'Open';
+  if (state === 'draft') return 'Draft';
+  return null;
 };
 
 const getSourceContext = (item: InboxItem) => {
@@ -478,6 +492,9 @@ const getSearchCorpus = (item: InboxItem) =>
 
 const getItemSourceBucket = (item: InboxItem) => {
   const source = normalizeForSearch(item.source);
+  const provider = normalizeForSearch(item.source_provider);
+  if (provider.includes('figma') || source.includes('figma')) return 'figma';
+  if (provider.includes('github') || source.includes('github')) return 'github';
   if (source.includes('slack')) return 'slack later';
   if (source.includes('email')) return 'email later';
   if (source.includes('calendar') || source.includes('event')) return 'calendar';
@@ -597,6 +614,77 @@ const getTypeDisplayLabel = (item: InboxItem) => {
   return 'Suggested task';
 };
 
+const getNativeObjectTypeLabel = (item: InboxItem): string | null => {
+  const raw = getRawPayload(item);
+  const source = normalizeForSearch(item.source_provider || item.source);
+  const explicitType = normalizeForSearch(
+    findDeepString(raw, [
+      'source_object_type',
+      'object_type',
+      'native_type',
+      'resource_type',
+      'item_type',
+      'github_object_type',
+      'node_type',
+    ])
+  );
+
+  if (source.includes('github')) {
+    if (explicitType.includes('pull') || explicitType.includes('pr')) return 'Pull request';
+    if (explicitType.includes('discussion')) return 'Discussion';
+    if (explicitType.includes('issue') || findDeepString(raw, ['issue_number', 'issue_id', 'issue_url'])) {
+      return 'Issue';
+    }
+    if (findDeepString(raw, ['pull_request_number', 'pull_request_id', 'pull_request_url'])) {
+      return 'Pull request';
+    }
+    return 'Issue';
+  }
+
+  if (source.includes('figma')) {
+    if (explicitType.includes('prototype')) return 'Prototype';
+    if (explicitType.includes('frame')) return 'Frame';
+    if (explicitType.includes('page')) return 'Page';
+    if (explicitType.includes('file') || findDeepString(raw, ['file_key', 'fileKey'])) return 'File';
+    return null;
+  }
+
+  if (source.includes('calendar') || source.includes('event')) {
+    const type = normalizeForSearch(findDeepString(raw, ['calendar_item_type', 'item_type', 'type', 'kind']));
+    if (type.includes('reminder')) return 'Reminder';
+    if (type.includes('event')) return 'Event';
+    return null;
+  }
+  if (source.includes('email')) return 'Email';
+  if (source.includes('form') || source.includes('submission')) return 'Submission';
+  if (source.includes('manual') || source.includes('quick')) return 'Quick capture';
+  if (explicitType && !['capture', 'task', 'note', 'event', 'reminder'].includes(explicitType)) {
+    return titleCase(explicitType);
+  }
+  return null;
+};
+
+const stripRepeatedPreviewMetadata = (
+  value: string,
+  sourceMeta: Array<string | null | undefined>,
+  isGithub: boolean
+) => {
+  const metadata = sourceMeta.filter((part): part is string => Boolean(part)).map((part) => normalizeForSearch(part));
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, index) => {
+      const normalized = normalizeForSearch(line);
+      if (metadata.includes(normalized)) return false;
+      if (isGithub && index === 0 && /\b(issue|pull request|discussion)\b/.test(normalized)) {
+        return false;
+      }
+      return true;
+    })
+    .join('\n');
+};
+
 const GithubMark = ({ size = 13, className = '' }: { size?: number; className?: string }) => (
   <img
     src="/github-mark.svg"
@@ -687,6 +775,7 @@ export default function IntakeWindow() {
   const [draft, setDraft] = useState<IntakeDraftState | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
+  const [activePaneAction, setActivePaneAction] = useState<'primary' | 'archive' | 'delete' | null>(null);
   const [contextMenu, setContextMenu] = useState<IntakeMenuState | null>(null);
   const [filterMenu, setFilterMenu] = useState<MenuAnchorState | null>(null);
   const [displayMenu, setDisplayMenu] = useState<MenuAnchorState | null>(null);
@@ -720,7 +809,7 @@ export default function IntakeWindow() {
   const [selectedCalendarId, setSelectedCalendarId] = useState('');
   const [selectedAssigneeId, setSelectedAssigneeId] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState('');
-  const [destinationType, setDestinationType] = useState<DestinationType>('capture');
+  const [destinationType, setDestinationType] = useState<DestinationType>('task');
   const [showInToday, setShowInToday] = useState(false);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('09:00');
@@ -1247,9 +1336,9 @@ export default function IntakeWindow() {
     if (!selectedItem) return;
     const raw = getRawPayload(selectedItem);
     const suggested = normalizeForSearch(selectedItem.suggested_type || '');
-    const nextDestination: DestinationType = ['capture', 'task', 'note', 'event', 'reminder'].includes(suggested)
+    const nextDestination: DestinationType = ['task', 'note', 'event', 'reminder'].includes(suggested)
       ? suggested as DestinationType
-      : 'capture';
+      : 'task';
     const projectId = selectedItem.suggested_project_id || findDeepString(raw, ['suggested_project_id', 'project_id', 'linked_project_id']) || '';
     const assigneeId = selectedItem.suggested_assignee_id || findDeepString(raw, ['suggested_assignee_id', 'assigned_to_user_id', 'assignee_id', 'owner_id']) || '';
     const teamId = findDeepString(raw, ['suggested_team_id', 'suggested_owner_team_id', 'assigned_to_team_id', 'owner_team_id']) || '';
@@ -1701,6 +1790,7 @@ export default function IntakeWindow() {
     const sourceBits = [
       display.showSource ? getSourceLabel(item) : null,
       display.showStatus ? getStatusLabel(item.status) : null,
+      getGithubLifecycleLabel(item),
       display.showProject ? getItemProjectLabel(item) || null : null,
       display.showAssignee ? getItemAssigneeLabel(item) || getItemTeamLabel(item) || null : null,
       display.showCreated ? formatRelativeTime(item.created_at) : null,
@@ -1947,6 +2037,8 @@ export default function IntakeWindow() {
         'browser',
         'meeting',
         'calendar',
+        'figma',
+        'github',
         'manual',
         'slack later',
         'email later',
@@ -2651,7 +2743,8 @@ export default function IntakeWindow() {
   const selectedFigmaNodeName = findDeepString(selectedFigmaPayload, ['node_name', 'nodeName']);
   const selectedFigmaFileName = findDeepString(selectedFigmaPayload, ['file_name', 'fileName']);
   const selectedItemStatusLabel = selectedItem ? getStatusLabel(selectedItem.status) : '';
-  const selectedItemTypeLabel = selectedItem ? getTypeDisplayLabel(selectedItem) : '';
+  const selectedItemGithubLifecycleLabel = selectedItem ? getGithubLifecycleLabel(selectedItem) : null;
+  const selectedItemNativeTypeLabel = selectedItem ? getNativeObjectTypeLabel(selectedItem) : null;
   const destinationNeedsSchedule = destinationType === 'event' || destinationType === 'reminder';
   const destinationValidationError =
     destinationType === 'event' && (!eventDate || !eventTime)
@@ -2675,7 +2768,8 @@ export default function IntakeWindow() {
           'full_name',
           'repository',
         ]);
-        const number = findDeepString(raw, ['number', 'issue_number', 'pull_request_number']);
+        const rawNumber = findDeepString(raw, ['issue_number', 'pull_request_number', 'number']);
+        const number = rawNumber && /^\d+$/.test(rawNumber) ? rawNumber : '';
         const state = findDeepString(raw, ['state', 'status']);
         const sourceMeta = isGithubSource
           ? [repository, number ? `#${number}` : '', state].filter(Boolean)
@@ -2686,11 +2780,14 @@ export default function IntakeWindow() {
               findDeepString(raw, ['node_name', 'nodeName']),
             ].filter(Boolean)
           : [getSourceContext(selectedItem), selectedItem.author_name].filter(Boolean);
-        const description = cleanSlackText(
-          (isFigmaSource ? findDeepString(raw, ['description', 'text', 'message', 'content']) : selectedItem.body) ||
+        const rawDescription = cleanSlackText(
+          selectedItem.body ||
+            (isFigmaSource ? findDeepString(raw, ['description', 'details', 'text', 'message', 'content', 'node_description', 'nodeDescription']) : null) ||
             findDeepString(raw, ['description', 'text', 'message', 'content']) ||
-            (isFigmaSource ? '' : getItemReason(selectedItem) || '')
+            getItemReason(selectedItem) ||
+            (isFigmaSource ? 'Figma resource linked from this intake item.' : '')
         );
+        const description = stripRepeatedPreviewMetadata(rawDescription, sourceMeta, isGithubSource);
         return { title, sourceMeta, description };
       })()
     : null;
@@ -2748,28 +2845,9 @@ export default function IntakeWindow() {
           return null;
         })()
       : null;
-  const acceptAsCapture = async (item: InboxItem) => {
-    setActiveActionId(item.id);
-    try {
-      const updated = (await api.convertIntakeItem(item.id, {
-        type: 'capture',
-        title: getDisplayTitle(item),
-        body: item.body || null,
-      })) as InboxItem;
-      setItems((current) => current.map((entry) => (entry.id === item.id ? updated : entry)));
-      emitInboxItemsUpdated(item.status === 'unprocessed' ? -1 : 0);
-      toast.show('Kept intake item as a capture.', { variant: 'success' });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not keep capture.';
-      setError(message);
-      toast.show(message, { variant: 'error' });
-    } finally {
-      setActiveActionId(null);
-    }
-  };
   const acceptAsDestination = async (
     item: InboxItem,
-    type: Exclude<DestinationType, 'capture'>
+    type: DestinationType
   ) => {
     setActiveActionId(item.id);
     try {
@@ -2828,13 +2906,17 @@ export default function IntakeWindow() {
       setActiveActionId(null);
     }
   };
+  const runPaneAction = (kind: 'primary' | 'archive' | 'delete', action: () => Promise<void>) => {
+    setActivePaneAction(kind);
+    void action().finally(() => setActivePaneAction(null));
+  };
   const selectedItemPrimaryAction: InspectorAction | null = selectedItem
     ? selectedItem.status === 'archived'
       ? {
           label: 'Restore',
-          onClick: () => void restoreItem(selectedItem),
-          loading: activeActionId === selectedItem.id,
-          disabled: activeActionId === selectedItem.id,
+          onClick: () => runPaneAction('primary', () => restoreItem(selectedItem)),
+          loading: activePaneAction === 'primary',
+          disabled: activePaneAction !== null || activeActionId === selectedItem.id,
         }
       : selectedItem.status === 'converted'
       ? selectedItemOpenAction ?? {
@@ -2844,12 +2926,9 @@ export default function IntakeWindow() {
         }
       : {
           label: 'Accept',
-          onClick: () =>
-            destinationType === 'capture'
-              ? void acceptAsCapture(selectedItem)
-              : void acceptAsDestination(selectedItem, destinationType),
-          loading: activeActionId === selectedItem.id,
-          disabled: Boolean(destinationValidationError) || activeActionId === selectedItem.id,
+          onClick: () => runPaneAction('primary', () => acceptAsDestination(selectedItem, destinationType)),
+          loading: activePaneAction === 'primary',
+          disabled: Boolean(destinationValidationError) || activePaneAction !== null || activeActionId === selectedItem.id,
         }
     : null;
   const selectedItemSecondaryActions: InspectorAction[] = selectedItem
@@ -2863,12 +2942,13 @@ export default function IntakeWindow() {
                 y: 220,
                 item: selectedItem,
               }),
+            disabled: activePaneAction !== null || activeActionId === selectedItem.id,
           },
           {
             label: 'Archive',
-            onClick: () => void archiveItem(selectedItem),
-            loading: activeActionId === selectedItem.id,
-            disabled: activeActionId === selectedItem.id,
+            onClick: () => runPaneAction('archive', () => archiveItem(selectedItem)),
+            loading: activePaneAction === 'archive',
+            disabled: activePaneAction !== null || activeActionId === selectedItem.id,
           },
         ]
       : selectedItem.status === 'snoozed'
@@ -2881,12 +2961,13 @@ export default function IntakeWindow() {
                 y: 220,
                 item: selectedItem,
               }),
+            disabled: activePaneAction !== null || activeActionId === selectedItem.id,
           },
           {
             label: 'Archive',
-            onClick: () => void archiveItem(selectedItem),
-            loading: activeActionId === selectedItem.id,
-            disabled: activeActionId === selectedItem.id,
+            onClick: () => runPaneAction('archive', () => archiveItem(selectedItem)),
+            loading: activePaneAction === 'archive',
+            disabled: activePaneAction !== null || activeActionId === selectedItem.id,
           },
         ]
       : []
@@ -2894,9 +2975,9 @@ export default function IntakeWindow() {
   const selectedItemDangerAction: InspectorAction | null = selectedItem
     ? {
         label: 'Delete',
-        onClick: () => void deleteItem(selectedItem),
-        loading: activeActionId === selectedItem.id,
-        disabled: activeActionId === selectedItem.id,
+        onClick: () => runPaneAction('delete', () => deleteItem(selectedItem)),
+        loading: activePaneAction === 'delete',
+        disabled: activePaneAction !== null || activeActionId === selectedItem.id,
       }
     : null;
   const selectedItemPrimaryLoading = Boolean(
@@ -2988,7 +3069,7 @@ export default function IntakeWindow() {
                   <div className="flex h-12 items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4">
                     <div className="flex items-baseline gap-2">
                       <span className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                        Queue
+                        {getStatusLabel(activeStatus)}
                       </span>
                       <span className="text-sm text-[var(--ledger-text-muted)]">
                         {filteredItems.length}
@@ -3046,15 +3127,22 @@ export default function IntakeWindow() {
                             <h2 className="min-w-0 flex-1 text-[15px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
                               {selectedItemPreview?.title || getDisplayTitle(selectedItem)}
                             </h2>
-                            <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
-                              {selectedItemTypeLabel}
-                            </span>
+                            {selectedItemNativeTypeLabel ? (
+                              <span className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
+                                {selectedItemNativeTypeLabel}
+                              </span>
+                            ) : null}
                           </div>
                           {selectedItemMetadata.length > 0 && (
                             <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
                               {selectedItemMetadata.join(' · ')}
                             </p>
                           )}
+                          {selectedItemGithubLifecycleLabel ? (
+                            <p className="mt-1 text-xs text-[var(--ledger-text-secondary)]">
+                              GitHub lifecycle · {selectedItemGithubLifecycleLabel}
+                            </p>
+                          ) : null}
                         </div>
 
                         <section className="space-y-2">
@@ -3065,7 +3153,10 @@ export default function IntakeWindow() {
                             </p>
                           ) : null}
                           <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--ledger-text-secondary)]">
-                            {selectedItemPreview?.description || 'No preview available.'}
+                            {selectedItemPreview?.description ||
+                              (selectedItemIsFigma
+                                ? 'Figma resource linked from this intake item.'
+                                : 'No preview available.')}
                           </p>
                           {selectedItemSourceUrl ? (
                             <button
@@ -3094,10 +3185,10 @@ export default function IntakeWindow() {
                           <div className="space-y-2.5">
                             <DestinationProperty
                               label="Create as"
+                              icon={LayoutList}
                               value={destinationType}
                               onChange={(value) => setDestinationType(value as DestinationType)}
                               options={[
-                                { value: 'capture', label: 'Capture' },
                                 { value: 'task', label: 'Task' },
                                 { value: 'note', label: 'Note' },
                                 { value: 'event', label: 'Event' },
@@ -3108,6 +3199,7 @@ export default function IntakeWindow() {
                             {(destinationType === 'task' || destinationType === 'note' || destinationNeedsSchedule) && (
                               <DestinationProperty
                                 label="Project"
+                                icon={FolderKanban}
                                 value={selectedProjectId}
                                 placeholder="No project"
                                 onChange={setSelectedProjectId}
@@ -3122,6 +3214,7 @@ export default function IntakeWindow() {
                               <>
                                 <DestinationProperty
                                   label="Owner"
+                                  icon={User}
                                   value={selectedAssigneeId}
                                   placeholder="Unassigned"
                                   onChange={setSelectedAssigneeId}
@@ -3129,6 +3222,7 @@ export default function IntakeWindow() {
                                 />
                                 <DestinationProperty
                                   label="Team"
+                                  icon={Users}
                                   value={selectedTeamId}
                                   placeholder="Choose team"
                                   onChange={setSelectedTeamId}
@@ -3140,6 +3234,7 @@ export default function IntakeWindow() {
                             {destinationType === 'note' && !isPersonalWorkspace && (
                               <DestinationProperty
                                 label="Team"
+                                icon={Users}
                                 value={selectedTeamId}
                                 placeholder="Choose team"
                                 onChange={setSelectedTeamId}
@@ -3167,6 +3262,7 @@ export default function IntakeWindow() {
                             {destinationNeedsSchedule && (
                               <DestinationProperty
                                 label="Calendar"
+                                icon={CalendarDays}
                                 value={selectedCalendarId}
                                 placeholder="Default calendar"
                                 onChange={setSelectedCalendarId}
@@ -3177,6 +3273,7 @@ export default function IntakeWindow() {
                             {(destinationType === 'note' || destinationNeedsSchedule) && notes.length > 0 && (
                               <DestinationProperty
                                 label="Linked note"
+                                icon={FileText}
                                 value={selectedNoteId}
                                 placeholder="No note"
                                 onChange={setSelectedNoteId}
@@ -3372,25 +3469,30 @@ function ToggleOption({
 
 function DestinationProperty({
   label,
+  icon: Icon = LayoutList,
   value,
   placeholder,
   options,
   onChange,
 }: {
   label: string;
+  icon?: typeof CheckSquare;
   value: string;
   placeholder?: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-4">
-      <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">{label}</span>
-      <span className="relative min-w-0 flex-1">
+    <label className="grid grid-cols-[minmax(0,112px)_minmax(0,1fr)] items-center gap-3">
+      <span className="flex min-w-0 items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
+        <Icon size={14} strokeWidth={1.8} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="relative min-w-0">
         <select
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="h-8 w-full appearance-none rounded-lg border border-transparent bg-[var(--ledger-surface-muted)] px-2.5 pr-7 text-right text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:border-[color:var(--ledger-border-subtle)] focus:border-[color:var(--ledger-border-strong)] focus:text-[var(--ledger-text-primary)]"
+          className="h-9 w-full appearance-none rounded-xl border border-transparent bg-[var(--ledger-surface-muted)] px-3 pr-8 text-left text-xs font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:border-[color:var(--ledger-border-subtle)] focus:border-[color:var(--ledger-border-strong)] focus:text-[var(--ledger-text-primary)]"
         >
           <option value="">{placeholder || 'Choose'}</option>
           {options.map((option) => (

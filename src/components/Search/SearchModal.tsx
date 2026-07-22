@@ -34,6 +34,7 @@ import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
+import { IntegrationProviderMark, normalizeIntegrationProvider } from '../Common/IntegrationProviderMark';
 
 type SearchResultType =
   | 'note'
@@ -58,6 +59,8 @@ type SearchResult = {
   project_id?: string | null;
   focusDate?: string | null;
   actionId?: string;
+  provider?: string | null;
+  source_provider?: string | null;
 };
 
 const settingsSearchEntries: Array<{
@@ -576,6 +579,7 @@ export const SearchModal = () => {
                   title: String(result.title ?? 'Untitled'),
                   preview: String(result.preview ?? ''),
                   icon: String(result.icon ?? ''),
+                  provider: String(result.provider ?? result.source_provider ?? ''),
                 };
               })
             : [];
@@ -888,6 +892,21 @@ export const SearchModal = () => {
                     <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                       {result.title}
                     </p>
+                    {normalizeIntegrationProvider(
+                      result.provider,
+                      result.source_provider,
+                      result.type === 'github' ? 'github' : ''
+                    ) && (
+                      <IntegrationProviderMark
+                        provider={normalizeIntegrationProvider(
+                          result.provider,
+                          result.source_provider,
+                          result.type === 'github' ? 'github' : ''
+                        )}
+                        size={13}
+                        className="shrink-0"
+                      />
+                    )}
                     {result.type !== 'command' && (
                       <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
                         {result.type}

@@ -5082,7 +5082,11 @@ function DashboardContent() {
     if (property === 'project') {
       return row.linkedContext?.find(([label]) => label === 'Project')?.[1] ?? null;
     }
-    if (property === 'dueDate') return row.dateLabel ?? null;
+    if (property === 'dueDate') {
+      // Keep the explicit empty-state wording in the inspector, but keep list
+      // rows focused on useful metadata when no date has been set.
+      return row.dateLabel === 'Not set' ? null : row.dateLabel ?? null;
+    }
     if (property === 'assignee') {
       // Assignees are represented by the compact initials/team marker in the row.
       // Keep team assignment text available, but never duplicate a person's name.
@@ -6776,7 +6780,7 @@ function DashboardContent() {
                   </>
                 ) : (
                   <>
-                    <div className="border-b border-[color:var(--ledger-border-subtle)] pb-3">
+                    <div className="pb-2.5">
                       <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                         {selectedOverviewTypeLabel}
                       </p>
@@ -6798,10 +6802,10 @@ function DashboardContent() {
                       </div>
                     </div>
 
-                    {overviewDetailSections.map((section) => (
+                    {overviewDetailSections.map((section, sectionIndex) => (
                       <section
                         key={section.title}
-                        className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-3"
+                        className={`space-y-1.5 ${sectionIndex > 0 ? 'pt-2.5' : 'pt-1'}`}
                       >
                         <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                           {section.title}
@@ -6814,7 +6818,7 @@ function DashboardContent() {
                       </section>
                     ))}
 
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-3">
+                    <section className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-2.5 pb-1">
                       <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                         Quick actions
                       </p>
