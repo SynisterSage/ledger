@@ -7096,9 +7096,12 @@ const captureGithubWebhookEvent = async ({ workspaceId, eventType, action, repos
 const getApprovedGithubRepository = async (workspaceId, repositoryId) => {
   const value = String(repositoryId ?? '').trim();
   if (!value) return null;
-  const byInternalId = await supabase.from('github_repositories').select('id, github_repository_id, github_installation_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('id', value).maybeSingle();
-  if (byInternalId.error) throw byInternalId.error;
-  if (byInternalId.data) return byInternalId.data;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  if (isUuid) {
+    const byInternalId = await supabase.from('github_repositories').select('id, github_repository_id, github_installation_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('id', value).maybeSingle();
+    if (byInternalId.error) throw byInternalId.error;
+    if (byInternalId.data) return byInternalId.data;
+  }
   const byGithubId = await supabase.from('github_repositories').select('id, github_repository_id, github_installation_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('github_repository_id', value).maybeSingle();
   if (byGithubId.error) throw byGithubId.error;
   return byGithubId.data ?? null;
