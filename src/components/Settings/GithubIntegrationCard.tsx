@@ -18,6 +18,13 @@ export type GithubIntegrationStatus = {
   installation_status?: string;
   management_url?: string | null;
   last_synced_at?: string | null;
+  health?: {
+    state?: 'connected' | 'syncing' | 'delayed' | 'suspended' | 'access_changed' | 'action_required' | 'disconnected';
+    label?: string;
+    last_successful_sync_at?: string | null;
+    last_successful_webhook_at?: string | null;
+    error_message?: string | null;
+  } | null;
   can_manage?: boolean;
   repositories?: Array<{
     id: string | number;
@@ -228,6 +235,7 @@ export const GithubIntegrationCard = ({ workspaceId, canManage }: Props) => {
   const syncDate = formatRelativeTime(status.last_synced_at);
   const connectedDate = formatShortDate(status.last_synced_at) ?? 'recently';
   const isUnavailable = ['suspended', 'deleted'].includes(String(status.installation_status ?? '').toLowerCase());
+  const healthState = status.health?.state ?? (isUnavailable ? 'suspended' : 'connected');
   const rowDescription = useMemo(
     () => `${accountLogin} · ${repositoryCount}`,
     [accountLogin, repositoryCount]
@@ -297,7 +305,8 @@ export const GithubIntegrationCard = ({ workspaceId, canManage }: Props) => {
         </div>
         {repositories.length > 5 && <button type="button" onClick={() => setShowAll((value) => !value)} className="mt-2 px-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">{showAll ? 'Show less' : `Show all (${repositories.length})`}</button>}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-[var(--ledger-text-muted)]">
-          <span>Connected {connectedDate} · Last synced {syncDate}</span>
+          <span>{status.health?.label ?? 'Connected'} · Connected {connectedDate} · Last synced {syncDate}</span>
+          {['action_required', 'access_changed', 'suspended', 'delayed'].includes(healthState) && <span className="text-[var(--ledger-danger)]">{status.health?.error_message ?? (healthState === 'suspended' ? 'GitHub installation is suspended.' : healthState === 'access_changed' ? 'Repository access changed.' : healthState === 'delayed' ? 'Sync is delayed.' : 'Refresh required.')}</span>}
           {canManage && status.management_url && <a href={status.management_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Manage repositories <ExternalLink size={11} /></a>}
           {canManage && <button type="button" onClick={() => void openCaptureRules()} className="font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Manage capture rules</button>}
         </div>

@@ -22,12 +22,13 @@ import { checkExternalReferenceChange, getExternalReferenceChangeState, getFigma
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpServer } from './mcp/server.js';
 import { OPENAI_APPS_CHALLENGE_PATH, getOpenAiAppsChallengeToken } from './mcp/openai-challenge.js';
-import { createGithubAppJwt, createGithubState, exchangeGithubCode, getAccessibleInstallations, getCanonicalInstallation, getGithubUser, createInstallationToken, listInstallationRepositories, normalizeGithubError, normalizeGithubRepository, revokeGithubUserToken, hashGithubState, verifyGithubWebhookSignature } from './integrations/github/github-app.js';
+import { createGithubAppJwt, createGithubState, exchangeGithubCode, getAccessibleInstallations, getCanonicalInstallation, getGithubUser, createInstallationToken, listInstallationRepositories, normalizeGithubRepository, revokeGithubUserToken, hashGithubState, verifyGithubWebhookSignature } from './integrations/github/github-app.js';
 import { findGithubPullRequestsForCommit, resolveGithubMetadata, searchGithubWork, githubSafeMessage, GithubProviderError } from './integrations/github/github-adapter.js';
 import { parseGithubUrl } from './integrations/github/github-url-parser.js';
 import { findLinkedGithubReferences, listGithubAttention, reconcileGithubAttention } from './integrations/github/github-live-awareness.js';
 import { GITHUB_CAPTURE_EVENT_TYPES, buildGithubIntakePayload, githubCaptureEventType, githubCaptureFingerprint, githubCaptureRuleMatches, githubNotificationCategory, normalizeGithubCaptureRule } from './integrations/github/github-capture.js';
 import { findActiveGithubTasks, githubTaskDescription, projectRepositoryRole } from './integrations/github/github-project-workflows.js';
+import { githubConnectionHealth, githubSafeErrorCode, githubSafeErrorMessage, isStaleGithubEvent } from './integrations/github/github-health.js';
 import { createSupabaseTraceFetch } from './request-instrumentation.js';
 
 dotenv.config();
@@ -6899,11 +6900,24 @@ const githubStatusPayload = ({ installation, repositories, canManage }) => ({
   installation_status: installation?.status ?? 'disconnected',
   management_url: installation?.management_url ?? null,
   last_synced_at: installation?.last_synced_at ?? null,
+  health: installation ? {
+    ...githubConnectionHealth({
+      installationStatus: installation.status,
+      repositoryCount: repositories?.length ?? 0,
+      lastSyncedAt: installation.last_synced_at,
+      lastWebhookProcessedAt: installation.last_webhook_processed_at,
+      lastErrorAt: installation.last_sync_error_at,
+    }),
+    last_successful_sync_at: installation.last_synced_at ?? null,
+    last_successful_webhook_at: installation.last_webhook_processed_at ?? null,
+    error_code: installation.last_sync_error_code ?? null,
+    error_message: installation.last_sync_error_message ?? null,
+  } : { state: 'disconnected', label: 'Disconnected' },
   can_manage: canManage,
   repositories: (repositories ?? []).map((repo) => ({ id: repo.github_repository_id, owner_login: repo.owner_login, name: repo.name, full_name: repo.full_name, html_url: repo.html_url, is_private: repo.is_private, is_archived: repo.is_archived, is_disabled: repo.is_disabled, default_branch: repo.default_branch })),
 });
 const githubInstallationRows = async (workspaceId) => {
-  const installation = await supabase.from('github_installations').select('id, workspace_id, installation_id, github_account_id, github_account_login, github_account_type, repository_selection, permissions, events, management_url, installed_by_user_id, installed_by_github_user_id, installed_by_github_login, status, last_synced_at, created_at, updated_at').eq('workspace_id', workspaceId).maybeSingle();
+  const installation = await supabase.from('github_installations').select('id, workspace_id, installation_id, github_account_id, github_account_login, github_account_type, repository_selection, permissions, events, management_url, installed_by_user_id, installed_by_github_user_id, installed_by_github_login, status, last_synced_at, last_webhook_processed_at, last_sync_error_code, last_sync_error_message, last_sync_error_at, created_at, updated_at').eq('workspace_id', workspaceId).maybeSingle();
   if (installation.error) throw installation.error;
   if (!installation.data) return { installation: null, repositories: [] };
   const repos = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('github_installation_id', installation.data.id).order('full_name');
@@ -6921,8 +6935,13 @@ const syncGithubRepositories = async ({ installationRow, repositories }) => {
   if (ids.length) query = query.not('github_repository_id', 'in', `(${ids.join(',')})`);
   const removed = await query;
   if (removed.error) throw removed.error;
-  const updated = await supabase.from('github_installations').update({ last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', installationRow.id);
+  const updated = await supabase.from('github_installations').update({ last_synced_at: new Date().toISOString(), last_sync_error_code: null, last_sync_error_message: null, last_sync_error_at: null, updated_at: new Date().toISOString() }).eq('id', installationRow.id);
   if (updated.error) throw updated.error;
+};
+
+const recordGithubInstallationError = async ({ workspaceId, code, error }) => {
+  if (!workspaceId) return;
+  await supabase.from('github_installations').update({ last_sync_error_code: githubSafeErrorCode(error, code), last_sync_error_message: githubSafeErrorMessage({ ...error, code }), last_sync_error_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId);
 };
 
 const githubCaptureRuleSelect = 'id, workspace_id, name, event_type, enabled, repository_scope, repository_ids, label_filters, destination_type, destination_team_id, create_notification, create_intake_item, created_by_user_id, updated_by_user_id, created_at, updated_at';
@@ -6968,6 +6987,9 @@ const createGithubCaptureNotification = async ({ workspaceId, eventType, sourceI
   const category = githubNotificationCategory(eventType);
   const recipients = await getGithubNotificationRecipients({ workspaceId, category });
   if (!recipients.length) return null;
+  const existing = await supabase.from('notification_events').select('id').eq('workspace_id', workspaceId).eq('source_type', 'github_capture').eq('source_id', String(sourceId)).eq('notification_type', `github_${eventType}`).in('user_id', recipients).limit(1).maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data?.id) return existing.data.id;
   const scheduledFor = new Date().toISOString();
   const payload = recipients.map((userId) => ({
     user_id: userId,
@@ -7010,7 +7032,7 @@ const validateGithubCaptureRule = async ({ workspaceId, input }) => {
   }
   const repositories = await supabase.from('github_repositories').select('id, github_repository_id').eq('workspace_id', workspaceId).limit(100);
   if (repositories.error) throw repositories.error;
-  const approvedIds = new Set((repositories.data ?? []).map((repository) => String(repository.id)));
+  const approvedIds = new Set((repositories.data ?? []).flatMap((repository) => [repository.id, repository.github_repository_id]).map(String));
   if (rule.repository_scope === 'selected' && rule.repository_ids.some((id) => !approvedIds.has(String(id)))) {
     const error = new Error('One or more repositories are not approved for this workspace.');
     error.statusCode = 400;
@@ -7026,7 +7048,7 @@ const createOrUpdateGithubCaptureReference = async ({ workspaceId, objectType, r
   const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'github', url, createdByUserId: userId });
   const parsedMetadata = buildGithubIntakePayload({ eventType: objectType === 'pullRequest' ? 'pull_request_opened' : 'issue_opened', repository, object }).raw_payload;
   const metadata = { ...(created.reference.metadata ?? {}), ...parsedMetadata };
-  const updated = await supabase.from('external_references').update({ metadata, access_status: 'accessible', external_id: `${repository.id}:${objectType}:${object.id ?? object.number}`, external_identity: `github:${repository.id}:${objectType}:${object.id ?? object.number}`, normalized_url: url, external_url: url, last_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('*').single();
+  const updated = await supabase.from('external_references').update({ metadata, access_status: 'accessible', external_id: `${repository.id}:${objectType}:${object.id ?? object.number}`, external_identity: `github:${repository.id}:${objectType}:${object.id ?? object.number}`, normalized_url: url, external_url: url, last_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('id, workspace_id, provider, external_type, external_id, external_identity, external_url, normalized_url, metadata, access_status, last_resolved_at, created_at, updated_at').single();
   if (updated.error) throw updated.error;
   return updated.data;
 };
@@ -7042,6 +7064,7 @@ const captureGithubWebhookEvent = async ({ workspaceId, eventType, action, repos
   for (const rule of rulesResult.data ?? []) {
     if (!githubCaptureRuleMatches({ rule, eventType, repositoryId: repository.id, labels })) continue;
     const fingerprint = githubCaptureFingerprint({ ruleId: rule.id, repositoryId: repository.id, objectType, objectId, eventType });
+    const logicalEventFingerprint = [repository.id, objectType, objectId, eventType].map((value) => String(value ?? '')).join(':');
     const existing = await supabase.from('github_capture_records').select('id, intake_item_id, notification_id').eq('workspace_id', workspaceId).eq('fingerprint', fingerprint).maybeSingle();
     if (existing.error) throw existing.error;
     if (existing.data) continue;
@@ -7061,7 +7084,7 @@ const captureGithubWebhookEvent = async ({ workspaceId, eventType, action, repos
         if (linked.error) throw linked.error;
       }
     }
-    const notificationId = rule.create_notification ? await createGithubCaptureNotification({ workspaceId, eventType, sourceId: fingerprint, title: intakePayload?.title ?? `GitHub repository available · ${repository.full_name}`, body: intakePayload?.body ?? `${repository.full_name} is now available to connect with Ledger.`, githubUrl: intakePayload?.source_url ?? repository.html_url, intakeId, repositoryFullName: repository.full_name }) : null;
+    const notificationId = rule.create_notification ? await createGithubCaptureNotification({ workspaceId, eventType, sourceId: logicalEventFingerprint, title: intakePayload?.title ?? `GitHub repository available · ${repository.full_name}`, body: intakePayload?.body ?? `${repository.full_name} is now available to connect with Ledger.`, githubUrl: intakePayload?.source_url ?? repository.html_url, intakeId, repositoryFullName: repository.full_name }) : null;
     const record = await supabase.from('github_capture_records').insert({ workspace_id: workspaceId, rule_id: rule.id, github_repository_id: String(repository.id), github_object_type: objectType, github_object_id: objectId, github_event_action: action, external_reference_id: reference?.id ?? null, intake_item_id: intakeId, notification_id: notificationId, fingerprint }).select('id').maybeSingle();
     if (record.error?.code === '23505') continue;
     if (record.error) throw record.error;
@@ -7119,7 +7142,7 @@ const ensureGithubRepositoryExternalReference = async ({ workspaceId, repository
     isDisabled: Boolean(repository.is_disabled),
     defaultBranch: repository.default_branch ?? null,
   };
-  const updated = await supabase.from('external_references').update({ metadata, access_status: repository.is_disabled ? 'inaccessible' : 'accessible', external_id: `github:${repository.github_repository_id}:repository`, external_identity: `github:${repository.github_repository_id}:repository`, external_url: repository.html_url, normalized_url: repository.html_url, last_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('*').single();
+  const updated = await supabase.from('external_references').update({ metadata, access_status: repository.is_disabled ? 'inaccessible' : 'accessible', external_id: `github:${repository.github_repository_id}:repository`, external_identity: `github:${repository.github_repository_id}:repository`, external_url: repository.html_url, normalized_url: repository.html_url, last_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('id, workspace_id, provider, external_type, external_id, external_identity, external_url, normalized_url, metadata, access_status, last_resolved_at, created_at, updated_at').single();
   if (updated.error) throw updated.error;
   return updated.data;
 };
@@ -7355,14 +7378,15 @@ app.get('/api/integrations/github/callback', rateLimit('github_callback'), async
     await syncGithubRepositories({ installationRow: saved.data, repositories: repositories.repositories ?? [] });
     return res.redirect(githubFrontendRedirect('success'));
   } catch (error) {
-    console.error('GitHub callback failed:', normalizeGithubError(error));
+    console.warn('GitHub callback failed', { code: githubSafeErrorCode(error) });
     return res.redirect(githubFrontendRedirect('error'));
   } finally { if (userToken) await revokeGithubUserToken({ token: userToken }); }
 });
 
 app.post('/api/integrations/github/refresh', authMiddleware, rateLimit('github_refresh'), async (req, res) => {
+  let workspaceId = null;
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    workspaceId = await resolveWorkspaceIdForRequest(req);
     const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
     const rows = await githubInstallationRows(workspaceId);
     if (!rows.installation) return res.status(404).json({ error: 'GitHub is not connected.' });
@@ -7371,7 +7395,10 @@ app.post('/api/integrations/github/refresh', authMiddleware, rateLimit('github_r
     await syncGithubRepositories({ installationRow: rows.installation, repositories: repositories.repositories ?? [] });
     const latest = await githubInstallationRows(workspaceId);
     res.json(githubStatusPayload({ ...latest, canManage: githubManageAccess(access.role) }));
-  } catch (error) { return respondWithError(res, error); }
+  } catch (error) {
+    if (![401, 403].includes(Number(error?.statusCode))) await recordGithubInstallationError({ workspaceId, code: 'repository_sync_failed', error }).catch(() => {});
+    return respondWithError(res, error);
+  }
 });
 
 app.delete('/api/integrations/github', authMiddleware, rateLimit('github_disconnect'), async (req, res) => {
@@ -7390,6 +7417,7 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
   const event = String(req.headers['x-github-event'] ?? '').trim().slice(0, 80);
   const action = String(req.body?.action ?? '').trim().slice(0, 80);
   let eventRecordId = null;
+  let installationWorkspaceId = null;
   try {
     if (Buffer.byteLength(String(req.rawBody ?? ''), 'utf8') > 512 * 1024) return res.status(413).json({ error: 'Webhook payload is too large.' });
     if (!verifyGithubWebhookSignature({ rawBody: req.rawBody, signature: String(req.headers['x-hub-signature-256'] ?? ''), secret: process.env.GITHUB_APP_WEBHOOK_SECRET })) return res.status(401).json({ error: 'Invalid webhook signature.' });
@@ -7404,12 +7432,13 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
       if (eventRecord.data?.id) await supabase.from('integration_webhook_events').update({ status: 'ignored', processed_at: new Date().toISOString() }).eq('id', eventRecord.data.id);
       return res.status(202).json({ accepted: true, ignored: true });
     }
-    const row = await supabase.from('github_installations').select('*').eq('installation_id', installationId).maybeSingle();
+    const row = await supabase.from('github_installations').select('id, workspace_id, installation_id, installed_by_user_id, status, repository_selection, last_synced_at, last_webhook_processed_at, last_sync_error_code, last_sync_error_message, last_sync_error_at').eq('installation_id', installationId).maybeSingle();
     if (row.error) throw row.error;
     if (!row.data) {
       if (eventRecord.data?.id) await supabase.from('integration_webhook_events').update({ status: 'ignored', processed_at: new Date().toISOString(), error_code: 'installation_not_connected' }).eq('id', eventRecord.data.id);
       return res.status(202).json({ accepted: true, ignored: true });
     }
+    installationWorkspaceId = row.data.workspace_id;
     const now = new Date().toISOString();
     if (event === 'installation') {
       const status = action === 'suspend' ? 'suspended' : action === 'unsuspend' ? 'active' : action === 'deleted' ? 'deleted' : row.data.status;
@@ -7442,6 +7471,7 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
       await supabase.from('github_repositories').update(lifecycleUpdate).eq('workspace_id', row.data.workspace_id).eq('github_installation_id', row.data.id).eq('github_repository_id', repoId);
       const refs = await supabase.from('external_references').select('id, metadata').eq('workspace_id', row.data.workspace_id).eq('provider', 'github').limit(500);
       for (const reference of refs.data ?? []) if (String(reference.metadata?.githubRepositoryId ?? '') === repoId) {
+        if (isStaleGithubEvent({ eventUpdatedAt: repo?.updated_at ?? req.body?.repository?.updated_at, storedUpdatedAt: reference.metadata?.lastGithubUpdatedAt ?? reference.metadata?.updatedAt })) continue;
         const metadata = { ...reference.metadata, repositoryFullName: lifecycleUpdate.full_name, canonicalUrl: lifecycleUpdate.html_url, ownerLogin: lifecycleUpdate.owner_login, name: lifecycleUpdate.name, isPrivate: lifecycleUpdate.is_private, isArchived: lifecycleUpdate.is_archived, isDisabled: lifecycleUpdate.is_disabled, unavailableReason: action === 'deleted' ? 'repository_deleted' : null };
         await supabase.from('external_references').update({ metadata, access_status: action === 'deleted' ? 'inaccessible' : 'accessible', updated_at: now }).eq('id', reference.id);
         const linked = await supabase.from('external_reference_links').select('id, external_reference_id, target_type, target_id, link_metadata').eq('workspace_id', row.data.workspace_id).eq('external_reference_id', reference.id);
@@ -7463,6 +7493,8 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
         const refs = (await Promise.all(candidateRows.map((candidate) => findLinkedGithubReferences({ supabase, workspaceId: row.data.workspace_id, repositoryId, githubId: candidate.id, nodeId: candidate.node_id, number: candidate.number, resourceKind: kind })))).flat().filter((reference, index, array) => array.findIndex((item) => item.id === reference.id) === index);
         for (const reference of refs) {
           try {
+            const eventUpdatedAt = candidates?.updated_at ?? candidateRows.find((candidate) => candidate.id === reference.metadata?.githubId)?.updated_at ?? null;
+            if (isStaleGithubEvent({ eventUpdatedAt, storedUpdatedAt: reference.metadata?.updatedAt })) continue;
             const parsed = parseGithubUrl(reference.external_url);
             const token = await createInstallationToken({ installationId });
             const resolved = await resolveGithubMetadata(parsed, { accessToken: token.token, approvedRepository: repo.data });
@@ -7512,11 +7544,14 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
         }
       }
     }
-    if (eventRecord.data?.id) await supabase.from('integration_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('id', eventRecord.data.id);
+    const processedAt = new Date().toISOString();
+    await supabase.from('github_installations').update({ last_webhook_processed_at: processedAt, last_sync_error_code: null, last_sync_error_message: null, last_sync_error_at: null, updated_at: processedAt }).eq('id', row.data.id).eq('workspace_id', row.data.workspace_id);
+    if (eventRecord.data?.id) await supabase.from('integration_webhook_events').update({ status: 'processed', processed_at: processedAt }).eq('id', eventRecord.data.id);
     await writeWorkspaceAuditLog({ workspaceId: row.data.workspace_id, actorUserId: row.data.installed_by_user_id, action: 'github_webhook_delivery_processed', targetType: 'github_webhook', targetId: deliveryId, metadata: { event, action, repository_id: repositoryId || null } });
     res.status(202).json({ accepted: true });
   } catch (error) {
     if (eventRecordId) await supabase.from('integration_webhook_events').update({ status: 'failed', processed_at: new Date().toISOString(), error_code: 'safe_processing_failure' }).eq('id', eventRecordId);
+    await recordGithubInstallationError({ workspaceId: installationWorkspaceId, code: 'webhook_processing_failed', error }).catch(() => {});
     return res.status(202).json({ accepted: true });
   }
 });
