@@ -44,6 +44,7 @@ type SearchResultType =
   | 'person'
   | 'team'
   | 'intake'
+  | 'github'
   | 'command';
 type SearchCategory = 'navigate' | 'action' | 'resource' | 'settings';
 
@@ -188,6 +189,7 @@ const iconMap: Record<SearchResultType, typeof FileText> = {
   person: Briefcase,
   team: Briefcase,
   intake: FileText,
+  github: Plug2,
   command: Search,
 };
 
@@ -562,6 +564,7 @@ export const SearchModal = () => {
                   'person',
                   'team',
                   'intake',
+                  'github',
                 ].includes(rawType)
                   ? (rawType as SearchResultType)
                   : 'note';
@@ -728,6 +731,9 @@ export const SearchModal = () => {
         void window.desktopWindow?.openModule('calendar', focusDate ? { focusDate } : undefined);
       } else if (result.type === 'reminder' || result.type === 'intake') {
         void window.desktopWindow?.openModule('inbox', { focusSection: 'unprocessed' });
+      } else if (result.type === 'github') {
+        const url = (result as SearchResult & { external_url?: string }).external_url;
+        if (url) void window.desktopWindow?.openExternal(url);
       } else if (result.type === 'person' || result.type === 'team') {
         void window.desktopWindow?.openModule('teams');
       }

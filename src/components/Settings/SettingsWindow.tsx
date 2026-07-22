@@ -905,6 +905,7 @@ export const SettingsWindow = () => {
   const [mcpConnectionError, setMcpConnectionError] = useState<string | null>(null);
   const [mcpConnectionActionId, setMcpConnectionActionId] = useState<string | null>(null);
   const [mcpScopeActionId, setMcpScopeActionId] = useState<string | null>(null);
+  const [isMcpConnectionsExpanded, setIsMcpConnectionsExpanded] = useState(false);
   const [expandedMcpConnectionId, setExpandedMcpConnectionId] = useState<string | null>(null);
   const [openMcpConnectionMenuId, setOpenMcpConnectionMenuId] = useState<string | null>(null);
   const [openMcpPermissionsId, setOpenMcpPermissionsId] = useState<string | null>(null);
@@ -1536,8 +1537,16 @@ export const SettingsWindow = () => {
   }, [activeSection, activeWorkspaceId, api]);
 
   useEffect(() => {
-    if (activeSection !== 'integrations') return;
+    if (activeSection !== 'integrations' || !activeWorkspaceId) {
+      setMcpConnections([]);
+      setIsMcpConnectionsExpanded(false);
+      setExpandedMcpConnectionId(null);
+      return;
+    }
     let cancelled = false;
+    setMcpConnections([]);
+    setIsMcpConnectionsExpanded(false);
+    setExpandedMcpConnectionId(null);
     setIsLoadingMcpConnections(true);
     void api.getMcpConnections().then((payload) => {
       if (!cancelled) setMcpConnections((payload as McpConnection[]) ?? []);
@@ -1547,7 +1556,7 @@ export const SettingsWindow = () => {
       if (!cancelled) setIsLoadingMcpConnections(false);
     });
     return () => { cancelled = true; };
-  }, [activeSection, api]);
+  }, [activeSection, activeWorkspaceId, api]);
 
   const handleRevokeMcpConnection = async (connectionId: string) => {
     setMcpConnectionActionId(connectionId);
@@ -2350,6 +2359,12 @@ export const SettingsWindow = () => {
     (isWorkspaceDeleteModalOpen && Boolean(activeWorkspace)) ||
     Boolean(inviteModal && selectedInvite) ||
     isCreateTeamOpen;
+
+  const activeMcpConnections = mcpConnections.filter(
+    (connection) =>
+      connection.status === 'active' &&
+      connection.workspaces.some((workspace) => workspace.id === activeWorkspaceId)
+  );
 
   return (
     <div
@@ -4526,7 +4541,7 @@ export const SettingsWindow = () => {
                         <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><FigmaMark /></span>
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Attach designs to Ledger work and preview them without leaving your workspace.</p></div>
-                          <button type="button" onClick={() => setFigmaDetailOpen(true)} className={figmaStatus.status === 'connected' ? settingsTheme.controlButtonNeutral : 'h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white hover:bg-[var(--ledger-accent-hover)]'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
+                          <button type="button" onClick={() => setFigmaDetailOpen(true)} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
                         </div>
                         <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]">
@@ -4559,7 +4574,7 @@ export const SettingsWindow = () => {
                               className={`h-8 rounded-lg px-3 text-xs font-medium transition disabled:opacity-50 ${
                                 slackStatus?.connected
                                   ? `${settingsTheme.controlButtonNeutral} rounded-lg`
-                                  : 'bg-[var(--ledger-accent)] text-white hover:bg-[var(--ledger-accent-hover)]'
+                                : `${settingsTheme.controlButtonNeutral} rounded-lg`
                               }`}
                             >
                               {isConnectingSlack
@@ -4656,7 +4671,7 @@ export const SettingsWindow = () => {
                                   !activeWorkspaceId ||
                                   !canUseWorkspaceIntegrations
                                 }
-                                className="h-8 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
+                                className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
                               >
                                 {isExtensionTokenBusy ? 'Generating...' : 'Generate token'}
                               </button>
@@ -4664,16 +4679,28 @@ export const SettingsWindow = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-start gap-3 px-4 py-2.5">
+                        <div
+                          className={`flex items-start gap-3 px-4 py-2.5 ${activeMcpConnections.length ? `cursor-pointer transition ${isMcpConnectionsExpanded ? '' : 'hover:bg-[var(--ledger-surface-muted)]'}` : ''}`}
+                          onClick={() => {
+                            if (!activeMcpConnections.length) return;
+                            setIsMcpConnectionsExpanded((expanded) => !expanded);
+                            setOpenMcpConnectionMenuId(null);
+                            setOpenMcpPermissionsId(null);
+                          }}
+                          aria-expanded={activeMcpConnections.length ? isMcpConnectionsExpanded : undefined}
+                        >
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]" aria-hidden="true">
                             <img src="/mcp-icons/mpc.svg" alt="" className="h-5 w-5 dark:invert" />
                           </span>
                           <div className="min-w-0 flex-1">
                             <p className={settingsTheme.label}>MCP connections</p>
                             <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Connect AI tools to an explicitly approved Ledger workspace.</p>
-                            {isLoadingMcpConnections ? <p className={settingsTheme.sectionStatus + ' mt-1'}>Checking connections…</p> : mcpConnections.filter((connection) => connection.status === 'active').length === 0 ? <p className={settingsTheme.sectionStatus + ' mt-1'}>No active connections</p> : (
-                              <div className="mt-2 overflow-visible rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
-                                {mcpConnections.filter((connection) => connection.status === 'active').map((connection) => {
+                            {isLoadingMcpConnections ? <p className={settingsTheme.sectionStatus + ' mt-1'}>Checking connections…</p> : activeMcpConnections.length === 0 ? <p className={settingsTheme.sectionStatus + ' mt-1'}>No active connections</p> : isMcpConnectionsExpanded ? (
+                              <div
+                                className="mt-2 overflow-visible rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                {activeMcpConnections.map((connection) => {
                                   const isExpanded = expandedMcpConnectionId === connection.id;
                                   const isMenuOpen = openMcpConnectionMenuId === connection.id;
                                   const hasWriteAccess = connection.scopes.some((scope) => scope.endsWith(':write'));
@@ -4724,8 +4751,18 @@ export const SettingsWindow = () => {
                                   </div>;
                                 })}
                               </div>
-                            )}
+                            ) : null}
                           </div>
+                          {activeMcpConnections.length > 0 && (
+                            <button
+                              type="button"
+                              aria-label={isMcpConnectionsExpanded ? 'Collapse MCP connections' : 'Expand MCP connections'}
+                              aria-expanded={isMcpConnectionsExpanded}
+                              className="mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                            >
+                              {isMcpConnectionsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </button>
+                          )}
                         </div>
                       </div>
 

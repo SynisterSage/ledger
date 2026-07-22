@@ -250,6 +250,14 @@ export const useApi = () => {
       disconnectGithubIntegration: (workspaceId: string) =>
         request('/api/integrations/github', { method: 'DELETE', headers: { 'X-Workspace-Id': workspaceId }, body: JSON.stringify({ confirmed: true }) }),
       getGithubRepositories: () => request('/api/integrations/github/repositories'),
+      searchGithubResources: (params: { query?: string; type?: 'all' | 'repository' | 'issue' | 'pull_request'; repositoryId?: string; limit?: number } = {}) => {
+        const search = new URLSearchParams();
+        if (params.query) search.set('query', params.query);
+        if (params.type) search.set('type', params.type);
+        if (params.repositoryId) search.set('repositoryId', params.repositoryId);
+        search.set('limit', String(params.limit ?? 20));
+        return request(`/api/integrations/github/resources?${search}`);
+      },
       getGithubAttention: (params: { targetType?: string; targetId?: string } = {}) => {
         const search = new URLSearchParams();
         if (params.targetType) search.set('targetType', params.targetType);
@@ -258,6 +266,18 @@ export const useApi = () => {
       },
       searchGithubWork: (params: { repositoryId: string; type: 'issue' | 'pull_request'; query?: string; state?: 'open' | 'closed' | 'all'; limit?: number }) =>
         request(`/api/integrations/github/search?${new URLSearchParams({ repositoryId: params.repositoryId, type: params.type, query: params.query ?? '', state: params.state ?? 'open', limit: String(params.limit ?? 20) })}`),
+      getGithubCaptureRules: () => request('/api/integrations/github/capture-rules'),
+      createGithubCaptureRule: (payload: Record<string, unknown>) => request('/api/integrations/github/capture-rules', { method: 'POST', body: JSON.stringify(payload) }),
+      updateGithubCaptureRule: (ruleId: string, payload: Record<string, unknown>) => request(`/api/integrations/github/capture-rules/${encodeURIComponent(ruleId)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+      disableGithubCaptureRule: (ruleId: string) => request(`/api/integrations/github/capture-rules/${encodeURIComponent(ruleId)}`, { method: 'DELETE' }),
+      previewGithubCaptureRepositories: (params: { repositoryScope?: 'all_approved' | 'selected'; repositoryIds?: string[] } = {}) => {
+        const search = new URLSearchParams();
+        if (params.repositoryScope) search.set('repositoryScope', params.repositoryScope);
+        if (params.repositoryIds?.length) search.set('repositoryIds', params.repositoryIds.join(','));
+        return request(`/api/integrations/github/capture-rules/preview${search.toString() ? `?${search}` : ''}`);
+      },
+      getGithubNotificationPreferences: () => request('/api/integrations/github/notification-preferences'),
+      updateGithubNotificationPreferences: (payload: Record<string, boolean>) => request('/api/integrations/github/notification-preferences', { method: 'PATCH', body: JSON.stringify(payload) }),
       linkExternalReferenceWithMetadata: (referenceId: string, targetType: string, targetId: string, linkMetadata?: Record<string, unknown>, source = 'manual') =>
         request(`/api/external-references/${encodeURIComponent(referenceId)}/links`, { method: 'POST', body: JSON.stringify({ target_type: targetType, target_id: targetId, source, link_metadata: linkMetadata ?? {} }) }),
       getSlackIntegrationStatus: (workspaceId: string) =>
@@ -343,8 +363,8 @@ export const useApi = () => {
         request(`/api/external-references/${encodeURIComponent(referenceId)}/change-state?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
       checkExternalReferenceChangeState: (referenceId: string, targetType: string, targetId: string) =>
         request(`/api/external-references/${encodeURIComponent(referenceId)}/change-state?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
-      searchExternalReferences: (query = '') =>
-        request(`/api/external-references/search?provider=figma&query=${encodeURIComponent(query)}`),
+      searchExternalReferences: (query = '', provider?: string) =>
+        request(`/api/external-references/search?${new URLSearchParams({ ...(provider ? { provider } : {}), query })}`),
       getExternalReferenceLinkedTargets: (referenceId: string) =>
         request(`/api/external-references/${encodeURIComponent(referenceId)}/linked-targets`),
       deleteExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
@@ -451,6 +471,12 @@ export const useApi = () => {
           body: JSON.stringify(payload),
           skipWorkspaceHeader: true,
         }),
+      attachGithubIntakeToProject: (intakeId: string, projectId: string) =>
+        request(`/api/inbox/${encodeURIComponent(intakeId)}/github-project`, {
+          method: 'POST',
+          body: JSON.stringify({ project_id: projectId }),
+          skipWorkspaceHeader: true,
+        }),
       createIntakeItem: (payload: {
         workspace_id: string;
         source: 'quick_capture' | 'browser' | 'meeting' | 'calendar' | 'manual' | 'system_suggestion';
@@ -503,6 +529,7 @@ export const useApi = () => {
               project_type?: string | null;
               lead_id?: string | null;
               owner_team_id?: string | null;
+              github_repository_id?: string | null;
             }
       ) => {
         const payload = typeof input === 'string' ? { name: input } : input;
@@ -534,6 +561,10 @@ export const useApi = () => {
         request(`/api/projects/${id}`, {
           method: 'DELETE',
         }),
+      getProjectGithubRepositories: (projectId: string) => request(`/api/projects/${encodeURIComponent(projectId)}/github-repositories`),
+      linkProjectGithubRepository: (projectId: string, repositoryId: string, role: 'primary' | 'supporting' = 'supporting') => request(`/api/projects/${encodeURIComponent(projectId)}/github-repositories`, { method: 'POST', body: JSON.stringify({ repository_id: repositoryId, role }) }),
+      updateProjectGithubRepositoryRole: (projectId: string, linkId: string, role: 'primary' | 'supporting') => request(`/api/projects/${encodeURIComponent(projectId)}/github-repositories/${encodeURIComponent(linkId)}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+      unlinkProjectGithubRepository: (projectId: string, linkId: string) => request(`/api/projects/${encodeURIComponent(projectId)}/github-repositories/${encodeURIComponent(linkId)}`, { method: 'DELETE' }),
       getProjectNoteLinks: (projectId: string) => request(`/api/projects/${projectId}/note-links`),
       getWorkspaceProjectNoteLinks: (workspaceId: string) =>
         request(`/api/workspaces/${workspaceId}/project-note-links`),
@@ -639,6 +670,8 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify(payload),
         }),
+      getGithubReferenceTasks: (referenceId: string) => request(`/api/integrations/github/references/${encodeURIComponent(referenceId)}/tasks`),
+      createTaskFromGithubReference: (referenceId: string, payload: { project_id?: string | null; allow_duplicate?: boolean; title?: string; priority?: string }) => request(`/api/integrations/github/references/${encodeURIComponent(referenceId)}/task`, { method: 'POST', body: JSON.stringify(payload) }),
       updateTask: (id: string, update: Record<string, unknown>) =>
         request(`/api/tasks/${id}`, {
           method: 'PATCH',

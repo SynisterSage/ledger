@@ -190,6 +190,7 @@ const handleLedgerProtocolUrl = (url: string) => {
     }
 
     if (host === 'settings' || pathnameParts[0] === 'settings') {
+      const githubResult = parsed.searchParams.get('github');
       if (!sidebarWin || sidebarWin.isDestroyed()) {
         createSidebarWindow();
       } else {
@@ -197,6 +198,17 @@ const handleLedgerProtocolUrl = (url: string) => {
         sidebarWin.focus();
       }
       openModuleWindow('settings', null, null, null, null, null, section);
+      if (githubResult) {
+        const sendGithubCallback = () => {
+          const settingsWindow = moduleWins.get('settings');
+          if (!settingsWindow || settingsWindow.isDestroyed() || settingsWindow.webContents.isLoading()) {
+            setTimeout(sendGithubCallback, 150);
+            return;
+          }
+          settingsWindow.webContents.send('settings:github-callback', { result: githubResult });
+        };
+        sendGithubCallback();
+      }
       return;
     }
 

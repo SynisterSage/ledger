@@ -46,6 +46,15 @@ type QuickCaptureCalendar = {
   name?: string | null;
 };
 
+const githubUrlPattern = /https:\/\/(?:www\.)?github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+(?:\/(?:issues|pull)\/\d+)?(?:\?[^\s#]*)?(?:#[^\s]*)?/gi;
+const extractGithubUrls = (value: string) => [...new Set((value.match(githubUrlPattern) ?? []).map((url) => url.replace(/[),.;]+$/, '')).filter((url) => {
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    return ['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase()) && (parts.length === 2 || (parts.length === 4 && ['issues', 'pull'].includes(parts[2].toLowerCase())));
+  } catch { return false; }
+}))].slice(0, 3);
+
 const parseFollowUpContext = (value?: string): FollowUpContext | null => {
   if (!value) return null;
   if (!value.startsWith('ledger-followup|')) return null;
@@ -377,6 +386,15 @@ export const QuickCaptureWindow = ({
         show_in_today: showInToday,
         is_today_focus: false,
       });
+      await Promise.all(extractGithubUrls(`${taskTitle}\n${selectionContext?.text ?? ''}`).map(async (url) => {
+        try {
+          const reference = await api.createExternalReference('github', url) as { id: string };
+          await api.resolveExternalReference(reference.id);
+          await api.linkExternalReference(reference.id, 'task', String(createdTask.id), 'integration');
+        } catch {
+          // A plain URL remains usable when GitHub is disconnected or unapproved.
+        }
+      }));
 
       if (followUpContext) {
         window.ipcRenderer?.send('calendar:follow-up-created', {
@@ -420,9 +438,18 @@ export const QuickCaptureWindow = ({
     try {
       setIsSaving(true);
       setError(null);
-      await api.createNote(noteTitle.trim(), noteContent.trim(), {
+      const createdNote = await api.createNote(noteTitle.trim(), noteContent.trim(), {
         source: 'quick_capture',
       });
+      await Promise.all(extractGithubUrls(`${noteTitle}\n${noteContent}`).map(async (url) => {
+        try {
+          const reference = await api.createExternalReference('github', url) as { id: string };
+          await api.resolveExternalReference(reference.id);
+          await api.linkExternalReference(reference.id, 'note', String(createdNote.id), 'integration');
+        } catch {
+          // Keep quick capture non-blocking when GitHub metadata is unavailable.
+        }
+      }));
       setShowCloseGuardModal(false);
       resetNoteDraft();
       closeWindowNow();

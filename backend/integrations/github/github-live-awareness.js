@@ -24,9 +24,10 @@ export const findLinkedGithubReferences = async ({ supabase, workspaceId, reposi
   return matches.filter((reference) => (byReference.get(reference.id) ?? []).length).map((reference) => ({ ...reference, links: byReference.get(reference.id) ?? [] }));
 };
 
-const targetLabel = (link) => link.target_type === 'project' ? 'project' : link.target_type === 'note' ? 'note' : link.target_type === 'inbox' ? 'Intake item' : 'task';
+const targetLabel = (link) => link.target_type === 'project' ? 'project' : link.target_type === 'note' ? 'note' : ['inbox', 'intake'].includes(link.target_type) ? 'Intake item' : 'task';
 const focusPayload = (link) => ({
-  kind: link.target_type === 'inbox' ? 'inbox' : link.target_type === 'note' ? 'notes' : link.target_type === 'project' ? 'projects' : 'dashboard',
+  kind: ['inbox', 'intake'].includes(link.target_type) ? 'inbox' : link.target_type === 'note' ? 'notes' : link.target_type === 'project' ? 'projects' : 'dashboard',
+  ...(link.target_type === 'intake' || link.target_type === 'inbox' ? { focusInboxId: link.target_id } : {}),
   ...(link.target_type === 'project' ? { focusProjectId: link.target_id } : {}),
   ...(link.target_type === 'note' ? { focusNoteId: link.target_id } : {}),
   ...(link.target_type === 'task' ? { focusTaskId: link.target_id } : {}),

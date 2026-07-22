@@ -731,6 +731,8 @@ export default function IntakeWindow() {
   const [projectStatus, setProjectStatus] = useState('not_started');
   const [projectOwnerTeamId, setProjectOwnerTeamId] = useState('');
   const [projectLeadId, setProjectLeadId] = useState('');
+  const [linkGithubRepositoryOnProject, setLinkGithubRepositoryOnProject] = useState(false);
+  const [githubProjectRepositories, setGithubProjectRepositories] = useState<Array<{ id: string | number; github_repository_id: string; full_name: string; is_private?: boolean; is_archived?: boolean }>>([]);
 
   useEffect(() => {
     if (!isPersonalWorkspace) return;
@@ -1379,6 +1381,7 @@ export default function IntakeWindow() {
   const openConversion = (item: InboxItem, type?: ConversionType) => {
     const nextType = type ?? getDefaultConversionType(item);
     const raw = getRawPayload(item);
+    const githubRepositoryId = findDeepString(raw, ['githubRepositoryId', 'github_repository_id', 'repository_id']);
     const seed = `${item.title}\n${item.body ?? ''}`;
     const reminderDefaults = defaultReminderAt(seed);
     const eventDefaults = defaultEventStart(seed);
@@ -1439,6 +1442,12 @@ export default function IntakeWindow() {
     setProjectStatus(projectDefaults.status);
     setProjectOwnerTeamId(projectDefaults.ownerTeamId);
     setProjectLeadId(projectDefaults.leadId);
+    setLinkGithubRepositoryOnProject(Boolean(item.source_provider === 'github' || item.source === 'github') && Boolean(githubRepositoryId));
+    if (item.source_provider === 'github' || item.source === 'github') {
+      void api.getGithubRepositories().then((payload) => setGithubProjectRepositories(Array.isArray(payload) ? payload as typeof githubProjectRepositories : [])).catch(() => setGithubProjectRepositories([]));
+    } else {
+      setGithubProjectRepositories([]);
+    }
   };
 
   const closeConversion = () => {
@@ -1546,6 +1555,7 @@ export default function IntakeWindow() {
         calendar_id: calendarId || null,
         assigned_to_user_id: isPersonalWorkspace ? null : selectedAssigneeId || null,
         assigned_to_team_id: isPersonalWorkspace ? null : selectedTeamId || null,
+        github_repository_id: draft.type === 'project' && linkGithubRepositoryOnProject ? findDeepString(getRawPayload(draft.item), ['githubRepositoryId', 'github_repository_id', 'repository_id']) || null : null,
       };
 
       if (draft.type === 'project') {
@@ -2325,6 +2335,13 @@ export default function IntakeWindow() {
                     className="w-full resize-y rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)]"
                   />
                 </label>
+
+                {linkGithubRepositoryOnProject && githubProjectRepositories.length > 0 && (
+                  <label className="flex items-start gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5 text-xs text-[var(--ledger-text-secondary)]">
+                    <input type="checkbox" checked={linkGithubRepositoryOnProject} onChange={(event) => setLinkGithubRepositoryOnProject(event.target.checked)} className="mt-0.5 h-3.5 w-3.5 rounded border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)]" />
+                    <span>Link {githubProjectRepositories.find((repository) => String(repository.github_repository_id) === findDeepString(getRawPayload(draft.item), ['githubRepositoryId', 'github_repository_id', 'repository_id']))?.full_name ?? 'the GitHub repository'} as this project’s primary repository</span>
+                  </label>
+                )}
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block space-y-1">

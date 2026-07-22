@@ -12,6 +12,7 @@ import {
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
 import type { ExternalEmbedTargetType } from './ExternalEmbedNode';
+import { GithubResourcePicker, type GithubResourcePickerResult } from './GithubResourcePicker';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
@@ -96,6 +97,9 @@ export function LinkedDesignsSection({
   >(null);
   const [menuLink, setMenuLink] = useState<Link | null>(null);
   const [consentReference, setConsentReference] = useState<Reference | null>(null);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [projectPickerId, setProjectPickerId] = useState('');
+  const [projectOptions, setProjectOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [provider, setProvider] = useState<'figma' | 'github'>('figma');
   const [githubRepositories, setGithubRepositories] = useState<
     Array<{ github_repository_id: string; full_name: string; owner_login: string; name: string }>
@@ -324,13 +328,75 @@ export function LinkedDesignsSection({
     if (target.targetType !== 'project') return;
     setBusyId(repository.github_repository_id);
     try {
-      const reference = (await api.createExternalReference('github', `https://github.com/${repository.owner_login}/${repository.name}`)) as Reference;
-      await linkReference(reference);
+      const existingRepositoryLinks = links.filter((link) => {
+        const reference = (Array.isArray(link.external_references) ? link.external_references[0] : link.external_references) as Reference | undefined;
+        return isGithub(reference) && reference?.external_type === 'repository';
+      });
+      await api.linkProjectGithubRepository(target.targetId, repository.github_repository_id, existingRepositoryLinks.length ? 'supporting' : 'primary');
+      setDialogOpen(false);
+      await load();
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Could not link this repository.', { variant: 'error' });
     } finally {
       setBusyId(null);
     }
+  };
+  const createGithubTask = async (link: Link, reference: Reference) => {
+    if (!canEdit || target.targetType === 'task') return;
+    setBusyId(link.id);
+    try {
+      const existingTasks = (await api.getGithubReferenceTasks(reference.id)) as Array<{ id: string; title?: string }>;
+      let allowDuplicate = false;
+      if (existingTasks.length) {
+        allowDuplicate = window.confirm(`A Ledger task already tracks this GitHub item${existingTasks[0]?.title ? `: ${existingTasks[0].title}` : ''}. Create another task?`);
+        if (!allowDuplicate) return;
+      }
+      await api.createTaskFromGithubReference(reference.id, { project_id: target.targetType === 'project' ? target.targetId : null, allow_duplicate: allowDuplicate });
+      toast.show('Ledger task created.', { variant: 'success' });
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not create a Ledger task.', { variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+  const openProjectPicker = async () => {
+    setProjectPickerOpen(true);
+    try {
+      const projects = await api.getProjects({ includeCompleted: false });
+      setProjectOptions(Array.isArray(projects) ? projects.map((project: any) => ({ id: String(project.id), name: String(project.name ?? 'Project') })) : []);
+    } catch {
+      setProjectOptions([]);
+    }
+  };
+  const attachGithubToProject = async () => {
+    if (!projectPickerId || target.targetType !== 'intake') return;
+    setBusyId('attach-project');
+    try {
+      await api.attachGithubIntakeToProject(target.targetId, projectPickerId);
+      toast.show('GitHub work attached to project.', { variant: 'success' });
+      setProjectPickerOpen(false);
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not attach GitHub work to project.', { variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+  const selectGithubResource = async (resource: GithubResourcePickerResult) => {
+    if (!canEdit || !resource.canonicalUrl) return;
+    const existingGithubRepositories = links.filter((link) => {
+      const reference = (Array.isArray(link.external_references) ? link.external_references[0] : link.external_references) as Reference | undefined;
+      return isGithub(reference) && reference?.external_type === 'repository';
+    });
+    if (resource.resourceType === 'repository' && target.targetType === 'project' && resource.githubRepositoryId) {
+      await api.linkProjectGithubRepository(target.targetId, String(resource.githubRepositoryId), existingGithubRepositories.length ? 'supporting' : 'primary');
+      await load();
+      return;
+    }
+    let reference = resource.referenceId ? ({ id: resource.referenceId, provider: 'github', external_type: resource.resourceType === 'pull_request' ? 'pullRequest' : resource.resourceType, normalized_url: resource.canonicalUrl, external_url: resource.canonicalUrl, metadata: resource } as Reference) : null;
+    if (!reference) reference = await api.createExternalReference('github', resource.canonicalUrl) as Reference;
+    if (reference.provider === 'github') reference = await api.resolveExternalReference(reference.id) as Reference;
+    await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
+    await load();
   };
   const unlink = async (link: Link) => {
     if (!canEdit) return;
@@ -422,6 +488,10 @@ export function LinkedDesignsSection({
     [links]
   );
   const sectionLabel = rows.some(({ reference }) => isGithub(reference)) ? 'Linked work' : 'Linked designs';
+  const hasGithubWork = rows.some(({ reference }) => isGithub(reference) && ['issue', 'pullRequest'].includes(String(reference?.external_type ?? '')));
+  const githubIssues = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'issue' && String(reference?.metadata?.state ?? '').toLowerCase() === 'open').length;
+  const githubPullRequests = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'pullRequest' && !['closed', 'merged'].includes(String(reference?.metadata?.state ?? '').toLowerCase())).length;
+  const githubAttention = rows.filter(({ reference }) => isGithub(reference) && (Number((reference?.metadata as any)?.reviewSummary?.reviewRequestedCount ?? 0) > 0 || Number((reference?.metadata as any)?.reviewSummary?.changesRequestedCount ?? 0) > 0 || String((reference?.metadata as any)?.checksSummary?.overallState ?? '') === 'failing')).length;
   return (
     <section
       className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4"
@@ -438,6 +508,9 @@ export function LinkedDesignsSection({
           {rows.length > 0 && (
             <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length}</span>
           )}
+          {target.targetType === 'project' && hasGithubWork && (
+            <span className="text-[11px] text-[var(--ledger-text-muted)]">{githubIssues} open issues · {githubPullRequests} open PRs{githubAttention ? ` · ${githubAttention} needs attention` : ''}</span>
+          )}
         </div>
         {canEdit && (
           <button
@@ -449,6 +522,10 @@ export function LinkedDesignsSection({
             Add context
           </button>
         )}
+        {canEdit && target.targetType === 'intake' && hasGithubWork && (
+          <button type="button" onClick={() => void openProjectPicker()} className="text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Attach to project</button>
+        )}
+        {canEdit && <GithubResourcePicker onSelect={selectGithubResource} existingReferenceIds={links.map((link) => link.external_reference_id)} />}
       </div>
       {loading ? (
         <div className="flex items-center gap-2 py-3 text-xs text-[var(--ledger-text-muted)]">
@@ -607,6 +684,9 @@ export function LinkedDesignsSection({
                     )}
                     {target.targetType === 'project' && github && reference?.external_type === 'repository' && link.link_metadata?.role !== 'primary' && (
                       <button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50" onClick={() => { void api.linkExternalReferenceWithMetadata(reference!.id, target.targetType, target.targetId, { role: 'primary' }, 'manual').then(load).catch(() => toast.show('Could not set the primary repository.', { variant: 'error' })); setMenuLink(null); }}>Set as primary repository</button>
+                    )}
+                    {canEdit && target.targetType !== 'task' && github && ['issue', 'pullRequest'].includes(String(reference?.external_type ?? '')) && (
+                      <button type="button" disabled={Boolean(busyId)} className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50" onClick={() => { void createGithubTask(link, reference!); setMenuLink(null); }}>Create Ledger task</button>
                     )}
                     <button
                       type="button"
@@ -880,6 +960,15 @@ export function LinkedDesignsSection({
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+      {projectPickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4" role="dialog" aria-modal="true" aria-label="Attach GitHub work to project" onMouseDown={(event) => { if (event.target === event.currentTarget) setProjectPickerOpen(false); }}>
+          <div className="w-full max-w-sm rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-4 shadow-[var(--ledger-shadow)]">
+            <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-[var(--ledger-text-primary)]">Attach to project</h3><button type="button" onClick={() => setProjectPickerOpen(false)} aria-label="Close"><X size={15} /></button></div>
+            <select value={projectPickerId} onChange={(event) => setProjectPickerId(event.target.value)} className="mt-3 h-9 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-secondary)]"><option value="">Choose a project</option>{projectOptions.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+            <div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setProjectPickerOpen(false)} className="h-8 rounded-md px-3 text-xs text-[var(--ledger-text-secondary)]">Cancel</button><button type="button" disabled={!projectPickerId || Boolean(busyId)} onClick={() => void attachGithubToProject()} className="h-8 rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50">{busyId === 'attach-project' ? 'Attaching…' : 'Attach'}</button></div>
           </div>
         </div>
       )}

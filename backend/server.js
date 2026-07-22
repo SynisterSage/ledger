@@ -26,6 +26,8 @@ import { createGithubAppJwt, createGithubState, exchangeGithubCode, getAccessibl
 import { findGithubPullRequestsForCommit, resolveGithubMetadata, searchGithubWork, githubSafeMessage, GithubProviderError } from './integrations/github/github-adapter.js';
 import { parseGithubUrl } from './integrations/github/github-url-parser.js';
 import { findLinkedGithubReferences, listGithubAttention, reconcileGithubAttention } from './integrations/github/github-live-awareness.js';
+import { GITHUB_CAPTURE_EVENT_TYPES, buildGithubIntakePayload, githubCaptureEventType, githubCaptureFingerprint, githubCaptureRuleMatches, githubNotificationCategory, normalizeGithubCaptureRule } from './integrations/github/github-capture.js';
+import { findActiveGithubTasks, githubTaskDescription, projectRepositoryRole } from './integrations/github/github-project-workflows.js';
 import { createSupabaseTraceFetch } from './request-instrumentation.js';
 
 dotenv.config();
@@ -6923,6 +6925,383 @@ const syncGithubRepositories = async ({ installationRow, repositories }) => {
   if (updated.error) throw updated.error;
 };
 
+const githubCaptureRuleSelect = 'id, workspace_id, name, event_type, enabled, repository_scope, repository_ids, label_filters, destination_type, destination_team_id, create_notification, create_intake_item, created_by_user_id, updated_by_user_id, created_at, updated_at';
+const githubNotificationPreferenceDefaults = {
+  repository_available: true,
+  issue_events: true,
+  pull_request_events: true,
+  review_requests: true,
+  checks_failing: true,
+};
+
+const githubRuleResponse = (row) => ({
+  ...row,
+  repository_ids: Array.isArray(row?.repository_ids) ? row.repository_ids : [],
+  label_filters: Array.isArray(row?.label_filters) ? row.label_filters : [],
+});
+
+const getGithubNotificationPreference = async (workspaceId, userId) => {
+  const result = await supabase.from('github_notification_preferences').select('repository_available, issue_events, pull_request_events, review_requests, checks_failing').eq('workspace_id', workspaceId).eq('user_id', userId).maybeSingle();
+  if (result.error) throw result.error;
+  return { ...githubNotificationPreferenceDefaults, ...(result.data ?? {}) };
+};
+
+const getGithubNotificationRecipients = async ({ workspaceId, category }) => {
+  const workspace = await supabase.from('workspaces').select('owner_id').eq('id', workspaceId).maybeSingle();
+  const members = await supabase.from('workspace_members').select('user_id, role').eq('workspace_id', workspaceId);
+  if (workspace.error) throw workspace.error;
+  if (members.error) throw members.error;
+  const candidates = new Map();
+  if (workspace.data?.owner_id) candidates.set(workspace.data.owner_id, 'owner');
+  for (const member of members.data ?? []) candidates.set(member.user_id, member.role);
+  const recipients = [];
+  for (const [userId, role] of candidates) {
+    if (category === 'repository_available' && !['owner', 'admin'].includes(String(role).toLowerCase())) continue;
+    const preferences = await getGithubNotificationPreference(workspaceId, userId);
+    if (preferences[category] === false) continue;
+    recipients.push(userId);
+  }
+  return recipients;
+};
+
+const createGithubCaptureNotification = async ({ workspaceId, eventType, sourceId, title, body, githubUrl, intakeId = null, repositoryFullName = null }) => {
+  const category = githubNotificationCategory(eventType);
+  const recipients = await getGithubNotificationRecipients({ workspaceId, category });
+  if (!recipients.length) return null;
+  const scheduledFor = new Date().toISOString();
+  const payload = recipients.map((userId) => ({
+    user_id: userId,
+    workspace_id: workspaceId,
+    source_type: 'github_capture',
+    source_id: String(sourceId),
+    notification_type: `github_${eventType}`,
+    scheduled_for: scheduledFor,
+    delivered_in_app_at: scheduledFor,
+    metadata: {
+      title: String(title ?? '').slice(0, 240),
+      body: String(body ?? '').slice(0, 500),
+      context: repositoryFullName ? `GitHub · ${repositoryFullName}` : 'GitHub',
+      moduleKind: intakeId ? 'inbox' : 'settings',
+      focusPayload: intakeId ? { kind: 'inbox', focusInboxId: intakeId } : { kind: 'settings', settingsSection: 'integrations' },
+      actions: ['open', 'dismiss'],
+      githubUrl: githubUrl ?? null,
+    },
+  }));
+  const result = await supabase.from('notification_events').upsert(payload, { onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for', ignoreDuplicates: true }).select('id').limit(1);
+  if (result.error) throw result.error;
+  return result.data?.[0]?.id ?? null;
+};
+
+const validateGithubCaptureRule = async ({ workspaceId, input }) => {
+  const rule = normalizeGithubCaptureRule(input);
+  if (!GITHUB_CAPTURE_EVENT_TYPES.includes(rule.event_type)) {
+    const error = new Error('Unsupported GitHub capture event.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (rule.destination_type === 'team_intake') {
+    if (!rule.destination_team_id || !(await ensureWorkspaceTeam(rule.destination_team_id, workspaceId))) {
+      const error = new Error('Team Intake destination not found.');
+      error.statusCode = 400;
+      throw error;
+    }
+  } else {
+    rule.destination_team_id = null;
+  }
+  const repositories = await supabase.from('github_repositories').select('id, github_repository_id').eq('workspace_id', workspaceId).limit(100);
+  if (repositories.error) throw repositories.error;
+  const approvedIds = new Set((repositories.data ?? []).map((repository) => String(repository.id)));
+  if (rule.repository_scope === 'selected' && rule.repository_ids.some((id) => !approvedIds.has(String(id)))) {
+    const error = new Error('One or more repositories are not approved for this workspace.');
+    error.statusCode = 400;
+    throw error;
+  }
+  return rule;
+};
+
+const createOrUpdateGithubCaptureReference = async ({ workspaceId, objectType, repository, object, userId }) => {
+  if (!object || !['issue', 'pullRequest'].includes(objectType)) return null;
+  const url = String(object.html_url ?? '').trim();
+  if (!url) return null;
+  const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'github', url, createdByUserId: userId });
+  const parsedMetadata = buildGithubIntakePayload({ eventType: objectType === 'pullRequest' ? 'pull_request_opened' : 'issue_opened', repository, object }).raw_payload;
+  const metadata = { ...(created.reference.metadata ?? {}), ...parsedMetadata };
+  const updated = await supabase.from('external_references').update({ metadata, access_status: 'accessible', external_id: `${repository.id}:${objectType}:${object.id ?? object.number}`, external_identity: `github:${repository.id}:${objectType}:${object.id ?? object.number}`, normalized_url: url, external_url: url, last_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('*').single();
+  if (updated.error) throw updated.error;
+  return updated.data;
+};
+
+const captureGithubWebhookEvent = async ({ workspaceId, eventType, action, repository, object, userId }) => {
+  if (!eventType || !repository?.id) return { matched: 0, captured: 0 };
+  const rulesResult = await supabase.from('github_capture_rules').select(githubCaptureRuleSelect).eq('workspace_id', workspaceId).eq('event_type', eventType).eq('enabled', true);
+  if (rulesResult.error) throw rulesResult.error;
+  const labels = object?.labels ?? [];
+  const objectType = eventType.startsWith('pull_request') || ['review_requested', 'changes_requested', 'checks_failing'].includes(eventType) ? 'pull_request' : eventType.startsWith('issue_') ? 'issue' : 'repository';
+  const objectId = String(object?.id ?? repository.id);
+  let captured = 0;
+  for (const rule of rulesResult.data ?? []) {
+    if (!githubCaptureRuleMatches({ rule, eventType, repositoryId: repository.id, labels })) continue;
+    const fingerprint = githubCaptureFingerprint({ ruleId: rule.id, repositoryId: repository.id, objectType, objectId, eventType });
+    const existing = await supabase.from('github_capture_records').select('id, intake_item_id, notification_id').eq('workspace_id', workspaceId).eq('fingerprint', fingerprint).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data) continue;
+    const reference = await createOrUpdateGithubCaptureReference({ workspaceId, objectType, repository, object, userId });
+    const intakePayload = reference && objectType !== 'repository' ? buildGithubIntakePayload({ eventType, repository, object }) : null;
+    let intakeId = null;
+    if (rule.create_intake_item && intakePayload) {
+      const inserted = await supabase.from('inbox_items').insert({ workspace_id: workspaceId, user_id: userId, updated_by: userId, source: 'github', source_provider: 'github', source_id: intakePayload.source_id, source_url: intakePayload.source_url, title: intakePayload.title, body: intakePayload.body, raw_payload: { ...intakePayload.raw_payload, capture_rule_id: rule.id, capture_rule_name: rule.name, suggested_team_id: rule.destination_type === 'team_intake' ? rule.destination_team_id : null }, suggested_type: intakePayload.suggested_type, status: intakePayload.status }).select('id').single();
+      if (inserted.error?.code === '23505') {
+        const existingIntake = await supabase.from('inbox_items').select('id').eq('workspace_id', workspaceId).eq('source', 'github').eq('source_id', intakePayload.source_id).maybeSingle();
+        if (existingIntake.error) throw existingIntake.error;
+        intakeId = existingIntake.data?.id ?? null;
+      } else if (inserted.error) throw inserted.error;
+      else intakeId = inserted.data?.id ?? null;
+      if (intakeId && reference) {
+        const linked = await supabase.from('external_reference_links').upsert({ workspace_id: workspaceId, external_reference_id: reference.id, target_type: 'intake', target_id: intakeId, created_by_user_id: userId, sources: ['integration'], link_metadata: { capture_rule_id: rule.id } }, { onConflict: 'workspace_id,external_reference_id,target_type,target_id' }).select('id').maybeSingle();
+        if (linked.error) throw linked.error;
+      }
+    }
+    const notificationId = rule.create_notification ? await createGithubCaptureNotification({ workspaceId, eventType, sourceId: fingerprint, title: intakePayload?.title ?? `GitHub repository available · ${repository.full_name}`, body: intakePayload?.body ?? `${repository.full_name} is now available to connect with Ledger.`, githubUrl: intakePayload?.source_url ?? repository.html_url, intakeId, repositoryFullName: repository.full_name }) : null;
+    const record = await supabase.from('github_capture_records').insert({ workspace_id: workspaceId, rule_id: rule.id, github_repository_id: String(repository.id), github_object_type: objectType, github_object_id: objectId, github_event_action: action, external_reference_id: reference?.id ?? null, intake_item_id: intakeId, notification_id: notificationId, fingerprint }).select('id').maybeSingle();
+    if (record.error?.code === '23505') continue;
+    if (record.error) throw record.error;
+    captured += 1;
+  }
+  return { matched: (rulesResult.data ?? []).length, captured };
+};
+
+const getApprovedGithubRepository = async (workspaceId, repositoryId) => {
+  const value = String(repositoryId ?? '').trim();
+  if (!value) return null;
+  const byInternalId = await supabase.from('github_repositories').select('id, github_repository_id, github_installation_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('id', value).maybeSingle();
+  if (byInternalId.error) throw byInternalId.error;
+  if (byInternalId.data) return byInternalId.data;
+  const byGithubId = await supabase.from('github_repositories').select('id, github_repository_id, github_installation_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('github_repository_id', value).maybeSingle();
+  if (byGithubId.error) throw byGithubId.error;
+  return byGithubId.data ?? null;
+};
+
+const assertApprovedGithubRepository = async (workspaceId, repositoryId, { allowUnavailable = false } = {}) => {
+  const repository = await getApprovedGithubRepository(workspaceId, repositoryId);
+  if (!repository) {
+    const error = new Error('Repository is not approved for this workspace.');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (!allowUnavailable && (repository.is_disabled || repository.is_archived)) {
+    const error = new Error('This repository is unavailable for new links.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const installation = await supabase.from('github_installations').select('id, status').eq('workspace_id', workspaceId).eq('id', repository.github_installation_id).maybeSingle();
+  if (installation.error) throw installation.error;
+  if (!installation.data || installation.data.status !== 'active') {
+    const error = new Error('GitHub is not connected for this workspace.');
+    error.statusCode = 409;
+    throw error;
+  }
+  return repository;
+};
+
+const ensureGithubRepositoryExternalReference = async ({ workspaceId, repository, userId }) => {
+  const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'github', url: repository.html_url, createdByUserId: userId });
+  const metadata = {
+    ...(created.reference.metadata ?? {}),
+    provider: 'github',
+    resourceKind: 'repository',
+    githubRepositoryId: String(repository.github_repository_id),
+    ownerLogin: repository.owner_login,
+    repository: repository.name,
+    repositoryFullName: repository.full_name,
+    canonicalUrl: repository.html_url,
+    isPrivate: Boolean(repository.is_private),
+    isArchived: Boolean(repository.is_archived),
+    isDisabled: Boolean(repository.is_disabled),
+    defaultBranch: repository.default_branch ?? null,
+  };
+  const updated = await supabase.from('external_references').update({ metadata, access_status: repository.is_disabled ? 'inaccessible' : 'accessible', external_id: `github:${repository.github_repository_id}:repository`, external_identity: `github:${repository.github_repository_id}:repository`, external_url: repository.html_url, normalized_url: repository.html_url, last_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('*').single();
+  if (updated.error) throw updated.error;
+  return updated.data;
+};
+
+const getProjectGithubRepositoryLinks = async (workspaceId, projectId) => {
+  const links = await supabase.from('external_reference_links').select('id, external_reference_id, target_type, target_id, link_metadata, created_at, external_references(id, provider, external_type, metadata, external_url, normalized_url, access_status)').eq('workspace_id', workspaceId).eq('target_type', 'project').eq('target_id', projectId);
+  if (links.error) throw links.error;
+  return (links.data ?? []).filter((link) => link.external_references?.provider === 'github' && link.external_references?.external_type === 'repository');
+};
+
+const mapProjectGithubRepositoryLink = (link) => ({
+  id: link.id,
+  external_reference_id: link.external_reference_id,
+  role: link.link_metadata?.role === 'primary' ? 'primary' : 'supporting',
+  ...link.external_references,
+});
+
+const linkGithubRepositoryToProject = async ({ workspaceId, projectId, repositoryId, role, userId }) => {
+  const projectAllowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
+  if (!projectAllowed) {
+    const error = new Error('Project not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  const repository = await assertApprovedGithubRepository(workspaceId, repositoryId);
+  const reference = await ensureGithubRepositoryExternalReference({ workspaceId, repository, userId });
+  const existingLinks = await getProjectGithubRepositoryLinks(workspaceId, projectId);
+  const existingLink = existingLinks.find((item) => item.external_reference_id === reference.id);
+  if (existingLink) {
+    if (role !== 'primary' || existingLink.role === 'primary') return mapProjectGithubRepositoryLink(existingLink);
+  }
+  const requestedRole = projectRepositoryRole({ existingCount: existingLinks.length, requestedRole: role });
+  const link = await supabase.from('external_reference_links').upsert({ workspace_id: workspaceId, external_reference_id: reference.id, target_type: 'project', target_id: projectId, created_by_user_id: userId, sources: ['manual'], link_metadata: { role: requestedRole } }, { onConflict: 'workspace_id,external_reference_id,target_type,target_id' }).select('id, external_reference_id, target_type, target_id, link_metadata, created_at').single();
+  if (link.error) throw link.error;
+  if (requestedRole === 'primary') {
+    const primary = await supabase.rpc('set_primary_external_reference_link', { p_workspace_id: workspaceId, p_link_id: link.data.id });
+    if (primary.error) throw primary.error;
+  }
+  const refreshed = await getProjectGithubRepositoryLinks(workspaceId, projectId);
+  return refreshed.find((item) => item.id === link.data.id) ?? refreshed.find((item) => item.external_reference_id === reference.id) ?? link.data;
+};
+
+app.get('/api/integrations/github/capture-rules', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase.from('github_capture_rules').select(githubCaptureRuleSelect).eq('workspace_id', workspaceId).order('created_at');
+    if (result.error) throw result.error;
+    res.json((result.data ?? []).map(githubRuleResponse));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/github/capture-rules', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const rule = await validateGithubCaptureRule({ workspaceId, input: req.body });
+    const result = await supabase.from('github_capture_rules').insert({ workspace_id: workspaceId, ...rule, created_by_user_id: req.authUser.id, updated_by_user_id: req.authUser.id }).select(githubCaptureRuleSelect).single();
+    if (result.error?.code === '23505') return res.status(409).json({ error: 'A capture rule with this name already exists.' });
+    if (result.error) throw result.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_capture_rule_created', targetType: 'github_capture_rule', targetId: result.data.id, metadata: { event_type: rule.event_type, enabled: rule.enabled, create_intake_item: rule.create_intake_item, create_notification: rule.create_notification } });
+    res.status(201).json(githubRuleResponse(result.data));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/integrations/github/capture-rules/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const existing = await supabase.from('github_capture_rules').select(githubCaptureRuleSelect).eq('workspace_id', workspaceId).eq('id', req.params.id).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (!existing.data) return res.status(404).json({ error: 'GitHub capture rule not found.' });
+    const rule = await validateGithubCaptureRule({ workspaceId, input: { ...existing.data, ...req.body } });
+    const result = await supabase.from('github_capture_rules').update({ ...rule, updated_by_user_id: req.authUser.id, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', req.params.id).select(githubCaptureRuleSelect).single();
+    if (result.error) throw result.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_capture_rule_updated', targetType: 'github_capture_rule', targetId: req.params.id, metadata: { event_type: rule.event_type, enabled: rule.enabled } });
+    res.json(githubRuleResponse(result.data));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/integrations/github/capture-rules/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const result = await supabase.from('github_capture_rules').update({ enabled: false, updated_by_user_id: req.authUser.id, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', req.params.id).select('id').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'GitHub capture rule not found.' });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_capture_rule_disabled', targetType: 'github_capture_rule', targetId: req.params.id, metadata: {} });
+    res.json({ disabled: true });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/github/capture-rules/preview', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase.from('github_repositories').select('id, github_repository_id, owner_login, name, full_name, is_private, is_archived').eq('workspace_id', workspaceId).order('full_name').limit(100);
+    if (result.error) throw result.error;
+    res.json((result.data ?? []).map((repository) => ({ ...repository, selected: String(req.query?.repositoryScope ?? '') !== 'selected' || (String(req.query?.repositoryIds ?? '').split(',').filter(Boolean).includes(String(repository.id))) })));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/github/notification-preferences', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    res.json(await getGithubNotificationPreference(workspaceId, req.authUser.id));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/integrations/github/notification-preferences', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const values = Object.fromEntries(Object.keys(githubNotificationPreferenceDefaults).map((key) => [key, req.body?.[key] !== false]));
+    const result = await supabase.from('github_notification_preferences').upsert({ workspace_id: workspaceId, user_id: req.authUser.id, ...values, updated_at: new Date().toISOString() }, { onConflict: 'workspace_id,user_id' }).select('repository_available, issue_events, pull_request_events, review_requests, checks_failing').single();
+    if (result.error) throw result.error;
+    res.json(result.data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/github/references/:referenceId/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const reference = await supabase.from('external_references').select('id, provider, workspace_id').eq('workspace_id', workspaceId).eq('id', req.params.referenceId).maybeSingle();
+    if (reference.error) throw reference.error;
+    if (!reference.data || reference.data.provider !== 'github') return res.status(404).json({ error: 'GitHub reference not found' });
+    const links = await supabase.from('external_reference_links').select('target_id').eq('workspace_id', workspaceId).eq('external_reference_id', req.params.referenceId).eq('target_type', 'task');
+    if (links.error) throw links.error;
+    const taskIds = (links.data ?? []).map((link) => link.target_id).filter(Boolean);
+    if (!taskIds.length) return res.json([]);
+    const tasks = await supabase.from('tasks').select('id, workspace_id, project_id, title, status, priority, created_at, updated_at').eq('workspace_id', workspaceId).in('id', taskIds).neq('status', 'completed').neq('status', 'cancelled');
+    if (tasks.error) throw tasks.error;
+    res.json(tasks.data ?? []);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/github/references/:referenceId/task', authMiddleware, rateLimit('write'), quotaGuard('tasks'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const reference = await supabase.from('external_references').select('id, provider, workspace_id, external_type, metadata, external_url, normalized_url').eq('workspace_id', workspaceId).eq('id', req.params.referenceId).maybeSingle();
+    if (reference.error) throw reference.error;
+    if (!reference.data || reference.data.provider !== 'github' || !['issue', 'pullRequest'].includes(reference.data.external_type)) return res.status(404).json({ error: 'GitHub issue or pull request reference not found' });
+    const existingLinks = await supabase.from('external_reference_links').select('target_id').eq('workspace_id', workspaceId).eq('external_reference_id', reference.data.id).eq('target_type', 'task');
+    if (existingLinks.error) throw existingLinks.error;
+    const activeTaskIds = (existingLinks.data ?? []).map((link) => link.target_id).filter(Boolean);
+    if (activeTaskIds.length) {
+      const activeTasks = await supabase.from('tasks').select('id, workspace_id, project_id, title, status, priority, created_at, updated_at').eq('workspace_id', workspaceId).in('id', activeTaskIds).neq('status', 'completed').neq('status', 'cancelled');
+      if (activeTasks.error) throw activeTasks.error;
+      const activeGithubTasks = findActiveGithubTasks(activeTasks.data ?? []);
+      if (activeGithubTasks.length && req.body?.allow_duplicate !== true) return res.status(409).json({ code: 'github_task_exists', error: 'A Ledger task already tracks this GitHub item.', tasks: activeGithubTasks });
+    }
+    const projectId = req.body?.project_id ? String(req.body.project_id) : null;
+    if (projectId && !(await ensureWorkspaceResource('projects', projectId, workspaceId))) return res.status(404).json({ error: 'Project not found' });
+    const metadata = reference.data.metadata ?? {};
+    const title = String(req.body?.title ?? metadata.title ?? `GitHub ${reference.data.external_type === 'pullRequest' ? 'pull request' : 'issue'}`).trim().slice(0, 255);
+    const notes = githubTaskDescription({ type: reference.data.external_type, number: metadata.number, repository: metadata.repositoryFullName, bodyPreview: metadata.bodyPreview, url: reference.data.normalized_url ?? reference.data.external_url });
+    const payload = { workspace_id: workspaceId, project_id: projectId, title, description: notes, notes, due_date: null, due_time: null, status: 'todo', priority: String(req.body?.priority ?? 'medium'), assigned_to_user_id: null, assigned_to_team_id: null, assigned_team_id: null, assigned_by_user_id: null, assigned_at: null, tags: [], source: 'github', source_platform: 'github' };
+    const insertAttempts = [
+      { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: true },
+      { includeTaskHorizon: true, includeShowInToday: true, includeIsTodayFocus: false },
+      { includeTaskHorizon: false, includeShowInToday: false, includeIsTodayFocus: false },
+    ];
+    let createdTask = null;
+    for (const attempt of insertAttempts) {
+      const result = await supabase.from('tasks').insert({ ...payload, ...(attempt.includeTaskHorizon ? { task_horizon: 'long_term' } : {}), ...(attempt.includeShowInToday ? { show_in_today: false } : {}), ...(attempt.includeIsTodayFocus ? { is_today_focus: false } : {}) }).select(buildTaskSelectColumns(attempt)).single();
+      if (!result.error) { createdTask = result.data; break; }
+      if (!isMissingTaskTodayColumnError(result.error)) throw result.error;
+    }
+    if (!createdTask) throw new Error('Could not create task from GitHub reference');
+    const linked = await supabase.from('external_reference_links').upsert({ workspace_id: workspaceId, external_reference_id: reference.data.id, target_type: 'task', target_id: createdTask.id, created_by_user_id: req.authUser.id, sources: ['integration'], link_metadata: { source: 'github' } }, { onConflict: 'workspace_id,external_reference_id,target_type,target_id' });
+    if (linked.error) {
+      await supabase.from('tasks').delete().eq('workspace_id', workspaceId).eq('id', createdTask.id);
+      throw linked.error;
+    }
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_task_created', targetType: 'task', targetId: createdTask.id, metadata: { external_reference_id: reference.data.id, project_id: projectId } });
+    res.status(201).json(createdTask);
+  } catch (error) { return respondWithError(res, error); }
+});
+
 app.get('/api/integrations/github/status', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -7094,6 +7473,42 @@ app.post('/api/integrations/github/webhook', rateLimit('github_webhook'), async 
             const accessStatus = error instanceof GithubProviderError && ['not_found', 'inaccessible', 'revoked'].includes(error.accessStatus) ? 'inaccessible' : 'error';
             await supabase.from('external_references').update({ access_status: accessStatus, updated_at: now }).eq('id', reference.id).eq('workspace_id', row.data.workspace_id);
           }
+        }
+      }
+    }
+    if (row.data.status === 'active') {
+      const captureEvent = githubCaptureEventType({ event, action, payload: req.body });
+      if (captureEvent) {
+        const captureObjects = [];
+        if (event === 'installation_repositories' && action === 'added') {
+          for (const added of req.body?.repositories_added ?? []) {
+            const approved = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', row.data.workspace_id).eq('github_repository_id', String(added?.id ?? '')).maybeSingle();
+            if (!approved.error && approved.data) captureObjects.push({ repository: { ...approved.data, id: approved.data.github_repository_id }, object: null });
+          }
+        } else if (event === 'installation_repositories' && action === 'removed') {
+          for (const removed of req.body?.repositories_removed ?? []) {
+            if (!removed?.id) continue;
+            captureObjects.push({ repository: { ...removed, id: String(removed.id), full_name: removed.full_name, html_url: removed.html_url }, object: null });
+          }
+        } else if (repositoryId) {
+          if (event === 'repository' && action === 'created') {
+            try {
+              const token = await createInstallationToken({ installationId });
+              const repositories = await listInstallationRepositories({ token: token.token });
+              await syncGithubRepositories({ installationRow: row.data, repositories: repositories.repositories ?? [] });
+            } catch {
+              // The lifecycle event is still acknowledged; a later refresh can recover access.
+            }
+          }
+          const approved = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', row.data.workspace_id).eq('github_repository_id', repositoryId).maybeSingle();
+          if (!approved.error && approved.data) {
+            const object = req.body?.issue ?? req.body?.pull_request ?? req.body?.check_run?.pull_requests?.[0] ?? null;
+            if (object || captureEvent.startsWith('repository_')) captureObjects.push({ repository: { ...approved.data, id: approved.data.github_repository_id }, object });
+          }
+        }
+        for (const capture of captureObjects) {
+          const captured = await captureGithubWebhookEvent({ workspaceId: row.data.workspace_id, eventType: captureEvent, action, repository: capture.repository, object: capture.object, userId: row.data.installed_by_user_id });
+          if (captured.captured) await writeWorkspaceAuditLog({ workspaceId: row.data.workspace_id, actorUserId: row.data.installed_by_user_id, action: 'github_capture_created', targetType: 'github_capture_rule', targetId: captureEvent, metadata: { event_type: captureEvent, captured: captured.captured } });
         }
       }
     }
@@ -7452,6 +7867,97 @@ app.get('/api/integrations/github/repositories', authMiddleware, rateLimit('read
   } catch (error) { return respondWithError(res, error); }
 });
 
+app.get('/api/integrations/github/resources', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const query = String(req.query?.query ?? '').trim().slice(0, 120);
+    const type = String(req.query?.type ?? 'all').trim().toLowerCase();
+    const limit = Math.min(Math.max(Number(req.query?.limit) || 20, 1), 50);
+    if (!['all', 'repository', 'issue', 'pull_request'].includes(type)) return res.status(400).json({ error: 'Unsupported GitHub resource type.' });
+    const installation = await supabase.from('github_installations').select('installation_id, status').eq('workspace_id', workspaceId).maybeSingle();
+    if (installation.error) throw installation.error;
+    if (!installation.data || installation.data.status !== 'active') return res.json([]);
+
+    const repositories = await supabase.from('github_repositories').select('github_repository_id, owner_login, name, full_name, html_url, is_private, is_archived, is_disabled, default_branch').eq('workspace_id', workspaceId).eq('is_disabled', false).order('full_name').limit(100);
+    if (repositories.error) throw repositories.error;
+    const repoRows = repositories.data ?? [];
+    const normalizedQuery = query.toLowerCase();
+    let parsedGithubUrl = null;
+    if (/^https:\/\/(?:www\.)?github\.com\//i.test(query)) {
+      try { parsedGithubUrl = parseGithubUrl(query); } catch { parsedGithubUrl = null; }
+    }
+    const parsedRepository = parsedGithubUrl ? repoRows.find((repo) => repo.owner_login.toLowerCase() === parsedGithubUrl.owner.toLowerCase() && repo.name.toLowerCase() === parsedGithubUrl.repository.toLowerCase()) : null;
+    const matchesRepo = (repo) => !normalizedQuery || [repo.owner_login, repo.name, repo.full_name].some((value) => String(value ?? '').toLowerCase().includes(normalizedQuery));
+    const results = [];
+    if (parsedGithubUrl && parsedRepository && (type === 'all' || (type === 'pull_request' && parsedGithubUrl.resourceKind === 'pullRequest') || (type === parsedGithubUrl.resourceKind))) {
+      results.push({
+        resourceType: parsedGithubUrl.resourceKind === 'pullRequest' ? 'pull_request' : parsedGithubUrl.resourceKind,
+        githubRepositoryId: parsedRepository.github_repository_id,
+        number: parsedGithubUrl.number ?? null,
+        title: parsedGithubUrl.resourceKind === 'repository' ? parsedRepository.full_name : `${parsedGithubUrl.resourceKind === 'pullRequest' ? 'PR' : 'Issue'} #${parsedGithubUrl.number ?? ''}`,
+        repositoryFullName: parsedRepository.full_name,
+        canonicalUrl: parsedGithubUrl.normalizedUrl,
+        state: 'available',
+        isPrivate: Boolean(parsedRepository.is_private),
+        isArchived: Boolean(parsedRepository.is_archived),
+        defaultBranch: parsedRepository.default_branch ?? null,
+      });
+    }
+    if (type === 'all' || type === 'repository') {
+      results.push(...repoRows.filter(matchesRepo).slice(0, limit).map((repo) => ({
+        resourceType: 'repository',
+        id: `github-repository-${repo.github_repository_id}`,
+        githubRepositoryId: repo.github_repository_id,
+        title: repo.full_name,
+        repositoryFullName: repo.full_name,
+        canonicalUrl: repo.html_url,
+        isPrivate: Boolean(repo.is_private),
+        isArchived: Boolean(repo.is_archived),
+        defaultBranch: repo.default_branch ?? null,
+        state: repo.is_archived ? 'archived' : 'available',
+      })));
+    }
+
+    const referenceRows = await supabase.from('external_references').select('id, external_type, external_url, normalized_url, metadata, access_status, updated_at').eq('workspace_id', workspaceId).eq('provider', 'github').in('external_type', type === 'repository' ? ['repository'] : type === 'issue' ? ['issue'] : type === 'pull_request' ? ['pullRequest'] : ['issue', 'pullRequest']).order('updated_at', { ascending: false }).limit(200);
+    if (referenceRows.error) throw referenceRows.error;
+    const approvedById = new Map(repoRows.map((repo) => [String(repo.github_repository_id), repo]));
+    const mappedReferences = (referenceRows.data ?? []).filter((reference) => {
+      const repo = approvedById.get(String(reference.metadata?.githubRepositoryId ?? ''));
+      if (!repo || repo.is_disabled) return false;
+      const values = [reference.metadata?.title, reference.metadata?.repositoryFullName, reference.metadata?.ownerLogin, reference.metadata?.number, reference.normalized_url];
+      return !normalizedQuery || values.some((value) => String(value ?? '').toLowerCase().includes(normalizedQuery));
+    }).slice(0, limit).map((reference) => ({
+      resourceType: reference.external_type === 'pullRequest' ? 'pull_request' : reference.external_type,
+      referenceId: reference.id,
+      githubRepositoryId: reference.metadata?.githubRepositoryId ?? null,
+      githubId: reference.metadata?.githubId ?? null,
+      number: reference.metadata?.number ?? null,
+      title: reference.metadata?.title ?? (reference.external_type === 'pullRequest' ? `PR #${reference.metadata?.number ?? ''}` : `Issue #${reference.metadata?.number ?? ''}`),
+      repositoryFullName: reference.metadata?.repositoryFullName ?? null,
+      canonicalUrl: reference.normalized_url ?? reference.external_url,
+      state: reference.metadata?.state ?? null,
+      isPrivate: Boolean(reference.metadata?.isPrivate),
+      accessStatus: reference.access_status,
+    }));
+    results.push(...mappedReferences);
+
+    const repositoryId = String(req.query?.repositoryId ?? '').trim();
+    if (repositoryId && query.length >= 2 && ['all', 'issue', 'pull_request'].includes(type)) {
+      const repository = repoRows.find((row) => String(row.github_repository_id) === repositoryId);
+      if (repository && installation.data?.status === 'active') {
+        const remoteTypes = type === 'all' ? ['issue', 'pull_request'] : [type];
+        for (const remoteType of remoteTypes) {
+          const remote = await searchGithubWork({ repository, type: remoteType, query, state: 'all', limit: Math.min(limit, 20), installationId: installation.data.installation_id });
+          results.push(...remote.map((item) => ({ ...item, resourceType: item.resourceKind === 'pullRequest' ? 'pull_request' : 'issue' })));
+        }
+      }
+    }
+    const seen = new Set();
+    res.json(results.filter((item) => { const key = `${item.resourceType}:${item.referenceId ?? item.canonicalUrl}`; if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, limit));
+  } catch (error) { return res.status(error instanceof GithubProviderError ? 502 : (error.statusCode || 500)).json({ error: error instanceof GithubProviderError ? githubSafeMessage(error) : 'Could not search approved GitHub resources.' }); }
+});
+
 app.get('/api/integrations/github/search', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -7805,6 +8311,34 @@ app.get('/api/inbox', authMiddleware, rateLimit('read'), async (req, res) => {
   } catch (error) {
     return respondWithError(res, error);
   }
+});
+
+app.post('/api/inbox/:id/github-project', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const inbox = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!inbox) return res.status(404).json({ error: 'Intake item not found' });
+    const projectId = String(req.body?.project_id ?? '').trim();
+    if (!projectId || !(await ensureWorkspaceResource('projects', projectId, workspaceId))) return res.status(404).json({ error: 'Project not found' });
+    const links = await supabase.from('external_reference_links').select('external_reference_id').eq('workspace_id', workspaceId).eq('target_type', 'intake').eq('target_id', inbox.id);
+    if (links.error) throw links.error;
+    const referenceIds = (links.data ?? []).map((link) => link.external_reference_id).filter(Boolean);
+    if (!referenceIds.length) return res.status(400).json({ error: 'This Intake item has no linked GitHub reference.' });
+    const references = await supabase.from('external_references').select('id, provider, metadata, external_type').eq('workspace_id', workspaceId).in('id', referenceIds).eq('provider', 'github');
+    if (references.error) throw references.error;
+    const linkedProjects = [];
+    for (const reference of references.data ?? []) {
+      const existing = await supabase.from('external_reference_links').select('id').eq('workspace_id', workspaceId).eq('external_reference_id', reference.id).eq('target_type', 'project').eq('target_id', projectId).maybeSingle();
+      if (existing.error) throw existing.error;
+      if (existing.data) { linkedProjects.push(existing.data.id); continue; }
+      const inserted = await supabase.from('external_reference_links').insert({ workspace_id: workspaceId, external_reference_id: reference.id, target_type: 'project', target_id: projectId, created_by_user_id: req.authUser.id, sources: ['manual'], link_metadata: {} }).select('id').single();
+      if (inserted.error) throw inserted.error;
+      linkedProjects.push(inserted.data.id);
+    }
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_intake_attached_to_project', targetType: 'project', targetId: projectId, metadata: { inbox_id: inbox.id, external_reference_count: references.data?.length ?? 0 } });
+    res.json({ attached: true, project_id: projectId, link_ids: linkedProjects });
+  } catch (error) { return respondWithError(res, error); }
 });
 
 app.post('/api/inbox/:id/archive', authMiddleware, rateLimit('write'), async (req, res) => {
@@ -8365,6 +8899,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
           .select(inboxItemSelectColumns)
           .single();
         if (inboxUpdate.error) throw inboxUpdate.error;
+        if (githubRepositoryId) await linkGithubRepositoryToProject({ workspaceId, projectId: existingProject.id, repositoryId: githubRepositoryId, role: 'primary', userId: req.authUser.id });
         await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: existingProject.id, userId: req.authUser.id });
         return res.json({
           inbox_item: mapInboxItemResponse(inboxUpdate.data),
@@ -8412,6 +8947,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
+      if (githubRepositoryId) await linkGithubRepositoryToProject({ workspaceId, projectId: createdId, repositoryId: githubRepositoryId, role: 'primary', userId: req.authUser.id });
       await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
@@ -12885,6 +13421,7 @@ app.post(
   async (req, res) => {
     try {
       const workspaceId = await resolveWorkspaceIdForRequest(req);
+      await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
       const name = String(req.body?.name ?? '').trim();
       if (!name) {
         return res.status(400).json({ error: 'Project name required' });
@@ -12897,6 +13434,7 @@ app.post(
       const projectType = normalizeProjectType(req.body?.project_type);
       const leadId = normalizeNullableText(req.body?.lead_id);
       const ownerTeamId = normalizeNullableText(req.body?.owner_team_id);
+      const githubRepositoryId = normalizeNullableText(req.body?.github_repository_id);
       if (ownerTeamId) {
         const teamAllowed = await ensureWorkspaceTeam(ownerTeamId, workspaceId);
         if (!teamAllowed) {
@@ -12916,6 +13454,7 @@ app.post(
 
       if (existingError) throw existingError;
       if (existingProject) {
+        if (githubRepositoryId) await linkGithubRepositoryToProject({ workspaceId, projectId: existingProject.id, repositoryId: githubRepositoryId, role: 'primary', userId: req.authUser.id });
         return res.json(existingProject);
       }
 
@@ -12939,6 +13478,14 @@ app.post(
         .single();
 
       if (error) throw error;
+      if (githubRepositoryId) {
+        try {
+          await linkGithubRepositoryToProject({ workspaceId, projectId: data.id, repositoryId: githubRepositoryId, role: 'primary', userId: req.authUser.id });
+        } catch (linkError) {
+          await supabase.from('projects').delete().eq('workspace_id', workspaceId).eq('id', data.id);
+          throw linkError;
+        }
+      }
       res.json(data);
     } catch (error) {
       return respondWithError(res, error);
@@ -13035,6 +13582,63 @@ app.delete('/api/projects/:id', authMiddleware, rateLimit('write'), async (req, 
   } catch (error) {
     return respondWithError(res, error);
   }
+});
+
+app.get('/api/projects/:id/github-repositories', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    if (!(await ensureWorkspaceResource('projects', req.params.id, workspaceId))) return res.status(404).json({ error: 'Project not found' });
+    const links = await getProjectGithubRepositoryLinks(workspaceId, req.params.id);
+    res.json(links.map(mapProjectGithubRepositoryLink));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/projects/:id/github-repositories', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const role = req.body?.role === 'supporting' ? 'supporting' : 'primary';
+    const link = await linkGithubRepositoryToProject({ workspaceId, projectId: req.params.id, repositoryId: req.body?.repository_id, role, userId: req.authUser.id });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_repository_linked_to_project', targetType: 'project', targetId: req.params.id, metadata: { external_reference_id: link.external_reference_id, role } });
+    res.status(201).json(mapProjectGithubRepositoryLink(link));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/projects/:id/github-repositories/:linkId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const link = await supabase.from('external_reference_links').select('id, external_reference_id, target_type, target_id, link_metadata').eq('workspace_id', workspaceId).eq('id', req.params.linkId).eq('target_type', 'project').eq('target_id', req.params.id).maybeSingle();
+    if (link.error) throw link.error;
+    if (!link.data) return res.status(404).json({ error: 'Project repository link not found' });
+    const role = req.body?.role === 'primary' ? 'primary' : 'supporting';
+    if (role === 'primary') {
+      const primary = await supabase.rpc('set_primary_external_reference_link', { p_workspace_id: workspaceId, p_link_id: link.data.id });
+      if (primary.error) throw primary.error;
+    } else {
+      const updated = await supabase.from('external_reference_links').update({ link_metadata: { ...(link.data.link_metadata ?? {}), role: 'supporting' } }).eq('workspace_id', workspaceId).eq('id', link.data.id);
+      if (updated.error) throw updated.error;
+    }
+    const links = await getProjectGithubRepositoryLinks(workspaceId, req.params.id);
+    const result = links.find((item) => item.id === link.data.id);
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_project_repository_role_changed', targetType: 'project', targetId: req.params.id, metadata: { external_reference_id: link.data.external_reference_id, role } });
+    res.json(mapProjectGithubRepositoryLink(result));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/projects/:id/github-repositories/:linkId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const link = await supabase.from('external_reference_links').select('id, external_reference_id').eq('workspace_id', workspaceId).eq('id', req.params.linkId).eq('target_type', 'project').eq('target_id', req.params.id).maybeSingle();
+    if (link.error) throw link.error;
+    if (!link.data) return res.status(404).json({ error: 'Project repository link not found' });
+    const removed = await supabase.from('external_reference_links').delete().eq('workspace_id', workspaceId).eq('id', link.data.id);
+    if (removed.error) throw removed.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'github_repository_unlinked_from_project', targetType: 'project', targetId: req.params.id, metadata: { external_reference_id: link.data.external_reference_id } });
+    res.json({ removed: true });
+  } catch (error) { return respondWithError(res, error); }
 });
 
 app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async (req, res) => {
@@ -16078,7 +16682,7 @@ async function searchWorkspaceContent({
   const like = `%${rawQuery}%`;
   const normalizedQuery = normalizeSearchTerm(rawQuery);
 
-  const [notesResult, projectsResult, tasksResult, eventsResult, remindersResult, inboxResult, teamsResult, membersResult, workspaceResult] = await Promise.all([
+  const [notesResult, projectsResult, tasksResult, eventsResult, remindersResult, inboxResult, teamsResult, membersResult, workspaceResult, githubReferencesResult] = await Promise.all([
     supabase
       .from('notes')
       .select('id, title, preview, mode, updated_at, created_at')
@@ -16138,6 +16742,13 @@ async function searchWorkspaceContent({
       .select('owner_id')
       .eq('id', workspaceId)
       .maybeSingle(),
+    supabase
+      .from('external_references')
+      .select('id, external_type, external_url, normalized_url, metadata, access_status, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'github')
+      .order('updated_at', { ascending: false })
+      .limit(100),
   ]);
 
   if (notesResult.error) throw notesResult.error;
@@ -16149,6 +16760,7 @@ async function searchWorkspaceContent({
   if (teamsResult.error) throw teamsResult.error;
   if (membersResult.error) throw membersResult.error;
   if (workspaceResult.error) throw workspaceResult.error;
+  if (githubReferencesResult.error) throw githubReferencesResult.error;
 
   const memberUserIds = [
     ...new Set([
@@ -16361,7 +16973,31 @@ async function searchWorkspaceContent({
     };
   });
 
-  return [...notes, ...projects, ...tasks, ...events, ...reminders, ...people, ...teams, ...intake]
+  const githubExternal = (githubReferencesResult.data ?? []).filter((row) => {
+    const metadata = row.metadata ?? {};
+    return [metadata.title, metadata.repositoryFullName, metadata.ownerLogin, metadata.number, row.normalized_url].some((value) => normalizeSearchTerm(value).includes(normalizedQuery));
+  }).slice(0, 20).map((row) => {
+    const metadata = row.metadata ?? {};
+    const kind = row.external_type === 'pullRequest' ? 'Pull request' : row.external_type === 'issue' ? 'Issue' : 'Repository';
+    const title = String(metadata.title ?? (row.external_type === 'repository' ? metadata.repositoryFullName : `${kind} #${metadata.number ?? ''}`));
+    return {
+      type: 'github',
+      id: row.id,
+      title,
+      preview: `${kind} · ${metadata.repositoryFullName ?? ''}${metadata.number ? ` · #${metadata.number}` : ''}`,
+      snippet: `${kind} · ${metadata.repositoryFullName ?? ''}`,
+      workspace_id: workspaceId,
+      workspace_name: workspaceName,
+      source_type: 'external_reference',
+      source_id: row.id,
+      external_url: row.normalized_url ?? row.external_url,
+      external_type: row.external_type,
+      icon: 'Github',
+      score: scoreSearchResult(title, normalizedQuery, `${metadata.repositoryFullName ?? ''} ${metadata.number ?? ''}`, false),
+    };
+  });
+
+  return [...notes, ...projects, ...tasks, ...events, ...reminders, ...people, ...teams, ...intake, ...githubExternal]
     .sort((left, right) => {
       if (left.score !== right.score) return left.score - right.score;
       return String(left.title).localeCompare(String(right.title));

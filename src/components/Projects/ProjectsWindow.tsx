@@ -686,6 +686,8 @@ export const ProjectsWindow = () => {
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [newProjectType, setNewProjectType] = useState<ProjectTypeKind>('code');
   const [newProjectLeadId, setNewProjectLeadId] = useState('');
+  const [newProjectGithubRepositories, setNewProjectGithubRepositories] = useState<Array<{ github_repository_id: string; full_name: string; name: string; is_private?: boolean; is_archived?: boolean; default_branch?: string | null }>>([]);
+  const [newProjectGithubRepositoryId, setNewProjectGithubRepositoryId] = useState('');
   const [newProjectNoteIds, setNewProjectNoteIds] = useState<string[]>([]);
   const [newProjectNotes, setNewProjectNotes] = useState<NoteOption[]>([]);
   const [isLoadingNewProjectNotes, setIsLoadingNewProjectNotes] = useState(false);
@@ -1903,6 +1905,7 @@ export const ProjectsWindow = () => {
         project_type: newProjectType,
         lead_id: isPersonalWorkspace ? null : newProjectLeadId || null,
         owner_team_id: isPersonalWorkspace ? null : newProjectOwnerTeamId || null,
+        github_repository_id: newProjectGithubRepositoryId || null,
       });
       const created = data as ProjectRow;
       let linkNoteError: string | null = null;
@@ -1948,6 +1951,7 @@ export const ProjectsWindow = () => {
     newProjectLeadId,
     newProjectName,
     newProjectOwnerTeamId,
+    newProjectGithubRepositoryId,
     newProjectNoteIds,
     newProjectType,
     syncDraftFromProject,
@@ -1959,6 +1963,8 @@ export const ProjectsWindow = () => {
     setNewProjectDescription('');
     setNewProjectType('code');
     setNewProjectLeadId(user?.id ?? '');
+    setNewProjectGithubRepositoryId('');
+    setNewProjectGithubRepositories([]);
     setNewProjectNoteIds([]);
     setNewProjectNotesSearch('');
     setError(null);
@@ -2002,6 +2008,10 @@ export const ProjectsWindow = () => {
         setIsLoadingNewProjectNotes(false);
       }
     })();
+    void api.getGithubRepositories().then((payload) => {
+      const rows = Array.isArray(payload) ? payload : [];
+      setNewProjectGithubRepositories(rows as Array<{ github_repository_id: string; full_name: string; name: string; is_private?: boolean; is_archived?: boolean; default_branch?: string | null }>);
+    }).catch(() => setNewProjectGithubRepositories([]));
     window.setTimeout(() => {
       createProjectInputRef.current?.focus();
       createProjectInputRef.current?.select();
@@ -2015,6 +2025,7 @@ export const ProjectsWindow = () => {
     setNewProjectDescription('');
     setNewProjectType('code');
     setNewProjectLeadId('');
+    setNewProjectGithubRepositoryId('');
     setNewProjectOwnerTeamId('');
     setNewProjectNoteIds([]);
     setNewProjectNotes([]);
@@ -6321,6 +6332,15 @@ export const ProjectsWindow = () => {
                 </option>
               ))}
             </select>}
+
+            {newProjectGithubRepositories.length > 0 && <label className="inline-flex h-8 min-w-[190px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs text-[var(--ledger-text-secondary)]">
+              <img src="/github-mark.svg" alt="" className="h-3.5 w-3.5 dark:invert" />
+              <span className="sr-only">GitHub repository</span>
+              <select value={newProjectGithubRepositoryId} onChange={(event) => setNewProjectGithubRepositoryId(event.target.value)} className="min-w-0 flex-1 bg-transparent text-xs outline-none">
+                <option value="">GitHub repository (optional)</option>
+                {newProjectGithubRepositories.filter((repository) => !repository.is_archived).map((repository) => <option key={repository.github_repository_id} value={repository.github_repository_id}>{repository.full_name}{repository.is_private ? ' · Private' : ''}{repository.default_branch ? ` · ${repository.default_branch}` : ''}</option>)}
+              </select>
+            </label>}
 
             <button
               type="button"
