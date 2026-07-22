@@ -15450,6 +15450,87 @@ app.get('/api/tasks', authMiddleware, rateLimit('read'), async (req, res) => {
   }
 });
 
+const contextLinkTypes = new Set(['note', 'project', 'task', 'event', 'reminder']);
+const contextLinkTables = { note: 'notes', project: 'projects', task: 'tasks', event: 'events', reminder: 'reminders' };
+const contextLinkTitleColumns = { note: 'title', project: 'name', task: 'title', event: 'title', reminder: 'title' };
+const contextLinkTypeRank = { event: 1, note: 2, project: 3, reminder: 4, task: 5 };
+const contextLinkCanonical = (type, id, otherType, otherId) => {
+  const leftRank = contextLinkTypeRank[type];
+  const rightRank = contextLinkTypeRank[otherType];
+  return leftRank < rightRank || (leftRank === rightRank && String(id) < String(otherId))
+    ? { resource_a_type: type, resource_a_id: id, resource_b_type: otherType, resource_b_id: otherId }
+    : { resource_a_type: otherType, resource_a_id: otherId, resource_b_type: type, resource_b_id: id };
+};
+
+const syncLegacyCalendarContextLinks = async (workspaceId, calendarType, calendarId, projectId, noteId, userId) => {
+  for (const type of ['project', 'note']) {
+    const removals = await supabase.from('ledger_context_links').delete().eq('workspace_id', workspaceId).or(`and(resource_a_type.eq.${calendarType},resource_a_id.eq.${calendarId},resource_b_type.eq.${type}),and(resource_b_type.eq.${calendarType},resource_b_id.eq.${calendarId},resource_a_type.eq.${type})`);
+    if (removals.error) throw removals.error;
+  }
+  for (const [type, id] of [['project', projectId], ['note', noteId]]) {
+    if (!id) continue;
+    const { error } = await supabase.from('ledger_context_links').upsert({ workspace_id: workspaceId, ...contextLinkCanonical(calendarType, calendarId, type, String(id)), created_by: userId }, { onConflict: 'workspace_id,resource_a_type,resource_a_id,resource_b_type,resource_b_id' });
+    if (error) throw error;
+  }
+};
+
+const loadContextLinkResource = async (type, id, workspaceId) => {
+  const table = contextLinkTables[type];
+  const titleColumn = contextLinkTitleColumns[type];
+  const select = type === 'task' ? 'id, title, status, due_date, due_time, assigned_to, project_id' : `id, ${titleColumn}`;
+  const { data, error } = await supabase.from(table).select(select).eq('id', id).eq('workspace_id', workspaceId).maybeSingle();
+  if (error) throw error;
+  return data ? { type, id: String(data.id), title: String(data[titleColumn] ?? 'Untitled'), ...(type === 'task' ? { status: data.status ?? null, dueDate: data.due_date ?? null, dueTime: data.due_time ?? null, assignee: data.assigned_to ?? null, projectId: data.project_id ?? null } : {}) } : null;
+};
+
+app.get('/api/context-links', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const resourceType = String(req.query?.resource_type ?? '');
+    const resourceId = String(req.query?.resource_id ?? '');
+    if (!contextLinkTypes.has(resourceType) || !resourceId) return res.status(400).json({ error: 'A valid resource is required.' });
+    if (!(await ensureWorkspaceResource(contextLinkTables[resourceType], resourceId, workspaceId))) return res.status(404).json({ error: 'Resource not found.' });
+    const { data, error } = await supabase.from('ledger_context_links').select('id, resource_a_type, resource_a_id, resource_b_type, resource_b_id, created_at').eq('workspace_id', workspaceId).or(`and(resource_a_type.eq.${resourceType},resource_a_id.eq.${resourceId}),and(resource_b_type.eq.${resourceType},resource_b_id.eq.${resourceId})`).order('created_at', { ascending: false });
+    if (error) throw error;
+    const links = [];
+    for (const row of data ?? []) {
+      const otherType = row.resource_a_type === resourceType && row.resource_a_id === resourceId ? row.resource_b_type : row.resource_a_type;
+      const otherId = row.resource_a_type === resourceType && row.resource_a_id === resourceId ? row.resource_b_id : row.resource_a_id;
+      const resource = await loadContextLinkResource(otherType, otherId, workspaceId);
+      if (resource) links.push({ id: row.id, created_at: row.created_at, resource });
+    }
+    res.json(links);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/context-links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const resourceType = String(req.body?.resource_type ?? '');
+    const resourceId = String(req.body?.resource_id ?? '');
+    const targetType = String(req.body?.target_type ?? '');
+    const targetId = String(req.body?.target_id ?? '');
+    if (!contextLinkTypes.has(resourceType) || !contextLinkTypes.has(targetType) || !resourceId || !targetId) return res.status(400).json({ error: 'Valid resources are required.' });
+    if (resourceType === targetType && resourceId === targetId) return res.status(400).json({ error: 'A resource cannot link to itself.' });
+    if (resourceType === 'task' && targetType === 'task') return res.status(400).json({ error: 'Task-to-task links are not supported.' });
+    const [resourceAllowed, targetAllowed] = await Promise.all([ensureWorkspaceResource(contextLinkTables[resourceType], resourceId, workspaceId), ensureWorkspaceResource(contextLinkTables[targetType], targetId, workspaceId)]);
+    if (!resourceAllowed || !targetAllowed) return res.status(404).json({ error: 'Resource not found.' });
+    const canonical = contextLinkCanonical(resourceType, resourceId, targetType, targetId);
+    const { data, error } = await supabase.from('ledger_context_links').upsert({ workspace_id: workspaceId, ...canonical, created_by: req.authUser.id }, { onConflict: 'workspace_id,resource_a_type,resource_a_id,resource_b_type,resource_b_id' }).select('id, resource_a_type, resource_a_id, resource_b_type, resource_b_id, created_at').single();
+    if (error) throw error;
+    res.json(data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/context-links/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const { error } = await supabase.from('ledger_context_links').delete().eq('workspace_id', workspaceId).eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) { return respondWithError(res, error); }
+});
+
 app.get('/api/today', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceIds = await resolveTodayWorkspaceIds(req);
@@ -16638,6 +16719,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       .single();
 
     if (error) throw error;
+    await syncLegacyCalendarContextLinks(eventWorkspaceId, 'event', existingEvent.id, effectiveProjectId, effectiveNoteId, req.authUser.id);
     res.json(data);
   } catch (error) {
     return respondWithError(res, error);
@@ -17017,7 +17099,7 @@ async function searchWorkspaceContent({
   }).slice(0, 20).map((row) => {
     const metadata = row.metadata ?? {};
     const kind = row.external_type === 'pullRequest' ? 'Pull request' : row.external_type === 'issue' ? 'Issue' : 'Repository';
-    const title = String(metadata.title ?? (row.external_type === 'repository' ? metadata.repositoryFullName : `${kind} #${metadata.number ?? ''}`));
+    const title = String(metadata.title ?? (row.external_type === 'repository' ? metadata.repositoryFullName ?? metadata.fullName ?? metadata.name ?? 'GitHub repository' : `${kind} #${metadata.number ?? ''}`));
     return {
       type: 'github',
       id: row.id,
@@ -17609,6 +17691,7 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
       .single();
 
     if (error) throw error;
+    await syncLegacyCalendarContextLinks(reminder.workspace_id, 'reminder', reminder.id, data?.project_id ?? null, data?.note_id ?? null, req.authUser.id);
     res.json(mapReminderRow(data));
   } catch (error) {
     return respondWithError(res, error);

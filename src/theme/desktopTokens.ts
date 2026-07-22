@@ -320,6 +320,7 @@ export const getDesktopCssVars = (scheme: DesktopThemeScheme = 'light'): Record<
     '--ledger-tab-bar-border': colors.tabBarBorder,
     '--ledger-backdrop': colors.backdrop,
     '--ledger-shadow': colors.shadow,
+    '--ledger-github-icon-filter': scheme === 'dark' ? 'invert(1)' : 'none',
     '--ledger-shadow-accent': tokens.shadows.accent,
     '--ledger-control-radius': `${tokens.radius.control}px`,
     '--ledger-surface-radius': `${tokens.radius.surface}px`,

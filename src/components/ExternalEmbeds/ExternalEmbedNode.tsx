@@ -134,7 +134,7 @@ export const ExternalEmbedRenderer = ({ nodeKey, externalReferenceId, externalUr
   const githubMetadata = metadata as Record<string, any>;
   const github = reference?.provider === 'github';
   const fileName = String(metadata.fileName ?? 'Figma design');
-  const githubTitle = String(metadata.title ?? (reference?.external_type === 'repository' ? metadata.fullName : reference?.external_type === 'pullRequest' ? `PR #${metadata.number ?? ''}` : `Issue #${metadata.number ?? ''}`));
+  const githubTitle = String(metadata.title ?? (reference?.external_type === 'repository' ? metadata.repositoryFullName ?? metadata.fullName ?? metadata.name ?? 'GitHub repository' : reference?.external_type === 'pullRequest' ? `PR #${metadata.number ?? ''}` : `Issue #${metadata.number ?? ''}`));
   const nodeName = metadata.nodeName ? String(metadata.nodeName) : null;
   const nodeType = metadata.nodeType ? String(metadata.nodeType).toLowerCase().replace(/_/g, ' ') : 'File';
   const statusMessage = accessStatus === 'connection_required' ? `${github ? 'GitHub' : 'Figma'} is not connected for this workspace.` : accessStatus === 'repository_not_approved' ? 'Repository access changed.' : accessStatus === 'revoked' || accessStatus === 'expired' ? `${github ? 'GitHub' : 'Figma'} access needs to be refreshed.` : accessStatus === 'inaccessible' ? `This ${github ? 'GitHub item' : 'Figma design'} is not accessible.` : accessStatus === 'not_found' ? `This ${github ? 'GitHub item' : 'Figma design'} is no longer available.` : accessStatus === 'error' ? `Ledger couldn’t load this ${github ? 'GitHub reference' : 'Figma preview'}.` : null;

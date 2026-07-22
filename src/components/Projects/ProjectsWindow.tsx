@@ -56,6 +56,7 @@ import {
 import { ContextMenu } from '../Common/ContextMenu';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { LinkNoteModal } from '../Common/LinkNoteModal';
 import { SkeletonCompactRow, SkeletonProjectCard } from '../Common/Skeleton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
@@ -738,12 +739,10 @@ export const ProjectsWindow = () => {
   const [workspaceReminders, setWorkspaceReminders] = useState<ProjectCalendarReminder[]>([]);
   const [isLoadingLinkedNotes, setIsLoadingLinkedNotes] = useState(false);
   const [isLinkNoteModalOpen, setIsLinkNoteModalOpen] = useState(false);
-  const [linkNoteTargetProjectId, setLinkNoteTargetProjectId] = useState<string | null>(null);
   const [isLinkingNote, setIsLinkingNote] = useState(false);
   const [selectedLinkNoteIds, setSelectedLinkNoteIds] = useState<string[]>([]);
   const [linkableNotes, setLinkableNotes] = useState<NoteOption[]>([]);
   const [isLoadingLinkableNotes, setIsLoadingLinkableNotes] = useState(false);
-  const [linkNotesSearch, setLinkNotesSearch] = useState('');
   const [projectEvents, setProjectEvents] = useState<ProjectCalendarEvent[]>([]);
   const [projectReminders, setProjectReminders] = useState<ProjectCalendarReminder[]>([]);
   const [isLoadingProjectCalendarItems, setIsLoadingProjectCalendarItems] = useState(false);
@@ -1504,14 +1503,6 @@ export const ProjectsWindow = () => {
     () => tasks.find((task) => task.id === taskNotesTaskId) ?? null,
     [taskNotesTaskId, tasks]
   );
-
-  const filteredLinkableNotes = useMemo(() => {
-    const term = linkNotesSearch.trim().toLowerCase();
-    if (!term) return linkableNotes;
-    return linkableNotes.filter((note) =>
-      `${note.title} ${note.preview}`.toLowerCase().includes(term)
-    );
-  }, [linkNotesSearch, linkableNotes]);
 
   const filteredLinkableCalendarItems = useMemo(() => {
     const term = calendarLinkSearch.trim().toLowerCase();
@@ -2499,14 +2490,17 @@ export const ProjectsWindow = () => {
   const openLinkNoteModal = useCallback(
     async (projectId: string | null = selectedProjectId) => {
       if (!projectId) return;
-      setLinkNoteTargetProjectId(projectId);
       setIsLinkNoteModalOpen(true);
-      setLinkNotesSearch('');
-      setSelectedLinkNoteIds([]);
       await loadLinkableNotes(projectId);
     },
     [loadLinkableNotes, selectedProjectId]
   );
+
+  const loadNotesForLinkedContext = useCallback(async () => {
+    if (!selectedProjectId) return;
+    setSelectedLinkNoteIds([]);
+    await loadLinkableNotes(selectedProjectId);
+  }, [loadLinkableNotes, selectedProjectId]);
 
   const openLinkCalendarModal = useCallback(
     async (kind: CalendarLinkKind) => {
@@ -2927,26 +2921,25 @@ export const ProjectsWindow = () => {
     [api]
   );
 
-  const linkSelectedNotesToProject = useCallback(async () => {
-    const projectId = linkNoteTargetProjectId ?? selectedProjectId;
-    if (!projectId || selectedLinkNoteIds.length === 0) return;
+  const linkSelectedNotesToProject = useCallback(async (noteIds: string[]) => {
+    const projectId = selectedProjectId;
+    if (!projectId || noteIds.length === 0) return;
 
     setIsLinkingNote(true);
     try {
-      for (const noteId of selectedLinkNoteIds) {
+      for (const noteId of noteIds) {
         await api.linkProjectNote(projectId, noteId);
       }
       await loadLinkedNotes(projectId);
-      setLinkableNotes((prev) => prev.filter((note) => !selectedLinkNoteIds.includes(note.id)));
+      setLinkableNotes((prev) => prev.filter((note) => !noteIds.includes(note.id)));
       setSelectedLinkNoteIds([]);
       setIsLinkNoteModalOpen(false);
-      setLinkNoteTargetProjectId(null);
     } catch (error) {
       setTaskError(error instanceof Error ? error.message : 'Could not link note.');
     } finally {
       setIsLinkingNote(false);
     }
-  }, [api, loadLinkedNotes, linkNoteTargetProjectId, selectedLinkNoteIds, selectedProjectId]);
+  }, [api, loadLinkedNotes, selectedProjectId]);
 
   const unlinkNoteFromProject = useCallback(
     async (noteId: string) => {
@@ -4889,11 +4882,6 @@ export const ProjectsWindow = () => {
       <section className="mt-8 space-y-3">
         <div className="flex items-center gap-4">
           <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Resources</p>
-          {!isLoadingProjectResources && resources.length === 0 && (
-            <span className="text-[13px] text-[var(--ledger-text-muted)]">
-              No linked context yet.
-            </span>
-          )}
         </div>
         {isLoadingProjectResources ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -4922,14 +4910,25 @@ export const ProjectsWindow = () => {
                 </button>
               );
             })}
-            <button
-              type="button"
-              onClick={() => void openLinkNoteModal()}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-            >
-              <Plus size={12} />
-              Link
-            </button>
+            {activeWorkspaceId && selectedProject ? (
+              <LinkedDesignsSection
+                target={{ workspaceId: activeWorkspaceId, targetType: 'project', targetId: selectedProject.id }}
+                canEdit={activeWorkspace?.role !== 'viewer'}
+                compact
+                notes={linkableNotes}
+                isLoadingNotes={isLoadingLinkableNotes}
+                selectedNoteIds={selectedLinkNoteIds}
+                onToggleNote={(noteId) =>
+                  setSelectedLinkNoteIds((current) =>
+                    current.includes(noteId)
+                      ? current.filter((id) => id !== noteId)
+                      : [...current, noteId]
+                  )
+                }
+                onLinkNotes={linkSelectedNotesToProject}
+                onLoadNotes={loadNotesForLinkedContext}
+              />
+            ) : null}
           </div>
         )}
       </section>
@@ -6798,12 +6797,6 @@ export const ProjectsWindow = () => {
 
                   {renderProjectProperties()}
                   {renderProjectResources()}
-                  {activeWorkspaceId ? (
-                    <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--ledger-text-primary)]">Development</p><LinkedDesignsSection
-                      target={{ workspaceId: activeWorkspaceId, targetType: 'project', targetId: selectedProject.id }}
-                      canEdit={activeWorkspace?.role !== 'viewer'}
-                    /></div>
-                  ) : null}
                 </section>
 
                 <div className="mt-7">
@@ -7691,40 +7684,22 @@ export const ProjectsWindow = () => {
         </div>
       )}
 
-      <ModalOverlay
+      <LinkNoteModal
         isOpen={isLinkNoteModalOpen}
-        onClose={() => {
-          setIsLinkNoteModalOpen(false);
-          setLinkNoteTargetProjectId(null);
-          setSelectedLinkNoteIds([]);
-        }}
-        backdropBorderRadius="inherit"
-        disablePortal
-        manageWindowChrome={false}
-        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
-      >
-        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
-          <div>
-            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Link note</p>
-            <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-              Attach a workspace note to this project
-            </p>
-          </div>
-          <ModalCloseButton
-            onClick={() => {
-              setIsLinkNoteModalOpen(false);
-              setLinkNoteTargetProjectId(null);
-              setSelectedLinkNoteIds([]);
-            }}
-            ariaLabel="Close link note modal"
-            className="shrink-0"
-          />
-        </div>
-        <div className="space-y-3 p-5">
+        onClose={() => setIsLinkNoteModalOpen(false)}
+        notes={linkableNotes}
+        isLoading={isLoadingLinkableNotes}
+        isLinking={isLinkingNote}
+        onLink={linkSelectedNotesToProject}
+        description="Attach workspace notes to this project"
+      />
+      {/* The reusable link modal owns its search, selection, and footer actions. */}
+      {/* Legacy inline picker markup removed; LinkNoteModal is the single rendered surface.
+      <div className="space-y-3 p-5">
           <input
             type="text"
-            value={linkNotesSearch}
-            onChange={(e) => setLinkNotesSearch(e.target.value)}
+            value={''}
+            onChange={() => undefined}
             placeholder="Search notes"
             className="w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
@@ -7809,7 +7784,7 @@ export const ProjectsWindow = () => {
             </button>
           </div>
         </div>
-      </ModalOverlay>
+      </div> */}
 
       <ModalOverlay
         isOpen={Boolean(projectOwnerTeamPickerProject)}

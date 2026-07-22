@@ -138,6 +138,10 @@ body {
   }
 }
 
+img[src="/github-mark.svg"] {
+  filter: var(--ledger-github-icon-filter, none);
+}
+
 .notes-rich-text-editor a[href] {
   color: var(--ledger-link) !important;
   cursor: pointer;

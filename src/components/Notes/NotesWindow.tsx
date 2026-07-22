@@ -45,8 +45,6 @@ import {
   ModuleWindowHeader,
 } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
-import { ModalOverlay } from '../Common/ModalOverlay';
-import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { PinActionButton } from '../Common/PinActionButton';
 import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
 import { MindMapEditor } from './MindMapEditor';
@@ -721,13 +719,13 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [workspaceProjectNoteLinks, setWorkspaceProjectNoteLinks] = useState<
     WorkspaceProjectNoteLink[]
   >([]);
-  const [isLinkProjectModalOpen, setIsLinkProjectModalOpen] = useState(false);
+  const [linkedContextOpenRequest, setLinkedContextOpenRequest] = useState(0);
   const [selectionComposerContext, setSelectionComposerContext] =
     useState<NotesSelectionComposerContext | null>(null);
   const [linkProjectTargetNoteId, setLinkProjectTargetNoteId] = useState<string | null>(null);
   const [linkableProjects, setLinkableProjects] = useState<ProjectLinkCandidate[]>([]);
   const [isLoadingLinkableProjects, setIsLoadingLinkableProjects] = useState(false);
-  const [linkProjectSearch, setLinkProjectSearch] = useState('');
+  const [selectedLinkProjectIds, setSelectedLinkProjectIds] = useState<string[]>([]);
   const toast = useToast();
   const { pins, toggleObjectPin } = usePins();
   const { openSearch } = useSearch();
@@ -831,8 +829,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       setIsNoteActionsOpen(false);
       setIsInspectorActionsOpen(false);
       setLinkProjectTargetNoteId(noteId);
-      setLinkProjectSearch('');
-      setIsLinkProjectModalOpen(true);
+      setLinkedContextOpenRequest((current) => current + 1);
+      setSelectedLinkProjectIds([]);
       setIsLoadingLinkableProjects(true);
 
       try {
@@ -856,8 +854,37 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     [api, selectedNoteId]
   );
 
+  const toggleLinkProject = useCallback((projectId: string) => {
+    setSelectedLinkProjectIds((current) =>
+      current.includes(projectId)
+        ? current.filter((id) => id !== projectId)
+        : [...current, projectId]
+    );
+  }, []);
+
+  const loadProjectsForLinkedContext = useCallback(async () => {
+    setIsLoadingLinkableProjects(true);
+    try {
+      const projectsPayload = await api.getProjects();
+      const projects = Array.isArray(projectsPayload)
+        ? (projectsPayload as ProjectLinkCandidate[])
+        : [];
+      setLinkableProjects(
+        projects.filter((project) => {
+          const status = String(project.status ?? '').toLowerCase();
+          return status !== 'completed' && status !== 'paused' && status !== 'archived';
+        })
+      );
+    } catch (error) {
+      console.error('Failed to load linkable projects:', error);
+      setLinkableProjects([]);
+    } finally {
+      setIsLoadingLinkableProjects(false);
+    }
+  }, [api]);
+
   const linkNoteToProject = useCallback(
-    async (projectId: string) => {
+    async (projectId: string, preserveTarget = false) => {
       const noteId = linkProjectTargetNoteId ?? selectedNoteId;
       if (!noteId) return;
 
@@ -899,8 +926,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           detail: 'The note is now connected to the selected project.',
           variant: 'success',
         });
-        setIsLinkProjectModalOpen(false);
-        setLinkProjectTargetNoteId(null);
+        if (!preserveTarget) setLinkProjectTargetNoteId(null);
       } catch (error) {
         console.error('Failed to link note to project:', error);
         toast.show(error instanceof Error ? error.message : 'Could not link note', {
@@ -911,14 +937,16 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     [activeWorkspaceId, api, linkProjectTargetNoteId, selectedNoteId, toast]
   );
 
-  const filteredLinkableProjects = useMemo(() => {
-    const query = linkProjectSearch.trim().toLowerCase();
-    if (!query) return linkableProjects;
-    return linkableProjects.filter((project) => {
-      const haystack = `${project.name} ${project.status ?? ''}`.toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [linkProjectSearch, linkableProjects]);
+  const linkSelectedProjectsToNote = useCallback(
+    async (projectIds: string[]) => {
+      for (const projectId of projectIds) {
+        await linkNoteToProject(projectId, true);
+      }
+      setLinkProjectTargetNoteId(null);
+      setSelectedLinkProjectIds([]);
+    },
+    [linkNoteToProject]
+  );
 
   const openEditorOverviewComposer = useCallback(
     (kind: NotesSelectionComposerKind, selectedText: string) => {
@@ -5288,6 +5316,13 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       targetId: selectedNote.id,
                     }}
                     canEdit={activeWorkspace?.role !== 'viewer'}
+                    projects={linkableProjects}
+                    isLoadingProjects={isLoadingLinkableProjects}
+                    selectedProjectIds={selectedLinkProjectIds}
+                    onToggleProject={toggleLinkProject}
+                    onLinkProjects={linkSelectedProjectsToNote}
+                    onLoadProjects={loadProjectsForLinkedContext}
+                    openRequest={{ source: 'projects', token: linkedContextOpenRequest }}
                   />
                 ) : null}
 
@@ -5956,8 +5991,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         members={workspaceMembers}
         onClose={() => setSelectionComposerContext(null)}
       />
+      {/* Legacy nested project picker replaced by the Projects source in AddLinkedContextModal.
       <ModalOverlay
-        isOpen={isLinkProjectModalOpen}
+        isOpen={false}
         onClose={() => {
           setIsLinkProjectModalOpen(false);
           setLinkProjectTargetNoteId(null);
@@ -6034,7 +6070,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             )}
           </div>
         </div>
-      </ModalOverlay>
+      </ModalOverlay> */}
     </div>
   );
 };

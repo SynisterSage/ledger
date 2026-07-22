@@ -357,6 +357,12 @@ export const useApi = () => {
         }),
       getExternalReferencesForTarget: (targetType: string, targetId: string) =>
         request(`/api/external-references?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
+      getContextLinks: (resourceType: string, resourceId: string) =>
+        request(`/api/context-links?resource_type=${encodeURIComponent(resourceType)}&resource_id=${encodeURIComponent(resourceId)}`),
+      createContextLink: (resourceType: string, resourceId: string, targetType: string, targetId: string) =>
+        request('/api/context-links', { method: 'POST', body: JSON.stringify({ resource_type: resourceType, resource_id: resourceId, target_type: targetType, target_id: targetId }) }),
+      deleteContextLink: (linkId: string) =>
+        request(`/api/context-links/${encodeURIComponent(linkId)}`, { method: 'DELETE' }),
       getExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
         request(`/api/external-references/${encodeURIComponent(referenceId)}/preview?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`),
       getExternalReferenceChangeState: (referenceId: string, targetType: string, targetId: string) =>

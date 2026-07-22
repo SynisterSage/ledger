@@ -48,6 +48,7 @@ import {
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 
 // Get RRule from the module - handles both ESM and CommonJS
 const RRule = (rruleModule as any).RRule || (rruleModule as any).default?.RRule || rruleModule;
@@ -4875,6 +4876,17 @@ export const CalendarWindow = () => {
                     </p>
                   )}
                 </div>
+
+                {(selectedEventPreview || selectedReminder) && (
+                  <LinkedDesignsSection
+                    target={{ workspaceId: activeWorkspaceId ?? '', targetType: selectedEventPreview ? 'event' : 'reminder', targetId: selectedEventPreview ? (baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id) : (baseReminderId(selectedReminder!.id) ?? selectedReminder!.id) }}
+                    canEdit={selectedEventPreview ? canEditEvent(selectedEventPreview) : true}
+                    notes={notes.map((note) => ({ id: note.id, title: note.title, preview: String((note as any).content_preview ?? (note as any).preview ?? '') }))}
+                    projects={projects.map((project) => ({ id: project.id, name: project.name, status: (project as any).status, completeness: (project as any).completeness, end_date: (project as any).end_date }))}
+                    onLinkNotes={async (noteIds) => { for (const noteId of noteIds) await linkEventToNote(noteId); }}
+                    onLinkProjects={async (projectIds) => { for (const projectId of projectIds) await linkEventToProject(projectId); }}
+                  />
+                )}
 
                 {selectedEventPreview && calendarPreferences.eventNotesBehavior !== 'disabled' && (
                   <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">

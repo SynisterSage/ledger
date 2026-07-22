@@ -1,22 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  CalendarDays,
   Check,
   FileImage,
+  ListChecks,
   Link2,
   Loader2,
   MoreHorizontal,
-  Search,
   X,
   LockKeyhole,
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
+import { FigmaMark } from '../Common/FigmaMark';
 import type { ExternalEmbedTargetType } from './ExternalEmbedNode';
 import { GithubResourcePicker, type GithubResourcePickerResult } from './GithubResourcePicker';
+import {
+  AddLinkedContextModal,
+  type LinkedContextMode,
+  type LinkedContextSource,
+  type LinkedCalendarItem,
+  type LinkedTask,
+} from './AddLinkedContextModal';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
-  targetType: ExternalEmbedTargetType;
+  targetType: ExternalEmbedTargetType | 'event' | 'reminder';
   targetId: string;
 };
 type Reference = {
@@ -60,7 +69,7 @@ const githubTitle = (reference: Reference) =>
   String(
     reference.metadata?.title ??
       (reference.external_type === 'repository'
-        ? reference.metadata?.fullName
+        ? reference.metadata?.repositoryFullName ?? reference.metadata?.fullName ?? reference.metadata?.name ?? 'GitHub repository'
         : reference.external_type === 'pullRequest'
         ? `PR #${reference.metadata?.number ?? ''}`
         : `Issue #${reference.metadata?.number ?? ''}`)
@@ -73,6 +82,20 @@ export function LinkedDesignsSection({
   onInsert,
   fallbackNodeName,
   fallbackFileName,
+  compact = false,
+  notes,
+  isLoadingNotes,
+  selectedNoteIds,
+  onToggleNote,
+  onLinkNotes,
+  onLoadNotes,
+  onLoadProjects,
+  projects,
+  isLoadingProjects,
+  selectedProjectIds,
+  onToggleProject,
+  onLinkProjects,
+  openRequest,
 }: {
   target: LinkedDesignTarget;
   canEdit?: boolean;
@@ -80,6 +103,26 @@ export function LinkedDesignsSection({
   onInsert?: (reference: { id: string; url: string }) => void;
   fallbackNodeName?: string | null;
   fallbackFileName?: string | null;
+  compact?: boolean;
+  onLinkNote?: () => void;
+  notes?: Array<{ id: string; title: string; preview: string }>;
+  isLoadingNotes?: boolean;
+  selectedNoteIds?: string[];
+  onToggleNote?: (noteId: string) => void;
+  onLinkNotes?: (noteIds: string[]) => void | Promise<void>;
+  onLoadNotes?: () => void | Promise<void>;
+  onLoadProjects?: () => void | Promise<void>;
+  projects?: Array<{ id: string; name: string; status?: string | null; completeness?: number | null; end_date?: string | null }>;
+  isLoadingProjects?: boolean;
+  selectedProjectIds?: string[];
+  onToggleProject?: (projectId: string) => void;
+  onLinkProjects?: (projectIds: string[]) => void | Promise<void>;
+  calendarItems?: LinkedCalendarItem[];
+  selectedCalendarItemIds?: string[];
+  onToggleCalendarItem?: (itemId: string) => void;
+  onLinkCalendarItems?: (itemIds: string[]) => void | Promise<void>;
+  tasks?: LinkedTask[];
+  openRequest?: { source: LinkedContextSource; token: number };
 }) {
   const api = useApi();
   const toast = useToast();
@@ -101,11 +144,50 @@ export function LinkedDesignsSection({
   const [projectPickerId, setProjectPickerId] = useState('');
   const [projectOptions, setProjectOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [provider, setProvider] = useState<'figma' | 'github'>('figma');
+  const [contextSource, setContextSource] = useState<LinkedContextSource>('figma');
   const [githubRepositories, setGithubRepositories] = useState<
     Array<{ github_repository_id: string; full_name: string; owner_login: string; name: string }>
   >([]);
   const [githubRepositoryId, setGithubRepositoryId] = useState('');
-  const [githubType, setGithubType] = useState<'issue' | 'pull_request'>('issue');
+  const [calendarItems, setCalendarItems] = useState<LinkedCalendarItem[]>([]);
+  const [linkableCalendarItems, setLinkableCalendarItems] = useState<LinkedCalendarItem[]>([]);
+  const [selectedCalendarItemIds, setSelectedCalendarItemIds] = useState<string[]>([]);
+  const [contextLinks, setContextLinks] = useState<Array<{ id: string; resource: { type: string; id: string; title: string; status?: string | null; dueDate?: string | null; dueTime?: string | null; assignee?: string | null; projectId?: string | null } }>>([]);
+  const [linkableTasks, setLinkableTasks] = useState<LinkedTask[]>([]);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const githubType = 'issue' as const;
+
+  const handleContextSourceChange = (nextSource: LinkedContextSource) => {
+    setContextSource(nextSource);
+    setQuery((current) => current.replace(/^__calendar_filter__:[^ ]* ?/, ''));
+    if (nextSource !== 'calendar') setSelectedCalendarItemIds([]);
+    if (nextSource === 'figma' || nextSource === 'github') {
+      setProvider(nextSource);
+      setMode('paste');
+    }
+    if (nextSource === 'notes') void onLoadNotes?.();
+    if (nextSource === 'projects') void onLoadProjects?.();
+    if (nextSource === 'tasks') void loadTasks();
+  };
+
+  const loadTasks = async () => {
+    if (target.targetType === 'project' || target.targetType === 'task') return;
+    setIsLoadingTasks(true);
+    try {
+      const [taskPayload, linkPayload, projectPayload] = await Promise.all([api.getTasks(), api.getContextLinks(String(target.targetType), target.targetId), api.getProjects({ includeCompleted: true })]);
+      const rows = Array.isArray(taskPayload) ? taskPayload as Array<Record<string, any>> : [];
+      const links = Array.isArray(linkPayload) ? linkPayload as typeof contextLinks : [];
+      const projectNames = new Map((Array.isArray(projectPayload) ? projectPayload : []).map((project: any) => [String(project.id), String(project.name ?? '')]));
+      setContextLinks(links);
+      const linkedIds = new Set(links.filter((link) => link.resource.type === 'task').map((link) => link.resource.id));
+      setLinkableTasks(rows.filter((task) => !linkedIds.has(String(task.id))).map((task) => ({ id: String(task.id), title: String(task.title ?? 'Untitled task'), status: task.status ?? null, dueDate: task.due_date ?? null, dueTime: task.due_time ?? null, assignee: task.assigned_to ?? task.assigned_to_user_id ?? null, projectName: task.project_name ?? projectNames.get(String(task.project_id)) ?? null })));
+    } catch {
+      setLinkableTasks([]);
+    } finally {
+      setIsLoadingTasks(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -173,6 +255,32 @@ export function LinkedDesignsSection({
           hydrated.map((entry) => [entry.link.external_reference_id, entry.preview])
         )
       );
+      try {
+        const internalLinks = await api.getContextLinks(String(target.targetType), target.targetId);
+        setContextLinks(Array.isArray(internalLinks) ? internalLinks as typeof contextLinks : []);
+      } catch {
+        setContextLinks([]);
+      }
+      if (target.targetType !== 'project' && target.targetType !== 'task') void loadTasks();
+      if (target.targetType === 'note' || target.targetType === 'meetingNote' || target.targetType === 'project') {
+        const [eventsPayload, remindersPayload] = await Promise.all([api.getEvents(), api.getReminders()]);
+        const events = Array.isArray(eventsPayload) ? eventsPayload as Array<Record<string, any>> : [];
+        const reminders = Array.isArray(remindersPayload) ? remindersPayload as Array<Record<string, any>> : [];
+        const matches = (item: Record<string, any>) =>
+          target.targetType === 'project' ? item.project_id === target.targetId : item.note_id === target.targetId;
+        const allCalendarItems = [
+          ...events.filter(matches).map((item) => ({ id: String(item.id), title: String(item.title ?? 'Untitled event'), kind: 'event' as const, startsAt: String(item.start_at), endsAt: item.end_at ?? null, status: item.status ?? null, calendarName: item.calendar_name ?? null, projectName: item.project_name ?? null })),
+          ...reminders.filter(matches).map((item) => ({ id: String(item.id), title: String(item.title ?? 'Untitled reminder'), kind: 'reminder' as const, startsAt: String(item.remind_at), status: item.status ?? null, calendarName: item.calendar_name ?? null, projectName: item.project_name ?? null })),
+        ];
+        setCalendarItems(allCalendarItems);
+        const currentTargetField = target.targetType === 'project' ? 'project_id' : 'note_id';
+        const allEvents = events.map((item) => ({ id: String(item.id), title: String(item.title ?? 'Untitled event'), kind: 'event' as const, startsAt: String(item.start_at), endsAt: item.end_at ?? null, status: item.status ?? null, calendarName: item.calendar_name ?? null, projectName: item.project_name ?? null, linkedTargetId: item[currentTargetField] }));
+        const allReminders = reminders.map((item) => ({ id: String(item.id), title: String(item.title ?? 'Untitled reminder'), kind: 'reminder' as const, startsAt: String(item.remind_at), status: item.status ?? null, calendarName: item.calendar_name ?? null, projectName: item.project_name ?? null, linkedTargetId: item[currentTargetField] }));
+        setLinkableCalendarItems([...allEvents, ...allReminders].filter((item) => item.linkedTargetId !== target.targetId).map(({ linkedTargetId: _linkedTargetId, ...item }) => item));
+      } else {
+        setCalendarItems([]);
+        setLinkableCalendarItems([]);
+      }
     } catch {
       toast.show('Could not load linked references.', { variant: 'error' });
     } finally {
@@ -183,15 +291,28 @@ export function LinkedDesignsSection({
     void load();
   }, [target.targetId, target.targetType]);
   useEffect(() => {
+    if (!openRequest || openRequest.token === 0) return;
+    setContextSource(openRequest.source);
+    setDialogOpen(true);
+    if (openRequest.source === 'notes') void onLoadNotes?.();
+    if (openRequest.source === 'projects') void onLoadProjects?.();
+  }, [openRequest?.source, openRequest?.token, onLoadNotes, onLoadProjects]);
+  useEffect(() => {
     if (mode !== 'existing' || provider !== 'figma') return;
     const timer = window.setTimeout(() => {
       void api
         .searchExternalReferences(query)
-        .then((rows) => setExisting(Array.isArray(rows) ? (rows as Reference[]) : []))
+        .then((rows) =>
+          setExisting(
+            Array.isArray(rows)
+              ? (rows as Reference[]).filter((reference) => reference.provider === 'figma')
+              : []
+          )
+        )
         .catch(() => setExisting([]));
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [api, mode, query]);
+  }, [api, mode, provider, query]);
   useEffect(() => {
     if (!dialogOpen || provider !== 'github') return;
     void api
@@ -475,6 +596,53 @@ export function LinkedDesignsSection({
     }
   };
 
+  const toggleCalendarItem = (itemId: string) => {
+    setSelectedCalendarItemIds((current) =>
+      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]
+    );
+  };
+
+  const linkCalendarItems = async (itemIds: string[]) => {
+    if (!canEdit) return;
+    setBusyId('calendar-link');
+    try {
+      for (const itemId of itemIds) {
+        const item = linkableCalendarItems.find((candidate) => candidate.id === itemId);
+        if (!item) continue;
+        const payload = target.targetType === 'project' ? { project_id: target.targetId } : { note_id: target.targetId };
+        if (item.kind === 'event') await api.updateEvent(item.id, payload);
+        else await api.updateReminder(item.id, payload);
+      }
+      setSelectedCalendarItemIds([]);
+      await load();
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not link calendar items.', { variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleTask = (taskId: string) => setSelectedTaskIds((current) => current.includes(taskId) ? current.filter((id) => id !== taskId) : [...current, taskId]);
+  const linkTasks = async (taskIds: string[]) => {
+    if (!canEdit) return;
+    setBusyId('task-link');
+    try {
+      for (const taskId of taskIds) await api.createContextLink(String(target.targetType), target.targetId, 'task', taskId);
+      setSelectedTaskIds([]);
+      await load();
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not link tasks.', { variant: 'error' });
+    } finally { setBusyId(null); }
+  };
+
+  const unlinkContextLink = async (linkId: string) => {
+    if (!canEdit) return;
+    setBusyId(linkId);
+    try { await api.deleteContextLink(linkId); await load(); }
+    catch { toast.show('Could not unlink this context.', { variant: 'error' }); }
+    finally { setBusyId(null); }
+  };
+
   const rows = useMemo(
     () =>
       links
@@ -494,10 +662,10 @@ export function LinkedDesignsSection({
   const githubAttention = rows.filter(({ reference }) => isGithub(reference) && (Number((reference?.metadata as any)?.reviewSummary?.reviewRequestedCount ?? 0) > 0 || Number((reference?.metadata as any)?.reviewSummary?.changesRequestedCount ?? 0) > 0 || String((reference?.metadata as any)?.checksSummary?.overallState ?? '') === 'failing')).length;
   return (
     <section
-      className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4"
+      className={compact ? 'flex flex-wrap items-center gap-2' : 'space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4'}
       aria-labelledby={`linked-designs-${target.targetId}`}
     >
-      <div className="flex items-center justify-between gap-3">
+      {!compact && <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <p
             id={`linked-designs-${target.targetId}`}
@@ -505,8 +673,8 @@ export function LinkedDesignsSection({
           >
             {sectionLabel}
           </p>
-          {rows.length > 0 && (
-            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length}</span>
+          {(rows.length > 0 || calendarItems.length > 0 || contextLinks.length > 0) && (
+            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + calendarItems.length + contextLinks.length}</span>
           )}
           {target.targetType === 'project' && hasGithubWork && (
             <span className="text-[11px] text-[var(--ledger-text-muted)]">{githubIssues} open issues · {githubPullRequests} open PRs{githubAttention ? ` · ${githubAttention} needs attention` : ''}</span>
@@ -526,15 +694,32 @@ export function LinkedDesignsSection({
           <button type="button" onClick={() => void openProjectPicker()} className="text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Attach to project</button>
         )}
         {canEdit && <GithubResourcePicker onSelect={selectGithubResource} existingReferenceIds={links.map((link) => link.external_reference_id)} />}
-      </div>
+      </div>}
       {loading ? (
-        <div className="flex items-center gap-2 py-3 text-xs text-[var(--ledger-text-muted)]">
-          <Loader2 size={13} className="animate-spin" />
-          Loading linked work…
-        </div>
-      ) : rows.length === 0 ? (
+        compact ? (
+          <div className="flex items-center gap-2" aria-label="Loading resources">
+            {[72, 112, 88].map((width, index) => (
+              <div
+                key={index}
+                className="h-8 animate-pulse rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
+                style={{ width }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 py-3 text-xs text-[var(--ledger-text-muted)]">
+            <Loader2 size={13} className="animate-spin" />
+            Loading linked work…
+          </div>
+        )
+      ) : rows.length === 0 && calendarItems.length === 0 && contextLinks.length === 0 ? (
+        compact ? (
+          <>
+            {canEdit && <button type="button" onClick={() => setDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={12} />Link</button>}
+          </>
+        ) : (
         <div className="rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] px-3 py-3 text-xs text-[var(--ledger-text-muted)]">
-          Keep related Figma designs and GitHub work connected to this item.
+          Link events or reminders to keep related work and scheduling connected.
           {canEdit && (
             <button
               type="button"
@@ -545,8 +730,26 @@ export function LinkedDesignsSection({
             </button>
           )}
         </div>
+        )
       ) : (
-        <div className="space-y-1">
+        <div className={compact ? 'contents' : 'space-y-1'}>
+          {contextLinks.filter((link) => link.resource.type === 'task').map((link) => (
+            <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
+              <ListChecks size={compact ? 13 : 15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => window.desktopWindow?.openModule('projects', { kind: 'projects', focusTaskId: link.resource.id } as any)}><p className={`truncate text-xs font-medium text-[var(--ledger-text-primary)] ${link.resource.status === 'completed' ? 'line-through opacity-70' : ''}`}>{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Task{link.resource.dueDate ? ` · Due ${link.resource.dueDate}` : ''}{link.resource.assignee ? ` · ${link.resource.assignee}` : ''}{link.resource.status === 'completed' ? ' · Completed' : ''}</p>}</button>
+              {canEdit && <button type="button" aria-label="Unlink task" className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" onClick={() => void unlinkContextLink(link.id)}><MoreHorizontal size={14} /></button>}
+            </div>
+          ))}
+          {calendarItems.map((item) => (
+            <div key={`calendar-${item.kind}-${item.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]"><CalendarDays size={14} /></div>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => void window.desktopWindow?.openModule('calendar', { kind: 'calendar', focusContext: `${item.kind === 'event' ? 'focus-event' : 'focus-reminder'}:${item.id}`, focusDate: item.startsAt.slice(0, 10) } as any)}>
+                <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{item.title}</p>
+                {!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{new Date(item.startsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {item.kind === 'event' ? 'Event' : 'Reminder'}{item.status ? ` · ${item.status}` : ''}{item.projectName ? ` · ${item.projectName}` : ''}</p>}
+              </button>
+              {canEdit && <button type="button" aria-label={`Unlink ${item.kind}`} onClick={() => { void (item.kind === 'event' ? api.updateEvent(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null }) : api.updateReminder(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null })).then(load); }} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>}
+            </div>
+          ))}
           {rows.map(({ link, reference }) => {
             const github = isGithub(reference);
             const githubMetadata = (reference?.metadata ?? {}) as Record<string, any>;
@@ -581,11 +784,13 @@ export function LinkedDesignsSection({
             return (
               <div
                 key={link.id}
-                className="relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2"
+                className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}
               >
-                <div className="flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--ledger-surface-muted)]">
+                <div className={compact ? 'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-sm' : 'flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--ledger-surface-muted)]'}>
                   {github ? (
                     <img src="/github-mark.svg" alt="" className="h-4 w-4" />
+                  ) : compact ? (
+                    <FigmaMark size={13} />
                   ) : preview?.url ? (
                     <img src={preview.url} alt={title} className="h-full w-full object-cover" />
                   ) : (
@@ -600,7 +805,7 @@ export function LinkedDesignsSection({
                   <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">
                     {title}
                   </p>
-                  <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">
+                  {!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">
                     {github ? (
                       <>
                         {reference?.external_type === 'pullRequest'
@@ -618,7 +823,7 @@ export function LinkedDesignsSection({
                       'Figma'
                     )}
                     {context ? ` · ${context}` : ''}
-                  </p>
+                  </p>}
                 </button>
                 {canInsert && onInsert && (
                   <button
@@ -715,28 +920,92 @@ export function LinkedDesignsSection({
               </div>
             );
           })}
+          {compact && canEdit && <>
+            <button type="button" onClick={() => setDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={12} />Link</button>
+          </>}
         </div>
       )}
       {dialogOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Add linked context"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setDialogOpen(false);
-          }}
-        >
-          <div className="w-full max-w-md rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-4 shadow-[var(--ledger-shadow)]">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                Add linked context
-              </h3>
-              <button type="button" aria-label="Close" onClick={() => setDialogOpen(false)}>
-                <X size={15} />
-              </button>
-            </div>
+        <>
+          <AddLinkedContextModal
+            isOpen={dialogOpen}
+            onClose={() => setDialogOpen(false)}
+            source={contextSource}
+            onSourceChange={handleContextSourceChange}
+            hiddenSources={
+              target.targetType === 'project'
+                ? ['projects', 'tasks']
+                : target.targetType === 'note' || target.targetType === 'meetingNote'
+                  ? ['notes']
+                : target.targetType === 'task'
+                  ? ['tasks', 'projects']
+                : String(target.targetType) === 'event' || String(target.targetType) === 'reminder'
+                    ? ['calendar']
+                    : []
+            }
+            notes={notes}
+            isLoadingNotes={isLoadingNotes}
+            selectedNoteIds={selectedNoteIds}
+            onToggleNote={onToggleNote}
+            onLinkNotes={async (noteIds) => {
+              await onLinkNotes?.(noteIds);
+              setDialogOpen(false);
+            }}
+            projects={projects}
+            isLoadingProjects={isLoadingProjects}
+            selectedProjectIds={selectedProjectIds}
+            onToggleProject={onToggleProject}
+            onLinkProjects={async (projectIds) => {
+              await onLinkProjects?.(projectIds);
+              setDialogOpen(false);
+            }}
+            calendarItems={linkableCalendarItems}
+            selectedCalendarItemIds={selectedCalendarItemIds}
+            onToggleCalendarItem={toggleCalendarItem}
+            onLinkCalendarItems={async (itemIds) => {
+              await linkCalendarItems(itemIds);
+              setDialogOpen(false);
+            }}
+            tasks={linkableTasks}
+            isLoadingTasks={isLoadingTasks}
+            selectedTaskIds={selectedTaskIds}
+            onToggleTask={toggleTask}
+            onLinkTasks={async (taskIds) => {
+              await linkTasks(taskIds);
+              setDialogOpen(false);
+            }}
+            query={query}
+            onQueryChange={setQuery}
+            mode={mode as LinkedContextMode}
+            onModeChange={setMode}
+            url={url}
+            onUrlChange={setUrl}
+            existing={existing}
+            githubRepositories={githubRepositories}
+            githubRepositoryId={githubRepositoryId}
+            onGithubRepositoryChange={setGithubRepositoryId}
+            busyId={busyId}
+            onPasteLink={pasteLink}
+            onLinkReference={linkReference}
+            onLinkRepository={linkApprovedRepository}
+            resourceTitle={(reference) => reference.provider === 'github' ? githubTitle(reference as Reference) : referenceTitle(reference as Reference)}
+            resourceMeta={(reference) => reference.provider === 'github' ? String(reference.metadata?.repositoryFullName ?? '') : `Figma · ${resourceLabel(reference as Reference)}`}
+          />
+          {/* The previous inline picker was replaced by AddLinkedContextModal. */}
+          {/*
             <div className="mt-3 flex gap-1 rounded-lg bg-[var(--ledger-surface-muted)] p-1">
+              {onLinkNote && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDialogOpen(false);
+                    onLinkNote();
+                  }}
+                  className="flex-1 rounded-md px-2 py-1.5 text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  Note
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -834,7 +1103,7 @@ export function LinkedDesignsSection({
                     {target.targetType === 'project' && githubRepositories.length > 0 && (
                       <div className="mt-2 rounded-lg border border-[color:var(--ledger-border-subtle)] p-2">
                         <p className="text-[11px] text-[var(--ledger-text-muted)]">Link an approved repository</p>
-                        <div className="mt-1 space-y-0.5">
+                        <div className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
                           {githubRepositories.map((repo) => (
                             <button key={repo.github_repository_id} type="button" onClick={() => void linkApprovedRepository(repo)} disabled={Boolean(busyId)} className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50">
                               <span className="truncate">{repo.full_name}</span><span className="ml-2 text-[var(--ledger-accent)]">Link</span>
@@ -930,6 +1199,9 @@ export function LinkedDesignsSection({
             </div>
           </div>
         </div>
+      )}
+          */}
+        </>
       )}
       {locations && (
         <div

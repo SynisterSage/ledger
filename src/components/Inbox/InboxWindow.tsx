@@ -609,9 +609,20 @@ const getTypeDisplayLabel = (item: InboxItem) => {
   return 'Suggested task';
 };
 
+const GithubMark = ({ size = 13, className = '' }: { size?: number; className?: string }) => (
+  <img
+    src="/github-mark.svg"
+    alt=""
+    className={className}
+    style={{ width: size, height: size }}
+  />
+);
+
 const getRowIcon = (item: InboxItem) => {
   const sourceBucket = getItemSourceBucket(item);
   const figmaSource = normalizeForSearch(item.source_provider).includes('figma') || normalizeForSearch(item.source).includes('figma');
+  const githubSource = normalizeForSearch(item.source_provider).includes('github') || normalizeForSearch(item.source).includes('github');
+  if (githubSource) return GithubMark;
   if (figmaSource) return FigmaMark;
   if (sourceBucket === 'browser') return Globe;
   if (sourceBucket === 'meeting') return Calendar;
