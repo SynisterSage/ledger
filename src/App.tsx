@@ -78,6 +78,7 @@ import ProjectsWindow from './components/Projects/ProjectsWindow';
 import TeamsWindow from './components/Teams/TeamsWindow';
 import TeamSettingsWindow from './components/Teams/TeamSettingsWindow';
 import IntakeWindow from './components/Inbox/InboxWindow';
+import SlackWindow from './components/Slack/SlackWindow';
 import { NotificationCenterWindow } from './components/Notifications/NotificationCenterWindow';
 import {
   NotificationTray,
@@ -115,6 +116,7 @@ type ModuleKind =
   | 'notifications'
   | 'settings'
   | 'inbox'
+  | 'slack'
   | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
@@ -123,9 +125,12 @@ type ModuleKind =
   | null;
 
 const windowParams = new URLSearchParams(window.location.search);
+const workspaceSlackMatch = window.location.pathname.match(/^\/workspaces\/([^/]+)\/slack\/?$/);
 const pathnameModuleKind =
   window.location.pathname === '/intake' || window.location.pathname === '/inbox'
     ? ('inbox' as const)
+    : workspaceSlackMatch
+    ? ('slack' as const)
     : null;
 const isModuleWindow = windowParams.get('window') === 'module' || pathnameModuleKind !== null;
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? pathnameModuleKind ?? null;
@@ -142,6 +147,7 @@ type KeepAliveModuleKey =
   | 'dashboard'
   | 'notifications'
   | 'inbox'
+  | 'slack'
   | 'settings'
   | 'team-settings';
 
@@ -159,6 +165,7 @@ const getKeepAliveModuleKey = (
     kind === 'dashboard' ||
     kind === 'notifications' ||
     kind === 'inbox' ||
+    kind === 'slack' ||
     kind === 'settings'
   ) {
     return kind;
@@ -172,11 +179,12 @@ const isNewTabRoute = (route: WorkspaceShellRoute | ModuleFocusPayload | null | 
 const getWorkspaceShellRouteFromLocation = (): WorkspaceShellRoute => {
   const params = new URLSearchParams(window.location.search);
   return {
-    kind: (params.get('module') as ModuleKind) ?? null,
+    kind: (params.get('module') as ModuleKind) ?? pathnameModuleKind,
     focusDate: params.get('focusDate'),
     focusProjectId: params.get('focusProjectId'),
     focusNoteId: params.get('focusNoteId'),
     focusTaskId: params.get('focusTaskId'),
+    focusInboxId: params.get('focusInboxId'),
     focusContext: params.get('focusContext'),
     focusSection: params.get('section'),
   };
@@ -189,6 +197,7 @@ const buildWorkspaceShellSearch = (route: WorkspaceShellRoute) => {
   if (route.focusProjectId) searchParams.set('focusProjectId', route.focusProjectId);
   if (route.focusNoteId) searchParams.set('focusNoteId', route.focusNoteId);
   if (route.focusTaskId) searchParams.set('focusTaskId', route.focusTaskId);
+  if (route.focusInboxId) searchParams.set('focusInboxId', route.focusInboxId);
   if (route.focusContext) searchParams.set('focusContext', route.focusContext);
   if (route.focusSection) searchParams.set('section', route.focusSection);
   return searchParams.toString();
@@ -8022,6 +8031,15 @@ function AppShell() {
     window.history.replaceState({}, '', `/intake${window.location.search}${window.location.hash}`);
   }, []);
 
+  useEffect(() => {
+    const routeWorkspaceId = workspaceSlackMatch?.[1]?.trim() || null;
+    if (!routeWorkspaceId || !user || routeWorkspaceId === activeWorkspaceId) return;
+    void setActiveWorkspace(routeWorkspaceId).catch(() => {
+      // The Slack page will render its safe workspace/disconnected state when
+      // the requested workspace is not accessible.
+    });
+  }, [activeWorkspaceId, setActiveWorkspace, user]);
+
   // Initialize workspace for authenticated users
   const effectiveUiMode: 'auth' | 'app' = user ? 'app' : uiMode;
 
@@ -8036,6 +8054,7 @@ function AppShell() {
         focusProjectId: route.focusProjectId ?? null,
         focusNoteId: route.focusNoteId ?? null,
         focusTaskId: route.focusTaskId ?? null,
+        focusInboxId: route.focusInboxId ?? null,
         focusContext: route.focusContext ?? null,
         focusSection: route.focusSection ?? null,
       };
@@ -8440,6 +8459,8 @@ function AppShell() {
           return <NotificationCenterWindow />;
         case 'inbox':
           return <IntakeWindow />;
+        case 'slack':
+          return <SlackWindow routeWorkspaceId={workspaceSlackMatch?.[1] ?? null} />;
         case 'settings':
           return <SettingsWindow />;
       }

@@ -1738,6 +1738,7 @@ export const SettingsWindow = () => {
     try {
       await api.disconnectSlackIntegration(activeWorkspaceId);
       setSlackStatus({ connected: false });
+      window.ipcRenderer?.send('slack:connection-changed');
     } catch (err) {
       setSlackError(err instanceof Error ? err.message : 'Could not disconnect Slack.');
     } finally {

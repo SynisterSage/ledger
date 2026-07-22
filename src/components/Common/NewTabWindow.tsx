@@ -16,9 +16,13 @@ import {
 import { IntegrationProviderMark, normalizeIntegrationProvider } from './IntegrationProviderMark';
 
 type RecentRoute = ModuleFocusPayload & { kind: ModuleWindowKind };
+type RouteIcon = typeof LayoutList;
 
 const getRecentRoutesStorageKey = (workspaceId: string) =>
   `ledger:new-tab-recent-routes:${workspaceId}`;
+
+const MAX_VISIBLE_RECENT_ROUTES = 8;
+const MAX_STORED_RECENT_ROUTES = 12;
 
 const normalizeRecentRoutes = (routes: unknown): RecentRoute[] => {
   if (!Array.isArray(routes)) return [];
@@ -28,7 +32,7 @@ const normalizeRecentRoutes = (routes: unknown): RecentRoute[] => {
   );
 };
 
-const visibleRecentRoutes = (routes: RecentRoute[]) => routes.slice(-3).reverse();
+const visibleRecentRoutes = (routes: RecentRoute[]) => routes.slice(0, MAX_VISIBLE_RECENT_ROUTES);
 
 const destinations: Array<{
   label: string;
@@ -46,9 +50,24 @@ const destinations: Array<{
 const routeLabel = (route: RecentRoute) => {
   if (route.kind === 'dashboard') return 'Overview';
   if (route.kind === 'projects') return route.focusProjectId ? 'Project' : 'Projects';
-  if (route.kind === 'notes') return route.focusNoteId ? 'Note' : 'Notes';
+  if (route.kind === 'notes') {
+    if (route.focusContext === 'home' || !route.focusNoteId) return 'Notes Home';
+    return 'Note';
+  }
+  if (route.kind === 'calendar') return route.focusDate ? 'Calendar Day' : 'Calendar';
   if (route.kind === 'inbox') return 'Intake';
+  if (route.kind === 'notifications') return 'Notifications';
   return route.kind[0].toUpperCase() + route.kind.slice(1);
+};
+
+const getRecentRouteIcon = (route: RecentRoute): RouteIcon => {
+  if (route.kind === 'dashboard') return LayoutList;
+  if (route.kind === 'projects') return FolderKanban;
+  if (route.kind === 'notes') return FileText;
+  if (route.kind === 'calendar') return CalendarDays;
+  if (route.kind === 'inbox') return Funnel;
+  if (route.kind === 'notifications') return Bell;
+  return Search;
 };
 
 export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
@@ -156,7 +175,10 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
       setRecentRoutes(nextRoutes);
       try {
         if (normalizedRoutes.length > 0) {
-          localStorage.setItem(storageKey, JSON.stringify(nextRoutes));
+          localStorage.setItem(
+            storageKey,
+            JSON.stringify(normalizedRoutes.slice(0, MAX_STORED_RECENT_ROUTES))
+          );
         } else {
           localStorage.removeItem(storageKey);
         }
@@ -409,24 +431,27 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
                 </button>
               </div>
               <div className="space-y-0.5">
-                {recentRoutes.map((route, index) => (
-                  <button
-                    key={`${route.kind}-${route.focusProjectId ?? route.focusNoteId ?? route.focusDate ?? index}`}
-                    type="button"
-                    onClick={() => openDestination(route.kind, route)}
-                    className="flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-                  >
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background-muted)] text-[var(--ledger-text-secondary)]">
-                      <Search size={13} />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                      {routeLabel(route)}
-                    </span>
-                    <span className="shrink-0 text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                      {route.kind}
-                    </span>
-                  </button>
-                ))}
+                {recentRoutes.map((route, index) => {
+                  const Icon = getRecentRouteIcon(route);
+                  return (
+                    <button
+                      key={`${route.kind}-${route.focusProjectId ?? route.focusNoteId ?? route.focusDate ?? index}`}
+                      type="button"
+                      onClick={() => openDestination(route.kind, route)}
+                      className="flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background-muted)] text-[var(--ledger-text-secondary)]">
+                        <Icon size={13} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                        {routeLabel(route)}
+                      </span>
+                      <span className="shrink-0 text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                        {route.kind}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </section>
           )}

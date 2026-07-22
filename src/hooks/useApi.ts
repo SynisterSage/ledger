@@ -284,10 +284,71 @@ export const useApi = () => {
         request(`/api/integrations/slack/status?workspaceId=${encodeURIComponent(workspaceId)}`, {
           skipWorkspaceHeader: true,
         }),
-      getSlackCaptures: (workspaceId: string) =>
-        request(`/api/integrations/slack/captures?workspaceId=${encodeURIComponent(workspaceId)}`, {
+      getSlackCaptures: (workspaceId: string, params: { status?: string; search?: string } = {}) => {
+        const query = new URLSearchParams({ workspaceId });
+        if (params.status && params.status !== 'all') query.set('status', params.status);
+        if (params.search?.trim()) query.set('search', params.search.trim());
+        return request(`/api/integrations/slack/captures?${query.toString()}`, {
           skipWorkspaceHeader: true,
+        });
+      },
+      getSlackContexts: (workspaceId: string, params: { search?: string; targetType?: string; targetId?: string } = {}) => {
+        const query = new URLSearchParams({ workspaceId });
+        if (params.search?.trim()) query.set('search', params.search.trim());
+        if (params.targetType) query.set('target_type', params.targetType === 'intake' ? 'intake_item' : params.targetType);
+        if (params.targetId) query.set('target_id', params.targetId);
+        return request(`/api/integrations/slack/contexts?${query.toString()}`, { skipWorkspaceHeader: true });
+      },
+      getSlackContext: (workspaceId: string, contextId: string) =>
+        request(`/api/integrations/slack/contexts/${encodeURIComponent(contextId)}?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      getSlackContextThread: (workspaceId: string, contextId: string) =>
+        request(`/api/integrations/slack/contexts/${encodeURIComponent(contextId)}/thread?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      refreshSlackContextThread: (workspaceId: string, contextId: string) =>
+        request(`/api/integrations/slack/contexts/${encodeURIComponent(contextId)}/refresh?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
+      followSlackContext: (workspaceId: string, contextId: string, following: boolean) =>
+        request(`/api/integrations/slack/contexts/${encodeURIComponent(contextId)}/follow?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify({ following }) }),
+      markSlackContextRead: (workspaceId: string, contextId: string, lastViewedReplyTs?: string | null) =>
+        request(`/api/integrations/slack/contexts/${encodeURIComponent(contextId)}/read?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify({ last_viewed_reply_ts: lastViewedReplyTs ?? null }) }),
+      linkSlackContext: (workspaceId: string, contextId: string, targetType: string, targetId: string) =>
+        request(`/api/integrations/slack/contexts/${encodeURIComponent(contextId)}/links?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'POST',
+          skipWorkspaceHeader: true,
+          body: JSON.stringify({ target_type: targetType === 'intake' ? 'intake_item' : targetType, target_id: targetId }),
         }),
+      unlinkSlackContext: (workspaceId: string, linkId: string) =>
+        request(`/api/integrations/slack/context-links/${encodeURIComponent(linkId)}?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', skipWorkspaceHeader: true }),
+      getSlackIdentity: (workspaceId: string) =>
+        request(`/api/integrations/slack/identity?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      getSlackIdentityConnectUrl: (workspaceId: string) =>
+        request(`/api/integrations/slack/identity/connect-url?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      disconnectSlackIdentity: (workspaceId: string) =>
+        request(`/api/integrations/slack/identity?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', skipWorkspaceHeader: true }),
+      getSlackConversations: (workspaceId: string, search = '') =>
+        request(`/api/integrations/slack/conversations?workspaceId=${encodeURIComponent(workspaceId)}${search.trim() ? `&search=${encodeURIComponent(search.trim())}` : ''}`, { skipWorkspaceHeader: true }),
+      getSlackWatches: (workspaceId: string) =>
+        request(`/api/integrations/slack/watches?workspaceId=${encodeURIComponent(workspaceId)}`, { skipWorkspaceHeader: true }),
+      createSlackWatch: (workspaceId: string, payload: { slack_conversation_id: string; watch_type: 'personal' | 'shared' }) =>
+        request(`/api/integrations/slack/watches?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify(payload) }),
+      removeSlackWatch: (workspaceId: string, watchId: string) =>
+        request(`/api/integrations/slack/watches/${encodeURIComponent(watchId)}?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', skipWorkspaceHeader: true }),
+      updateSlackWatchPreferences: (workspaceId: string, watchId: string, payload: Record<string, boolean>) =>
+        request(`/api/integrations/slack/watches/${encodeURIComponent(watchId)}/preferences?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'PATCH', skipWorkspaceHeader: true, body: JSON.stringify(payload) }),
+      getSlackActivity: (workspaceId: string, params: { date?: string; filter?: string; search?: string; watchId?: string; unread?: boolean; limit?: number } = {}) => {
+        const query = new URLSearchParams({ workspaceId });
+        if (params.date) query.set('date', params.date);
+        if (params.filter) query.set('filter', params.filter);
+        if (params.search) query.set('search', params.search);
+        if (params.watchId) query.set('watch_id', params.watchId);
+        if (params.unread) query.set('unread', 'true');
+        if (params.limit) query.set('limit', String(params.limit));
+        return request(`/api/integrations/slack/activity?${query}`, { skipWorkspaceHeader: true });
+      },
+      getSlackActivityRecap: (workspaceId: string, date: string) => request(`/api/integrations/slack/activity/recap?workspaceId=${encodeURIComponent(workspaceId)}&date=${encodeURIComponent(date)}`, { skipWorkspaceHeader: true }),
+      markSlackActivityRead: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/read?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
+      markAllSlackActivityRead: (workspaceId: string, payload: { date?: string; filter?: string }) => request(`/api/integrations/slack/activity/read-all?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify(payload) }),
+      promoteSlackActivityToIntake: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/intake?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
+      linkSlackActivityContext: (workspaceId: string, activityId: string, targetType: string, targetId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/context-link?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify({ target_type: targetType, target_id: targetId }) }),
+      markSlackWatchRead: (workspaceId: string, watchId: string, lastViewedMessageTs?: string | null) => request(`/api/integrations/slack/watches/${encodeURIComponent(watchId)}/read?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify({ last_viewed_message_ts: lastViewedMessageTs ?? null }) }),
       getSlackInstallUrl: (workspaceId: string) =>
         request(
           `/api/integrations/slack/install-url?workspaceId=${encodeURIComponent(workspaceId)}`,

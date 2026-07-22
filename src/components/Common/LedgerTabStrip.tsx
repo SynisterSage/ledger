@@ -24,6 +24,7 @@ import {
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from './ToastProvider';
+import { IntegrationProviderMark } from './IntegrationProviderMark';
 
 type LedgerRoute = {
   kind: ModuleWindowKind;
@@ -50,6 +51,7 @@ const tabKinds = new Set<ModuleWindowKind>([
   'circle',
   'teams',
   'inbox',
+  'slack',
   'notifications',
   'settings',
 ]);
@@ -82,6 +84,7 @@ const routeKey = (route: LedgerRoute) => {
     case 'dashboard':
     case 'inbox':
     case 'notifications':
+    case 'slack':
     case 'settings':
       return route.kind;
     default:
@@ -124,6 +127,8 @@ const routeLabel = (
       return route.focusContext?.startsWith('team:') ? teamTitle || 'Team' : 'Teams';
     case 'inbox':
       return 'Intake';
+    case 'slack':
+      return 'Slack';
     case 'notifications':
       return 'Notifications';
     case 'settings':
@@ -152,6 +157,8 @@ const routeIcon = (route: LedgerRoute): ReactNode => {
       return <Users className={className} />;
     case 'inbox':
       return <Inbox className={className} />;
+    case 'slack':
+      return <IntegrationProviderMark provider="slack" size={14} className={className} />;
     case 'notifications':
       return <Bell className={className} />;
     default:

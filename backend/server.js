@@ -4224,6 +4224,8 @@ const getSlackRedirectUri = () => {
   return null;
 };
 
+const SLACK_ACTIVITY_BOT_SCOPES = ['app_mentions:read', 'channels:history', 'groups:history'];
+
 const getFigmaRedirectUri = () => {
   const explicit = process.env.FIGMA_REDIRECT_URI?.trim();
   if (explicit) return explicit;
@@ -4287,10 +4289,12 @@ const getSlackStateSecret = () =>
 
 const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
 
-const createSlackOAuthState = ({ workspaceId, installedBy }) => {
+const createSlackOAuthState = ({ workspaceId, installedBy, userId, flow = 'workspace' }) => {
   const payload = {
     workspace_id: workspaceId,
-    installed_by: installedBy,
+    ...(installedBy ? { installed_by: installedBy } : {}),
+    ...(userId ? { user_id: userId } : {}),
+    flow,
     nonce: crypto.randomBytes(16).toString('hex'),
     iat: Math.floor(Date.now() / 1000),
   };
@@ -4322,7 +4326,7 @@ const verifySlackOAuthState = (state) => {
 
   const payload = safeJson(Buffer.from(encodedPayload, 'base64url').toString('utf8'), null);
   const issuedAt = Number(payload?.iat ?? 0);
-  if (!payload?.workspace_id || !payload?.installed_by || !issuedAt) return null;
+  if (!payload?.workspace_id || (!payload?.installed_by && !payload?.user_id) || !issuedAt) return null;
   if (Math.floor(Date.now() / 1000) - issuedAt > 10 * 60) return null;
   return payload;
 };
@@ -4338,10 +4342,30 @@ const buildSlackAuthorizeUrl = ({ workspaceId, installedBy }) => {
 
   const params = new URLSearchParams({
     client_id: clientId,
-    scope: 'commands,chat:write',
+    scope: 'commands,chat:write,app_mentions:read,channels:history,groups:history',
     redirect_uri: redirectUri,
     state: createSlackOAuthState({ workspaceId, installedBy }),
   });
+  return `https://slack.com/oauth/v2/authorize?${params.toString()}`;
+};
+
+const buildSlackIdentityAuthorizeUrl = ({ workspaceId, userId, teamId }) => {
+  const clientId = process.env.SLACK_CLIENT_ID?.trim();
+  const redirectUri = getSlackRedirectUri();
+  if (!clientId || !redirectUri) {
+    const error = new Error('Slack OAuth is not configured');
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    scope: 'commands,chat:write',
+    user_scope: 'identity.basic,identity.email,identity.avatar,channels:read,groups:read,mpim:read',
+    redirect_uri: redirectUri,
+    state: createSlackOAuthState({ workspaceId, userId, flow: 'personal_identity' }),
+  });
+  if (teamId) params.set('team', teamId);
   return `https://slack.com/oauth/v2/authorize?${params.toString()}`;
 };
 
@@ -4480,6 +4504,11 @@ const buildSlackInstallCompleteHtml = ({ teamName }) => {
 </html>`;
 };
 
+const buildSlackIdentityCompleteHtml = ({ success, message = '' }) => {
+  const safeMessage = escapeHtml(message);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Slack identity</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fffbf7;color:#111827;font:14px system-ui,-apple-system,sans-serif}.content{width:min(360px,calc(100vw - 40px));text-align:center}h1{margin:0 0 8px;font-size:22px;letter-spacing:-.02em}p{margin:0;color:#6b7280;line-height:1.5}.button{display:inline-flex;margin-top:18px;padding:9px 15px;border-radius:999px;background:#ff5f40;color:white;text-decoration:none;font-weight:600}</style></head><body><main class="content"><h1>${success ? 'Slack identity connected' : 'Slack identity was not connected'}</h1><p>${safeMessage || (success ? 'Return to Ledger to continue.' : 'Authorization was cancelled or denied.')}</p>${success ? '<a class="button" href="ledger://slack">Open Ledger</a><script>setTimeout(()=>{try{window.location.href="ledger://slack"}catch{}} ,250)</script>' : ''}</main></body></html>`;
+};
+
 const verifySlackRequest = (req) => {
   const signingSecret = process.env.SLACK_SIGNING_SECRET?.trim();
   if (!signingSecret) return false;
@@ -4501,6 +4530,259 @@ const verifySlackRequest = (req) => {
     expectedBuffer.length === actualBuffer.length &&
     crypto.timingSafeEqual(expectedBuffer, actualBuffer)
   );
+};
+
+const getSlackEventIdentity = (payload) => {
+  const event = payload?.event ?? {};
+  const source = event.subtype === 'message_changed' ? (event.message ?? event) : event.subtype === 'message_deleted' ? (event.previous_message ?? event) : event;
+  const channelId = event.channel ?? source.channel ?? null;
+  const messageTs = source.ts ?? event.ts ?? null;
+  const rootThreadTs = source.thread_ts ?? event.thread_ts ?? messageTs;
+  return {
+    event,
+    source,
+    channelId,
+    messageTs,
+    rootThreadTs,
+    authorSlackUserId: source.user ?? event.user ?? null,
+    messageText: source.text ?? event.text ?? null,
+    isEdited: event.subtype === 'message_changed',
+    isDeleted: event.subtype === 'message_deleted',
+  };
+};
+
+const getSlackEventId = (payload) => {
+  if (payload?.event_id) return String(payload.event_id);
+  const identity = getSlackEventIdentity(payload);
+  return crypto.createHash('sha256').update(JSON.stringify({
+    team: payload?.team_id ?? payload?.event?.team ?? null,
+    channel: identity.channelId,
+    ts: identity.messageTs,
+    type: payload?.event?.type ?? null,
+    subtype: payload?.event?.subtype ?? null,
+  })).digest('hex');
+};
+
+const upsertSlackActivityMatch = async ({ workspaceId, activityId, watchId = null, contextId = null, ledgerUserId = null, matchType }) => {
+  const result = await supabase.from('slack_activity_matches').insert({
+    workspace_id: workspaceId,
+    activity_id: activityId,
+    slack_watch_id: watchId,
+    slack_context_id: contextId,
+    ledger_user_id: ledgerUserId,
+    match_type: matchType,
+  });
+  if (result.error && result.error.code !== '23505') throw result.error;
+};
+
+const updateSlackWatchActivity = async (watch) => {
+  const result = await supabase.from('slack_watches').update({
+    last_activity_at: new Date().toISOString(),
+    activity_count: Number(watch.activity_count ?? 0) + 1,
+    updated_at: new Date().toISOString(),
+  }).eq('id', watch.id).eq('status', 'active');
+  if (result.error) throw result.error;
+};
+
+const processSlackEventDelivery = async (deliveryId) => {
+  const deliveryResult = await supabase.from('slack_event_deliveries').select('id, workspace_id, integration_account_id, slack_team_id, slack_event_id, payload, retry_count, status').eq('id', deliveryId).maybeSingle();
+  if (deliveryResult.error || !deliveryResult.data) return;
+  const delivery = deliveryResult.data;
+  const startedAt = Date.now();
+  const claim = await supabase.from('slack_event_deliveries').update({ status: 'processing', updated_at: new Date().toISOString() }).eq('id', delivery.id).in('status', ['received', 'failed']).select('id').maybeSingle();
+  if (claim.error || !claim.data?.id) return;
+
+  try {
+    const account = await findSlackIntegrationAccount(delivery.slack_team_id);
+    if (!account?.workspace_id || (delivery.workspace_id && delivery.workspace_id !== account.workspace_id)) throw Object.assign(new Error('Slack workspace is not connected'), { permanent: true, code: 'missing_workspace' });
+    const workspaceId = account.workspace_id;
+    const payload = delivery.payload ?? {};
+    const eventType = payload.event?.type ?? '';
+    const identity = getSlackEventIdentity(payload);
+
+    if (['member_left_channel', 'group_left', 'channel_left'].includes(eventType)) {
+      const identities = await supabase.from('slack_identities').select('ledger_user_id, slack_user_id').eq('workspace_id', workspaceId).eq('slack_team_id', delivery.slack_team_id).eq('slack_user_id', payload.event?.user ?? '').eq('status', 'connected');
+      if (identities.error && !isMissingRelationError(identities.error, 'slack_identities')) throw identities.error;
+      for (const linked of identities.data ?? []) {
+        await supabase.from('slack_watches').update({ status: 'access_lost', updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('owner_user_id', linked.ledger_user_id).eq('slack_conversation_id', identity.channelId).eq('status', 'active');
+        console.info('[slack] watch access lost', { workspaceId, channelId: identity.channelId, ledgerUserId: linked.ledger_user_id });
+      }
+    } else if (['message', 'app_mention'].includes(eventType) && identity.channelId && identity.messageTs) {
+      const watchResult = await supabase.from('slack_watches').select(`${slackWatchSelect}, activity_count`).eq('workspace_id', workspaceId).eq('integration_account_id', account.id).eq('slack_conversation_id', identity.channelId).eq('status', 'active');
+      if (watchResult.error) throw watchResult.error;
+      const watches = watchResult.data ?? [];
+      const linkedIdentities = await supabase.from('slack_identities').select('ledger_user_id, slack_user_id').eq('workspace_id', workspaceId).eq('slack_team_id', delivery.slack_team_id).eq('status', 'connected');
+      if (linkedIdentities.error && !isMissingRelationError(linkedIdentities.error, 'slack_identities')) throw linkedIdentities.error;
+      const mentionIds = [...String(identity.messageText ?? '').matchAll(/<@([A-Z0-9]+)>/g)].map((match) => match[1]);
+      const mentionMatches = (linkedIdentities.data ?? []).filter((linked) => mentionIds.includes(linked.slack_user_id));
+      const threadRoot = identity.rootThreadTs ?? identity.messageTs;
+      const rootActivity = identity.rootThreadTs && identity.rootThreadTs !== identity.messageTs
+        ? await supabase.from('slack_activities').select('author_slack_user_id').eq('workspace_id', workspaceId).eq('slack_team_id', delivery.slack_team_id).eq('slack_conversation_id', identity.channelId).eq('slack_message_ts', identity.rootThreadTs).maybeSingle()
+        : { data: null, error: null };
+      if (rootActivity.error) throw rootActivity.error;
+      const contextResult = await supabase.from('slack_contexts').select('id, message_author_slack_id, captured_message_ts').eq('workspace_id', workspaceId).eq('slack_team_id', delivery.slack_team_id).eq('slack_channel_id', identity.channelId).eq('root_message_ts', threadRoot).maybeSingle();
+      if (contextResult.error && !isMissingRelationError(contextResult.error, 'slack_contexts')) throw contextResult.error;
+      const context = contextResult.data ?? null;
+      const contextReplyMatches = context?.message_author_slack_id ? (linkedIdentities.data ?? []).filter((linked) => linked.slack_user_id === context.message_author_slack_id) : [];
+      const replyMatches = rootActivity.data?.author_slack_user_id ? (linkedIdentities.data ?? []).filter((linked) => linked.slack_user_id === rootActivity.data.author_slack_user_id) : contextReplyMatches;
+      const followedUsers = context ? await supabase.from('slack_context_follows').select('ledger_user_id').eq('workspace_id', workspaceId).eq('slack_context_id', context.id) : { data: [], error: null };
+      if (followedUsers.error) throw followedUsers.error;
+      const contextLinkUsers = context ? await supabase.from('slack_context_links').select('created_by').eq('workspace_id', workspaceId).eq('slack_context_id', context.id).not('created_by', 'is', null) : { data: [], error: null };
+      if (contextLinkUsers.error) throw contextLinkUsers.error;
+      const activeContext = context && ((followedUsers.data ?? []).length || (contextLinkUsers.data ?? []).length) ? context : null;
+      const matchingWatches = watches.filter((watch) => watch.watch_type === 'shared' || watch.owner_user_id);
+      const hasMatch = matchingWatches.length || mentionMatches.length || activeContext || replyMatches.length || (followedUsers.data ?? []).length || (contextLinkUsers.data ?? []).length;
+      if (hasMatch) {
+        const conversationType = matchingWatches[0]?.conversation_type ?? 'public_channel';
+        const activityType = identity.isDeleted ? 'message_deleted' : identity.isEdited ? 'message_edited' : mentionMatches.length ? 'mention' : identity.rootThreadTs && identity.rootThreadTs !== identity.messageTs ? 'thread_reply' : 'message';
+        const permalink = `https://app.slack.com/client/${encodeURIComponent(delivery.slack_team_id)}/${encodeURIComponent(identity.channelId)}/p${String(identity.messageTs).replace('.', '')}`;
+        const activity = await supabase.from('slack_activities').upsert({
+          workspace_id: workspaceId,
+          integration_account_id: account.id,
+          slack_team_id: delivery.slack_team_id,
+          slack_event_id: delivery.slack_event_id,
+          slack_conversation_id: identity.channelId,
+          slack_message_ts: identity.messageTs,
+          slack_root_thread_ts: threadRoot,
+          activity_type: activityType,
+          conversation_type: conversationType,
+          author_slack_user_id: identity.authorSlackUserId,
+          target_slack_user_id: mentionMatches[0]?.slack_user_id ?? replyMatches[0]?.slack_user_id ?? null,
+          message_text: identity.isDeleted ? null : identity.messageText,
+          permalink,
+          source_created_at: parseSlackMessageTimestamp(identity.messageTs),
+          processed_at: new Date().toISOString(),
+          is_edited: identity.isEdited,
+          is_deleted: identity.isDeleted,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'workspace_id,slack_team_id,slack_conversation_id,slack_message_ts' }).select('id').single();
+        if (activity.error) throw activity.error;
+        for (const watch of matchingWatches) await upsertSlackActivityMatch({ workspaceId, activityId: activity.data.id, watchId: watch.id, ledgerUserId: watch.watch_type === 'personal' ? watch.owner_user_id : null, matchType: watch.watch_type === 'personal' ? 'personal_watch' : 'shared_watch' });
+        for (const linked of mentionMatches) await upsertSlackActivityMatch({ workspaceId, activityId: activity.data.id, ledgerUserId: linked.ledger_user_id, matchType: 'mention' });
+        for (const linked of replyMatches) await upsertSlackActivityMatch({ workspaceId, activityId: activity.data.id, ledgerUserId: linked.ledger_user_id, contextId: activeContext?.id ?? null, matchType: 'reply' });
+        for (const followed of followedUsers.data ?? []) await upsertSlackActivityMatch({ workspaceId, activityId: activity.data.id, ledgerUserId: followed.ledger_user_id, contextId: activeContext?.id ?? null, matchType: 'reply' });
+        for (const linked of contextLinkUsers.data ?? []) await upsertSlackActivityMatch({ workspaceId, activityId: activity.data.id, ledgerUserId: linked.created_by, contextId: activeContext?.id ?? null, matchType: 'captured_context' });
+        if (activeContext) await upsertSlackActivityMatch({ workspaceId, activityId: activity.data.id, contextId: activeContext.id, matchType: 'captured_context' });
+        for (const watch of matchingWatches) await updateSlackWatchActivity(watch);
+        if (activeContext) {
+          if (identity.rootThreadTs && identity.rootThreadTs !== identity.messageTs) {
+            await upsertSlackThreadReply({ workspaceId, contextId: activeContext.id, reply: identity.source, isEdited: identity.isEdited, isDeleted: identity.isDeleted });
+            const countResult = await supabase.from('slack_thread_replies').select('id, source_created_at').eq('workspace_id', workspaceId).eq('slack_context_id', activeContext.id).order('source_created_at', { ascending: false });
+            if (countResult.error) throw countResult.error;
+            await supabase.from('slack_contexts').update({ reply_count: countResult.data?.length ?? 0, latest_reply_at: countResult.data?.[0]?.source_created_at ?? null }).eq('id', activeContext.id).eq('workspace_id', workspaceId);
+          }
+          await supabase.from('slack_contexts').update({ last_synced_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...(identity.isEdited && activeContext.captured_message_ts === identity.messageTs && !identity.isDeleted ? { message_text: identity.messageText } : {}) }).eq('id', activeContext.id).eq('workspace_id', workspaceId);
+        }
+      }
+    }
+    const durationMs = Date.now() - startedAt;
+    await supabase.from('slack_event_deliveries').update({ status: 'processed', processed_at: new Date().toISOString(), processing_duration_ms: durationMs, error_code: null, error_message: null, updated_at: new Date().toISOString() }).eq('id', delivery.id);
+    console.info('[slack] event processed', { workspaceId: delivery.workspace_id, teamId: delivery.slack_team_id, eventId: delivery.slack_event_id, durationMs });
+  } catch (error) {
+    const retryCount = Number(delivery.retry_count ?? 0) + 1;
+    const retryable = !error?.permanent && retryCount < 3;
+    const nextAttemptAt = retryable ? new Date(Date.now() + retryCount * 30_000).toISOString() : null;
+    await supabase.from('slack_event_deliveries').update({ status: retryable ? 'received' : 'failed', retry_count: retryCount, next_attempt_at: nextAttemptAt, error_code: error?.code ?? error?.slackError ?? 'processing_failed', error_message: clampText(error?.message ?? 'processing_failed', 500), processing_duration_ms: Date.now() - startedAt, updated_at: new Date().toISOString() }).eq('id', delivery.id);
+    console.error('[slack] event processing failed', { eventId: delivery.slack_event_id, retryCount, retryable, code: error?.code ?? error?.slackError ?? 'processing_failed', durationMs: Date.now() - startedAt });
+    if (retryable) setTimeout(() => void processSlackEventDelivery(delivery.id), retryCount * 30_000);
+  }
+};
+
+const enqueueSlackEventDelivery = async (payload, retryNumber = 0) => {
+  const teamId = payload?.team_id ?? payload?.event?.team ?? null;
+  if (!teamId) return;
+  const account = await findSlackIntegrationAccount(teamId);
+  const eventId = getSlackEventId(payload);
+  const inserted = await supabase.from('slack_event_deliveries').insert({ workspace_id: account?.workspace_id ?? null, integration_account_id: account?.id ?? null, slack_team_id: teamId, slack_event_id: eventId, event_type: payload?.event?.type ?? payload?.type ?? 'unknown', payload, retry_count: Number(retryNumber) || 0 }).select('id').single();
+  if (inserted.error) {
+    if (inserted.error.code === '23505') {
+      console.info('[slack] duplicate event delivery', { teamId, eventId });
+      return;
+    }
+    throw inserted.error;
+  }
+  console.info('[slack] event received', { teamId, eventId, retryNumber });
+  void processSlackEventDelivery(inserted.data?.id);
+};
+
+const runSlackEventDeliveryWorker = async () => {
+  try {
+    const queued = await supabase.from('slack_event_deliveries').select('id').eq('status', 'received').or(`next_attempt_at.is.null,next_attempt_at.lte.${new Date().toISOString()}`).order('received_at', { ascending: true }).limit(10);
+    if (queued.error) {
+      if (isMissingRelationError(queued.error, 'slack_event_deliveries')) return;
+      throw queued.error;
+    }
+    await Promise.all((queued.data ?? []).map((delivery) => processSlackEventDelivery(delivery.id)));
+  } catch (error) {
+    console.error('[slack] event worker failed', { message: error?.message ?? 'unknown_error' });
+  }
+};
+
+const slackActivitySelect = 'id, workspace_id, integration_account_id, slack_team_id, slack_event_id, slack_conversation_id, slack_message_ts, slack_root_thread_ts, activity_type, conversation_type, author_slack_user_id, target_slack_user_id, message_text, permalink, source_created_at, processed_at, is_edited, is_deleted, created_at, updated_at';
+
+const loadVisibleSlackActivities = async ({ workspaceId, userId, date, filter = 'all', search = '', watchId = '', unreadOnly = false, limit = 50 }) => {
+  const matchResult = await supabase.from('slack_activity_matches').select('activity_id, slack_watch_id, slack_context_id, ledger_user_id, match_type').eq('workspace_id', workspaceId);
+  if (matchResult.error) throw matchResult.error;
+  const sharedWatchResult = await supabase.from('slack_watches').select('id').eq('workspace_id', workspaceId).eq('watch_type', 'shared');
+  if (sharedWatchResult.error) throw sharedWatchResult.error;
+  const sharedWatchIds = new Set((sharedWatchResult.data ?? []).map((watch) => watch.id));
+  const visibleMatches = (matchResult.data ?? []).filter((match) => match.ledger_user_id === userId || (match.ledger_user_id === null && match.slack_watch_id && sharedWatchIds.has(match.slack_watch_id)));
+  const matchesByActivity = new Map();
+  for (const match of visibleMatches) {
+    const rows = matchesByActivity.get(match.activity_id) ?? [];
+    rows.push(match);
+    matchesByActivity.set(match.activity_id, rows);
+  }
+  if (!matchesByActivity.size) return { rows: [], total: 0 };
+
+  const activityIds = [...matchesByActivity.keys()];
+  let query = supabase.from('slack_activities').select(slackActivitySelect).eq('workspace_id', workspaceId).in('id', activityIds).order('source_created_at', { ascending: false, nullsFirst: false }).limit(Math.min(Math.max(Number(limit) || 50, 1), 100));
+  if (date) {
+    const start = new Date(`${date}T00:00:00.000Z`);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    if (!Number.isNaN(start.getTime())) query = query.gte('source_created_at', start.toISOString()).lt('source_created_at', end.toISOString());
+  }
+  const trimmedSearch = String(search).trim().slice(0, 120);
+  if (trimmedSearch) {
+    const safeSearch = trimmedSearch.replace(/[%,]/g, '');
+    query = query.or(`message_text.ilike.%${safeSearch}%,author_slack_user_id.ilike.%${safeSearch}%`);
+  }
+  const activityResult = await query;
+  if (activityResult.error) throw activityResult.error;
+  let rows = activityResult.data ?? [];
+  const readStates = await supabase.from('slack_activity_read_states').select('slack_activity_id, read_at, dismissed_at').eq('workspace_id', workspaceId).eq('ledger_user_id', userId).in('slack_activity_id', rows.map((row) => row.id));
+  if (readStates.error) throw readStates.error;
+  const readByActivity = new Map((readStates.data ?? []).map((state) => [state.slack_activity_id, state]));
+  const contextIds = [...new Set(visibleMatches.map((match) => match.slack_context_id).filter(Boolean))];
+  const contexts = contextIds.length ? await supabase.from('slack_contexts').select('id, reply_count, latest_reply_at, sync_status').eq('workspace_id', workspaceId).in('id', contextIds) : { data: [], error: null };
+  if (contexts.error) throw contexts.error;
+  const contextById = new Map((contexts.data ?? []).map((context) => [context.id, context]));
+  const contextLinks = contextIds.length ? await supabase.from('slack_context_links').select('slack_context_id, target_type, target_id').eq('workspace_id', workspaceId).in('slack_context_id', contextIds) : { data: [], error: null };
+  if (contextLinks.error) throw contextLinks.error;
+  const intakeIds = [...new Set((contextLinks.data ?? []).filter((link) => link.target_type === 'intake_item').map((link) => link.target_id))];
+  const intakeRows = intakeIds.length ? await supabase.from('inbox_items').select('id, status, converted_type, converted_id, title').eq('workspace_id', workspaceId).in('id', intakeIds) : { data: [], error: null };
+  if (intakeRows.error) throw intakeRows.error;
+  const intakeById = new Map((intakeRows.data ?? []).map((item) => [item.id, item]));
+  const contextIntakeById = new Map();
+  for (const link of contextLinks.data ?? []) if (link.target_type === 'intake_item' && intakeById.has(link.target_id)) contextIntakeById.set(link.slack_context_id, intakeById.get(link.target_id));
+  rows = rows.map((activity) => {
+    const matches = matchesByActivity.get(activity.id) ?? [];
+    const state = readByActivity.get(activity.id);
+    const contextId = matches.find((match) => match.slack_context_id)?.slack_context_id ?? null;
+    return { ...activity, matches, context_id: contextId, context: contextId ? contextById.get(contextId) ?? null : null, intake_item: contextId ? contextIntakeById.get(contextId) ?? null : null, is_read: Boolean(state?.read_at), read_at: state?.read_at ?? null };
+  });
+  rows = rows.filter((row) => {
+    const matches = row.matches;
+    if (watchId && !matches.some((match) => match.slack_watch_id === watchId)) return false;
+    if (unreadOnly && row.is_read) return false;
+    if (filter === 'mentions' && !matches.some((match) => match.match_type === 'mention') && row.activity_type !== 'mention') return false;
+    if (filter === 'replies' && !matches.some((match) => match.match_type === 'reply') && !['reply', 'thread_reply'].includes(row.activity_type)) return false;
+    if (filter === 'threads' && row.slack_root_thread_ts === row.slack_message_ts) return false;
+    if (filter === 'watched' && !matches.some((match) => match.slack_watch_id)) return false;
+    if (filter === 'sent_to_intake' && !row.intake_item) return false;
+    return true;
+  });
+  return { rows, total: rows.length };
 };
 
 const getIntegrationTokenKey = () => {
@@ -4554,13 +4836,85 @@ const buildSlackInboxTitle = (text, authorName) => {
   return 'Slack message';
 };
 
-const saveSlackMessageCapture = async (payload) => {
-  const teamId = payload?.team?.id ?? payload?.team?.enterprise_id ?? null;
-  if (!teamId) return { ok: false, reason: 'missing_team' };
+const normalizeSlackContextTargetType = (value) => {
+  const type = String(value ?? '').trim().toLowerCase();
+  return type === 'intake' || type === 'inbox' ? 'intake_item' : type;
+};
 
+const slackContextTargetTables = {
+  intake_item: 'inbox_items',
+  task: 'tasks',
+  note: 'notes',
+  event: 'events',
+  reminder: 'reminders',
+  project: 'projects',
+  project_resource: 'external_references',
+};
+
+const linkSlackContextToTarget = async ({ workspaceId, slackContextId, targetType, targetId, userId, relationshipType = 'context' }) => {
+  const normalizedType = normalizeSlackContextTargetType(targetType);
+  const table = slackContextTargetTables[normalizedType];
+  if (!table || !targetId) throw new Error('Unsupported Slack context target');
+  const context = await supabase
+    .from('slack_contexts')
+    .select('id')
+    .eq('id', String(slackContextId))
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  if (context.error) throw context.error;
+  if (!context.data?.id) throw new Error('Slack context not found');
+  const allowed = await ensureWorkspaceResource(table, String(targetId), workspaceId);
+  if (!allowed) throw new Error('Slack context target not found');
+  const result = await supabase.from('slack_context_links').upsert(
+    {
+      workspace_id: workspaceId,
+      slack_context_id: slackContextId,
+      target_type: normalizedType,
+      target_id: String(targetId),
+      relationship_type: relationshipType,
+      created_by: userId ?? null,
+    },
+    { onConflict: 'workspace_id,slack_context_id,target_type,target_id' }
+  ).select('id, slack_context_id, target_type, target_id, relationship_type, created_at').single();
+  if (result.error) throw result.error;
+  return result.data;
+};
+
+const resolveSlackContextForCapture = async ({ account, teamId, channelId, channelName, message, messageText, messageTs, threadTs, externalUrl }) => {
+  const rootMessageTs = threadTs || messageTs;
+  if (!account?.workspace_id || !teamId || !channelId || !rootMessageTs || !messageTs) {
+    throw new Error('Slack context identity is incomplete');
+  }
+  const result = await supabase.from('slack_contexts').upsert(
+    {
+      workspace_id: account.workspace_id,
+      integration_account_id: account.id,
+      slack_team_id: teamId,
+      slack_channel_id: channelId,
+      slack_channel_name: channelName ?? null,
+      root_message_ts: rootMessageTs,
+      captured_message_ts: messageTs,
+      message_text: messageText || null,
+      message_author_slack_id: message.user ?? null,
+      message_author_name: message.username ?? null,
+      message_author_avatar_url: message.user_profile?.image_48 ?? message.user_profile?.image_72 ?? null,
+      permalink: externalUrl,
+      message_created_at: parseSlackMessageTimestamp(messageTs),
+      captured_at: new Date().toISOString(),
+      sync_status: 'static',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'workspace_id,slack_team_id,slack_channel_id,root_message_ts' }
+  ).select('id').single();
+  if (result.error) throw result.error;
+  return result.data.id;
+};
+
+const findSlackIntegrationAccount = async (teamId) => {
+  if (!teamId) return null;
   const accountResult = await supabase
     .from('integration_accounts')
-    .select('id, workspace_id')
+    .select('id, workspace_id, installed_by, provider_team_id, provider_team_name')
     .eq('provider', 'slack')
     .eq('provider_team_id', teamId)
     .order('created_at', { ascending: false })
@@ -4568,7 +4922,187 @@ const saveSlackMessageCapture = async (payload) => {
     .maybeSingle();
 
   if (accountResult.error) throw accountResult.error;
-  const account = accountResult.data;
+  return accountResult.data ?? null;
+};
+
+const resolveSlackIdentityLedgerUser = async ({ workspaceId, integrationAccountId, teamId, slackUserId }) => {
+  if (!workspaceId || !integrationAccountId || !teamId || !slackUserId) return null;
+  const result = await supabase
+    .from('slack_identities')
+    .select('ledger_user_id, status')
+    .eq('workspace_id', workspaceId)
+    .eq('integration_account_id', integrationAccountId)
+    .eq('slack_team_id', teamId)
+    .eq('slack_user_id', slackUserId)
+    .eq('status', 'connected')
+    .maybeSingle();
+  if (result.error) {
+    if (isMissingRelationError(result.error, 'slack_identities')) return null;
+    throw result.error;
+  }
+  return result.data?.ledger_user_id ?? null;
+};
+
+const loadConnectedSlackIdentity = async ({ workspaceId, userId }) => {
+  const result = await supabase
+    .from('slack_identities')
+    .select('id, workspace_id, ledger_user_id, integration_account_id, slack_team_id, slack_user_id, slack_display_name, status, access_token_encrypted, scopes')
+    .eq('workspace_id', workspaceId)
+    .eq('ledger_user_id', userId)
+    .eq('status', 'connected')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (result.error) {
+    if (isMissingRelationError(result.error, 'slack_identities')) return null;
+    throw result.error;
+  }
+  const token = readIntegrationToken(result.data?.access_token_encrypted);
+  if (!result.data?.id || !token) return null;
+  return { ...result.data, access_token_encrypted: token };
+};
+
+const loadSlackWorkspaceToken = async (workspaceId, integrationAccountId = null) => {
+  let query = supabase.from('integration_accounts').select('id, access_token_encrypted, provider_team_id').eq('workspace_id', workspaceId).eq('provider', 'slack').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+  if (integrationAccountId) query = supabase.from('integration_accounts').select('id, access_token_encrypted, provider_team_id').eq('workspace_id', workspaceId).eq('provider', 'slack').eq('id', integrationAccountId).maybeSingle();
+  const result = await query;
+  if (result.error) throw result.error;
+  const token = readIntegrationToken(result.data?.access_token_encrypted);
+  return result.data?.id && token ? { ...result.data, access_token: token } : null;
+};
+
+const upsertSlackThreadReply = async ({ workspaceId, contextId, reply, authorName = null, authorAvatarUrl = null, isEdited = false, isDeleted = false }) => {
+  if (!contextId || !reply?.ts) return null;
+  const now = new Date().toISOString();
+  const result = await supabase.from('slack_thread_replies').upsert({
+    workspace_id: workspaceId,
+    slack_context_id: contextId,
+    slack_message_ts: String(reply.ts),
+    slack_user_id: reply.user ?? null,
+    author_name: authorName ?? reply.username ?? null,
+    author_avatar_url: authorAvatarUrl ?? reply.user_profile?.image_48 ?? reply.user_profile?.image_72 ?? null,
+    message_text: isDeleted || reply.deleted ? null : reply.text ?? null,
+    permalink: reply.permalink ?? null,
+    source_created_at: parseSlackMessageTimestamp(reply.ts),
+    edited_at: isEdited || reply.edited ? now : null,
+    deleted_at: isDeleted || reply.deleted ? now : null,
+    is_edited: isEdited || Boolean(reply.edited),
+    is_deleted: isDeleted || Boolean(reply.deleted),
+    updated_at: now,
+  }, { onConflict: 'slack_context_id,slack_message_ts' }).select('id').single();
+  if (result.error) throw result.error;
+  return result.data?.id ?? null;
+};
+
+const syncSlackContextReplies = async ({ workspaceId, context, token }) => {
+  if (!context?.id || !token) return { synced: false, reason: 'authorization_unavailable' };
+  const payload = await slackApiRequest('conversations.replies', token, { channel: context.slack_channel_id, ts: context.root_message_ts, limit: 200, inclusive: true });
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  const replies = messages.filter((message) => String(message.ts) !== String(context.root_message_ts));
+  for (const reply of replies) await upsertSlackThreadReply({ workspaceId, contextId: context.id, reply, isEdited: Boolean(reply.edited), isDeleted: Boolean(reply.deleted) });
+  const latest = replies.length ? replies[replies.length - 1] : null;
+  const now = new Date().toISOString();
+  const updated = await supabase.from('slack_contexts').update({ reply_count: replies.length, latest_reply_at: latest ? parseSlackMessageTimestamp(latest.ts) : null, sync_status: 'sync_ready', last_synced_at: now, updated_at: now }).eq('id', context.id).eq('workspace_id', workspaceId);
+  if (updated.error) throw updated.error;
+  return { synced: true, replyCount: replies.length, latestReplyTs: latest?.ts ?? null, syncedAt: now };
+};
+
+const refreshSlackContextBestEffort = async (workspaceId, context) => {
+  try {
+    const workspaceToken = await loadSlackWorkspaceToken(workspaceId, context?.integration_account_id);
+    if (context && workspaceToken?.access_token) return await syncSlackContextReplies({ workspaceId, context, token: workspaceToken.access_token });
+  } catch (error) {
+    console.warn('[slack] linked thread sync delayed', { workspaceId, contextId: context?.id, code: error?.slackError ?? error?.code ?? 'sync_failed' });
+    if (context?.id) await supabase.from('slack_contexts').update({ sync_status: 'sync_error', updated_at: new Date().toISOString() }).eq('id', context.id).eq('workspace_id', workspaceId);
+  }
+  return null;
+};
+
+const slackApiRequest = async (method, token, params = {}) => {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+  });
+  const response = await fetch(`https://slack.com/api/${method}?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload?.ok) {
+    const error = new Error(payload?.error || `${method}_failed`);
+    error.slackError = payload?.error || 'request_failed';
+    error.statusCode = response.status;
+    throw error;
+  }
+  return payload;
+};
+
+const mapSlackConversation = (conversation, teamId, watched = {}) => {
+  const isDirectMessage = Boolean(conversation.is_im);
+  const isGroupConversation = Boolean(conversation.is_mpim);
+  const isPrivate = Boolean(conversation.is_private);
+  const conversationType = isDirectMessage
+    ? 'direct_message'
+    : isGroupConversation
+    ? 'group_conversation'
+    : isPrivate
+    ? 'private_channel'
+    : 'public_channel';
+  return {
+    id: conversation.id,
+    name: conversation.name || (isGroupConversation ? 'Group conversation' : isDirectMessage ? 'Direct message' : 'Untitled conversation'),
+    conversation_type: conversationType,
+    is_private: isPrivate,
+    member_count: conversation.num_members ?? null,
+    latest_message_ts: conversation.latest?.ts ?? null,
+    is_archived: Boolean(conversation.is_archived),
+    permalink: teamId && conversation.id ? `https://app.slack.com/client/${encodeURIComponent(teamId)}/${encodeURIComponent(conversation.id)}` : null,
+    personal_watch: watched.personal ?? null,
+    shared_watch: watched.shared ?? null,
+  };
+};
+
+const postSlackCaptureResponse = async (responseUrl, response) => {
+  const url = String(responseUrl ?? '').trim();
+  if (!url) return;
+  try {
+    const result = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response_type: 'ephemeral', replace_original: false, ...response }),
+    });
+    if (!result.ok) {
+      console.warn('[slack] capture response failed', { status: result.status });
+    }
+  } catch (error) {
+    console.warn('[slack] capture response request failed', { message: error?.message ?? 'unknown_error' });
+  }
+};
+
+const buildSlackOpenIntakeResponse = (inboxId) => ({
+  text: 'Sent to Ledger Intake',
+  ...(inboxId
+    ? {
+        blocks: [
+          {
+            type: 'section',
+            text: { type: 'mrkdwn', text: 'Sent to Ledger Intake' },
+            accessory: {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Open in Ledger' },
+              url: `ledger://inbox/${encodeURIComponent(inboxId)}`,
+              action_id: 'open_ledger_intake',
+            },
+          },
+        ],
+      }
+    : {}),
+});
+
+const saveSlackMessageCapture = async (payload, account = null) => {
+  const teamId = payload?.team?.id ?? payload?.team?.enterprise_id ?? null;
+  if (!teamId) return { ok: false, reason: 'missing_team' };
+
+  account = account || (await findSlackIntegrationAccount(teamId));
   if (!account?.workspace_id) return { ok: false, reason: 'missing_workspace' };
 
   const message = payload?.message ?? {};
@@ -4579,12 +5113,68 @@ const saveSlackMessageCapture = async (payload) => {
   const channelId = channel.id ?? payload?.channel_id ?? null;
   const authorName = message.username ?? user.username ?? user.name ?? null;
   const messageText = normalizeSlackMessageText(message.text ?? '');
+  const capturedByUserId = await resolveSlackIdentityLedgerUser({
+    workspaceId: account.workspace_id,
+    integrationAccountId: account.id,
+    teamId,
+    slackUserId: user.id ?? message.user ?? null,
+  });
   const sourceId = [teamId, channelId, messageTs].filter(Boolean).join(':') || null;
-  // TODO: call Slack chat.getPermalink when the shortcut payload does not include a permalink.
   const externalUrl = message.permalink ?? message.url ?? null;
   const title = buildSlackInboxTitle(messageText, authorName);
 
-  const insertResult = await supabase.from('external_sources').insert({
+  if (!sourceId) return { ok: false, reason: 'missing_message_identity' };
+
+  const slackContextId = await resolveSlackContextForCapture({
+    account,
+    teamId,
+    channelId,
+    channelName: channel.name,
+    message,
+    messageText,
+    messageTs,
+    threadTs,
+    externalUrl,
+  });
+
+  const existingContextLink = await supabase
+    .from('slack_context_links')
+    .select('target_id')
+    .eq('workspace_id', account.workspace_id)
+    .eq('slack_context_id', slackContextId)
+    .eq('target_type', 'intake_item')
+    .limit(1)
+    .maybeSingle();
+  if (existingContextLink.error) throw existingContextLink.error;
+  if (existingContextLink.data?.target_id) {
+    console.info('[slack] duplicate thread capture', { sourceId, slackContextId, workspaceId: account.workspace_id });
+    return { ok: true, duplicate: true, inboxId: existingContextLink.data.target_id };
+  }
+
+  const existingResult = await supabase
+    .from('external_sources')
+    .select('id, capture_status, intake_item_id')
+    .eq('workspace_id', account.workspace_id)
+    .eq('provider', 'slack')
+    .eq('external_id', sourceId)
+    .maybeSingle();
+  if (existingResult.error) throw existingResult.error;
+
+  const existing = existingResult.data;
+  if (existing?.capture_status === 'completed' || existing?.intake_item_id) {
+    console.info('[slack] duplicate capture', { sourceId, workspaceId: account.workspace_id });
+    return { ok: true, duplicate: true, inboxId: existing.intake_item_id ?? null };
+  }
+  if (existing && existing.capture_status === 'processing') {
+    console.info('[slack] duplicate capture attempt while processing', {
+      sourceId,
+      status: existing.capture_status,
+      workspaceId: account.workspace_id,
+    });
+    return { ok: true, duplicate: true, pending: true, inboxId: existing.intake_item_id ?? null };
+  }
+
+  const capturePayload = {
     workspace_id: account.workspace_id,
     provider: 'slack',
     integration_account_id: account.id,
@@ -4598,39 +5188,124 @@ const saveSlackMessageCapture = async (payload) => {
     captured_text: messageText || null,
     captured_at: parseSlackMessageTimestamp(messageTs ?? threadTs),
     raw_payload: payload,
-    created_by: null,
-  });
+    created_by: capturedByUserId,
+    slack_team_id: teamId,
+    slack_channel_id: channelId,
+    slack_message_ts: messageTs ?? null,
+    slack_user_id: user.id ?? message.user ?? null,
+    capture_action_id: payload.action_ts ?? payload.trigger_id ?? payload.callback_id ?? null,
+    slack_context_id: slackContextId,
+    capture_status: 'received',
+    failure_reason: null,
+    captured_by: capturedByUserId,
+  };
 
-  if (insertResult.error) throw insertResult.error;
-
-  const inboxResult = await supabase
-    .from('inbox_items')
-    .upsert(
-      {
-        workspace_id: account.workspace_id,
-        user_id: account?.installed_by ?? null,
-        updated_by: account?.installed_by ?? null,
-        source: 'slack',
-        source_provider: 'slack',
-        source_id: sourceId,
-        source_url: externalUrl,
-        title,
-        body: messageText || null,
-        raw_payload: payload,
-        suggested_type: 'unknown',
-        status: 'unprocessed',
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: 'workspace_id,source,source_id',
+  let captureId = existing?.id ?? null;
+  if (captureId) {
+    const resetResult = await supabase
+      .from('external_sources')
+      .update(capturePayload)
+      .eq('id', captureId);
+    if (resetResult.error) throw resetResult.error;
+  } else {
+    const insertResult = await supabase
+      .from('external_sources')
+      .insert(capturePayload)
+      .select('id')
+      .single();
+    if (insertResult.error) {
+      if (insertResult.error.code === '23505') {
+        const replay = await supabase
+          .from('external_sources')
+          .select('capture_status, intake_item_id')
+          .eq('workspace_id', account.workspace_id)
+          .eq('provider', 'slack')
+          .eq('external_id', sourceId)
+          .maybeSingle();
+        if (replay.error) throw replay.error;
+        console.info('[slack] duplicate capture race', { sourceId, workspaceId: account.workspace_id });
+        return {
+          ok: true,
+          duplicate: true,
+          pending: replay.data?.capture_status !== 'completed',
+          inboxId: replay.data?.intake_item_id ?? null,
+        };
       }
-    )
-    .select('id')
-    .single();
+      throw insertResult.error;
+    }
+    captureId = insertResult.data.id;
+  }
 
-  if (inboxResult.error) throw inboxResult.error;
+  const processingResult = await supabase
+    .from('external_sources')
+    .update({ capture_status: 'processing', failure_reason: null })
+    .eq('id', captureId);
+  if (processingResult.error) throw processingResult.error;
 
-  return { ok: true, inboxId: inboxResult.data?.id ?? null, workspaceId: account.workspace_id };
+  try {
+    const inboxResult = await supabase
+      .from('inbox_items')
+      .upsert(
+        {
+          workspace_id: account.workspace_id,
+          user_id: capturedByUserId ?? account?.installed_by ?? null,
+          updated_by: capturedByUserId ?? account?.installed_by ?? null,
+          source: 'slack',
+          source_provider: 'slack',
+          source_id: sourceId,
+          source_url: externalUrl,
+          title,
+          body: messageText || null,
+          raw_payload: payload,
+          suggested_type: 'unknown',
+          status: 'unprocessed',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'workspace_id,source,source_id' }
+      )
+      .select('id')
+      .single();
+    if (inboxResult.error) throw inboxResult.error;
+
+    await linkSlackContextToTarget({
+      workspaceId: account.workspace_id,
+      slackContextId,
+      targetType: 'intake_item',
+      targetId: inboxResult.data.id,
+      userId: account.installed_by,
+      relationshipType: 'source',
+    });
+
+    const completedResult = await supabase
+      .from('external_sources')
+      .update({ capture_status: 'completed', intake_item_id: inboxResult.data.id, failure_reason: null })
+      .eq('id', captureId);
+    if (completedResult.error) throw completedResult.error;
+
+    try {
+      const workspaceToken = await loadSlackWorkspaceToken(account.workspace_id, account.id);
+      const context = await loadSlackContextForWorkspace(account.workspace_id, slackContextId);
+      if (context && workspaceToken?.access_token) await syncSlackContextReplies({ workspaceId: account.workspace_id, context, token: workspaceToken.access_token });
+    } catch (syncError) {
+      console.warn('[slack] initial thread sync delayed', { workspaceId: account.workspace_id, contextId: slackContextId, code: syncError?.slackError ?? syncError?.code ?? 'sync_failed' });
+      await supabase.from('slack_contexts').update({ sync_status: 'sync_error', updated_at: new Date().toISOString() }).eq('id', slackContextId).eq('workspace_id', account.workspace_id);
+    }
+
+    return { ok: true, inboxId: inboxResult.data.id, workspaceId: account.workspace_id };
+  } catch (error) {
+    const failureReason = clampText(error?.message ?? 'capture_failed', 500);
+    await supabase
+      .from('external_sources')
+      .update({ capture_status: 'failed', failure_reason: failureReason })
+      .eq('id', captureId);
+    console.error('[slack] capture failed', {
+      captureId,
+      sourceId,
+      workspaceId: account.workspace_id,
+      failureReason,
+    });
+    throw error;
+  }
 };
 
 const mapInboxItemResponse = (row) => {
@@ -5587,12 +6262,23 @@ app.post('/api/intake', authMiddleware, rateLimit('write'), async (req, res) => 
   }
 });
 
+const resolveSlackWorkspaceForRequest = async (req) => {
+  const requestedWorkspaceId = String(
+    req.query?.workspaceId ?? req.query?.workspace_id ?? req.headers['x-workspace-id'] ?? ''
+  ).trim();
+  if (requestedWorkspaceId) {
+    await requireWorkspaceAccess(req.authUser.id, requestedWorkspaceId, 'member');
+    return requestedWorkspaceId;
+  }
+  return resolveWorkspaceIdForRequest(req);
+};
+
 app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
     const result = await supabase
       .from('integration_accounts')
-      .select('id, provider_team_id, provider_team_name, bot_user_id, scopes, updated_at')
+      .select('id, provider_team_id, provider_team_name, provider_team_icon, bot_user_id, scopes, installed_by, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .eq('provider', 'slack')
       .order('updated_at', { ascending: false })
@@ -5610,12 +6296,34 @@ app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), asy
       return res.json({ connected: false });
     }
 
+    let connectedBy = null;
+    if (result.data.installed_by) {
+      const userResult = await supabase
+        .from('users')
+        .select('id, full_name, email, avatar_url')
+        .eq('id', result.data.installed_by)
+        .maybeSingle();
+      if (userResult.error) throw userResult.error;
+      connectedBy = userResult.data
+        ? {
+            id: userResult.data.id,
+            name: userResult.data.full_name || userResult.data.email || 'Ledger member',
+            avatar_url: userResult.data.avatar_url ?? null,
+          }
+        : null;
+    }
+
     res.json({
       connected: true,
       team_id: result.data.provider_team_id ?? null,
       team_name: result.data.provider_team_name ?? null,
+      team_icon: result.data.provider_team_icon ?? null,
       bot_user_id: result.data.bot_user_id ?? null,
+      connected_by: connectedBy,
       scopes: result.data.scopes ?? [],
+      missing_activity_scopes: SLACK_ACTIVITY_BOT_SCOPES.filter((scope) => !(result.data.scopes ?? []).includes(scope)),
+      needs_reauthorization: SLACK_ACTIVITY_BOT_SCOPES.some((scope) => !(result.data.scopes ?? []).includes(scope)),
+      created_at: result.data.created_at ?? null,
       updated_at: result.data.updated_at ?? null,
     });
   } catch (error) {
@@ -5625,16 +6333,27 @@ app.get('/api/integrations/slack/status', authMiddleware, rateLimit('read'), asy
 
 app.get('/api/integrations/slack/captures', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const result = await supabase
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    const search = String(req.query?.search ?? '').trim().slice(0, 120);
+    const limit = Math.min(Math.max(Number(req.query?.limit ?? 50) || 50, 1), 100);
+    let capturesQuery = supabase
       .from('external_sources')
       .select(
-        'id, external_url, channel_name, author_name, captured_text, captured_at, created_at'
+        'id, external_url, channel_name, author_name, captured_text, captured_at, created_at, capture_status, failure_reason, intake_item_id, slack_team_id, slack_channel_id, slack_message_ts, slack_user_id'
       )
       .eq('workspace_id', workspaceId)
       .eq('provider', 'slack')
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(limit);
+
+    if (search) {
+      const safeSearch = search.replace(/[%,]/g, '');
+      capturesQuery = capturesQuery.or(
+        `captured_text.ilike.%${safeSearch}%,author_name.ilike.%${safeSearch}%,channel_name.ilike.%${safeSearch}%`
+      );
+    }
+
+    const result = await capturesQuery;
 
     if (result.error) {
       if (isMissingRelationError(result.error, 'external_sources')) {
@@ -5643,7 +6362,636 @@ app.get('/api/integrations/slack/captures', authMiddleware, rateLimit('read'), a
       throw result.error;
     }
 
+    const rows = result.data ?? [];
+    const intakeIds = rows.map((row) => row.intake_item_id).filter(Boolean);
+    const intakeResult = intakeIds.length
+      ? await supabase
+          .from('inbox_items')
+          .select('id, status, title, converted_type, converted_id, converted_at')
+          .eq('workspace_id', workspaceId)
+          .in('id', intakeIds)
+      : { data: [], error: null };
+    if (intakeResult.error) throw intakeResult.error;
+    const intakeById = new Map((intakeResult.data ?? []).map((item) => [item.id, item]));
+
+    const targets = new Map();
+    for (const type of ['task', 'note', 'event', 'project']) {
+      const ids = (intakeResult.data ?? [])
+        .filter((item) => item.converted_type === type && item.converted_id)
+        .map((item) => item.converted_id);
+      if (!ids.length) continue;
+      const table = type === 'project' ? 'projects' : `${type}s`;
+      const columns = type === 'project' ? 'id, name' : 'id, title';
+      const targetResult = await supabase.from(table).select(columns).eq('workspace_id', workspaceId).in('id', ids);
+      if (targetResult.error) throw targetResult.error;
+      for (const target of targetResult.data ?? []) {
+        targets.set(`${type}:${target.id}`, {
+          id: target.id,
+          type,
+          title: target.title ?? target.name ?? 'Ledger item',
+        });
+      }
+    }
+
+    res.json(
+      rows
+        .map((row) => {
+          const intake = row.intake_item_id ? intakeById.get(row.intake_item_id) ?? null : null;
+          const target = intake?.converted_type && intake.converted_id
+            ? targets.get(`${intake.converted_type}:${intake.converted_id}`) ?? null
+            : null;
+          return {
+            ...row,
+            intake_item: intake,
+            converted_item: target,
+          };
+        })
+        .filter((row) => {
+          const status = String(req.query?.status ?? 'all').trim();
+          if (status === 'failed') return row.capture_status === 'failed';
+          if (status === 'in_intake') return row.intake_item?.status === 'unprocessed' || row.intake_item?.status === 'snoozed';
+          if (status === 'converted') return row.intake_item?.status === 'converted';
+          return true;
+        })
+    );
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+const resolveSlackContextFromActivity = async (workspaceId, activity) => {
+  const rootMessageTs = activity.slack_root_thread_ts || activity.slack_message_ts;
+  const existing = await supabase.from('slack_contexts').select('id').eq('workspace_id', workspaceId).eq('slack_team_id', activity.slack_team_id).eq('slack_channel_id', activity.slack_conversation_id).eq('root_message_ts', rootMessageTs).maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data?.id) return existing.data.id;
+  const created = await supabase.from('slack_contexts').upsert({ workspace_id: workspaceId, integration_account_id: activity.integration_account_id, slack_team_id: activity.slack_team_id, slack_channel_id: activity.slack_conversation_id, root_message_ts: rootMessageTs, captured_message_ts: activity.slack_message_ts, message_text: activity.message_text, message_author_slack_id: activity.author_slack_user_id, permalink: activity.permalink, message_created_at: activity.source_created_at, captured_at: new Date().toISOString(), sync_status: 'static', updated_at: new Date().toISOString() }, { onConflict: 'workspace_id,slack_team_id,slack_channel_id,root_message_ts' }).select('id').single();
+  if (created.error) throw created.error;
+  return created.data.id;
+};
+
+const promoteSlackActivityToIntake = async ({ workspaceId, userId, activity }) => {
+  const contextId = await resolveSlackContextFromActivity(workspaceId, activity);
+  const existingLink = await supabase.from('slack_context_links').select('target_id').eq('workspace_id', workspaceId).eq('slack_context_id', contextId).eq('target_type', 'intake_item').limit(1).maybeSingle();
+  if (existingLink.error) throw existingLink.error;
+  if (existingLink.data?.target_id) return { inboxId: existingLink.data.target_id, contextId, duplicate: true };
+  const sourceId = [activity.slack_team_id, activity.slack_conversation_id, activity.slack_message_ts].join(':');
+  const source = await supabase.from('external_sources').select('id, intake_item_id').eq('workspace_id', workspaceId).eq('provider', 'slack').eq('external_id', sourceId).maybeSingle();
+  if (source.error) throw source.error;
+  if (source.data?.intake_item_id) {
+    await linkSlackContextToTarget({ workspaceId, slackContextId: contextId, targetType: 'intake_item', targetId: source.data.intake_item_id, userId, relationshipType: 'source' });
+    return { inboxId: source.data.intake_item_id, contextId, duplicate: true };
+  }
+  const inbox = await supabase.from('inbox_items').upsert({ workspace_id: workspaceId, user_id: userId, updated_by: userId, source: 'slack', source_provider: 'slack', source_id: sourceId, source_url: activity.permalink, title: buildSlackInboxTitle(activity.message_text, activity.author_slack_user_id), body: activity.message_text, raw_payload: { source: 'slack_activity', activity_id: activity.id }, suggested_type: 'unknown', status: 'unprocessed', updated_at: new Date().toISOString() }, { onConflict: 'workspace_id,source,source_id' }).select('id').single();
+  if (inbox.error) throw inbox.error;
+  const external = await supabase.from('external_sources').upsert({ workspace_id: workspaceId, provider: 'slack', integration_account_id: activity.integration_account_id, external_id: sourceId, external_url: activity.permalink, source_type: 'activity', channel_id: activity.slack_conversation_id, captured_text: activity.message_text, captured_at: activity.source_created_at, raw_payload: { source: 'slack_activity', activity_id: activity.id }, created_by: userId, slack_team_id: activity.slack_team_id, slack_channel_id: activity.slack_conversation_id, slack_message_ts: activity.slack_message_ts, slack_context_id: contextId, capture_status: 'completed', intake_item_id: inbox.data.id, captured_by: userId, updated_at: new Date().toISOString() }, { onConflict: 'workspace_id,provider,external_id' });
+  if (external.error && external.error.code !== '23505') throw external.error;
+  await linkSlackContextToTarget({ workspaceId, slackContextId: contextId, targetType: 'intake_item', targetId: inbox.data.id, userId, relationshipType: 'source' });
+  await upsertSlackActivityMatch({ workspaceId, activityId: activity.id, contextId, ledgerUserId: userId, matchType: 'captured_context' });
+  try {
+    const workspaceToken = await loadSlackWorkspaceToken(workspaceId, activity.integration_account_id);
+    const context = await loadSlackContextForWorkspace(workspaceId, contextId);
+    if (context && workspaceToken?.access_token) await syncSlackContextReplies({ workspaceId, context, token: workspaceToken.access_token });
+  } catch (syncError) {
+    console.warn('[slack] activity thread sync delayed', { workspaceId, contextId, code: syncError?.slackError ?? syncError?.code ?? 'sync_failed' });
+    await supabase.from('slack_contexts').update({ sync_status: 'sync_error', updated_at: new Date().toISOString() }).eq('id', contextId).eq('workspace_id', workspaceId);
+  }
+  return { inboxId: inbox.data.id, contextId, duplicate: false };
+};
+
+app.get('/api/integrations/slack/activity', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, date: String(req.query?.date ?? '').trim(), filter: String(req.query?.filter ?? 'all'), search: String(req.query?.search ?? ''), watchId: String(req.query?.watch_id ?? ''), unreadOnly: String(req.query?.unread ?? '') === 'true', limit: req.query?.limit });
+    res.json(result);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/slack/activity/recap', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const date = String(req.query?.date ?? new Date().toISOString().slice(0, 10)).trim();
+    const result = await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, date, limit: 100 });
+    const rows = result.rows;
+    const mentionCount = rows.filter((row) => row.activity_type === 'mention' || row.matches.some((match) => match.match_type === 'mention')).length;
+    const replyCount = rows.filter((row) => ['reply', 'thread_reply'].includes(row.activity_type) || row.matches.some((match) => match.match_type === 'reply')).length;
+    const threadRows = rows.filter((row) => row.slack_root_thread_ts && row.slack_root_thread_ts !== row.slack_message_ts);
+    const conversations = new Map();
+    for (const row of rows) conversations.set(row.slack_conversation_id, (conversations.get(row.slack_conversation_id) ?? 0) + 1);
+    res.json({ date, metrics: { new_messages: rows.filter((row) => ['message', 'message_edited'].includes(row.activity_type)).length, mentions: mentionCount, replies: replyCount, active_threads: new Set(threadRows.map((row) => `${row.slack_conversation_id}:${row.slack_root_thread_ts}`)).size, sent_to_intake: rows.filter((row) => row.intake_item).length, linked_contexts: rows.filter((row) => row.context_id).length }, most_active_conversations: [...conversations.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([conversationId, count]) => ({ conversation_id: conversationId, count })) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/activity/:id/read', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
+    const now = new Date().toISOString();
+    const result = await supabase.from('slack_activity_read_states').upsert({ workspace_id: workspaceId, slack_activity_id: activity.id, ledger_user_id: req.authUser.id, read_at: now, updated_at: now }, { onConflict: 'slack_activity_id,ledger_user_id' }).select('slack_activity_id, read_at, dismissed_at').single();
+    if (result.error) throw result.error;
+    res.json(result.data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/activity/:id/intake', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
+    const result = await promoteSlackActivityToIntake({ workspaceId, userId: req.authUser.id, activity });
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/activity/read-all', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const rows = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, date: String(req.body?.date ?? ''), filter: String(req.body?.filter ?? 'all'), unreadOnly: true, limit: 100 })).rows;
+    const now = new Date().toISOString();
+    for (const activity of rows) await supabase.from('slack_activity_read_states').upsert({ workspace_id: workspaceId, slack_activity_id: activity.id, ledger_user_id: req.authUser.id, read_at: now, updated_at: now }, { onConflict: 'slack_activity_id,ledger_user_id' });
+    res.json({ count: rows.length, read_at: now });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/watches/:id/read', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const watch = await loadSlackWatchForWorkspace(workspaceId, req.params.id);
+    if (!watch || (watch.watch_type === 'personal' && watch.owner_user_id !== req.authUser.id)) return res.status(404).json({ error: 'Slack watch not found.' });
+    const now = new Date().toISOString();
+    const result = await supabase.from('slack_watch_read_states').upsert({ workspace_id: workspaceId, slack_watch_id: watch.id, ledger_user_id: req.authUser.id, last_viewed_message_ts: req.body?.last_viewed_message_ts ?? null, last_viewed_at: now, updated_at: now }, { onConflict: 'slack_watch_id,ledger_user_id' }).select('slack_watch_id, last_viewed_message_ts, last_viewed_at').single();
+    if (result.error) throw result.error;
+    res.json(result.data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/activity/:id/context-link', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
+    const contextId = await resolveSlackContextFromActivity(workspaceId, activity);
+    const link = await linkSlackContextToTarget({ workspaceId, slackContextId: contextId, targetType: req.body?.target_type, targetId: req.body?.target_id, userId: req.authUser.id, relationshipType: 'activity' });
+    const context = await loadSlackContextForWorkspace(workspaceId, contextId);
+    void refreshSlackContextBestEffort(workspaceId, context);
+    res.status(201).json({ context_id: contextId, link });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+const slackContextSelect = 'id, workspace_id, integration_account_id, slack_team_id, slack_channel_id, slack_channel_name, root_message_ts, captured_message_ts, message_text, message_author_slack_id, message_author_name, message_author_avatar_url, permalink, message_created_at, captured_at, sync_status, last_synced_at, reply_count, latest_reply_at, created_at, updated_at';
+const slackIdentitySelect = 'id, workspace_id, ledger_user_id, integration_account_id, slack_team_id, slack_user_id, slack_display_name, slack_real_name, slack_email, slack_avatar_url, status, linked_at, last_verified_at, disconnected_at, error_code, created_at, updated_at';
+
+app.get('/api/integrations/slack/identity', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase
+      .from('slack_identities')
+      .select(slackIdentitySelect)
+      .eq('workspace_id', workspaceId)
+      .eq('ledger_user_id', req.authUser.id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (result.error) {
+      if (isMissingRelationError(result.error, 'slack_identities')) return res.json({ identity: null, status: 'disconnected' });
+      throw result.error;
+    }
+    res.json({ identity: result.data ?? null, status: result.data?.status ?? 'disconnected' });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/integrations/slack/identity/connect-url', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const connection = await supabase
+      .from('integration_accounts')
+      .select('provider_team_id')
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'slack')
+      .not('provider_team_id', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (connection.error) throw connection.error;
+    if (!connection.data?.provider_team_id) {
+      return res.status(409).json({ error: 'Connect the Slack workspace before linking your Slack identity.' });
+    }
+    res.json({ url: buildSlackIdentityAuthorizeUrl({ workspaceId, userId: req.authUser.id, teamId: connection.data.provider_team_id }) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/integrations/slack/identity', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase
+      .from('slack_identities')
+      .update({
+        status: 'disconnected',
+        access_token_encrypted: null,
+        refresh_token_encrypted: null,
+        disconnected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('workspace_id', workspaceId)
+      .eq('ledger_user_id', req.authUser.id);
+    if (result.error) throw result.error;
+    const watches = await supabase.from('slack_watches').update({ status: 'paused', updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('owner_user_id', req.authUser.id).eq('watch_type', 'personal').in('status', ['active', 'access_lost']);
+    if (watches.error && !isMissingRelationError(watches.error, 'slack_watches')) throw watches.error;
+    res.json({ success: true, status: 'disconnected' });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+const slackWatchSelect = 'id, workspace_id, integration_account_id, slack_team_id, slack_conversation_id, created_by_user_id, owner_user_id, watch_type, conversation_type, conversation_name, status, watch_started_at, activation_latest_message_ts, last_activity_at, created_at, updated_at';
+
+const loadSlackWatchForWorkspace = async (workspaceId, watchId) => {
+  const result = await supabase
+    .from('slack_watches')
+    .select(slackWatchSelect)
+    .eq('workspace_id', workspaceId)
+    .eq('id', watchId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
+const loadSlackWatchPreferences = async ({ workspaceId, watchIds, userId }) => {
+  if (!watchIds.length) return new Map();
+  const result = await supabase
+    .from('slack_watch_preferences')
+    .select('id, slack_watch_id, user_id, include_in_daily_recap, show_mentions, show_replies, show_active_threads, created_at, updated_at')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId)
+    .in('slack_watch_id', watchIds);
+  if (result.error) throw result.error;
+  return new Map((result.data ?? []).map((row) => [row.slack_watch_id, row]));
+};
+
+const serializeSlackWatch = (watch, preferences = null) => ({
+  ...watch,
+  preferences: preferences ?? {
+    include_in_daily_recap: true,
+    show_mentions: true,
+    show_replies: true,
+    show_active_threads: true,
+  },
+  permalink: watch.integration_account_id && watch.slack_conversation_id
+    ? `https://app.slack.com/client/${encodeURIComponent(watch.slack_team_id || '')}/${encodeURIComponent(watch.slack_conversation_id)}`
+    : null,
+});
+
+app.get('/api/integrations/slack/conversations', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const identity = await loadConnectedSlackIdentity({ workspaceId, userId: req.authUser.id });
+    if (!identity) return res.status(409).json({ error: 'Connect your Slack identity to choose conversations to watch.' });
+
+    const search = String(req.query?.search ?? '').trim().slice(0, 120).toLowerCase();
+    const watchResult = await supabase
+      .from('slack_watches')
+      .select(slackWatchSelect)
+      .eq('workspace_id', workspaceId)
+      .in('status', ['active', 'paused', 'access_lost', 'disconnected']);
+    if (watchResult.error) throw watchResult.error;
+    const watches = (watchResult.data ?? []).filter((watch) => watch.watch_type === 'shared' || watch.owner_user_id === req.authUser.id);
+    const watchMap = new Map();
+    for (const watch of watches) {
+      const current = watchMap.get(watch.slack_conversation_id) ?? {};
+      current[watch.watch_type] = watch;
+      watchMap.set(watch.slack_conversation_id, current);
+    }
+
+    const conversations = [];
+    let cursor = '';
+    for (let page = 0; page < 5; page += 1) {
+      const payload = await slackApiRequest('users.conversations', identity.access_token_encrypted, {
+        types: 'public_channel,private_channel,mpim',
+        exclude_archived: true,
+        limit: 200,
+        cursor,
+      });
+      conversations.push(...(payload.channels ?? []));
+      cursor = payload.response_metadata?.next_cursor ?? '';
+      if (!cursor) break;
+    }
+    const mapped = conversations
+      .filter((conversation) => !search || String(conversation.name ?? '').toLowerCase().includes(search))
+      .map((conversation) => mapSlackConversation(conversation, identity.slack_team_id, watchMap.get(conversation.id) ?? {}));
+    const accessibleConversationIds = new Set(conversations.map((conversation) => conversation.id));
+    const inaccessibleWatchIds = watches
+      .filter((watch) => watch.watch_type === 'personal' && watch.status === 'active' && !accessibleConversationIds.has(watch.slack_conversation_id))
+      .map((watch) => watch.id);
+    if (inaccessibleWatchIds.length) {
+      await supabase.from('slack_watches').update({ status: 'access_lost', updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).in('id', inaccessibleWatchIds);
+    }
+    res.json(mapped);
+  } catch (error) {
+    if (['token_revoked', 'token_expired', 'invalid_auth', 'missing_scope', 'not_allowed_token_type'].includes(error?.slackError)) {
+      return res.status(409).json({ error: 'Reconnect your Slack identity to choose conversations to watch.', code: 'reauthorization_required' });
+    }
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/integrations/slack/watches', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase.from('slack_watches').select(slackWatchSelect).eq('workspace_id', workspaceId).in('status', ['active', 'paused', 'access_lost', 'disconnected']).order('updated_at', { ascending: false });
+    if (result.error) throw result.error;
+    const watches = (result.data ?? []).filter((watch) => watch.watch_type === 'shared' || watch.owner_user_id === req.authUser.id);
+    const preferences = await loadSlackWatchPreferences({ workspaceId, watchIds: watches.map((watch) => watch.id), userId: req.authUser.id });
+    res.json(watches.map((watch) => serializeSlackWatch(watch, preferences.get(watch.id) ?? null)));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/integrations/slack/watches', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const identity = await loadConnectedSlackIdentity({ workspaceId, userId: req.authUser.id });
+    if (!identity) return res.status(409).json({ error: 'Connect your Slack identity to choose conversations to watch.' });
+    const watchType = String(req.body?.watch_type ?? 'personal').trim();
+    const conversationId = String(req.body?.slack_conversation_id ?? '').trim();
+    if (!['personal', 'shared'].includes(watchType) || !conversationId) return res.status(400).json({ error: 'Choose a valid Slack conversation.' });
+
+    const workspace = await supabase.from('workspaces').select('id, is_personal, owner_id').eq('id', workspaceId).maybeSingle();
+    if (workspace.error) throw workspace.error;
+    if (watchType === 'shared') {
+      if (workspace.data?.is_personal) return res.status(403).json({ error: 'Shared Slack watches are only available in team workspaces.' });
+      await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    }
+
+    const conversationPayload = await slackApiRequest('conversations.info', identity.access_token_encrypted, { channel: conversationId, include_num_members: true });
+    const conversation = conversationPayload.channel ?? {};
+    if (!conversation.id || conversation.id !== conversationId) return res.status(404).json({ error: 'Slack conversation not found.' });
+    const conversationType = mapSlackConversation(conversation, identity.slack_team_id).conversation_type;
+    if (conversationType === 'direct_message') return res.status(403).json({ error: 'Direct messages cannot be watched yet.' });
+    if (watchType === 'shared' && conversationType !== 'public_channel') return res.status(403).json({ error: 'Only public Slack channels can be watched for the workspace.' });
+
+    let existingQuery = supabase.from('slack_watches').select(slackWatchSelect).eq('workspace_id', workspaceId).eq('integration_account_id', identity.integration_account_id).eq('slack_conversation_id', conversationId).eq('watch_type', watchType).neq('status', 'removed');
+    existingQuery = watchType === 'personal' ? existingQuery.eq('owner_user_id', req.authUser.id) : existingQuery.is('owner_user_id', null);
+    const existing = await existingQuery.maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data) {
+      if (existing.data.status !== 'active') {
+        const reactivated = await supabase.from('slack_watches').update({ status: 'active', conversation_name: conversation.name || existing.data.conversation_name, watch_started_at: new Date().toISOString(), activation_latest_message_ts: conversation.latest?.ts ?? null, updated_at: new Date().toISOString() }).eq('id', existing.data.id).eq('workspace_id', workspaceId).select(slackWatchSelect).single();
+        if (reactivated.error) throw reactivated.error;
+        existing.data = reactivated.data;
+      }
+      const preferences = await loadSlackWatchPreferences({ workspaceId, watchIds: [existing.data.id], userId: req.authUser.id });
+      return res.json(serializeSlackWatch(existing.data, preferences.get(existing.data.id) ?? null));
+    }
+
+    const now = new Date().toISOString();
+    const inserted = await supabase.from('slack_watches').insert({
+      workspace_id: workspaceId,
+      integration_account_id: identity.integration_account_id,
+      slack_team_id: identity.slack_team_id,
+      slack_conversation_id: conversationId,
+      created_by_user_id: req.authUser.id,
+      owner_user_id: watchType === 'personal' ? req.authUser.id : null,
+      watch_type: watchType,
+      conversation_type: conversationType,
+      conversation_name: conversation.name || 'Slack conversation',
+      status: 'active',
+      watch_started_at: now,
+      activation_latest_message_ts: conversation.latest?.ts ?? null,
+      updated_at: now,
+    }).select(slackWatchSelect).single();
+    if (inserted.error) throw inserted.error;
+    const preference = await supabase.from('slack_watch_preferences').upsert({ workspace_id: workspaceId, slack_watch_id: inserted.data.id, user_id: req.authUser.id, updated_at: now }, { onConflict: 'slack_watch_id,user_id' }).select('id, slack_watch_id, user_id, include_in_daily_recap, show_mentions, show_replies, show_active_threads, created_at, updated_at').single();
+    if (preference.error) throw preference.error;
+    res.status(201).json(serializeSlackWatch(inserted.data, preference.data));
+  } catch (error) {
+    if (error?.slackError === 'channel_not_found' || error?.slackError === 'not_in_channel') return res.status(404).json({ error: 'You no longer have access to this Slack conversation.' });
+    if (['token_revoked', 'token_expired', 'invalid_auth', 'missing_scope', 'not_allowed_token_type'].includes(error?.slackError)) return res.status(409).json({ error: 'Reconnect your Slack identity to choose conversations to watch.', code: 'reauthorization_required' });
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/integrations/slack/watches/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const watch = await loadSlackWatchForWorkspace(workspaceId, req.params.id);
+    if (!watch) return res.status(404).json({ error: 'Slack watch not found.' });
+    if (watch.watch_type === 'personal') {
+      if (watch.owner_user_id !== req.authUser.id) return res.status(403).json({ error: 'You do not have access to this Slack watch.' });
+    } else {
+      await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    }
+    const result = await supabase.from('slack_watches').update({ status: 'removed', updated_at: new Date().toISOString() }).eq('id', watch.id).eq('workspace_id', workspaceId);
+    if (result.error) throw result.error;
+    res.json({ success: true, status: 'removed' });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/integrations/slack/watches/:id/preferences', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const watch = await loadSlackWatchForWorkspace(workspaceId, req.params.id);
+    if (!watch || (watch.watch_type === 'personal' && watch.owner_user_id !== req.authUser.id)) return res.status(404).json({ error: 'Slack watch not found.' });
+    const payload = {};
+    for (const field of ['include_in_daily_recap', 'show_mentions', 'show_replies', 'show_active_threads']) {
+      if (typeof req.body?.[field] === 'boolean') payload[field] = req.body[field];
+    }
+    const result = await supabase.from('slack_watch_preferences').upsert({ workspace_id: workspaceId, slack_watch_id: watch.id, user_id: req.authUser.id, ...payload, updated_at: new Date().toISOString() }, { onConflict: 'slack_watch_id,user_id' }).select('id, slack_watch_id, user_id, include_in_daily_recap, show_mentions, show_replies, show_active_threads, created_at, updated_at').single();
+    if (result.error) throw result.error;
+    res.json(result.data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+const loadSlackContextForWorkspace = async (workspaceId, contextId) => {
+  const result = await supabase
+    .from('slack_contexts')
+    .select(slackContextSelect)
+    .eq('workspace_id', workspaceId)
+    .eq('id', contextId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  return result.data ?? null;
+};
+
+const loadSlackThreadForUser = async (workspaceId, contextId, userId) => {
+  const context = await loadSlackContextForWorkspace(workspaceId, contextId);
+  if (!context) return null;
+  const replies = await supabase.from('slack_thread_replies').select('id, slack_context_id, slack_message_ts, slack_user_id, author_name, author_avatar_url, message_text, permalink, source_created_at, edited_at, deleted_at, is_edited, is_deleted').eq('workspace_id', workspaceId).eq('slack_context_id', context.id).order('source_created_at', { ascending: true });
+  if (replies.error) throw replies.error;
+  const read = await supabase.from('slack_context_read_states').select('last_viewed_reply_ts, last_viewed_at, unread_reply_count').eq('workspace_id', workspaceId).eq('slack_context_id', context.id).eq('ledger_user_id', userId).maybeSingle();
+  if (read.error) throw read.error;
+  const follow = await supabase.from('slack_context_follows').select('id').eq('workspace_id', workspaceId).eq('slack_context_id', context.id).eq('ledger_user_id', userId).maybeSingle();
+  if (follow.error) throw follow.error;
+  const lastViewed = read.data?.last_viewed_reply_ts;
+  const unreadReplyCount = lastViewed ? (replies.data ?? []).filter((reply) => String(reply.slack_message_ts) > String(lastViewed) && !reply.is_deleted).length : (replies.data ?? []).filter((reply) => !reply.is_deleted).length;
+  return { context, replies: replies.data ?? [], is_following: Boolean(follow.data?.id), unread_reply_count: unreadReplyCount, read_state: read.data ?? null };
+};
+
+app.get('/api/integrations/slack/contexts/:id/thread', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const thread = await loadSlackThreadForUser(workspaceId, req.params.id, req.authUser.id);
+    if (!thread) return res.status(404).json({ error: 'Slack thread not found.' });
+    res.json(thread);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/contexts/:id/refresh', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const context = await loadSlackContextForWorkspace(workspaceId, req.params.id);
+    if (!context) return res.status(404).json({ error: 'Slack thread not found.' });
+    const workspaceToken = await loadSlackWorkspaceToken(workspaceId, context.integration_account_id);
+    if (!workspaceToken?.access_token) return res.status(409).json({ error: 'Reconnect Slack to continue syncing this thread.' });
+    try {
+      const result = await syncSlackContextReplies({ workspaceId, context, token: workspaceToken.access_token });
+      res.json({ ...result, ...(await loadSlackThreadForUser(workspaceId, context.id, req.authUser.id)) });
+    } catch (error) {
+      await supabase.from('slack_contexts').update({ sync_status: error?.slackError === 'channel_not_found' ? 'access_lost' : 'sync_error', updated_at: new Date().toISOString() }).eq('id', context.id).eq('workspace_id', workspaceId);
+      throw error;
+    }
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/contexts/:id/follow', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const context = await loadSlackContextForWorkspace(workspaceId, req.params.id);
+    if (!context) return res.status(404).json({ error: 'Slack thread not found.' });
+    const following = req.body?.following !== false;
+    if (following) {
+      const result = await supabase.from('slack_context_follows').upsert({ workspace_id: workspaceId, slack_context_id: context.id, ledger_user_id: req.authUser.id }, { onConflict: 'slack_context_id,ledger_user_id' }).select('id').single();
+      if (result.error) throw result.error;
+    } else {
+      const result = await supabase.from('slack_context_follows').delete().eq('workspace_id', workspaceId).eq('slack_context_id', context.id).eq('ledger_user_id', req.authUser.id);
+      if (result.error) throw result.error;
+    }
+    if (following) void refreshSlackContextBestEffort(workspaceId, context);
+    res.json({ following });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/contexts/:id/read', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const context = await loadSlackContextForWorkspace(workspaceId, req.params.id);
+    if (!context) return res.status(404).json({ error: 'Slack thread not found.' });
+    const lastReply = String(req.body?.last_viewed_reply_ts ?? context.latest_reply_at ?? context.root_message_ts);
+    const result = await supabase.from('slack_context_read_states').upsert({ workspace_id: workspaceId, slack_context_id: context.id, ledger_user_id: req.authUser.id, last_viewed_reply_ts: lastReply, last_viewed_at: new Date().toISOString(), unread_reply_count: 0, updated_at: new Date().toISOString() }, { onConflict: 'slack_context_id,ledger_user_id' }).select('last_viewed_reply_ts, last_viewed_at, unread_reply_count').single();
+    if (result.error) throw result.error;
+    res.json(result.data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/slack/contexts', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    const targetType = normalizeSlackContextTargetType(req.query?.target_type);
+    const targetId = String(req.query?.target_id ?? '').trim();
+    const search = String(req.query?.search ?? '').trim().slice(0, 120);
+    const limit = Math.min(Math.max(Number(req.query?.limit ?? 30) || 30, 1), 100);
+
+    if (targetType || targetId) {
+      const table = slackContextTargetTables[targetType];
+      if (!table || !targetId || !(await ensureWorkspaceResource(table, targetId, workspaceId))) {
+        return res.status(404).json({ error: 'Linked Ledger object not found.' });
+      }
+      const links = await supabase
+        .from('slack_context_links')
+        .select('slack_context_id, target_type, target_id, relationship_type, created_at')
+        .eq('workspace_id', workspaceId)
+        .eq('target_type', targetType)
+        .eq('target_id', targetId)
+        .order('created_at', { ascending: false });
+      if (links.error) throw links.error;
+      const ids = (links.data ?? []).map((link) => link.slack_context_id).filter(Boolean);
+      if (!ids.length) return res.json([]);
+      const contexts = await supabase.from('slack_contexts').select(slackContextSelect).eq('workspace_id', workspaceId).in('id', ids).order('captured_at', { ascending: false });
+      if (contexts.error) throw contexts.error;
+      return res.json(contexts.data ?? []);
+    }
+
+    let query = supabase.from('slack_contexts').select(slackContextSelect).eq('workspace_id', workspaceId).order('captured_at', { ascending: false }).limit(limit);
+    if (search) {
+      const safeSearch = search.replace(/[%,]/g, '');
+      query = query.or(`message_text.ilike.%${safeSearch}%,message_author_name.ilike.%${safeSearch}%,slack_channel_name.ilike.%${safeSearch}%`);
+    }
+    const result = await query;
+    if (result.error) throw result.error;
     res.json(result.data ?? []);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/integrations/slack/contexts/:id', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    const context = await loadSlackContextForWorkspace(workspaceId, req.params.id);
+    if (!context) return res.status(404).json({ error: 'Slack context not found.' });
+    const links = await supabase.from('slack_context_links').select('id, target_type, target_id, relationship_type, created_at').eq('workspace_id', workspaceId).eq('slack_context_id', context.id).order('created_at', { ascending: false });
+    if (links.error) throw links.error;
+    res.json({ ...context, links: links.data ?? [] });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/integrations/slack/contexts/:id/links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const context = await loadSlackContextForWorkspace(workspaceId, req.params.id);
+    if (!context) return res.status(404).json({ error: 'Slack context not found.' });
+    const link = await linkSlackContextToTarget({
+      workspaceId,
+      slackContextId: context.id,
+      targetType: req.body?.target_type,
+      targetId: req.body?.target_id,
+      userId: req.authUser.id,
+      relationshipType: req.body?.relationship_type || 'context',
+    });
+    void refreshSlackContextBestEffort(workspaceId, context);
+    res.status(201).json({ context, link });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/integrations/slack/context-links/:id', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase.from('slack_context_links').delete().eq('workspace_id', workspaceId).eq('id', req.params.id);
+    if (result.error) throw result.error;
+    res.json({ success: true });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -5651,8 +6999,14 @@ app.get('/api/integrations/slack/captures', authMiddleware, rateLimit('read'), a
 
 app.delete('/api/integrations/slack/disconnect', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+
+    const now = new Date().toISOString();
+    const identities = await supabase.from('slack_identities').update({ status: 'disconnected', access_token_encrypted: null, refresh_token_encrypted: null, disconnected_at: now, updated_at: now }).eq('workspace_id', workspaceId).neq('status', 'disconnected');
+    if (identities.error && !isMissingRelationError(identities.error, 'slack_identities')) throw identities.error;
+    const watches = await supabase.from('slack_watches').update({ status: 'paused', updated_at: now }).eq('workspace_id', workspaceId).in('status', ['active', 'access_lost']);
+    if (watches.error && !isMissingRelationError(watches.error, 'slack_watches')) throw watches.error;
 
     const result = await supabase
       .from('integration_accounts')
@@ -5675,7 +7029,7 @@ app.delete('/api/integrations/slack/disconnect', authMiddleware, rateLimit('writ
 
 app.get('/api/integrations/slack/install-url', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
     res.json({
       url: buildSlackAuthorizeUrl({ workspaceId, installedBy: req.authUser.id }),
@@ -5687,7 +7041,7 @@ app.get('/api/integrations/slack/install-url', authMiddleware, rateLimit('read')
 
 app.get('/api/integrations/slack/install', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
     res.redirect(buildSlackAuthorizeUrl({ workspaceId, installedBy: req.authUser.id }));
   } catch (error) {
@@ -5711,10 +7065,13 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
       return res.status(500).send('Slack OAuth is not configured');
     }
 
+    const oauthUserId = statePayload.flow === 'personal_identity'
+      ? statePayload.user_id
+      : statePayload.installed_by;
     await requireWorkspaceAccess(
-      statePayload.installed_by,
+      oauthUserId,
       statePayload.workspace_id,
-      'admin'
+      statePayload.flow === 'personal_identity' ? 'member' : 'admin'
     );
 
     const tokenResponse = await fetch('https://slack.com/api/oauth.v2.access', {
@@ -5737,6 +7094,95 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
     const teamName = tokenPayload.team?.name ?? null;
     if (!teamId) return res.status(400).send('Slack OAuth response missing team id');
 
+    if (statePayload.flow === 'personal_identity') {
+      const sharedConnection = await supabase
+        .from('integration_accounts')
+        .select('id, provider_team_id, provider_team_name')
+        .eq('workspace_id', statePayload.workspace_id)
+        .eq('provider', 'slack')
+        .eq('provider_team_id', teamId)
+        .maybeSingle();
+      if (sharedConnection.error) throw sharedConnection.error;
+      if (!sharedConnection.data?.id) {
+        return res.status(409).type('html').send(buildSlackIdentityCompleteHtml({
+          success: false,
+          message: 'This Slack account does not belong to the Slack workspace connected to Ledger.',
+        }));
+      }
+
+      const slackUserId = tokenPayload.authed_user?.id ?? null;
+      const userAccessToken = tokenPayload.authed_user?.access_token ?? null;
+      if (!slackUserId || !userAccessToken) {
+        return res.status(400).type('html').send(buildSlackIdentityCompleteHtml({
+          success: false,
+          message: 'Slack did not return a personal identity for this account.',
+        }));
+      }
+
+      const identityResponse = await fetch('https://slack.com/api/users.identity', {
+        headers: { Authorization: `Bearer ${userAccessToken}` },
+      });
+      const identityPayload = await identityResponse.json();
+      if (!identityPayload?.ok || identityPayload.user?.id !== slackUserId) {
+        console.error('Slack personal identity verification failed', identityPayload?.error ?? 'identity_lookup_failed');
+        return res.status(400).type('html').send(buildSlackIdentityCompleteHtml({
+          success: false,
+          message: 'Ledger could not verify this Slack identity.',
+        }));
+      }
+
+      const conflictingIdentity = await supabase
+        .from('slack_identities')
+        .select('id, ledger_user_id')
+        .eq('workspace_id', statePayload.workspace_id)
+        .eq('integration_account_id', sharedConnection.data.id)
+        .eq('slack_user_id', slackUserId)
+        .neq('status', 'disconnected')
+        .neq('ledger_user_id', oauthUserId)
+        .maybeSingle();
+      if (conflictingIdentity.error) throw conflictingIdentity.error;
+      if (conflictingIdentity.data?.id) {
+        return res.status(409).type('html').send(buildSlackIdentityCompleteHtml({
+          success: false,
+          message: 'This Slack identity is already linked to another Ledger user.',
+        }));
+      }
+
+      const slackUser = identityPayload.user ?? {};
+      const profile = slackUser.profile ?? {};
+      const now = new Date().toISOString();
+      const identityResult = await supabase
+        .from('slack_identities')
+        .upsert({
+          workspace_id: statePayload.workspace_id,
+          ledger_user_id: oauthUserId,
+          integration_account_id: sharedConnection.data.id,
+          slack_team_id: teamId,
+          slack_user_id: slackUserId,
+          slack_display_name: profile.display_name || slackUser.name || null,
+          slack_real_name: profile.real_name || slackUser.real_name || null,
+          slack_email: profile.email || slackUser.email || null,
+          slack_avatar_url: profile.image_72 || profile.image_192 || slackUser.image_72 || null,
+          access_token_encrypted: protectIntegrationTokenForStorage(userAccessToken),
+          refresh_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.authed_user?.refresh_token),
+          scopes: String(tokenPayload.authed_user?.scope ?? '')
+            .split(',')
+            .map((scope) => scope.trim())
+            .filter(Boolean),
+          status: 'connected',
+          linked_at: now,
+          last_verified_at: now,
+          disconnected_at: null,
+          error_code: null,
+          updated_at: now,
+        }, { onConflict: 'workspace_id,ledger_user_id,integration_account_id' });
+      if (identityResult.error) throw identityResult.error;
+      return res.status(200).type('html').send(buildSlackIdentityCompleteHtml({
+        success: true,
+        message: `Connected ${profile.display_name || slackUser.name || 'your Slack identity'}.`,
+      }));
+    }
+
     const scopes = String(tokenPayload.scope ?? '')
       .split(',')
       .map((scope) => scope.trim())
@@ -5757,6 +7203,7 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
       provider: 'slack',
       provider_team_id: teamId,
       provider_team_name: teamName,
+      provider_team_icon: tokenPayload.team?.icon ?? null,
       provider_user_id: tokenPayload.authed_user?.id ?? null,
       bot_user_id: tokenPayload.bot_user_id ?? null,
       access_token_encrypted: protectIntegrationTokenForStorage(tokenPayload.access_token),
@@ -7864,6 +9311,26 @@ const transferInboxExternalReferences = async ({ workspaceId, inboxId, targetTyp
   }
 };
 
+const transferInboxSlackContexts = async ({ workspaceId, inboxId, targetType, targetId, userId }) => {
+  const sourceLinks = await supabase
+    .from('slack_context_links')
+    .select('slack_context_id, relationship_type')
+    .eq('workspace_id', workspaceId)
+    .eq('target_type', 'intake_item')
+    .eq('target_id', inboxId);
+  if (sourceLinks.error) throw sourceLinks.error;
+  for (const source of sourceLinks.data ?? []) {
+    await linkSlackContextToTarget({
+      workspaceId,
+      slackContextId: source.slack_context_id,
+      targetType,
+      targetId,
+      userId,
+      relationshipType: 'conversion',
+    });
+  }
+};
+
 const ensureExternalTarget = async ({ workspaceId, targetType, targetId }) => {
   const table = externalTargetTables[targetType];
   if (!table || !targetId) return false;
@@ -8299,8 +9766,32 @@ const generateExternalReferencePreviewForTarget = async (req, res, force) => {
 app.post('/api/external-references/:id/preview', authMiddleware, rateLimit('figma_preview'), (req, res) => generateExternalReferencePreviewForTarget(req, res, false));
 app.post('/api/external-references/:id/preview/refresh', authMiddleware, rateLimit('figma_preview'), (req, res) => generateExternalReferencePreviewForTarget(req, res, true));
 
+app.post('/api/integrations/slack/events', rateLimit('write'), async (req, res) => {
+  if (!verifySlackRequest(req)) {
+    console.warn('[slack] event signature verification failed', {
+      timestamp: req.headers['x-slack-request-timestamp'] ?? null,
+    });
+    return res.status(401).send('Invalid Slack signature');
+  }
+
+  const payload = typeof req.body === 'string' ? safeJson(req.body, null) : req.body;
+  if (!payload) return res.status(400).send('Invalid Slack event payload');
+  if (payload.type === 'url_verification') return res.status(200).json({ challenge: payload.challenge });
+  if (payload.type !== 'event_callback') return res.status(200).json({ ok: true });
+
+  // Slack only needs the acknowledgement here. Durable insertion and matching
+  // happen after the response so event processing never extends Slack's timeout.
+  res.status(200).json({ ok: true });
+  void enqueueSlackEventDelivery(payload, req.headers['x-slack-retry-num'] ?? 0).catch((error) => {
+    console.error('[slack] event enqueue failed', { message: error?.message ?? 'unknown_error' });
+  });
+});
+
 app.post('/api/integrations/slack/interactivity', rateLimit('write'), async (req, res) => {
   if (!verifySlackRequest(req)) {
+    console.warn('[slack] signature verification failed', {
+      timestamp: req.headers['x-slack-request-timestamp'] ?? null,
+    });
     return res.status(401).send('Invalid Slack signature');
   }
 
@@ -8311,30 +9802,56 @@ app.post('/api/integrations/slack/interactivity', rateLimit('write'), async (req
     return res.status(200).json({ response_type: 'ephemeral', text: 'Unsupported Ledger action.' });
   }
 
-  try {
-    const result = await saveSlackMessageCapture(payload);
-    if (!result?.ok) {
-      const fallbackMessage =
-        result?.reason === 'missing_workspace'
-          ? 'Ledger is connected, but no workspace is selected yet. Open Ledger settings to finish setup.'
-          : 'Ledger could not save this message right now.';
-      return res.status(200).json({
-        response_type: 'ephemeral',
-        text: fallbackMessage,
-      });
-    }
-
-    return res.status(200).json({
-      response_type: 'ephemeral',
-      text: 'Saved to Ledger Intake.',
-    });
-  } catch (error) {
-    console.error('Slack capture failed', error);
-    return res.status(200).json({
-      response_type: 'ephemeral',
-      text: 'Ledger could not save this message right now.',
+  const responseUrl = payload.response_url;
+  const startedAt = Date.now();
+  const retryNumber = req.headers['x-slack-retry-num'] ?? null;
+  if (retryNumber) {
+    console.info('[slack] retry received', {
+      retryNumber,
+      retryReason: req.headers['x-slack-retry-reason'] ?? null,
     });
   }
+
+  // Slack requires the acknowledgement within a few seconds. Database work
+  // and the eventual ephemeral result happen after this response is sent.
+  res.status(200).json({
+    response_type: 'ephemeral',
+    text: 'Sending to Ledger Intake…',
+  });
+
+  void (async () => {
+    try {
+      const result = await saveSlackMessageCapture(payload);
+      if (!result?.ok) {
+        const message =
+          result.reason === 'missing_workspace'
+            ? 'This Slack workspace is no longer connected to Ledger.'
+            : result.reason === 'missing_team'
+            ? 'This Slack workspace is no longer connected to Ledger.'
+            : 'Ledger could not send this message to Intake. Please try again.';
+        await postSlackCaptureResponse(responseUrl, { text: message });
+        return;
+      }
+
+      await postSlackCaptureResponse(
+        responseUrl,
+        result.inboxId ? buildSlackOpenIntakeResponse(result.inboxId) : { text: 'Sent to Ledger Intake' }
+      );
+    } catch (error) {
+      console.error('[slack] capture processing failed', {
+        message: error?.message ?? 'unknown_error',
+        durationMs: Date.now() - startedAt,
+      });
+      await postSlackCaptureResponse(responseUrl, {
+        text: 'Ledger could not send this message to Intake. Please try again.',
+      });
+    } finally {
+      console.info('[slack] capture request processed', {
+        durationMs: Date.now() - startedAt,
+        retryNumber,
+      });
+    }
+  })();
 });
 
 app.get('/api/inbox/count', authMiddleware, rateLimit('read'), async (req, res) => {
@@ -8691,6 +10208,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
       await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'task', targetId: createdId, userId: req.authUser.id });
+      await transferInboxSlackContexts({ workspaceId, inboxId: inboxItem.id, targetType: 'task', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: createdTask,
@@ -8758,6 +10276,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
       await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'note', targetId: createdId, userId: req.authUser.id });
+      await transferInboxSlackContexts({ workspaceId, inboxId: inboxItem.id, targetType: 'note', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
@@ -8851,6 +10370,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
+      await transferInboxSlackContexts({ workspaceId, inboxId: inboxItem.id, targetType: 'reminder', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
@@ -8926,6 +10446,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .select(inboxItemSelectColumns)
         .single();
       if (inboxUpdate.error) throw inboxUpdate.error;
+      await transferInboxSlackContexts({ workspaceId, inboxId: inboxItem.id, targetType: 'event', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
@@ -8990,6 +10511,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         if (inboxUpdate.error) throw inboxUpdate.error;
         if (githubRepositoryId) await linkGithubRepositoryToProject({ workspaceId, projectId: existingProject.id, repositoryId: githubRepositoryId, role: 'primary', userId: req.authUser.id });
         await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: existingProject.id, userId: req.authUser.id });
+        await transferInboxSlackContexts({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: existingProject.id, userId: req.authUser.id });
         return res.json({
           inbox_item: mapInboxItemResponse(inboxUpdate.data),
           created: existingProject,
@@ -9038,6 +10560,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       if (inboxUpdate.error) throw inboxUpdate.error;
       if (githubRepositoryId) await linkGithubRepositoryToProject({ workspaceId, projectId: createdId, repositoryId: githubRepositoryId, role: 'primary', userId: req.authUser.id });
       await transferInboxExternalReferences({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: createdId, userId: req.authUser.id });
+      await transferInboxSlackContexts({ workspaceId, inboxId: inboxItem.id, targetType: 'project', targetId: createdId, userId: req.authUser.id });
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
@@ -19584,4 +21107,7 @@ app.listen(PORT, () => {
   notificationSchedulerTimer = setInterval(() => {
     void runNotificationScheduler();
   }, 60_000);
+  setInterval(() => {
+    void runSlackEventDeliveryWorker();
+  }, 10_000);
 });

@@ -757,6 +757,8 @@ export default function IntakeWindow() {
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
   const initialFocusSection =
     new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
+  const initialFocusInboxId =
+    new URLSearchParams(window.location.search).get('focusInboxId')?.trim() ?? '';
   const initialInboxStatus: InboxStatus = statusLabels.some(
     ({ value }) => value === initialFocusSection
   )
@@ -1142,6 +1144,7 @@ export default function IntakeWindow() {
     };
 
     applyFocusSection(initialFocusSection);
+    if (initialFocusInboxId) setSelectedItemId(initialFocusInboxId);
     applyTeamFocusContext(initialFocusContext);
 
     const focusContextListener = (
@@ -1160,7 +1163,22 @@ export default function IntakeWindow() {
     return () => {
       window.ipcRenderer?.off('module:focus-context', focusContextListener);
     };
-  }, [initialFocusContext, initialFocusSection]);
+  }, [initialFocusContext, initialFocusSection, initialFocusInboxId]);
+
+  useEffect(() => {
+    const focusInboxListener = (
+      _event: unknown,
+      payload: { kind?: string; focusInboxId?: string | null }
+    ) => {
+      if (payload?.kind !== 'inbox' || !payload.focusInboxId) return;
+      setSelectedItemId(payload.focusInboxId);
+      setActiveStatus('unprocessed');
+    };
+    window.ipcRenderer?.on('module:focus-inbox', focusInboxListener);
+    return () => {
+      window.ipcRenderer?.off('module:focus-inbox', focusInboxListener);
+    };
+  }, []);
 
   useEffect(() => {
     const focusSectionListener = (

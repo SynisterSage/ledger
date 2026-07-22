@@ -33,6 +33,7 @@ import {
   X,
 } from 'lucide-react';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
+import { IntegrationProviderMark } from './IntegrationProviderMark';
 import { WorkspaceSwitcherMenu } from './WorkspaceSwitcherMenu';
 import { LedgerTabStrip } from './LedgerTabStrip';
 
@@ -230,6 +231,8 @@ const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
         : 'Settings';
     case 'inbox':
       return 'Intake';
+    case 'slack':
+      return 'Slack';
     case 'notifications':
       return 'Notifications';
     case 'quick-follow-up':
@@ -264,6 +267,8 @@ const getWorkspaceRouteIcon = (route: WorkspaceRoute) => {
       return <Settings2 className={iconClassName} />;
     case 'inbox':
       return <Inbox className={iconClassName} />;
+    case 'slack':
+      return <IntegrationProviderMark provider="slack" size={14} className={iconClassName} />;
     case 'notifications':
       return <Bell className={iconClassName} />;
     case 'quick-follow-up':

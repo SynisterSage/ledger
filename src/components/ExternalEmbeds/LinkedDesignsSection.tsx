@@ -22,7 +22,9 @@ import {
   type LinkedContextSource,
   type LinkedCalendarItem,
   type LinkedTask,
+  type LinkedSlackContext,
 } from './AddLinkedContextModal';
+import { SlackContextCard } from '../Slack/SlackContextCard';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
@@ -156,6 +158,9 @@ export function LinkedDesignsSection({
   const [linkableTasks, setLinkableTasks] = useState<LinkedTask[]>([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [slackContexts, setSlackContexts] = useState<LinkedSlackContext[]>([]);
+  const [selectedSlackContextIds, setSelectedSlackContextIds] = useState<string[]>([]);
+  const [isLoadingSlackContexts, setIsLoadingSlackContexts] = useState(false);
   const githubType = 'issue' as const;
 
   const handleContextSourceChange = (nextSource: LinkedContextSource) => {
@@ -169,6 +174,20 @@ export function LinkedDesignsSection({
     if (nextSource === 'notes') void onLoadNotes?.();
     if (nextSource === 'projects') void onLoadProjects?.();
     if (nextSource === 'tasks') void loadTasks();
+    if (nextSource === 'slack') void loadSlackContexts();
+  };
+
+  const loadSlackContexts = async () => {
+    setIsLoadingSlackContexts(true);
+    try {
+      const targetType = target.targetType === 'meetingNote' ? 'note' : target.targetType === 'intake' ? 'intake' : String(target.targetType);
+      const result = await api.getSlackContexts(target.workspaceId, { targetType, targetId: target.targetId });
+      setSlackContexts(Array.isArray(result) ? result as LinkedSlackContext[] : []);
+    } catch {
+      setSlackContexts([]);
+    } finally {
+      setIsLoadingSlackContexts(false);
+    }
   };
 
   const loadTasks = async () => {
@@ -261,6 +280,7 @@ export function LinkedDesignsSection({
       } catch {
         setContextLinks([]);
       }
+      await loadSlackContexts();
       if (target.targetType !== 'project' && target.targetType !== 'task') void loadTasks();
       if (target.targetType === 'note' || target.targetType === 'meetingNote' || target.targetType === 'project') {
         const [eventsPayload, remindersPayload] = await Promise.all([api.getEvents(), api.getReminders()]);
@@ -635,6 +655,19 @@ export function LinkedDesignsSection({
   };
 
   const toggleTask = (taskId: string) => setSelectedTaskIds((current) => current.includes(taskId) ? current.filter((id) => id !== taskId) : [...current, taskId]);
+  const toggleSlackContext = (contextId: string) => setSelectedSlackContextIds((current) => current.includes(contextId) ? current.filter((id) => id !== contextId) : [...current, contextId]);
+  const linkSlackContexts = async (contextIds: string[]) => {
+    if (!canEdit) return;
+    setBusyId('slack-context-link');
+    try {
+      const targetType = target.targetType === 'meetingNote' ? 'note' : target.targetType === 'intake' ? 'intake' : String(target.targetType);
+      for (const contextId of contextIds) await api.linkSlackContext(target.workspaceId, contextId, targetType, target.targetId);
+      setSelectedSlackContextIds([]);
+      await loadSlackContexts();
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not link Slack context.', { variant: 'error' });
+    } finally { setBusyId(null); }
+  };
   const linkTasks = async (taskIds: string[]) => {
     if (!canEdit) return;
     setBusyId('task-link');
@@ -693,8 +726,8 @@ export function LinkedDesignsSection({
           >
             {sectionLabel}
           </p>
-          {(rows.length > 0 || calendarItems.length > 0 || contextLinks.length > 0) && (
-            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + calendarItems.length + contextLinks.length}</span>
+          {(rows.length > 0 || calendarItems.length > 0 || contextLinks.length > 0 || slackContexts.length > 0) && (
+            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + calendarItems.length + contextLinks.length + slackContexts.length}</span>
           )}
           {target.targetType === 'project' && hasGithubWork && (
             <span className="text-[11px] text-[var(--ledger-text-muted)]">{githubIssues} open issues · {githubPullRequests} open PRs{githubAttention ? ` · ${githubAttention} needs attention` : ''}</span>
@@ -730,7 +763,7 @@ export function LinkedDesignsSection({
             Loading linked work…
           </div>
         )
-      ) : visibleRows.length === 0 && visibleCalendarItems.length === 0 && visibleContextLinks.length === 0 ? (
+      ) : visibleRows.length === 0 && visibleCalendarItems.length === 0 && visibleContextLinks.length === 0 && slackContexts.length === 0 ? (
         compact ? (
           <>
             {canEdit && <button type="button" onClick={() => setDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={12} />Link</button>}
@@ -753,6 +786,7 @@ export function LinkedDesignsSection({
         )
       ) : (
         <div className={compact ? 'contents' : 'space-y-1'}>
+          {slackContexts.map((context) => <SlackContextCard key={`slack-context-${context.id}`} context={context} compact={compact} />)}
           {visibleContextLinks.filter((link) => ['note', 'project'].includes(link.resource.type)).map((link) => {
             const isNote = link.resource.type === 'note';
             return <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : isIntakeTarget ? 'relative flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
@@ -1008,6 +1042,15 @@ export function LinkedDesignsSection({
               await linkTasks(taskIds);
               setDialogOpen(false);
             }}
+            slackContexts={slackContexts}
+            isLoadingSlackContexts={isLoadingSlackContexts}
+            selectedSlackContextIds={selectedSlackContextIds}
+            onToggleSlackContext={toggleSlackContext}
+            onLinkSlackContexts={async (contextIds) => {
+              await linkSlackContexts(contextIds);
+              setDialogOpen(false);
+            }}
+            onOpenSlackContext={(context) => openExternal(context.permalink ?? '')}
             query={query}
             onQueryChange={setQuery}
             mode={mode as LinkedContextMode}

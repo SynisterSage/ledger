@@ -42,6 +42,7 @@ import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
+import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 
 type FocusItem = {
   id: string;
@@ -457,6 +458,7 @@ export const ExpandedSidebar = ({
   >([]);
   const [isLoadingWorkspaceTasks, setIsLoadingWorkspaceTasks] = useState(true);
   const [isSavingWorkspaceTask, setIsSavingWorkspaceTask] = useState(false);
+  const [isSlackConnected, setIsSlackConnected] = useState(false);
   const taskCaptureRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -565,6 +567,34 @@ export const ExpandedSidebar = ({
   const handleSidebarWorkspaceRefresh = useCallback(() => {
     setSidebarRefreshToken((current) => current + 1);
   }, []);
+
+  const refreshSlackStatus = useCallback(async () => {
+    if (!activeWorkspaceId) {
+      setIsSlackConnected(false);
+      return;
+    }
+    try {
+      const status = (await api.getSlackIntegrationStatus(activeWorkspaceId)) as {
+        connected?: boolean;
+      };
+      setIsSlackConnected(Boolean(status.connected));
+    } catch {
+      setIsSlackConnected(false);
+    }
+  }, [activeWorkspaceId, api]);
+
+  useEffect(() => {
+    void refreshSlackStatus();
+    const handleConnectionChange = () => void refreshSlackStatus();
+    window.ipcRenderer?.on('slack:connection-changed', handleConnectionChange);
+    window.addEventListener('focus', handleConnectionChange);
+    const timer = window.setInterval(handleConnectionChange, 30_000);
+    return () => {
+      window.ipcRenderer?.off('slack:connection-changed', handleConnectionChange);
+      window.removeEventListener('focus', handleConnectionChange);
+      window.clearInterval(timer);
+    };
+  }, [refreshSlackStatus]);
 
   useWorkspaceRealtimeRefresh({
     workspaceId: activeWorkspaceId,
@@ -3831,16 +3861,6 @@ export const ExpandedSidebar = ({
               )}
             </section>
 
-            {!isPersonalWorkspace && (
-              <button
-                type="button"
-                onClick={() => window.desktopWindow?.toggleModule('circle')}
-                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-              >
-                <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                <span>Circle</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
@@ -3858,6 +3878,28 @@ export const ExpandedSidebar = ({
                 </span>
               )}
             </button>
+            {isSlackConnected && (
+              <button
+                type="button"
+                onClick={() => window.desktopWindow?.toggleModule('slack')}
+                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+                title="Slack"
+                aria-label="Open Slack"
+              >
+                <IntegrationProviderMark provider="slack" size={15} className="shrink-0" />
+                <span className="truncate">Slack</span>
+              </button>
+            )}
+            {!isPersonalWorkspace && (
+              <button
+                type="button"
+                onClick={() => window.desktopWindow?.toggleModule('circle')}
+                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span>Circle</span>
+              </button>
+            )}
           </div>
 
           <PinnedSidebarSection />

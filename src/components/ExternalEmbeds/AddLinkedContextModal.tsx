@@ -2,8 +2,9 @@ import { Check, CalendarDays, Folder, StickyNote, FileImage, ListChecks, Loader2
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { FigmaMark } from '../Common/FigmaMark';
+import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 
-export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'figma' | 'github';
+export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'figma' | 'github' | 'slack';
 export type LinkedContextMode = 'paste' | 'existing';
 
 export type LinkedContextNote = {
@@ -40,6 +41,18 @@ export type LinkedContextReference = {
   metadata?: Record<string, unknown>;
 };
 
+export type LinkedSlackContext = {
+  id: string;
+  slack_channel_name?: string | null;
+  message_text?: string | null;
+  message_author_name?: string | null;
+  permalink?: string | null;
+  message_created_at?: string | null;
+  captured_at?: string | null;
+};
+
+const SlackSourceIcon = ({ size = 14 }: { size?: number }) => <IntegrationProviderMark provider="slack" size={size} />;
+
 type Repository = {
   github_repository_id: string;
   full_name: string;
@@ -75,6 +88,12 @@ type Props = {
   selectedTaskIds?: string[];
   onToggleTask?: (taskId: string) => void;
   onLinkTasks?: (taskIds: string[]) => void | Promise<void>;
+  slackContexts?: LinkedSlackContext[];
+  isLoadingSlackContexts?: boolean;
+  selectedSlackContextIds?: string[];
+  onToggleSlackContext?: (contextId: string) => void;
+  onLinkSlackContexts?: (contextIds: string[]) => void | Promise<void>;
+  onOpenSlackContext?: (context: LinkedSlackContext) => void;
   query: string;
   onQueryChange: (value: string) => void;
   mode: LinkedContextMode;
@@ -102,6 +121,7 @@ const sourceGroups = [
     items: [
       { id: 'figma' as const, label: 'Figma', icon: FigmaMark },
       { id: 'github' as const, label: 'GitHub', icon: null },
+      { id: 'slack' as const, label: 'Slack', icon: SlackSourceIcon },
     ],
   },
 ];
@@ -131,6 +151,12 @@ export function AddLinkedContextModal({
   selectedTaskIds = [],
   onToggleTask,
   onLinkTasks,
+  slackContexts = [],
+  isLoadingSlackContexts = false,
+  selectedSlackContextIds = [],
+  onToggleSlackContext,
+  onLinkSlackContexts,
+  onOpenSlackContext,
   query,
   onQueryChange,
   mode,
@@ -153,7 +179,7 @@ export function AddLinkedContextModal({
   const visibleSourceGroups = sourceGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => !hiddenSources.includes(item.id)) }))
     .filter((group) => group.items.length > 0);
-  const selectedCount = source === 'notes' ? selectedNoteIds.length : source === 'projects' ? selectedProjectIds.length : source === 'calendar' ? selectedCalendarItemIds.length : source === 'tasks' ? selectedTaskIds.length : 0;
+  const selectedCount = source === 'notes' ? selectedNoteIds.length : source === 'projects' ? selectedProjectIds.length : source === 'calendar' ? selectedCalendarItemIds.length : source === 'tasks' ? selectedTaskIds.length : source === 'slack' ? selectedSlackContextIds.length : 0;
   const primaryLabel =
     source === 'notes'
       ? selectedCount === 0
@@ -169,6 +195,8 @@ export function AddLinkedContextModal({
             : `Link ${selectedCount} calendar items`
       : source === 'tasks'
         ? selectedCount === 0 ? 'Link selected' : `Link ${selectedCount} task${selectedCount === 1 ? '' : 's'}`
+      : source === 'slack'
+        ? selectedCount === 0 ? 'Link selected' : `Link ${selectedCount} Slack context${selectedCount === 1 ? '' : 's'}`
       : source === 'figma'
         ? mode === 'paste'
           ? 'Add Figma link'
@@ -225,11 +253,23 @@ export function AddLinkedContextModal({
                 {!hiddenSources.includes('tasks') && <option value="tasks">Ledger · Tasks</option>}
                 <option value="figma">Integrations · Figma</option>
                 <option value="github">Integrations · GitHub</option>
+                <option value="slack">Integrations · Slack</option>
               </select>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {source === 'tasks' ? (
+              {source === 'slack' ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3"><Search size={14} className="text-[var(--ledger-text-muted)]" /><input autoFocus value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search captured Slack messages" className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
+                  <div className="overflow-hidden rounded-lg bg-[var(--ledger-surface-muted)]">
+                    {isLoadingSlackContexts ? <p className="p-4 text-sm text-[var(--ledger-text-muted)]">Loading Slack context…</p> : slackContexts.filter((context) => `${context.message_text ?? ''} ${context.message_author_name ?? ''} ${context.slack_channel_name ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())).map((context) => {
+                      const selected = selectedSlackContextIds.includes(context.id);
+                      return <div key={context.id} className={`flex w-full items-start gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 last:border-b-0 hover:bg-[var(--ledger-surface-hover)] ${selected ? 'bg-[color:rgba(255,95,64,0.06)]' : ''}`}><button type="button" onClick={() => onToggleSlackContext?.(context.id)} disabled={Boolean(busyId)} className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[var(--ledger-border-subtle)]">{selected && <Check size={11} className="text-[var(--ledger-accent)]" />}</button><button type="button" onClick={() => onOpenSlackContext?.(context)} className="min-w-0 flex-1 text-left"><span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">{context.message_author_name || 'Slack member'}{context.slack_channel_name ? ` · #${context.slack_channel_name}` : ''}</span><span className="mt-0.5 block line-clamp-2 text-xs text-[var(--ledger-text-muted)]">{context.message_text || 'Slack message'}</span></button></div>;
+                    })}
+                    {!isLoadingSlackContexts && slackContexts.length === 0 && <p className="p-4 text-sm text-[var(--ledger-text-muted)]">No captured Slack context yet.</p>}
+                  </div>
+                </div>
+              ) : source === 'tasks' ? (
                 <div className="space-y-3">
                   <input autoFocus type="search" value={query.replace(/^__task_filter__:[^ ]* ?/, '')} onChange={(event) => { const filter = query.match(/^__task_filter__:(all|open|completed)/)?.[1] ?? 'all'; onQueryChange(filter === 'all' ? event.target.value : `__task_filter__:${filter} ${event.target.value}`); }} placeholder="Search tasks" className="h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)]" />
                   <div className="flex gap-1 rounded-lg bg-[var(--ledger-surface-muted)] p-1">{(['all', 'open', 'completed'] as const).map((filter) => <button key={filter} type="button" onClick={() => onQueryChange(filter === 'all' ? query.replace(/^__task_filter__:[^ ]* ?/, '') : `__task_filter__:${filter} ${query.replace(/^__task_filter__:[^ ]* ?/, '')}`)} className="flex-1 rounded-md px-2 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">{filter === 'all' ? 'All' : filter === 'open' ? 'Open' : 'Completed'}</button>)}</div>
@@ -293,8 +333,8 @@ export function AddLinkedContextModal({
             </div>
 
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
-              <p className="text-xs text-[var(--ledger-text-muted)]">{['notes', 'projects', 'calendar', 'tasks'].includes(source) ? `${selectedCount} selected` : source === 'github' && githubRepositoryId ? '1 selected' : ''}</p>
-              <div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={() => void (source === 'notes' ? onLinkNotes?.(selectedNoteIds) : source === 'projects' ? onLinkProjects?.(selectedProjectIds) : source === 'calendar' ? onLinkCalendarItems?.(selectedCalendarItemIds) : source === 'tasks' ? onLinkTasks?.(selectedTaskIds) : source === 'github' && githubRepositoryId ? onLinkRepository(githubRepositories.find((repo) => repo.github_repository_id === githubRepositoryId)!) : mode === 'existing' ? onLinkSelectedReference?.(existing.find((reference) => reference.id === selectedReferenceId)!) : onPasteLink())} disabled={Boolean(busyId) || (['notes', 'projects', 'calendar', 'tasks'].includes(source) ? selectedCount === 0 : source === 'github' ? !githubRepositoryId : mode === 'paste' ? !url.trim() : !selectedReferenceId)} className="inline-flex items-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{busyId && <Loader2 size={14} className="animate-spin" />}{primaryLabel}</button></div>
+              <p className="text-xs text-[var(--ledger-text-muted)]">{['notes', 'projects', 'calendar', 'tasks', 'slack'].includes(source) ? `${selectedCount} selected` : source === 'github' && githubRepositoryId ? '1 selected' : ''}</p>
+              <div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={() => void (source === 'notes' ? onLinkNotes?.(selectedNoteIds) : source === 'projects' ? onLinkProjects?.(selectedProjectIds) : source === 'calendar' ? onLinkCalendarItems?.(selectedCalendarItemIds) : source === 'tasks' ? onLinkTasks?.(selectedTaskIds) : source === 'slack' ? onLinkSlackContexts?.(selectedSlackContextIds) : source === 'github' && githubRepositoryId ? onLinkRepository(githubRepositories.find((repo) => repo.github_repository_id === githubRepositoryId)!) : mode === 'existing' ? onLinkSelectedReference?.(existing.find((reference) => reference.id === selectedReferenceId)!) : onPasteLink())} disabled={Boolean(busyId) || (['notes', 'projects', 'calendar', 'tasks', 'slack'].includes(source) ? selectedCount === 0 : source === 'github' ? !githubRepositoryId : mode === 'paste' ? !url.trim() : !selectedReferenceId)} className="inline-flex items-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{busyId && <Loader2 size={14} className="animate-spin" />}{primaryLabel}</button></div>
             </div>
           </div>
         </div>

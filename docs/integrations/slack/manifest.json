@@ -11,10 +11,10 @@
     },
     "shortcuts": [
       {
-        "name": "Save to Ledger",
+        "name": "Send to Ledger Intake",
         "type": "message",
         "callback_id": "save_to_ledger",
-        "description": "Save this Slack message to Ledger."
+        "description": "Send this Slack message to Ledger Intake."
       }
     ]
   },
@@ -25,9 +25,34 @@
     "scopes": {
       "bot": [
         "commands",
-        "chat:write"
+        "chat:write",
+        "app_mentions:read",
+        "channels:history",
+        "groups:history"
+      ],
+      "user": [
+        "identity.basic",
+        "identity.email",
+        "identity.avatar",
+        "channels:read",
+        "groups:read",
+        "mpim:read"
       ]
     }
+  },
+  "event_subscriptions": {
+    "request_url": "https://api.ledgerworkspace.com/api/integrations/slack/events",
+    "bot_events": [
+      "app_mention",
+      "message.channels",
+      "message.groups",
+      "member_joined_channel",
+      "member_left_channel",
+      "channel_archive",
+      "channel_unarchive",
+      "group_archive",
+      "group_unarchive"
+    ]
   },
   "settings": {
     "interactivity": {

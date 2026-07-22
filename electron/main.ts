@@ -212,11 +212,31 @@ const handleLedgerProtocolUrl = (url: string) => {
       return;
     }
 
-    const targetRoutes: Record<string, { kind: ModuleWindowKind; focus: 'task' | 'project' | 'note' | 'none' }> = {
+    if (host === 'slack' || pathnameParts[0] === 'slack') {
+      if (!sidebarWin || sidebarWin.isDestroyed()) {
+        createSidebarWindow();
+      } else {
+        if (!sidebarWin.isVisible()) sidebarWin.show();
+        sidebarWin.focus();
+      }
+      openModuleWindow('slack');
+      const notifySlackIdentityChanged = () => {
+        const slackWindow = moduleWins.get('slack');
+        if (!slackWindow || slackWindow.isDestroyed() || slackWindow.webContents.isLoading()) {
+          setTimeout(notifySlackIdentityChanged, 150);
+          return;
+        }
+        slackWindow.webContents.send('slack:identity-changed');
+      };
+      setTimeout(notifySlackIdentityChanged, 150);
+      return;
+    }
+
+    const targetRoutes: Record<string, { kind: ModuleWindowKind; focus: 'task' | 'project' | 'note' | 'inbox' | 'none' }> = {
       task: { kind: 'projects', focus: 'task' },
       project: { kind: 'projects', focus: 'project' },
       note: { kind: 'notes', focus: 'note' },
-      inbox: { kind: 'inbox', focus: 'none' },
+      inbox: { kind: 'inbox', focus: 'inbox' },
     };
     const target = targetRoutes[host];
     const targetId = pathnameParts[0];
@@ -234,7 +254,11 @@ const handleLedgerProtocolUrl = (url: string) => {
       null,
       target.focus === 'project' ? targetId : null,
       target.focus === 'note' ? targetId : null,
-      target.focus === 'task' ? targetId : null
+      target.focus === 'task' ? targetId : null,
+      null,
+      null,
+      {},
+      target.focus === 'inbox' ? targetId : null
     );
   } catch (error) {
     console.warn('[electron] Failed to handle ledger protocol URL', error);
@@ -710,6 +734,7 @@ type ModuleWindowKind =
   | 'notifications'
   | 'settings'
   | 'inbox'
+  | 'slack'
   | 'quick-task'
   | 'quick-note'
   | 'quick-event'
@@ -720,6 +745,7 @@ type ModuleFocusPayload = {
   focusProjectId?: string | null;
   focusNoteId?: string | null;
   focusTaskId?: string | null;
+  focusInboxId?: string | null;
   focusContext?: string | null;
   focusSection?: string | null;
 };
@@ -729,6 +755,7 @@ type WorkspaceModuleRoute = {
   focusProjectId?: string | null;
   focusNoteId?: string | null;
   focusTaskId?: string | null;
+  focusInboxId?: string | null;
   focusContext?: string | null;
   focusSection?: string | null;
 };
@@ -5417,7 +5444,8 @@ function sendModuleFocus(
   focusTaskId?: string | null,
   focusContext?: string | null,
   focusSection?: string | null,
-  targetWin?: BrowserWindow
+  targetWin?: BrowserWindow,
+  focusInboxId?: string | null
 ) {
   const existing = targetWin ?? moduleWins.get(kind);
   if (existing && !existing.isDestroyed()) {
@@ -5432,6 +5460,9 @@ function sendModuleFocus(
     }
     if (focusTaskId) {
       existing.webContents.send('module:focus-task', { kind, focusTaskId });
+    }
+    if (focusInboxId) {
+      existing.webContents.send('module:focus-inbox', { kind, focusInboxId });
     }
     if (focusContext) {
       existing.webContents.send('module:focus-context', { kind, focusContext });
@@ -5456,6 +5487,7 @@ function isWorkspaceModuleKind(kind: ModuleWindowKind) {
     kind === 'teams' ||
     kind === 'settings' ||
     kind === 'inbox' ||
+    kind === 'slack' ||
     kind === 'notifications'
   );
 }
@@ -5571,7 +5603,8 @@ function routeFromModuleArgs(
   focusNoteId?: string | null,
   focusTaskId?: string | null,
   focusContext?: string | null,
-  focusSection?: string | null
+  focusSection?: string | null,
+  focusInboxId?: string | null
 ): WorkspaceModuleRoute {
   return {
     kind,
@@ -5579,6 +5612,7 @@ function routeFromModuleArgs(
     focusProjectId: focusProjectId ?? null,
     focusNoteId: focusNoteId ?? null,
     focusTaskId: focusTaskId ?? null,
+    focusInboxId: focusInboxId ?? null,
     focusContext: focusContext ?? null,
     focusSection: focusSection ?? null,
   };
@@ -5603,6 +5637,7 @@ function isSameWorkspaceRoute(a: WorkspaceModuleRoute | null, b: WorkspaceModule
     (a.focusProjectId ?? null) === (b.focusProjectId ?? null) &&
     (a.focusNoteId ?? null) === (b.focusNoteId ?? null) &&
     (a.focusTaskId ?? null) === (b.focusTaskId ?? null) &&
+    (a.focusInboxId ?? null) === (b.focusInboxId ?? null) &&
     (a.focusContext ?? null) === (b.focusContext ?? null) &&
     (a.focusSection ?? null) === (b.focusSection ?? null)
   );
@@ -5622,6 +5657,9 @@ function buildModuleUrl(
   const focusTaskQuery = route.focusTaskId
     ? `&focusTaskId=${encodeURIComponent(route.focusTaskId)}`
     : '';
+  const focusInboxQuery = route.focusInboxId
+    ? `&focusInboxId=${encodeURIComponent(route.focusInboxId)}`
+    : '';
   const focusContextQuery = route.focusContext
     ? `&focusContext=${encodeURIComponent(route.focusContext)}`
     : '';
@@ -5634,7 +5672,7 @@ function buildModuleUrl(
     ? `&tabTransferId=${encodeURIComponent(options.transferId)}`
     : '';
   return getRendererUrl(
-    `?window=module&module=${route.kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusContextQuery}${focusSectionQuery}${windowIdQuery}${detachedQuery}${transferIdQuery}`
+    `?window=module&module=${route.kind}${focusDateQuery}${focusProjectQuery}${focusNoteQuery}${focusTaskQuery}${focusInboxQuery}${focusContextQuery}${focusSectionQuery}${windowIdQuery}${detachedQuery}${transferIdQuery}`
   );
 }
 
@@ -5708,7 +5746,9 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
         route.focusNoteId,
         route.focusTaskId,
         route.focusContext,
-        route.focusSection
+        route.focusSection,
+        undefined,
+        route.focusInboxId
       );
       broadcastWorkspaceNavigationState();
     });
@@ -5722,7 +5762,9 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
       route.focusNoteId,
       route.focusTaskId,
       route.focusContext,
-      route.focusSection
+      route.focusSection,
+      undefined,
+      route.focusInboxId
     );
   }
 
@@ -5810,7 +5852,8 @@ function openModuleWindow(
   focusTaskId?: string | null,
   focusContext?: string | null,
   focusSection?: string | null,
-  options: OpenModuleWindowOptions = {}
+  options: OpenModuleWindowOptions = {},
+  focusInboxId?: string | null
 ) {
   const isDetachedWindow = Boolean(options.detachedWindowId);
   const workspaceRoute = routeFromModuleArgs(
@@ -5820,7 +5863,8 @@ function openModuleWindow(
     focusNoteId,
     focusTaskId,
     focusContext,
-    focusSection
+    focusSection,
+    focusInboxId
   );
   const notesHomeRoute =
     kind === 'notes'
@@ -5888,7 +5932,9 @@ function openModuleWindow(
       focusNoteId,
       focusTaskId,
       focusContext,
-      focusSection
+      focusSection,
+      undefined,
+      focusInboxId
     );
     broadcastWorkspaceNavigationState();
     return;
@@ -6664,6 +6710,7 @@ ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | Modul
   const focusProjectId = typeof payload === 'string' ? undefined : payload.focusProjectId;
   const focusNoteId = typeof payload === 'string' ? undefined : payload.focusNoteId;
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
+  const focusInboxId = typeof payload === 'string' ? undefined : payload.focusInboxId;
   const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
   const focusSection = typeof payload === 'string' ? undefined : payload.focusSection;
   if (detachedRecord) {
@@ -6677,7 +6724,8 @@ ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | Modul
           focusNoteId,
           focusTaskId,
           focusContext,
-          focusSection
+          focusSection,
+          focusInboxId
         )
       );
     } else if (senderWindow?.isVisible()) {
@@ -6703,13 +6751,14 @@ ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | Modul
           focusNoteId,
           focusTaskId,
           focusContext,
-          focusSection
+          focusSection,
+          focusInboxId
         )
       );
       return;
     }
 
-    if (focusDate || focusProjectId || focusNoteId || focusTaskId) {
+    if (focusDate || focusProjectId || focusNoteId || focusTaskId || focusInboxId) {
       if (existing.isMinimized()) {
         existing.restore();
         if (isWorkspaceModuleKind(kind)) {
@@ -6726,7 +6775,9 @@ ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | Modul
         focusNoteId,
         focusTaskId,
         focusContext,
-        focusSection
+        focusSection,
+        undefined,
+        focusInboxId
       );
       return;
     }
@@ -6762,6 +6813,12 @@ ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | Modul
   );
 });
 
+ipcMain.on('slack:connection-changed', () => {
+  if (sidebarWin && !sidebarWin.isDestroyed()) {
+    sidebarWin.webContents.send('slack:connection-changed');
+  }
+});
+
 ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleFocusPayload) => {
   const senderWindow = BrowserWindow.fromWebContents(event.sender);
   const detachedRecord = getDetachedWindowRecord(senderWindow);
@@ -6772,6 +6829,7 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
   const focusTaskId = typeof payload === 'string' ? undefined : payload.focusTaskId;
   const focusContext = typeof payload === 'string' ? undefined : payload.focusContext;
   const focusSection = typeof payload === 'string' ? undefined : payload.focusSection;
+  const focusInboxId = typeof payload === 'string' ? undefined : payload.focusInboxId;
   const requestedRoute = routeFromModuleArgs(
     kind,
     focusDate,
@@ -6779,7 +6837,8 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
     focusNoteId,
     focusTaskId,
     focusContext,
-    focusSection
+    focusSection,
+    focusInboxId
   );
   if (detachedRecord) {
     senderWindow?.webContents.send('workspace:route-requested', { ...requestedRoute });
@@ -6807,7 +6866,8 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
           focusNoteId,
           focusTaskId,
           focusContext,
-          focusSection
+          focusSection,
+          focusInboxId
         )
       );
       return;
@@ -6833,7 +6893,9 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
       focusNoteId,
       focusTaskId,
       focusContext,
-      focusSection
+      focusSection,
+      undefined,
+      focusInboxId
     );
     return;
   }
@@ -6845,7 +6907,9 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
     focusNoteId,
     focusTaskId,
     focusContext,
-    focusSection
+    focusSection,
+    {},
+    focusInboxId
   );
 });
 

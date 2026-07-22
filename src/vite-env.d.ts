@@ -12,6 +12,7 @@ type ModuleWindowKind =
   | 'notifications'
   | 'settings'
   | 'inbox'
+  | 'slack'
   | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
@@ -23,6 +24,7 @@ type ModuleFocusPayload = {
   focusProjectId?: string | null;
   focusNoteId?: string | null;
   focusTaskId?: string | null;
+  focusInboxId?: string | null;
   focusContext?: string | null;
   focusSection?: string | null;
 };
