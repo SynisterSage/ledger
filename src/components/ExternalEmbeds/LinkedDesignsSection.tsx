@@ -87,6 +87,8 @@ export function LinkedDesignsSection({
   fallbackFileName,
   compact = false,
   compactExternalOnly = false,
+  hideGithubResourcePicker = false,
+  minimalEmptyState = false,
   notes,
   isLoadingNotes,
   selectedNoteIds,
@@ -109,6 +111,8 @@ export function LinkedDesignsSection({
   fallbackFileName?: string | null;
   compact?: boolean;
   compactExternalOnly?: boolean;
+  hideGithubResourcePicker?: boolean;
+  minimalEmptyState?: boolean;
   onLinkNote?: () => void;
   notes?: Array<{ id: string; title: string; preview: string }>;
   isLoadingNotes?: boolean;
@@ -744,7 +748,12 @@ export function LinkedDesignsSection({
             <Link2 size={12} />
           </button>
         )}
-        {canEdit && !isIntakeTarget && <GithubResourcePicker onSelect={selectGithubResource} existingReferenceIds={links.map((link) => link.external_reference_id)} />}
+        {canEdit && !isIntakeTarget && !hideGithubResourcePicker && (
+          <GithubResourcePicker
+            onSelect={selectGithubResource}
+            existingReferenceIds={links.map((link) => link.external_reference_id)}
+          />
+        )}
       </div>}
       {loading ? (
         compact ? (
@@ -769,9 +778,13 @@ export function LinkedDesignsSection({
             {canEdit && <button type="button" onClick={() => setDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={12} />Link</button>}
           </>
         ) : (
-        <div className={isIntakeTarget ? 'flex items-center gap-2 py-2 text-xs text-[var(--ledger-text-muted)]' : 'rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] px-3 py-3 text-xs text-[var(--ledger-text-muted)]'}>
-          {isIntakeTarget ? 'No linked context' : 'Link events or reminders to keep related work and scheduling connected.'}
-          {canEdit && (
+        <div className={
+          isIntakeTarget || minimalEmptyState
+            ? 'flex items-center gap-2 py-1 text-xs text-[var(--ledger-text-muted)]'
+            : 'rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] px-3 py-3 text-xs text-[var(--ledger-text-muted)]'
+        }>
+          {isIntakeTarget || minimalEmptyState ? 'No linked context' : 'Link events or reminders to keep related work and scheduling connected.'}
+          {canEdit && !minimalEmptyState && (
             <button
               type="button"
               className="rounded-md p-1 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"

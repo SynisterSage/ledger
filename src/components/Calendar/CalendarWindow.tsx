@@ -807,6 +807,7 @@ export const CalendarWindow = () => {
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
   const [eventEditorEvent, setEventEditorEvent] = useState<EventRow | null>(null);
   const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null);
+  const [reminderEditorReminder, setReminderEditorReminder] = useState<ReminderRow | null>(null);
   const [pendingFocusEventId, setPendingFocusEventId] = useState<string | null>(null);
   const [pendingFocusReminderId, setPendingFocusReminderId] = useState<string | null>(null);
   const [eventNotesDrafts, setEventNotesDrafts] = useState<Record<string, string>>({});
@@ -1295,7 +1296,7 @@ export const CalendarWindow = () => {
   }, [calendars]);
 
   const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
-  const canEditEvent = (event: EventRow) => !isPastEvent(event);
+  const canEditEvent = (_event: EventRow) => true;
   const isPastReminder = (reminder: ReminderRow) =>
     new Date(reminder.remind_at).getTime() < Date.now();
   const isPastEventMuted = (event: EventRow) =>
@@ -2035,6 +2036,9 @@ export const CalendarWindow = () => {
         setSelectedReminder((current) =>
           current && !reminderRowsById.has(current.id) ? null : current
         );
+        setReminderEditorReminder((current) =>
+          current && !reminderRowsById.has(current.id) ? null : current
+        );
 
         const [projectResult, noteResult, taskResult] = await Promise.allSettled([
           api.getProjects({ includeCompleted: true }),
@@ -2244,7 +2248,7 @@ export const CalendarWindow = () => {
     const hasOpenModal =
       isComposerOpen ||
       Boolean(eventEditorEvent) ||
-      Boolean(selectedReminder) ||
+      Boolean(reminderEditorReminder) ||
       Boolean(overflowDayKey);
     if (!hasOpenModal) return;
 
@@ -2254,8 +2258,8 @@ export const CalendarWindow = () => {
         setOverflowDayKey(null);
         return;
       }
-      if (selectedReminder) {
-        setSelectedReminder(null);
+      if (reminderEditorReminder) {
+        setReminderEditorReminder(null);
         return;
       }
       if (eventEditorEvent) {
@@ -2270,7 +2274,7 @@ export const CalendarWindow = () => {
 
     window.addEventListener('keydown', onEscape);
     return () => window.removeEventListener('keydown', onEscape);
-  }, [eventEditorEvent, isComposerOpen, overflowDayKey, selectedReminder]);
+  }, [eventEditorEvent, isComposerOpen, overflowDayKey, reminderEditorReminder]);
 
   useEffect(() => {
     if (!isResizingSidebar) return;
@@ -2795,7 +2799,8 @@ export const CalendarWindow = () => {
   const openReminderEditor = (reminder: ReminderRow) => {
     const start = new Date(reminder.remind_at);
     const source = reminders.find((row) => row.id === baseReminderId(reminder.id)) ?? reminder;
-    setSelectedReminder(reminder);
+    setSelectedReminder(source);
+    setReminderEditorReminder(source);
     setReminderEditTitle(source.title);
     setReminderEditDate(formatDateKey(start));
     setReminderEditTime(
@@ -2825,18 +2830,18 @@ export const CalendarWindow = () => {
   };
 
   const saveReminderEdits = async () => {
-    if (!selectedReminder || !reminderEditTitle.trim()) return;
+    if (!reminderEditorReminder || !reminderEditTitle.trim()) return;
     setIsSavingEdit(true);
     setError(null);
 
-    const originalReminderDate = new Date(selectedReminder.remind_at);
+    const originalReminderDate = new Date(reminderEditorReminder.remind_at);
     const remindAt = new Date(`${reminderEditDate}T${reminderEditTime}:00`);
     const resolvedReminderCalendarId =
-      reminderEditCalendarId || selectedReminder.calendar_id || getDefaultCalendar()?.id || '';
+      reminderEditCalendarId || reminderEditorReminder.calendar_id || getDefaultCalendar()?.id || '';
     const resolvedReminderColor =
       calendarById.get(resolvedReminderCalendarId)?.color ?? reminderEditColor;
 
-    const updated = (await api.updateReminder(baseReminderId(selectedReminder.id), {
+    const updated = (await api.updateReminder(baseReminderId(reminderEditorReminder.id), {
       title: reminderEditTitle.trim(),
       remind_at: remindAt.toISOString(),
       calendar_id: resolvedReminderCalendarId,
@@ -2867,21 +2872,23 @@ export const CalendarWindow = () => {
     }
 
     setSelectedReminder(updated);
+    setReminderEditorReminder(updated);
     notifyCalendarItemsUpdated();
     window.dispatchEvent(new CustomEvent('ledger:notifications-refresh'));
   };
 
   const deleteReminderFromEditor = async () => {
-    if (!selectedReminder) return;
+    if (!reminderEditorReminder) return;
     setIsDeletingReminder(true);
     setError(null);
 
     try {
-      await api.deleteReminder(baseReminderId(selectedReminder.id));
+      await api.deleteReminder(baseReminderId(reminderEditorReminder.id));
       setReminders((prev) =>
-        prev.filter((item) => baseReminderId(item.id) !== baseReminderId(selectedReminder.id))
+        prev.filter((item) => baseReminderId(item.id) !== baseReminderId(reminderEditorReminder.id))
       );
       setSelectedReminder(null);
+      setReminderEditorReminder(null);
       notifyCalendarItemsUpdated();
     } catch (error) {
       setError('Could not delete reminder.');
@@ -3065,19 +3072,27 @@ export const CalendarWindow = () => {
     const resolvedEventCalendarId = editCalendarId || eventEditorEvent.calendar_id;
     const resolvedEventColor = calendarById.get(resolvedEventCalendarId)?.color ?? editColor;
 
-    const updated = (await api.updateEvent(eventEditorEvent.id, {
-      title: editTitle.trim(),
-      start_at: start.toISOString(),
-      end_at: end.toISOString(),
-      calendar_id: resolvedEventCalendarId,
-      color: resolvedEventColor,
-      status: editStatus,
-      visibility: editVisibility,
-      recurrence_rule: editRecurrence,
-      project_id: editProjectId || null,
-      note_id: editNoteId || null,
-      notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? null,
-    })) as EventRow;
+    let updated: EventRow;
+    try {
+      updated = (await api.updateEvent(eventEditorEvent.id, {
+        title: editTitle.trim(),
+        start_at: start.toISOString(),
+        end_at: end.toISOString(),
+        calendar_id: resolvedEventCalendarId,
+        color: resolvedEventColor,
+        status: editStatus,
+        visibility: editVisibility,
+        recurrence_rule: editRecurrence,
+        project_id: editProjectId || null,
+        note_id: editNoteId || null,
+        notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? null,
+      })) as EventRow;
+    } catch (error) {
+      console.error('Could not update event:', error);
+      setError(error instanceof Error ? error.message : 'Could not update event.');
+      setIsSavingEdit(false);
+      return;
+    }
 
     setIsSavingEdit(false);
 
@@ -4021,23 +4036,25 @@ export const CalendarWindow = () => {
                                 return (
                                   <div
                                     key={reminder.id}
-                                    className={`text-[10px] leading-tight rounded px-1.5 py-1 truncate ${
+                                    className={`truncate rounded-md border px-1.5 py-1 text-[10px] font-medium leading-tight transition-colors ${
                                       pastReminder ? 'opacity-80' : ''
                                     }`}
                                     style={{
                                       backgroundColor: pastReminder
-                                        ? '#F6EFE8'
-                                        : `${reminder.color ?? '#F59E0B'}1f`,
-                                      color: pastReminder ? '#6B7280' : '#1F2937',
+                                        ? 'var(--ledger-surface-hover)'
+                                        : `${reminder.color ?? '#F59E0B'}2e`,
+                                      borderColor: pastReminder
+                                        ? 'var(--ledger-border-subtle)'
+                                        : `${reminder.color ?? '#F59E0B'}70`,
+                                      color: pastReminder
+                                        ? 'var(--ledger-text-muted)'
+                                        : 'var(--ledger-text-primary)',
                                     }}
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      setListContextMenu(null);
                                       setSelectedEvent(null);
                                       setSelectedReminder(reminder);
-                                      setViewMode('day');
-                                      const date = new Date(reminder.remind_at);
-                                      date.setHours(0, 0, 0, 0);
-                                      setViewAnchor(date);
                                     }}
                                     onContextMenu={(event) => {
                                       event.preventDefault();
@@ -4050,6 +4067,14 @@ export const CalendarWindow = () => {
                                       });
                                     }}
                                   >
+                                    <span
+                                      className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                                      style={{
+                                        backgroundColor: pastReminder
+                                          ? 'var(--ledger-text-muted)'
+                                          : reminder.color ?? '#F59E0B',
+                                      }}
+                                    />
                                     {reminder.title}
                                   </div>
                                 );
@@ -4093,10 +4118,6 @@ export const CalendarWindow = () => {
                                       // Select the occurrence so selectedEventPreview preserves the occurrence time
                                       setSelectedEvent(event);
                                       setSelectedReminder(null);
-                                      setViewMode('day');
-                                      const eventDate = new Date(event.start_at);
-                                      eventDate.setHours(0, 0, 0, 0);
-                                      setViewAnchor(eventDate);
                                     }}
                                     onContextMenu={(e) => {
                                       e.preventDefault();
@@ -4420,9 +4441,9 @@ export const CalendarWindow = () => {
                                             key={reminder.id}
                                             onClick={(e) => {
                                               setSelectedEvent(null);
-                                              setSelectedReminder(null);
+                                              setSelectedReminder(reminder);
+                                              setListContextMenu(null);
                                               e.stopPropagation();
-                                              void toggleReminderDone(reminder);
                                             }}
                                             onContextMenu={(e) => {
                                               e.preventDefault();
@@ -4881,6 +4902,8 @@ export const CalendarWindow = () => {
                   <LinkedDesignsSection
                     target={{ workspaceId: activeWorkspaceId ?? '', targetType: selectedEventPreview ? 'event' : 'reminder', targetId: selectedEventPreview ? (baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id) : (baseReminderId(selectedReminder!.id) ?? selectedReminder!.id) }}
                     canEdit={selectedEventPreview ? canEditEvent(selectedEventPreview) : true}
+                    hideGithubResourcePicker
+                    minimalEmptyState
                     notes={notes.map((note) => ({ id: note.id, title: note.title, preview: String((note as any).content_preview ?? (note as any).preview ?? '') }))}
                     projects={projects.map((project) => ({ id: project.id, name: project.name, status: (project as any).status, completeness: (project as any).completeness, end_date: (project as any).end_date }))}
                     onLinkNotes={async (noteIds) => { for (const noteId of noteIds) await linkEventToNote(noteId); }}
@@ -5835,10 +5858,10 @@ export const CalendarWindow = () => {
         </ModalOverlay>
       )}
 
-      {selectedReminder && (
+      {reminderEditorReminder && (
         <ModalOverlay
-          isOpen={Boolean(selectedReminder)}
-          onClose={() => setSelectedReminder(null)}
+          isOpen={Boolean(reminderEditorReminder)}
+          onClose={() => setReminderEditorReminder(null)}
           closeOnBackdropClick={!isSavingEdit && !isDeletingReminder}
           backdropBorderRadius="inherit"
           disablePortal
@@ -5851,13 +5874,13 @@ export const CalendarWindow = () => {
               <div className="flex items-center gap-1">
                 <PinActionButton
                   objectType="reminder"
-                  objectId={selectedReminder.id}
+                  objectId={reminderEditorReminder.id}
                   showLabel={false}
                   className="inline-flex h-7 w-7 items-center justify-center rounded-full text-gray-500 transition hover:bg-[#FFF1E3] hover:text-gray-900"
                   iconSize={14}
                 />
                 <ModalCloseButton
-                  onClick={() => setSelectedReminder(null)}
+                  onClick={() => setReminderEditorReminder(null)}
                   ariaLabel="Close reminder editor"
                   disabled={isSavingEdit || isDeletingReminder}
                   className="shrink-0"
@@ -5903,8 +5926,8 @@ export const CalendarWindow = () => {
                         key={option.label}
                         type="button"
                         onClick={() =>
-                          selectedReminder &&
-                          void snoozeReminderByMinutes(selectedReminder, option.minutes)
+                          reminderEditorReminder &&
+                          void snoozeReminderByMinutes(reminderEditorReminder, option.minutes)
                         }
                         className="rounded-md border border-[#E2D4C4] bg-[#FFF8F2] px-2.5 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-[#FFF1E3]"
                       >
@@ -6003,7 +6026,11 @@ export const CalendarWindow = () => {
                   {overflowReminders.map((reminder) => (
                     <button
                       key={reminder.id}
-                      onClick={() => openReminderEditor(reminder)}
+                      onClick={() => {
+                        setSelectedEvent(null);
+                        setSelectedReminder(reminder);
+                        setOverflowDayKey(null);
+                      }}
                       className="w-full rounded-md border border-amber-100 bg-amber-50 px-2.5 py-2 text-left text-xs text-gray-800"
                     >
                       <span className="font-medium">{reminder.title}</span>

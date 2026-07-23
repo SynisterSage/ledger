@@ -734,10 +734,16 @@ export const LedgerTabStrip = () => {
     const handleRouteRequested = (_event: unknown, nextRoute?: ModuleFocusPayload | null) => {
       const route = normalizeRoute(nextRoute);
       if (!route) return;
+      const key = routeKey(route);
+      if (closedTabKeysRef.current.has(key) && pendingCloseKeyRef.current === key) return;
       rememberRouteHint(route);
       setVisualRouteOverride(route);
-      const key = routeKey(route);
       if (!closedTabKeysRef.current.has(key)) return;
+      // A keep-alive module can publish its previous route after an active tab
+      // was closed. Do not treat that late broadcast as an intentional reopen.
+      // Explicit tab selection is handled by the local route event below.
+      const visualOverride = visualCurrentRouteRef.current;
+      if (visualOverride && !sameRoute(visualOverride, route)) return;
       const nextClosed = new Set(closedTabKeysRef.current);
       nextClosed.delete(key);
       closedTabKeysRef.current = nextClosed;
@@ -751,6 +757,13 @@ export const LedgerTabStrip = () => {
       if (route) {
         rememberRouteHint(route);
         setVisualRouteOverride(route);
+        const key = routeKey(route);
+        if (closedTabKeysRef.current.has(key)) {
+          const nextClosed = new Set(closedTabKeysRef.current);
+          nextClosed.delete(key);
+          closedTabKeysRef.current = nextClosed;
+          setClosedTabKeys(nextClosed);
+        }
       }
     };
 
@@ -773,14 +786,6 @@ export const LedgerTabStrip = () => {
     }
 
     const currentKey = currentRoute ? routeKey(currentRoute) : null;
-    if (
-      pendingCloseKeyRef.current &&
-      pendingCloseKeyRef.current !== currentKey &&
-      !isNewTabRoute(currentRoute)
-    ) {
-      pendingCloseKeyRef.current = null;
-    }
-
     const nextOrder = tabOrderRef.current.filter((route, index, routes) => {
       if (!isNewTabRoute(route)) return true;
       return routes.findIndex((candidate) => isNewTabRoute(candidate)) === index;
@@ -793,7 +798,11 @@ export const LedgerTabStrip = () => {
     // Explicit tab selection clears the closed key before opening the route.
     if (currentRoute && nextClosed.has(currentKey ?? '')) {
       const prunedOrder = nextOrder.filter((route) => !nextClosed.has(routeKey(route)));
-      const fallbackRoute = prunedOrder[0] ?? createNewTabRoute();
+      const preferredRoute = visualCurrentRouteRef.current;
+      const fallbackRoute =
+        (preferredRoute && prunedOrder.find((route) => sameRoute(route, preferredRoute))) ||
+        prunedOrder[0] ||
+        createNewTabRoute();
       if (prunedOrder.length === 0) prunedOrder.push(fallbackRoute);
       if (prunedOrder.length !== nextOrder.length) {
         tabOrderRef.current = prunedOrder;
@@ -972,6 +981,10 @@ export const LedgerTabStrip = () => {
 
   const closeTab = useCallback((route: LedgerRoute) => {
     const key = routeKey(route);
+    pendingCloseKeyRef.current = key;
+    window.setTimeout(() => {
+      if (pendingCloseKeyRef.current === key) pendingCloseKeyRef.current = null;
+    }, 1500);
     const currentTabOrder = tabOrderRef.current;
     const index = currentTabOrder.findIndex((item) => sameRoute(item, route));
     if (index < 0) return;
@@ -1028,13 +1041,24 @@ export const LedgerTabStrip = () => {
       // Closing an inactive tab must still re-assert the visible route.
       // Hidden keep-alive modules can otherwise publish their stale route
       // after the close and resurrect the tab that was just removed.
-      selectWorkspaceTabRoute(activeRoute);
-      void window.desktopWindow?.closeWorkspaceRoute?.(route);
+      // Remove the closed route first. If these two IPC calls race, the
+      // active-route broadcast can cause Electron's recent-route state to
+      // reinsert the tab we just removed.
+      const closeRequest = window.desktopWindow?.closeWorkspaceRoute?.(route);
+      void Promise.resolve(closeRequest).then(() => {
+        if (
+          !tabOrderRef.current.some((candidate) => sameRoute(candidate, activeRoute)) ||
+          closedTabKeysRef.current.has(routeKey(activeRoute))
+        ) {
+          return;
+        }
+        selectWorkspaceTabRoute(activeRoute);
+      });
       return;
     }
     if (nextRoute) {
-      pendingCloseKeyRef.current = key;
       setVisualRouteOverride(nextRoute);
+      visualCurrentRouteRef.current = nextRoute;
       selectWorkspaceTabRoute(nextRoute);
       void window.desktopWindow?.closeWorkspaceRoute?.(route);
       return;

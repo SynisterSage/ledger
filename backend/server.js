@@ -18224,7 +18224,12 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
     const isStatusOnlyUpdate = requestedKeys.length === 1 && requestedKeys[0] === 'status';
     const requestedStatus = String(req.body?.status ?? '').toLowerCase();
     const isPastStatusUpdate = isPastEvent && isStatusOnlyUpdate && requestedStatus === 'done';
-    if (isPastEvent && !isPastStatusUpdate) {
+    const requestedEnd = req.body?.end_at ? new Date(req.body.end_at) : null;
+    const isFutureReschedule =
+      Boolean(requestedEnd) &&
+      !Number.isNaN(requestedEnd.getTime()) &&
+      requestedEnd.getTime() > Date.now();
+    if (isPastEvent && !isPastStatusUpdate && !isFutureReschedule) {
       return res.status(409).json({ error: 'Past events cannot be edited' });
     }
 

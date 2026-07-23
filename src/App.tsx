@@ -3571,12 +3571,36 @@ function DashboardContent() {
       };
     }
 
+    const upcomingReminder = upcomingReminders.find((reminder) => reminder.id === taskId);
+    if (upcomingReminder) return upcomingReminder;
+
     return null;
   };
 
   const addTaskToFocus = async (taskId: string) => {
     const target = findOverviewTaskTarget(taskId);
-    if (!target || focusTasks.length >= 3) return;
+    if (!target || focusTasks.length + daily.focusItems.length >= 3) return;
+
+    if (isOverviewReminderTask(target)) {
+      const focusItemId = `reminder:${target.id}`;
+      if (daily.focusItems.some((item) => item.id === focusItemId)) return;
+      if (daily.focusItems.length + focusTasks.length >= 3) return;
+
+      const previousDaily = daily;
+      const nextFocusItems = [
+        ...daily.focusItems,
+        { id: focusItemId, text: target.title, done: false },
+      ];
+      setDaily((current) => ({ ...current, focusItems: nextFocusItems }));
+      setDashboardContextMenu(null);
+      try {
+        await saveDailyAccountability({ focusItems: nextFocusItems });
+      } catch (error) {
+        console.error('Failed to add reminder to focus:', error);
+        setDaily(previousDaily);
+      }
+      return;
+    }
 
     const previousTodayTasks = todayTasks;
     const previousWorkspaceTasks = workspaceTasks;
@@ -3645,6 +3669,28 @@ function DashboardContent() {
       setWorkspaceTasks(previousWorkspaceTasks);
     } finally {
       setFocusActionId(null);
+    }
+  };
+
+  const addOverviewEventToFocus = async (eventId: string) => {
+    const event = upcoming.find((item) => item.id === eventId);
+    if (!event) return;
+    const focusItemId = `event:${event.id}`;
+    if (daily.focusItems.some((item) => item.id === focusItemId)) return;
+    if (daily.focusItems.length + focusTasks.length >= 3) return;
+
+    const previousDaily = daily;
+    const nextFocusItems = [
+      ...daily.focusItems,
+      { id: focusItemId, text: event.title, done: false },
+    ];
+    setDaily((current) => ({ ...current, focusItems: nextFocusItems }));
+    setDashboardContextMenu(null);
+    try {
+      await saveDailyAccountability({ focusItems: nextFocusItems });
+    } catch (error) {
+      console.error('Failed to add event to focus:', error);
+      setDaily(previousDaily);
     }
   };
 
@@ -4892,6 +4938,30 @@ function DashboardContent() {
     };
   });
 
+  const focusedContextRows = daily.focusItems.flatMap<OverviewRow>((item) => {
+    const separatorIndex = item.id.indexOf(':');
+    if (separatorIndex <= 0) return [];
+    const kind = item.id.slice(0, separatorIndex);
+    const sourceId = item.id.slice(separatorIndex + 1);
+    if (kind === 'event') {
+      const eventRow = eventRows.find((row) => row.sourceId === sourceId);
+      return eventRow ? [{ ...eventRow, id: `Needs attention:${item.id}`, group: 'Needs attention', chips: ['Focus'] }] : [];
+    }
+    if (kind === 'reminder') {
+      const reminder = upcomingReminders.find((candidate) => candidate.id === sourceId);
+      return reminder
+        ? [buildTaskRow(reminder, 'Needs attention', ['Focus'])]
+        : [];
+    }
+    return [];
+  });
+  const focusedEventIds = new Set(
+    focusedContextRows.filter((row) => row.kind === 'event').map((row) => row.sourceId)
+  );
+  const focusedReminderIds = new Set(
+    focusedContextRows.filter((row) => row.kind === 'reminder').map((row) => row.sourceId)
+  );
+
   const followUpRows = followUpTasks
     .filter((task) => task.status !== 'done')
     .slice(0, 4)
@@ -4949,14 +5019,14 @@ function DashboardContent() {
   const overviewRows: OverviewRow[] = [
     ...githubAttentionRows,
     ...focusTasksForDisplay.map((task) => buildTaskRow(task, 'Needs attention', ['Focus'])),
+    ...focusedContextRows,
     ...followUpRows,
     ...activeTodayTasks.slice(0, 6).map((task) => buildTaskRow(task, 'Today')),
     ...longTermTaskRows,
     ...projectRows,
     ...noteRows,
-    ...upcomingReminderRows,
-    ...eventRows.filter((row) => row.group === 'Upcoming'),
-    ...eventRows.filter((row) => row.group === 'Today'),
+    ...upcomingReminderRows.filter((row) => !focusedReminderIds.has(row.sourceId)),
+    ...eventRows.filter((row) => !focusedEventIds.has(row.sourceId)),
   ];
 
   const activeOverviewFilters = overviewFilters[overviewTab];
@@ -6096,7 +6166,7 @@ function DashboardContent() {
                   setIsOverviewFilterOpen(false);
                   setIsOverviewDisplayOpen(false);
                 }}
-                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
                 aria-haspopup="menu"
                 aria-expanded={isOverviewViewMenuOpen}
                 aria-label="Change overview view"
@@ -7506,10 +7576,12 @@ function DashboardContent() {
       {dashboardContextMenu &&
         createPortal(
           <div
-            className="fixed z-140 min-w-46.5 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
+            className={`fixed z-140 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)] ${
+              dashboardContextMenu.type === 'overview-row' ? 'w-[17rem]' : 'min-w-46.5'
+            }`}
             style={{
-              left: `${Math.max(8, Math.min(dashboardContextMenu.x, window.innerWidth - 200))}px`,
-              top: `${Math.max(8, Math.min(dashboardContextMenu.y, window.innerHeight - 240))}px`,
+              left: `${Math.max(8, Math.min(dashboardContextMenu.x, window.innerWidth - 272))}px`,
+              top: `${Math.max(8, Math.min(dashboardContextMenu.y, window.innerHeight - 260))}px`,
             }}
             onClick={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
@@ -7520,7 +7592,8 @@ function DashboardContent() {
                 if (!row) return null;
                 const isFollowUpTask = followUpTasks.some((task) => task.id === row.sourceId);
                 const isTaskRow = row.kind === 'task' || row.kind === 'reminder';
-                const canAddToFocus = isTaskRow && !row.chips.includes('Focus');
+                const canAddToFocus =
+                  (isTaskRow || row.kind === 'event') && !row.chips.includes('Focus');
                 const target = isTaskRow ? findOverviewTaskTarget(row.sourceId) : null;
                 const dateBucket = target?.due_date ? getOverviewDateBucket(target.due_date) : null;
                 const isOverdueTask = isTaskRow && dateBucket === 'overdue';
@@ -7544,6 +7617,8 @@ function DashboardContent() {
                   ) : row.group === 'Long-term tasks' ? (
                     <Zap size={14} />
                   ) : null;
+                const rescheduleRowClass =
+                  'flex h-8 w-full items-center gap-2 rounded-md px-3 text-left text-[12px] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]';
                 const canAssign =
                   row.kind === 'task' ||
                   row.kind === 'reminder' ||
@@ -7602,6 +7677,7 @@ function DashboardContent() {
                 };
                 const addToFocus = () => {
                   if (isTaskRow) void addTaskToFocus(row.sourceId);
+                  else if (row.kind === 'event') void addOverviewEventToFocus(row.sourceId);
                   else setDashboardContextMenu(null);
                 };
                 return (
@@ -7613,6 +7689,15 @@ function DashboardContent() {
                       >
                         <ArrowRight size={14} />
                         Open
+                      </button>
+                    )}
+                    {row.kind === 'event' && canAddToFocus && (
+                      <button
+                        onClick={addToFocus}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        {addToFocusIcon}
+                        Add to Focus
                       </button>
                     )}
                     {isTaskRow && (
@@ -7646,10 +7731,14 @@ function DashboardContent() {
                                 <CalendarDays size={14} />
                                 {moveLabel}
                               </span>
-                              <ChevronRight size={14} className="text-[var(--ledger-text-muted)]" />
+                              {isOverviewRescheduleOpen ? (
+                                <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
+                              ) : (
+                                <ChevronRight size={14} className="text-[var(--ledger-text-muted)]" />
+                              )}
                             </button>
                             {isOverviewRescheduleOpen && (
-                              <div className="border-y border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5">
+                              <div className="border-y border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 py-2">
                                 {[
                                   ['Tomorrow', getRelativeDateKey(1)],
                                   ['Later this week', getRelativeDateKey(3)],
@@ -7658,12 +7747,14 @@ function DashboardContent() {
                                   <button
                                     key={value}
                                     onClick={() => selectRescheduleDate(value)}
-                                    className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                    className={rescheduleRowClass}
                                   >
-                                    {label}
+                                    <CalendarDays size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                                    <span className="truncate">{label}</span>
                                   </button>
                                 ))}
-                                <div className="flex items-center gap-2 px-2 py-1.5">
+                                <div className="mt-1 flex h-8 items-center gap-2 rounded-md px-3 text-left text-[12px] text-[var(--ledger-text-secondary)]">
+                                  <CalendarDays size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
                                   <input
                                     type="date"
                                     value={overviewRescheduleDate}
@@ -7672,17 +7763,20 @@ function DashboardContent() {
                                   />
                                   <button
                                     type="button"
+                                    aria-label="Apply due date"
+                                    title="Apply due date"
                                     disabled={!overviewRescheduleDate}
                                     onClick={() => selectRescheduleDate(overviewRescheduleDate)}
-                                    className="rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
+                                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
                                   >
-                                    Pick date
+                                    <ChevronRight size={13} />
                                   </button>
                                 </div>
                                 <button
                                   onClick={() => selectRescheduleDate(null)}
-                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                  className={rescheduleRowClass}
                                 >
+                                  <CalendarDays size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
                                   Remove due date
                                 </button>
                               </div>
