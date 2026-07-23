@@ -30,6 +30,7 @@ type WorkspaceShellKind =
   | 'teams'
   | 'settings'
   | 'inbox'
+  | 'slack'
   | 'notifications';
 type FloatingDockPayload = {
   isDocked?: boolean;
@@ -59,6 +60,7 @@ const workspaceShellKinds = new Set<WorkspaceShellKind>([
   'teams',
   'settings',
   'inbox',
+  'slack',
   'notifications',
 ]);
 

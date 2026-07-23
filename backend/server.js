@@ -4757,6 +4757,9 @@ const loadVisibleSlackActivities = async ({ workspaceId, userId, date, filter = 
   const contexts = contextIds.length ? await supabase.from('slack_contexts').select('id, reply_count, latest_reply_at, sync_status').eq('workspace_id', workspaceId).in('id', contextIds) : { data: [], error: null };
   if (contexts.error) throw contexts.error;
   const contextById = new Map((contexts.data ?? []).map((context) => [context.id, context]));
+  const follows = contextIds.length ? await supabase.from('slack_context_follows').select('slack_context_id').eq('workspace_id', workspaceId).eq('ledger_user_id', userId).in('slack_context_id', contextIds) : { data: [], error: null };
+  if (follows.error) throw follows.error;
+  const followedContextIds = new Set((follows.data ?? []).map((follow) => follow.slack_context_id));
   const contextLinks = contextIds.length ? await supabase.from('slack_context_links').select('slack_context_id, target_type, target_id').eq('workspace_id', workspaceId).in('slack_context_id', contextIds) : { data: [], error: null };
   if (contextLinks.error) throw contextLinks.error;
   const intakeIds = [...new Set((contextLinks.data ?? []).filter((link) => link.target_type === 'intake_item').map((link) => link.target_id))];
@@ -4769,9 +4772,10 @@ const loadVisibleSlackActivities = async ({ workspaceId, userId, date, filter = 
     const matches = matchesByActivity.get(activity.id) ?? [];
     const state = readByActivity.get(activity.id);
     const contextId = matches.find((match) => match.slack_context_id)?.slack_context_id ?? null;
-    return { ...activity, matches, context_id: contextId, context: contextId ? contextById.get(contextId) ?? null : null, intake_item: contextId ? contextIntakeById.get(contextId) ?? null : null, is_read: Boolean(state?.read_at), read_at: state?.read_at ?? null };
+    return { ...activity, matches, context_id: contextId, context: contextId ? contextById.get(contextId) ?? null : null, intake_item: contextId ? contextIntakeById.get(contextId) ?? null : null, is_following: Boolean(contextId && followedContextIds.has(contextId)), is_read: Boolean(state?.read_at), read_at: state?.read_at ?? null, dismissed_at: state?.dismissed_at ?? null };
   });
   rows = rows.filter((row) => {
+    if (row.dismissed_at) return false;
     const matches = row.matches;
     if (watchId && !matches.some((match) => match.slack_watch_id === watchId)) return false;
     if (unreadOnly && row.is_read) return false;
@@ -6419,6 +6423,38 @@ app.get('/api/integrations/slack/captures', authMiddleware, rateLimit('read'), a
   }
 });
 
+app.delete('/api/integrations/slack/captures/:captureId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    const captureId = String(req.params.captureId ?? '').trim();
+    if (!captureId) return res.status(400).json({ error: 'Capture id is required.' });
+
+    const existing = await supabase
+      .from('external_sources')
+      .select('id, intake_item_id')
+      .eq('id', captureId)
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'slack')
+      .maybeSingle();
+    if (existing.error) throw existing.error;
+    if (!existing.data) return res.status(404).json({ error: 'Slack capture not found.' });
+    if (existing.data.intake_item_id) {
+      return res.status(409).json({ error: 'Captures already sent to Intake cannot be removed here.' });
+    }
+
+    const removed = await supabase
+      .from('external_sources')
+      .delete()
+      .eq('id', captureId)
+      .eq('workspace_id', workspaceId)
+      .eq('provider', 'slack');
+    if (removed.error) throw removed.error;
+    return res.json({ removed: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 const resolveSlackContextFromActivity = async (workspaceId, activity) => {
   const rootMessageTs = activity.slack_root_thread_ts || activity.slack_message_ts;
   const existing = await supabase.from('slack_contexts').select('id').eq('workspace_id', workspaceId).eq('slack_team_id', activity.slack_team_id).eq('slack_channel_id', activity.slack_conversation_id).eq('root_message_ts', rootMessageTs).maybeSingle();
@@ -6490,7 +6526,20 @@ app.post('/api/integrations/slack/activity/:id/read', authMiddleware, rateLimit(
     const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
     if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
     const now = new Date().toISOString();
-    const result = await supabase.from('slack_activity_read_states').upsert({ workspace_id: workspaceId, slack_activity_id: activity.id, ledger_user_id: req.authUser.id, read_at: now, updated_at: now }, { onConflict: 'slack_activity_id,ledger_user_id' }).select('slack_activity_id, read_at, dismissed_at').single();
+    const result = await supabase.from('slack_activity_read_states').upsert({ workspace_id: workspaceId, slack_activity_id: activity.id, ledger_user_id: req.authUser.id, read_at: req.body?.read === false ? null : now, updated_at: now }, { onConflict: 'slack_activity_id,ledger_user_id' }).select('slack_activity_id, read_at, dismissed_at').single();
+    if (result.error) throw result.error;
+    res.json(result.data);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/slack/activity/:id/dismiss', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveSlackWorkspaceForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const activity = (await loadVisibleSlackActivities({ workspaceId, userId: req.authUser.id, limit: 100 })).rows.find((row) => row.id === req.params.id);
+    if (!activity) return res.status(404).json({ error: 'Slack activity not found.' });
+    const now = new Date().toISOString();
+    const result = await supabase.from('slack_activity_read_states').upsert({ workspace_id: workspaceId, slack_activity_id: activity.id, ledger_user_id: req.authUser.id, dismissed_at: now, updated_at: now }, { onConflict: 'slack_activity_id,ledger_user_id' }).select('slack_activity_id, read_at, dismissed_at').single();
     if (result.error) throw result.error;
     res.json(result.data);
   } catch (error) { return respondWithError(res, error); }
@@ -17702,6 +17751,10 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
         .single();
 
       if (!error) {
+        if (String(req.body?.status ?? '').toLowerCase() === 'completed') {
+          const resolved = await supabase.from('github_attention_signals').update({ status: 'resolved', resolved_at: nowIso, updated_at: nowIso }).eq('workspace_id', workspaceId).eq('target_type', 'task').eq('target_id', req.params.id).eq('status', 'active');
+          if (resolved.error && !isMissingRelationError(resolved.error, 'github_attention_signals')) throw resolved.error;
+        }
         return res.json(data);
       }
 
@@ -17721,12 +17774,15 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
 app.delete('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const now = new Date().toISOString();
     const { error } = await supabase
       .from('tasks')
       .delete()
       .eq('id', req.params.id)
       .eq('workspace_id', workspaceId);
     if (error) throw error;
+    const resolved = await supabase.from('github_attention_signals').update({ status: 'resolved', resolved_at: now, updated_at: now }).eq('workspace_id', workspaceId).eq('target_type', 'task').eq('target_id', req.params.id).eq('status', 'active');
+    if (resolved.error && !isMissingRelationError(resolved.error, 'github_attention_signals')) throw resolved.error;
     res.json({ success: true });
   } catch (error) {
     return respondWithError(res, error);

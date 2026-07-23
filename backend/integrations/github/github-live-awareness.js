@@ -91,7 +91,13 @@ const insertAttentionNotification = async ({ supabase, workspaceId, signal, even
 
 export const reconcileGithubAttention = async ({ supabase, workspaceId, reference, eventTime = null }) => {
   const links = reference.links ?? [];
-  const desired = links.flatMap((link) => activeTarget(link.target_type, link.target_id) ? signalDefinitions({ reference, link, metadata: reference.metadata ?? {} }) : []);
+  const taskLinks = links.filter((link) => link.target_type === 'task' && link.target_id);
+  const taskStatuses = taskLinks.length
+    ? await supabase.from('tasks').select('id, status').eq('workspace_id', workspaceId).in('id', taskLinks.map((link) => link.target_id))
+    : { data: [], error: null };
+  if (taskStatuses.error) throw taskStatuses.error;
+  const openTaskIds = new Set((taskStatuses.data ?? []).filter((task) => !['completed', 'cancelled'].includes(String(task.status ?? '').toLowerCase())).map((task) => task.id));
+  const desired = links.flatMap((link) => activeTarget(link.target_type, link.target_id) && (link.target_type !== 'task' || openTaskIds.has(link.target_id)) ? signalDefinitions({ reference, link, metadata: reference.metadata ?? {} }) : []);
   const existing = await supabase.from('github_attention_signals').select('id, fingerprint, status').eq('workspace_id', workspaceId).eq('external_reference_id', reference.id).eq('status', 'active');
   if (existing.error) throw existing.error;
   const desiredFingerprints = new Set(desired.map((signal) => signal.fingerprint));
@@ -115,5 +121,16 @@ export const listGithubAttention = async ({ supabase, workspaceId, targetType = 
   if (targetId) query = query.eq('target_id', targetId);
   const result = await query;
   if (result.error) throw result.error;
-  return result.data ?? [];
+  const rows = result.data ?? [];
+  const taskIds = rows.filter((row) => row.target_type === 'task' && row.target_id).map((row) => row.target_id);
+  if (!taskIds.length) return rows;
+  const tasks = await supabase.from('tasks').select('id, status').eq('workspace_id', workspaceId).in('id', taskIds);
+  if (tasks.error) throw tasks.error;
+  const openTaskIds = new Set((tasks.data ?? []).filter((task) => !['completed', 'cancelled'].includes(String(task.status ?? '').toLowerCase())).map((task) => task.id));
+  const staleIds = rows.filter((row) => row.target_type === 'task' && row.target_id && !openTaskIds.has(row.target_id)).map((row) => row.id);
+  if (staleIds.length) {
+    const resolved = await supabase.from('github_attention_signals').update({ status: 'resolved', resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).in('id', staleIds);
+    if (resolved.error) throw resolved.error;
+  }
+  return rows.filter((row) => row.target_type !== 'task' || !row.target_id || openTaskIds.has(row.target_id));
 };

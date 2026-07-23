@@ -37,14 +37,7 @@ export function IntegrationProviderMark({
   }
   if (key === 'figma') return <span role="img" aria-label={label} className={className}><FigmaMark size={size} /></span>;
   if (key === 'slack') {
-    return (
-      <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={label} className={className}>
-        <path fill="#36C5F0" d="M6.1 14.3a2.1 2.1 0 1 1-2.1 2.1 2.1 2.1 0 0 1 2.1-2.1h2.1v-2.1H6.1Z" />
-        <path fill="#2EB67D" d="M9.7 6.1a2.1 2.1 0 1 1-2.1-2.1 2.1 2.1 0 0 1 2.1 2.1v2.1h2.1V6.1Z" />
-        <path fill="#ECB22E" d="M17.9 9.7a2.1 2.1 0 1 1 2.1 2.1 2.1 2.1 0 0 1-2.1 2.1h-2.1v-2.1h2.1Z" />
-        <path fill="#E01E5A" d="M14.3 17.9a2.1 2.1 0 1 1 2.1 2.1 2.1 2.1 0 0 1-2.1-2.1v-2.1h-2.1v2.1Z" />
-      </svg>
-    );
+    return <img src="/slack.svg" alt={label} title={label} className={className} style={{ width: size, height: size }} />;
   }
   return <Globe size={size} aria-label={label} className={className} />;
 }

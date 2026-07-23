@@ -292,6 +292,11 @@ export const useApi = () => {
           skipWorkspaceHeader: true,
         });
       },
+      removeSlackCapture: (workspaceId: string, captureId: string) =>
+        request(`/api/integrations/slack/captures/${encodeURIComponent(captureId)}?workspaceId=${encodeURIComponent(workspaceId)}`, {
+          method: 'DELETE',
+          skipWorkspaceHeader: true,
+        }),
       getSlackContexts: (workspaceId: string, params: { search?: string; targetType?: string; targetId?: string } = {}) => {
         const query = new URLSearchParams({ workspaceId });
         if (params.search?.trim()) query.set('search', params.search.trim());
@@ -345,6 +350,8 @@ export const useApi = () => {
       },
       getSlackActivityRecap: (workspaceId: string, date: string) => request(`/api/integrations/slack/activity/recap?workspaceId=${encodeURIComponent(workspaceId)}&date=${encodeURIComponent(date)}`, { skipWorkspaceHeader: true }),
       markSlackActivityRead: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/read?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
+      markSlackActivityUnread: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/read?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify({ read: false }) }),
+      dismissSlackActivity: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/dismiss?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
       markAllSlackActivityRead: (workspaceId: string, payload: { date?: string; filter?: string }) => request(`/api/integrations/slack/activity/read-all?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify(payload) }),
       promoteSlackActivityToIntake: (workspaceId: string, activityId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/intake?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true }),
       linkSlackActivityContext: (workspaceId: string, activityId: string, targetType: string, targetId: string) => request(`/api/integrations/slack/activity/${encodeURIComponent(activityId)}/context-link?workspaceId=${encodeURIComponent(workspaceId)}`, { method: 'POST', skipWorkspaceHeader: true, body: JSON.stringify({ target_type: targetType, target_id: targetId }) }),

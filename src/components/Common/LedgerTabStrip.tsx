@@ -24,7 +24,6 @@ import {
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from './ToastProvider';
-import { IntegrationProviderMark } from './IntegrationProviderMark';
 
 type LedgerRoute = {
   kind: ModuleWindowKind;
@@ -158,7 +157,7 @@ const routeIcon = (route: LedgerRoute): ReactNode => {
     case 'inbox':
       return <Inbox className={className} />;
     case 'slack':
-      return <IntegrationProviderMark provider="slack" size={14} className={className} />;
+      return <img src="/slack-outline.svg" alt="" aria-hidden="true" className={`h-3.5 w-3.5 brightness-0 invert opacity-60 ${className}`} />;
     case 'notifications':
       return <Bell className={className} />;
     default:

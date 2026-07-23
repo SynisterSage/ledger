@@ -60,6 +60,7 @@ import { ModalCloseButton } from '../Common/ModalCloseButton';
 import authService from '../../services/auth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegrationPage';
+import { SlackIntegrationPage } from './SlackIntegrationPage';
 import { GithubIntegrationCard } from './GithubIntegrationCard';
 
 type UserPreferences = {
@@ -159,7 +160,10 @@ type SlackIntegrationStatus = {
   team_name?: string | null;
   bot_user_id?: string | null;
   scopes?: string[];
+  connected_by?: { name?: string | null; email?: string | null } | null;
+  created_at?: string | null;
   updated_at?: string | null;
+  needs_reauthorization?: boolean;
 };
 
 type ExtensionTokenStatus = {
@@ -883,11 +887,11 @@ export const SettingsWindow = () => {
   const [slackStatus, setSlackStatus] = useState<SlackIntegrationStatus | null>(null);
   const [isLoadingSlackStatus, setIsLoadingSlackStatus] = useState(false);
   const [isConnectingSlack, setIsConnectingSlack] = useState(false);
-  const [isDisconnectingSlack, setIsDisconnectingSlack] = useState(false);
   const [slackError, setSlackError] = useState<string | null>(null);
   const [slackRefreshToken, setSlackRefreshToken] = useState(0);
   const [figmaStatus, setFigmaStatus] = useState<FigmaIntegrationStatus>({ status: 'disconnected' });
   const [figmaDetailOpen, setFigmaDetailOpen] = useState(false);
+  const [slackDetailOpen, setSlackDetailOpen] = useState(false);
   const [extensionTokenStatus, setExtensionTokenStatus] = useState<ExtensionTokenStatus | null>(
     null
   );
@@ -1719,30 +1723,6 @@ export const SettingsWindow = () => {
       setSlackError(err instanceof Error ? err.message : 'Could not start Slack connection.');
     } finally {
       setIsConnectingSlack(false);
-    }
-  };
-
-  const handleDisconnectSlack = async () => {
-    if (!activeWorkspaceId) {
-      setSlackError('Select a workspace before disconnecting Slack.');
-      return;
-    }
-
-    const confirmed = window.confirm(
-      'Disconnect Slack from this workspace? Existing captures will remain in Ledger.'
-    );
-    if (!confirmed) return;
-
-    setIsDisconnectingSlack(true);
-    setSlackError(null);
-    try {
-      await api.disconnectSlackIntegration(activeWorkspaceId);
-      setSlackStatus({ connected: false });
-      window.ipcRenderer?.send('slack:connection-changed');
-    } catch (err) {
-      setSlackError(err instanceof Error ? err.message : 'Could not disconnect Slack.');
-    } finally {
-      setIsDisconnectingSlack(false);
     }
   };
 
@@ -4519,6 +4499,13 @@ export const SettingsWindow = () => {
                   onBack={() => setFigmaDetailOpen(false)}
                   onStatusChange={setFigmaStatus}
                 />
+              ) : activeSection === 'integrations' && slackDetailOpen ? (
+                <SlackIntegrationPage
+                  workspaceId={activeWorkspaceId}
+                  canManage={canManageWorkspace}
+                  onBack={() => setSlackDetailOpen(false)}
+                  onStatusChange={(next) => setSlackStatus(next as SlackIntegrationStatus)}
+                />
               ) : activeSection === 'integrations' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-integrations">
                   <div className="space-y-2">
@@ -4544,7 +4531,13 @@ export const SettingsWindow = () => {
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Attach designs to Ledger work and preview them without leaving your workspace.</p></div>
                           <button type="button" onClick={() => setFigmaDetailOpen(true)} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
                         </div>
-                        <div className="flex items-center gap-3 px-4 py-2.5">
+                        <div
+                          className={`flex items-center gap-3 px-4 py-2.5 ${slackStatus?.connected ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''}`}
+                          onClick={() => { if (slackStatus?.connected) setSlackDetailOpen(true); }}
+                          role={slackStatus?.connected ? 'button' : undefined}
+                          tabIndex={slackStatus?.connected ? 0 : undefined}
+                          onKeyDown={(event) => { if (slackStatus?.connected && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSlackDetailOpen(true); } }}
+                        >
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]">
                             <SlackMark />
                           </span>
@@ -4568,7 +4561,7 @@ export const SettingsWindow = () => {
                           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => void handleConnectSlack()}
+                              onClick={(event) => { event.stopPropagation(); if (slackStatus?.connected) setSlackDetailOpen(true); else void handleConnectSlack(); }}
                               disabled={
                                 isConnectingSlack || !activeWorkspaceId || !canManageWorkspace
                               }
@@ -4581,21 +4574,9 @@ export const SettingsWindow = () => {
                               {isConnectingSlack
                                 ? 'Opening...'
                                 : slackStatus?.connected
-                                ? 'Reconnect'
-                                : 'Connect Slack'}
+                                ? 'Manage'
+                                : 'Connect'}
                             </button>
-                            {slackStatus?.connected && (
-                              <button
-                                type="button"
-                                onClick={() => void handleDisconnectSlack()}
-                                disabled={
-                                  isDisconnectingSlack || !activeWorkspaceId || !canManageWorkspace
-                                }
-                                className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
-                              >
-                                {isDisconnectingSlack ? 'Disconnecting...' : 'Disconnect'}
-                              </button>
-                            )}
                           </div>
                         </div>
                         <GithubIntegrationCard workspaceId={activeWorkspaceId} canManage={canManageWorkspace} />

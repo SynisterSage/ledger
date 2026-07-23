@@ -42,7 +42,6 @@ import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
-import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 
 type FocusItem = {
   id: string;
@@ -3886,7 +3885,7 @@ export const ExpandedSidebar = ({
                 title="Slack"
                 aria-label="Open Slack"
               >
-                <IntegrationProviderMark provider="slack" size={15} className="shrink-0" />
+                <img src="/slack-outline.svg" alt="" aria-hidden="true" className="h-[15px] w-[15px] shrink-0 brightness-0 invert opacity-60" />
                 <span className="truncate">Slack</span>
               </button>
             )}

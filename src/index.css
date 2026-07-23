@@ -654,3 +654,19 @@ button:focus {
     animation: none;
   }
 }
+
+.slack-content .divide-y > :not([hidden]) ~ :not([hidden]) {
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+}
+
+.slack-content article {
+  border: 0 !important;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  transition: background-color 120ms ease;
+}
+
+.slack-content article:hover {
+  background-color: var(--ledger-surface-muted);
+}

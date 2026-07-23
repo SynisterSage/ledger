@@ -5289,6 +5289,13 @@ function DashboardContent() {
           return actions;
         }
 
+        actions.push({
+          label: 'Delete task',
+          icon: <Trash2 size={13} />,
+          action: () => void deleteOverviewRow({ kind: selectedOverviewRow.kind, sourceId: selectedOverviewRow.sourceId }),
+          disabled: false,
+        });
+
         const isFocusTask = selectedOverviewRow.chips.includes('Focus');
         const isTodayTask = selectedOverviewRow.group === 'Today';
         const isLongTermTask = selectedOverviewRow.group === 'Long-term tasks';
