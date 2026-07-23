@@ -4361,7 +4361,7 @@ const buildSlackIdentityAuthorizeUrl = ({ workspaceId, userId, teamId }) => {
   const params = new URLSearchParams({
     client_id: clientId,
     scope: 'commands,chat:write',
-    user_scope: 'identity.basic,identity.email,identity.avatar,channels:read,groups:read,mpim:read',
+    user_scope: 'channels:read,groups:read,mpim:read,users:read,users:read.email',
     redirect_uri: redirectUri,
     state: createSlackOAuthState({ workspaceId, userId, flow: 'personal_identity' }),
   });
@@ -7168,10 +7168,7 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
         }));
       }
 
-      const identityResponse = await fetch('https://slack.com/api/users.identity', {
-        headers: { Authorization: `Bearer ${userAccessToken}` },
-      });
-      const identityPayload = await identityResponse.json();
+      const identityPayload = await slackApiRequest('users.info', userAccessToken, { user: slackUserId });
       if (!identityPayload?.ok || identityPayload.user?.id !== slackUserId) {
         console.error('Slack personal identity verification failed', identityPayload?.error ?? 'identity_lookup_failed');
         return res.status(400).type('html').send(buildSlackIdentityCompleteHtml({
