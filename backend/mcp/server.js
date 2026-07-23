@@ -68,6 +68,15 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
   const workspaceId = context.workspaceId;
   const userId = context.userId;
 
+  const timed = async (toolName, step, operation) => {
+    const startedAt = Date.now();
+    try {
+      return await operation();
+    } finally {
+      console.info('MCP tool timing', { toolName, step, durationMs: Date.now() - startedAt });
+    }
+  };
+
   const requireScope = (scope) => {
     if (!context.scopes.includes(scope)) throw new Error('Required scope is missing.');
   };
@@ -240,7 +249,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
       hasScope('calendar:read') ? query('events', 'id, title, notes, start_at, end_at, all_day, status, project_id, note_id').gte('start_at', new Date().toISOString()).order('start_at', { ascending: true }).limit(30) : { data: [], error: null },
       hasScope('calendar:read') ? query('reminders', 'id, title, remind_at, status, project_id, note_id').gte('remind_at', `${today}T00:00:00.000Z`).neq('status', 'completed').order('remind_at', { ascending: true }).limit(30) : { data: [], error: null },
       hasScope('daily:read') ? supabase.from('daily_accountability').select('focus_items, entry_date, checkin_finished, checkin_blocked, checkin_first_task_tomorrow, updated_at').eq('user_id', userId).eq('entry_date', today).maybeSingle() : { data: null, error: null },
-      hasScope('notes:read') ? query('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html').order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(20) : { data: [], error: null },
+      hasScope('notes:read') ? query('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, preview').order('date', { ascending: false }).order('updated_at', { ascending: false }).limit(20) : { data: [], error: null },
     ]);
     if (projects.error || tasks.error || events.error || reminders.error || accountability.error || notes.error) throw new Error('Could not load workspace context.');
 
@@ -294,7 +303,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
         }),
         nextActions: taskRows.filter((task) => task.project_id === project.id).slice(0, 5).map(compactTask),
       })),
-      recentNotes: noteRows.slice(0, 20).map((note) => ({ id: note.id, title: note.title, date: note.date, mode: note.mode ?? undefined, sectionId: note.section_id ?? undefined, parentId: note.parent_id ?? undefined, preview: searchSnippet(note.content_html || note.content, '', 360), createdAt: note.created_at, updatedAt: note.updated_at, url: `ledger://notes/${encodeURIComponent(note.id)}` })),
+      recentNotes: noteRows.slice(0, 20).map((note) => ({ id: note.id, title: note.title, date: note.date, mode: note.mode ?? undefined, sectionId: note.section_id ?? undefined, parentId: note.parent_id ?? undefined, preview: note.preview ?? '', createdAt: note.created_at, updatedAt: note.updated_at, url: `ledger://notes/${encodeURIComponent(note.id)}` })),
     };
     await audit('resource.read', { resource: 'ledger://workspace/current/context' });
     return { contents: [{ uri: 'ledger://workspace/current/context', mimeType: 'application/json', text: JSON.stringify(payload) }] };
@@ -349,7 +358,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     ]);
     if (tasks.error || links.error || lead.error || team.error) throw new Error('Could not load project context.');
     const noteIds = (links.data ?? []).map((link) => link.note_id).filter(Boolean);
-    const notes = noteIds.length ? await query('notes', 'id, title, date, content, content_html, updated_at').in('id', noteIds) : { data: [], error: null };
+    const notes = noteIds.length ? await query('notes', 'id, title, date, preview, updated_at').in('id', noteIds) : { data: [], error: null };
     if (notes.error) throw new Error('Could not load linked project notes.');
     const taskAssigneeIds = [...new Set((tasks.data ?? []).map((task) => task.assigned_to_user_id).filter(Boolean))];
     const taskTeamIds = [...new Set((tasks.data ?? []).map((task) => task.assigned_to_team_id).filter(Boolean))];
@@ -362,7 +371,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     const taskAssigneeById = new Map((taskAssignees.data ?? []).map((assignee) => [assignee.id, assignee]));
     const taskTeamById = new Map((taskTeams.data ?? []).map((teamRow) => [teamRow.id, teamRow]));
     await audit('tool.invoked', { toolName: 'get_project' });
-    return textResult({ project: projectSummary(project, { lead: lead.data ? { id: lead.data.id, name: lead.data.full_name ?? undefined } : undefined, ownerTeam: team.data ? { id: team.data.id, name: team.data.name, identifier: team.data.identifier ?? undefined } : undefined, taskCount: (tasks.data ?? []).length, linkedNoteCount: (links.data ?? []).length }), linkedNotes: (links.data ?? []).map((link) => { const note = notesById.get(link.note_id); return note ? { id: note.id, title: note.title, date: note.date, snippet: searchSnippet(note.content_html || note.content, '', 400), updatedAt: note.updated_at, url: `ledger://notes/${encodeURIComponent(note.id)}` } : null; }).filter(Boolean), nextActions: (tasks.data ?? []).map((task) => ({ id: task.id, title: task.title, status: task.status, priority: task.priority ?? undefined, dueDate: task.due_date ?? undefined, dueTime: task.due_time ?? undefined, assignee: task.assigned_to_user_id ? { id: task.assigned_to_user_id, name: taskAssigneeById.get(task.assigned_to_user_id)?.full_name ?? undefined } : undefined, team: task.assigned_to_team_id ? { id: task.assigned_to_team_id, name: taskTeamById.get(task.assigned_to_team_id)?.name ?? undefined, identifier: taskTeamById.get(task.assigned_to_team_id)?.identifier ?? undefined } : undefined, updatedAt: task.updated_at, url: `ledger://tasks/${encodeURIComponent(task.id)}` })) });
+    return textResult({ project: projectSummary(project, { lead: lead.data ? { id: lead.data.id, name: lead.data.full_name ?? undefined } : undefined, ownerTeam: team.data ? { id: team.data.id, name: team.data.name, identifier: team.data.identifier ?? undefined } : undefined, taskCount: (tasks.data ?? []).length, linkedNoteCount: (links.data ?? []).length }), linkedNotes: (links.data ?? []).map((link) => { const note = notesById.get(link.note_id); return note ? { id: note.id, title: note.title, date: note.date, snippet: String(note.preview ?? '').slice(0, 400), updatedAt: note.updated_at, url: `ledger://notes/${encodeURIComponent(note.id)}` } : null; }).filter(Boolean), nextActions: (tasks.data ?? []).map((task) => ({ id: task.id, title: task.title, status: task.status, priority: task.priority ?? undefined, dueDate: task.due_date ?? undefined, dueTime: task.due_time ?? undefined, assignee: task.assigned_to_user_id ? { id: task.assigned_to_user_id, name: taskAssigneeById.get(task.assigned_to_user_id)?.full_name ?? undefined } : undefined, team: task.assigned_to_team_id ? { id: task.assigned_to_team_id, name: taskTeamById.get(task.assigned_to_team_id)?.name ?? undefined, identifier: taskTeamById.get(task.assigned_to_team_id)?.identifier ?? undefined } : undefined, updatedAt: task.updated_at, url: `ledger://tasks/${encodeURIComponent(task.id)}` })) });
   });
 
   server.registerTool('search_notes', {
@@ -377,18 +386,18 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     const searchTerm = rawQuery.replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim();
     if (searchTerm.length < 2) throw new Error('Search query must be at least 2 characters.');
     const like = `%${searchTerm}%`;
-    let request = queryTable('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html')
+    let request = queryTable('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, preview')
       .or(`title.ilike.${like},content.ilike.${like},content_html.ilike.${like}`)
       .order('date', { ascending: false })
       .order('updated_at', { ascending: false })
       .range(offset, offset + limit);
     if (dateFrom) request = request.gte('date', dateFrom);
     if (dateTo) request = request.lte('date', dateTo);
-    const result = await request;
+    const result = await timed('search_notes', 'query', () => request);
     if (result.error) throw new Error('Could not search notes.');
     const rows = result.data ?? [];
-    await audit('tool.invoked', { toolName: 'search_notes' });
-    return textResult({ notes: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.title, date: row.date, mode: row.mode ?? undefined, sectionId: row.section_id ?? undefined, parentId: row.parent_id ?? undefined, snippet: searchSnippet(row.content_html || row.content, rawQuery), createdAt: row.created_at, updatedAt: row.updated_at, url: `ledger://notes/${encodeURIComponent(row.id)}` })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
+    await timed('search_notes', 'audit', () => audit('tool.invoked', { toolName: 'search_notes' }));
+    return textResult({ notes: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.title, date: row.date, mode: row.mode ?? undefined, sectionId: row.section_id ?? undefined, parentId: row.parent_id ?? undefined, snippet: searchSnippet(row.preview, rawQuery), createdAt: row.created_at, updatedAt: row.updated_at, url: `ledger://notes/${encodeURIComponent(row.id)}` })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
   });
 
   server.registerTool('list_notes', {
@@ -400,15 +409,15 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     validateDateRange(dateFrom, dateTo);
     const offset = decodeCursor(cursor);
     if (offset === null) throw new Error('Invalid cursor.');
-    let request = queryTable('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html').order('date', { ascending: false }).order('updated_at', { ascending: false }).range(offset, offset + limit);
+    let request = queryTable('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, preview').order('date', { ascending: false }).order('updated_at', { ascending: false }).range(offset, offset + limit);
     if (dateFrom) request = request.gte('date', dateFrom);
     if (dateTo) request = request.lte('date', dateTo);
     if (sectionId) request = request.eq('section_id', sectionId);
-    const result = await request;
+    const result = await timed('list_notes', 'query', () => request);
     if (result.error) throw new Error('Could not load notes.');
     const rows = result.data ?? [];
-    await audit('tool.invoked', { toolName: 'list_notes' });
-    return textResult({ notes: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.title, date: row.date, mode: row.mode ?? undefined, sectionId: row.section_id ?? undefined, parentId: row.parent_id ?? undefined, preview: searchSnippet(row.content_html || row.content, '', 280), createdAt: row.created_at, updatedAt: row.updated_at, url: `ledger://notes/${encodeURIComponent(row.id)}` })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
+    await timed('list_notes', 'audit', () => audit('tool.invoked', { toolName: 'list_notes' }));
+    return textResult({ notes: rows.slice(0, limit).map((row) => ({ id: row.id, title: row.title, date: row.date, mode: row.mode ?? undefined, sectionId: row.section_id ?? undefined, parentId: row.parent_id ?? undefined, preview: row.preview ?? '', createdAt: row.created_at, updatedAt: row.updated_at, url: `ledger://notes/${encodeURIComponent(row.id)}` })), ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) });
   });
 
   server.registerTool('list_tasks', {
@@ -450,17 +459,20 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
 
   server.registerTool('get_note', { description: 'Get note metadata, with optionally capped sanitized plain text.', annotations: readAnnotations, inputSchema: { noteId: uuidSchema, includeContent: z.boolean().default(false) } }, async ({ noteId, includeContent }) => {
     requireScope('notes:read');
-    const result = await query('notes', 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html').eq('id', noteId).maybeSingle();
+    const fields = includeContent
+      ? 'id, title, date, mode, section_id, parent_id, created_at, updated_at, content, content_html'
+      : 'id, title, date, mode, section_id, parent_id, created_at, updated_at, preview';
+    const result = await timed('get_note', 'query', () => query('notes', fields).eq('id', noteId).maybeSingle());
     if (result.error || !result.data) throw new Error('Object not found or inaccessible.');
     const note = result.data;
     const payload = { id: note.id, title: note.title, date: note.date, mode: note.mode, sectionId: note.section_id, parentId: note.parent_id, createdAt: note.created_at, updatedAt: note.updated_at };
     if (includeContent) {
-      payload.content = plainText(note.content_html || note.content).slice(0, MAX_NOTE_CONTENT);
-      await audit('note.content.read', { toolName: 'get_note' });
+      payload.content = await timed('get_note', 'sanitize', () => plainText(note.content_html || note.content).slice(0, MAX_NOTE_CONTENT));
+      await timed('get_note', 'content_audit', () => audit('note.content.read', { toolName: 'get_note' }));
     } else {
-      payload.preview = plainText(note.content_html || note.content).slice(0, 280);
+      payload.preview = String(note.preview ?? '').slice(0, 280);
     }
-    await audit('tool.invoked', { toolName: 'get_note' });
+    await timed('get_note', 'audit', () => audit('tool.invoked', { toolName: 'get_note' }));
     return textResult({ note: payload });
   });
 
