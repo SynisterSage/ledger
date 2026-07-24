@@ -927,16 +927,22 @@ export const ProjectsWindow = () => {
   }, [selectedProjectId, tasks]);
 
   const selectedProjectMilestones = useMemo(() => {
-    return workspaceMilestones
+    const milestones = workspaceMilestones
       .filter((milestone) => milestone.project_id === selectedProjectId)
       .sort((left, right) => {
-        const completionDelta = Number(Boolean(left.completed)) - Number(Boolean(right.completed));
-        if (completionDelta !== 0) return completionDelta;
         const leftDate = left.milestone_date || '9999-12-31';
         const rightDate = right.milestone_date || '9999-12-31';
         if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
         return left.title.localeCompare(right.title);
       });
+
+    // Keep completed milestones below the active timeline. Do the partition
+    // explicitly so the project page cannot let date ordering pull ghosted
+    // rows back above milestones that still need attention.
+    return [
+      ...milestones.filter((milestone) => !milestone.completed),
+      ...milestones.filter((milestone) => milestone.completed),
+    ];
   }, [selectedProjectId, workspaceMilestones]);
 
   const selectedProjectMilestoneById = useMemo(() => {

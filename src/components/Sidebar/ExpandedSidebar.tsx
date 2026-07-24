@@ -8,7 +8,7 @@ import {
   ClipboardCheck,
   Bell,
   Folder,
-  LogOut,
+  Power,
   Plus,
   Funnel,
   RotateCcw,
@@ -341,7 +341,7 @@ export const ExpandedSidebar = ({
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onCollapseRequest?: () => void;
 }) => {
-  const { user, signOut } = useAuthContext();
+  const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const { collapseToRail, position } = useSidebar();
   const { openSearch } = useSearch();
@@ -414,7 +414,7 @@ export const ExpandedSidebar = ({
   const autoExpireTodayTaskIdsRef = useRef<Set<string>>(new Set());
   const TODAY_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:today-collapsed:v1';
   const CHECKIN_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:checkin-collapsed:v1';
-  const PROJECTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:projects-collapsed:v3';
+  const PROJECTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:projects-collapsed:v4';
   const EVENTS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:events-collapsed:v1';
   const WORKSPACE_SECTION_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:workspace-section-collapsed:v1';
   const MY_TEAMS_COLLAPSE_STORAGE_KEY = 'ledger:sidebar:my-teams-collapsed:v1';
@@ -2574,12 +2574,12 @@ export const ExpandedSidebar = ({
               <CollapseChevron size={16} />
             </button>
             <button
-              onClick={signOut}
+              onClick={() => void window.desktopWindow?.quitApp()}
               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-secondary)] transition-colors duration-150 hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
-              title="Sign out"
-              aria-label="Sign out"
+              title="Exit Ledger"
+              aria-label="Exit Ledger"
             >
-              <LogOut size={14} />
+              <Power size={14} />
             </button>
           </div>
         </div>
@@ -2876,7 +2876,7 @@ export const ExpandedSidebar = ({
               <ChevronDown
                 size={12}
                 className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
-                  workspaceSectionCollapsed ? 'rotate-180' : ''
+                  workspaceSectionCollapsed ? '' : 'rotate-180'
                 }`}
               />
             </span>
@@ -3066,7 +3066,7 @@ export const ExpandedSidebar = ({
                   </span>
                   <ChevronDown
                     size={14}
-                    className={`transition-transform ${todayCollapsed ? 'rotate-180' : ''}`}
+                    className={`transition-transform ${todayCollapsed ? '' : 'rotate-180'}`}
                   />
                 </span>
               </button>
@@ -3727,7 +3727,7 @@ export const ExpandedSidebar = ({
                     <span>{projects.length}</span>
                     <ChevronDown
                       size={14}
-                      className={`transition-transform ${projectsCollapsed ? 'rotate-180' : ''}`}
+                      className={`transition-transform ${projectsCollapsed ? '' : 'rotate-180'}`}
                     />
                   </span>
                 </button>
@@ -3885,7 +3885,7 @@ export const ExpandedSidebar = ({
                 title="Slack"
                 aria-label="Open Slack"
               >
-                <img src="/slack-outline.svg" alt="" aria-hidden="true" className="h-[15px] w-[15px] shrink-0 brightness-0 invert opacity-60" />
+                <span role="img" aria-label="Slack" className="ledger-slack-outline h-[15px] w-[15px] shrink-0" />
                 <span className="truncate">Slack</span>
               </button>
             )}
@@ -3919,7 +3919,7 @@ export const ExpandedSidebar = ({
                   <ChevronDown
                     size={12}
                     className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
-                      myTeamsCollapsed ? 'rotate-180' : ''
+                      myTeamsCollapsed ? '' : 'rotate-180'
                     }`}
                   />
                 </span>
@@ -3984,7 +3984,7 @@ export const ExpandedSidebar = ({
                               <ChevronDown
                                 size={13}
                                 className={`transition-transform ${
-                                  isTeamExpanded ? '' : 'rotate-180'
+                                  isTeamExpanded ? 'rotate-180' : ''
                                 }`}
                               />
                             </button>

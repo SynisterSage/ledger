@@ -824,6 +824,10 @@ let workspaceModuleCurrentRoute: WorkspaceModuleRoute | null = null;
 const workspaceModuleBackStack: WorkspaceModuleRoute[] = [];
 const workspaceModuleForwardStack: WorkspaceModuleRoute[] = [];
 const workspaceModuleRecentRoutes: WorkspaceModuleRoute[] = [];
+// A kept-alive renderer can publish its previous route after its tab has been
+// closed. Keep those late broadcasts from putting the closed route back into
+// navigation history until the user explicitly selects it again.
+const workspaceModuleClosedRouteKeys = new Set<string>();
 
 function getLedgerWindowId(win: BrowserWindow) {
   const existing = ledgerWindowIds.get(win);
@@ -5620,6 +5624,8 @@ function routeFromModuleArgs(
 }
 
 function recordWorkspaceRoute(route: WorkspaceModuleRoute) {
+  if (workspaceModuleClosedRouteKeys.has(workspaceRouteKey(route))) return;
+
   const existingIndex = workspaceModuleRecentRoutes.findIndex((entry) =>
     isSameWorkspaceRoute(entry, route)
   );
@@ -5629,6 +5635,19 @@ function recordWorkspaceRoute(route: WorkspaceModuleRoute) {
 
   workspaceModuleRecentRoutes.unshift({ ...route });
   workspaceModuleRecentRoutes.length = Math.min(workspaceModuleRecentRoutes.length, 12);
+}
+
+function workspaceRouteKey(route: WorkspaceModuleRoute) {
+  return [
+    route.kind,
+    route.focusDate ?? '',
+    route.focusProjectId ?? '',
+    route.focusNoteId ?? '',
+    route.focusTaskId ?? '',
+    route.focusInboxId ?? '',
+    route.focusContext ?? '',
+    route.focusSection ?? '',
+  ].join('|');
 }
 
 function isSameWorkspaceRoute(a: WorkspaceModuleRoute | null, b: WorkspaceModuleRoute) {
@@ -5712,6 +5731,9 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   const moduleWin = workspaceModuleWin;
   if (!moduleWin || moduleWin.isDestroyed()) return false;
 
+  // Selecting a route intentionally reopens it, so it is safe to record again.
+  workspaceModuleClosedRouteKeys.delete(workspaceRouteKey(route));
+
   const currentRoute = getCurrentWorkspaceRoute();
   if (pushHistory && currentRoute && !isSameWorkspaceRoute(currentRoute, route)) {
     workspaceModuleBackStack.push(currentRoute);
@@ -5787,11 +5809,13 @@ function removeWorkspaceRouteFromHistory(route: WorkspaceModuleRoute) {
   removeMatching(workspaceModuleBackStack);
   removeMatching(workspaceModuleForwardStack);
   removeMatching(workspaceModuleRecentRoutes);
+  workspaceModuleClosedRouteKeys.add(workspaceRouteKey(route));
 }
 
 function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute, pushHistory = true) {
   const moduleWin = workspaceModuleWin;
   if (!moduleWin || moduleWin.isDestroyed()) return false;
+  if (workspaceModuleClosedRouteKeys.has(workspaceRouteKey(route))) return false;
   if (!pushHistory) {
     // Calendar date changes are view state, not separate workspace destinations.
     // Drop any legacy same-module entries so an existing process cannot replay
@@ -6110,6 +6134,7 @@ function openModuleWindow(
       workspaceModuleBackStack.length = 0;
       workspaceModuleForwardStack.length = 0;
       workspaceModuleRecentRoutes.length = 0;
+      workspaceModuleClosedRouteKeys.clear();
       broadcastWorkspaceNavigationState();
     }
     if (!detachedRecord) {

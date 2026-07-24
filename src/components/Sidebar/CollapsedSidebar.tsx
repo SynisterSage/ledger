@@ -1,8 +1,7 @@
 import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
-import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, LogOut } from 'lucide-react';
+import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, Power } from 'lucide-react';
 import { useSearch } from '../../context/SearchContext';
-import { useAuthContext } from '../../context/AuthContext';
 import { sidebarTheme } from './sidebarTheme';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
 
@@ -13,7 +12,6 @@ export const CollapsedSidebar = ({
 }) => {
   const { restoreSidebarView, position } = useSidebar();
   const { openSearch } = useSearch();
-  const { signOut } = useAuthContext();
   const isHorizontal = position === 'top' || position === 'bottom';
   const isTopDock = position === 'top';
   const ExpandChevron = isTopDock ? ChevronDown : ChevronUp;
@@ -124,11 +122,13 @@ export const CollapsedSidebar = ({
               <ExpandChevron size={18} />
             </button>
             <button
-              onClick={signOut}
+              onClick={() => void window.desktopWindow?.quitApp()}
               onMouseDown={(e) => e.stopPropagation()}
               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition-colors duration-150 hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+              title="Exit Ledger"
+              aria-label="Exit Ledger"
             >
-              <LogOut size={18} />
+              <Power size={18} />
             </button>
           </div>
         </>

@@ -395,7 +395,7 @@ export const PinnedSidebarSection = () => {
           <ChevronDown
             size={12}
             className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${
-              isCollapsed ? 'rotate-180' : ''
+              isCollapsed ? '' : 'rotate-180'
             }`}
           />
         </span>

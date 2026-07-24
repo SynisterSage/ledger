@@ -492,19 +492,15 @@ function AuthStatusScreen({
         isExiting ? 'opacity-0 scale-[0.985] translate-y-1' : 'opacity-100 scale-100 translate-y-0'
       }`}
       style={dragRegionStyle}
+      role="status"
+      aria-label={`${title}. ${subtitle}`}
     >
-      <div className="absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
-      <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] w-full items-center justify-center rounded-3xl px-6 py-8">
-        <div className="flex flex-col items-center text-center" style={noDragRegionStyle}>
-          <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11" />
-          <h2 className="mt-4 text-[22px] font-medium leading-tight text-[var(--ledger-text-primary)]">
-            {title}
-          </h2>
-          <p className="mt-1.5 max-w-[18rem] text-sm leading-6 text-[var(--ledger-text-muted)]">
-            {subtitle}
-          </p>
-          <Loader2 size={14} className="mt-4 animate-spin text-[var(--ledger-text-muted)]" />
-        </div>
+      <div
+        className="flex h-32 w-32 flex-col items-center justify-center gap-4 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+        style={noDragRegionStyle}
+      >
+        <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11 select-none" />
+        <Loader2 size={14} className="animate-spin text-[var(--ledger-text-muted)]" aria-hidden="true" />
       </div>
     </div>
   );

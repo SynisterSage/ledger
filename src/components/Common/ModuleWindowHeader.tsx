@@ -26,6 +26,7 @@ import {
   Inbox,
   LayoutList,
   RefreshCw,
+  Search,
   Settings2,
   SidebarClose,
   SidebarOpen,
@@ -36,6 +37,7 @@ import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { IntegrationProviderMark } from './IntegrationProviderMark';
 import { WorkspaceSwitcherMenu } from './WorkspaceSwitcherMenu';
 import { LedgerTabStrip } from './LedgerTabStrip';
+import { useSearch } from '../../context/SearchContext';
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string;
@@ -515,6 +517,7 @@ export const ModuleWindowHeader = ({
   showHistoryControl = true,
   headerRef,
 }: ModuleWindowHeaderProps) => {
+  const { openSearch } = useSearch();
   void icon;
   const controlClassName = `flex h-5 w-5 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`;
 
@@ -895,6 +898,15 @@ export const ModuleWindowHeader = ({
                     <History size={14} />
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => openSearch()}
+                  title="Search · ⌘K"
+                  aria-label="Search Ledger"
+                  className={stripIconButtonClassName}
+                >
+                  <Search size={14} />
+                </button>
               </>
             )}
             {showPanelToggle && onTogglePanels && (
@@ -981,11 +993,17 @@ export const ModuleWindowHeader = ({
           onDoubleClick={handleStripDoubleClick}
         >
           {resolvedStripTitle ? (
-            <div className="min-w-0 max-w-[26vw] flex-none" title={resolvedStripTitle}>
-              <p className="truncate text-[13px] font-semibold leading-none tracking-tight text-[var(--ledger-text-primary)]">
-                {resolvedStripTitle}
-              </p>
-            </div>
+            <>
+              <div
+                aria-hidden="true"
+                className="h-5 shrink-0 border-l border-[color:var(--ledger-border-subtle)]"
+              />
+              <div className="min-w-0 max-w-[26vw] flex-none" title={resolvedStripTitle}>
+                <p className="truncate text-[13px] font-semibold leading-none tracking-tight text-[var(--ledger-text-primary)]">
+                  {resolvedStripTitle}
+                </p>
+              </div>
+            </>
           ) : null}
         </div>
 

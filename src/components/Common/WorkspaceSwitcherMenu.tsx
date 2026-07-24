@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   ArrowRight,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   CircleUserRound,
   Copy,
@@ -421,7 +422,11 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
             {workspaceInitials}
           </span>
           <span className="min-w-0 truncate">{workspaceName}</span>
-          <ChevronDown size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+          {isOpen ? (
+            <ChevronUp size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+          ) : (
+            <ChevronDown size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+          )}
         </button>
       </div>
 

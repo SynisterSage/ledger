@@ -157,7 +157,7 @@ const routeIcon = (route: LedgerRoute): ReactNode => {
     case 'inbox':
       return <Inbox className={className} />;
     case 'slack':
-      return <img src="/slack-outline.svg" alt="" aria-hidden="true" className={`h-3.5 w-3.5 brightness-0 invert opacity-60 ${className}`} />;
+      return <span role="img" aria-label="Slack" className={`ledger-slack-outline h-3.5 w-3.5 ${className}`} />;
     case 'notifications':
       return <Bell className={className} />;
     default:

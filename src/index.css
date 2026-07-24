@@ -42,6 +42,8 @@ body {
   --ledger-danger: #d92d20;
   --ledger-success: #12b76a;
   --ledger-warning: #dc6803;
+  --ledger-slack-outline-color: var(--ledger-text-secondary);
+  --ledger-slack-outline-opacity: 0.62;
   --ledger-input-background: #fafafa;
   --ledger-placeholder: #a0a0a0;
   --ledger-tab-bar: #f5f5f5;
@@ -104,6 +106,8 @@ body {
     --ledger-danger: #f97066;
     --ledger-success: #32d583;
     --ledger-warning: #fdb022;
+    --ledger-slack-outline-color: var(--ledger-text-secondary);
+    --ledger-slack-outline-opacity: 0.62;
     --ledger-input-background: #161616;
     --ledger-placeholder: #666666;
     --ledger-tab-bar: #0f0f0f;
@@ -136,6 +140,14 @@ body {
     --ledger-scrollbar-thumb: rgb(80 80 80);
     --ledger-scrollbar-thumb-hover: rgb(110 110 110);
   }
+}
+
+.ledger-slack-outline {
+  display: inline-block;
+  background-color: var(--ledger-slack-outline-color, var(--ledger-text-secondary));
+  -webkit-mask: url('/slack.svg') center / contain no-repeat;
+  mask: url('/slack.svg') center / contain no-repeat;
+  opacity: var(--ledger-slack-outline-opacity, 0.62);
 }
 
 img[src="/github-mark.svg"] {

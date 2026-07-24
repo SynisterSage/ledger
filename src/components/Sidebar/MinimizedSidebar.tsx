@@ -1,7 +1,7 @@
 import {
   BarChart3,
   CalendarDays,
-  LogOut,
+  Power,
   ChevronRight,
   ChevronUp,
   ChevronDown,
@@ -10,7 +10,6 @@ import {
   Search,
 } from 'lucide-react';
 import type React from 'react';
-import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
@@ -21,7 +20,6 @@ export const MinimizedSidebar = ({
 }: {
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
-  const { signOut } = useAuthContext();
   const { collapseSidebar, setState, position } = useSidebar();
   const { openSearch } = useSearch();
   const isHorizontal = position === 'top' || position === 'bottom';
@@ -123,11 +121,13 @@ export const MinimizedSidebar = ({
           </button>
 
           <button
-            onClick={signOut}
+            onClick={() => void window.desktopWindow?.quitApp()}
             onMouseDown={(e) => e.stopPropagation()}
             className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors duration-150 text-[var(--ledger-text-secondary)] hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+            title="Exit Ledger"
+            aria-label="Exit Ledger"
           >
-            <LogOut size={18} />
+            <Power size={18} />
           </button>
         </div>
       </div>

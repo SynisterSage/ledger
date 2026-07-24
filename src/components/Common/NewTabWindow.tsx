@@ -38,6 +38,7 @@ const destinations: Array<{
   label: string;
   kind: ModuleWindowKind;
   icon: typeof LayoutList;
+  provider?: 'slack';
 }> = [
   { label: 'Overview', kind: 'dashboard', icon: LayoutList },
   { label: 'Projects', kind: 'projects', icon: FolderKanban },
@@ -82,6 +83,7 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [isSlackEnabled, setIsSlackEnabled] = useState(false);
   const [pinnedPersonNames, setPinnedPersonNames] = useState<Record<string, string>>({});
   const { results, isLoading, trimmedQuery } = useWorkspaceSearch(query);
 
@@ -119,23 +121,27 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
     if (!user || !activeWorkspaceId) {
       setInboxCount(0);
       setNotificationCount(0);
+      setIsSlackEnabled(false);
       return;
     }
 
     let cancelled = false;
     const loadCounts = async () => {
       try {
-        const [inbox, notifications] = await Promise.all([
+        const [inbox, notifications, slack] = await Promise.all([
           api.getInboxCount() as Promise<{ count?: number }>,
           api.getNotificationCenterSummary() as Promise<{ counts?: { active?: number } }>,
+          api.getSlackIntegrationStatus(activeWorkspaceId) as Promise<{ connected?: boolean }>,
         ]);
         if (cancelled) return;
         setInboxCount(Math.max(0, Number(inbox?.count ?? 0)));
         setNotificationCount(Math.max(0, Number(notifications?.counts?.active ?? 0)));
+        setIsSlackEnabled(slack?.connected === true);
       } catch {
         if (!cancelled) {
           setInboxCount(0);
           setNotificationCount(0);
+          setIsSlackEnabled(false);
         }
       }
     };
@@ -147,6 +153,14 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
       window.clearInterval(timer);
     };
   }, [activeWorkspaceId, api, user]);
+
+  const quickNavDestinations = isSlackEnabled
+    ? [
+        ...destinations.slice(0, 5),
+        { label: 'Slack', kind: 'slack' as ModuleWindowKind, icon: LayoutList, provider: 'slack' },
+        destinations[5],
+      ]
+    : destinations;
 
   useEffect(() => {
     if (!activeWorkspaceId) {
@@ -336,14 +350,18 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
               }}
               className="flex min-w-0 items-center gap-x-5 overflow-x-auto whitespace-nowrap pr-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
-              {destinations.map(({ label, kind, icon: Icon }) => (
+              {quickNavDestinations.map(({ label, kind, icon: Icon, provider }) => (
                 <button
                   key={label}
                   type="button"
                   onClick={() => openDestination(kind)}
                   className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
                 >
-                  <Icon size={13} />
+                  {provider ? (
+                    <IntegrationProviderMark provider={provider} size={13} />
+                  ) : (
+                    <Icon size={13} />
+                  )}
                   {label}
                 </button>
               ))}
