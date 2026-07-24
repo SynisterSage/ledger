@@ -1760,6 +1760,8 @@ export const CalendarWindow = () => {
     const endLabel = formatCalendarTime(end).replace(':00', '');
     return `${startLabel}–${endLabel}`;
   };
+  const formatCompactCalendarTime = (date: Date) =>
+    formatCalendarTime(date).replace(':00', '');
   const getDurationDisplay = (minutes: number) => {
     if (minutes >= 60 && minutes % 60 === 0) {
       return { value: minutes / 60, unit: 'hours' as const };
@@ -4165,7 +4167,10 @@ export const CalendarWindow = () => {
                                     >
                                       {reminder.is_done && <Check size={8} strokeWidth={2.5} />}
                                     </span>
-                                    {reminder.title}
+                                    <span className="min-w-0 flex-1 truncate">{reminder.title}</span>
+                                    <span className="ml-auto shrink-0 pl-1 text-[10px] font-normal text-[var(--ledger-text-muted)]">
+                                      {formatCompactCalendarTime(new Date(reminder.remind_at))}
+                                    </span>
                                   </div>
                                 );
                               })()
@@ -4238,7 +4243,12 @@ export const CalendarWindow = () => {
                                         className="mr-1 inline-block align-middle text-[var(--ledger-text-muted)]"
                                       />
                                     )}
-                                    {event.title}
+                                    <span className="min-w-0 flex-1 truncate">{event.title}</span>
+                                    {!isAllDayEvent(event) && (
+                                      <span className="ml-auto shrink-0 pl-1 text-[10px] font-normal text-[var(--ledger-text-muted)]">
+                                        {formatCompactCalendarTime(new Date(event.start_at))}
+                                      </span>
+                                    )}
                                   </div>
                                 );
                               })()

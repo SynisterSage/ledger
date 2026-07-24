@@ -724,9 +724,28 @@ export const LedgerTabStrip = () => {
     const handleState = (_event: unknown, state?: NavigationState) => {
       if (state) setNavigationState(state);
     };
+    const handleRouteChanged = (_event: unknown, nextRoute?: ModuleFocusPayload | null) => {
+      const route = normalizeRoute(nextRoute);
+      if (!route) return;
+
+      // This is the authoritative acknowledgement from Electron that the
+      // keep-alive workspace surface has actually switched. Navigation-state
+      // broadcasts can arrive behind route requests, which otherwise leaves
+      // the temporary tab-click override highlighting the previous tab.
+      setNavigationState((current) => ({
+        ...current,
+        currentModule: route.kind,
+        currentRoute: route,
+      }));
+      setVisualRouteOverride(null);
+      visualCurrentRouteRef.current = route;
+      rememberRouteHint(route);
+    };
     window.ipcRenderer?.on?.('workspace:navigation-state', handleState as any);
+    window.ipcRenderer?.on?.('workspace:route-changed', handleRouteChanged as any);
     return () => {
       window.ipcRenderer?.off?.('workspace:navigation-state', handleState as any);
+      window.ipcRenderer?.off?.('workspace:route-changed', handleRouteChanged as any);
     };
   }, []);
 

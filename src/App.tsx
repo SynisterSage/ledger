@@ -1989,10 +1989,10 @@ function DashboardContent() {
     const loadNotificationSummary = async () => {
       try {
         const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { active?: number };
+          counts?: { active?: number; unread?: number };
         };
         if (cancelled) return;
-        setNotificationCount(Number(payload?.counts?.active ?? 0));
+        setNotificationCount(Number(payload?.counts?.unread ?? payload?.counts?.active ?? 0));
       } catch {
         if (!cancelled) {
           setNotificationCount(0);

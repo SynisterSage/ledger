@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Bell, RotateCcw, Inbox, CalendarDays, Folder, CheckCircle2, Clock3, MoreHorizontal, ExternalLink, Check, Clock, X } from 'lucide-react';
+import { Bell, RotateCcw, Inbox, CalendarDays, Folder, CheckCircle2, Clock3, MoreHorizontal, ExternalLink, Check, Clock, X, CheckCheck } from 'lucide-react';
 import {
   ModuleHeaderSegmentedButton,
   ModuleHeaderSegmentedGroup,
@@ -143,7 +143,8 @@ const actionLabel = (item: NotificationCenterItem, action: NotificationCenterIte
 
 const getNotificationMenuGroups = (
   item: NotificationCenterItem,
-  applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>
+  applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>,
+  markAsRead: (item: NotificationCenterItem) => Promise<void>
 ): ContextMenuGroup[] => {
   const groups: ContextMenuGroup[] = [];
   if (item.actions.includes('open')) {
@@ -154,6 +155,18 @@ const getNotificationMenuGroups = (
           label: actionLabel(item, 'open'),
           icon: <ExternalLink size={13} />,
           onClick: () => void applyAction(item, 'open'),
+        },
+      ],
+    });
+  }
+  if (item.unread === true) {
+    groups.push({
+      items: [
+        {
+          id: 'read',
+          label: 'Mark as read',
+          icon: <CheckCheck size={13} />,
+          onClick: () => void markAsRead(item),
         },
       ],
     });
@@ -191,10 +204,12 @@ const getNotificationMenuGroups = (
 const CompactTrayList = ({
   items,
   applyAction,
+  markAsRead,
   onRequestClose,
 }: {
   items: NotificationCenterItem[];
   applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>;
+  markAsRead: (item: NotificationCenterItem) => Promise<void>;
   onRequestClose?: () => void;
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: NotificationCenterItem } | null>(null);
@@ -270,7 +285,7 @@ const CompactTrayList = ({
         x={contextMenu?.x ?? 0}
         y={contextMenu?.y ?? 0}
         width={208}
-        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyTrayAction) : []}
+        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyTrayAction, markAsRead) : []}
         onClose={() => setContextMenu(null)}
         ariaLabel="Notification actions"
         groupLabelCase="normal"
@@ -283,10 +298,12 @@ const CompactNotificationList = ({
   items,
   sectionLabel,
   applyAction,
+  markAsRead,
 }: {
   items: NotificationCenterItem[];
   sectionLabel: 'Active' | 'Earlier';
   applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>;
+  markAsRead: (item: NotificationCenterItem) => Promise<void>;
 }) => {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -401,7 +418,7 @@ const CompactNotificationList = ({
         x={contextMenu?.x ?? 0}
         y={contextMenu?.y ?? 0}
         width={208}
-        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyAction) : []}
+        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyAction, markAsRead) : []}
         onClose={() => setContextMenu(null)}
         ariaLabel="Notification actions"
         groupLabelCase="normal"
@@ -421,7 +438,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
   onRequestClose,
   onViewAll,
 }) => {
-  const { active, earlier, loading, error, activeCount, loadNotifications, applyAction } =
+  const { active, earlier, loading, error, unreadCount, loadNotifications, applyAction, markAsRead, markAllAsRead } =
     useNotificationCenter();
   const { workspaceShellLayout } = useSidebar();
   const inboxCount = 0;
@@ -442,8 +459,8 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
   };
 
   const headerSubtitle = useMemo(
-    () => (activeCount === 1 ? '1 active' : `${activeCount} active`),
-    [activeCount]
+    () => (unreadCount === 1 ? '1 unread' : `${unreadCount} unread`),
+    [unreadCount]
   );
 
   const isTray = mode === 'tray';
@@ -503,6 +520,16 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
           <>
             <button
               type="button"
+              onClick={() => void markAllAsRead()}
+              disabled={unreadCount === 0}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-default disabled:opacity-35"
+              aria-label="Mark all notifications as read"
+              title="Mark all as read"
+            >
+              <CheckCheck size={13} />
+            </button>
+            <button
+              type="button"
               onClick={() => void loadNotifications({ force: true })}
               className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
               aria-label="Refresh notifications"
@@ -524,6 +551,16 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
             <span className="text-xs text-[var(--ledger-text-muted)]">{headerSubtitle}</span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => void markAllAsRead()}
+              disabled={unreadCount === 0}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-default disabled:opacity-35"
+              aria-label="Mark all notifications as read"
+              title="Mark all as read"
+            >
+              <CheckCheck size={13} />
+            </button>
             <button
               type="button"
               onClick={() => void loadNotifications({ force: true })}
@@ -578,6 +615,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
       )}
 
       <div className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto ${isTray ? 'bg-[var(--ledger-surface-card)] px-0 py-0' : 'bg-[var(--ledger-background)] px-5 py-4'}`}>
+        <div className={isTray ? '' : 'mx-auto w-full max-w-6xl'}>
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
@@ -619,6 +657,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
           <CompactTrayList
             items={trayItems}
             applyAction={applyAction}
+            markAsRead={markAsRead}
             onRequestClose={onRequestClose}
           />
         ) : (
@@ -627,9 +666,11 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
               items={filter === 'earlier' ? displayEarlier : displayActive}
               sectionLabel={filter === 'earlier' ? 'Earlier' : 'Active'}
               applyAction={applyAction}
+              markAsRead={markAsRead}
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   );

@@ -2510,6 +2510,8 @@ const mapNotificationCenterRow = (row, maps) => {
     focusPayload,
     actions: Array.from(new Set((actions || []).map((action) => String(action).trim()).filter(Boolean))),
     scheduledFor: row.scheduled_for,
+    unread: actionTaken !== 'open',
+    readAt: actionTaken === 'open' ? row.updated_at ?? null : null,
     deliveredInAppAt: row.delivered_in_app_at ?? null,
     deliveredDesktopAt: row.delivered_desktop_at ?? null,
     dismissedAt: row.dismissed_at ?? null,
@@ -2551,12 +2553,14 @@ const getNotificationCenterItems = async (userId, workspaceId = null) => {
   const items = rows.map((row) => mapNotificationCenterRow(row, maps));
   const active = items.filter((item) => item.status === 'active');
   const earlier = items.filter((item) => item.status !== 'active');
+  const unread = items.filter((item) => item.unread);
 
   return {
     active,
     earlier,
     counts: {
       active: active.length,
+      unread: unread.length,
       earlier: earlier.length,
       total: items.length,
     },
@@ -11107,6 +11111,46 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
         });
       })
     );
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notifications/read-all', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = normalizeNullableText(req.headers['x-workspace-id']);
+    let workspace = null;
+    if (workspaceId && workspaceId !== 'all') {
+      const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+      workspace = access.workspace;
+    }
+
+    let query = supabase
+      .from('notification_events')
+      .select('id, action_taken')
+      .eq('user_id', req.authUser.id)
+      .not('delivered_in_app_at', 'is', null)
+      .is('dismissed_at', null);
+    if (workspace) query = query.eq('workspace_id', workspace.id);
+
+    const { data: rows, error: rowsError } = await query;
+    if (rowsError) throw rowsError;
+
+    const ids = (Array.isArray(rows) ? rows : [])
+      .filter((row) => !['dismiss', 'snooze', 'complete', 'open'].includes(String(row.action_taken ?? '').trim().toLowerCase()))
+      .map((row) => row.id)
+      .filter(Boolean);
+
+    if (ids.length > 0) {
+      const { error: updateError } = await supabase
+        .from('notification_events')
+        .update({ action_taken: 'open', updated_at: new Date().toISOString() })
+        .in('id', ids)
+        .eq('user_id', req.authUser.id);
+      if (updateError) throw updateError;
+    }
+
+    res.json({ ok: true, count: ids.length });
   } catch (error) {
     return respondWithError(res, error);
   }

@@ -5140,16 +5140,16 @@ export const ProjectsWindow = () => {
 
   const renderProjectsTimelineOverview = () => {
     const timelineMonthWidth = 220;
-    const timelineRowPitch = 126;
-    const timelineBarHeight = 42;
+    const timelineRowPitch = 108;
+    const timelineBarHeight = 24;
     const timelineWidth = Math.max(1180, timelineMonths.length * timelineMonthWidth);
     const timelineCanvasHeight = Math.max(
       800,
       viewportHeight - 220,
-      240 + visibleDatedProjects.length * timelineRowPitch
+      220 + visibleDatedProjects.length * timelineRowPitch
     );
     const timelineBodyHeight = Math.max(680, timelineCanvasHeight - 72);
-    const timelineSubdivisions = 4;
+    const timelineSubdivisions = 5;
     const todayLeft = getTimelinePositionFromDate(todayKey());
     const showTodayMarker = todayLeft > 0 && todayLeft < 100;
     const [todayMonthLabel, todayDayLabel] = formatShortDate(todayKey()).split(' ');
@@ -5430,18 +5430,15 @@ export const ProjectsWindow = () => {
                               className="pointer-events-none absolute z-[7] -translate-x-1/2"
                               style={{ left: `${dateToX(todayKey())}%`, top: 0, bottom: 0 }}
                             >
-                              <span className="absolute left-1/2 top-4 z-[8] flex min-w-[38px] -translate-x-1/2 items-center justify-center rounded-full bg-[var(--ledger-accent)] px-2 py-0.5 text-[10px] font-semibold leading-none text-white shadow-[0_10px_20px_rgba(255,95,64,0.18)]">
-                                <span className="flex flex-col items-center justify-center gap-0.5 text-center">
-                                  <span className="block">{todayMonthLabel}</span>
-                                  <span className="block">{todayDayLabel}</span>
-                                </span>
+                                  <span className="absolute left-1/2 top-3 z-[8] flex -translate-x-1/2 items-center justify-center rounded-md bg-[var(--ledger-accent)] px-1.5 py-1 text-[10px] font-semibold leading-none text-white">
+                                <span className="tabular-nums">{todayMonthLabel} {todayDayLabel}</span>
                               </span>
                               <span
-                                className="absolute left-1/2 top-[38px] bottom-0 w-px -translate-x-1/2 bg-[var(--ledger-accent)]/60"
+                                className="absolute left-1/2 top-[34px] bottom-0 w-px -translate-x-1/2 bg-[var(--ledger-accent)]/55"
                                 aria-hidden="true"
                               />
                               <span
-                                className="absolute left-1/2 top-[38px] z-[8] h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-[var(--ledger-accent)]/75"
+                                className="absolute left-1/2 top-[34px] z-[8] h-0.5 w-0.5 -translate-x-1/2 rounded-full bg-[var(--ledger-accent)]/75"
                                 aria-hidden="true"
                               />
                             </div>
@@ -5524,9 +5521,15 @@ export const ProjectsWindow = () => {
                                     0,
                                     Math.min(100, Number(project.completeness) || 0)
                                   );
-                                  const barTop =
-                                    82 + index * timelineRowPitch + (index % 2 === 0 ? 0 : 24);
-                                  const labelTop = Math.max(20, barTop - 36);
+                                  const todayDate = parseTimelineDate(todayKey());
+                                  const projectEndDate = parseTimelineDate(project.end_date);
+                                  const isOverdueProject = Boolean(
+                                    semantic !== 'completed' &&
+                                      projectEndDate &&
+                                      todayDate &&
+                                      projectEndDate < todayDate
+                                  );
+                                  const barTop = 46 + index * timelineRowPitch;
                                   const stats = projectTaskStats.get(project.id) ?? {
                                     active: 0,
                                     completed: 0,
@@ -5547,7 +5550,6 @@ export const ProjectsWindow = () => {
                                             milestoneDate < timelineRange.end
                                           );
                                         });
-                                  const todayDate = parseTimelineDate(todayKey());
                                   const todayX = dateToX(todayKey());
                                   const sortedMilestoneLayouts = visibleProjectMilestones
                                     .map((milestone) => {
@@ -5622,6 +5624,23 @@ export const ProjectsWindow = () => {
                                       return { ...layout, labelLane: lane };
                                     })
                                     .sort((left, right) => left.markerX - right.markerX);
+                                  const milestoneClusters: Array<typeof milestoneLayouts> = [];
+                                  for (const layout of milestoneLayouts) {
+                                    const previous = milestoneClusters[milestoneClusters.length - 1];
+                                    if (previous && Math.abs(layout.markerX - previous[0].markerX) < 18) {
+                                      previous.push(layout);
+                                    } else {
+                                      milestoneClusters.push([layout]);
+                                    }
+                                  }
+                                  const clusteredMilestoneLayouts = milestoneClusters.flatMap((cluster) =>
+                                    cluster.map((layout, clusterIndex) => ({
+                                      ...layout,
+                                      clusterIndex,
+                                      clusterSize: cluster.length,
+                                      isClusterLabel: clusterIndex === 0,
+                                    }))
+                                  );
                                   return (
                                     <div
                                       key={project.id}
@@ -5675,12 +5694,12 @@ export const ProjectsWindow = () => {
                                       )} · ${stats.active} active actions · ${
                                         overviewNoteLinkCounts[project.id] ?? 0
                                       } notes`}
-                                      className={`absolute left-0 block h-28 w-full text-left ${
+                                      className={`absolute left-0 block h-[100px] w-full text-left ${
                                         isMilestonePlacementActive
                                           ? 'cursor-crosshair'
                                           : 'cursor-default'
                                       }`}
-                                      style={{ top: `${barTop - 52}px` }}
+                                      style={{ top: `${barTop - 28}px` }}
                                     >
                                       {isMilestonePlacementActive &&
                                         milestoneHover?.projectId === project.id &&
@@ -5715,16 +5734,23 @@ export const ProjectsWindow = () => {
                                         onContextMenu={(event) =>
                                           handleTimelineProjectRowContextMenu(event, project.id)
                                         }
-                                        className="absolute rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_10px_28px_rgba(17,24,39,0.05)] transition hover:border-[color:var(--ledger-border-strong)] hover:shadow-[0_14px_34px_rgba(17,24,39,0.08)]"
+                                        aria-label={`Open ${project.name}`}
+                                        className={`group/bar absolute overflow-hidden rounded-[5px] border bg-[var(--ledger-surface-muted)] transition hover:border-[color:var(--ledger-border-strong)] ${
+                                          selectedProjectId === project.id
+                                            ? 'border-[color:var(--ledger-accent)]/60 bg-[var(--ledger-surface-hover)]'
+                                            : 'border-[color:var(--ledger-border-subtle)]'
+                                        } ${isOverdueProject ? 'border-dashed border-amber-500/45' : ''}`}
                                         style={{
                                           left: `${lane.left}%`,
-                                          top: '52px',
+                                          top: '28px',
                                           width: `${Math.max(5, lane.width)}%`,
                                           height: `${timelineBarHeight}px`,
                                         }}
                                       >
                                         <div
-                                          className="h-full rounded-[inherit] opacity-20"
+                                          className={`h-full rounded-[inherit] transition-opacity group-hover/bar:opacity-90 ${
+                                            semantic === 'paused' ? 'opacity-35' : 'opacity-75'
+                                          }`}
                                           style={{
                                             width: `${
                                               semantic === 'completed' ? 100 : completeness
@@ -5732,8 +5758,14 @@ export const ProjectsWindow = () => {
                                             backgroundColor: project.color || '#FF5F40',
                                           }}
                                         />
+                                        {isOverdueProject && (
+                                          <span
+                                            className="pointer-events-none absolute inset-y-0 right-0 w-1/4 border-l border-dashed border-amber-500/55 bg-amber-500/10"
+                                            aria-hidden="true"
+                                          />
+                                        )}
                                       </button>
-                                      {milestoneLayouts.map(
+                                      {clusteredMilestoneLayouts.map(
                                         ({
                                           milestone,
                                           markerLeft,
@@ -5741,12 +5773,18 @@ export const ProjectsWindow = () => {
                                           labelLane,
                                           isActive,
                                           isOverdue,
+                                          clusterIndex,
+                                          clusterSize,
+                                          isClusterLabel,
                                         }) => {
                                           return (
                                             <div
                                               key={milestone.id}
                                               className="group absolute z-[3] -translate-x-1/2"
-                                              style={{ left: `${markerLeft}%`, top: '64px' }}
+                                              style={{
+                                                left: `calc(${markerLeft}% + ${(clusterIndex - (clusterSize - 1) / 2) * 6}px)`,
+                                                top: '35px',
+                                              }}
                                             >
                                               <span
                                                 title={`${milestone.title}\n${
@@ -5772,41 +5810,40 @@ export const ProjectsWindow = () => {
                                                     'milestone'
                                                   )
                                                 }
-                                                className={`mx-auto flex h-[18px] w-[18px] rotate-45 items-center justify-center rounded-[4px] border shadow-[0_8px_18px_rgba(17,24,39,0.05)] transition ${
+                                                className={`mx-auto flex h-[10px] w-[10px] rotate-45 items-center justify-center rounded-[2px] border transition group-hover:scale-125 ${
                                                   isActive
-                                                    ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
+                                                    ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] ring-2 ring-[var(--ledger-accent)]/20'
                                                     : milestone.completed
-                                                    ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-text-muted)]/70'
+                                                    ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
                                                     : isOverdue
-                                                    ? 'border-[color:rgba(217,45,32,0.46)] bg-[var(--ledger-surface-card)]'
-                                                    : 'border-[color:var(--ledger-accent)] bg-[var(--ledger-surface-card)]'
+                                                    ? 'border-amber-500/70 bg-amber-500/10'
+                                                    : 'border-[color:var(--ledger-text-muted)]/65 bg-[var(--ledger-surface-card)]'
                                                 }`}
                                               >
-                                                {milestone.completed && (
-                                                  <CheckCircle2
-                                                    size={11}
-                                                    className="-rotate-45 text-[var(--ledger-surface-card)] opacity-0 transition group-hover:opacity-100"
-                                                  />
-                                                )}
                                                 {isActive && (
                                                   <span
-                                                    className="h-1.5 w-1.5 rounded-full bg-white"
+                                                    className="h-1.5 w-1.5 -rotate-45 rounded-full bg-white"
                                                     aria-hidden="true"
                                                   />
                                                 )}
                                               </span>
-                                              {labelVisible && (
+                                              {labelVisible && isClusterLabel && (
                                                 <span
-                                                  className={`absolute left-1/2 w-36 -translate-x-1/2 truncate text-center text-[11px] font-medium leading-tight text-[var(--ledger-text-muted)] ${
+                                                  className={`absolute left-1/2 top-[17px] flex w-36 -translate-x-1/2 items-center justify-center gap-1 text-[11px] font-medium leading-4 text-[var(--ledger-text-muted)] ${
                                                     milestone.completed
                                                       ? 'opacity-55'
                                                       : 'opacity-[0.82]'
                                                   }`}
                                                   style={{
-                                                    top: `${22 + labelLane * 16}px`,
+                                                    top: `${17 + labelLane * 14}px`,
                                                   }}
                                                 >
-                                                  {milestone.title}
+                                                  <span className="max-w-32 truncate">{milestone.title}</span>
+                                                  {clusterSize > 1 && (
+                                                    <span className="shrink-0 rounded bg-[var(--ledger-surface-muted)] px-1 text-[10px] tabular-nums text-[var(--ledger-text-muted)]">
+                                                      +{clusterSize - 1}
+                                                    </span>
+                                                  )}
                                                 </span>
                                               )}
                                             </div>
@@ -5815,10 +5852,10 @@ export const ProjectsWindow = () => {
                                       )}
                                       {pendingMilestone?.projectId === project.id && (
                                         <span
-                                          className="pointer-events-none absolute z-[4] flex h-[18px] w-[18px] -translate-x-1/2 rotate-45 items-center justify-center rounded-[4px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
+                                          className="pointer-events-none absolute z-[4] flex h-[10px] w-[10px] -translate-x-1/2 rotate-45 items-center justify-center rounded-[2px] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]/20"
                                           style={{
                                             left: `${dateToX(pendingMilestone.date)}%`,
-                                            top: '64px',
+                                            top: '35px',
                                           }}
                                         />
                                       )}
@@ -5852,7 +5889,7 @@ export const ProjectsWindow = () => {
                                         }
                                         style={{
                                           left: `${Math.max(0, Math.min(94, lane.left))}%`,
-                                          top: `${labelTop - (barTop - 52)}px`,
+                                          top: '0px',
                                         }}
                                       >
                                         {(() => {
@@ -5860,20 +5897,31 @@ export const ProjectsWindow = () => {
                                             project.project_type
                                           ).icon;
                                           return (
-                                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
                                               <ProjectTypeIcon
-                                                size={11}
+                                                size={10}
                                                 style={{ color: project.color || '#FF5F40' }}
                                               />
                                             </span>
                                           );
                                         })()}
-                                        <span className="truncate text-[13px] font-semibold text-[var(--ledger-text-secondary)]">
+                                        <span className="truncate text-[14px] font-semibold leading-4 text-[var(--ledger-text-primary)]">
                                           {project.name}
                                         </span>
-                                        <span className="shrink-0 text-[13px] font-medium text-[var(--ledger-text-muted)]">
+                                        <span className="shrink-0 text-[11px] font-medium leading-4 text-[var(--ledger-text-muted)]">
                                           {projectStatusLabels[semantic]}
                                         </span>
+                                        {(stats.active > 0 ||
+                                          (overviewNoteLinkCounts[project.id] ?? 0) > 0 ||
+                                          workspaceEvents.some((event) => event.project_id === project.id)) && (
+                                          <span className="ml-0.5 flex shrink-0 items-center gap-1 text-[var(--ledger-text-muted)]/65">
+                                            {stats.active > 0 && <CircleDot size={12} />}
+                                            {(overviewNoteLinkCounts[project.id] ?? 0) > 0 && <FileText size={12} />}
+                                            {workspaceEvents.some((event) => event.project_id === project.id) && (
+                                              <CalendarDays size={12} />
+                                            )}
+                                          </span>
+                                        )}
                                       </button>
                                     </div>
                                   );
@@ -6546,7 +6594,7 @@ export const ProjectsWindow = () => {
               </div>
 
               <div
-                className={`flex-1 overflow-auto ${isCompactLayout ? 'p-2.5' : 'p-3'} space-y-2`}
+                className={`flex-1 overflow-auto ${isCompactLayout ? 'p-2' : 'p-2.5'} space-y-1`}
               >
                 {isLoadingProjects ? (
                   <div className="space-y-2">
@@ -6607,15 +6655,15 @@ export const ProjectsWindow = () => {
                             projectId: project.id,
                           });
                         }}
-                        className={`group relative w-full rounded-lg border px-3 py-2.5 text-left transition ${
+                        className={`group relative w-full rounded-md border border-transparent px-2.5 py-1.5 text-left transition ${
                           active
-                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)]'
-                            : 'border-transparent bg-transparent hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]'
+                            ? 'bg-[var(--ledger-surface-hover)]'
+                            : 'bg-transparent hover:bg-[var(--ledger-surface-hover)]'
                         }`}
                         title={project.name}
                       >
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex min-w-0 items-center gap-1.5">
                             <span
                               className="h-1.5 w-1.5 shrink-0 rounded-full"
                               style={{
@@ -6628,14 +6676,16 @@ export const ProjectsWindow = () => {
                               {project.name}
                             </p>
                           </div>
-                          <p className="mt-1 text-[11px] text-[var(--ledger-text-secondary)]">
-                            {statusLabel} · {actionLabel}
-                          </p>
-                          <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">
-                            {dueLabel}
-                          </p>
+                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-4">
+                            <span className="shrink-0 text-[var(--ledger-text-secondary)]">
+                              {statusLabel} · {actionLabel}
+                            </span>
+                            <span className="truncate text-[var(--ledger-text-muted)]">
+                              · {dueLabel}
+                            </span>
+                          </div>
                         </div>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]/90">
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]/90">
                           <div
                             className="h-full rounded-full"
                             style={{
