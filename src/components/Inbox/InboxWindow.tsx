@@ -3059,14 +3059,43 @@ export default function IntakeWindow() {
         <div className="flex h-full min-h-0 flex-col px-6 py-5">
           <div className="min-h-0 flex-1 overflow-hidden">
             {isLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center">
-                  <Loader2
-                    size={20}
-                    className="mx-auto mb-2 animate-spin text-[var(--ledger-text-muted)]"
-                  />
-                  <p className={`text-sm ${inboxTheme.mutedText}`}>Loading Intake...</p>
-                </div>
+              <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] animate-pulse">
+                <section className="min-h-0 overflow-hidden bg-[var(--ledger-surface-card)]">
+                  <div className="flex h-12 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4">
+                    <div className="h-3.5 w-24 rounded bg-[var(--ledger-surface-hover)]" />
+                    <div className="h-8 w-44 rounded-lg bg-[var(--ledger-surface-muted)]" />
+                  </div>
+                  <div className="divide-y divide-[color:var(--ledger-border-subtle)] px-2">
+                    {Array.from({ length: 7 }).map((_, index) => (
+                      <div key={index} className="flex items-center gap-3 px-2 py-3">
+                        <div className="h-7 w-7 shrink-0 rounded-lg bg-[var(--ledger-surface-muted)]" />
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div
+                            className={`h-3.5 rounded bg-[var(--ledger-surface-hover)] ${
+                              index % 3 === 0 ? 'w-3/5' : index % 3 === 1 ? 'w-4/5' : 'w-2/3'
+                            }`}
+                          />
+                          <div className="h-3 w-2/5 rounded bg-[var(--ledger-surface-muted)]" />
+                        </div>
+                        <div className="h-3 w-12 rounded bg-[var(--ledger-surface-muted)]" />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+                <aside className="min-h-0 border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                  <div className="flex h-12 items-center border-b border-[color:var(--ledger-border-subtle)] px-4">
+                    <div className="h-3.5 w-28 rounded bg-[var(--ledger-surface-hover)]" />
+                  </div>
+                  <div className="space-y-4 px-4 py-5">
+                    <div className="h-3 w-20 rounded bg-[var(--ledger-surface-muted)]" />
+                    <div className="h-5 w-4/5 rounded bg-[var(--ledger-surface-hover)]" />
+                    <div className="space-y-2 pt-3">
+                      <div className="h-3 w-full rounded bg-[var(--ledger-surface-muted)]" />
+                      <div className="h-3 w-5/6 rounded bg-[var(--ledger-surface-muted)]" />
+                      <div className="h-3 w-2/3 rounded bg-[var(--ledger-surface-muted)]" />
+                    </div>
+                  </div>
+                </aside>
               </div>
             ) : error ? (
               <div className="flex h-full items-center justify-center">

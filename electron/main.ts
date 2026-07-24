@@ -5059,9 +5059,9 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   const isHorizontalDock = currentSidebarPosition === 'top' || currentSidebarPosition === 'bottom';
   const shouldRefreshLedgerWorkspaceDock =
     currentSidebarPosition === 'floating' &&
-    isLedgerWindowDockTarget() &&
+    Boolean(workspaceModuleWin && !workspaceModuleWin.isDestroyed()) &&
     Boolean(workspaceModuleKind) &&
-    Boolean(workspaceModuleWin && !workspaceModuleWin.isDestroyed());
+    shouldAttachWorkspaceWindowToSidebar();
   if (currentSidebarPosition === 'floating' && currentFloatingDockTarget) {
     holdCurrentFloatingDockTarget(2000);
   }
