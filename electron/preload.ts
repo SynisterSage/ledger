@@ -59,6 +59,7 @@ type ModuleWindowKind =
   | 'quick-reminder';
 type ModuleFocusPayload = {
   kind: ModuleWindowKind;
+  historyMode?: 'push' | 'replace';
   focusDate?: string | null;
   focusProjectId?: string | null;
   focusNoteId?: string | null;

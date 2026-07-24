@@ -741,6 +741,7 @@ type ModuleWindowKind =
   | 'quick-reminder';
 type ModuleFocusPayload = {
   kind: ModuleWindowKind;
+  historyMode?: 'push' | 'replace';
   focusDate?: string | null;
   focusProjectId?: string | null;
   focusNoteId?: string | null;
@@ -5788,19 +5789,31 @@ function removeWorkspaceRouteFromHistory(route: WorkspaceModuleRoute) {
   removeMatching(workspaceModuleRecentRoutes);
 }
 
-function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute) {
+function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute, pushHistory = true) {
   const moduleWin = workspaceModuleWin;
   if (!moduleWin || moduleWin.isDestroyed()) return false;
+  if (!pushHistory) {
+    // Calendar date changes are view state, not separate workspace destinations.
+    // Drop any legacy same-module entries so an existing process cannot replay
+    // stale day-by-day Calendar routes after the renderer switches to replace mode.
+    for (const stack of [workspaceModuleBackStack, workspaceModuleForwardStack]) {
+      for (let index = stack.length - 1; index >= 0; index -= 1) {
+        if (stack[index].kind === route.kind) stack.splice(index, 1);
+      }
+    }
+  }
   const currentRoute = getCurrentWorkspaceRoute();
   if (currentRoute && isSameWorkspaceRoute(currentRoute, route)) {
     broadcastWorkspaceNavigationState();
     return true;
   }
 
-  if (currentRoute) {
+  if (currentRoute && pushHistory) {
     workspaceModuleBackStack.push(currentRoute);
   }
-  workspaceModuleForwardStack.length = 0;
+  if (pushHistory) {
+    workspaceModuleForwardStack.length = 0;
+  }
 
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
   recordWorkspaceRoute(route);
@@ -7029,7 +7042,8 @@ ipcMain.handle('window:workspace-route-changed', (event, payload: ModuleFocusPay
         payload.focusTaskId,
         payload.focusContext,
         payload.focusSection
-      )
+      ),
+      payload.historyMode !== 'replace'
     );
   }
   return updateWorkspaceModuleRoute(
@@ -7041,7 +7055,8 @@ ipcMain.handle('window:workspace-route-changed', (event, payload: ModuleFocusPay
       payload.focusTaskId,
       payload.focusContext,
       payload.focusSection
-    )
+    ),
+    payload.historyMode !== 'replace'
   );
 });
 

@@ -7,6 +7,7 @@ import {
   BellRing,
   ClipboardPaste,
   CalendarPlus,
+  Clock3,
   Palette,
   PencilLine,
   Trash2,
@@ -33,7 +34,6 @@ import {
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
-import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import {
   decodeSmartDateComposerContext,
   type SmartDateComposerContext,
@@ -230,8 +230,8 @@ type ListContextMenuState = {
 type CalendarViewMode = 'day' | 'week' | 'month';
 
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const CALENDAR_DAY_START_HOUR = 8;
-const CALENDAR_DAY_END_HOUR = 21;
+const CALENDAR_DAY_START_HOUR = 0;
+const CALENDAR_DAY_END_HOUR = 23;
 const hours = Array.from(
   { length: CALENDAR_DAY_END_HOUR - CALENDAR_DAY_START_HOUR + 1 },
   (_, i) => `${i + CALENDAR_DAY_START_HOUR}:00`
@@ -242,7 +242,7 @@ const SIDEBAR_MIN_WIDTH = modulePaneSizing.calendar.left.min;
 const SIDEBAR_MAX_WIDTH = 460;
 const INSPECTOR_MIN_WIDTH = modulePaneSizing.calendar.right.min;
 const INSPECTOR_MAX_WIDTH = 420;
-const TIMELINE_HOUR_HEIGHT = 64;
+const TIMELINE_HOUR_HEIGHT = 68;
 
 const startOfWeek = (date: Date, weekStartsOn: 'sunday' | 'monday' = 'monday') => {
   const d = new Date(date);
@@ -733,6 +733,10 @@ export const CalendarWindow = () => {
   const api = useApi();
   const viewportWidth = useViewportWidth();
   const centerScrollRef = useRef<HTMLDivElement | null>(null);
+  const monthGridRef = useRef<HTMLDivElement | null>(null);
+  const hasAutoScrolledToNowRef = useRef(false);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [monthCellHeight, setMonthCellHeight] = useState(122);
   const hasLoadedDataRef = useRef(false);
   const calendarDataCacheRef = useRef(new Map<string, CalendarDataCacheEntry>());
   const hasAppliedInitialFocusContextRef = useRef(false);
@@ -911,6 +915,11 @@ export const CalendarWindow = () => {
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [overflowDayKey, setOverflowDayKey] = useState<string | null>(null);
   const areSidePanelsCollapsed = isLeftPaneCollapsed && isRightPaneCollapsed;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentTime(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleCalendarWorkspaceRefresh = useCallback(() => {
     setCalendarRefreshToken((current) => current + 1);
@@ -1145,34 +1154,6 @@ export const CalendarWindow = () => {
     }
   };
   useEffect(() => {
-    const applyFocusDate = (focusDate: string) => {
-      const date = parseValidCalendarDate(focusDate);
-      if (!date) return;
-      date.setHours(0, 0, 0, 0);
-      setViewAnchor(date);
-    };
-
-    if (initialFocusDate) {
-      applyFocusDate(initialFocusDate);
-    }
-
-    const focusDateListener = (
-      _event: unknown,
-      payload: { kind?: string; focusDate?: string | null }
-    ) => {
-      if (payload?.kind === 'calendar' && payload.focusDate) {
-        applyFocusDate(payload.focusDate);
-      }
-    };
-
-    window.ipcRenderer?.on('module:focus-date', focusDateListener);
-
-    return () => {
-      window.ipcRenderer?.off('module:focus-date', focusDateListener);
-    };
-  }, [initialFocusDate]);
-
-  useEffect(() => {
     const applyFocusContext = (focusContext: string | null | undefined) => {
       if (!focusContext) return;
       if (focusContext.startsWith('smart-date-create:')) {
@@ -1262,13 +1243,16 @@ export const CalendarWindow = () => {
     if (viewMode === 'month') {
       const monthStart = startOfMonth(viewAnchor);
       const start = startOfMonthGrid(viewAnchor);
-      const end = addDays(start, 42);
+      const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+      const leadingDays = Math.round((monthStart.getTime() - start.getTime()) / 86_400_000);
+      const gridLength = Math.ceil((leadingDays + daysInMonth) / 7) * 7;
+      const end = addDays(start, gridLength);
       const monthLabel = monthStart.toLocaleDateString([], { month: 'long', year: 'numeric' });
       return {
         label: monthLabel,
         start,
         end,
-        dates: Array.from({ length: 42 }, (_, i) => addDays(start, i)),
+        dates: Array.from({ length: gridLength }, (_, i) => addDays(start, i)),
       };
     }
 
@@ -1290,6 +1274,46 @@ export const CalendarWindow = () => {
       dates,
     };
   }, [viewAnchor, viewMode, calendarPreferences.showWeekends, calendarPreferences.weekStartsOn]);
+
+  const todayKey = formatDateKey(currentTime);
+  const visibleToday = viewConfig.dates.some((date) => formatDateKey(date) === todayKey);
+  const todayColumnIndex = viewConfig.dates.findIndex((date) => formatDateKey(date) === todayKey);
+  const currentTimeMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+
+  useEffect(() => {
+    hasAutoScrolledToNowRef.current = false;
+  }, [viewAnchor, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== 'month') return;
+    const grid = monthGridRef.current;
+    if (!grid) return;
+
+    const measure = () => {
+      const cell = grid.querySelector<HTMLElement>('[data-month-cell="true"]');
+      if (cell) setMonthCellHeight(cell.getBoundingClientRect().height);
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [viewMode, viewConfig.dates.length]);
+
+  useEffect(() => {
+    if (viewMode === 'month' || !visibleToday || hasAutoScrolledToNowRef.current) return;
+    const container = centerScrollRef.current;
+    if (!container) return;
+
+    const hour = container.querySelector<HTMLElement>(
+      `[data-timeline-hour="${currentTime.getHours()}"]`
+    );
+    if (!hour) return;
+
+    const target = Math.max(0, hour.offsetTop - container.clientHeight * 0.36);
+    container.scrollTop = target;
+    hasAutoScrolledToNowRef.current = true;
+  }, [currentTime, viewMode, visibleToday]);
 
   const visibleCalendarIdsMemo = useMemo(() => {
     return new Set(calendars.filter((calendar) => calendar.is_visible !== false).map((c) => c.id));
@@ -1543,6 +1567,42 @@ export const CalendarWindow = () => {
     calendarPreferences.showRemindersOnCalendar,
   ]);
 
+  const timelineEventOffsets = useMemo(() => {
+    const offsets = new Map<string, number>();
+    for (const dayDate of viewConfig.dates) {
+      const key = formatDateKey(dayDate);
+      const dayEvents = (eventsByDay[key] ?? [])
+        .filter((event) => !event.all_day)
+        .filter((event) => {
+          const start = new Date(event.start_at);
+          const end = new Date(event.end_at);
+          const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+          return !(
+            start.getHours() === 0 &&
+            start.getMinutes() === 0 &&
+            end.getHours() === 0 &&
+            end.getMinutes() === 0 &&
+            durationMinutes >= 1380
+          );
+        })
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+
+      for (const [index, event] of dayEvents.entries()) {
+        const start = new Date(event.start_at).getTime();
+        const overlapDepth = dayEvents.slice(0, index).filter((previous) => {
+          const previousStart = new Date(previous.start_at).getTime();
+          const previousEnd = new Date(previous.end_at).getTime();
+          return previousStart <= start && previousEnd > start;
+        }).length;
+        const remindersBeforeEvent = (remindersByDay[key] ?? []).filter(
+          (reminder) => new Date(reminder.remind_at).getTime() <= start
+        ).length;
+        offsets.set(event.id, overlapDepth + remindersBeforeEvent);
+      }
+    }
+    return offsets;
+  }, [eventsByDay, remindersByDay, viewConfig.dates]);
+
   const selectedContextDate = selectedEventPreview
     ? new Date(selectedEventPreview.start_at)
     : selectedReminder
@@ -1696,9 +1756,9 @@ export const CalendarWindow = () => {
     if (isAllDayEvent(event)) return 'All day';
     const start = new Date(event.start_at);
     const end = new Date(event.end_at);
-    const startLabel = formatCalendarTime(start);
-    const endLabel = formatCalendarTime(end);
-    return `${startLabel} – ${endLabel}`;
+    const startLabel = formatCalendarTime(start).replace(':00', '');
+    const endLabel = formatCalendarTime(end).replace(':00', '');
+    return `${startLabel}–${endLabel}`;
   };
   const getDurationDisplay = (minutes: number) => {
     if (minutes >= 60 && minutes % 60 === 0) {
@@ -2540,14 +2600,16 @@ export const CalendarWindow = () => {
     setViewAnchor(new Date());
   };
 
-  useWorkspaceRouteHistory(
-    {
-      kind: 'calendar',
-      focusDate: formatDateKey(viewAnchor),
-      focusSection: viewMode,
-    },
-    true
-  );
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('focusDate', formatDateKey(viewAnchor));
+    params.set('section', viewMode);
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}?${params.toString()}${window.location.hash}`
+    );
+  }, [viewAnchor, viewMode]);
 
   const createQuickEvent = async () => {
     if (!user || !newEventTitle.trim() || calendars.length === 0) return;
@@ -3944,8 +4006,8 @@ export const CalendarWindow = () => {
           </div>
         )}
 
-        <section className="flex-1 min-w-0 p-2.5">
-          <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+        <section className="flex-1 min-w-0 p-3">
+          <div className="flex h-full flex-col overflow-hidden rounded-[19px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
             <div
               ref={centerScrollRef}
               className="flex-1 min-w-0 overflow-auto"
@@ -3966,12 +4028,15 @@ export const CalendarWindow = () => {
               {isInitialLoading ? (
                 loadingSkeleton
               ) : viewMode === 'month' ? (
-                <div className="min-w-210 p-3">
-                  <div className="grid grid-cols-7 overflow-hidden rounded-t-lg border-l border-t border-[color:var(--ledger-border-subtle)]">
+                <div className="min-w-[720px]">
+                  <div
+                    ref={monthGridRef}
+                    className="grid grid-cols-7 border-l border-t border-[color:var(--ledger-border-subtle)]"
+                  >
                     {days.map((day) => (
                       <div
                         key={day}
-                        className="flex h-10 items-center justify-center border-b border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-xs font-semibold text-[var(--ledger-text-secondary)]"
+                        className="sticky top-0 z-20 flex h-9 items-center justify-center border-b border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[11px] font-medium tracking-wide text-[var(--ledger-text-muted)]"
                       >
                         {day}
                       </div>
@@ -3980,18 +4045,39 @@ export const CalendarWindow = () => {
                       const key = formatDateKey(dayDate);
                       const dayEvents = eventsByDay[key] ?? [];
                       const dayReminders = remindersByDay[key] ?? [];
-                      const visibleEvents = dayEvents.slice(0, 2);
-                      const visibleReminders = dayReminders.slice(0, 1);
+                      const monthRowHeight = 16;
+                      const monthRowGap = 2;
+                      const monthContentHeight = Math.max(0, monthCellHeight - 8 - 24);
+                      let usedMonthContentHeight = 0;
+                      const visibleReminders: ReminderRow[] = [];
+                      const visibleEvents: EventRow[] = [];
+
+                      for (const reminder of dayReminders) {
+                        const rowHeight =
+                          monthRowHeight +
+                          (visibleReminders.length + visibleEvents.length > 0 ? monthRowGap : 0);
+                        if (usedMonthContentHeight + rowHeight > monthContentHeight) break;
+                        visibleReminders.push(reminder);
+                        usedMonthContentHeight += rowHeight;
+                      }
+
+                      for (const event of dayEvents) {
+                        const rowHeight =
+                          monthRowHeight +
+                          (visibleReminders.length + visibleEvents.length > 0 ? monthRowGap : 0);
+                        if (usedMonthContentHeight + rowHeight > monthContentHeight) break;
+                        visibleEvents.push(event);
+                        usedMonthContentHeight += rowHeight;
+                      }
+
                       const extraCount =
-                        dayEvents.length +
-                        dayReminders.length -
-                        visibleEvents.length -
-                        visibleReminders.length;
+                        dayEvents.length + dayReminders.length - visibleEvents.length - visibleReminders.length;
                       const inMonth = dayDate.getMonth() === viewAnchor.getMonth();
 
                       return (
                         <button
                           key={key}
+                          data-month-cell="true"
                           onClick={() => {
                             setSelectedEvent(null);
                             setSelectedReminder(null);
@@ -4007,45 +4093,41 @@ export const CalendarWindow = () => {
                               hour: 9,
                             });
                           }}
-                          className={`min-h-29 border-b border-r border-[color:var(--ledger-border-subtle)] p-2 text-left align-top transition-colors hover:bg-[var(--ledger-surface-hover)] ${
+                          className={`relative min-h-[122px] border-b border-r border-[color:var(--ledger-border-subtle)] p-1 text-left align-top transition-colors hover:bg-[var(--ledger-surface-hover)] ${
                             inMonth
                               ? 'bg-[var(--ledger-surface-card)]'
                               : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'
                           }`}
                         >
-                          <div className="flex items-start justify-between">
+                          <div className="absolute right-4 top-1.5 z-10 flex h-6 items-start justify-end">
                             <span
-                              className={`text-xs font-semibold ${
-                                inMonth
+                              className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[11px] font-medium tabular-nums ${
+                                key === todayKey
+                                  ? 'bg-[var(--ledger-accent)] text-white'
+                                  : inMonth
                                   ? 'text-[var(--ledger-text-primary)]'
                                   : 'text-[var(--ledger-text-muted)]'
                               }`}
                             >
                               {dayDate.getDate()}
                             </span>
-                            {dayEvents.length + dayReminders.length > 0 && (
-                              <span className="text-[10px] text-[var(--ledger-text-muted)]">
-                                {dayEvents.length + dayReminders.length}
-                              </span>
-                            )}
                           </div>
-                          <div className="mt-2 space-y-1">
+                          <div className="space-y-0.5 pt-5">
                             {visibleReminders.map((reminder) =>
                               (() => {
                                 const pastReminder = isPastReminder(reminder);
                                 return (
                                   <div
                                     key={reminder.id}
-                                    className={`truncate rounded-md border px-1.5 py-1 text-[10px] font-medium leading-tight transition-colors ${
-                                      pastReminder ? 'opacity-80' : ''
+                                    className={`flex min-h-4 items-center truncate px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors ${
+                                      reminder.is_done
+                                        ? 'line-through opacity-55'
+                                        : pastReminder
+                                        ? 'opacity-80'
+                                        : ''
                                     }`}
                                     style={{
-                                      backgroundColor: pastReminder
-                                        ? 'var(--ledger-surface-hover)'
-                                        : `${reminder.color ?? '#F59E0B'}2e`,
-                                      borderColor: pastReminder
-                                        ? 'var(--ledger-border-subtle)'
-                                        : `${reminder.color ?? '#F59E0B'}70`,
+                                      backgroundColor: 'transparent',
                                       color: pastReminder
                                         ? 'var(--ledger-text-muted)'
                                         : 'var(--ledger-text-primary)',
@@ -4068,13 +4150,21 @@ export const CalendarWindow = () => {
                                     }}
                                   >
                                     <span
-                                      className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle"
-                                      style={{
-                                        backgroundColor: pastReminder
-                                          ? 'var(--ledger-text-muted)'
-                                          : reminder.color ?? '#F59E0B',
-                                      }}
-                                    />
+                                      className={`mr-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${
+                                        reminder.is_done ? 'border-[var(--ledger-success)] text-[var(--ledger-success)]' : ''
+                                      }`}
+                                      style={
+                                        reminder.is_done
+                                          ? undefined
+                                          : {
+                                              borderColor: pastReminder
+                                                ? 'var(--ledger-text-muted)'
+                                                : reminder.color ?? '#F59E0B',
+                                            }
+                                      }
+                                    >
+                                      {reminder.is_done && <Check size={8} strokeWidth={2.5} />}
+                                    </span>
                                     {reminder.title}
                                   </div>
                                 );
@@ -4082,16 +4172,13 @@ export const CalendarWindow = () => {
                             )}
                             {visibleEvents.map((event) =>
                               (() => {
-                                const meta = getEventStatusMeta(event.status);
                                 const calendarColor = getCalendarColor(event.calendar_id);
                                 const pastEvent = isPastEvent(event);
                                 const pastEventMuted = isPastEventMuted(event);
                                 return (
                                   <div
                                     key={event.id}
-                                    className={`rounded-md border px-2 py-1 text-[10px] leading-tight shadow-sm ${
-                                      meta.previewClass
-                                    } ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
+                                    className={`flex h-4 items-center truncate px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
                                       event.status === 'cancelled' ? 'opacity-65' : ''
                                     } ${pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''} ${
                                       pastEvent && !pastEventMuted
@@ -4099,12 +4186,7 @@ export const CalendarWindow = () => {
                                         : ''
                                     }`}
                                     style={{
-                                      backgroundColor: pastEvent
-                                        ? 'var(--ledger-surface-hover)'
-                                        : `${calendarColor}22`,
-                                      borderColor: pastEvent
-                                        ? 'var(--ledger-border-subtle)'
-                                        : `${calendarColor}44`,
+                                      backgroundColor: 'transparent',
                                       color: pastEvent
                                         ? 'var(--ledger-text-muted)'
                                         : 'var(--ledger-text-primary)',
@@ -4131,14 +4213,13 @@ export const CalendarWindow = () => {
                                     }}
                                   >
                                     <span
-                                      className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${meta.dotClass}`}
-                                      style={{ backgroundColor: calendarColor }}
+                                      className="mr-1 h-3 w-0.5 shrink-0 rounded-full"
+                                      style={{
+                                        backgroundColor: pastEvent
+                                          ? 'var(--ledger-text-muted)'
+                                          : calendarColor,
+                                      }}
                                     />
-                                    {event.status === 'done' && (
-                                      <span className="mr-1 inline-block align-middle text-[12px] text-[var(--ledger-success)]">
-                                        ✓
-                                      </span>
-                                    )}
                                     {pastEvent &&
                                       new Date(event.start_at).getHours() === 0 &&
                                       (() => {
@@ -4180,30 +4261,36 @@ export const CalendarWindow = () => {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3 p-3">
+                <div className="min-w-[720px]">
                   {/* Removed fallback card: events are rendered into the normal day grid, including off-hour rows */}
                   <div
-                    className="grid min-w-210"
+                    className="relative grid min-w-[720px]"
                     style={{
                       gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
                     }}
                   >
-                    <div className="sticky top-0 z-50 h-12 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" />
+                    <div className="sticky top-0 z-50 h-14 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]" />
                     {viewConfig.dates.map((dayDate) => (
                       <div
                         key={dayDate.toISOString()}
-                        className="sticky top-0 z-50 flex h-12 flex-col items-center justify-center border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
+                        className={`sticky top-0 z-50 flex h-14 flex-col items-center justify-center border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] ${
+                          formatDateKey(dayDate) === todayKey ? 'text-[var(--ledger-text-primary)]' : ''
+                        }`}
                       >
-                        <span className="text-xs font-semibold text-[var(--ledger-text-secondary)]">
+                        <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                           {dayDate.toLocaleDateString([], { weekday: 'short' })}
                         </span>
-                        <span className="text-[10px] text-[var(--ledger-text-muted)]">
-                          {dayDate.getMonth() + 1}/{dayDate.getDate()}
+                        <span className={`mt-0.5 flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[12px] font-medium tabular-nums ${
+                          formatDateKey(dayDate) === todayKey
+                            ? 'bg-[var(--ledger-accent)] text-white'
+                            : 'text-[var(--ledger-text-secondary)]'
+                        }`}>
+                          {dayDate.getDate()}
                         </span>
                       </div>
                     ))}
 
-                    <div className="flex h-10 items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]">
+                    <div className="flex h-10 items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-2 pt-1.5 text-[10px] text-[var(--ledger-text-muted)]">
                       All day
                     </div>
                     {viewConfig.dates.map((dayDate) => {
@@ -4217,7 +4304,7 @@ export const CalendarWindow = () => {
                       return (
                         <div
                           key={`all-day-${key}`}
-                          className="relative h-10 border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/30 px-1 py-1"
+                          className="relative h-10 border-b border-l border-[color:var(--ledger-border-subtle)] bg-transparent px-1 py-1"
                         >
                           <div className="space-y-0.5">
                             {visibleAllDayItems.map((evt) => {
@@ -4244,16 +4331,14 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className={`w-full truncate rounded-md border px-2 py-1 text-left text-[10px] leading-tight shadow-sm ${
+                                  className={`w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] leading-tight transition-colors ${
                                     pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''
                                   }`}
                                   style={{
                                     backgroundColor: pastEvent
                                       ? 'var(--ledger-surface-hover)'
                                       : `${eventColor}22`,
-                                    borderColor: pastEvent
-                                      ? 'var(--ledger-border-subtle)'
-                                      : `${eventColor}44`,
+                                    borderLeft: `2px solid ${pastEvent ? 'var(--ledger-text-muted)' : eventColor}`,
                                     color: pastEvent
                                       ? 'var(--ledger-text-muted)'
                                       : 'var(--ledger-text-primary)',
@@ -4291,34 +4376,47 @@ export const CalendarWindow = () => {
                       );
                     })}
 
+                    {visibleToday && (
+                      <div
+                        aria-label={`Current time ${formatCalendarTime(currentTime)}`}
+                        className="pointer-events-none absolute left-0 right-0 z-40"
+                        style={{ top: `${56 + 40 + (currentTimeMinutes / 60) * TIMELINE_HOUR_HEIGHT}px` }}
+                      >
+                        <span className="absolute -top-2 left-4 z-50 rounded-full bg-[var(--ledger-accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-white shadow-sm">
+                          {formatCalendarTime(currentTime)}
+                        </span>
+                        <span
+                          className="absolute bottom-0 left-0 right-0 top-0 grid"
+                          style={{
+                            gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
+                          }}
+                        >
+                          {todayColumnIndex > 0 && (
+                            <span
+                              className="h-px bg-[var(--ledger-accent)]/25"
+                              style={{ gridColumn: `2 / ${todayColumnIndex + 2}` }}
+                            />
+                          )}
+                          <span
+                            className="relative h-px bg-[var(--ledger-accent)]/90"
+                            style={{ gridColumn: `${todayColumnIndex + 2} / -1` }}
+                          >
+                            <span className="absolute -left-[3px] -top-[3px] h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
+                          </span>
+                        </span>
+                      </div>
+                    )}
+
                     {hoursToRender.map((hour) => (
                       <Fragment key={hour}>
                         {(() => {
                           const hourInt = Number.parseInt(hour.split(':')[0], 10);
-                          const rowHeight = Math.max(
-                            64,
-                            ...viewConfig.dates.map((dayDate) => {
-                              const key = formatDateKey(dayDate);
-                              const dayReminders = remindersByDay[key] ?? [];
-                              const remindersForHour = dayReminders.filter(
-                                (reminder) => new Date(reminder.remind_at).getHours() === hourInt
-                              );
-                              const visibleReminders = remindersForHour.slice(0, 2);
-                              const hiddenReminders =
-                                remindersForHour.length - visibleReminders.length;
-                              return (
-                                64 +
-                                (visibleReminders.length > 0
-                                  ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 0)
-                                  : 0)
-                              );
-                            })
-                          );
+                          const rowHeight = TIMELINE_HOUR_HEIGHT;
                           return (
                             <>
                               <div
                                 data-timeline-hour={hourInt}
-                                className="flex items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-3 pt-1.5 text-[11px] text-[var(--ledger-text-muted)]"
+                                className="flex items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-2 pt-1.5 text-[10px] tabular-nums text-[var(--ledger-text-muted)]"
                                 style={{ minHeight: `${rowHeight}px` }}
                               >
                                 {formatCalendarHourLabel(hourInt)}
@@ -4341,20 +4439,31 @@ export const CalendarWindow = () => {
                                   );
                                 });
                                 const dayReminders = remindersByDay[key] ?? [];
-                                const visibleItems = startingEvents.slice(0, 2);
-                                const hiddenCount = startingEvents.length - visibleItems.length;
+                                const visibleItems = startingEvents;
                                 const remindersForHour = dayReminders.filter(
                                   (reminder) => new Date(reminder.remind_at).getHours() === hourInt
                                 );
                                 const visibleReminders = remindersForHour.slice(0, 2);
                                 const hiddenReminders =
                                   remindersForHour.length - visibleReminders.length;
-                                const hasOccupiedTimelineCell =
-                                  hourEvents.length > 0 || remindersForHour.length > 0;
                                 const reminderStackHeight =
                                   visibleReminders.length > 0
                                     ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 6)
                                     : 0;
+                                const reminderLaneOffset = Math.max(
+                                  0,
+                                  ...remindersForHour.map((reminder) =>
+                                    (eventsByDay[key] ?? []).filter((event) => {
+                                      if (isAllDayEvent(event)) return false;
+                                      const eventStart = new Date(event.start_at).getTime();
+                                      const eventEnd = new Date(event.end_at).getTime();
+                                      const reminderTime = new Date(reminder.remind_at).getTime();
+                                      return eventStart < reminderTime && eventEnd > reminderTime;
+                                    }).length
+                                  )
+                                ) * 14;
+                                const hasOccupiedTimelineCell =
+                                  hourEvents.length > 0 || remindersForHour.length > 0;
                                 const isQuickAddOpen =
                                   gridQuickAdd?.dateKey === key && gridQuickAdd?.hour === hourInt;
 
@@ -4435,7 +4544,10 @@ export const CalendarWindow = () => {
                                       </div>
                                     )}
                                     {(visibleReminders.length > 0 || hiddenReminders > 0) && (
-                                      <div className="relative z-40 mb-1 space-y-1">
+                                      <div
+                                        className="relative z-40 mb-1 space-y-1"
+                                        style={{ marginLeft: `${reminderLaneOffset}px` }}
+                                      >
                                         {visibleReminders.map((reminder) => (
                                           <button
                                             key={reminder.id}
@@ -4455,7 +4567,7 @@ export const CalendarWindow = () => {
                                                 id: reminder.id,
                                               });
                                             }}
-                                            className={`relative z-30 block w-full truncate rounded-md border px-2 py-1.5 text-left text-[10px] leading-tight shadow-sm ${
+                                            className={`relative z-30 flex min-h-5 w-full items-center truncate px-1 py-0.5 text-left text-[11px] leading-tight ${
                                               reminder.is_done &&
                                               (calendarPreferences.completedReminderBehavior ??
                                                 'collapse') === 'collapse'
@@ -4465,12 +4577,7 @@ export const CalendarWindow = () => {
                                                 : ''
                                             } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
                                             style={{
-                                              backgroundColor: isPastReminder(reminder)
-                                                ? 'var(--ledger-surface-hover)'
-                                                : `${reminder.color ?? '#F59E0B'}1a`,
-                                              borderColor: isPastReminder(reminder)
-                                                ? 'var(--ledger-border-subtle)'
-                                                : `${reminder.color ?? '#F59E0B'}55`,
+                                              backgroundColor: 'transparent',
                                               color: isPastReminder(reminder)
                                                 ? 'var(--ledger-text-muted)'
                                                 : 'var(--ledger-text-primary)',
@@ -4480,14 +4587,26 @@ export const CalendarWindow = () => {
                                             )} • ${reminder.title}`}
                                           >
                                             <span
-                                              className="mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
-                                              style={{
-                                                backgroundColor: isPastReminder(reminder)
-                                                  ? '#9CA3AF'
-                                                  : reminder.color ?? '#F59E0B',
-                                              }}
-                                            />
-                                            Reminder: {reminder.title}
+                                              className={`mr-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${
+                                                reminder.is_done
+                                                  ? 'border-[var(--ledger-success)] text-[var(--ledger-success)]'
+                                                  : ''
+                                              }`}
+                                              style={
+                                                reminder.is_done
+                                                  ? undefined
+                                                  : {
+                                                      borderColor: isPastReminder(reminder)
+                                                        ? 'var(--ledger-text-muted)'
+                                                        : reminder.color ?? '#F59E0B',
+                                                    }
+                                              }
+                                            >
+                                              {reminder.is_done && (
+                                                <Check size={8} strokeWidth={2.5} />
+                                              )}
+                                            </span>
+                                            {reminder.title}
                                           </button>
                                         ))}
                                         {hiddenReminders > 0 && (
@@ -4513,6 +4632,7 @@ export const CalendarWindow = () => {
                                       const durationRows = getEventDurationRows(evt);
                                       const minuteOffset = getEventMinuteOffset(evt);
                                       const durationMinutes = getEventDurationMinutes(evt);
+                                      const overlapDepth = timelineEventOffsets.get(evt.id) ?? 0;
                                       return (
                                         <button
                                           key={evt.id}
@@ -4530,27 +4650,29 @@ export const CalendarWindow = () => {
                                               id: evt.id,
                                             });
                                           }}
-                                          className={`group absolute inset-x-1 z-30 flex flex-col rounded-md border text-left text-[10px] leading-tight shadow-sm transition-[border-color,box-shadow,transform] ${
+                                          className={`group absolute z-30 flex flex-col rounded-[5px] border text-left text-[11px] leading-tight transition-[border-color,box-shadow,transform] ${
                                             durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
                                           }`}
                                           style={{
                                             pointerEvents: 'auto',
+                                            left: `${4 + overlapDepth * 14}px`,
+                                            right: '4px',
                                             top: `${Math.max(
                                               8,
-                                              reminderStackHeight +
-                                                6 +
+                                              4 +
+                                                reminderStackHeight +
                                                 (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT
                                             )}px`,
                                             height: `${Math.max(
-                                              40,
-                                              (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 12
+                                              24,
+                                              (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 4
                                             )}px`,
                                             backgroundColor: pastEvent
                                               ? 'var(--ledger-surface-hover)'
-                                              : `${eventColor}18`,
+                                              : `${eventColor}12`,
                                             borderColor: pastEvent
                                               ? 'var(--ledger-border-subtle)'
-                                              : `${eventColor}55`,
+                                              : `${eventColor}3d`,
                                             color: pastEvent
                                               ? 'var(--ledger-text-muted)'
                                               : 'var(--ledger-text-primary)',
@@ -4564,11 +4686,20 @@ export const CalendarWindow = () => {
                                         >
                                           <span
                                             aria-hidden="true"
+                                            className="pointer-events-none absolute bottom-2 left-0.5 top-2 z-10 w-0.5 rounded-full"
+                                            style={{
+                                              backgroundColor: pastEvent
+                                                ? 'var(--ledger-text-muted)'
+                                                : eventColor,
+                                            }}
+                                          />
+                                          <span
+                                            aria-hidden="true"
                                             className="pointer-events-none absolute inset-0 rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100"
                                             style={{
                                               backgroundColor: pastEvent
                                                 ? 'var(--ledger-surface-hover)'
-                                                : `${eventColor}24`,
+                                                : `${eventColor}1c`,
                                             }}
                                           />
                                           <div className="flex gap-1.5 min-w-0">
@@ -4578,9 +4709,9 @@ export const CalendarWindow = () => {
                                             />
                                             <div className="relative z-10 min-w-0 flex-1">
                                               <div className="flex items-start gap-1 min-w-0">
-                                                {evt.status === 'done' && (
-                                                  <span className="shrink-0 text-[10px] font-semibold leading-none -mt-0.5 text-[var(--ledger-success)]">
-                                                    ✓
+                                                {evt.recurrence_rule && evt.recurrence_rule !== 'none' && (
+                                                  <span className="shrink-0 text-[10px] leading-none text-[var(--ledger-text-muted)]">
+                                                    ↻
                                                   </span>
                                                 )}
                                                 {evt.project_id && (
@@ -4590,20 +4721,24 @@ export const CalendarWindow = () => {
                                                   />
                                                 )}
                                                 <span
-                                                  className={`font-medium ${
+                                                  className={`font-normal ${
                                                     durationRows > 1 ? 'line-clamp-3' : 'truncate'
                                                   } ${pastEventMuted ? 'opacity-70' : ''}`}
                                                 >
                                                   {evt.title}
                                                 </span>
                                               </div>
-                                              {durationRows > 1 && (
+                                              {durationRows > 1 &&
+                                                !(viewMode === 'week' && viewportWidth < 1200) && (
                                                 <div
-                                                  className={`text-[9px] text-[var(--ledger-text-muted)] ${
+                                                  className={`text-[10px] text-[var(--ledger-text-muted)] ${
                                                     durationRows > 1 ? 'mt-1' : 'mt-0.5'
                                                   }`}
                                                 >
-                                                  {formatEventTimeRangeLabel(evt)}
+                                                  <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                                    <Clock3 size={9} strokeWidth={1.8} />
+                                                    {formatEventTimeRangeLabel(evt)}
+                                                  </span>
                                                 </div>
                                               )}
                                             </div>
@@ -4611,17 +4746,6 @@ export const CalendarWindow = () => {
                                         </button>
                                       );
                                     })}
-                                    {hiddenCount > 0 && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setOverflowDayKey(key);
-                                        }}
-                                        className="relative z-30 px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
-                                      >
-                                        +{hiddenCount} more
-                                      </button>
-                                    )}
                                   </div>
                                 );
                               })}

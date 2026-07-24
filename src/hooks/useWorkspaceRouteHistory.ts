@@ -10,6 +10,10 @@ type WorkspaceRoute = {
   focusSection?: string | null;
 };
 
+type WorkspaceRouteHistoryOptions = {
+  pushHistory?: boolean;
+};
+
 const buildWorkspaceRouteKey = (route: WorkspaceRoute) =>
   [
     route.kind,
@@ -34,7 +38,11 @@ const buildWorkspaceRouteSearch = (route: WorkspaceRoute) => {
   return searchParams.toString();
 };
 
-export const useWorkspaceRouteHistory = (route: WorkspaceRoute | null, enabled = true) => {
+export const useWorkspaceRouteHistory = (
+  route: WorkspaceRoute | null,
+  enabled = true,
+  options: WorkspaceRouteHistoryOptions = {}
+) => {
   const didMountRef = useRef(false);
   const lastRouteKeyRef = useRef('');
   const routeRef = useRef(route);
@@ -96,6 +104,12 @@ export const useWorkspaceRouteHistory = (route: WorkspaceRoute | null, enabled =
     if (!didMountRef.current) {
       didMountRef.current = true;
       lastRouteKeyRef.current = nextKey;
+      if (options.pushHistory === false) {
+        void window.desktopWindow?.updateWorkspaceRoute?.({
+          ...route,
+          historyMode: 'replace',
+        });
+      }
       return;
     }
 
@@ -116,6 +130,19 @@ export const useWorkspaceRouteHistory = (route: WorkspaceRoute | null, enabled =
     const nextSearch = buildWorkspaceRouteSearch(route);
     const nextUrl = `${window.location.pathname}?${nextSearch}${window.location.hash}`;
     window.history.replaceState({}, '', nextUrl);
-    void window.desktopWindow?.updateWorkspaceRoute?.(route);
-  }, [enabled, route?.kind, route?.focusContext, route?.focusDate, route?.focusNoteId, route?.focusProjectId, route?.focusSection, route?.focusTaskId]);
+    void window.desktopWindow?.updateWorkspaceRoute?.({
+      ...route,
+      historyMode: options.pushHistory === false ? 'replace' : 'push',
+    });
+  }, [
+    enabled,
+    options.pushHistory,
+    route?.kind,
+    route?.focusContext,
+    route?.focusDate,
+    route?.focusNoteId,
+    route?.focusProjectId,
+    route?.focusSection,
+    route?.focusTaskId,
+  ]);
 };
