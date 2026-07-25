@@ -285,6 +285,7 @@ export const useApi = () => {
       copyGoogleDriveResource: (resourceId: string, payload: Record<string, unknown>) => request(`/api/google-drive/items/${encodeURIComponent(resourceId)}/copy`, { method: 'POST', body: JSON.stringify(payload) }),
       moveGoogleDriveResource: (resourceId: string, payload: Record<string, unknown>) => request(`/api/google-drive/items/${encodeURIComponent(resourceId)}/move`, { method: 'POST', body: JSON.stringify(payload) }),
       getExternalProviderOperation: (operationId: string) => request(`/api/external-operations/${encodeURIComponent(operationId)}`),
+      retryExternalProviderOperation: (operationId: string) => request(`/api/external-operations/${encodeURIComponent(operationId)}/retry`, { method: 'POST' }),
       getExternalFolderTemplates: () => request('/api/external-folder-templates'),
       createExternalFolderTemplate: (payload: Record<string, unknown>) => request('/api/external-folder-templates', { method: 'POST', body: JSON.stringify(payload) }),
       updateExternalFolderTemplate: (templateId: string, payload: Record<string, unknown>) => request(`/api/external-folder-templates/${encodeURIComponent(templateId)}`, { method: 'PATCH', body: JSON.stringify(payload) }),

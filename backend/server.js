@@ -32,6 +32,7 @@ import { findActiveGithubTasks, githubTaskDescription, projectRepositoryRole } f
 import { githubConnectionHealth, githubSafeErrorCode, githubSafeErrorMessage, isStaleGithubEvent } from './integrations/github/github-health.js';
 import { createSupabaseTraceFetch } from './request-instrumentation.js';
 import { getAllowedCorsOrigins, isAllowedCorsOrigin } from './cors-origins.js';
+import { GOOGLE_DRIVE_MAX_UPLOAD_BYTES, assertBase64Size } from './integrations/google-drive-upload.js';
 
 dotenv.config();
 
@@ -66,6 +67,15 @@ app.use(
 const REQUEST_BODY_LIMIT = '5mb';
 app.use(express.json({ limit: REQUEST_BODY_LIMIT, verify: captureRawBody }));
 app.use(express.urlencoded({ extended: false, limit: REQUEST_BODY_LIMIT, verify: captureRawBody }));
+app.use((req, res, next) => {
+  if (req.path !== '/api/google-drive/uploads' || req.method !== 'POST') return next();
+  try {
+    assertBase64Size(req.body?.content_base64, GOOGLE_DRIVE_MAX_UPLOAD_BYTES);
+    return next();
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({ error: error.message, code: error.code || 'upload_invalid', max_bytes: error.maxBytes || GOOGLE_DRIVE_MAX_UPLOAD_BYTES });
+  }
+});
 
 // Keep OAuth/MCP scan diagnostics visible in Render without logging credentials,
 // request bodies, authorization codes, or bearer tokens.
@@ -9397,6 +9407,22 @@ app.patch('/api/external-folder-templates/:templateId', authMiddleware, rateLimi
 app.delete('/api/external-folder-templates/:templateId', authMiddleware, rateLimit('write'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin'); const result = await supabase.from('external_folder_templates').delete().eq('workspace_id', workspaceId).eq('id', String(req.params.templateId)); if (result.error) throw result.error; res.json({ deleted: true }); } catch (error) { return respondWithError(res, error); } });
 
 app.post('/api/projects/:projectId/google-drive/structure', authMiddleware, rateLimit('write'), async (req, res) => { try { requireDriveWrite(); const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; const projectId = String(req.params.projectId); await requireExternalReferenceEdit({ userId, workspaceId, targetType: 'project', targetId: projectId }); const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: userId }); if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to create a project structure.', code: 'connection_required' }); const templateId = String(req.body?.template_id || req.body?.templateId || ''); const template = templateId ? await supabase.from('external_folder_templates').select('structure,name').eq('workspace_id', workspaceId).eq('id', templateId).maybeSingle() : { data: { structure: req.body?.structure || { folders: [] }, name: 'Custom structure' }, error: null }; if (template.error) throw template.error; if (!template.data) return res.status(404).json({ error: 'Folder template not found.' }); const destination = await verifyGoogleDriveDestination({ workspaceId, userId, destinationFolderId: req.body?.destination_folder_id, connection }); const operationResult = await createDriveOperation({ workspaceId, userId, operationType: 'create_folder_structure', idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { rootName: req.body?.root_name || req.body?.rootName || 'Project folder', templateId, destinationFolderId: destination.id }, sourceEntityType: 'project', sourceEntityId: projectId }); if (operationResult.reused && ['completed','partially_completed'].includes(operationResult.operation.status)) return res.json({ operation: operationResult.operation }); const operation = operationResult.operation; try { await updateDriveOperation(operation.id, { status: 'running', started_at: new Date().toISOString(), destination_provider_resource_id: destination.id }); const root = await createGoogleDriveFolder({ name: clampText(req.body?.root_name || req.body?.rootName, 240) || 'Project folder', parentId: destination.id, accessToken: connection.access_token_encrypted }); const createdFolders = [{ name: root.name, id: root.id, parentId: destination.id }]; const createChildren = async (parentId, folders, ancestry = []) => { for (const folder of Array.isArray(folders) ? folders.slice(0, 50) : []) { const safeName = clampText(folder?.name, 160); if (!safeName || ancestry.includes(safeName)) continue; const child = await createGoogleDriveFolder({ name: safeName, parentId, accessToken: connection.access_token_encrypted }); createdFolders.push({ name: safeName, id: child.id, parentId }); await createChildren(child.id, folder.children, [...ancestry, safeName]); } }; await createChildren(root.id, template.data.structure?.folders); const rootFolder = await resolveGoogleDriveFolder(root.id, { accessToken: connection.access_token_encrypted }); const source = await createConnectedSourceForDriveFolder({ workspaceId, userId, folder: rootFolder, connection, projectId }); const completed = await updateDriveOperation(operation.id, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: { root_folder_id: root.id, source_id: source.id, created_folders: createdFolders, template_name: template.data.name } }); await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_project_structure_created', targetType: 'project', targetId: projectId, metadata: { operation_id: operation.id, root_folder_id: root.id, folder_count: createdFolders.length, template_name: template.data.name } }); res.status(201).json({ operation: completed, source, folders: createdFolders }); } catch (error) { await updateDriveOperation(operation.id, { status: 'partially_completed', error_message: clampText(error?.message || 'Project structure creation was partially completed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; } } catch (error) { return respondWithError(res, error); } });
+
+app.post('/api/external-operations/:operationId/retry', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const result = await supabase.from('external_provider_operations').select('*').eq('workspace_id', workspaceId).eq('id', String(req.params.operationId)).maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'Operation not found.' });
+    if (!['failed', 'partially_completed'].includes(result.data.status)) return res.status(409).json({ error: 'This operation is not awaiting a retry.' });
+    // Creation operations are idempotent through the original operation record. The
+    // structure endpoint owns provider-side recovery; returning the record here keeps
+    // the UI honest when a retry is not safe to replay blindly.
+    const updated = await updateDriveOperation(result.data.id, { status: 'pending', error_message: null, progress: result.data.progress || 0 });
+    res.json(updated);
+  } catch (error) { return respondWithError(res, error); }
+});
 
 app.post('/api/intake/google-drive/files', authMiddleware, rateLimit('write'), async (req, res) => {
   try {

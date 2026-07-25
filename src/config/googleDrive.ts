@@ -1,0 +1,2 @@
+export const GOOGLE_DRIVE_MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+export const GOOGLE_DRIVE_MAX_UPLOAD_LABEL = '3 MB';

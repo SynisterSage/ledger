@@ -25,6 +25,7 @@ import {
   type LinkedSlackContext,
 } from './AddLinkedContextModal';
 import { SlackContextCard } from '../Slack/SlackContextCard';
+import { GoogleDriveResourceActionModal, type GoogleDriveAction } from './GoogleDriveResourceActionModal';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
@@ -149,6 +150,7 @@ export function LinkedDesignsSection({
     { target_type: string; target_id: string; title: string }[] | null
   >(null);
   const [menuLink, setMenuLink] = useState<Link | null>(null);
+  const [driveAction, setDriveAction] = useState<{ action: GoogleDriveAction; link: Link; reference: Reference } | null>(null);
   const [consentReference, setConsentReference] = useState<Reference | null>(null);
   const [provider, setProvider] = useState<'figma' | 'github' | 'google_drive'>('figma');
   const [contextSource, setContextSource] = useState<LinkedContextSource>('figma');
@@ -644,6 +646,17 @@ export function LinkedDesignsSection({
     } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not send this file to Intake.', { variant: 'error' }); }
     finally { setBusyId(null); setMenuLink(null); }
   };
+  const runGoogleDriveAction = async (action: GoogleDriveAction, link: Link, reference: Reference, payload: Record<string, unknown>) => {
+    if (!canEdit) return;
+    setBusyId(link.id);
+    try {
+      const call = action === 'rename' ? api.renameGoogleDriveResource : action === 'copy' ? api.copyGoogleDriveResource : api.moveGoogleDriveResource;
+      await call(reference.id, payload);
+      await load();
+      toast.show(action === 'rename' ? 'Drive item renamed.' : action === 'copy' ? 'Drive file copied.' : 'Drive item moved.', { variant: 'success' });
+    } catch (error) { toast.show(error instanceof Error ? error.message : `Could not ${action} this Drive item.`, { variant: 'error' }); }
+    finally { setBusyId(null); }
+  };
   const showLocations = async (referenceId: string) => {
     try {
       setLocations(
@@ -1005,13 +1018,17 @@ export function LinkedDesignsSection({
                         setMenuLink(null);
                       }}
                     >
-                      Refresh
+                      Refresh details
                     </button>
                     {googleDrive && (
                       <button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50" onClick={() => void sendGoogleDriveToIntake(link)}>
                         Send to Intake
                       </button>
                     )}
+                    {googleDrive && canEdit && reference && (reference.metadata?.capabilities as any)?.canRename !== false && <button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { setDriveAction({ action: 'rename', link, reference }); setMenuLink(null); }}>Rename</button>}
+                    {googleDrive && canEdit && reference && (reference.metadata?.capabilities as any)?.canCopy !== false && <button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { setDriveAction({ action: 'copy', link, reference }); setMenuLink(null); }}>Copy</button>}
+                    {googleDrive && canEdit && reference && (reference.metadata?.capabilities as any)?.canMoveItemWithinDrive !== false && <button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { setDriveAction({ action: 'move', link, reference }); setMenuLink(null); }}>Move</button>}
+                    {googleDrive && <button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { void navigator.clipboard?.writeText(refUrl); toast.show('Drive link copied.', { variant: 'success' }); setMenuLink(null); }}>Copy Drive link</button>}
                     {canInsert && onInsert && (
                       <button
                         type="button"
@@ -1049,7 +1066,7 @@ export function LinkedDesignsSection({
                           setMenuLink(null);
                         }}
                       >
-                        Unlink from this item
+                        Remove from Ledger
                       </button>
                     )}
                   </div>
@@ -1414,6 +1431,7 @@ export function LinkedDesignsSection({
           </div>
         </div>
       )}
+      {driveAction && <GoogleDriveResourceActionModal action={driveAction.action} title={referenceTitle(driveAction.reference, fallbackNodeName)} currentParentId={String(((driveAction.reference.metadata?.parents as string[] | undefined) || [])[0] ?? '')} onClose={() => setDriveAction(null)} onSubmit={(payload) => runGoogleDriveAction(driveAction.action, driveAction.link, driveAction.reference, payload)} />}
     </section>
   );
 }
