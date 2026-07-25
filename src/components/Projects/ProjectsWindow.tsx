@@ -66,6 +66,8 @@ import {
   type ProjectTypeKind,
 } from '../../utils/projectTypes';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import { ConnectedGoogleDriveSources } from './ConnectedGoogleDriveSources';
+import { GoogleDriveWriteActions } from './GoogleDriveWriteActions';
 
 const parseProjectsSection = (
   value: string
@@ -4878,6 +4880,7 @@ export const ProjectsWindow = () => {
         <div className="flex items-center gap-4">
           <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Linked context</p>
         </div>
+        {selectedProject ? <><ConnectedGoogleDriveSources projectId={selectedProject.id} canEdit={activeWorkspace?.role !== 'viewer'} /><GoogleDriveWriteActions projectId={selectedProject.id} canEdit={activeWorkspace?.role !== 'viewer'} /></> : null}
         {isLoadingProjectResources ? (
           <div className="flex flex-wrap items-center gap-2">
             {Array.from({ length: 6 }).map((_, index) => (

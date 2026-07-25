@@ -25,6 +25,7 @@ import { OPENAI_APPS_CHALLENGE_PATH, getOpenAiAppsChallengeToken } from './mcp/o
 import { createGithubAppJwt, createGithubState, exchangeGithubCode, getAccessibleInstallations, getCanonicalInstallation, getGithubUser, createInstallationToken, listInstallationRepositories, normalizeGithubRepository, revokeGithubUserToken, hashGithubState, verifyGithubWebhookSignature } from './integrations/github/github-app.js';
 import { findGithubPullRequestsForCommit, resolveGithubMetadata, searchGithubWork, githubSafeMessage, GithubProviderError } from './integrations/github/github-adapter.js';
 import { parseGithubUrl } from './integrations/github/github-url-parser.js';
+import { parseGoogleDriveUrl, DRIVE_SCOPE, resolveGoogleDriveFolder, listGoogleDriveChildren, googleDriveItemIsWithinRoot, resolveGoogleDriveMetadata, getGoogleDriveStartPageToken, listGoogleDriveChanges, watchGoogleDriveChanges, stopGoogleDriveChanges, createGoogleDriveFolder, createGoogleDriveNativeFile, updateGoogleDriveItem, copyGoogleDriveFile, uploadGoogleDriveBytes } from './integrations/google-drive.js';
 import { findLinkedGithubReferences, listGithubAttention, reconcileGithubAttention } from './integrations/github/github-live-awareness.js';
 import { GITHUB_CAPTURE_EVENT_TYPES, buildGithubIntakePayload, githubCaptureEventType, githubCaptureFingerprint, githubCaptureRuleMatches, githubNotificationCategory, normalizeGithubCaptureRule } from './integrations/github/github-capture.js';
 import { findActiveGithubTasks, githubTaskDescription, projectRepositoryRole } from './integrations/github/github-project-workflows.js';
@@ -103,6 +104,10 @@ const RATE_LIMITS = {
   figma_unlink: { max: 30 },
   figma_update: { max: 60 },
   figma_change_check: { max: 30 },
+  google_drive_oauth: { max: 20 },
+  google_drive_token: { max: 60 },
+  google_drive_refresh: { max: 30 },
+  google_drive_webhook: { max: 600 },
   figma_webhook: { max: 120 },
   figma_cleanup: { max: 2 },
   github_connect: { max: 10 },
@@ -191,6 +196,16 @@ const inboxItemSelectColumns = [
   'archived_at',
   'archived_by',
   'snoozed_until',
+  'provider_resource_id',
+  'canonical_resource_id',
+  'connected_source_id',
+  'integration_connection_id',
+  'capture_method',
+  'provider_metadata',
+  'access_status',
+  'last_resolved_at',
+  'placed_at',
+  'placed_by',
   'created_at',
   'updated_at',
 ].join(', ');
@@ -541,6 +556,7 @@ const intakeSourceValues = [
   'slack later',
   'email later',
   'system_suggestion',
+  'google_drive',
 ];
 
 const intakeSuggestedTypeValues = [
@@ -4239,6 +4255,50 @@ const getFigmaRedirectUri = () => {
     : null;
 };
 
+const getGoogleDriveRedirectUri = () => process.env.GOOGLE_DRIVE_REDIRECT_URI?.trim() || (process.env.PUBLIC_BACKEND_URL?.trim() ? `${process.env.PUBLIC_BACKEND_URL.replace(/\/$/, '')}/api/integrations/google-drive/callback` : null);
+const getGoogleDriveStateSecret = () => process.env.GOOGLE_DRIVE_STATE_SECRET?.trim() || process.env.FIGMA_STATE_SECRET?.trim() || 'ledger-google-drive-dev-state';
+const createGoogleDriveOAuthState = ({ userId }) => {
+  const encoded = base64UrlEncode(JSON.stringify({ user_id: userId, nonce: crypto.randomBytes(24).toString('hex'), iat: Math.floor(Date.now() / 1000) }));
+  return `${encoded}.${crypto.createHmac('sha256', getGoogleDriveStateSecret()).update(encoded).digest('base64url')}`;
+};
+const verifyGoogleDriveOAuthState = (state) => {
+  const [encoded, signature] = String(state ?? '').split('.');
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac('sha256', getGoogleDriveStateSecret()).update(encoded).digest('base64url');
+  if (expected.length !== signature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
+  const payload = safeJson(Buffer.from(encoded, 'base64url').toString('utf8'), null);
+  if (!payload?.user_id || !payload?.nonce || Math.floor(Date.now() / 1000) - Number(payload.iat || 0) > 10 * 60) return null;
+  return { ...payload, state_hash: crypto.createHash('sha256').update(String(state)).digest('hex') };
+};
+const googleDriveCompleteHtml = (success, message = '') => `<!doctype html><meta charset="utf-8"><title>Google Drive</title><script>window.opener?.postMessage({type:'ledger-google-drive-oauth',success:${Boolean(success)}},'*');window.close();</script><p>${String(message || (success ? 'Connected. You can return to Ledger.' : 'Connection failed. Return to Ledger and try again.')).replace(/[<>]/g, '')}</p>`;
+const buildGoogleDriveAuthorizeUrl = ({ state }) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
+  const redirectUri = getGoogleDriveRedirectUri();
+  if (!clientId || !redirectUri) { const error = new Error('Google Drive OAuth is not configured'); error.statusCode = 500; throw error; }
+  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: DRIVE_SCOPE, state }).toString()}`;
+};
+const exchangeGoogleDriveCode = async (code) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim();
+  const redirectUri = getGoogleDriveRedirectUri();
+  const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, code, grant_type: 'authorization_code' }) });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token || !payload.refresh_token) throw new Error('Google Drive did not return a usable connection.');
+  return payload;
+};
+const refreshGoogleDriveAccessToken = async (connection) => {
+  const refreshToken = readIntegrationToken(connection.encrypted_refresh_token);
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim();
+  if (!refreshToken || !clientId || !clientSecret) return null;
+  const response = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }) });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) return null;
+  const expiresAt = new Date(Date.now() + Number(payload.expires_in || 3600) * 1000).toISOString();
+  await supabase.from('google_drive_connections').update({ encrypted_access_token: protectIntegrationTokenForStorage(payload.access_token), token_expires_at: expiresAt, status: 'connected', last_error: null, updated_at: new Date().toISOString() }).eq('id', connection.id);
+  return payload.access_token;
+};
+
 const getFigmaStateSecret = () =>
   process.env.FIGMA_STATE_SECRET?.trim() || process.env.SLACK_STATE_SECRET?.trim() || 'ledger-figma-dev-state';
 
@@ -5328,6 +5388,9 @@ const mapInboxItemResponse = (row) => {
     author_name:
       row.author_name ?? message.username ?? user.username ?? user.name ?? rawPayload?.user_name ?? null,
     source_label: row.source ? titleCaseLabel(row.source) : 'Intake',
+    capture_source_label: row.source_provider === 'google_drive'
+      ? `Google Drive${row.provider_metadata?.sourceFolderName ? ` · ${row.provider_metadata.sourceFolderName}` : ''}`
+      : row.source ? titleCaseLabel(row.source) : 'Intake',
   };
 };
 
@@ -9214,6 +9277,409 @@ app.post('/api/integrations/figma/webhook', rateLimit('figma_webhook'), async (r
   } catch (error) { return respondWithError(res, error); }
 });
 
+app.get('/api/integrations/google-drive/connect', authMiddleware, rateLimit('google_drive_oauth'), async (req, res) => {
+  try {
+    const state = createGoogleDriveOAuthState({ userId: req.authUser.id });
+    const attempt = await supabase.from('google_drive_oauth_attempts').insert({ user_id: req.authUser.id, state_hash: crypto.createHash('sha256').update(state).digest('hex'), expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString() }).select('id').single();
+    if (attempt.error) throw attempt.error;
+    res.json({ url: buildGoogleDriveAuthorizeUrl({ state }) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/google-drive/status', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const result = await supabase.from('google_drive_connections').select('provider_account_id, provider_account_email, status, granted_scopes, connected_at, updated_at, last_error').eq('user_id', req.authUser.id).maybeSingle();
+    if (result.error) { if (isMissingRelationError(result.error, 'google_drive_connections')) return res.json({ status: 'disconnected' }); throw result.error; }
+    res.json(result.data ? { ...result.data, status: result.data.status || 'connected' } : { status: 'disconnected' });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/integrations/google-drive/callback', rateLimit('auth'), async (req, res) => {
+  try {
+    const statePayload = verifyGoogleDriveOAuthState(req.query?.state);
+    if (!statePayload || req.query?.error || !req.query?.code) return res.status(400).type('html').send(googleDriveCompleteHtml(false, 'This authorization attempt expired or was cancelled.'));
+    const attempt = await supabase.from('google_drive_oauth_attempts').select('id, user_id, consumed_at, expires_at').eq('state_hash', statePayload.state_hash).maybeSingle();
+    if (attempt.error) throw attempt.error;
+    if (!attempt.data || attempt.data.user_id !== statePayload.user_id || attempt.data.consumed_at || new Date(attempt.data.expires_at).getTime() < Date.now()) return res.status(400).type('html').send(googleDriveCompleteHtml(false, 'This authorization attempt is no longer valid.'));
+    const consumed = await supabase.from('google_drive_oauth_attempts').update({ consumed_at: new Date().toISOString() }).eq('id', attempt.data.id).is('consumed_at', null).select('id').maybeSingle();
+    if (consumed.error || !consumed.data) return res.status(400).type('html').send(googleDriveCompleteHtml(false, 'This authorization attempt is no longer valid.'));
+    const token = await exchangeGoogleDriveCode(String(req.query.code));
+    const profileResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${token.access_token}` } });
+    const profile = await profileResponse.json();
+    if (!profileResponse.ok || !profile.sub) throw new Error('Could not load the Google account.');
+    const now = new Date().toISOString();
+    const payload = { user_id: statePayload.user_id, provider_account_id: profile.sub, provider_account_email: profile.email || null, encrypted_refresh_token: protectIntegrationTokenForStorage(token.refresh_token), encrypted_access_token: protectIntegrationTokenForStorage(token.access_token), granted_scopes: String(token.scope || DRIVE_SCOPE).split(' ').filter(Boolean), status: 'connected', token_expires_at: new Date(Date.now() + Number(token.expires_in || 3600) * 1000).toISOString(), last_error: null, connected_at: now, updated_at: now };
+    const existing = await supabase.from('google_drive_connections').select('id').eq('user_id', statePayload.user_id).maybeSingle();
+    if (existing.error) throw existing.error;
+    const saved = existing.data?.id ? await supabase.from('google_drive_connections').update({ ...payload, connected_at: existing.data.connected_at || now }).eq('id', existing.data.id) : await supabase.from('google_drive_connections').insert(payload);
+    if (saved.error) throw saved.error;
+    return res.type('html').send(googleDriveCompleteHtml(true, `Connected as ${profile.email || 'your Google account'}.`));
+  } catch (error) { console.error('Google Drive OAuth callback failed', { message: error instanceof Error ? error.message : 'unknown_error' }); return res.status(400).type('html').send(googleDriveCompleteHtml(false)); }
+});
+
+app.post('/api/integrations/google-drive/disconnect', authMiddleware, rateLimit('write'), async (req, res) => {
+  try { const result = await supabase.from('google_drive_connections').update({ status: 'disconnected', encrypted_access_token: null, encrypted_refresh_token: null, last_error: null, updated_at: new Date().toISOString() }).eq('user_id', req.authUser.id).select('id').maybeSingle(); if (result.error) throw result.error; res.json({ status: 'disconnected' }); } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/google-drive/picker-token', authMiddleware, rateLimit('google_drive_token'), async (req, res) => {
+  try { const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id }); if (!connection) return res.status(409).json({ error: 'Connect Google Drive to continue.', code: 'connection_required' }); res.json({ access_token: connection.access_token_encrypted, expires_at: connection.token_expires_at || null }); } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/resources/google-drive/attach', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const fileIds = Array.isArray(req.body?.file_ids) ? req.body.file_ids.map((id) => String(id)).filter((id) => /^[a-zA-Z0-9_-]{10,}$/.test(id)).slice(0, 25) : [];
+    if (!fileIds.length) return res.status(400).json({ error: 'Select at least one Google Drive file.' });
+    const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
+    if (!connection) return res.status(409).json({ error: 'Connect Google Drive to continue.', code: 'connection_required' });
+    const results = await Promise.all(fileIds.map(async (fileId) => {
+      try {
+        const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'google_drive', url: `https://drive.google.com/open?id=${encodeURIComponent(fileId)}`, createdByUserId: req.authUser.id });
+        const reference = await resolveExternalReference({ supabase, workspaceId, referenceId: created.reference.id, requestedByUserId: req.authUser.id, getConnection: getConnectionForExternalReference });
+        return { file_id: fileId, reference, error: reference.access_status === 'accessible' ? null : 'Could not access this file.' };
+      } catch (error) { return { file_id: fileId, reference: null, error: error instanceof Error ? error.message : 'Could not add this file.' }; }
+    }));
+    res.status(201).json({ resources: results.filter((item) => item.reference), failures: results.filter((item) => item.error) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+const driveWriteEnabled = () => String(process.env.GOOGLE_DRIVE_WRITE_OPERATIONS_ENABLED ?? 'true').toLowerCase() !== 'false';
+const requireDriveWrite = () => { if (!driveWriteEnabled()) { const error = new Error('Google Drive write actions are currently unavailable.'); error.statusCode = 503; throw error; } };
+const driveEntityFromBody = (body) => ({ type: String(body?.entity_type ?? body?.entityType ?? '').trim(), id: String(body?.entity_id ?? body?.entityId ?? '').trim() });
+const assertDriveEntityEdit = async ({ userId, workspaceId, entity }) => { if (!entity.type || !entity.id) return; await requireExternalReferenceEdit({ userId, workspaceId, targetType: entity.type, targetId: entity.id }); };
+
+const executeDriveCreateOperation = async ({ req, operationType, name, mimeType = null }) => {
+  requireDriveWrite();
+  const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; await requireWorkspaceAccess(userId, workspaceId, 'member');
+  const entity = driveEntityFromBody(req.body); await assertDriveEntityEdit({ userId, workspaceId, entity });
+  const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: userId }); if (!connection) { const error = new Error('Reconnect Google Drive to continue.'); error.statusCode = 409; error.code = 'connection_required'; throw error; }
+  const operationResult = await createDriveOperation({ workspaceId, userId, operationType, idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { name, mimeType, destinationFolderId: req.body?.destination_folder_id || req.body?.destinationFolderId || null }, sourceEntityType: entity.type || null, sourceEntityId: entity.id || null, connectedSourceId: req.body?.connected_source_id || null });
+  if (operationResult.reused && ['completed', 'partially_completed'].includes(operationResult.operation.status)) return operationResult.operation;
+  const operationId = operationResult.operation.id;
+  try {
+    await updateDriveOperation(operationId, { status: 'validating', started_at: new Date().toISOString(), progress: 10 });
+    const destination = await verifyGoogleDriveDestination({ workspaceId, userId, destinationFolderId: req.body?.destination_folder_id || req.body?.destinationFolderId, connectedSourceId: req.body?.connected_source_id || null, projectId: entity.type === 'project' ? entity.id : null, connection });
+    await updateDriveOperation(operationId, { status: 'running', destination_provider_resource_id: destination.id, progress: 35 });
+    const created = mimeType ? await createGoogleDriveNativeFile({ name, mimeType, parentId: destination.id, accessToken: connection.access_token_encrypted }) : await createGoogleDriveFolder({ name, parentId: destination.id, accessToken: connection.access_token_encrypted });
+    const linked = await linkCreatedDriveFile({ workspaceId, userId, fileId: created.id, targetType: entity.type || null, targetId: entity.id || null, connection, connectedSourceId: req.body?.connected_source_id || null, operationId });
+    const result = await updateDriveOperation(operationId, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: { file_id: created.id, reference_id: linked.reference.id, name: linked.metadata.name, web_view_url: linked.metadata.webViewUrl } });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: mimeType ? 'google_drive_native_file_created' : 'google_drive_folder_created', targetType: entity.type || 'external_reference', targetId: entity.id || linked.reference.id, metadata: { operation_id: operationId, file_id: created.id, file_name: linked.metadata.name, mime_type: linked.metadata.mimeType } });
+    return result;
+  } catch (error) { await updateDriveOperation(operationId, { status: 'failed', error_code: error?.accessStatus || error?.code || 'drive_write_failed', error_message: clampText(error?.message || 'Google Drive action failed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; }
+};
+
+app.post('/api/google-drive/folders', authMiddleware, rateLimit('write'), async (req, res) => { try { const name = clampText(req.body?.name, 240); if (!name) return res.status(400).json({ error: 'Folder name is required.' }); const operation = await executeDriveCreateOperation({ req, operationType: 'create_folder', name }); res.status(201).json({ operation }); } catch (error) { return respondWithError(res, error); } });
+app.post('/api/google-drive/native-files', authMiddleware, rateLimit('write'), async (req, res) => { try { const types = { google_doc: 'application/vnd.google-apps.document', google_sheet: 'application/vnd.google-apps.spreadsheet', google_slide: 'application/vnd.google-apps.presentation' }; const fileType = String(req.body?.file_type ?? req.body?.fileType ?? ''); if (!types[fileType]) return res.status(400).json({ error: 'Choose a Google Doc, Sheet, or Slide.' }); const name = clampText(req.body?.name, 240); if (!name) return res.status(400).json({ error: 'File name is required.' }); const operation = await executeDriveCreateOperation({ req, operationType: `create_${fileType}`, name, mimeType: types[fileType] }); res.status(201).json({ operation }); } catch (error) { return respondWithError(res, error); } });
+app.post('/api/projects/:projectId/google-drive/folder', authMiddleware, rateLimit('write'), async (req, res) => { try { const projectId = String(req.params.projectId); req.body = { ...(req.body || {}), entity_type: 'project', entity_id: projectId }; const operation = await executeDriveCreateOperation({ req, operationType: 'create_project_folder', name: clampText(req.body?.name, 240) || 'Project folder' }); const result = operation.result_metadata || {}; if (result.file_id) { const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id }); const folder = await resolveGoogleDriveFolder(result.file_id, { accessToken: connection.access_token_encrypted }); const source = await createConnectedSourceForDriveFolder({ workspaceId: await resolveWorkspaceIdForRequest(req), userId: req.authUser.id, folder, connection, projectId }); res.status(201).json({ operation, source }); return; } res.status(201).json({ operation }); } catch (error) { return respondWithError(res, error); } });
+
+app.post('/api/google-drive/uploads', authMiddleware, rateLimit('write'), async (req, res) => { try { requireDriveWrite(); const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; await requireWorkspaceAccess(userId, workspaceId, 'member'); const entity = driveEntityFromBody(req.body); await assertDriveEntityEdit({ userId, workspaceId, entity }); const encoded = String(req.body?.content_base64 || ''); const maxBytes = Number(process.env.GOOGLE_DRIVE_MAX_UPLOAD_BYTES) || 25 * 1024 * 1024; const bytes = Buffer.from(encoded, 'base64'); if (!encoded || !bytes.length || bytes.length > maxBytes) return res.status(400).json({ error: 'Provide a validated Ledger file within the upload limit.' }); const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: userId }); if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to continue.', code: 'connection_required' }); const operationResult = await createDriveOperation({ workspaceId, userId, operationType: 'upload_file', idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { name: clampText(req.body?.name, 240), mimeType: clampText(req.body?.mime_type, 160), sizeBytes: bytes.length, destinationFolderId: req.body?.destination_folder_id || null }, sourceEntityType: entity.type || null, sourceEntityId: entity.id || null, connectedSourceId: req.body?.connected_source_id || null }); if (operationResult.reused && operationResult.operation.status === 'completed') return res.status(200).json({ operation: operationResult.operation }); const operationId = operationResult.operation.id; try { const destination = await verifyGoogleDriveDestination({ workspaceId, userId, destinationFolderId: req.body?.destination_folder_id, connectedSourceId: req.body?.connected_source_id || null, projectId: entity.type === 'project' ? entity.id : null, connection }); await updateDriveOperation(operationId, { status: 'running', started_at: new Date().toISOString(), destination_provider_resource_id: destination.id, progress: 25 }); const created = await uploadGoogleDriveBytes({ name: clampText(req.body?.name, 240) || 'Uploaded file', mimeType: clampText(req.body?.mime_type, 160) || 'application/octet-stream', parentId: destination.id, bytes, accessToken: connection.access_token_encrypted }); const linked = await linkCreatedDriveFile({ workspaceId, userId, fileId: created.id, targetType: entity.type || null, targetId: entity.id || null, connection, connectedSourceId: req.body?.connected_source_id || null, operationId }); const completed = await updateDriveOperation(operationId, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: { file_id: created.id, reference_id: linked.reference.id, name: linked.metadata.name, web_view_url: linked.metadata.webViewUrl } }); await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_file_uploaded', targetType: entity.type || 'external_reference', targetId: entity.id || linked.reference.id, metadata: { operation_id: operationId, file_id: created.id, file_name: linked.metadata.name } }); res.status(201).json({ operation: completed }); } catch (error) { await updateDriveOperation(operationId, { status: 'failed', error_code: error?.accessStatus || 'upload_failed', error_message: clampText(error?.message || 'Upload failed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; } } catch (error) { return respondWithError(res, error); } });
+
+app.get('/api/external-operations/:operationId', authMiddleware, rateLimit('read'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); const result = await supabase.from('external_provider_operations').select('*').eq('workspace_id', workspaceId).eq('id', String(req.params.operationId)).maybeSingle(); if (result.error) throw result.error; if (!result.data) return res.status(404).json({ error: 'Operation not found.' }); res.json(result.data); } catch (error) { return respondWithError(res, error); } });
+
+const loadDriveReferenceForMutation = async ({ workspaceId, userId, resourceId }) => { const reference = await supabase.from('external_references').select('*').eq('workspace_id', workspaceId).eq('id', String(resourceId)).maybeSingle(); if (reference.error) throw reference.error; if (!reference.data || reference.data.provider !== 'google_drive') return null; const fileId = reference.data.metadata?.providerResourceId; const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: userId }); if (!connection) { const error = new Error('Reconnect Google Drive to continue.'); error.statusCode = 409; throw error; } const resolved = await getGoogleDriveReferenceByFileId({ workspaceId, userId, fileId, connection }); return { reference: resolved.reference, connection, fileId, capabilities: resolved.metadata.capabilities || {} }; };
+const assertDriveCapability = (capabilities, key) => { if (capabilities?.[key] === false) { const error = new Error('Google Drive does not allow this action for the selected item.'); error.statusCode = 403; throw error; } };
+
+app.post('/api/google-drive/items/:resourceId/rename', authMiddleware, rateLimit('write'), async (req, res) => { try { requireDriveWrite(); const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; await requireWorkspaceAccess(userId, workspaceId, 'member'); const loaded = await loadDriveReferenceForMutation({ workspaceId, userId, resourceId: req.params.resourceId }); if (!loaded) return res.status(404).json({ error: 'Google Drive resource not found.' }); assertDriveCapability(loaded.capabilities, 'canRename'); const name = clampText(req.body?.name, 240); if (!name) return res.status(400).json({ error: 'A new name is required.' }); const operationResult = await createDriveOperation({ workspaceId, userId, operationType: 'rename_item', idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { fileId: loaded.fileId, name }, sourceProviderResourceId: loaded.fileId }); const operation = operationResult.operation; if (operationResult.reused && operation.status === 'completed') return res.json({ operation }); await updateDriveOperation(operation.id, { status: 'running', started_at: new Date().toISOString() }); try { const changed = await updateGoogleDriveItem({ fileId: loaded.fileId, body: { name }, accessToken: loaded.connection.access_token_encrypted }); const refreshed = await getGoogleDriveReferenceByFileId({ workspaceId, userId, fileId: changed.id || loaded.fileId, connection: loaded.connection }); const completed = await updateDriveOperation(operation.id, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: refreshed.metadata }); await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_item_renamed', targetType: 'external_reference', targetId: loaded.reference.id, metadata: { operation_id: operation.id, file_id: loaded.fileId, before_name: loaded.reference.metadata?.name || null, after_name: refreshed.metadata.name } }); res.json({ operation: completed, reference: refreshed.reference }); } catch (error) { await updateDriveOperation(operation.id, { status: 'failed', error_message: clampText(error?.message || 'Rename failed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; } } catch (error) { return respondWithError(res, error); } });
+
+app.post('/api/google-drive/items/:resourceId/copy', authMiddleware, rateLimit('write'), async (req, res) => { try { requireDriveWrite(); const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; await requireWorkspaceAccess(userId, workspaceId, 'member'); const loaded = await loadDriveReferenceForMutation({ workspaceId, userId, resourceId: req.params.resourceId }); if (!loaded) return res.status(404).json({ error: 'Google Drive resource not found.' }); assertDriveCapability(loaded.capabilities, 'canCopy'); const destination = await verifyGoogleDriveDestination({ workspaceId, userId, destinationFolderId: req.body?.destination_folder_id, connectedSourceId: req.body?.connected_source_id || null, projectId: req.body?.project_id || null, connection: loaded.connection }); const operationResult = await createDriveOperation({ workspaceId, userId, operationType: 'copy_file', idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { sourceFileId: loaded.fileId, destinationFolderId: destination.id }, sourceProviderResourceId: loaded.fileId }); const operation = operationResult.operation; if (operationResult.reused && operation.status === 'completed') return res.json({ operation }); await updateDriveOperation(operation.id, { status: 'running', started_at: new Date().toISOString(), destination_provider_resource_id: destination.id }); try { const copied = await copyGoogleDriveFile({ fileId: loaded.fileId, name: clampText(req.body?.name, 240) || null, parentId: destination.id, accessToken: loaded.connection.access_token_encrypted }); const entity = driveEntityFromBody(req.body); await assertDriveEntityEdit({ userId, workspaceId, entity }); const linked = await linkCreatedDriveFile({ workspaceId, userId, fileId: copied.id, targetType: entity.type || null, targetId: entity.id || null, connection: loaded.connection, provenance: { copied_from_provider_resource_id: loaded.fileId, copied_from_canonical_resource_id: loaded.reference.id } }); const completed = await updateDriveOperation(operation.id, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: { file_id: copied.id, reference_id: linked.reference.id, copied_from_file_id: loaded.fileId } }); await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_item_copied', targetType: entity.type || 'external_reference', targetId: entity.id || linked.reference.id, metadata: { operation_id: operation.id, source_file_id: loaded.fileId, copied_file_id: copied.id } }); res.status(201).json({ operation: completed, reference: linked.reference }); } catch (error) { await updateDriveOperation(operation.id, { status: 'failed', error_message: clampText(error?.message || 'Copy failed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; } } catch (error) { return respondWithError(res, error); } });
+
+app.post('/api/google-drive/items/:resourceId/move', authMiddleware, rateLimit('write'), async (req, res) => { try { requireDriveWrite(); const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; await requireWorkspaceAccess(userId, workspaceId, 'member'); const loaded = await loadDriveReferenceForMutation({ workspaceId, userId, resourceId: req.params.resourceId }); if (!loaded) return res.status(404).json({ error: 'Google Drive resource not found.' }); assertDriveCapability(loaded.capabilities, 'canMoveItemWithinDrive'); const expectedCurrentParentId = String(req.body?.expected_current_parent_id || req.body?.expectedCurrentParentId || ''); const currentParentId = loaded.reference.metadata?.parents?.[0] || ''; if (expectedCurrentParentId && currentParentId && expectedCurrentParentId !== currentParentId) return res.status(409).json({ error: 'This file moved before Ledger could update it. Refresh and try again.' }); const destination = await verifyGoogleDriveDestination({ workspaceId, userId, destinationFolderId: req.body?.destination_folder_id, connectedSourceId: req.body?.connected_source_id || null, projectId: req.body?.project_id || null, connection: loaded.connection }); const operationResult = await createDriveOperation({ workspaceId, userId, operationType: 'move_file', idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { fileId: loaded.fileId, currentParentId, destinationFolderId: destination.id }, sourceProviderResourceId: loaded.fileId }); const operation = operationResult.operation; if (operationResult.reused && operation.status === 'completed') return res.json({ operation }); await updateDriveOperation(operation.id, { status: 'running', started_at: new Date().toISOString(), destination_provider_resource_id: destination.id }); try { const moved = await updateGoogleDriveItem({ fileId: loaded.fileId, addParents: destination.id, removeParents: currentParentId || undefined, accessToken: loaded.connection.access_token_encrypted }); const refreshed = await getGoogleDriveReferenceByFileId({ workspaceId, userId, fileId: moved.id || loaded.fileId, connection: loaded.connection }); const completed = await updateDriveOperation(operation.id, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: refreshed.metadata }); await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_item_moved', targetType: 'external_reference', targetId: loaded.reference.id, metadata: { operation_id: operation.id, file_id: loaded.fileId, from_folder_id: currentParentId || null, to_folder_id: destination.id } }); res.json({ operation: completed, reference: refreshed.reference }); } catch (error) { await updateDriveOperation(operation.id, { status: 'failed', error_message: clampText(error?.message || 'Move failed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; } } catch (error) { return respondWithError(res, error); } });
+
+const googleDriveApiJson = async (url, accessToken, body) => { const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (!response.ok) throw new Error('Google Drive export could not be completed.'); return response.json(); };
+const exportProjectText = (project, tasks) => [`Project: ${project.name || 'Untitled project'}`, `Status: ${project.status || 'Not started'}`, `Progress: ${project.completeness ?? 0}%`, '', project.description || '', '', 'Next actions', ...(tasks || []).map((task) => `- ${task.title || 'Untitled task'}${task.status ? ` · ${task.status}` : ''}`)].join('\n');
+
+app.post('/api/projects/:projectId/google-drive/export', authMiddleware, rateLimit('write'), async (req, res) => { try { requireDriveWrite(); const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; const projectId = String(req.params.projectId); await requireExternalReferenceEdit({ userId, workspaceId, targetType: 'project', targetId: projectId }); const projectResult = await supabase.from('projects').select('id,name,status,completeness,description,updated_at').eq('workspace_id', workspaceId).eq('id', projectId).maybeSingle(); if (projectResult.error) throw projectResult.error; if (!projectResult.data) return res.status(404).json({ error: 'Project not found.' }); const tasksResult = await supabase.from('tasks').select('title,status').eq('workspace_id', workspaceId).eq('project_id', projectId).order('created_at').limit(200); if (tasksResult.error) throw tasksResult.error; const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: userId }); if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to export this project.', code: 'connection_required' }); const destination = await verifyGoogleDriveDestination({ workspaceId, userId, destinationFolderId: req.body?.destination_folder_id, connectedSourceId: req.body?.connected_source_id || null, projectId, connection }); const format = String(req.body?.format || 'google_doc'); const operationResult = await createDriveOperation({ workspaceId, userId, operationType: 'export_ledger_record', idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { exportType: req.body?.export_type || 'project_brief', format, destinationFolderId: destination.id }, sourceEntityType: 'project', sourceEntityId: projectId }); if (operationResult.reused && operationResult.operation.status === 'completed') return res.json({ operation: operationResult.operation }); const operation = operationResult.operation; try { await updateDriveOperation(operation.id, { status: 'running', started_at: new Date().toISOString(), destination_provider_resource_id: destination.id }); const isSheet = format === 'google_sheet'; const mimeType = isSheet ? 'application/vnd.google-apps.spreadsheet' : 'application/vnd.google-apps.document'; const name = clampText(req.body?.name, 240) || `${projectResult.data.name || 'Project'} — ${isSheet ? 'Task List' : 'Project Brief'}`; const created = await createGoogleDriveNativeFile({ name, mimeType, parentId: destination.id, accessToken: connection.access_token_encrypted }); const textContent = exportProjectText(projectResult.data, tasksResult.data); if (isSheet) await googleDriveApiJson(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(created.id)}/values/Sheet1!A1:append?valueInputOption=RAW`, connection.access_token_encrypted, { values: [['Project', projectResult.data.name || 'Untitled'], ['Status', projectResult.data.status || 'Not started'], ['Progress', `${projectResult.data.completeness ?? 0}%`], [], ['Next action', 'Status'], ...(tasksResult.data || []).map((task) => [task.title || 'Untitled task', task.status || 'todo'])] }); else await googleDriveApiJson(`https://docs.googleapis.com/v1/documents/${encodeURIComponent(created.id)}:batchUpdate`, connection.access_token_encrypted, { requests: [{ insertText: { location: { index: 1 }, text: textContent } }] }); const linked = await linkCreatedDriveFile({ workspaceId, userId, fileId: created.id, targetType: 'project', targetId: projectId, connection, operationId: operation.id, provenance: { export_type: req.body?.export_type || 'project_brief', source_entity_type: 'project', source_entity_id: projectId, exported_at: new Date().toISOString(), source_updated_at: projectResult.data.updated_at } }); const completed = await updateDriveOperation(operation.id, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: { file_id: created.id, reference_id: linked.reference.id, export_type: req.body?.export_type || 'project_brief', source_updated_at: projectResult.data.updated_at } }); await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_ledger_export_created', targetType: 'project', targetId: projectId, metadata: { operation_id: operation.id, file_id: created.id, export_type: req.body?.export_type || 'project_brief' } }); res.status(201).json({ operation: completed, reference: linked.reference }); } catch (error) { await updateDriveOperation(operation.id, { status: 'failed', error_message: clampText(error?.message || 'Export failed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; } } catch (error) { return respondWithError(res, error); } });
+
+app.get('/api/external-folder-templates', authMiddleware, rateLimit('read'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer'); const result = await supabase.from('external_folder_templates').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').order('name'); if (result.error) throw result.error; res.json(result.data || []); } catch (error) { return respondWithError(res, error); } });
+app.post('/api/external-folder-templates', authMiddleware, rateLimit('write'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin'); const name = clampText(req.body?.name, 160); const folders = Array.isArray(req.body?.structure?.folders) ? req.body.structure.folders : []; if (!name || folders.some((folder) => !clampText(folder?.name, 160))) return res.status(400).json({ error: 'Provide a template name and valid folder names.' }); const result = await supabase.from('external_folder_templates').insert({ workspace_id: workspaceId, provider: 'google_drive', name, description: clampText(req.body?.description, 500) || null, structure: { folders: folders.slice(0, 50).map((folder) => ({ name: clampText(folder.name, 160), children: Array.isArray(folder.children) ? folder.children : [] })) }, created_by_user_id: req.authUser.id }).select('*').single(); if (result.error) throw result.error; res.status(201).json(result.data); } catch (error) { return respondWithError(res, error); } });
+app.patch('/api/external-folder-templates/:templateId', authMiddleware, rateLimit('write'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin'); const changes = {}; if (req.body?.name !== undefined) changes.name = clampText(req.body.name, 160); if (req.body?.description !== undefined) changes.description = clampText(req.body.description, 500) || null; if (req.body?.structure !== undefined) changes.structure = req.body.structure; const result = await supabase.from('external_folder_templates').update({ ...changes, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', String(req.params.templateId)).select('*').single(); if (result.error) throw result.error; res.json(result.data); } catch (error) { return respondWithError(res, error); } });
+app.delete('/api/external-folder-templates/:templateId', authMiddleware, rateLimit('write'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin'); const result = await supabase.from('external_folder_templates').delete().eq('workspace_id', workspaceId).eq('id', String(req.params.templateId)); if (result.error) throw result.error; res.json({ deleted: true }); } catch (error) { return respondWithError(res, error); } });
+
+app.post('/api/projects/:projectId/google-drive/structure', authMiddleware, rateLimit('write'), async (req, res) => { try { requireDriveWrite(); const workspaceId = await resolveWorkspaceIdForRequest(req); const userId = req.authUser.id; const projectId = String(req.params.projectId); await requireExternalReferenceEdit({ userId, workspaceId, targetType: 'project', targetId: projectId }); const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: userId }); if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to create a project structure.', code: 'connection_required' }); const templateId = String(req.body?.template_id || req.body?.templateId || ''); const template = templateId ? await supabase.from('external_folder_templates').select('structure,name').eq('workspace_id', workspaceId).eq('id', templateId).maybeSingle() : { data: { structure: req.body?.structure || { folders: [] }, name: 'Custom structure' }, error: null }; if (template.error) throw template.error; if (!template.data) return res.status(404).json({ error: 'Folder template not found.' }); const destination = await verifyGoogleDriveDestination({ workspaceId, userId, destinationFolderId: req.body?.destination_folder_id, connection }); const operationResult = await createDriveOperation({ workspaceId, userId, operationType: 'create_folder_structure', idempotencyKey: req.headers['idempotency-key'] || req.body?.idempotency_key, requestMetadata: { rootName: req.body?.root_name || req.body?.rootName || 'Project folder', templateId, destinationFolderId: destination.id }, sourceEntityType: 'project', sourceEntityId: projectId }); if (operationResult.reused && ['completed','partially_completed'].includes(operationResult.operation.status)) return res.json({ operation: operationResult.operation }); const operation = operationResult.operation; try { await updateDriveOperation(operation.id, { status: 'running', started_at: new Date().toISOString(), destination_provider_resource_id: destination.id }); const root = await createGoogleDriveFolder({ name: clampText(req.body?.root_name || req.body?.rootName, 240) || 'Project folder', parentId: destination.id, accessToken: connection.access_token_encrypted }); const createdFolders = [{ name: root.name, id: root.id, parentId: destination.id }]; const createChildren = async (parentId, folders, ancestry = []) => { for (const folder of Array.isArray(folders) ? folders.slice(0, 50) : []) { const safeName = clampText(folder?.name, 160); if (!safeName || ancestry.includes(safeName)) continue; const child = await createGoogleDriveFolder({ name: safeName, parentId, accessToken: connection.access_token_encrypted }); createdFolders.push({ name: safeName, id: child.id, parentId }); await createChildren(child.id, folder.children, [...ancestry, safeName]); } }; await createChildren(root.id, template.data.structure?.folders); const rootFolder = await resolveGoogleDriveFolder(root.id, { accessToken: connection.access_token_encrypted }); const source = await createConnectedSourceForDriveFolder({ workspaceId, userId, folder: rootFolder, connection, projectId }); const completed = await updateDriveOperation(operation.id, { status: 'completed', progress: 100, completed_at: new Date().toISOString(), result_metadata: { root_folder_id: root.id, source_id: source.id, created_folders: createdFolders, template_name: template.data.name } }); await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_project_structure_created', targetType: 'project', targetId: projectId, metadata: { operation_id: operation.id, root_folder_id: root.id, folder_count: createdFolders.length, template_name: template.data.name } }); res.status(201).json({ operation: completed, source, folders: createdFolders }); } catch (error) { await updateDriveOperation(operation.id, { status: 'partially_completed', error_message: clampText(error?.message || 'Project structure creation was partially completed.', 500), completed_at: new Date().toISOString() }).catch(() => null); throw error; } } catch (error) { return respondWithError(res, error); } });
+
+app.post('/api/intake/google-drive/files', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const fileIds = (Array.isArray(req.body?.file_ids) ? req.body.file_ids : []).map(normalizeGoogleDriveFileId).slice(0, 50);
+    if (!fileIds.length) return res.status(400).json({ error: 'Select at least one Google Drive file.' });
+    const results = [];
+    for (const fileId of fileIds) {
+      try {
+        results.push(await captureGoogleDriveFileToIntake({ workspaceId, userId: req.authUser.id, fileId, captureMethod: String(req.body?.capture_method || 'picker'), connectedSourceId: req.body?.connected_source_id || null, sourceFolderId: req.body?.source_folder_id || null, sourceFolderName: req.body?.source_folder_name || null, originalLedgerEntityType: req.body?.original_ledger_entity_type || null, originalLedgerEntityId: req.body?.original_ledger_entity_id || null }));
+      } catch (error) { results.push({ file_id: fileId, error: error instanceof Error ? error.message : 'Could not capture this file.' }); }
+    }
+    res.status(201).json({ items: results.filter((result) => result.item), captured: results.filter((result) => result.item && !result.duplicate), duplicates: results.filter((result) => result.duplicate), failures: results.filter((result) => result.error) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/intake/google-drive/resolve-url', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const parsed = parseGoogleDriveUrl(req.body?.url);
+    const result = await captureGoogleDriveFileToIntake({ workspaceId, userId: req.authUser.id, fileId: parsed.fileId, captureMethod: 'pasted_link' });
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/external-references/:id/send-to-intake', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    const reference = await supabase.from('external_references').select('provider, metadata').eq('workspace_id', workspaceId).eq('id', req.params.id).maybeSingle();
+    if (reference.error) throw reference.error;
+    if (!reference.data || reference.data.provider !== 'google_drive') return res.status(404).json({ error: 'Google Drive resource not found.' });
+    const fileId = reference.data.metadata?.providerResourceId;
+    const result = await captureGoogleDriveFileToIntake({ workspaceId, userId: req.authUser.id, fileId, captureMethod: 'existing_resource' });
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { return respondWithError(res, error); }
+});
+
+const connectedSourceItemResponse = (item, linkedReferenceIds = new Set()) => ({ id: item.provider_item_id, name: item.name, mime_type: item.mime_type, item_type: item.item_type, modified_time: item.modified_time, trashed: item.trashed, access_status: item.access_status, parent_id: item.parent_provider_item_id, ...(item.metadata || {}), link_status: linkedReferenceIds.has(item.provider_item_id) ? 'linked_to_project' : 'not_linked' });
+
+app.post('/api/projects/:projectId/connected-sources/google-drive', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.params.projectId);
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
+    const folderId = String(req.body?.folder_id ?? req.body?.folderId ?? '').trim();
+    if (!/^[A-Za-z0-9_-]{10,}$/.test(folderId)) return res.status(400).json({ error: 'Select a valid Google Drive folder.' });
+    const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
+    if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to connect a folder.', code: 'connection_required' });
+    const folder = await resolveGoogleDriveFolder(folderId, { accessToken: connection.access_token_encrypted });
+    const existing = await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').eq('source_type', 'folder').eq('provider_source_id', folderId).maybeSingle();
+    if (existing.error) throw existing.error;
+    let source = existing.data;
+    if (!source) {
+      const created = await supabase.from('connected_external_sources').insert({ workspace_id: workspaceId, provider: 'google_drive', source_type: 'folder', provider_source_id: folderId, integration_connection_id: connection.id, connected_by_user_id: req.authUser.id, name: folder.name || 'Google Drive folder', canonical_url: folder.webViewLink || `https://drive.google.com/drive/folders/${folderId}`, icon_url: folder.iconLink || null, external_metadata: { providerAccountEmail: connection.provider_account_email || null }, sync_mode: 'manual', status: 'active' }).select('*').single();
+      if (created.error && created.error.code !== '23505') throw created.error;
+      source = created.data || (await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('provider_source_id', folderId).single()).data;
+    }
+    const relationship = await supabase.from('connected_source_relationships').upsert({ connected_source_id: source.id, workspace_id: workspaceId, entity_type: 'project', entity_id: projectId, created_by_user_id: req.authUser.id }, { onConflict: 'connected_source_id,entity_type,entity_id' }).select('*').single();
+    if (relationship.error) throw relationship.error;
+    const refreshed = await refreshConnectedGoogleDriveSource({ source, userId: req.authUser.id, force: true });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_folder_connected', targetType: 'project', targetId: projectId, metadata: { source_id: source.id, folder_id: folderId, folder_name: folder.name } });
+    res.status(201).json({ source: refreshed.source, relationship: relationship.data, changes: refreshed.changes });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/projects/:projectId/connected-sources', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.params.projectId);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    if (!await ensureExternalTarget({ workspaceId, targetType: 'project', targetId: projectId })) return res.status(404).json({ error: 'Project not found' });
+    const relationships = await supabase.from('connected_source_relationships').select('*').eq('workspace_id', workspaceId).eq('entity_type', 'project').eq('entity_id', projectId).order('created_at');
+    if (relationships.error) throw relationships.error;
+    const ids = (relationships.data ?? []).map((row) => row.connected_source_id);
+    if (!ids.length) return res.json([]);
+    const sources = await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).in('id', ids);
+    if (sources.error) throw sources.error;
+    res.json((sources.data ?? []).map((source) => ({ ...source, relationship: (relationships.data ?? []).find((row) => row.connected_source_id === source.id) || null })));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/connected-sources/:sourceId/items', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const sourceId = String(req.params.sourceId);
+    const projectId = String(req.query?.project_id ?? req.query?.projectId ?? '');
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId });
+    if (!membership) return res.status(404).json({ error: 'Connected source not found' });
+    const source = membership.source;
+    const parentId = String(req.query?.parent_id ?? req.query?.parentId ?? source.provider_source_id);
+    const connection = await getGoogleDriveConnectionById(source.integration_connection_id);
+    let items = [];
+    let nextPageToken = null;
+    let liveError = null;
+    if (connection) {
+      try {
+        if (!(await googleDriveItemIsWithinRoot(parentId, source.provider_source_id, { accessToken: connection.access_token_encrypted }))) return res.status(400).json({ error: 'That folder is outside the connected source.' });
+        const listing = await listGoogleDriveChildren(parentId, { accessToken: connection.access_token_encrypted, pageToken: String(req.query?.page_token ?? ''), pageSize: req.query?.page_size });
+        const now = new Date().toISOString();
+        const normalized = (listing.files ?? []).map((item) => normalizeGoogleDriveSourceItem(item, source.id, workspaceId, now));
+        for (const item of normalized) await supabase.from('connected_source_items').upsert(item, { onConflict: 'connected_source_id,provider_item_id' });
+        items = normalized;
+        nextPageToken = listing.nextPageToken || null;
+      } catch (error) { liveError = error; }
+    }
+    if (!items.length && (liveError || !connection)) {
+      const cached = await supabase.from('connected_source_items').select('*').eq('connected_source_id', source.id).eq('parent_provider_item_id', parentId).order('item_type').order('name');
+      if (cached.error) throw cached.error;
+      items = cached.data ?? [];
+    }
+    const projectLinks = await supabase.from('external_reference_links').select('external_reference_id, external_references(provider,metadata)').eq('workspace_id', workspaceId).eq('target_type', 'project').eq('target_id', projectId);
+    if (projectLinks.error) throw projectLinks.error;
+    const linkedReferenceIds = new Set((projectLinks.data ?? []).map((row) => { const reference = Array.isArray(row.external_references) ? row.external_references[0] : row.external_references; return String(reference?.metadata?.providerResourceId ?? ''); }).filter(Boolean));
+    const allRefs = await supabase.from('external_references').select('metadata').eq('workspace_id', workspaceId).eq('provider', 'google_drive');
+    if (allRefs.error) throw allRefs.error;
+    const knownIds = new Set((allRefs.data ?? []).map((row) => String(row.metadata?.providerResourceId ?? '')).filter(Boolean));
+    res.json({ source: { id: source.id, status: liveError ? (source.last_successful_refresh_at ? 'stale' : source.status) : source.status }, items: items.map((item) => ({ ...connectedSourceItemResponse(item, linkedReferenceIds), link_status: linkedReferenceIds.has(item.provider_item_id) ? 'linked_to_project' : knownIds.has(item.provider_item_id) ? 'linked_elsewhere' : 'not_linked' })), next_page_token: nextPageToken, stale: Boolean(liveError || !connection), error: liveError ? 'Showing folder contents from the last successful refresh.' : null });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/connected-sources/:sourceId/send-to-intake', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.body?.project_id ?? req.body?.projectId ?? '');
+    const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId: String(req.params.sourceId) });
+    if (!membership) return res.status(404).json({ error: 'Connected source not found' });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
+    const connection = await getGoogleDriveConnectionById(membership.source.integration_connection_id);
+    if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to send files to Intake.', code: 'connection_required' });
+    const fileIds = (Array.isArray(req.body?.file_ids) ? req.body.file_ids : []).map(normalizeGoogleDriveFileId).slice(0, 50);
+    const results = [];
+    for (const fileId of fileIds) {
+      try {
+        if (!(await googleDriveItemIsWithinRoot(fileId, membership.source.provider_source_id, { accessToken: connection.access_token_encrypted }))) throw new Error('This file is outside the connected folder.');
+        results.push(await captureGoogleDriveFileToIntake({ workspaceId, userId: req.authUser.id, fileId, captureMethod: 'connected_folder_browser', connectedSourceId: membership.source.id, sourceFolderId: membership.source.provider_source_id, sourceFolderName: membership.source.name, originalLedgerEntityType: 'project', originalLedgerEntityId: projectId, connection }));
+      } catch (error) { results.push({ file_id: fileId, error: error instanceof Error ? error.message : 'Could not send this file to Intake.' }); }
+    }
+    res.status(201).json({ items: results.filter((result) => result.item), captured: results.filter((result) => result.item && !result.duplicate), duplicates: results.filter((result) => result.duplicate), failures: results.filter((result) => result.error) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/connected-sources/:sourceId/refresh', authMiddleware, rateLimit('google_drive_refresh'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.body?.project_id ?? req.body?.projectId ?? '');
+    const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId: String(req.params.sourceId) });
+    if (!membership) return res.status(404).json({ error: 'Connected source not found' });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
+    const result = await refreshConnectedGoogleDriveSource({ source: membership.source, userId: req.authUser.id, force: true });
+    const settings = membership.source.external_metadata?.intakeSettings || {};
+    const intakeCaptures = [];
+    if (result.source.status === 'active' && settings.captureNewFilesToIntake) {
+      for (const change of result.changes ?? []) {
+        if (change.type !== 'file_added' || !change.provider_item_id) continue;
+        try { intakeCaptures.push(await captureGoogleDriveFileToIntake({ workspaceId, userId: req.authUser.id, fileId: change.provider_item_id, captureMethod: 'connected_folder_refresh', connectedSourceId: membership.source.id, sourceFolderId: membership.source.provider_source_id, sourceFolderName: membership.source.name, originalLedgerEntityType: 'project', originalLedgerEntityId: projectId })); } catch (error) { intakeCaptures.push({ file_id: change.provider_item_id, error: error instanceof Error ? error.message : 'Could not capture new file.' }); }
+      }
+    }
+    if (result.changes?.length) await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_folder_refreshed_with_changes', targetType: 'project', targetId: projectId, metadata: { source_id: membership.source.id, changes: result.changes.slice(0, 50), change_count: result.changes.length } });
+    res.json({ ...result, intake_captures: intakeCaptures, error: result.error || null });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/connected-sources/:sourceId/intake-settings', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.body?.project_id ?? req.body?.projectId ?? '');
+    const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId: String(req.params.sourceId) });
+    if (!membership) return res.status(404).json({ error: 'Connected source not found' });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
+    const settings = { captureNewFilesToIntake: Boolean(req.body?.capture_new_files_to_intake ?? req.body?.captureNewFilesToIntake), includeNestedFolders: Boolean(req.body?.include_nested_folders ?? req.body?.includeNestedFolders), suggestedProjectId: req.body?.suggested_project_id || projectId, suggestedOwnerId: req.body?.suggested_owner_id || null };
+    const updated = await supabase.from('connected_external_sources').update({ external_metadata: { ...(membership.source.external_metadata || {}), intakeSettings: settings }, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', membership.source.id).select('*').single();
+    if (updated.error) throw updated.error;
+    res.json({ source: updated.data, settings });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/connected-sources/:sourceId/promote', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.body?.project_id ?? req.body?.projectId ?? '');
+    const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId: String(req.params.sourceId) });
+    if (!membership) return res.status(404).json({ error: 'Connected source not found' });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
+    const connection = await getGoogleDriveConnectionById(membership.source.integration_connection_id);
+    if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to add files.', code: 'connection_required' });
+    const fileIds = Array.isArray(req.body?.file_ids) ? req.body.file_ids.map((id) => String(id)).filter((id) => /^[A-Za-z0-9_-]{10,}$/.test(id)).slice(0, 25) : [];
+    const resources = []; const failures = [];
+    for (const fileId of fileIds) {
+      try {
+        if (!(await googleDriveItemIsWithinRoot(fileId, membership.source.provider_source_id, { accessToken: connection.access_token_encrypted }))) throw new Error('This item is outside the connected folder.');
+        const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'google_drive', url: `https://drive.google.com/open?id=${encodeURIComponent(fileId)}`, createdByUserId: req.authUser.id });
+        const reference = await resolveDriveReferenceForSource({ workspaceId, referenceId: created.reference.id, source: membership.source, accessToken: connection.access_token_encrypted });
+        if (reference.metadata?.mimeType === 'application/vnd.google-apps.folder') throw new Error('Folders cannot be added as project resources.');
+        const link = await linkExternalReference({ supabase, workspaceId, referenceId: reference.id, targetType: 'project', targetId: projectId, createdByUserId: req.authUser.id, source: 'manual', linkMetadata: { connected_source_id: membership.source.id, provider_item_id: fileId }, ensureTarget: ensureExternalTarget });
+        resources.push({ reference, link });
+        await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_file_promoted', targetType: 'project', targetId: projectId, metadata: { source_id: membership.source.id, external_reference_id: reference.id, file_id: fileId, file_name: reference.metadata?.name || null } });
+      } catch (error) { failures.push({ file_id: fileId, error: error instanceof Error ? error.message : 'Could not add this file.' }); }
+    }
+    res.status(201).json({ resources, failures });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/connected-sources/:sourceId/reconnect', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.body?.project_id ?? req.body?.projectId ?? '');
+    const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId: String(req.params.sourceId) });
+    if (!membership) return res.status(404).json({ error: 'Connected source not found' });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
+    const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
+    if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive first.', code: 'connection_required' });
+    const folder = await resolveGoogleDriveFolder(membership.source.provider_source_id, { accessToken: connection.access_token_encrypted });
+    const updated = await supabase.from('connected_external_sources').update({ integration_connection_id: connection.id, connected_by_user_id: req.authUser.id, name: folder.name || membership.source.name, status: 'active', last_error: null, updated_at: new Date().toISOString() }).eq('id', membership.source.id).eq('workspace_id', workspaceId).select('*').single();
+    if (updated.error) throw updated.error;
+    const refreshed = await refreshConnectedGoogleDriveSource({ source: updated.data, userId: req.authUser.id, force: true });
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_folder_reconnected', targetType: 'project', targetId: projectId, metadata: { source_id: updated.data.id, folder_id: updated.data.provider_source_id } });
+    res.json({ source: refreshed.source });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/projects/:projectId/connected-sources/:sourceId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.params.projectId); const sourceId = String(req.params.sourceId);
+    const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId });
+    if (!membership) return res.status(404).json({ error: 'Connected source not found' });
+    await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
+    const deleted = await supabase.from('connected_source_relationships').delete().eq('workspace_id', workspaceId).eq('connected_source_id', sourceId).eq('entity_type', 'project').eq('entity_id', projectId).select('id').maybeSingle();
+    if (deleted.error) throw deleted.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_folder_disconnected', targetType: 'project', targetId: projectId, metadata: { source_id: sourceId, folder_name: membership.source.name } });
+    res.json({ disconnected: true });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/google-drive/webhook', rateLimit('google_drive_webhook'), async (req, res) => {
+  const channelId = String(req.headers['x-goog-channel-id'] || '').trim();
+  const channelToken = String(req.headers['x-goog-channel-token'] || '').trim();
+  const resourceId = String(req.headers['x-goog-resource-id'] || '').trim();
+  const messageNumber = Number(req.headers['x-goog-message-number']);
+  if (!channelId || !channelToken) return res.status(204).end();
+  try {
+    const channel = await supabase.from('google_drive_watch_channels').select('*').eq('channel_id', channelId).in('status', ['creating', 'active', 'renewing']).maybeSingle();
+    if (channel.error) throw channel.error;
+    if (!channel.data || !googleDriveChannelTokenMatches(channelToken, channel.data.channel_token_hash) || (channel.data.resource_id !== 'pending' && resourceId && channel.data.resource_id !== resourceId)) return res.status(204).end();
+    await supabase.from('google_drive_watch_channels').update({ last_message_number: Number.isFinite(messageNumber) ? messageNumber : channel.data.last_message_number, last_notification_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', channel.data.id);
+    const delivery = await supabase.from('google_drive_change_deliveries').insert({ integration_connection_id: channel.data.integration_connection_id, channel_id: channelId, resource_id: resourceId || null, message_number: Number.isFinite(messageNumber) ? messageNumber : null, state: String(req.headers['x-goog-resource-state'] || '') || null }).select('id').single();
+    if (delivery.error && delivery.error.code !== '23505') throw delivery.error;
+    res.status(204).end();
+    if (delivery.data?.id) void (async () => { try { await drainGoogleDriveConnection(channel.data.integration_connection_id); await supabase.from('google_drive_change_deliveries').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('id', delivery.data.id); } catch (error) { await supabase.from('google_drive_change_deliveries').update({ status: 'failed', error_message: clampText(error?.message || 'drain_failed', 500) }).eq('id', delivery.data.id); } })();
+  } catch (error) { console.error('[google-drive] webhook validation failed', { message: error?.message || 'unknown_error' }); return res.status(204).end(); }
+});
+
+app.get('/api/integrations/google-drive/monitoring', authMiddleware, rateLimit('read'), async (req, res) => {
+  try { const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id }); if (!connection) return res.json({ status: 'connection_required' }); const state = await getGoogleDriveMonitoringState(connection.id); const channel = await supabase.from('google_drive_watch_channels').select('id, channel_id, expiration_at, status, last_notification_at, last_renewed_at, last_error').eq('integration_connection_id', connection.id).eq('status', 'active').order('expiration_at', { ascending: false }).limit(1).maybeSingle(); if (channel.error) throw channel.error; res.json({ status: channel.data ? 'active' : 'disabled', state, channel: channel.data || null }); } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/google-drive/monitoring/start', authMiddleware, rateLimit('write'), async (req, res) => {
+  try { const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id }); if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to start monitoring.', code: 'connection_required' }); const result = await ensureGoogleDriveMonitoring({ connection, force: true }); res.json({ status: 'active', ...result }); } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/integrations/google-drive/monitoring/repair', authMiddleware, rateLimit('write'), async (req, res) => {
+  try { const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id }); if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to repair monitoring.', code: 'connection_required' }); const result = await ensureGoogleDriveMonitoring({ connection, force: true }); const drained = await drainGoogleDriveConnection(connection.id); res.json({ status: 'active', ...result, drained }); } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/connected-sources/:sourceId/monitoring', authMiddleware, rateLimit('write'), async (req, res) => {
+  try { const workspaceId = await resolveWorkspaceIdForRequest(req); const sourceId = String(req.params.sourceId); const source = await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('id', sourceId).maybeSingle(); if (source.error) throw source.error; if (!source.data) return res.status(404).json({ error: 'Connected source not found.' }); await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: String(req.body?.project_id || '') }); const settings = { ...(source.data.external_metadata || {}), monitorActivity: req.body?.monitor_activity !== false && req.body?.monitorActivity !== false, monitorChanges: req.body?.monitor_changes !== false && req.body?.monitorChanges !== false, includeNestedFolders: Boolean(req.body?.include_nested_folders ?? req.body?.includeNestedFolders ?? source.data.external_metadata?.includeNestedFolders), notificationPreference: ['off','important','all'].includes(String(req.body?.notification_preference || req.body?.notificationPreference)) ? String(req.body?.notification_preference || req.body?.notificationPreference) : (source.data.external_metadata?.notificationPreference || 'important') }; const updated = await supabase.from('connected_external_sources').update({ external_metadata: settings, status: settings.monitorChanges ? source.data.status : 'active', updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', sourceId).select('*').single(); if (updated.error) throw updated.error; res.json({ source: updated.data }); } catch (error) { return respondWithError(res, error); }
+});
+
+const allowedGoogleDriveRuleTriggers = new Set(['file_added','file_updated','file_moved_in','file_moved_out','file_trashed','file_deleted','file_restored','file_access_lost','file_access_restored','external.file.added','external.file.updated','external.file.moved_in','external.file.moved_out','external.file.trashed','external.file.deleted','external.file.restored','external.file.access_lost','external.file.access_restored']);
+const allowedGoogleDriveRuleActions = new Set(['send_to_intake','add_to_project_resources','add_project_activity','create_drive_folder','create_google_doc']);
+
+app.get('/api/connected-sources/:sourceId/rules', authMiddleware, rateLimit('read'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer'); const result = await supabase.from('integration_rules').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').eq('connected_source_id', String(req.params.sourceId)).order('created_at', { ascending: false }); if (result.error) throw result.error; res.json(result.data || []); } catch (error) { return respondWithError(res, error); } });
+app.post('/api/connected-sources/:sourceId/rules', authMiddleware, rateLimit('write'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member'); const sourceId = String(req.params.sourceId); const source = await supabase.from('connected_external_sources').select('id, workspace_id').eq('workspace_id', workspaceId).eq('id', sourceId).maybeSingle(); if (source.error) throw source.error; if (!source.data) return res.status(404).json({ error: 'Connected source not found.' }); const trigger = String(req.body?.trigger_type || '').trim(); if (!allowedGoogleDriveRuleTriggers.has(trigger)) return res.status(400).json({ error: 'Unsupported Google Drive rule trigger.' }); const actions = Array.isArray(req.body?.actions) ? req.body.actions : []; if (!actions.length || actions.some((action) => !allowedGoogleDriveRuleActions.has(String(action?.type || '')))) return res.status(400).json({ error: 'Unsupported Google Drive rule action.' }); const projectId = req.body?.project_id ? String(req.body.project_id) : null; if (projectId && !await ensureWorkspaceResource('projects', projectId, workspaceId)) return res.status(404).json({ error: 'Project not found.' }); const inserted = await supabase.from('integration_rules').insert({ workspace_id: workspaceId, provider: 'google_drive', connected_source_id: sourceId, project_id: projectId, name: clampText(req.body?.name || 'Google Drive rule', 160), description: clampText(req.body?.description, 500) || null, trigger_type: trigger, trigger_config: req.body?.trigger_config || {}, conditions: Array.isArray(req.body?.conditions) ? req.body.conditions : [], actions, enabled: false, created_by_user_id: req.authUser.id }).select('*').single(); if (inserted.error) throw inserted.error; await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_rule_created', targetType: 'integration_rule', targetId: inserted.data.id, metadata: { source_id: sourceId, trigger_type: trigger } }); res.status(201).json(inserted.data); } catch (error) { return respondWithError(res, error); } });
+
+app.get('/api/integration-rules/:ruleId', authMiddleware, rateLimit('read'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); const result = await supabase.from('integration_rules').select('*').eq('workspace_id', workspaceId).eq('id', String(req.params.ruleId)).maybeSingle(); if (result.error) throw result.error; if (!result.data) return res.status(404).json({ error: 'Rule not found.' }); res.json(result.data); } catch (error) { return respondWithError(res, error); } });
+app.patch('/api/integration-rules/:ruleId', authMiddleware, rateLimit('write'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member'); const changes = {}; for (const key of ['name','description','trigger_type','project_id']) if (req.body?.[key] !== undefined) changes[key] = key === 'name' ? clampText(req.body[key], 160) : key === 'description' ? clampText(req.body[key], 500) || null : req.body[key]; if (req.body?.conditions !== undefined) changes.conditions = Array.isArray(req.body.conditions) ? req.body.conditions : []; if (req.body?.actions !== undefined) changes.actions = Array.isArray(req.body.actions) ? req.body.actions : []; if (req.body?.enabled !== undefined) changes.enabled = Boolean(req.body.enabled); const updated = await supabase.from('integration_rules').update({ ...changes, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', String(req.params.ruleId)).select('*').single(); if (updated.error) throw updated.error; res.json(updated.data); } catch (error) { return respondWithError(res, error); } });
+app.delete('/api/integration-rules/:ruleId', authMiddleware, rateLimit('write'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member'); const deleted = await supabase.from('integration_rules').delete().eq('workspace_id', workspaceId).eq('id', String(req.params.ruleId)); if (deleted.error) throw deleted.error; res.json({ deleted: true }); } catch (error) { return respondWithError(res, error); } });
+app.get('/api/integration-rules/:ruleId/executions', authMiddleware, rateLimit('read'), async (req, res) => { try { const workspaceId = await resolveWorkspaceIdForRequest(req); const rule = await supabase.from('integration_rules').select('id').eq('workspace_id', workspaceId).eq('id', String(req.params.ruleId)).maybeSingle(); if (rule.error) throw rule.error; if (!rule.data) return res.status(404).json({ error: 'Rule not found.' }); const result = await supabase.from('integration_rule_executions').select('*, external_change_events(provider_resource_id,event_type,metadata_after)').eq('rule_id', rule.data.id).order('created_at', { ascending: false }).limit(100); if (result.error) throw result.error; res.json(result.data || []); } catch (error) { return respondWithError(res, error); } });
+
 app.get('/api/integrations/figma/oauth/callback', rateLimit('auth'), async (req, res) => {
   try {
     const code = String(req.query?.code ?? '').trim();
@@ -9416,7 +9882,487 @@ const getGithubConnectionForReference = async ({ workspaceId, reference, parsed 
   return { id: installationResult.data.id, access_token_encrypted: token.token, approvedRepository: repositoryResult.data };
 };
 
-const getConnectionForExternalReference = async (args) => args.provider === 'github' ? getGithubConnectionForReference(args) : getFigmaConnectionForReference(args);
+const getGoogleDriveConnectionForReference = async ({ requestedByUserId }) => {
+  const result = await supabase.from('google_drive_connections').select('id, user_id, provider_account_id, provider_account_email, encrypted_refresh_token, encrypted_access_token, status, token_expires_at').eq('user_id', requestedByUserId).maybeSingle();
+  if (result.error) throw result.error;
+  const connection = result.data;
+  if (!connection || connection.status !== 'connected') return null;
+  let accessToken = readIntegrationToken(connection.encrypted_access_token);
+  if (!accessToken || (connection.token_expires_at && new Date(connection.token_expires_at).getTime() < Date.now() + 60_000)) accessToken = await refreshGoogleDriveAccessToken(connection);
+  if (!accessToken) {
+    await supabase.from('google_drive_connections').update({ status: 'revoked', last_error: 'token_refresh_failed', updated_at: new Date().toISOString() }).eq('id', connection.id);
+    return null;
+  }
+  return { ...connection, access_token_encrypted: accessToken };
+};
+
+const getGoogleDriveConnectionById = async (connectionId) => {
+  const result = await supabase.from('google_drive_connections').select('id, user_id, provider_account_email, encrypted_refresh_token, encrypted_access_token, status, token_expires_at').eq('id', connectionId).maybeSingle();
+  if (result.error) throw result.error;
+  const connection = result.data;
+  if (!connection || connection.status !== 'connected') return null;
+  let accessToken = readIntegrationToken(connection.encrypted_access_token);
+  if (!accessToken || (connection.token_expires_at && new Date(connection.token_expires_at).getTime() < Date.now() + 60_000)) accessToken = await refreshGoogleDriveAccessToken(connection);
+  if (!accessToken) {
+    await supabase.from('google_drive_connections').update({ status: 'revoked', last_error: 'token_refresh_failed', updated_at: new Date().toISOString() }).eq('id', connection.id);
+    return null;
+  }
+  return { ...connection, access_token_encrypted: accessToken };
+};
+
+const normalizeGoogleDriveSourceItem = (item, sourceId, workspaceId, now) => {
+  const isFolder = item.mimeType === 'application/vnd.google-apps.folder';
+  const metadata = { webViewUrl: item.webViewLink || null, iconUrl: item.iconLink || null, thumbnailUrl: item.thumbnailLink || null, sizeBytes: item.size ? Number(item.size) : null, driveId: item.driveId || null };
+  const metadataHash = crypto.createHash('sha256').update(JSON.stringify({ name: item.name, mimeType: item.mimeType, modifiedTime: item.modifiedTime, trashed: Boolean(item.trashed), metadata })).digest('hex');
+  return { connected_source_id: sourceId, workspace_id: workspaceId, provider_item_id: String(item.id), parent_provider_item_id: item.parents?.[0] || null, name: String(item.name || 'Untitled Drive item').slice(0, 2000), mime_type: item.mimeType || null, item_type: isFolder ? 'folder' : 'file', modified_time: item.modifiedTime || null, trashed: Boolean(item.trashed), access_status: item.trashed ? 'trashed' : 'accessible', metadata, metadata_hash: metadataHash, last_seen_at: now };
+};
+
+const getConnectedSourceForProject = async ({ workspaceId, projectId, sourceId }) => {
+  const projectExists = await ensureExternalTarget({ workspaceId, targetType: 'project', targetId: projectId });
+  if (!projectExists) return null;
+  const relationship = await supabase.from('connected_source_relationships').select('id, connected_source_id, entity_type, entity_id, created_by_user_id, created_at').eq('workspace_id', workspaceId).eq('connected_source_id', sourceId).eq('entity_type', 'project').eq('entity_id', projectId).maybeSingle();
+  if (relationship.error) throw relationship.error;
+  if (!relationship.data) return null;
+  const source = await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('id', sourceId).maybeSingle();
+  if (source.error) throw source.error;
+  return source.data ? { source: source.data, relationship: relationship.data } : null;
+};
+
+const refreshConnectedGoogleDriveSource = async ({ source, userId, force = false }) => {
+  const connection = await getGoogleDriveConnectionById(source.integration_connection_id);
+  if (!connection) {
+    const updated = await supabase.from('connected_external_sources').update({ status: 'connection_required', last_error: 'connection_required', updated_at: new Date().toISOString() }).eq('id', source.id).select('*').single();
+    if (updated.error) throw updated.error;
+    return { source: updated.data, changes: [], connectionRequired: true };
+  }
+  const now = new Date().toISOString();
+  await supabase.from('connected_external_sources').update({ status: 'refreshing', last_refreshed_at: now, updated_at: now }).eq('id', source.id);
+  try {
+    const folder = await resolveGoogleDriveFolder(source.provider_source_id, { accessToken: connection.access_token_encrypted });
+    let listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, pageSize: 100, includeTrashed: true });
+    const allFiles = [...(listing.files ?? [])];
+    for (let page = 0; listing.nextPageToken && page < 10; page += 1) {
+      listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, pageSize: 100, includeTrashed: true, pageToken: listing.nextPageToken });
+      allFiles.push(...(listing.files ?? []));
+    }
+    const previous = await supabase.from('connected_source_items').select('provider_item_id, name, mime_type, modified_time, metadata_hash, access_status').eq('connected_source_id', source.id).eq('parent_provider_item_id', source.provider_source_id);
+    if (previous.error) throw previous.error;
+    const before = new Map((previous.data ?? []).map((row) => [row.provider_item_id, row]));
+    const normalized = allFiles.map((item) => normalizeGoogleDriveSourceItem(item, source.id, source.workspace_id, now));
+    const currentIds = new Set(normalized.map((item) => item.provider_item_id));
+    const visibleNormalized = normalized.filter((item) => !item.trashed);
+    const changes = [];
+    for (const item of normalized) {
+      const old = before.get(item.provider_item_id);
+      if (item.trashed && (!old || old.access_status !== 'trashed')) changes.push({ type: 'item_trashed', name: item.name, provider_item_id: item.provider_item_id, item_type: item.item_type });
+      else if (!old) changes.push({ type: item.item_type === 'folder' ? 'folder_added' : 'file_added', name: item.name, provider_item_id: item.provider_item_id, item_type: item.item_type });
+      else if (old.metadata_hash !== item.metadata_hash || old.modified_time !== item.modified_time) changes.push({ type: 'item_updated', name: item.name, provider_item_id: item.provider_item_id, item_type: item.item_type });
+    }
+    for (const old of before.values()) if (!currentIds.has(old.provider_item_id) && old.access_status !== 'not_found') changes.push({ type: 'item_removed', name: old.name });
+    for (const item of normalized) {
+      const saved = await supabase.from('connected_source_items').upsert({ ...item, first_seen_at: before.has(item.provider_item_id) ? undefined : now }, { onConflict: 'connected_source_id,provider_item_id' });
+      if (saved.error) throw saved.error;
+    }
+    if (currentIds.size < before.size) {
+      const missing = [...before.keys()].filter((id) => !currentIds.has(id));
+      await supabase.from('connected_source_items').update({ access_status: 'not_found', last_seen_at: now }).eq('connected_source_id', source.id).in('provider_item_id', missing);
+    }
+    const updated = await supabase.from('connected_external_sources').update({ name: String(folder.name || source.name).slice(0, 2000), canonical_url: folder.webViewLink || source.canonical_url, icon_url: folder.iconLink || source.icon_url, external_metadata: { ...(source.external_metadata || {}), modifiedTime: folder.modifiedTime || null, providerAccountEmail: connection.provider_account_email || null, itemCount: visibleNormalized.length }, status: 'active', last_refreshed_at: now, last_successful_refresh_at: now, last_error: null, updated_at: now }).eq('id', source.id).select('*').single();
+    if (updated.error) throw updated.error;
+    return { source: updated.data, changes, next_page_token: listing.nextPageToken || null };
+  } catch (error) {
+    const status = error?.accessStatus === 'revoked' ? 'connection_required' : error?.accessStatus === 'inaccessible' ? 'inaccessible' : error?.accessStatus === 'not_found' ? 'not_found' : 'stale';
+    const updated = await supabase.from('connected_external_sources').update({ status, last_refreshed_at: now, last_error: status, updated_at: now }).eq('id', source.id).select('*').single();
+    if (updated.error) throw updated.error;
+    if (status === 'stale') return { source: updated.data, changes: [], error: 'Showing folder contents from the last successful refresh.' };
+    return { source: updated.data, changes: [], error: error instanceof Error ? error.message : 'Could not refresh Google Drive folder.' };
+  }
+};
+
+const resolveDriveReferenceForSource = async ({ workspaceId, referenceId, source, accessToken }) => {
+  const result = await supabase.from('external_references').select('*').eq('workspace_id', workspaceId).eq('id', referenceId).maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data) { const error = new Error('External reference not found'); error.statusCode = 404; throw error; }
+  const parsed = parseGoogleDriveUrl(result.data.external_url);
+  const resolved = await resolveGoogleDriveMetadata(parsed, { accessToken });
+  const updated = await supabase.from('external_references').update({ metadata: { ...(result.data.metadata || {}), ...(resolved.metadata || {}), provenance: { connectedSourceId: source.id, providerItemId: parsed.fileId } }, external_type: 'file', access_status: resolved.accessStatus, last_resolved_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', referenceId).select('*').single();
+  if (updated.error) throw updated.error;
+  return updated.data;
+};
+
+const normalizeGoogleDriveFileId = (value) => {
+  const fileId = String(value ?? '').trim();
+  if (!/^[A-Za-z0-9_-]{10,}$/.test(fileId)) {
+    const error = new Error('Select a valid Google Drive file.'); error.statusCode = 400; throw error;
+  }
+  return fileId;
+};
+
+const getGoogleDriveReferenceByFileId = async ({ workspaceId, userId, fileId, connection, source = null }) => {
+  const normalizedFileId = normalizeGoogleDriveFileId(fileId);
+  const activeConnection = connection || await getGoogleDriveConnectionForReference({ requestedByUserId: userId });
+  if (!activeConnection) {
+    const error = new Error('Reconnect Google Drive to continue.'); error.statusCode = 409; error.code = 'connection_required'; throw error;
+  }
+  const created = await createOrGetExternalReference({
+    supabase, workspaceId, provider: 'google_drive',
+    url: `https://drive.google.com/open?id=${encodeURIComponent(normalizedFileId)}`,
+    createdByUserId: userId,
+  });
+  const parsed = parseGoogleDriveUrl(created.reference.external_url);
+  const resolved = await resolveGoogleDriveMetadata(parsed, { accessToken: activeConnection.access_token_encrypted });
+  const metadata = { ...(created.reference.metadata || {}), ...(resolved.metadata || {}) };
+  const updated = await supabase.from('external_references').update({
+    metadata,
+    external_type: 'file',
+    access_status: resolved.accessStatus,
+    last_resolved_at: new Date().toISOString(),
+  }).eq('workspace_id', workspaceId).eq('id', created.reference.id).select('*').single();
+  if (updated.error) throw updated.error;
+  return { reference: updated.data, connection: activeConnection, metadata, reused: created.reused };
+};
+
+const captureGoogleDriveFileToIntake = async ({ workspaceId, userId, fileId, captureMethod = 'picker', connectedSourceId = null, sourceFolderId = null, sourceFolderName = null, originalLedgerEntityType = null, originalLedgerEntityId = null, connection = null }) => {
+  const source = connectedSourceId
+    ? (await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('id', connectedSourceId).maybeSingle()).data
+    : null;
+  if (connectedSourceId && !source) { const error = new Error('Connected Google Drive source not found.'); error.statusCode = 404; throw error; }
+  const sourceConnection = source ? await getGoogleDriveConnectionById(source.integration_connection_id) : null;
+  if (source && !sourceConnection) { const error = new Error('Reconnect Google Drive to continue.'); error.statusCode = 409; error.code = 'connection_required'; throw error; }
+  const resolved = await getGoogleDriveReferenceByFileId({ workspaceId, userId, fileId, connection: sourceConnection || connection, source });
+  if (resolved.metadata.mimeType === 'application/vnd.google-apps.folder') { const error = new Error('Folders cannot be sent to Intake.'); error.statusCode = 400; throw error; }
+
+  const duplicate = await supabase.from('inbox_items').select(inboxItemSelectColumns).eq('workspace_id', workspaceId).eq('source_provider', 'google_drive').eq('provider_resource_id', resolved.metadata.providerResourceId).in('status', ['unprocessed', 'snoozed']).maybeSingle();
+  if (duplicate.error) throw duplicate.error;
+  if (duplicate.data) return { item: mapInboxItemResponse(duplicate.data), reference: resolved.reference, duplicate: true };
+
+  let suggestedProjectId = null;
+  if (source) {
+    const relation = await supabase.from('connected_source_relationships').select('entity_id').eq('workspace_id', workspaceId).eq('connected_source_id', source.id).eq('entity_type', 'project').limit(1).maybeSingle();
+    if (relation.error) throw relation.error;
+    suggestedProjectId = relation.data?.entity_id || null;
+  }
+  if (originalLedgerEntityType === 'project' && originalLedgerEntityId && await ensureExternalTarget({ workspaceId, targetType: 'project', targetId: originalLedgerEntityId })) suggestedProjectId = originalLedgerEntityId;
+  const provenance = { captureMethod, connectedSourceId: connectedSourceId || null, sourceFolderId: sourceFolderId || source?.provider_source_id || null, sourceFolderName: sourceFolderName || source?.name || null, originalLedgerEntityType, originalLedgerEntityId, capturedAt: new Date().toISOString() };
+  const providerMetadata = { ...resolved.metadata, provenance, suggestionReason: suggestedProjectId ? 'This file came from a Google Drive folder connected to this project.' : null };
+  const inserted = await supabase.from('inbox_items').insert({
+    workspace_id: workspaceId, user_id: userId, updated_by: userId,
+    source: 'google_drive', source_provider: 'google_drive', source_id: resolved.metadata.providerResourceId,
+    provider_resource_id: resolved.metadata.providerResourceId, canonical_resource_id: resolved.reference.id,
+    connected_source_id: connectedSourceId || source?.id || null, integration_connection_id: resolved.connection.id,
+    capture_method: captureMethod, provider_metadata: providerMetadata, access_status: resolved.reference.access_status,
+    last_resolved_at: resolved.reference.last_resolved_at, source_url: resolved.metadata.webViewUrl || resolved.metadata.canonicalUrl,
+    title: resolved.metadata.name, body: null, raw_payload: { provider: 'google_drive', metadata: resolved.metadata, provenance, suggestionReason: providerMetadata.suggestionReason },
+    suggested_type: 'capture', suggested_project_id: suggestedProjectId, status: 'unprocessed', updated_at: new Date().toISOString(),
+  }).select(inboxItemSelectColumns).single();
+  if (inserted.error?.code === '23505') {
+    const raced = await supabase.from('inbox_items').select(inboxItemSelectColumns).eq('workspace_id', workspaceId).eq('source_provider', 'google_drive').eq('provider_resource_id', resolved.metadata.providerResourceId).in('status', ['unprocessed', 'snoozed']).maybeSingle();
+    if (raced.error) throw raced.error;
+    return { item: mapInboxItemResponse(raced.data), reference: resolved.reference, duplicate: true };
+  }
+  if (inserted.error) throw inserted.error;
+  await linkExternalReference({ supabase, workspaceId, referenceId: resolved.reference.id, targetType: 'intake', targetId: inserted.data.id, createdByUserId: userId, source: 'integration', linkMetadata: { capture_method: captureMethod, connected_source_id: connectedSourceId || source?.id || null }, ensureTarget: ensureExternalTarget });
+  await writeWorkspaceAuditLog({ workspaceId, actorUserId: userId, action: 'google_drive_file_sent_to_intake', targetType: 'intake', targetId: inserted.data.id, metadata: { file_id: resolved.metadata.providerResourceId, file_name: resolved.metadata.name, capture_method: captureMethod } });
+  return { item: mapInboxItemResponse(inserted.data), reference: resolved.reference, duplicate: false };
+};
+
+const googleDriveWebhookAddress = () => String(process.env.GOOGLE_DRIVE_WEBHOOK_URL || `${process.env.PUBLIC_API_URL || ''}/api/integrations/google-drive/webhook`).trim();
+const googleDriveChannelTokenHash = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+const googleDriveChannelTokenMatches = (token, hash) => {
+  const left = Buffer.from(googleDriveChannelTokenHash(token)); const right = Buffer.from(String(hash || ''));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+};
+
+const getGoogleDriveMonitoringState = async (connectionId) => {
+  const result = await supabase.from('google_drive_change_states').select('*').eq('integration_connection_id', connectionId).maybeSingle();
+  if (result.error) throw result.error;
+  return result.data;
+};
+
+const monitoredGoogleDriveSourcesForConnection = async (connectionId) => {
+  const result = await supabase.from('connected_external_sources').select('*').eq('integration_connection_id', connectionId).eq('provider', 'google_drive').eq('source_type', 'folder').neq('status', 'not_found');
+  if (result.error) throw result.error;
+  return (result.data ?? []).filter((source) => source.external_metadata?.monitorChanges !== false);
+};
+
+const googleDriveConnectionHasMonitoredObjects = async (connectionId, userId) => {
+  const sources = await monitoredGoogleDriveSourcesForConnection(connectionId);
+  if (sources.length) return true;
+  const intake = await supabase.from('inbox_items').select('id', { count: 'exact', head: true }).eq('integration_connection_id', connectionId).eq('source_provider', 'google_drive').in('status', ['unprocessed', 'snoozed']);
+  if (intake.error) throw intake.error;
+  if ((intake.count ?? 0) > 0) return true;
+  const references = await supabase.from('external_references').select('id', { count: 'exact', head: true }).eq('provider', 'google_drive');
+  if (references.error) throw references.error;
+  return (references.count ?? 0) > 0;
+};
+
+const createGoogleDriveWatch = async ({ connection, pageToken, replacingChannelId = null }) => {
+  const channelId = crypto.randomUUID();
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = googleDriveChannelTokenHash(verificationToken);
+  const placeholder = await supabase.from('google_drive_watch_channels').insert({ integration_connection_id: connection.id, channel_id: channelId, resource_id: 'pending', resource_uri: null, channel_token_hash: tokenHash, expiration_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(), status: 'creating' }).select('*').single();
+  if (placeholder.error) throw placeholder.error;
+  try {
+    const expiration = Date.now() + Math.min(7 * 24 * 60 * 60 * 1000 - 60_000, Math.max(60 * 60 * 1000, Number(process.env.GOOGLE_DRIVE_CHANNEL_EXPIRATION_MS) || 6 * 24 * 60 * 60 * 1000));
+    const watched = await watchGoogleDriveChanges({ pageToken, address: googleDriveWebhookAddress(), channelId, token: verificationToken, expiration, accessToken: connection.access_token_encrypted });
+    const updated = await supabase.from('google_drive_watch_channels').update({ resource_id: watched.resourceId || 'unknown', resource_uri: watched.resourceUri || null, expiration_at: watched.expiration ? new Date(Number(watched.expiration)).toISOString() : new Date(expiration).toISOString(), status: 'active', last_renewed_at: new Date().toISOString(), last_error: null }).eq('id', placeholder.data.id).select('*').single();
+    if (updated.error) throw updated.error;
+    if (replacingChannelId) {
+      const old = await supabase.from('google_drive_watch_channels').select('channel_id, resource_id').eq('id', replacingChannelId).maybeSingle();
+      if (old.data) { await stopGoogleDriveChanges({ resourceId: old.data.resource_id, channelId: old.data.channel_id, accessToken: connection.access_token_encrypted }).catch(() => null); await supabase.from('google_drive_watch_channels').update({ status: 'stopped', updated_at: new Date().toISOString() }).eq('id', replacingChannelId); }
+    }
+    return updated.data;
+  } catch (error) {
+    await supabase.from('google_drive_watch_channels').update({ status: 'error', last_error: clampText(error?.message || 'watch_failed', 500), updated_at: new Date().toISOString() }).eq('id', placeholder.data.id);
+    throw error;
+  }
+};
+
+const ensureGoogleDriveMonitoring = async ({ connection, force = false }) => {
+  let state = await getGoogleDriveMonitoringState(connection.id);
+  if (!state) {
+    const token = await getGoogleDriveStartPageToken({ accessToken: connection.access_token_encrypted });
+    const created = await supabase.from('google_drive_change_states').insert({ integration_connection_id: connection.id, current_page_token: token.startPageToken }).select('*').single();
+    if (created.error) throw created.error;
+    state = created.data;
+  }
+  const channel = await supabase.from('google_drive_watch_channels').select('*').eq('integration_connection_id', connection.id).eq('status', 'active').order('expiration_at', { ascending: false }).limit(1).maybeSingle();
+  if (channel.error) throw channel.error;
+  const expiresSoon = !channel.data || new Date(channel.data.expiration_at).getTime() < Date.now() + (Number(process.env.GOOGLE_DRIVE_CHANNEL_RENEWAL_HOURS || 24) * 60 * 60 * 1000);
+  if (force || expiresSoon) await createGoogleDriveWatch({ connection, pageToken: state.current_page_token, replacingChannelId: channel.data?.id || null });
+  return { state, channel: channel.data };
+};
+
+const updateGoogleDriveKnownMetadata = async ({ workspaceId, connection, fileId, file, removed, eventType }) => {
+  const refs = await supabase.from('external_references').select('id, metadata, access_status').eq('workspace_id', workspaceId).eq('provider', 'google_drive').filter('metadata->>providerResourceId', 'eq', fileId);
+  if (refs.error) throw refs.error;
+  const metadata = file ? { ...(refs.data?.[0]?.metadata || {}), provider: 'google_drive', providerResourceId: fileId, name: file.name || 'Untitled Drive file', mimeType: file.mimeType || null, webViewUrl: file.webViewLink || null, iconUrl: file.iconLink || null, thumbnailUrl: file.thumbnailLink || null, modifiedAtExternal: file.modifiedTime || null, sizeBytes: file.size ? Number(file.size) : null, sharedDriveId: file.driveId || null, parents: file.parents || [] } : null;
+  for (const ref of refs.data ?? []) {
+    const updated = await supabase.from('external_references').update({ metadata: metadata || ref.metadata || {}, access_status: removed ? 'not_found' : 'accessible', last_resolved_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', ref.id);
+    if (updated.error) throw updated.error;
+  }
+  const intake = await supabase.from('inbox_items').select('id, provider_metadata, title').eq('workspace_id', workspaceId).eq('source_provider', 'google_drive').eq('provider_resource_id', fileId).in('status', ['unprocessed', 'snoozed']);
+  if (intake.error) throw intake.error;
+  for (const item of intake.data ?? []) {
+    const nextMetadata = { ...(item.provider_metadata || {}), ...(metadata || {}), accessStatus: removed ? 'not_found' : 'accessible' };
+    const updated = await supabase.from('inbox_items').update({ ...(metadata?.name ? { title: metadata.name } : {}), provider_metadata: nextMetadata, access_status: removed ? 'not_found' : 'accessible', last_resolved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', item.id).eq('workspace_id', workspaceId);
+    if (updated.error) throw updated.error;
+  }
+  return { reference: refs.data?.[0] || null, metadata, intakeItems: intake.data ?? [], eventType };
+};
+
+const createDriveOperation = async ({ workspaceId, userId, operationType, idempotencyKey, requestMetadata = {}, sourceEntityType = null, sourceEntityId = null, connectedSourceId = null, sourceProviderResourceId = null }) => {
+  const derivedKey = crypto.createHash('sha256').update(JSON.stringify({ operationType, requestMetadata, sourceEntityType, sourceEntityId, connectedSourceId, sourceProviderResourceId })).digest('hex');
+  const key = clampText(idempotencyKey || `${operationType}:${derivedKey}`, 240);
+  const existing = await supabase.from('external_provider_operations').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').eq('idempotency_key', key).maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data) return { operation: existing.data, reused: true };
+  const inserted = await supabase.from('external_provider_operations').insert({ workspace_id: workspaceId, provider: 'google_drive', operation_type: operationType, idempotency_key: key, request_metadata: requestMetadata, source_provider_resource_id: sourceProviderResourceId, source_entity_type: sourceEntityType, source_entity_id: sourceEntityId, connected_source_id: connectedSourceId, requested_by_user_id: userId }).select('*').single();
+  if (inserted.error?.code === '23505') { const raced = await supabase.from('external_provider_operations').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').eq('idempotency_key', key).single(); if (raced.error) throw raced.error; return { operation: raced.data, reused: true }; }
+  if (inserted.error) throw inserted.error;
+  return { operation: inserted.data, reused: false };
+};
+
+const updateDriveOperation = async (operationId, changes) => {
+  const result = await supabase.from('external_provider_operations').update({ ...changes, updated_at: new Date().toISOString() }).eq('id', operationId).select('*').single();
+  if (result.error) throw result.error;
+  return result.data;
+};
+
+const verifyGoogleDriveDestination = async ({ workspaceId, userId, destinationFolderId, connectedSourceId = null, projectId = null, connection }) => {
+  const folderId = normalizeGoogleDriveFileId(destinationFolderId);
+  if (connectedSourceId) {
+    const sourceResult = await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('id', connectedSourceId).maybeSingle();
+    if (sourceResult.error) throw sourceResult.error;
+    if (!sourceResult.data || sourceResult.data.provider !== 'google_drive' || sourceResult.data.source_type !== 'folder') { const error = new Error('Approved Google Drive destination not found.'); error.statusCode = 404; throw error; }
+    if (projectId) { const membership = await getConnectedSourceForProject({ workspaceId, projectId, sourceId: connectedSourceId }); if (!membership) { const error = new Error('This destination is not connected to the project.'); error.statusCode = 403; throw error; } }
+    if (!(await googleDriveItemIsWithinRoot(folderId, sourceResult.data.provider_source_id, { accessToken: connection.access_token_encrypted }))) { const error = new Error('Choose a folder inside the connected Google Drive source.'); error.statusCode = 400; throw error; }
+  }
+  const folder = await resolveGoogleDriveFolder(folderId, { accessToken: connection.access_token_encrypted });
+  if (folder.trashed || folder.capabilities?.canAddChildren === false) { const error = new Error('You no longer have permission to add files to this folder.'); error.statusCode = 403; throw error; }
+  return folder;
+};
+
+const linkCreatedDriveFile = async ({ workspaceId, userId, fileId, targetType, targetId, connection, connectedSourceId = null, operationId = null, provenance = {} }) => {
+  const resolved = await getGoogleDriveReferenceByFileId({ workspaceId, userId, fileId, connection });
+  let link = null;
+  if (targetType && targetId) link = await linkExternalReference({ supabase, workspaceId, referenceId: resolved.reference.id, targetType, targetId, createdByUserId: userId, source: 'integration', linkMetadata: { ...(connectedSourceId ? { connected_source_id: connectedSourceId } : {}), ...(operationId ? { operation_id: operationId } : {}), ...provenance }, ensureTarget: ensureExternalTarget });
+  return { ...resolved, link };
+};
+
+const createConnectedSourceForDriveFolder = async ({ workspaceId, userId, folder, connection, projectId = null }) => {
+  const existing = await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').eq('source_type', 'folder').eq('provider_source_id', folder.id).maybeSingle();
+  if (existing.error) throw existing.error;
+  let source = existing.data;
+  if (!source) {
+    const created = await supabase.from('connected_external_sources').insert({ workspace_id: workspaceId, provider: 'google_drive', source_type: 'folder', provider_source_id: folder.id, integration_connection_id: connection.id, connected_by_user_id: userId, name: folder.name || 'Google Drive folder', canonical_url: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`, icon_url: folder.iconLink || null, external_metadata: { providerAccountEmail: connection.provider_account_email || null, createdByLedger: true }, sync_mode: 'manual', status: 'active' }).select('*').single();
+    if (created.error) throw created.error;
+    source = created.data;
+  }
+  if (projectId) { const relationship = await supabase.from('connected_source_relationships').upsert({ connected_source_id: source.id, workspace_id: workspaceId, entity_type: 'project', entity_id: projectId, created_by_user_id: userId }, { onConflict: 'connected_source_id,entity_type,entity_id' }).select('*').single(); if (relationship.error) throw relationship.error; }
+  return source;
+};
+
+const googleDriveEventTypeForChange = ({ file, removed, wasKnown, wasTrashed, inFolder, wasInFolder }) => {
+  if (removed) return wasInFolder ? 'external.file.deleted' : null;
+  if (!file && wasInFolder) return 'external.file.access_lost';
+  if (file?.trashed) return wasTrashed ? 'external.file.updated' : 'external.file.trashed';
+  if (!wasInFolder && inFolder) return 'external.file.moved_in';
+  if (wasInFolder && !inFolder) return 'external.file.moved_out';
+  if (!wasKnown) return inFolder ? 'external.file.added' : null;
+  if (wasTrashed && !file?.trashed) return 'external.file.restored';
+  return inFolder ? 'external.file.updated' : null;
+};
+
+const driveRuleTriggerMatches = (rule, event) => {
+  const aliases = { 'external.file.added': 'file_added', 'external.file.updated': 'file_updated', 'external.file.moved_in': 'file_moved_in', 'external.file.moved_out': 'file_moved_out', 'external.file.trashed': 'file_trashed', 'external.file.deleted': 'file_deleted', 'external.file.restored': 'file_restored', 'external.file.access_lost': 'file_access_lost', 'external.file.access_restored': 'file_access_restored' };
+  return String(rule.trigger_type) === event.event_type || String(rule.trigger_type) === aliases[event.event_type];
+};
+
+const driveRuleConditionsMatch = (conditions, file, { alreadyResource = false, alreadyIntake = false } = {}) => {
+  for (const condition of Array.isArray(conditions) ? conditions : []) {
+    const field = String(condition?.field || '').trim(); const operator = String(condition?.operator || 'contains').trim(); const expected = String(condition?.value ?? '').toLowerCase();
+    const actual = field === 'name' ? String(file?.name || '') : field === 'extension' ? String(file?.name || '').split('.').pop() : field === 'file_type' ? String(file?.mimeType || '') : field === 'size_bytes' ? String(file?.size || '') : field === 'already_resource' ? String(alreadyResource) : field === 'already_intake' ? String(alreadyIntake) : field === 'parent_folder' ? String(file?.parents?.[0] || '') : '';
+    const normalized = actual.toLowerCase();
+    if (operator === 'contains' && !normalized.includes(expected)) return false;
+    if (operator === 'starts_with' && !normalized.startsWith(expected)) return false;
+    if (operator === 'ends_with' && !normalized.endsWith(expected)) return false;
+    if (operator === 'equals' && normalized !== expected) return false;
+    if (operator === 'greater_than' && !(Number(actual) > Number(condition.value))) return false;
+    if (operator === 'less_than' && !(Number(actual) < Number(condition.value))) return false;
+  }
+  return true;
+};
+
+const createGoogleDriveChangeNotification = async ({ workspaceId, source, event, fileName, projectId = null }) => {
+  const preference = source.external_metadata?.notificationPreference || 'important';
+  if (preference === 'off') return;
+  const important = ['external.file.added', 'external.file.moved_in', 'external.file.moved_out', 'external.file.trashed', 'external.file.deleted', 'external.file.access_lost', 'external.file.restored'].includes(event.event_type);
+  if (preference !== 'all' && !important) return;
+  const recipients = new Set([source.connected_by_user_id].filter(Boolean));
+  if (projectId) {
+    const project = await supabase.from('projects').select('created_by').eq('workspace_id', workspaceId).eq('id', projectId).maybeSingle();
+    if (project.error) throw project.error;
+    if (project.data?.created_by) recipients.add(project.data.created_by);
+  }
+  const scheduledFor = new Date().toISOString();
+  const title = event.event_type === 'external.file.added' || event.event_type === 'external.file.moved_in' ? `${fileName} was added to ${source.name}.` : event.event_type === 'external.file.access_lost' ? `${fileName} is no longer accessible.` : `${fileName} changed in ${source.name}.`;
+  const payload = [...recipients].map((userId) => ({ user_id: userId, workspace_id: workspaceId, source_type: 'google_drive_change', source_id: event.id, notification_type: event.event_type, scheduled_for: scheduledFor, delivered_in_app_at: scheduledFor, metadata: { title, body: title, context: `Google Drive · ${source.name}`, moduleKind: projectId ? 'projects' : 'settings', focusPayload: projectId ? { kind: 'projects', focusProjectId: projectId } : { kind: 'settings', settingsSection: 'integrations' }, actions: ['open', 'dismiss'], external_change_event_id: event.id } }));
+  if (payload.length) { const result = await supabase.from('notification_events').upsert(payload, { onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for', ignoreDuplicates: true }); if (result.error) throw result.error; }
+};
+
+const executeGoogleDriveRules = async ({ event, source, file, workspaceId, connection }) => {
+  if (file?.appProperties?.ledgerRuleId) return [];
+  const rules = await supabase.from('integration_rules').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').eq('enabled', true).or(`connected_source_id.eq.${source.id},connected_source_id.is.null`);
+  if (rules.error) throw rules.error;
+  const results = [];
+  for (const rule of rules.data ?? []) {
+    if (!driveRuleTriggerMatches(rule, event)) continue;
+    const refs = await supabase.from('external_references').select('id').eq('workspace_id', workspaceId).eq('provider', 'google_drive').filter('metadata->>providerResourceId', 'eq', event.provider_resource_id).limit(1);
+    if (refs.error) throw refs.error;
+    const intake = await supabase.from('inbox_items').select('id').eq('workspace_id', workspaceId).eq('source_provider', 'google_drive').eq('provider_resource_id', event.provider_resource_id).in('status', ['unprocessed', 'snoozed']).limit(1);
+    if (intake.error) throw intake.error;
+    if (!driveRuleConditionsMatch(rule.conditions, file, { alreadyResource: Boolean(refs.data?.length), alreadyIntake: Boolean(intake.data?.length) })) continue;
+    const idempotencyKey = `${rule.id}:${event.id}`;
+    const execution = await supabase.from('integration_rule_executions').insert({ rule_id: rule.id, external_change_event_id: event.id, idempotency_key: idempotencyKey, status: 'running', matched_conditions: rule.conditions || [], started_at: new Date().toISOString() }).select('*').single();
+    if (execution.error?.code === '23505') continue;
+    if (execution.error) throw execution.error;
+    const actionResults = [];
+    for (const action of Array.isArray(rule.actions) ? rule.actions : []) {
+      try {
+        const type = String(action?.type || '');
+        if (type === 'send_to_intake') await captureGoogleDriveFileToIntake({ workspaceId, userId: rule.created_by_user_id || connection.user_id, fileId: event.provider_resource_id, captureMethod: 'rule', connectedSourceId: source.id, sourceFolderId: source.provider_source_id, sourceFolderName: source.name, connection });
+        else if (type === 'create_drive_folder') await createGoogleDriveFolder({ name: clampText(action.name || 'New folder', 240), parentId: source.provider_source_id, appProperties: { ledgerRuleId: rule.id }, accessToken: connection.access_token_encrypted });
+        else if (type === 'create_google_doc') await createGoogleDriveNativeFile({ name: clampText(action.name || 'New document', 240), mimeType: 'application/vnd.google-apps.document', parentId: source.provider_source_id, appProperties: { ledgerRuleId: rule.id }, accessToken: connection.access_token_encrypted });
+        else if (type === 'add_to_project_resources' && rule.project_id) {
+          const captured = await getGoogleDriveReferenceByFileId({ workspaceId, userId: rule.created_by_user_id || connection.user_id, fileId: event.provider_resource_id, connection });
+          await linkExternalReference({ supabase, workspaceId, referenceId: captured.reference.id, targetType: 'project', targetId: rule.project_id, createdByUserId: rule.created_by_user_id || connection.user_id, source: 'integration', linkMetadata: { integration_rule_id: rule.id }, ensureTarget: ensureExternalTarget });
+        } else if (type === 'add_project_activity') await writeWorkspaceAuditLog({ workspaceId, actorUserId: rule.created_by_user_id || connection.user_id, action: 'google_drive_rule_activity', targetType: 'project', targetId: rule.project_id, metadata: { rule_id: rule.id, file_id: event.provider_resource_id, file_name: file?.name || null } });
+        else throw new Error('Unsupported Google Drive rule action.');
+        actionResults.push({ type, status: 'succeeded' });
+      } catch (error) { actionResults.push({ type: String(action?.type || ''), status: 'failed', error: clampText(error?.message || 'action_failed', 500) }); }
+    }
+    const failed = actionResults.some((action) => action.status === 'failed'); const status = failed ? (actionResults.some((action) => action.status === 'succeeded') ? 'partially_succeeded' : 'failed') : 'succeeded';
+    await supabase.from('integration_rule_executions').update({ status, action_results: actionResults, completed_at: new Date().toISOString(), error_message: failed ? 'One or more rule actions failed.' : null }).eq('id', execution.data.id);
+    await supabase.from('integration_rules').update({ last_triggered_at: new Date().toISOString(), ...(failed ? {} : { last_success_at: new Date().toISOString() }), last_error: failed ? 'One or more actions failed.' : null, updated_at: new Date().toISOString() }).eq('id', rule.id);
+    results.push({ rule_id: rule.id, status });
+  }
+  return results;
+};
+
+const drainGoogleDriveConnection = async (connectionId) => {
+  const workerId = crypto.randomUUID();
+  const state = await getGoogleDriveMonitoringState(connectionId);
+  if (!state) return { processed: 0 };
+  const locked = await supabase.from('google_drive_change_states').update({ processing_started_at: new Date().toISOString(), processing_worker_id: workerId, last_error: null, updated_at: new Date().toISOString() }).eq('integration_connection_id', connectionId).is('processing_started_at', null).select('*').maybeSingle();
+  if (locked.error) throw locked.error;
+  if (!locked.data) return { skipped: true };
+  try {
+    const connection = await getGoogleDriveConnectionById(connectionId);
+    if (!connection) throw new Error('Google Drive connection required.');
+    const sources = await monitoredGoogleDriveSourcesForConnection(connectionId);
+    let pageToken = state.current_page_token; let processed = 0; let relevant = 0; let page;
+    do {
+      page = await listGoogleDriveChanges(pageToken, { accessToken: connection.access_token_encrypted });
+      for (const change of page.changes ?? []) {
+        const fileId = String(change.fileId || change.file?.id || ''); if (!fileId) continue;
+        const file = change.file || null;
+        const matchingSources = [];
+        for (const source of sources) {
+          const previous = await supabase.from('connected_source_items').select('access_status, trashed, name').eq('connected_source_id', source.id).eq('provider_item_id', fileId).maybeSingle();
+          if (previous.error) throw previous.error;
+          const wasInFolder = Boolean(previous.data);
+          let inFolder = wasInFolder;
+          if (file && source.external_metadata?.monitorActivity !== false) { try { inFolder = await googleDriveItemIsWithinRoot(fileId, source.provider_source_id, { accessToken: connection.access_token_encrypted }); } catch { inFolder = false; } }
+          if (inFolder || previous.data) matchingSources.push({ source, previous: previous.data, inFolder, wasInFolder });
+        }
+        const refs = await supabase.from('external_references').select('id, workspace_id, metadata').eq('provider', 'google_drive').filter('metadata->>providerResourceId', 'eq', fileId).limit(20);
+        if (refs.error) throw refs.error;
+        const activeIntake = await supabase.from('inbox_items').select('id, workspace_id').eq('source_provider', 'google_drive').eq('provider_resource_id', fileId).in('status', ['unprocessed', 'snoozed']).limit(20);
+        if (activeIntake.error) throw activeIntake.error;
+        if (!matchingSources.length && !refs.data?.length && !activeIntake.data?.length) continue;
+        const contexts = matchingSources.map((match) => match);
+        for (const ref of refs.data ?? []) if (!contexts.some((match) => !match.source && match.workspaceId === ref.workspace_id)) contexts.push({ source: null, previous: null, inFolder: false, workspaceId: ref.workspace_id });
+        for (const item of activeIntake.data ?? []) if (!contexts.some((match) => !match.source && match.workspaceId === item.workspace_id)) contexts.push({ source: null, previous: null, inFolder: false, workspaceId: item.workspace_id });
+        for (const match of contexts) {
+          const source = match.source; const workspaceId = source?.workspace_id || match.workspaceId || null; if (!workspaceId) continue;
+          const eventType = googleDriveEventTypeForChange({ file, removed: Boolean(change.removed), wasKnown: Boolean(match.previous), wasTrashed: Boolean(match.previous?.trashed), inFolder: match.inFolder, wasInFolder: Boolean(match.wasInFolder ?? match.previous) });
+          if (!eventType && !refs.data?.length && !activeIntake.data?.length) continue;
+          const eventKey = `${pageToken}:${workspaceId}:${source?.id || 'known'}:${fileId}:${change.removed ? 'removed' : JSON.stringify({ modifiedTime: file?.modifiedTime, parents: file?.parents, trashed: file?.trashed })}`;
+          const inserted = await supabase.from('external_change_events').insert({ workspace_id: workspaceId, provider: 'google_drive', integration_connection_id: connectionId, connected_source_id: source?.id || null, provider_resource_id: fileId, canonical_resource_id: refs.data?.[0]?.id || null, event_type: eventType || 'external.file.updated', provider_event_key: eventKey, metadata_before: match.previous || {}, metadata_after: file || {}, relevance_reason: source ? 'connected_folder' : refs.data?.length ? 'canonical_resource' : 'active_intake' }).select('*').single();
+          if (inserted.error?.code === '23505') continue;
+          if (inserted.error) throw inserted.error;
+          const event = inserted.data; relevant += 1;
+          const localOperation = await supabase.from('external_provider_operations').select('id, operation_type, result_metadata, created_at').eq('provider', 'google_drive').eq('status', 'completed').filter('result_metadata->>file_id', 'eq', fileId).gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle();
+          if (localOperation.error) throw localOperation.error;
+          await updateGoogleDriveKnownMetadata({ workspaceId, connection, fileId, file, removed: Boolean(change.removed), eventType });
+          if (source && file && match.inFolder) await supabase.from('connected_source_items').upsert({ ...normalizeGoogleDriveSourceItem(file, source.id, workspaceId, new Date().toISOString()), access_status: file.trashed ? 'trashed' : 'accessible' }, { onConflict: 'connected_source_id,provider_item_id' });
+          if (source && (!file || !match.inFolder)) await supabase.from('connected_source_items').update({ access_status: 'not_found', last_seen_at: new Date().toISOString() }).eq('connected_source_id', source.id).eq('provider_item_id', fileId);
+          if (source) {
+            const relation = await supabase.from('connected_source_relationships').select('entity_id').eq('workspace_id', workspaceId).eq('connected_source_id', source.id).eq('entity_type', 'project').limit(1).maybeSingle();
+            if (relation.error) throw relation.error;
+            const projectId = relation.data?.entity_id || null;
+            if (!localOperation.data && source.external_metadata?.monitorActivity !== false && ['external.file.added','external.file.moved_in','external.file.moved_out','external.file.trashed','external.file.deleted','external.file.access_lost','external.file.restored'].includes(event.event_type)) await writeWorkspaceAuditLog({ workspaceId, actorUserId: source.connected_by_user_id || connection.user_id, action: 'google_drive_external_change', targetType: projectId ? 'project' : 'connected_source', targetId: projectId || source.id, metadata: { event_id: event.id, event_type: event.event_type, source_id: source.id, file_id: fileId, file_name: file?.name || match.previous?.name || 'Drive file' } });
+            if (!localOperation.data) { await createGoogleDriveChangeNotification({ workspaceId, source, event, fileName: file?.name || match.previous?.name || 'Drive file', projectId }); await executeGoogleDriveRules({ event, source, file, workspaceId, connection }); }
+            else await supabase.from('external_provider_operations').update({ result_metadata: { ...(localOperation.data.result_metadata || {}), observed_event_id: event.id }, updated_at: new Date().toISOString() }).eq('id', localOperation.data.id);
+          }
+          await supabase.from('external_change_events').update({ processed_at: new Date().toISOString() }).eq('id', event.id);
+        }
+        processed += 1;
+      }
+      pageToken = page.nextPageToken || page.newStartPageToken || pageToken;
+      if (page.nextPageToken) continue;
+      const saved = await supabase.from('google_drive_change_states').update({ current_page_token: page.newStartPageToken || pageToken, last_successful_drain_at: new Date().toISOString(), processing_started_at: null, processing_worker_id: null, last_error: null, updated_at: new Date().toISOString() }).eq('integration_connection_id', connectionId).eq('processing_worker_id', workerId);
+      if (saved.error) throw saved.error;
+      return { processed, relevant };
+    } while (page?.nextPageToken);
+  } catch (error) {
+    await supabase.from('google_drive_change_states').update({ processing_started_at: null, processing_worker_id: null, last_error: clampText(error?.message || 'drain_failed', 500), updated_at: new Date().toISOString() }).eq('integration_connection_id', connectionId).eq('processing_worker_id', workerId);
+    throw error;
+  }
+};
+
+const getConnectionForExternalReference = async (args) => args.provider === 'github' ? getGithubConnectionForReference(args) : args.provider === 'google_drive' ? getGoogleDriveConnectionForReference(args) : getFigmaConnectionForReference(args);
 const requireExternalReferenceEdit = async ({ userId, workspaceId, targetType, targetId }) => {
   const access = await requireWorkspaceAccess(userId, workspaceId, 'member');
   if (!await ensureExternalTarget({ workspaceId, targetType, targetId })) {
@@ -9944,6 +10890,48 @@ app.get('/api/inbox', authMiddleware, rateLimit('read'), async (req, res) => {
   } catch (error) {
     return respondWithError(res, error);
   }
+});
+
+app.post('/api/inbox/:id/place-resource', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const inbox = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!inbox || inbox.source_provider !== 'google_drive') return res.status(404).json({ error: 'Google Drive Intake item not found.' });
+    const destinations = Array.isArray(req.body?.destinations) ? req.body.destinations.slice(0, 20) : [];
+    if (!destinations.length) return res.status(400).json({ error: 'Choose at least one destination.' });
+    const referenceId = inbox.canonical_resource_id;
+    if (!referenceId) return res.status(409).json({ error: 'This Intake item has no canonical resource.' });
+    const placed = []; const failures = [];
+    for (const destination of destinations) {
+      const targetType = String(destination?.entity_type ?? destination?.entityType ?? '').trim();
+      const targetId = String(destination?.entity_id ?? destination?.entityId ?? '').trim();
+      try {
+        if (!['project', 'task', 'note', 'event', 'reminder'].includes(targetType)) throw new Error('That destination type is not supported.');
+        await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType, targetId });
+        const link = await linkExternalReference({ supabase, workspaceId, referenceId, targetType, targetId, createdByUserId: req.authUser.id, source: 'manual', linkMetadata: { placed_from_intake_id: inbox.id }, ensureTarget: ensureExternalTarget });
+        placed.push({ target_type: targetType, target_id: targetId, link });
+      } catch (error) { failures.push({ target_type: targetType, target_id: targetId, error: error instanceof Error ? error.message : 'Could not place this resource.' }); }
+    }
+    if (!placed.length) return res.status(400).json({ placed, failures });
+    const now = new Date().toISOString();
+    const updated = await supabase.from('inbox_items').update({ status: 'converted', converted_type: 'external_resource', converted_id: referenceId, converted_at: now, converted_by: req.authUser.id, placed_at: now, placed_by: req.authUser.id, updated_by: req.authUser.id, updated_at: now }).eq('workspace_id', workspaceId).eq('id', inbox.id).select(inboxItemSelectColumns).single();
+    if (updated.error) throw updated.error;
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_resource_placed', targetType: 'intake', targetId: inbox.id, metadata: { reference_id: referenceId, destinations: placed.map((item) => ({ type: item.target_type, id: item.target_id })) } });
+    res.json({ inbox_item: mapInboxItemResponse(updated.data), placed, failures });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/inbox/:id/refresh-google-drive', authMiddleware, rateLimit('google_drive_refresh'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const inbox = await loadInboxItemForWorkspace(workspaceId, req.params.id);
+    if (!inbox || inbox.source_provider !== 'google_drive') return res.status(404).json({ error: 'Google Drive Intake item not found.' });
+    const result = await getGoogleDriveReferenceByFileId({ workspaceId, userId: req.authUser.id, fileId: inbox.provider_resource_id, connection: null });
+    const metadata = { ...(inbox.provider_metadata || {}), ...result.metadata };
+    const updated = await supabase.from('inbox_items').update({ title: result.metadata.name, source_url: result.metadata.webViewUrl || result.metadata.canonicalUrl, provider_metadata: metadata, access_status: result.reference.access_status, integration_connection_id: result.connection.id, last_resolved_at: result.reference.last_resolved_at, updated_by: req.authUser.id, updated_at: new Date().toISOString() }).eq('workspace_id', workspaceId).eq('id', inbox.id).select(inboxItemSelectColumns).single();
+    if (updated.error) throw updated.error;
+    res.json({ item: mapInboxItemResponse(updated.data) });
+  } catch (error) { return respondWithError(res, error); }
 });
 
 app.post('/api/inbox/:id/github-project', authMiddleware, rateLimit('write'), async (req, res) => {
@@ -21203,6 +22191,22 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+const runGoogleDriveMonitoringWorker = async () => {
+  try {
+    const connections = await supabase.from('google_drive_connections').select('id, user_id, status').eq('status', 'connected');
+    if (connections.error) { if (!isMissingRelationError(connections.error, 'google_drive_connections')) throw connections.error; return; }
+    for (const connection of connections.data ?? []) {
+      try {
+        if (!await googleDriveConnectionHasMonitoredObjects(connection.id, connection.user_id)) continue;
+        const hydrated = await getGoogleDriveConnectionById(connection.id);
+        if (!hydrated) continue;
+        await ensureGoogleDriveMonitoring({ connection: hydrated });
+        await drainGoogleDriveConnection(connection.id);
+      } catch (error) { console.error('[google-drive] monitoring cycle failed', { connectionId: connection.id, message: error?.message || 'unknown_error' }); }
+    }
+  } catch (error) { console.error('[google-drive] monitoring worker failed', { message: error?.message || 'unknown_error' }); }
+};
+
 app.listen(PORT, () => {
   console.log(`Backend running on port ${PORT}`);
   void runNotificationScheduler();
@@ -21212,4 +22216,6 @@ app.listen(PORT, () => {
   setInterval(() => {
     void runSlackEventDeliveryWorker();
   }, 10_000);
+  void runGoogleDriveMonitoringWorker();
+  setInterval(() => { void runGoogleDriveMonitoringWorker(); }, Math.max(15, Number(process.env.GOOGLE_DRIVE_RECONCILIATION_INTERVAL_HOURS) || 6) * 60 * 60 * 1000);
 });

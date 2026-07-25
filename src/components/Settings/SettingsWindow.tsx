@@ -823,6 +823,15 @@ export const SettingsWindow = () => {
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+  const [googleDriveStatus, setGoogleDriveStatus] = useState<{ status?: string; provider_account_email?: string | null }>({ status: 'disconnected' });
+  useEffect(() => {
+    if (activeSection !== 'integrations') return;
+    void api.getGoogleDriveIntegrationStatus().then((status) => setGoogleDriveStatus(status as typeof googleDriveStatus)).catch(() => setGoogleDriveStatus({ status: 'error' }));
+  }, [activeSection, api]);
+  const connectGoogleDrive = async () => {
+    try { const result = await api.connectGoogleDrive() as { url?: string }; if (!result.url) throw new Error('Google Drive connection is not configured.'); setGoogleDriveStatus({ status: 'connecting' }); window.open(result.url, '_blank', 'noopener,noreferrer'); } catch (error) { window.alert(error instanceof Error ? error.message : 'Could not connect Google Drive.'); }
+  };
+  const disconnectGoogleDrive = async () => { await api.disconnectGoogleDrive(); setGoogleDriveStatus({ status: 'disconnected' }); };
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [notificationPreferences, setNotificationPreferences] =
     useState<NotificationPreferences>(defaultNotificationPrefs);
@@ -4530,6 +4539,11 @@ export const SettingsWindow = () => {
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><FigmaMark /></span>
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Attach designs to Ledger work and preview them without leaving your workspace.</p></div>
                           <button type="button" onClick={() => setFigmaDetailOpen(true)} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
+                        </div>
+                        <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-2.5">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true">▣</span>
+                          <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Google Drive <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{googleDriveStatus.status === 'connected' ? `Connected as ${googleDriveStatus.provider_account_email || 'your Google account'}` : googleDriveStatus.status === 'connecting' ? 'Connecting' : googleDriveStatus.status === 'revoked' || googleDriveStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Browse and link Google Drive files to your Ledger projects and work.</p></div>
+                          <div className="flex shrink-0 gap-2"><button type="button" onClick={() => void connectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{googleDriveStatus.status === 'connected' ? 'Manage connection' : 'Connect Google Drive'}</button>{googleDriveStatus.status === 'connected' && <button type="button" onClick={() => void disconnectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Disconnect</button>}</div>
                         </div>
                         <div
                           className={`flex items-center gap-3 px-4 py-2.5 ${slackStatus?.connected ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''}`}

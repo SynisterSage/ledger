@@ -254,6 +254,44 @@ export const useApi = () => {
       disconnectGithubIntegration: (workspaceId: string) =>
         request('/api/integrations/github', { method: 'DELETE', headers: { 'X-Workspace-Id': workspaceId }, body: JSON.stringify({ confirmed: true }) }),
       getGithubRepositories: () => request('/api/integrations/github/repositories'),
+      getGoogleDriveIntegrationStatus: () => request('/api/integrations/google-drive/status', { skipWorkspaceHeader: true }),
+      connectGoogleDrive: () => request('/api/integrations/google-drive/connect', { skipWorkspaceHeader: true }),
+      disconnectGoogleDrive: () => request('/api/integrations/google-drive/disconnect', { method: 'POST', skipWorkspaceHeader: true }),
+      getGoogleDrivePickerToken: () => request('/api/integrations/google-drive/picker-token', { method: 'POST', skipWorkspaceHeader: true }),
+      attachGoogleDriveFiles: (fileIds: string[]) => request('/api/resources/google-drive/attach', { method: 'POST', body: JSON.stringify({ file_ids: fileIds }) }),
+      getProjectConnectedSources: (projectId: string) => request(`/api/projects/${encodeURIComponent(projectId)}/connected-sources`),
+      connectGoogleDriveFolderToProject: (projectId: string, folderId: string) => request(`/api/projects/${encodeURIComponent(projectId)}/connected-sources/google-drive`, { method: 'POST', body: JSON.stringify({ folder_id: folderId }) }),
+      getConnectedSourceItems: (sourceId: string, projectId: string, params: { parentId?: string; pageToken?: string; pageSize?: number } = {}) => { const query = new URLSearchParams({ project_id: projectId }); if (params.parentId) query.set('parent_id', params.parentId); if (params.pageToken) query.set('page_token', params.pageToken); if (params.pageSize) query.set('page_size', String(params.pageSize)); return request(`/api/connected-sources/${encodeURIComponent(sourceId)}/items?${query}`); },
+      refreshConnectedSource: (sourceId: string, projectId: string) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/refresh`, { method: 'POST', body: JSON.stringify({ project_id: projectId }) }),
+      sendConnectedSourceFilesToIntake: (sourceId: string, projectId: string, fileIds: string[]) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/send-to-intake`, { method: 'POST', body: JSON.stringify({ project_id: projectId, file_ids: fileIds }) }),
+      updateConnectedSourceIntakeSettings: (sourceId: string, projectId: string, settings: Record<string, unknown>) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/intake-settings`, { method: 'PATCH', body: JSON.stringify({ project_id: projectId, ...settings }) }),
+      getGoogleDriveMonitoring: () => request('/api/integrations/google-drive/monitoring'),
+      startGoogleDriveMonitoring: () => request('/api/integrations/google-drive/monitoring/start', { method: 'POST' }),
+      repairGoogleDriveMonitoring: () => request('/api/integrations/google-drive/monitoring/repair', { method: 'POST' }),
+      updateConnectedSourceMonitoring: (sourceId: string, projectId: string, settings: Record<string, unknown>) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/monitoring`, { method: 'PATCH', body: JSON.stringify({ project_id: projectId, ...settings }) }),
+      getConnectedSourceRules: (sourceId: string) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/rules`),
+      createConnectedSourceRule: (sourceId: string, payload: Record<string, unknown>) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/rules`, { method: 'POST', body: JSON.stringify(payload) }),
+      getIntegrationRule: (ruleId: string) => request(`/api/integration-rules/${encodeURIComponent(ruleId)}`),
+      updateIntegrationRule: (ruleId: string, payload: Record<string, unknown>) => request(`/api/integration-rules/${encodeURIComponent(ruleId)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+      deleteIntegrationRule: (ruleId: string) => request(`/api/integration-rules/${encodeURIComponent(ruleId)}`, { method: 'DELETE' }),
+      getIntegrationRuleExecutions: (ruleId: string) => request(`/api/integration-rules/${encodeURIComponent(ruleId)}/executions`),
+      createGoogleDriveFolder: (payload: Record<string, unknown>) => request('/api/google-drive/folders', { method: 'POST', body: JSON.stringify(payload) }),
+      createGoogleDriveNativeFile: (payload: Record<string, unknown>) => request('/api/google-drive/native-files', { method: 'POST', body: JSON.stringify(payload) }),
+      uploadFileToGoogleDrive: (payload: Record<string, unknown>) => request('/api/google-drive/uploads', { method: 'POST', body: JSON.stringify(payload) }),
+      createGoogleDriveProjectFolder: (projectId: string, payload: Record<string, unknown>) => request(`/api/projects/${encodeURIComponent(projectId)}/google-drive/folder`, { method: 'POST', body: JSON.stringify(payload) }),
+      createGoogleDriveProjectStructure: (projectId: string, payload: Record<string, unknown>) => request(`/api/projects/${encodeURIComponent(projectId)}/google-drive/structure`, { method: 'POST', body: JSON.stringify(payload) }),
+      exportProjectToGoogleDrive: (projectId: string, payload: Record<string, unknown>) => request(`/api/projects/${encodeURIComponent(projectId)}/google-drive/export`, { method: 'POST', body: JSON.stringify(payload) }),
+      renameGoogleDriveResource: (resourceId: string, payload: Record<string, unknown>) => request(`/api/google-drive/items/${encodeURIComponent(resourceId)}/rename`, { method: 'POST', body: JSON.stringify(payload) }),
+      copyGoogleDriveResource: (resourceId: string, payload: Record<string, unknown>) => request(`/api/google-drive/items/${encodeURIComponent(resourceId)}/copy`, { method: 'POST', body: JSON.stringify(payload) }),
+      moveGoogleDriveResource: (resourceId: string, payload: Record<string, unknown>) => request(`/api/google-drive/items/${encodeURIComponent(resourceId)}/move`, { method: 'POST', body: JSON.stringify(payload) }),
+      getExternalProviderOperation: (operationId: string) => request(`/api/external-operations/${encodeURIComponent(operationId)}`),
+      getExternalFolderTemplates: () => request('/api/external-folder-templates'),
+      createExternalFolderTemplate: (payload: Record<string, unknown>) => request('/api/external-folder-templates', { method: 'POST', body: JSON.stringify(payload) }),
+      updateExternalFolderTemplate: (templateId: string, payload: Record<string, unknown>) => request(`/api/external-folder-templates/${encodeURIComponent(templateId)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+      deleteExternalFolderTemplate: (templateId: string) => request(`/api/external-folder-templates/${encodeURIComponent(templateId)}`, { method: 'DELETE' }),
+      promoteConnectedSourceFiles: (sourceId: string, projectId: string, fileIds: string[]) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/promote`, { method: 'POST', body: JSON.stringify({ project_id: projectId, file_ids: fileIds }) }),
+      reconnectConnectedSource: (sourceId: string, projectId: string) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/reconnect`, { method: 'POST', body: JSON.stringify({ project_id: projectId }) }),
+      disconnectConnectedSource: (sourceId: string, projectId: string) => request(`/api/projects/${encodeURIComponent(projectId)}/connected-sources/${encodeURIComponent(sourceId)}`, { method: 'DELETE' }),
       searchGithubResources: (params: { query?: string; type?: 'all' | 'repository' | 'issue' | 'pull_request'; repositoryId?: string; limit?: number } = {}) => {
         const search = new URLSearchParams();
         if (params.query) search.set('query', params.query);
@@ -581,6 +619,17 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify(payload),
         }),
+
+      captureGoogleDriveFiles: (payload: { file_ids: string[]; capture_method?: string; connected_source_id?: string | null; source_folder_id?: string | null; source_folder_name?: string | null; original_ledger_entity_type?: string | null; original_ledger_entity_id?: string | null }) =>
+        request('/api/intake/google-drive/files', { method: 'POST', body: JSON.stringify(payload), skipWorkspaceHeader: true }),
+      resolveGoogleDriveIntakeUrl: (url: string) =>
+        request('/api/intake/google-drive/resolve-url', { method: 'POST', body: JSON.stringify({ url }), skipWorkspaceHeader: true }),
+      sendExternalReferenceToIntake: (referenceId: string) =>
+        request(`/api/external-references/${encodeURIComponent(referenceId)}/send-to-intake`, { method: 'POST', skipWorkspaceHeader: true }),
+      placeIntakeResource: (intakeId: string, destinations: Array<{ entityType: string; entityId: string }>) =>
+        request(`/api/inbox/${encodeURIComponent(intakeId)}/place-resource`, { method: 'POST', body: JSON.stringify({ destinations: destinations.map((destination) => ({ entity_type: destination.entityType, entity_id: destination.entityId })) }), skipWorkspaceHeader: true }),
+      refreshGoogleDriveIntake: (intakeId: string) =>
+        request(`/api/inbox/${encodeURIComponent(intakeId)}/refresh-google-drive`, { method: 'POST', skipWorkspaceHeader: true }),
 
       // Projects
       getProjects: (options?: { includeCompleted?: boolean }) => {

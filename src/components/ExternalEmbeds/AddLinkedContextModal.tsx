@@ -4,7 +4,7 @@ import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { FigmaMark } from '../Common/FigmaMark';
 import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 
-export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'figma' | 'github' | 'slack';
+export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'figma' | 'github' | 'google_drive' | 'slack';
 export type LinkedContextMode = 'paste' | 'existing';
 
 export type LinkedContextNote = {
@@ -121,6 +121,7 @@ const sourceGroups = [
     items: [
       { id: 'figma' as const, label: 'Figma', icon: FigmaMark },
       { id: 'github' as const, label: 'GitHub', icon: null },
+      { id: 'google_drive' as const, label: 'Google Drive', icon: null },
       { id: 'slack' as const, label: 'Slack', icon: SlackSourceIcon },
     ],
   },
@@ -197,9 +198,9 @@ export function AddLinkedContextModal({
         ? selectedCount === 0 ? 'Link selected' : `Link ${selectedCount} task${selectedCount === 1 ? '' : 's'}`
       : source === 'slack'
         ? selectedCount === 0 ? 'Link selected' : `Link ${selectedCount} Slack context${selectedCount === 1 ? '' : 's'}`
-      : source === 'figma'
+      : source === 'figma' || source === 'google_drive'
         ? mode === 'paste'
-          ? 'Add Figma link'
+          ? `Add ${source === 'google_drive' ? 'Google Drive' : 'Figma'} link`
           : 'Link selected'
         : githubRepositoryId
           ? 'Link repository'
@@ -321,11 +322,11 @@ export function AddLinkedContextModal({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {source === 'figma' && <div className="flex rounded-lg bg-[var(--ledger-surface-muted)] p-1">
+                  {(source === 'figma' || source === 'google_drive') && <div className="flex rounded-lg bg-[var(--ledger-surface-muted)] p-1">
                     <button type="button" onClick={() => onModeChange('paste')} className={`flex-1 rounded-md px-3 py-2 text-xs font-medium ${mode === 'paste' ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm' : 'text-[var(--ledger-text-muted)]'}`}>Paste link</button>
                     <button type="button" onClick={() => onModeChange('existing')} className={`flex-1 rounded-md px-3 py-2 text-xs font-medium ${mode === 'existing' ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm' : 'text-[var(--ledger-text-muted)]'}`}>Search</button>
                   </div>}
-                  {source === 'figma' && mode === 'paste' ? <div className="space-y-2"><label className="text-xs text-[var(--ledger-text-muted)]" htmlFor="external-link-input">Paste a Figma link</label><input id="external-link-input" value={url} onChange={(event) => onUrlChange(event.target.value)} placeholder="https://figma.com/design/..." className="h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-transparent px-3 text-sm outline-none focus:border-[var(--ledger-border-strong)]" /></div> : <div className="space-y-3">
+                  {(source === 'figma' || source === 'google_drive') && mode === 'paste' ? <div className="space-y-2"><label className="text-xs text-[var(--ledger-text-muted)]" htmlFor="external-link-input">Paste a {source === 'google_drive' ? 'Google Drive' : 'Figma'} link</label><input id="external-link-input" value={url} onChange={(event) => onUrlChange(event.target.value)} placeholder={source === 'google_drive' ? 'https://drive.google.com/file/d/…' : 'https://figma.com/design/...'} className="h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-transparent px-3 text-sm outline-none focus:border-[var(--ledger-border-strong)]" /></div> : <div className="space-y-3">
                     {source === 'github' ? <><input autoFocus type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search approved repositories" className="h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm outline-none focus:border-[var(--ledger-border-strong)]" /><div className="overflow-hidden rounded-lg bg-[var(--ledger-surface-muted)]">{githubRepositories.filter((repo) => `${repo.full_name} ${repo.owner_login}`.toLowerCase().includes(query.trim().toLowerCase())).map((repo) => <button key={repo.github_repository_id} type="button" onClick={() => onGithubRepositoryChange(repo.github_repository_id)} className={`flex w-full items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left last:border-b-0 hover:bg-[var(--ledger-surface-hover)] ${githubRepositoryId === repo.github_repository_id ? 'bg-[color:rgba(255,95,64,0.08)]' : ''}`}><span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--ledger-surface-card)]"><img src="/github-mark.svg" alt="" className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{repo.full_name}</span><span className="block text-xs text-[var(--ledger-text-muted)]">{repo.is_private ? 'Private' : 'Approved repository'}{repo.default_branch ? ` · ${repo.default_branch}` : ''}</span></span><span className={`h-4 w-4 rounded-full border ${githubRepositoryId === repo.github_repository_id ? 'border-[var(--ledger-accent)] bg-[var(--ledger-accent)]' : 'border-[var(--ledger-border-subtle)]'}`} /></button>)}</div></> : <><div className="flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3"><Search size={14} className="text-[var(--ledger-text-muted)]" /><input autoFocus value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search files or nodes" className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" /></div><div className="rounded-lg bg-[var(--ledger-surface-muted)]">{existing.map((reference) => <button key={reference.id} type="button" onClick={() => void onLinkReference(reference)} className="flex w-full items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--ledger-surface-card)]"><FileImage size={14} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{resourceTitle(reference)}</span><span className="block truncate text-xs text-[var(--ledger-text-muted)]">{resourceMeta(reference)}</span></span><span className="text-xs text-[var(--ledger-text-muted)]">Select</span></button>)}</div></>}
                   </div>}
                 </div>

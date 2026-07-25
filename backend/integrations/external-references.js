@@ -2,6 +2,7 @@ import { parseFigmaUrl, getFigmaExternalIdentity } from './figma/figma-url-parse
 import { resolveFigmaMetadata, FigmaProviderError } from './figma/figma-adapter.js';
 import { parseGithubUrl, getGithubExternalIdentity } from './github/github-url-parser.js';
 import { resolveGithubMetadata, GithubProviderError } from './github/github-adapter.js';
+import { parseGoogleDriveUrl, getGoogleDriveExternalIdentity, resolveGoogleDriveMetadata, GoogleDriveProviderError } from './google-drive.js';
 
 const adapters = {
   figma: {
@@ -13,6 +14,11 @@ const adapters = {
     parse: parseGithubUrl,
     getExternalIdentity: getGithubExternalIdentity,
     resolveMetadata: resolveGithubMetadata,
+  },
+  google_drive: {
+    parse: parseGoogleDriveUrl,
+    getExternalIdentity: getGoogleDriveExternalIdentity,
+    resolveMetadata: resolveGoogleDriveMetadata,
   },
 };
 const allowedTargetTypes = new Set([
@@ -87,6 +93,7 @@ export const createOrGetExternalReference = async ({
         ...(parsed.nodeId ? { nodeId: parsed.nodeId } : {}),
         ...(parsed.branchKey ? { branchKey: parsed.branchKey } : {}),
         ...(parsed.provider === 'github' ? { owner: parsed.owner, repository: parsed.repository, ...(parsed.number ? { number: parsed.number } : {}) } : {}),
+        ...(provider === 'google_drive' ? { providerResourceId: parsed.fileId } : {}),
       },
       access_status: 'unresolved',
       created_by_user_id: createdByUserId,
@@ -185,7 +192,7 @@ export const resolveExternalReference = async ({
     if (updated.error) throw updated.error;
     return updated.data;
   } catch (error) {
-    const status = error instanceof FigmaProviderError || error instanceof GithubProviderError ? error.accessStatus : 'error';
+    const status = error instanceof FigmaProviderError || error instanceof GithubProviderError || error instanceof GoogleDriveProviderError ? error.accessStatus : 'error';
     const updated = await supabase
       .from('external_references')
       .update({ access_status: status })
@@ -347,7 +354,7 @@ export const searchExternalReferences = async ({ supabase, workspaceId, provider
     .limit(Math.min(Math.max(Number(limit) || 30, 1), 50));
   if (provider) request = request.eq('provider', String(provider).trim().toLowerCase());
   const trimmed = String(query ?? '').trim();
-  if (trimmed) request = request.or(`normalized_url.ilike.%${trimmed}%,external_url.ilike.%${trimmed}%,metadata->>fileName.ilike.%${trimmed}%,metadata->>nodeName.ilike.%${trimmed}%,metadata->>fullName.ilike.%${trimmed}%,metadata->>title.ilike.%${trimmed}%`);
+  if (trimmed) request = request.or(`normalized_url.ilike.%${trimmed}%,external_url.ilike.%${trimmed}%,metadata->>fileName.ilike.%${trimmed}%,metadata->>name.ilike.%${trimmed}%,metadata->>fileType.ilike.%${trimmed}%,metadata->>nodeName.ilike.%${trimmed}%,metadata->>fullName.ilike.%${trimmed}%,metadata->>title.ilike.%${trimmed}%`);
   const result = await request;
   if (result.error) throw result.error;
   return result.data ?? [];

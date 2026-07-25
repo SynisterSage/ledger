@@ -63,11 +63,12 @@ const resourceLabel = (reference: Reference) => {
 };
 const referenceTitle = (reference: Reference, fallbackTitle?: string | null) =>
   String(
-    reference.metadata?.nodeName ?? reference.metadata?.fileName ?? fallbackTitle ?? 'Figma design'
+    reference.metadata?.name ?? reference.metadata?.nodeName ?? reference.metadata?.fileName ?? fallbackTitle ?? 'Figma design'
   );
 const referenceFileName = (reference: Reference, fallbackFileName?: string | null) =>
   String(reference.metadata?.fileName ?? fallbackFileName ?? '').trim();
 const isGithub = (reference?: Reference) => reference?.provider === 'github';
+const isGoogleDrive = (reference?: Reference) => reference?.provider === 'google_drive';
 const githubTitle = (reference: Reference) =>
   String(
     reference.metadata?.title ??
@@ -149,7 +150,7 @@ export function LinkedDesignsSection({
   >(null);
   const [menuLink, setMenuLink] = useState<Link | null>(null);
   const [consentReference, setConsentReference] = useState<Reference | null>(null);
-  const [provider, setProvider] = useState<'figma' | 'github'>('figma');
+  const [provider, setProvider] = useState<'figma' | 'github' | 'google_drive'>('figma');
   const [contextSource, setContextSource] = useState<LinkedContextSource>('figma');
   const [githubRepositories, setGithubRepositories] = useState<
     Array<{ github_repository_id: string; full_name: string; owner_login: string; name: string }>
@@ -167,13 +168,48 @@ export function LinkedDesignsSection({
   const [isLoadingSlackContexts, setIsLoadingSlackContexts] = useState(false);
   const githubType = 'issue' as const;
 
+  const openGoogleDrivePicker = async () => {
+    if (!canEdit) return;
+    setBusyId('google-drive');
+    try {
+      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string };
+      if (!tokenResult.access_token) throw new Error('Connect Google Drive to continue.');
+      const loadPicker = () => new Promise<void>((resolve, reject) => {
+        const googleWindow = window as any;
+        if (googleWindow.google?.picker) return resolve();
+        const existingScript = document.querySelector('script[data-ledger-google-picker]');
+        if (existingScript) { existingScript.addEventListener('load', () => googleWindow.gapi.load('picker', resolve)); existingScript.addEventListener('error', () => reject(new Error('Google Picker could not load.'))); return; }
+        const script = document.createElement('script'); script.src = 'https://apis.google.com/js/api.js'; script.async = true; script.dataset.ledgerGooglePicker = 'true'; script.onload = () => googleWindow.gapi.load('picker', resolve); script.onerror = () => reject(new Error('Google Picker could not load.')); document.head.appendChild(script);
+      });
+      await loadPicker();
+      const googleWindow = window as any;
+      await new Promise<void>((resolve) => {
+        const picker = new googleWindow.google.picker.PickerBuilder().addView(googleWindow.google.picker.ViewId.DOCS).enableFeature(googleWindow.google.picker.Feature.MULTISELECT_ENABLED).setOAuthToken(tokenResult.access_token).setCallback(async (data: any) => {
+          if (data.action === googleWindow.google.picker.Action.PICKED) {
+            const selected = (data.docs ?? []).map((doc: any) => String(doc.id)).filter(Boolean);
+            try {
+              const attached = await api.attachGoogleDriveFiles(selected) as { resources?: Reference[]; failures?: Array<{ error?: string }> };
+              for (const reference of attached.resources ?? []) await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
+              if (attached.failures?.length) toast.show(`${attached.failures.length} selected file${attached.failures.length === 1 ? '' : 's'} could not be added.`, { variant: 'error' });
+              await load();
+            } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not add Google Drive files.', { variant: 'error' }); }
+          }
+          if (data.action === googleWindow.google.picker.Action.CANCEL || data.action === googleWindow.google.picker.Action.PICKED) resolve();
+        }).build();
+        picker.setVisible(true);
+      });
+    } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not open Google Picker.', { variant: 'error' }); }
+    finally { setBusyId(null); }
+  };
+
   const handleContextSourceChange = (nextSource: LinkedContextSource) => {
     setContextSource(nextSource);
     setQuery((current) => current.replace(/^__calendar_filter__:[^ ]* ?/, ''));
     if (nextSource !== 'calendar') setSelectedCalendarItemIds([]);
-    if (nextSource === 'figma' || nextSource === 'github') {
+    if (nextSource === 'figma' || nextSource === 'github' || nextSource === 'google_drive') {
       setProvider(nextSource);
       setMode('paste');
+      if (nextSource === 'google_drive') void openGoogleDrivePicker();
     }
     if (nextSource === 'notes') void onLoadNotes?.();
     if (nextSource === 'projects') void onLoadProjects?.();
@@ -232,6 +268,7 @@ export function LinkedDesignsSection({
               !reference.metadata?.nodeName &&
               !reference.metadata?.fileName) ||
             (reference?.provider === 'github' && reference.access_status === 'unresolved')
+            || (reference?.provider === 'google_drive' && reference.access_status === 'unresolved')
           ) {
             try {
               const resolved = (await api.resolveExternalReference(
@@ -419,7 +456,7 @@ export function LinkedDesignsSection({
         setDialogOpen(false);
         return;
       }
-      if (referenceToLink.provider === 'github') {
+      if (referenceToLink.provider === 'github' || referenceToLink.provider === 'google_drive') {
         await api.resolveExternalReference(referenceToLink.id);
       }
       await api.linkExternalReferenceWithMetadata(
@@ -470,7 +507,7 @@ export function LinkedDesignsSection({
       toast.show(
         error instanceof Error
           ? error.message
-          : `That is not a supported ${provider === 'github' ? 'GitHub' : 'Figma'} link.`,
+          : `That is not a supported ${provider === 'github' ? 'GitHub' : provider === 'google_drive' ? 'Google Drive' : 'Figma'} link.`,
         { variant: 'error' }
       );
     } finally {
@@ -576,7 +613,7 @@ export function LinkedDesignsSection({
       const reference = (Array.isArray(link.external_references)
         ? link.external_references[0]
         : link.external_references) as Reference | undefined;
-      if (isGithub(reference)) {
+      if (isGithub(reference) || isGoogleDrive(reference)) {
         await api.resolveExternalReference(link.external_reference_id);
         await load();
         return;
@@ -597,6 +634,15 @@ export function LinkedDesignsSection({
     } finally {
       setBusyId(null);
     }
+  };
+  const sendGoogleDriveToIntake = async (link: Link) => {
+    if (!canEdit) return;
+    setBusyId(link.id);
+    try {
+      const result = await api.sendExternalReferenceToIntake(link.external_reference_id) as { duplicate?: boolean };
+      toast.show(result.duplicate ? 'This file is already in Intake.' : 'Google Drive file sent to Intake.', { variant: 'success' });
+    } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not send this file to Intake.', { variant: 'error' }); }
+    finally { setBusyId(null); setMenuLink(null); }
   };
   const showLocations = async (referenceId: string) => {
     try {
@@ -711,7 +757,7 @@ export function LinkedDesignsSection({
   const githubAttention = rows.filter(({ reference }) => isGithub(reference) && (Number((reference?.metadata as any)?.reviewSummary?.reviewRequestedCount ?? 0) > 0 || Number((reference?.metadata as any)?.reviewSummary?.changesRequestedCount ?? 0) > 0 || String((reference?.metadata as any)?.checksSummary?.overallState ?? '') === 'failing')).length;
   const isIntakeTarget = target.targetType === 'intake';
   const visibleRows = compactExternalOnly
-    ? rows.filter(({ reference }) => isGithub(reference) || reference?.provider === 'figma')
+    ? rows.filter(({ reference }) => isGithub(reference) || isGoogleDrive(reference) || reference?.provider === 'figma')
     : rows;
   const visibleContextLinks = compactExternalOnly
     ? contextLinks.filter((link) => link.resource.type === 'project')
@@ -827,6 +873,7 @@ export function LinkedDesignsSection({
           ))}
           {visibleRows.map(({ link, reference }) => {
             const github = isGithub(reference);
+            const googleDrive = isGoogleDrive(reference);
             const githubMetadata = (reference?.metadata ?? {}) as Record<string, any>;
             const preview = previews[link.external_reference_id];
             const refUrl = reference?.normalized_url || reference?.external_url || '';
@@ -835,7 +882,7 @@ export function LinkedDesignsSection({
               : referenceTitle(reference!, fallbackNodeName);
             const fileName = referenceFileName(reference!, fallbackFileName);
             const context = github
-              ? [
+              ? googleDrive ? [reference?.metadata?.fileType, reference?.metadata?.modifiedAtExternal ? `Updated ${formatDate(String(reference.metadata.modifiedAtExternal))}` : '', reference?.access_status !== 'accessible' ? (reference?.access_status === 'connection_required' ? 'Connect Google Drive to view file details.' : reference?.access_status === 'not_found' ? 'This file is no longer available in Google Drive.' : 'This Google Drive file is no longer accessible.') : ''] : [
                   reference?.metadata?.state === 'merged'
                     ? 'Merged'
                     : reference?.metadata?.state === 'closed'
@@ -870,6 +917,8 @@ export function LinkedDesignsSection({
                 <div className={compact ? 'flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-sm' : 'flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[var(--ledger-surface-muted)]'}>
                   {github ? (
                     <img src="/github-mark.svg" alt="" className="h-4 w-4" />
+                  ) : googleDrive && reference?.metadata?.iconUrl ? (
+                    <img src={String(reference.metadata.iconUrl)} alt="" className="h-4 w-4" />
                   ) : (
                     <FigmaResourceIcon
                       url={compact ? null : preview?.url}
@@ -900,6 +949,8 @@ export function LinkedDesignsSection({
                           </>
                         )}
                       </>
+                    ) : googleDrive ? (
+                      'Google Drive'
                     ) : (
                       'Figma'
                     )}
@@ -943,7 +994,7 @@ export function LinkedDesignsSection({
                         setMenuLink(null);
                       }}
                     >
-                      Open in {github ? 'GitHub' : 'Figma'}
+                      Open in {github ? 'GitHub' : googleDrive ? 'Google Drive' : 'Figma'}
                     </button>
                     <button
                       type="button"
@@ -956,6 +1007,11 @@ export function LinkedDesignsSection({
                     >
                       Refresh
                     </button>
+                    {googleDrive && (
+                      <button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50" onClick={() => void sendGoogleDriveToIntake(link)}>
+                        Send to Intake
+                      </button>
+                    )}
                     {canInsert && onInsert && (
                       <button
                         type="button"
@@ -1078,8 +1134,8 @@ export function LinkedDesignsSection({
             onPasteLink={pasteLink}
             onLinkReference={linkReference}
             onLinkRepository={linkApprovedRepository}
-            resourceTitle={(reference) => reference.provider === 'github' ? githubTitle(reference as Reference) : referenceTitle(reference as Reference)}
-            resourceMeta={(reference) => reference.provider === 'github' ? String(reference.metadata?.repositoryFullName ?? '') : `Figma · ${resourceLabel(reference as Reference)}`}
+            resourceTitle={(reference) => reference.provider === 'github' ? githubTitle(reference as Reference) : String(reference.metadata?.name ?? referenceTitle(reference as Reference))}
+            resourceMeta={(reference) => reference.provider === 'github' ? String(reference.metadata?.repositoryFullName ?? '') : `${reference.provider === 'google_drive' ? 'Google Drive' : 'Figma'} · ${String(reference.metadata?.fileType ?? resourceLabel(reference as Reference))}`}
           />
           {/* The previous inline picker was replaced by AddLinkedContextModal. */}
           {/*

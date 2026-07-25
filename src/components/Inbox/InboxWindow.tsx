@@ -43,6 +43,7 @@ import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { FigmaMark } from '../Common/FigmaMark';
+import { GoogleDriveIntakeCaptureButton } from './GoogleDriveIntakeCaptureButton';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
@@ -75,6 +76,15 @@ type InboxItem = {
   channel_name?: string | null;
   author_name?: string | null;
   source_label?: string | null;
+  capture_source_label?: string | null;
+  provider_resource_id?: string | null;
+  canonical_resource_id?: string | null;
+  connected_source_id?: string | null;
+  capture_method?: string | null;
+  provider_metadata?: Record<string, unknown> | null;
+  access_status?: string | null;
+  last_resolved_at?: string | null;
+  placed_at?: string | null;
   snoozed_until?: string | null;
   created_at: string;
   updated_at: string;
@@ -1525,6 +1535,32 @@ export default function IntakeWindow() {
     }
   };
 
+  const placeGoogleDriveItem = async (item: InboxItem) => {
+    const destinationProjectId = selectedProjectId || item.suggested_project_id || '';
+    if (item.source_provider !== 'google_drive' || !destinationProjectId) {
+      toast.show('Choose a project destination first.', { variant: 'error' });
+      return;
+    }
+    setActiveActionId(item.id);
+    try {
+      const result = await api.placeIntakeResource(item.id, [{ entityType: 'project', entityId: destinationProjectId }]) as { inbox_item?: InboxItem };
+      if (result.inbox_item) setItems((current) => current.map((entry) => entry.id === item.id ? result.inbox_item! : entry));
+      toast.show('Resource placed in the project.', { variant: 'success' });
+      emitInboxItemsUpdated(item.status === 'unprocessed' ? -1 : 0);
+    } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not place this resource.', { variant: 'error' }); }
+    finally { setActiveActionId(null); }
+  };
+
+  const refreshGoogleDriveItem = async (item: InboxItem) => {
+    setActiveActionId(item.id);
+    try {
+      const result = await api.refreshGoogleDriveIntake(item.id) as { item?: InboxItem };
+      if (result.item) setItems((current) => current.map((entry) => entry.id === item.id ? result.item! : entry));
+      toast.show('Google Drive details refreshed.', { variant: 'success' });
+    } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not refresh Google Drive details.', { variant: 'error' }); }
+    finally { setActiveActionId(null); }
+  };
+
   const snoozeItem = async (
     item: InboxItem,
     mode: 'later-today' | 'tomorrow' | 'next-week' | 'pick-date',
@@ -2757,6 +2793,7 @@ export default function IntakeWindow() {
       (normalizeForSearch(selectedItem.source_provider).includes('github') ||
         normalizeForSearch(selectedItem.source).includes('github'))
   );
+  const selectedItemIsGoogleDrive = Boolean(selectedItem && normalizeForSearch(selectedItem.source_provider || selectedItem.source).includes('google_drive'));
   const selectedFigmaPayload = selectedItemIsFigma && selectedItem ? getRawPayload(selectedItem) : {};
   const selectedFigmaNodeName = findDeepString(selectedFigmaPayload, ['node_name', 'nodeName']);
   const selectedFigmaFileName = findDeepString(selectedFigmaPayload, ['file_name', 'fileName']);
@@ -2789,6 +2826,8 @@ export default function IntakeWindow() {
         const rawNumber = findDeepString(raw, ['issue_number', 'pull_request_number', 'number']);
         const number = rawNumber && /^\d+$/.test(rawNumber) ? rawNumber : '';
         const state = getGithubLifecycleLabel(selectedItem) || findDeepString(raw, ['state', 'status']);
+        const isGoogleDriveSource = source.includes('google_drive');
+        const googleMetadata = selectedItem.provider_metadata || {};
         const sourceMeta = isGithubSource
           ? [repository, number ? `#${number}` : '', state].filter(Boolean)
           : isFigmaSource
@@ -2796,14 +2835,16 @@ export default function IntakeWindow() {
               findDeepString(raw, ['file_name', 'fileName']),
               findDeepString(raw, ['page_name', 'pageName']),
               findDeepString(raw, ['node_name', 'nodeName']),
-            ].filter(Boolean)
+          ].filter(Boolean)
+          : isGoogleDriveSource
+          ? [String(googleMetadata.fileType || 'File'), googleMetadata.modifiedAtExternal ? `Updated ${formatDateTime(String(googleMetadata.modifiedAtExternal))}` : '', String(googleMetadata.sourceFolderName || '')].filter(Boolean)
           : [getSourceContext(selectedItem), selectedItem.author_name].filter(Boolean);
         const rawDescription = cleanSlackText(
           selectedItem.body ||
             (isFigmaSource ? findDeepString(raw, ['description', 'details', 'text', 'message', 'content', 'node_description', 'nodeDescription']) : null) ||
             findDeepString(raw, ['description', 'text', 'message', 'content']) ||
             getItemReason(selectedItem) ||
-            (isFigmaSource ? 'Figma resource linked from this intake item.' : '')
+            (isFigmaSource ? 'Figma resource linked from this intake item.' : isGoogleDriveSource ? 'Google Drive resource captured for review.' : '')
         );
         const description = stripRepeatedPreviewMetadata(rawDescription, sourceMeta, isGithubSource);
         return { title, sourceMeta, description };
@@ -3044,14 +3085,17 @@ export default function IntakeWindow() {
           </div>
         }
         secondaryActions={
-          <ModuleHeaderStripAction
-            icon={
-              refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />
-            }
-            onClick={() => void loadInbox(true, { force: true })}
-            title="Refresh Intake"
-            ariaLabel="Refresh Intake"
-          />
+          <div className="flex items-center gap-1.5">
+            <GoogleDriveIntakeCaptureButton onCaptured={() => void loadInbox(true, { force: true })} />
+            <ModuleHeaderStripAction
+              icon={
+                refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />
+              }
+              onClick={() => void loadInbox(true, { force: true })}
+              title="Refresh Intake"
+              ariaLabel="Refresh Intake"
+            />
+          </div>
         }
       />
 
@@ -3219,7 +3263,29 @@ export default function IntakeWindow() {
                           ) : null}
                         </section>
 
-                        <section className="space-y-3">
+                        <>
+                          {selectedItemIsGoogleDrive && (
+                            <section className="space-y-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3">
+                              <div>
+                                <p className={inboxTheme.inspectorLabel}>Google Drive resource</p>
+                                <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">{String(selectedItem.provider_metadata?.suggestionReason || 'Review this file before placing it in Ledger.')}</p>
+                              </div>
+                              <DestinationProperty
+                                label="Suggested project"
+                                icon={FolderKanban}
+                                value={selectedProjectId || selectedItem.suggested_project_id || ''}
+                                placeholder="Choose a project"
+                                onChange={setSelectedProjectId}
+                                options={projects.map((project) => ({ value: project.id, label: project.name || project.title || 'Untitled project' }))}
+                              />
+                              <button type="button" onClick={() => void placeGoogleDriveItem(selectedItem)} disabled={!(selectedProjectId || selectedItem.suggested_project_id) || selectedItem.status === 'converted' || activeActionId === selectedItem.id} className="w-full rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white disabled:opacity-50">
+                                {activeActionId === selectedItem.id ? 'Placing…' : selectedItem.status === 'converted' ? 'Resource placed' : 'Place resource'}
+                              </button>
+                              <button type="button" onClick={() => void refreshGoogleDriveItem(selectedItem)} disabled={activeActionId === selectedItem.id} className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50">Refresh details</button>
+                            </section>
+                          )}
+
+                          <section className="space-y-3">
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <p className={inboxTheme.inspectorLabel}>Destination</p>
@@ -3332,6 +3398,7 @@ export default function IntakeWindow() {
                             <p className="text-xs text-[var(--ledger-danger)]">{destinationValidationError}</p>
                           )}
                         </section>
+                        </>
                         {activeWorkspaceId ? (
                           <LinkedDesignsSection
                             target={{ workspaceId: activeWorkspaceId, targetType: 'intake', targetId: selectedItem.id }}
