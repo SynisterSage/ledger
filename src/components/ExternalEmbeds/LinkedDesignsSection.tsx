@@ -181,7 +181,7 @@ export function LinkedDesignsSection({
     setBusyId('google-drive');
     try {
       installGooglePickerStyles();
-      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string };
+      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null };
       if (!tokenResult.access_token) throw new Error('Connect Google Drive to continue.');
       const loadPicker = () => new Promise<void>((resolve, reject) => {
         const googleWindow = window as any;
@@ -193,7 +193,9 @@ export function LinkedDesignsSection({
       await loadPicker();
       const googleWindow = window as any;
       await new Promise<void>((resolve) => {
-        const picker = new googleWindow.google.picker.PickerBuilder().addView(googleWindow.google.picker.ViewId.DOCS).enableFeature(googleWindow.google.picker.Feature.MULTISELECT_ENABLED).setOAuthToken(tokenResult.access_token).setCallback(async (data: any) => {
+        const pickerBuilder = new googleWindow.google.picker.PickerBuilder().addView(googleWindow.google.picker.ViewId.DOCS).enableFeature(googleWindow.google.picker.Feature.MULTISELECT_ENABLED).setOAuthToken(tokenResult.access_token);
+        if (tokenResult.app_id) pickerBuilder.setAppId(tokenResult.app_id);
+        const picker = pickerBuilder.setCallback(async (data: any) => {
           if (data.action === googleWindow.google.picker.Action.PICKED) {
             const selected = (data.docs ?? []).map((doc: any) => String(doc.id)).filter(Boolean);
             try {

@@ -40,13 +40,15 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
     setBusy('connect');
     try {
       installGooglePickerStyles();
-      const token = await api.getGoogleDrivePickerToken() as { access_token?: string };
+      const token = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null };
       if (!token.access_token) throw new Error('Reconnect Google Drive to continue.');
       await loadPicker();
       const browser = window as any;
       await new Promise<void>((resolve) => {
         const pickerView = new browser.google.picker.DocsView(browser.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true);
-        const picker = new browser.google.picker.PickerBuilder().addView(pickerView).enableFeature(browser.google.picker.Feature.NAV_HIDDEN).setOAuthToken(token.access_token).setCallback(async (data: any) => {
+        const pickerBuilder = new browser.google.picker.PickerBuilder().addView(pickerView).enableFeature(browser.google.picker.Feature.NAV_HIDDEN).setOAuthToken(token.access_token);
+        if (token.app_id) pickerBuilder.setAppId(token.app_id);
+        const picker = pickerBuilder.setCallback(async (data: any) => {
           if (data.action === browser.google.picker.Action.PICKED) {
             const folderId = String(data.docs?.[0]?.id ?? '');
             try { await api.connectGoogleDriveFolderToProject(projectId, folderId); toast.show('Google Drive folder connected.', { variant: 'success' }); await loadSources(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); }

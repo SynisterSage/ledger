@@ -9335,7 +9335,17 @@ app.post('/api/integrations/google-drive/disconnect', authMiddleware, rateLimit(
 });
 
 app.post('/api/integrations/google-drive/picker-token', authMiddleware, rateLimit('google_drive_token'), async (req, res) => {
-  try { const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id }); if (!connection) return res.status(409).json({ error: 'Connect Google Drive to continue.', code: 'connection_required' }); res.json({ access_token: connection.access_token_encrypted, expires_at: connection.token_expires_at || null }); } catch (error) { return respondWithError(res, error); }
+  try {
+    const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
+    if (!connection) return res.status(409).json({ error: 'Connect Google Drive to continue.', code: 'connection_required' });
+    res.json({
+      access_token: connection.access_token_encrypted,
+      expires_at: connection.token_expires_at || null,
+      // drive.file Picker flows need the Cloud project number so Google can
+      // associate selected files with this OAuth application.
+      app_id: process.env.GOOGLE_DRIVE_APP_ID?.trim() || process.env.GOOGLE_CLOUD_PROJECT_NUMBER?.trim() || null,
+    });
+  } catch (error) { return respondWithError(res, error); }
 });
 
 app.post('/api/resources/google-drive/attach', authMiddleware, rateLimit('write'), async (req, res) => {
@@ -9364,12 +9374,17 @@ app.post('/api/resources/google-drive/attach', authMiddleware, rateLimit('write'
       } catch (error) {
         console.error('[google-drive] picker file resolution failed', {
           fileId,
+          connectionId: connection.id,
+          connectedAccount: connection.provider_account_email || null,
           accessStatus: error?.accessStatus || null,
           code: error?.code || null,
           statusCode: error?.statusCode || null,
           message: error instanceof Error ? error.message : 'unknown_error',
         });
-        return { file_id: fileId, reference: null, error: error instanceof Error ? error.message : 'Could not add this file.' };
+        const errorMessage = error?.accessStatus === 'not_found'
+          ? 'Google Drive could not verify this file for the connected account. It may be deleted, inaccessible, or owned by another Google account.'
+          : error instanceof Error ? error.message : 'Could not add this file.';
+        return { file_id: fileId, reference: null, error: errorMessage };
       }
     }));
     res.status(201).json({ resources: results.filter((item) => item.reference), failures: results.filter((item) => item.error) });
