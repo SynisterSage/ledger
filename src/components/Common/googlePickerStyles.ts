@@ -10,9 +10,9 @@ export const installGooglePickerStyles = () => {
   style.id = 'ledger-google-picker-styles';
   style.textContent = `
     .picker-dialog-bg {
-      /* The Picker is opened after Ledger's own modal closes. A second dim
-         layer makes the transparent desktop shell read like a mismatched
-         nested window, so keep Google's blocking backdrop transparent. */
+      /* The Picker is opened after Ledger's own modal closes. Remove Google's
+         second full-window layer so it cannot read like a nested shell window. */
+      display: none !important;
       background: transparent !important;
     }
     .picker-dialog {

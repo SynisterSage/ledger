@@ -68,6 +68,8 @@ const referenceTitle = (reference: Reference, fallbackTitle?: string | null) =>
   String(
     reference.metadata?.name ?? reference.metadata?.nodeName ?? reference.metadata?.fileName ?? fallbackTitle ?? 'Figma design'
   );
+const googleDriveTitle = (reference: Reference) =>
+  String(reference.metadata?.name ?? reference.metadata?.fileName ?? reference.metadata?.title ?? 'Google Drive file');
 const referenceFileName = (reference: Reference, fallbackFileName?: string | null) =>
   String(reference.metadata?.fileName ?? fallbackFileName ?? '').trim();
 const isGithub = (reference?: Reference) => reference?.provider === 'github';
@@ -310,7 +312,7 @@ export function LinkedDesignsSection({
               !reference.metadata?.nodeName &&
               !reference.metadata?.fileName) ||
             (reference?.provider === 'github' && reference.access_status === 'unresolved')
-            || (reference?.provider === 'google_drive' && reference.access_status === 'unresolved')
+            || (reference?.provider === 'google_drive' && (reference.access_status === 'unresolved' || !reference.metadata?.name))
           ) {
             try {
               const resolved = (await api.resolveExternalReference(
@@ -943,12 +945,15 @@ export function LinkedDesignsSection({
             const githubMetadata = (reference?.metadata ?? {}) as Record<string, any>;
             const preview = previews[link.external_reference_id];
             const refUrl = reference?.normalized_url || reference?.external_url || '';
-            const title = github
+            const title = googleDrive
+              ? googleDriveTitle(reference!)
+              : github
               ? githubTitle(reference!)
               : referenceTitle(reference!, fallbackNodeName);
             const fileName = referenceFileName(reference!, fallbackFileName);
-            const context = github
-              ? googleDrive ? [reference?.metadata?.fileType, reference?.metadata?.modifiedAtExternal ? `Updated ${formatDate(String(reference.metadata.modifiedAtExternal))}` : '', reference?.access_status !== 'accessible' ? (reference?.access_status === 'connection_required' ? 'Connect Google Drive to view file details.' : reference?.access_status === 'not_found' ? 'This file is no longer available in Google Drive.' : 'This Google Drive file is no longer accessible.') : ''] : [
+            const context = googleDrive
+              ? [reference?.metadata?.fileType, reference?.metadata?.modifiedAtExternal ? `Updated ${formatDate(String(reference.metadata.modifiedAtExternal))}` : '', reference?.access_status !== 'accessible' ? (reference?.access_status === 'connection_required' ? 'Connect Google Drive to view file details.' : reference?.access_status === 'not_found' ? 'This file is no longer available in Google Drive.' : 'This Google Drive file is no longer accessible.') : '']
+              : github ? [
                   reference?.metadata?.state === 'merged'
                     ? 'Merged'
                     : reference?.metadata?.state === 'closed'

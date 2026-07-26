@@ -9348,10 +9348,22 @@ app.post('/api/resources/google-drive/attach', authMiddleware, rateLimit('write'
     if (!connection) return res.status(409).json({ error: 'Connect Google Drive to continue.', code: 'connection_required' });
     const results = await Promise.all(fileIds.map(async (fileId) => {
       try {
-        const created = await createOrGetExternalReference({ supabase, workspaceId, provider: 'google_drive', url: `https://drive.google.com/open?id=${encodeURIComponent(fileId)}`, createdByUserId: req.authUser.id });
-        const reference = await resolveExternalReference({ supabase, workspaceId, referenceId: created.reference.id, requestedByUserId: req.authUser.id, getConnection: getConnectionForExternalReference });
-        return { file_id: fileId, reference, error: reference.access_status === 'accessible' ? null : 'Could not access this file.' };
-      } catch (error) { return { file_id: fileId, reference: null, error: error instanceof Error ? error.message : 'Could not add this file.' }; }
+        // Resolve from the Picker's verified file ID through the same authoritative
+        // Drive metadata path used by Intake and connected-folder promotion. Do not
+        // expose/link an unresolved reference with only providerResourceId metadata.
+        const resolved = await getGoogleDriveReferenceByFileId({
+          workspaceId,
+          userId: req.authUser.id,
+          fileId,
+          connection,
+        });
+        if (resolved.reference.access_status !== 'accessible' || !resolved.metadata.name) {
+          return { file_id: fileId, reference: null, error: 'Could not load this Google Drive file.' };
+        }
+        return { file_id: fileId, reference: resolved.reference, error: null };
+      } catch (error) {
+        return { file_id: fileId, reference: null, error: error instanceof Error ? error.message : 'Could not add this file.' };
+      }
     }));
     res.status(201).json({ resources: results.filter((item) => item.reference), failures: results.filter((item) => item.error) });
   } catch (error) { return respondWithError(res, error); }
