@@ -9502,6 +9502,11 @@ app.post('/api/external-references/:id/send-to-intake', authMiddleware, rateLimi
 });
 
 const connectedSourceItemResponse = (item, linkedReferenceIds = new Set()) => ({ id: item.provider_item_id, name: item.name, mime_type: item.mime_type, item_type: item.item_type, modified_time: item.modified_time, trashed: item.trashed, access_status: item.access_status, parent_id: item.parent_provider_item_id, ...(item.metadata || {}), link_status: linkedReferenceIds.has(item.provider_item_id) ? 'linked_to_project' : 'not_linked' });
+const connectedSourceResourceKey = (source) => {
+  const stored = String(source.external_metadata?.resourceKey || '').trim();
+  if (stored) return stored;
+  try { return new URL(String(source.canonical_url || '')).searchParams.get('resourcekey') || null; } catch { return null; }
+};
 
 app.post('/api/projects/:projectId/connected-sources/google-drive', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
@@ -9573,7 +9578,8 @@ app.get('/api/connected-sources/:sourceId/items', authMiddleware, rateLimit('rea
     if (connection) {
       try {
         if (!(await googleDriveItemIsWithinRoot(parentId, source.provider_source_id, { accessToken: connection.access_token_encrypted }))) return res.status(400).json({ error: 'That folder is outside the connected source.' });
-        const listing = await listGoogleDriveChildren(parentId, { accessToken: connection.access_token_encrypted, pageToken: String(req.query?.page_token ?? ''), pageSize: req.query?.page_size });
+        const resourceKey = parentId === source.provider_source_id ? connectedSourceResourceKey(source) : null;
+        const listing = await listGoogleDriveChildren(parentId, { accessToken: connection.access_token_encrypted, resourceKey, pageToken: String(req.query?.page_token ?? ''), pageSize: req.query?.page_size });
         const now = new Date().toISOString();
         const normalized = (listing.files ?? []).map((item) => normalizeGoogleDriveSourceItem(item, source.id, workspaceId, now));
         for (const item of normalized) await supabase.from('connected_source_items').upsert(item, { onConflict: 'connected_source_id,provider_item_id' });
@@ -9760,7 +9766,17 @@ app.get('/api/integrations/google-drive/connected-sources', authMiddleware, rate
       if (!project) continue;
       relationshipBySource.set(relationship.connected_source_id, { ...relationship, project, connected_by: userById.get(relationship.created_by_user_id) || null });
     }
-    res.json(rows.map((source) => ({ ...source, relationship: relationshipBySource.get(source.id) || null })));
+    const snapshotCounts = await Promise.all(rows.map(async (source) => {
+      const items = await supabase.from('connected_source_items').select('provider_item_id, trashed, access_status').eq('connected_source_id', source.id).eq('parent_provider_item_id', source.provider_source_id);
+      if (items.error) throw items.error;
+      return [source.id, (items.data || []).filter((item) => !item.trashed && item.access_status !== 'not_found').length];
+    }));
+    const countBySource = new Map(snapshotCounts);
+    res.json(rows.map((source) => ({
+      ...source,
+      external_metadata: { ...(source.external_metadata || {}), itemCount: countBySource.get(source.id) ?? Number(source.external_metadata?.itemCount || 0) },
+      relationship: relationshipBySource.get(source.id) || null,
+    })));
   } catch (error) { return respondWithError(res, error); }
 });
 
@@ -10045,11 +10061,12 @@ const refreshConnectedGoogleDriveSource = async ({ source, userId, force = false
   const now = new Date().toISOString();
   await supabase.from('connected_external_sources').update({ status: 'refreshing', last_refreshed_at: now, updated_at: now }).eq('id', source.id);
   try {
-    const folder = await resolveGoogleDriveFolder(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey: source.external_metadata?.resourceKey });
-    let listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey: source.external_metadata?.resourceKey, pageSize: 100, includeTrashed: true });
+    const resourceKey = connectedSourceResourceKey(source);
+    const folder = await resolveGoogleDriveFolder(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey });
+    let listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey, pageSize: 100, includeTrashed: true });
     const allFiles = [...(listing.files ?? [])];
     for (let page = 0; listing.nextPageToken && page < 10; page += 1) {
-      listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey: source.external_metadata?.resourceKey, pageSize: 100, includeTrashed: true, pageToken: listing.nextPageToken });
+      listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey, pageSize: 100, includeTrashed: true, pageToken: listing.nextPageToken });
       allFiles.push(...(listing.files ?? []));
     }
     const previous = await supabase.from('connected_source_items').select('provider_item_id, name, mime_type, modified_time, metadata_hash, access_status').eq('connected_source_id', source.id).eq('parent_provider_item_id', source.provider_source_id);
@@ -10235,11 +10252,14 @@ const createGoogleDriveWatch = async ({ connection, pageToken, replacingChannelI
 
 const ensureGoogleDriveMonitoring = async ({ connection, force = false }) => {
   let state = await getGoogleDriveMonitoringState(connection.id);
-  if (!state) {
+  if (!state?.current_page_token) {
     const token = await getGoogleDriveStartPageToken({ accessToken: connection.access_token_encrypted });
-    const created = await supabase.from('google_drive_change_states').insert({ integration_connection_id: connection.id, current_page_token: token.startPageToken }).select('*').single();
-    if (created.error) throw created.error;
-    state = created.data;
+    if (!token?.startPageToken) throw new Error('Google Drive did not return a change cursor.');
+    const cursorResult = state
+      ? await supabase.from('google_drive_change_states').update({ current_page_token: token.startPageToken, last_error: null, updated_at: new Date().toISOString() }).eq('id', state.id).select('*').single()
+      : await supabase.from('google_drive_change_states').insert({ integration_connection_id: connection.id, current_page_token: token.startPageToken }).select('*').single();
+    if (cursorResult.error) throw cursorResult.error;
+    state = cursorResult.data;
   }
   const channel = await supabase.from('google_drive_watch_channels').select('*').eq('integration_connection_id', connection.id).eq('status', 'active').order('expiration_at', { ascending: false }).limit(1).maybeSingle();
   if (channel.error) throw channel.error;

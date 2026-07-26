@@ -18,7 +18,7 @@ export type FigmaIntegrationStatus = {
 };
 type Props = { workspaceId: string | null; canManage: boolean; onBack: () => void; onStatusChange?: (status: FigmaIntegrationStatus) => void };
 export const settingsIntegrationButton = 'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50';
-export const settingsIntegrationPrimary = 'h-9 rounded-full bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60';
+export const settingsIntegrationPrimary = 'h-9 rounded-lg bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60';
 const button = settingsIntegrationButton;
 const formatDate = (value?: string | null) => value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 

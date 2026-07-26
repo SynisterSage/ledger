@@ -26,6 +26,7 @@ export interface ModalOverlayProps {
   children: ReactNode;
   classNameBackdrop?: string;
   classNameContainer?: string;
+  classNameContent?: string;
   closeOnBackdropClick?: boolean;
   backdropBorderRadius?: string;
   backdropInset?: string;
@@ -44,6 +45,7 @@ export const ModalOverlay = ({
   children,
   classNameBackdrop = '',
   classNameContainer = '',
+  classNameContent = '',
   closeOnBackdropClick = true,
   backdropBorderRadius = 'var(--modal-backdrop-radius, 28px)',
   backdropInset,
@@ -85,7 +87,9 @@ export const ModalOverlay = ({
 
   const overlay = (
     <div
-      className={`${disablePortal ? 'absolute' : 'fixed'} inset-0 z-9999 isolate ${classNameBackdrop}`}
+      className={`${
+        disablePortal ? 'absolute' : 'fixed'
+      } inset-0 z-9999 isolate ${classNameBackdrop}`}
       style={wrapperStyle}
     >
       <div
@@ -102,7 +106,7 @@ export const ModalOverlay = ({
           onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          <div className="max-h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className={`max-h-[calc(100vh-4rem)] overflow-y-auto ${classNameContent}`.trim()}>
             {children}
           </div>
         </div>

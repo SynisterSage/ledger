@@ -50,12 +50,14 @@ type Link = {
   external_references?: Reference | Reference[];
 };
 type Preview = { url?: string | null; capturedAt?: string | null };
-type ConnectedFolder = { id: string; name: string; canonical_url?: string | null; status?: string; external_metadata?: Record<string, unknown> };
+type ConnectedFolder = { id: string; name: string; provider_source_id?: string | null; canonical_url?: string | null; status?: string; external_metadata?: Record<string, unknown> };
 
 const openExternal = (url: string) =>
   window.desktopWindow?.openExternal
     ? void window.desktopWindow.openExternal(url)
     : window.open(url, '_blank', 'noopener,noreferrer');
+const connectedFolderUrl = (folder: ConnectedFolder) =>
+  folder.canonical_url || (folder.provider_source_id ? `https://drive.google.com/drive/folders/${encodeURIComponent(folder.provider_source_id)}` : '');
 const formatDate = (value?: string | null) =>
   value && !Number.isNaN(new Date(value).getTime())
     ? new Date(value).toLocaleDateString([], { month: 'short', day: 'numeric' })
@@ -426,6 +428,23 @@ export function LinkedDesignsSection({
     if (openRequest.source === 'notes') void onLoadNotes?.();
     if (openRequest.source === 'projects') void onLoadProjects?.();
   }, [openRequest?.source, openRequest?.token, onLoadNotes, onLoadProjects]);
+  useEffect(() => {
+    if (!menuFolderId) return;
+    const closeOnOutside = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest('[data-drive-folder-row="true"]')) return;
+      setMenuFolderId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuFolderId(null);
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menuFolderId]);
   useEffect(() => {
     if (mode !== 'existing' || provider !== 'figma') return;
     const timer = window.setTimeout(() => {
@@ -827,9 +846,16 @@ export function LinkedDesignsSection({
   const githubPullRequests = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'pullRequest' && !['closed', 'merged'].includes(String(reference?.metadata?.state ?? '').toLowerCase())).length;
   const githubAttention = rows.filter(({ reference }) => isGithub(reference) && (Number((reference?.metadata as any)?.reviewSummary?.reviewRequestedCount ?? 0) > 0 || Number((reference?.metadata as any)?.reviewSummary?.changesRequestedCount ?? 0) > 0 || String((reference?.metadata as any)?.checksSummary?.overallState ?? '') === 'failing')).length;
   const isIntakeTarget = target.targetType === 'intake';
-  const visibleRows = compactExternalOnly
+  const visibleRows = (compactExternalOnly
     ? rows.filter(({ reference }) => isGithub(reference) || isGoogleDrive(reference) || reference?.provider === 'figma')
-    : rows;
+    : rows
+  ).slice().sort((left, right) => {
+    // Keep the quiet pill layout, but make provider groups visually adjacent.
+    // This prevents a Drive item from appearing stranded between unrelated
+    // GitHub/Figma context while preserving insertion order within a provider.
+    const rank = (provider?: string) => provider === 'google_drive' ? 0 : provider === 'github' ? 1 : provider === 'figma' ? 2 : 3;
+    return rank(left.reference?.provider) - rank(right.reference?.provider);
+  });
   const visibleContextLinks = compactExternalOnly
     ? contextLinks.filter((link) => link.resource.type === 'project')
     : contextLinks;
@@ -917,7 +943,7 @@ export function LinkedDesignsSection({
         )
       ) : (
         <div className={compact ? 'contents' : 'space-y-1'}>
-          {connectedFolders.map((folder) => <div key={`drive-folder-${folder.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}><span className="flex h-5 w-5 shrink-0 items-center justify-center"><img src="/drive.svg" alt="" className="h-4 w-4 object-contain" /></span><button type="button" className="min-w-0 flex-1 text-left" onClick={() => openExternal(folder.canonical_url || '')}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{folder.name}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Google Drive · Connected folder{folder.external_metadata?.monitorChanges === false ? '' : ' · Monitoring on'}</p>}</button><button type="button" aria-label="Folder actions" onClick={() => setMenuFolderId(menuFolderId === folder.id ? null : folder.id)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>{menuFolderId === folder.id && <div className="absolute right-1 top-9 z-20 w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { openExternal(folder.canonical_url || ''); setMenuFolderId(null); }}>Open in Google Drive</button><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { window.history.pushState({}, '', '/settings/integrations/google-drive'); setMenuFolderId(null); }}>Folder settings</button><button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50" onClick={() => { void api.disconnectConnectedSource(folder.id, target.targetId).then(load); setMenuFolderId(null); }}>Disconnect from project</button></div>}</div>)}
+          {connectedFolders.map((folder) => <div data-drive-folder-row="true" key={`drive-folder-${folder.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}><span className="flex h-5 w-5 shrink-0 items-center justify-center"><img src="/drive.svg" alt="" className="h-4 w-4 object-contain" /></span><button type="button" className="min-w-0 flex-1 text-left" onClick={() => openExternal(connectedFolderUrl(folder))}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{folder.name}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Google Drive · Connected folder{folder.external_metadata?.monitorChanges === false ? '' : ' · Monitoring on'}</p>}</button><button type="button" aria-label="Folder actions" onClick={() => setMenuFolderId(menuFolderId === folder.id ? null : folder.id)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>{menuFolderId === folder.id && <div data-drive-folder-menu="true" className="absolute bottom-9 right-1 z-50 w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { openExternal(connectedFolderUrl(folder)); setMenuFolderId(null); }}>Open in Google Drive</button><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { window.history.pushState({}, '', '/settings/integrations/google-drive'); setMenuFolderId(null); }}>Folder settings</button><button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50" onClick={() => { void api.disconnectConnectedSource(folder.id, target.targetId).then(load); setMenuFolderId(null); }}>Disconnect from project</button></div>}</div>)}
           {slackContexts.map((context) => <SlackContextCard key={`slack-context-${context.id}`} context={context} compact={compact} />)}
           {visibleContextLinks.filter((link) => ['note', 'project'].includes(link.resource.type)).map((link) => {
             const isNote = link.resource.type === 'note';
