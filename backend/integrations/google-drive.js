@@ -115,7 +115,13 @@ export const listGoogleDriveChanges = async (pageToken, { accessToken, fetchImpl
 };
 
 export const watchGoogleDriveChanges = async ({ pageToken, address, channelId, token, expiration, accessToken, fetchImpl = fetch } = {}) => {
-  const response = await fetchImpl('https://www.googleapis.com/drive/v3/changes/watch', { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: channelId, type: 'web_hook', address, token, expiration: String(expiration), pageToken: String(pageToken), includeItemsFromAllDrives: true, supportsAllDrives: true }) });
+  const normalizedPageToken = String(pageToken || '').trim();
+  if (!normalizedPageToken) throw new GoogleDriveProviderError('Google Drive monitoring could not be started.', 'error', 502);
+  const watchUrl = new URL('https://www.googleapis.com/drive/v3/changes/watch');
+  watchUrl.searchParams.set('pageToken', normalizedPageToken);
+  watchUrl.searchParams.set('includeItemsFromAllDrives', 'true');
+  watchUrl.searchParams.set('supportsAllDrives', 'true');
+  const response = await fetchImpl(watchUrl.toString(), { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: channelId, type: 'web_hook', address, token, expiration: String(expiration) }) });
   if (response.status === 401) throw new GoogleDriveProviderError('Google Drive connection expired.', 'revoked', 401);
   if (response.status === 403) throw new GoogleDriveProviderError('Google Drive monitoring is not authorized.', 'inaccessible', 403);
   if (!response.ok) {
