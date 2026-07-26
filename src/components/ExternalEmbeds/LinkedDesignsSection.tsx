@@ -203,7 +203,11 @@ export function LinkedDesignsSection({
                 return item as Reference;
               }).filter((reference): reference is Reference => Boolean(reference?.id));
               for (const reference of references) await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
-              if (attached.failures?.length) toast.show(`${attached.failures.length} selected file${attached.failures.length === 1 ? '' : 's'} could not be added.`, { variant: 'error' });
+              if (attached.failures?.length) {
+                const messages = attached.failures.map((failure) => String(failure.error ?? '').trim()).filter(Boolean);
+                const detail = messages.length === 1 ? ` ${messages[0]}` : '';
+                toast.show(`${attached.failures.length} selected file${attached.failures.length === 1 ? '' : 's'} could not be added.${detail}`, { variant: 'error' });
+              }
               await load();
             } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not add Google Drive files.', { variant: 'error' }); }
           }

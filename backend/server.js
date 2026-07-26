@@ -9358,10 +9358,17 @@ app.post('/api/resources/google-drive/attach', authMiddleware, rateLimit('write'
           connection,
         });
         if (resolved.reference.access_status !== 'accessible' || !resolved.metadata.name) {
-          return { file_id: fileId, reference: null, error: 'Could not load this Google Drive file.' };
+          return { file_id: fileId, reference: null, error: resolved.reference.access_status === 'revoked' || resolved.reference.access_status === 'connection_required' ? 'Reconnect Google Drive to load this file.' : 'Could not load this Google Drive file.' };
         }
         return { file_id: fileId, reference: resolved.reference, error: null };
       } catch (error) {
+        console.error('[google-drive] picker file resolution failed', {
+          fileId,
+          accessStatus: error?.accessStatus || null,
+          code: error?.code || null,
+          statusCode: error?.statusCode || null,
+          message: error instanceof Error ? error.message : 'unknown_error',
+        });
         return { file_id: fileId, reference: null, error: error instanceof Error ? error.message : 'Could not add this file.' };
       }
     }));
