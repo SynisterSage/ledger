@@ -4,6 +4,7 @@ import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { FigmaMark } from '../Common/FigmaMark';
 import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 import { GoogleDriveIcon } from '../Common/GoogleDriveIcon';
+import { GoogleDriveWriteActions } from '../Projects/GoogleDriveWriteActions';
 
 export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'figma' | 'github' | 'google_drive' | 'slack';
 export type LinkedContextMode = 'paste' | 'existing';
@@ -113,6 +114,13 @@ type Props = {
   onLinkRepository: (repository: Repository) => void | Promise<void>;
   resourceTitle: (reference: LinkedContextReference) => string;
   resourceMeta: (reference: LinkedContextReference) => string;
+  googleDriveProjectId?: string;
+  googleDriveCanEdit?: boolean;
+  onChooseGoogleDriveFile?: () => void | Promise<void>;
+  onConnectGoogleDriveFolder?: () => void | Promise<void>;
+  onApplyGoogleDriveTemplate?: () => void | Promise<void>;
+  onGoogleDriveWriteComplete?: () => void | Promise<void>;
+  onBeforeGoogleDriveAction?: () => void | Promise<void>;
 };
 
 const sourceGroups = [
@@ -177,6 +185,13 @@ export function AddLinkedContextModal({
   onLinkRepository,
   resourceTitle,
   resourceMeta,
+  googleDriveProjectId,
+  googleDriveCanEdit = false,
+  onChooseGoogleDriveFile,
+  onConnectGoogleDriveFolder,
+  onApplyGoogleDriveTemplate,
+  onGoogleDriveWriteComplete,
+  onBeforeGoogleDriveAction,
 }: Props) {
   const visibleSourceGroups = sourceGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => !hiddenSources.includes(item.id)) }))
@@ -255,6 +270,7 @@ export function AddLinkedContextModal({
                 {!hiddenSources.includes('tasks') && <option value="tasks">Ledger · Tasks</option>}
                 <option value="figma">Integrations · Figma</option>
                 <option value="github">Integrations · GitHub</option>
+                <option value="google_drive">Integrations · Google Drive</option>
                 <option value="slack">Integrations · Slack</option>
               </select>
             </div>
@@ -323,11 +339,12 @@ export function AddLinkedContextModal({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {(source === 'figma' || source === 'google_drive') && <div className="flex rounded-lg bg-[var(--ledger-surface-muted)] p-1">
+                  {source === 'google_drive' && <div className="space-y-4"><div><p className="text-sm font-medium text-[var(--ledger-text-primary)]">Google Drive</p><p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Link an existing item or create one in the project’s connected folder.</p></div><label className="block text-xs text-[var(--ledger-text-muted)]" htmlFor="google-drive-link-input">Paste a Drive link<input id="google-drive-link-input" value={url} onChange={(event) => onUrlChange(event.target.value)} placeholder="https://drive.google.com/file/d/…" className="mt-1 h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-transparent px-3 text-sm outline-none focus:border-[var(--ledger-border-strong)]" /></label><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => void onChooseGoogleDriveFile?.()} className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-left text-xs font-medium hover:bg-[var(--ledger-surface-hover)]"><span className="block">Choose file</span><span className="mt-0.5 block font-normal text-[var(--ledger-text-muted)]">Link existing</span></button><button type="button" onClick={() => void onConnectGoogleDriveFolder?.()} className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-left text-xs font-medium hover:bg-[var(--ledger-surface-hover)]"><span className="block">Connect folder</span><span className="mt-0.5 block font-normal text-[var(--ledger-text-muted)]">Browse from this project</span></button></div>{googleDriveProjectId ? <div className="border-t border-[color:var(--ledger-border-subtle)] pt-4"><p className="mb-3 text-xs font-medium text-[var(--ledger-text-secondary)]">Create new</p><GoogleDriveWriteActions projectId={googleDriveProjectId} canEdit={googleDriveCanEdit} onBeforeAction={onBeforeGoogleDriveAction} onComplete={onGoogleDriveWriteComplete} /><button type="button" onClick={() => void onApplyGoogleDriveTemplate?.()} className="mt-3 rounded-md px-2 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Apply folder template</button></div> : null}</div>}
+                  {(source === 'figma' || source === 'google_drive') && source !== 'google_drive' && <div className="flex rounded-lg bg-[var(--ledger-surface-muted)] p-1">
                     <button type="button" onClick={() => onModeChange('paste')} className={`flex-1 rounded-md px-3 py-2 text-xs font-medium ${mode === 'paste' ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm' : 'text-[var(--ledger-text-muted)]'}`}>Paste link</button>
                     <button type="button" onClick={() => onModeChange('existing')} className={`flex-1 rounded-md px-3 py-2 text-xs font-medium ${mode === 'existing' ? 'bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-sm' : 'text-[var(--ledger-text-muted)]'}`}>Search</button>
                   </div>}
-                  {(source === 'figma' || source === 'google_drive') && mode === 'paste' ? <div className="space-y-2"><label className="text-xs text-[var(--ledger-text-muted)]" htmlFor="external-link-input">Paste a {source === 'google_drive' ? 'Google Drive' : 'Figma'} link</label><input id="external-link-input" value={url} onChange={(event) => onUrlChange(event.target.value)} placeholder={source === 'google_drive' ? 'https://drive.google.com/file/d/…' : 'https://figma.com/design/...'} className="h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-transparent px-3 text-sm outline-none focus:border-[var(--ledger-border-strong)]" /></div> : <div className="space-y-3">
+                  {source === 'figma' && mode === 'paste' ? <div className="space-y-2"><label className="text-xs text-[var(--ledger-text-muted)]" htmlFor="external-link-input">Paste a Figma link</label><input id="external-link-input" value={url} onChange={(event) => onUrlChange(event.target.value)} placeholder="https://figma.com/design/..." className="h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-transparent px-3 text-sm outline-none focus:border-[var(--ledger-border-strong)]" /></div> : source === 'google_drive' ? null : <div className="space-y-3">
                     {source === 'github' ? <><input autoFocus type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search approved repositories" className="h-10 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm outline-none focus:border-[var(--ledger-border-strong)]" /><div className="overflow-hidden rounded-lg bg-[var(--ledger-surface-muted)]">{githubRepositories.filter((repo) => `${repo.full_name} ${repo.owner_login}`.toLowerCase().includes(query.trim().toLowerCase())).map((repo) => <button key={repo.github_repository_id} type="button" onClick={() => onGithubRepositoryChange(repo.github_repository_id)} className={`flex w-full items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left last:border-b-0 hover:bg-[var(--ledger-surface-hover)] ${githubRepositoryId === repo.github_repository_id ? 'bg-[color:rgba(255,95,64,0.08)]' : ''}`}><span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--ledger-surface-card)]"><img src="/github-mark.svg" alt="" className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{repo.full_name}</span><span className="block text-xs text-[var(--ledger-text-muted)]">{repo.is_private ? 'Private' : 'Approved repository'}{repo.default_branch ? ` · ${repo.default_branch}` : ''}</span></span><span className={`h-4 w-4 rounded-full border ${githubRepositoryId === repo.github_repository_id ? 'border-[var(--ledger-accent)] bg-[var(--ledger-accent)]' : 'border-[var(--ledger-border-subtle)]'}`} /></button>)}</div></> : <><div className="flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3"><Search size={14} className="text-[var(--ledger-text-muted)]" /><input autoFocus value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search files or nodes" className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" /></div><div className="rounded-lg bg-[var(--ledger-surface-muted)]">{existing.map((reference) => <button key={reference.id} type="button" onClick={() => void onLinkReference(reference)} className="flex w-full items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--ledger-surface-card)]"><FileImage size={14} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{resourceTitle(reference)}</span><span className="block truncate text-xs text-[var(--ledger-text-muted)]">{resourceMeta(reference)}</span></span><span className="text-xs text-[var(--ledger-text-muted)]">Select</span></button>)}</div></>}
                   </div>}
                 </div>

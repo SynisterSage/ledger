@@ -266,6 +266,8 @@ export const useApi = () => {
       sendConnectedSourceFilesToIntake: (sourceId: string, projectId: string, fileIds: string[]) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/send-to-intake`, { method: 'POST', body: JSON.stringify({ project_id: projectId, file_ids: fileIds }) }),
       updateConnectedSourceIntakeSettings: (sourceId: string, projectId: string, settings: Record<string, unknown>) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/intake-settings`, { method: 'PATCH', body: JSON.stringify({ project_id: projectId, ...settings }) }),
       getGoogleDriveMonitoring: () => request('/api/integrations/google-drive/monitoring'),
+      getGoogleDriveConnectedSources: () => request('/api/integrations/google-drive/connected-sources'),
+      getGoogleDriveOperations: () => request('/api/integrations/google-drive/operations'),
       startGoogleDriveMonitoring: () => request('/api/integrations/google-drive/monitoring/start', { method: 'POST' }),
       repairGoogleDriveMonitoring: () => request('/api/integrations/google-drive/monitoring/repair', { method: 'POST' }),
       updateConnectedSourceMonitoring: (sourceId: string, projectId: string, settings: Record<string, unknown>) => request(`/api/connected-sources/${encodeURIComponent(sourceId)}/monitoring`, { method: 'PATCH', body: JSON.stringify({ project_id: projectId, ...settings }) }),

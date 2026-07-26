@@ -62,6 +62,7 @@ import authService from '../../services/auth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegrationPage';
 import { SlackIntegrationPage } from './SlackIntegrationPage';
+import { GoogleDriveIntegrationPage } from './GoogleDriveIntegrationPage';
 import { GithubIntegrationCard } from './GithubIntegrationCard';
 
 type UserPreferences = {
@@ -337,6 +338,7 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
 };
 
 const getInitialSettingsSection = (): SettingsSectionId => {
+  if (window.location.pathname === '/settings/integrations/google-drive') return 'integrations';
   const section = new URLSearchParams(window.location.search).get('section');
   return isSettingsSection(section) ? section : 'account';
 };
@@ -827,12 +829,35 @@ export const SettingsWindow = () => {
   const [googleDriveStatus, setGoogleDriveStatus] = useState<{ status?: string; provider_account_email?: string | null }>({ status: 'disconnected' });
   useEffect(() => {
     if (activeSection !== 'integrations') return;
-    void api.getGoogleDriveIntegrationStatus().then((status) => setGoogleDriveStatus(status as typeof googleDriveStatus)).catch(() => setGoogleDriveStatus({ status: 'error' }));
+    const refreshStatus = () => api.getGoogleDriveIntegrationStatus().then((status) => setGoogleDriveStatus(status as typeof googleDriveStatus)).catch(() => setGoogleDriveStatus({ status: 'error' }));
+    void refreshStatus();
+    const handleOAuthMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'ledger-google-drive-oauth') return;
+      if (event.data.success) void refreshStatus();
+      else setGoogleDriveStatus({ status: 'error' });
+    };
+    window.addEventListener('message', handleOAuthMessage);
+    return () => window.removeEventListener('message', handleOAuthMessage);
   }, [activeSection, api]);
   const connectGoogleDrive = async () => {
-    try { const result = await api.connectGoogleDrive() as { url?: string }; if (!result.url) throw new Error('Google Drive connection is not configured.'); setGoogleDriveStatus({ status: 'connecting' }); window.open(result.url, '_blank', 'noopener,noreferrer'); } catch (error) { window.alert(error instanceof Error ? error.message : 'Could not connect Google Drive.'); }
+    try {
+      const result = await api.connectGoogleDrive() as { url?: string };
+      if (!result.url) throw new Error('Google Drive connection is not configured.');
+      setGoogleDriveStatus({ status: 'connecting' });
+      const popup = window.open(result.url, '_blank', 'noopener,noreferrer');
+      if (popup) {
+        const startedAt = Date.now();
+        const timer = window.setInterval(() => {
+          if (popup.closed || Date.now() - startedAt > 5 * 60 * 1000) {
+            window.clearInterval(timer);
+            if (popup.closed) void api.getGoogleDriveIntegrationStatus().then((status) => setGoogleDriveStatus(status as typeof googleDriveStatus)).catch(() => undefined);
+          }
+        }, 800);
+      }
+    } catch (error) { window.alert(error instanceof Error ? error.message : 'Could not connect Google Drive.'); }
   };
-  const disconnectGoogleDrive = async () => { await api.disconnectGoogleDrive(); setGoogleDriveStatus({ status: 'disconnected' }); };
+  const openGoogleDriveManagement = () => { window.history.pushState({}, '', '/settings/integrations/google-drive'); setGoogleDriveDetailOpen(true); };
+  const closeGoogleDriveManagement = () => { window.history.pushState({}, '', '/?window=module&module=settings&section=integrations'); setGoogleDriveDetailOpen(false); };
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [notificationPreferences, setNotificationPreferences] =
     useState<NotificationPreferences>(defaultNotificationPrefs);
@@ -902,6 +927,7 @@ export const SettingsWindow = () => {
   const [figmaStatus, setFigmaStatus] = useState<FigmaIntegrationStatus>({ status: 'disconnected' });
   const [figmaDetailOpen, setFigmaDetailOpen] = useState(false);
   const [slackDetailOpen, setSlackDetailOpen] = useState(false);
+  const [googleDriveDetailOpen, setGoogleDriveDetailOpen] = useState(() => window.location.pathname === '/settings/integrations/google-drive');
   const [extensionTokenStatus, setExtensionTokenStatus] = useState<ExtensionTokenStatus | null>(
     null
   );
@@ -4516,6 +4542,13 @@ export const SettingsWindow = () => {
                   onBack={() => setSlackDetailOpen(false)}
                   onStatusChange={(next) => setSlackStatus(next as SlackIntegrationStatus)}
                 />
+              ) : activeSection === 'integrations' && googleDriveDetailOpen ? (
+                <GoogleDriveIntegrationPage
+                  workspaceId={activeWorkspaceId}
+                  canManage={canManageWorkspace}
+                  onBack={closeGoogleDriveManagement}
+                  onStatusChange={(next) => setGoogleDriveStatus(next)}
+                />
               ) : activeSection === 'integrations' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-integrations">
                   <div className="space-y-2">
@@ -4544,7 +4577,7 @@ export const SettingsWindow = () => {
                         <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><GoogleDriveIcon size={18} /></span>
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Google Drive <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{googleDriveStatus.status === 'connected' ? `Connected as ${googleDriveStatus.provider_account_email || 'your Google account'}` : googleDriveStatus.status === 'connecting' ? 'Connecting' : googleDriveStatus.status === 'revoked' || googleDriveStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Browse and link Google Drive files to your Ledger projects and work.</p></div>
-                          <div className="flex shrink-0 gap-2"><button type="button" onClick={() => void connectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{googleDriveStatus.status === 'connected' ? 'Manage connection' : 'Connect Google Drive'}</button>{googleDriveStatus.status === 'connected' && <button type="button" onClick={() => void disconnectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Disconnect</button>}</div>
+                          <button type="button" onClick={() => googleDriveStatus.status === 'connected' ? openGoogleDriveManagement() : void connectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{googleDriveStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
                         </div>
                         <div
                           className={`flex items-center gap-3 px-4 py-2.5 ${slackStatus?.connected ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''}`}

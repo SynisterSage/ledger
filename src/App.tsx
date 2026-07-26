@@ -126,11 +126,14 @@ type ModuleKind =
 
 const windowParams = new URLSearchParams(window.location.search);
 const workspaceSlackMatch = window.location.pathname.match(/^\/workspaces\/([^/]+)\/slack\/?$/);
+const isGoogleDriveSettingsRoute = window.location.pathname === '/settings/integrations/google-drive';
 const pathnameModuleKind =
   window.location.pathname === '/intake' || window.location.pathname === '/inbox'
     ? ('inbox' as const)
     : workspaceSlackMatch
     ? ('slack' as const)
+    : isGoogleDriveSettingsRoute
+    ? ('settings' as const)
     : null;
 const isModuleWindow = windowParams.get('window') === 'module' || pathnameModuleKind !== null;
 const moduleKind = (windowParams.get('module') as ModuleKind) ?? pathnameModuleKind ?? null;

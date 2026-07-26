@@ -49,6 +49,7 @@ type Link = {
   external_references?: Reference | Reference[];
 };
 type Preview = { url?: string | null; capturedAt?: string | null };
+type ConnectedFolder = { id: string; name: string; canonical_url?: string | null; status?: string; external_metadata?: Record<string, unknown> };
 
 const openExternal = (url: string) =>
   window.desktopWindow?.openExternal
@@ -164,6 +165,8 @@ export function LinkedDesignsSection({
   const [contextLinks, setContextLinks] = useState<Array<{ id: string; resource: { type: string; id: string; title: string; status?: string | null; dueDate?: string | null; dueTime?: string | null; assignee?: string | null; projectId?: string | null } }>>([]);
   const [linkableTasks, setLinkableTasks] = useState<LinkedTask[]>([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [connectedFolders, setConnectedFolders] = useState<ConnectedFolder[]>([]);
+  const [menuFolderId, setMenuFolderId] = useState<string | null>(null);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [slackContexts, setSlackContexts] = useState<LinkedSlackContext[]>([]);
   const [selectedSlackContextIds, setSelectedSlackContextIds] = useState<string[]>([]);
@@ -190,8 +193,12 @@ export function LinkedDesignsSection({
           if (data.action === googleWindow.google.picker.Action.PICKED) {
             const selected = (data.docs ?? []).map((doc: any) => String(doc.id)).filter(Boolean);
             try {
-              const attached = await api.attachGoogleDriveFiles(selected) as { resources?: Reference[]; failures?: Array<{ error?: string }> };
-              for (const reference of attached.resources ?? []) await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
+              const attached = await api.attachGoogleDriveFiles(selected) as { resources?: Array<Reference | { reference?: Reference | null }>; failures?: Array<{ error?: string }> };
+              const references = (attached.resources ?? []).map((item): Reference | null => {
+                if (item && typeof item === 'object' && 'reference' in item) return item.reference ?? null;
+                return item as Reference;
+              }).filter((reference): reference is Reference => Boolean(reference?.id));
+              for (const reference of references) await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
               if (attached.failures?.length) toast.show(`${attached.failures.length} selected file${attached.failures.length === 1 ? '' : 's'} could not be added.`, { variant: 'error' });
               await load();
             } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not add Google Drive files.', { variant: 'error' }); }
@@ -203,6 +210,36 @@ export function LinkedDesignsSection({
     } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not open Google Picker.', { variant: 'error' }); }
     finally { setBusyId(null); }
   };
+  const closeLinkedContextBeforeDriveAction = async () => {
+    setDialogOpen(false);
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+  };
+
+  const openGoogleDriveFolderPicker = async () => {
+    if (!canEdit || target.targetType !== 'project') return;
+    setBusyId('google-drive-folder');
+    try {
+      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string };
+      if (!tokenResult.access_token) throw new Error('Connect Google Drive to continue.');
+      const googleWindow = window as any;
+      if (!googleWindow.google?.picker) await new Promise<void>((resolve, reject) => { const script = document.querySelector('script[data-ledger-google-picker]') || document.createElement('script'); if (!script.parentNode) { script.setAttribute('data-ledger-google-picker', 'true'); (script as HTMLScriptElement).src = 'https://apis.google.com/js/api.js'; (script as HTMLScriptElement).async = true; script.addEventListener('load', () => googleWindow.gapi.load('picker', resolve)); script.addEventListener('error', () => reject(new Error('Google Picker could not load.'))); document.head.appendChild(script); } else { script.addEventListener('load', () => googleWindow.gapi.load('picker', resolve)); } });
+      await new Promise<void>((resolve) => { const view = new googleWindow.google.picker.DocsView(googleWindow.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true); const picker = new googleWindow.google.picker.PickerBuilder().addView(view).enableFeature(googleWindow.google.picker.Feature.NAV_HIDDEN).setOAuthToken(tokenResult.access_token).setCallback(async (data: any) => { if (data.action === googleWindow.google.picker.Action.PICKED) { const folderId = String(data.docs?.[0]?.id ?? ''); try { await api.connectGoogleDriveFolderToProject(target.targetId, folderId); toast.show('Google Drive folder connected.', { variant: 'success' }); await load(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); } resolve(); } else if (data.action === googleWindow.google.picker.Action.CANCEL) resolve(); }).build(); picker.setVisible(true); });
+    } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not open Google Picker.', { variant: 'error' }); } finally { setBusyId(null); }
+  };
+  const applyGoogleDriveTemplate = async () => {
+    if (!canEdit || target.targetType !== 'project') return;
+    try {
+      const [templatesResult, sourcesResult] = await Promise.all([api.getExternalFolderTemplates(), api.getProjectConnectedSources(target.targetId)]);
+      const templates = Array.isArray(templatesResult) ? templatesResult as Array<{ id: string; name: string }> : [];
+      const source = Array.isArray(sourcesResult) ? sourcesResult[0] as { provider_source_id?: string } | undefined : undefined;
+      if (!templates.length || !source?.provider_source_id) { toast.show('Create a folder template and connect a Drive folder to this project first.', { variant: 'error' }); return; }
+      const choice = window.prompt(`Choose a folder template:\n${templates.map((template, index) => `${index + 1}. ${template.name}`).join('\n')}`, '1');
+      const template = templates[Number(choice || '') - 1];
+      if (!template) return;
+      await api.createGoogleDriveProjectStructure(target.targetId, { template_id: template.id, destination_folder_id: source.provider_source_id, idempotency_key: `template-link:${target.targetId}:${template.id}` });
+      toast.show('Folder template application started.', { variant: 'success' });
+    } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not apply folder template.', { variant: 'error' }); }
+  };
 
   const handleContextSourceChange = (nextSource: LinkedContextSource) => {
     setContextSource(nextSource);
@@ -211,7 +248,6 @@ export function LinkedDesignsSection({
     if (nextSource === 'figma' || nextSource === 'github' || nextSource === 'google_drive') {
       setProvider(nextSource);
       setMode('paste');
-      if (nextSource === 'google_drive') void openGoogleDrivePicker();
     }
     if (nextSource === 'notes') void onLoadNotes?.();
     if (nextSource === 'projects') void onLoadProjects?.();
@@ -312,6 +348,16 @@ export function LinkedDesignsSection({
         })
       );
       setLinks(hydrated.map((entry) => entry.link));
+      if (target.targetType === 'project') {
+        try {
+          const sources = await api.getProjectConnectedSources(target.targetId);
+          setConnectedFolders(Array.isArray(sources) ? sources as ConnectedFolder[] : []);
+        } catch {
+          setConnectedFolders([]);
+        }
+      } else {
+        setConnectedFolders([]);
+      }
       setPreviews(
         Object.fromEntries(
           hydrated.map((entry) => [entry.link.external_reference_id, entry.preview])
@@ -776,6 +822,7 @@ export function LinkedDesignsSection({
     ? contextLinks.filter((link) => link.resource.type === 'project')
     : contextLinks;
   const visibleCalendarItems = compactExternalOnly ? [] : calendarItems;
+  const hasConnectedFolders = target.targetType === 'project' && connectedFolders.length > 0;
   return (
     <section
       className={compact ? 'flex flex-wrap items-center gap-2' : `space-y-2 pt-2 ${isIntakeTarget ? '' : 'border-t border-[color:var(--ledger-border-subtle)]'}`}
@@ -831,7 +878,7 @@ export function LinkedDesignsSection({
             Loading linked work…
           </div>
         )
-      ) : visibleRows.length === 0 && visibleCalendarItems.length === 0 && visibleContextLinks.length === 0 && slackContexts.length === 0 ? (
+      ) : visibleRows.length === 0 && visibleCalendarItems.length === 0 && visibleContextLinks.length === 0 && slackContexts.length === 0 && !hasConnectedFolders ? (
         compact ? (
           <>
             {canEdit && <button type="button" onClick={() => setDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={12} />Link</button>}
@@ -858,6 +905,7 @@ export function LinkedDesignsSection({
         )
       ) : (
         <div className={compact ? 'contents' : 'space-y-1'}>
+          {connectedFolders.map((folder) => <div key={`drive-folder-${folder.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}><span className="flex h-5 w-5 shrink-0 items-center justify-center"><img src="/drive.svg" alt="" className="h-4 w-4 object-contain" /></span><button type="button" className="min-w-0 flex-1 text-left" onClick={() => openExternal(folder.canonical_url || '')}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{folder.name}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Google Drive · Connected folder{folder.external_metadata?.monitorChanges === false ? '' : ' · Monitoring on'}</p>}</button><button type="button" aria-label="Folder actions" onClick={() => setMenuFolderId(menuFolderId === folder.id ? null : folder.id)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>{menuFolderId === folder.id && <div className="absolute right-1 top-9 z-20 w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { openExternal(folder.canonical_url || ''); setMenuFolderId(null); }}>Open in Google Drive</button><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { window.history.pushState({}, '', '/settings/integrations/google-drive'); setMenuFolderId(null); }}>Folder settings</button><button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50" onClick={() => { void api.disconnectConnectedSource(folder.id, target.targetId).then(load); setMenuFolderId(null); }}>Disconnect from project</button></div>}</div>)}
           {slackContexts.map((context) => <SlackContextCard key={`slack-context-${context.id}`} context={context} compact={compact} />)}
           {visibleContextLinks.filter((link) => ['note', 'project'].includes(link.resource.type)).map((link) => {
             const isNote = link.resource.type === 'note';
@@ -1154,6 +1202,13 @@ export function LinkedDesignsSection({
             onLinkRepository={linkApprovedRepository}
             resourceTitle={(reference) => reference.provider === 'github' ? githubTitle(reference as Reference) : String(reference.metadata?.name ?? referenceTitle(reference as Reference))}
             resourceMeta={(reference) => reference.provider === 'github' ? String(reference.metadata?.repositoryFullName ?? '') : `${reference.provider === 'google_drive' ? 'Google Drive' : 'Figma'} · ${String(reference.metadata?.fileType ?? resourceLabel(reference as Reference))}`}
+            googleDriveProjectId={target.targetType === 'project' ? target.targetId : undefined}
+            googleDriveCanEdit={canEdit}
+            onChooseGoogleDriveFile={async () => { await closeLinkedContextBeforeDriveAction(); await openGoogleDrivePicker(); }}
+            onConnectGoogleDriveFolder={async () => { await closeLinkedContextBeforeDriveAction(); await openGoogleDriveFolderPicker(); }}
+            onApplyGoogleDriveTemplate={async () => { await closeLinkedContextBeforeDriveAction(); await applyGoogleDriveTemplate(); }}
+            onBeforeGoogleDriveAction={closeLinkedContextBeforeDriveAction}
+            onGoogleDriveWriteComplete={load}
           />
           {/* The previous inline picker was replaced by AddLinkedContextModal. */}
           {/*
