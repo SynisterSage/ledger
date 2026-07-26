@@ -32,7 +32,7 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [menuSourceId, setMenuSourceId] = useState<string | null>(null);
 
-  const loadSources = async () => { try { const result = await api.getProjectConnectedSources(projectId); setSources(Array.isArray(result) ? result as Source[] : []); } catch { setSources([]); } };
+  const loadSources = async () => { try { const result = await api.getProjectConnectedSources(projectId); setSources(Array.isArray(result) ? (result as Source[]).map((source) => ({ ...source, icon_url: '/drive.svg' })) : []); } catch { setSources([]); } };
   useEffect(() => { void loadSources(); }, [projectId, api]);
 
   const picker = async () => {
@@ -61,7 +61,7 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
     setBusy('items'); setBrowserError(null);
     try {
       const result = await api.getConnectedSourceItems(source.id, projectId, { parentId: nextParentId || undefined, pageToken: nextToken || undefined });
-      setItems((current) => (nextToken ? current : []).concat((result.items ?? []) as Item[]));
+      setItems((current) => (nextToken ? current : []).concat(((result.items ?? []) as Item[]).map((item) => item.item_type === 'file' ? { ...item, iconUrl: '/drive.svg' } : item)));
       setNextPageToken(result.next_page_token ?? null);
       if (result.error) setBrowserError(result.error);
     } catch (error) { setBrowserError(error instanceof Error ? error.message : 'Could not load this folder.'); }

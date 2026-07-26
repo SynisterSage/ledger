@@ -25,7 +25,7 @@ import { OPENAI_APPS_CHALLENGE_PATH, getOpenAiAppsChallengeToken } from './mcp/o
 import { createGithubAppJwt, createGithubState, exchangeGithubCode, getAccessibleInstallations, getCanonicalInstallation, getGithubUser, createInstallationToken, listInstallationRepositories, normalizeGithubRepository, revokeGithubUserToken, hashGithubState, verifyGithubWebhookSignature } from './integrations/github/github-app.js';
 import { findGithubPullRequestsForCommit, resolveGithubMetadata, searchGithubWork, githubSafeMessage, GithubProviderError } from './integrations/github/github-adapter.js';
 import { parseGithubUrl } from './integrations/github/github-url-parser.js';
-import { parseGoogleDriveUrl, DRIVE_SCOPE, resolveGoogleDriveFolder, listGoogleDriveChildren, googleDriveItemIsWithinRoot, resolveGoogleDriveMetadata, getGoogleDriveStartPageToken, listGoogleDriveChanges, watchGoogleDriveChanges, stopGoogleDriveChanges, createGoogleDriveFolder, createGoogleDriveNativeFile, updateGoogleDriveItem, copyGoogleDriveFile, uploadGoogleDriveBytes } from './integrations/google-drive.js';
+import { parseGoogleDriveUrl, DRIVE_SCOPE, GOOGLE_DRIVE_OAUTH_SCOPE, resolveGoogleDriveFolder, listGoogleDriveChildren, googleDriveItemIsWithinRoot, resolveGoogleDriveMetadata, getGoogleDriveStartPageToken, listGoogleDriveChanges, watchGoogleDriveChanges, stopGoogleDriveChanges, createGoogleDriveFolder, createGoogleDriveNativeFile, updateGoogleDriveItem, copyGoogleDriveFile, uploadGoogleDriveBytes } from './integrations/google-drive.js';
 import { findLinkedGithubReferences, listGithubAttention, reconcileGithubAttention } from './integrations/github/github-live-awareness.js';
 import { GITHUB_CAPTURE_EVENT_TYPES, buildGithubIntakePayload, githubCaptureEventType, githubCaptureFingerprint, githubCaptureRuleMatches, githubNotificationCategory, normalizeGithubCaptureRule } from './integrations/github/github-capture.js';
 import { findActiveGithubTasks, githubTaskDescription, projectRepositoryRole } from './integrations/github/github-project-workflows.js';
@@ -4285,7 +4285,7 @@ const buildGoogleDriveAuthorizeUrl = ({ state }) => {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
   const redirectUri = getGoogleDriveRedirectUri();
   if (!clientId || !redirectUri) { const error = new Error('Google Drive OAuth is not configured'); error.statusCode = 500; throw error; }
-  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: DRIVE_SCOPE, state }).toString()}`;
+  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: GOOGLE_DRIVE_OAUTH_SCOPE, state }).toString()}`;
 };
 const exchangeGoogleDriveCode = async (code) => {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
@@ -9316,7 +9316,10 @@ app.get('/api/integrations/google-drive/callback', rateLimit('auth'), async (req
     const token = await exchangeGoogleDriveCode(String(req.query.code));
     const profileResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${token.access_token}` } });
     const profile = await profileResponse.json();
-    if (!profileResponse.ok || !profile.sub) throw new Error('Could not load the Google account.');
+    if (!profileResponse.ok || !profile.sub) {
+      console.error('Google Drive user identity lookup failed', { status: profileResponse.status, provider_error: profile.error || null });
+      throw new Error('Could not load the Google account. Reconnect Google Drive and try again.');
+    }
     const now = new Date().toISOString();
     const payload = { user_id: statePayload.user_id, provider_account_id: profile.sub, provider_account_email: profile.email || null, encrypted_refresh_token: protectIntegrationTokenForStorage(token.refresh_token), encrypted_access_token: protectIntegrationTokenForStorage(token.access_token), granted_scopes: String(token.scope || DRIVE_SCOPE).split(' ').filter(Boolean), status: 'connected', token_expires_at: new Date(Date.now() + Number(token.expires_in || 3600) * 1000).toISOString(), last_error: null, connected_at: now, updated_at: now };
     const existing = await supabase.from('google_drive_connections').select('id').eq('user_id', statePayload.user_id).maybeSingle();

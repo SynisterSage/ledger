@@ -887,6 +887,7 @@ export function LinkedDesignsSection({
           {visibleRows.map(({ link, reference }) => {
             const github = isGithub(reference);
             const googleDrive = isGoogleDrive(reference);
+            if (googleDrive && reference) reference = { ...reference, metadata: { ...reference.metadata, iconUrl: '/drive.svg' } };
             const githubMetadata = (reference?.metadata ?? {}) as Record<string, any>;
             const preview = previews[link.external_reference_id];
             const refUrl = reference?.normalized_url || reference?.external_url || '';

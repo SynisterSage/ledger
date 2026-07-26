@@ -3,6 +3,7 @@ import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { FigmaMark } from '../Common/FigmaMark';
 import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
+import { GoogleDriveIcon } from '../Common/GoogleDriveIcon';
 
 export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'figma' | 'github' | 'google_drive' | 'slack';
 export type LinkedContextMode = 'paste' | 'existing';
@@ -121,7 +122,7 @@ const sourceGroups = [
     items: [
       { id: 'figma' as const, label: 'Figma', icon: FigmaMark },
       { id: 'github' as const, label: 'GitHub', icon: null },
-      { id: 'google_drive' as const, label: 'Google Drive', icon: null },
+      { id: 'google_drive' as const, label: 'Google Drive', icon: GoogleDriveIcon },
       { id: 'slack' as const, label: 'Slack', icon: SlackSourceIcon },
     ],
   },

@@ -130,7 +130,7 @@ export const ExternalEmbedRenderer = ({ nodeKey, externalReferenceId, externalUr
     setMenuOpen(false);
   };
 
-  const metadata = reference?.metadata ?? {};
+  const metadata = reference?.provider === 'google_drive' ? { ...(reference?.metadata ?? {}), iconUrl: '/drive.svg' } : reference?.metadata ?? {};
   const githubMetadata = metadata as Record<string, any>;
   const github = reference?.provider === 'github';
   const googleDrive = reference?.provider === 'google_drive';

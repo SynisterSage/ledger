@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
+import { GoogleDriveIcon } from '../Common/GoogleDriveIcon';
 import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import {
@@ -4541,7 +4542,7 @@ export const SettingsWindow = () => {
                           <button type="button" onClick={() => setFigmaDetailOpen(true)} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
                         </div>
                         <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-2.5">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true">▣</span>
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><GoogleDriveIcon size={18} /></span>
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Google Drive <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{googleDriveStatus.status === 'connected' ? `Connected as ${googleDriveStatus.provider_account_email || 'your Google account'}` : googleDriveStatus.status === 'connecting' ? 'Connecting' : googleDriveStatus.status === 'revoked' || googleDriveStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Browse and link Google Drive files to your Ledger projects and work.</p></div>
                           <div className="flex shrink-0 gap-2"><button type="button" onClick={() => void connectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{googleDriveStatus.status === 'connected' ? 'Manage connection' : 'Connect Google Drive'}</button>{googleDriveStatus.status === 'connected' && <button type="button" onClick={() => void disconnectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Disconnect</button>}</div>
                         </div>

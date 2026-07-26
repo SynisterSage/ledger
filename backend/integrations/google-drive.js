@@ -1,4 +1,6 @@
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const GOOGLE_IDENTITY_SCOPES = 'openid email profile';
+const GOOGLE_DRIVE_OAUTH_SCOPE = `${DRIVE_SCOPE} ${GOOGLE_IDENTITY_SCOPES}`;
 const GOOGLE_HOSTS = new Set(['drive.google.com', 'docs.google.com', 'sheets.google.com', 'slides.google.com', 'forms.google.com', 'drawings.google.com']);
 
 const safeText = (value, fallback = '') => String(value ?? fallback).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 2000);
@@ -109,4 +111,4 @@ export const stopGoogleDriveChanges = async ({ resourceId, channelId, accessToke
   return { stopped: true };
 };
 
-export { DRIVE_SCOPE };
+export { DRIVE_SCOPE, GOOGLE_IDENTITY_SCOPES, GOOGLE_DRIVE_OAUTH_SCOPE };
