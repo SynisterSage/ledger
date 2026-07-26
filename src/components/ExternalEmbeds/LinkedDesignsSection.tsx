@@ -26,6 +26,7 @@ import {
 } from './AddLinkedContextModal';
 import { SlackContextCard } from '../Slack/SlackContextCard';
 import { GoogleDriveResourceActionModal, type GoogleDriveAction } from './GoogleDriveResourceActionModal';
+import { installGooglePickerStyles } from '../Common/googlePickerStyles';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
@@ -177,6 +178,7 @@ export function LinkedDesignsSection({
     if (!canEdit) return;
     setBusyId('google-drive');
     try {
+      installGooglePickerStyles();
       const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string };
       if (!tokenResult.access_token) throw new Error('Connect Google Drive to continue.');
       const loadPicker = () => new Promise<void>((resolve, reject) => {
@@ -206,6 +208,7 @@ export function LinkedDesignsSection({
           if (data.action === googleWindow.google.picker.Action.CANCEL || data.action === googleWindow.google.picker.Action.PICKED) resolve();
         }).build();
         picker.setVisible(true);
+        installGooglePickerStyles();
       });
     } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not open Google Picker.', { variant: 'error' }); }
     finally { setBusyId(null); }
@@ -219,11 +222,12 @@ export function LinkedDesignsSection({
     if (!canEdit || target.targetType !== 'project') return;
     setBusyId('google-drive-folder');
     try {
+      installGooglePickerStyles();
       const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string };
       if (!tokenResult.access_token) throw new Error('Connect Google Drive to continue.');
       const googleWindow = window as any;
       if (!googleWindow.google?.picker) await new Promise<void>((resolve, reject) => { const script = document.querySelector('script[data-ledger-google-picker]') || document.createElement('script'); if (!script.parentNode) { script.setAttribute('data-ledger-google-picker', 'true'); (script as HTMLScriptElement).src = 'https://apis.google.com/js/api.js'; (script as HTMLScriptElement).async = true; script.addEventListener('load', () => googleWindow.gapi.load('picker', resolve)); script.addEventListener('error', () => reject(new Error('Google Picker could not load.'))); document.head.appendChild(script); } else { script.addEventListener('load', () => googleWindow.gapi.load('picker', resolve)); } });
-      await new Promise<void>((resolve) => { const view = new googleWindow.google.picker.DocsView(googleWindow.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true); const picker = new googleWindow.google.picker.PickerBuilder().addView(view).enableFeature(googleWindow.google.picker.Feature.NAV_HIDDEN).setOAuthToken(tokenResult.access_token).setCallback(async (data: any) => { if (data.action === googleWindow.google.picker.Action.PICKED) { const folderId = String(data.docs?.[0]?.id ?? ''); try { await api.connectGoogleDriveFolderToProject(target.targetId, folderId); toast.show('Google Drive folder connected.', { variant: 'success' }); await load(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); } resolve(); } else if (data.action === googleWindow.google.picker.Action.CANCEL) resolve(); }).build(); picker.setVisible(true); });
+      await new Promise<void>((resolve) => { const view = new googleWindow.google.picker.DocsView(googleWindow.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true); const picker = new googleWindow.google.picker.PickerBuilder().addView(view).enableFeature(googleWindow.google.picker.Feature.NAV_HIDDEN).setOAuthToken(tokenResult.access_token).setCallback(async (data: any) => { if (data.action === googleWindow.google.picker.Action.PICKED) { const folderId = String(data.docs?.[0]?.id ?? ''); try { await api.connectGoogleDriveFolderToProject(target.targetId, folderId); toast.show('Google Drive folder connected.', { variant: 'success' }); await load(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); } resolve(); } else if (data.action === googleWindow.google.picker.Action.CANCEL) resolve(); }).build(); picker.setVisible(true); installGooglePickerStyles(); });
     } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not open Google Picker.', { variant: 'error' }); } finally { setBusyId(null); }
   };
   const applyGoogleDriveTemplate = async () => {

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
 import { ModalOverlay } from '../Common/ModalOverlay';
+import { installGooglePickerStyles } from '../Common/googlePickerStyles';
 
 type Source = { id: string; name: string; provider_source_id: string; canonical_url: string; icon_url?: string | null; status?: string; last_successful_refresh_at?: string | null; last_refreshed_at?: string | null; external_metadata?: Record<string, any>; relationship?: { created_by_user_id?: string | null } };
 type Item = { id: string; name: string; item_type: 'file' | 'folder'; mime_type?: string | null; modified_time?: string | null; webViewUrl?: string | null; iconUrl?: string | null; thumbnailUrl?: string | null; link_status?: 'linked_to_project' | 'linked_elsewhere' | 'not_linked'; access_status?: string };
@@ -38,6 +39,7 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
   const picker = async () => {
     setBusy('connect');
     try {
+      installGooglePickerStyles();
       const token = await api.getGoogleDrivePickerToken() as { access_token?: string };
       if (!token.access_token) throw new Error('Reconnect Google Drive to continue.');
       await loadPicker();
@@ -52,6 +54,7 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
           } else if (data.action === browser.google.picker.Action.CANCEL) resolve();
         }).build();
         picker.setVisible(true);
+        installGooglePickerStyles();
       });
     } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not open Google Picker.', { variant: 'error' }); }
     finally { setBusy(null); }

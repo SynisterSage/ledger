@@ -1,6 +1,7 @@
 import { Link2, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useApi } from '../../hooks/useApi';
+import { installGooglePickerStyles } from '../Common/googlePickerStyles';
 import { useToast } from '../Common/ToastProvider';
 
 declare global {
@@ -31,6 +32,7 @@ export function GoogleDriveIntakeCaptureButton({ onCaptured }: { onCaptured?: ()
   const openPicker = async () => {
     setBusy(true);
     try {
+      installGooglePickerStyles();
       const token = await api.getGoogleDrivePickerToken() as { access_token?: string };
       if (!token.access_token) throw new Error('Reconnect Google Drive to continue.');
       await loadPicker();
@@ -45,6 +47,7 @@ export function GoogleDriveIntakeCaptureButton({ onCaptured }: { onCaptured?: ()
             } else if (data.action === window.google.picker.Action.CANCEL) resolve();
           }).build();
         picker.setVisible(true);
+        installGooglePickerStyles();
       });
     } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not add Google Drive files.', { variant: 'error' }); }
     finally { setBusy(false); }
