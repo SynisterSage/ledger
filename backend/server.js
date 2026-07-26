@@ -9526,7 +9526,17 @@ app.post('/api/projects/:projectId/connected-sources/google-drive', authMiddlewa
     const refreshed = await refreshConnectedGoogleDriveSource({ source, userId: req.authUser.id, force: true });
     await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_folder_connected', targetType: 'project', targetId: projectId, metadata: { source_id: source.id, folder_id: folderId, folder_name: folder.name } });
     res.status(201).json({ source: refreshed.source, relationship: relationship.data, changes: refreshed.changes });
-  } catch (error) { return respondWithError(res, error); }
+  } catch (error) {
+    console.error('[google-drive] folder connection failed', {
+      projectId: req.params.projectId,
+      folderId: String(req.body?.folder_id ?? req.body?.folderId ?? '').trim() || null,
+      providerStatus: error?.providerStatus || null,
+      providerReason: error?.providerReason || null,
+      accessStatus: error?.accessStatus || null,
+      message: error?.message || 'unknown_error',
+    });
+    return respondWithError(res, error);
+  }
 });
 
 app.get('/api/projects/:projectId/connected-sources', authMiddleware, rateLimit('read'), async (req, res) => {
@@ -10209,6 +10219,14 @@ const createGoogleDriveWatch = async ({ connection, pageToken, replacingChannelI
     }
     return updated.data;
   } catch (error) {
+    console.error('[google-drive] watch creation failed', {
+      connectionId: connection.id,
+      address: googleDriveWebhookAddress() || null,
+      providerStatus: error?.providerStatus || null,
+      providerReason: error?.providerReason || null,
+      accessStatus: error?.accessStatus || null,
+      message: error?.message || 'unknown_error',
+    });
     await supabase.from('google_drive_watch_channels').update({ status: 'error', last_error: clampText(error?.message || 'watch_failed', 500), updated_at: new Date().toISOString() }).eq('id', placeholder.data.id);
     throw error;
   }

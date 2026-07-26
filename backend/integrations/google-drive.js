@@ -60,7 +60,17 @@ const driveRequest = async (url, accessToken, fetchImpl = fetch) => {
   if (response.status === 401) throw new GoogleDriveProviderError('Google Drive connection expired.', 'revoked', 401);
   if (response.status === 403) throw new GoogleDriveProviderError('This Google Drive item is no longer accessible.', 'inaccessible', 403);
   if (response.status === 404) throw new GoogleDriveProviderError('This Google Drive item is no longer available.', 'not_found', 404);
-  if (!response.ok) throw new GoogleDriveProviderError('Google Drive could not load this folder right now.', 'error', 502);
+  if (!response.ok) {
+    let providerReason = null;
+    try {
+      const payload = await response.clone().json();
+      providerReason = payload?.error?.status || payload?.error?.message || null;
+    } catch { /* Keep provider responses out of the user-facing error. */ }
+    const error = new GoogleDriveProviderError('Google Drive could not load this folder right now.', 'error', 502);
+    error.providerStatus = response.status;
+    error.providerReason = providerReason;
+    throw error;
+  }
   return response.json();
 };
 export const resolveGoogleDriveFolder = async (folderId, { accessToken, fetchImpl = fetch } = {}) => {
@@ -99,7 +109,17 @@ export const watchGoogleDriveChanges = async ({ pageToken, address, channelId, t
   const response = await fetchImpl('https://www.googleapis.com/drive/v3/changes/watch', { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: channelId, type: 'web_hook', address, token, expiration: String(expiration), pageToken: String(pageToken), includeItemsFromAllDrives: true, supportsAllDrives: true }) });
   if (response.status === 401) throw new GoogleDriveProviderError('Google Drive connection expired.', 'revoked', 401);
   if (response.status === 403) throw new GoogleDriveProviderError('Google Drive monitoring is not authorized.', 'inaccessible', 403);
-  if (!response.ok) throw new GoogleDriveProviderError('Google Drive monitoring could not be started.', 'error', 502);
+  if (!response.ok) {
+    let providerReason = null;
+    try {
+      const payload = await response.clone().json();
+      providerReason = payload?.error?.status || payload?.error?.message || null;
+    } catch { /* Keep provider responses out of the user-facing error. */ }
+    const error = new GoogleDriveProviderError('Google Drive monitoring could not be started.', 'error', 502);
+    error.providerStatus = response.status;
+    error.providerReason = providerReason;
+    throw error;
+  }
   return response.json();
 };
 
