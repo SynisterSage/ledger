@@ -50,8 +50,10 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
         if (token.app_id) pickerBuilder.setAppId(token.app_id);
         const picker = pickerBuilder.setCallback(async (data: any) => {
           if (data.action === browser.google.picker.Action.PICKED) {
-            const folderId = String(data.docs?.[0]?.id ?? '');
-            try { await api.connectGoogleDriveFolderToProject(projectId, folderId); toast.show('Google Drive folder connected.', { variant: 'success' }); await loadSources(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); }
+            const folder = data.docs?.[0] ?? {};
+            const folderId = String(folder.id ?? '');
+            const resourceKey = String(folder.resourceKey ?? '').trim() || null;
+            try { await api.connectGoogleDriveFolderToProject(projectId, folderId, resourceKey); toast.show('Google Drive folder connected.', { variant: 'success' }); await loadSources(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); }
             resolve();
           } else if (data.action === browser.google.picker.Action.CANCEL) resolve();
         }).build();

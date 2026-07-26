@@ -9512,18 +9512,19 @@ app.post('/api/projects/:projectId/connected-sources/google-drive', authMiddlewa
     if (!/^[A-Za-z0-9_-]{10,}$/.test(folderId)) return res.status(400).json({ error: 'Select a valid Google Drive folder.' });
     const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
     if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive to connect a folder.', code: 'connection_required' });
-    const folder = await resolveGoogleDriveFolder(folderId, { accessToken: connection.access_token_encrypted });
+    const resourceKey = String(req.body?.resource_key ?? req.body?.resourceKey ?? '').trim() || null;
+    const folder = await resolveGoogleDriveFolder(folderId, { accessToken: connection.access_token_encrypted, resourceKey });
     const existing = await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('provider', 'google_drive').eq('source_type', 'folder').eq('provider_source_id', folderId).maybeSingle();
     if (existing.error) throw existing.error;
     let source = existing.data;
     if (!source) {
-      const created = await supabase.from('connected_external_sources').insert({ workspace_id: workspaceId, provider: 'google_drive', source_type: 'folder', provider_source_id: folderId, integration_connection_id: connection.id, connected_by_user_id: req.authUser.id, name: folder.name || 'Google Drive folder', canonical_url: folder.webViewLink || `https://drive.google.com/drive/folders/${folderId}`, icon_url: folder.iconLink || null, external_metadata: { providerAccountEmail: connection.provider_account_email || null }, sync_mode: 'manual', status: 'active' }).select('*').single();
+      const created = await supabase.from('connected_external_sources').insert({ workspace_id: workspaceId, provider: 'google_drive', source_type: 'folder', provider_source_id: folderId, integration_connection_id: connection.id, connected_by_user_id: req.authUser.id, name: folder.name || 'Google Drive folder', canonical_url: folder.webViewLink || `https://drive.google.com/drive/folders/${folderId}`, icon_url: folder.iconLink || null, external_metadata: { providerAccountEmail: connection.provider_account_email || null, ...(folder.resourceKey || resourceKey ? { resourceKey: folder.resourceKey || resourceKey } : {}) }, sync_mode: 'manual', status: 'active' }).select('*').single();
       if (created.error && created.error.code !== '23505') throw created.error;
       source = created.data || (await supabase.from('connected_external_sources').select('*').eq('workspace_id', workspaceId).eq('provider_source_id', folderId).single()).data;
     }
     const relationship = await supabase.from('connected_source_relationships').upsert({ connected_source_id: source.id, workspace_id: workspaceId, entity_type: 'project', entity_id: projectId, created_by_user_id: req.authUser.id }, { onConflict: 'connected_source_id,entity_type,entity_id' }).select('*').single();
     if (relationship.error) throw relationship.error;
-    const refreshed = await refreshConnectedGoogleDriveSource({ source, userId: req.authUser.id, force: true });
+    const refreshed = await refreshConnectedGoogleDriveSource({ source: { ...source, external_metadata: { ...(source.external_metadata || {}), ...(folder.resourceKey || resourceKey ? { resourceKey: folder.resourceKey || resourceKey } : {}) } }, userId: req.authUser.id, force: true });
     await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_folder_connected', targetType: 'project', targetId: projectId, metadata: { source_id: source.id, folder_id: folderId, folder_name: folder.name } });
     res.status(201).json({ source: refreshed.source, relationship: relationship.data, changes: refreshed.changes });
   } catch (error) {
@@ -9686,8 +9687,8 @@ app.post('/api/connected-sources/:sourceId/reconnect', authMiddleware, rateLimit
     await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: 'project', targetId: projectId });
     const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
     if (!connection) return res.status(409).json({ error: 'Reconnect Google Drive first.', code: 'connection_required' });
-    const folder = await resolveGoogleDriveFolder(membership.source.provider_source_id, { accessToken: connection.access_token_encrypted });
-    const updated = await supabase.from('connected_external_sources').update({ integration_connection_id: connection.id, connected_by_user_id: req.authUser.id, name: folder.name || membership.source.name, status: 'active', last_error: null, updated_at: new Date().toISOString() }).eq('id', membership.source.id).eq('workspace_id', workspaceId).select('*').single();
+    const folder = await resolveGoogleDriveFolder(membership.source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey: membership.source.external_metadata?.resourceKey });
+    const updated = await supabase.from('connected_external_sources').update({ integration_connection_id: connection.id, connected_by_user_id: req.authUser.id, name: folder.name || membership.source.name, status: 'active', last_error: null, external_metadata: { ...(membership.source.external_metadata || {}), ...(folder.resourceKey ? { resourceKey: folder.resourceKey } : {}) }, updated_at: new Date().toISOString() }).eq('id', membership.source.id).eq('workspace_id', workspaceId).select('*').single();
     if (updated.error) throw updated.error;
     const refreshed = await refreshConnectedGoogleDriveSource({ source: updated.data, userId: req.authUser.id, force: true });
     await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'google_drive_folder_reconnected', targetType: 'project', targetId: projectId, metadata: { source_id: updated.data.id, folder_id: updated.data.provider_source_id } });
@@ -10018,7 +10019,7 @@ const getGoogleDriveConnectionById = async (connectionId) => {
 
 const normalizeGoogleDriveSourceItem = (item, sourceId, workspaceId, now) => {
   const isFolder = item.mimeType === 'application/vnd.google-apps.folder';
-  const metadata = { webViewUrl: item.webViewLink || null, iconUrl: item.iconLink || null, thumbnailUrl: item.thumbnailLink || null, sizeBytes: item.size ? Number(item.size) : null, driveId: item.driveId || null };
+  const metadata = { webViewUrl: item.webViewLink || null, iconUrl: item.iconLink || null, thumbnailUrl: item.thumbnailLink || null, sizeBytes: item.size ? Number(item.size) : null, driveId: item.driveId || null, resourceKey: item.resourceKey || null };
   const metadataHash = crypto.createHash('sha256').update(JSON.stringify({ name: item.name, mimeType: item.mimeType, modifiedTime: item.modifiedTime, trashed: Boolean(item.trashed), metadata })).digest('hex');
   return { connected_source_id: sourceId, workspace_id: workspaceId, provider_item_id: String(item.id), parent_provider_item_id: item.parents?.[0] || null, name: String(item.name || 'Untitled Drive item').slice(0, 2000), mime_type: item.mimeType || null, item_type: isFolder ? 'folder' : 'file', modified_time: item.modifiedTime || null, trashed: Boolean(item.trashed), access_status: item.trashed ? 'trashed' : 'accessible', metadata, metadata_hash: metadataHash, last_seen_at: now };
 };
@@ -10044,11 +10045,11 @@ const refreshConnectedGoogleDriveSource = async ({ source, userId, force = false
   const now = new Date().toISOString();
   await supabase.from('connected_external_sources').update({ status: 'refreshing', last_refreshed_at: now, updated_at: now }).eq('id', source.id);
   try {
-    const folder = await resolveGoogleDriveFolder(source.provider_source_id, { accessToken: connection.access_token_encrypted });
-    let listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, pageSize: 100, includeTrashed: true });
+    const folder = await resolveGoogleDriveFolder(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey: source.external_metadata?.resourceKey });
+    let listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey: source.external_metadata?.resourceKey, pageSize: 100, includeTrashed: true });
     const allFiles = [...(listing.files ?? [])];
     for (let page = 0; listing.nextPageToken && page < 10; page += 1) {
-      listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, pageSize: 100, includeTrashed: true, pageToken: listing.nextPageToken });
+      listing = await listGoogleDriveChildren(source.provider_source_id, { accessToken: connection.access_token_encrypted, resourceKey: source.external_metadata?.resourceKey, pageSize: 100, includeTrashed: true, pageToken: listing.nextPageToken });
       allFiles.push(...(listing.files ?? []));
     }
     const previous = await supabase.from('connected_source_items').select('provider_item_id, name, mime_type, modified_time, metadata_hash, access_status').eq('connected_source_id', source.id).eq('parent_provider_item_id', source.provider_source_id);

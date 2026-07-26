@@ -54,12 +54,21 @@ export const updateGoogleDriveItem = async ({ fileId, body, addParents, removePa
 export const copyGoogleDriveFile = async ({ fileId, name, parentId, accessToken, fetchImpl = fetch } = {}) => writeDriveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/copy?supportsAllDrives=true`, { accessToken, fetchImpl, body: { ...(name ? { name: safeText(name) } : {}), ...(parentId ? { parents: [String(parentId)] } : {}) } });
 export const uploadGoogleDriveBytes = async ({ name, mimeType, parentId, bytes, accessToken, fetchImpl = fetch } = {}) => { const metadata = JSON.stringify({ name: safeText(name, 'Uploaded file'), mimeType: safeText(mimeType, 'application/octet-stream'), ...(parentId ? { parents: [String(parentId)] } : {}) }); const boundary = `ledger_${Math.random().toString(16).slice(2)}`; const prefix = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType || 'application/octet-stream'}\r\n\r\n`); const suffix = Buffer.from(`\r\n--${boundary}--`); return writeDriveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', { accessToken, fetchImpl, body: Buffer.concat([prefix, Buffer.from(bytes), suffix]), headers: { 'Content-Type': `multipart/related; boundary=${boundary}` } }); };
 
-const driveFields = 'id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,owners(displayName,emailAddress),driveId,trashed,parents,capabilities,shortcutDetails,appProperties';
-const driveRequest = async (url, accessToken, fetchImpl = fetch) => {
-  const response = await fetchImpl(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+const driveFields = 'id,name,mimeType,webViewLink,iconLink,thumbnailLink,modifiedTime,size,owners(displayName,emailAddress),driveId,trashed,parents,capabilities,shortcutDetails,appProperties,resourceKey';
+const driveRequest = async (url, accessToken, fetchImpl = fetch, resourceKeys = null) => {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  if (resourceKeys && typeof resourceKeys === 'object') {
+    const value = Object.entries(resourceKeys).filter(([id, key]) => id && key).map(([id, key]) => `${id}/${key}`).join(',');
+    if (value) headers['X-Goog-Drive-Resource-Keys'] = value;
+  }
+  const response = await fetchImpl(url, { headers });
   if (response.status === 401) throw new GoogleDriveProviderError('Google Drive connection expired.', 'revoked', 401);
   if (response.status === 403) throw new GoogleDriveProviderError('This Google Drive item is no longer accessible.', 'inaccessible', 403);
-  if (response.status === 404) throw new GoogleDriveProviderError('This Google Drive item is no longer available.', 'not_found', 404);
+  if (response.status === 404) {
+    const error = new GoogleDriveProviderError('This Google Drive item is no longer available.', 'not_found', 404);
+    error.providerStatus = 404;
+    throw error;
+  }
   if (!response.ok) {
     let providerReason = null;
     try {
@@ -73,16 +82,16 @@ const driveRequest = async (url, accessToken, fetchImpl = fetch) => {
   }
   return response.json();
 };
-export const resolveGoogleDriveFolder = async (folderId, { accessToken, fetchImpl = fetch } = {}) => {
-  const file = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?${new URLSearchParams({ fields: driveFields, supportsAllDrives: 'true' })}`, accessToken, fetchImpl);
+export const resolveGoogleDriveFolder = async (folderId, { accessToken, resourceKey, fetchImpl = fetch } = {}) => {
+  const file = await driveRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?${new URLSearchParams({ fields: driveFields, supportsAllDrives: 'true' })}`, accessToken, fetchImpl, resourceKey ? { [String(folderId)]: String(resourceKey) } : null);
   if (file.trashed) throw new GoogleDriveProviderError('This folder is no longer available in Google Drive.', 'not_found', 404);
   if (file.mimeType !== 'application/vnd.google-apps.folder') throw new GoogleDriveProviderError('Select a Google Drive folder.', 'error', 400);
   return file;
 };
-export const listGoogleDriveChildren = async (parentId, { accessToken, pageToken = '', pageSize = 50, includeTrashed = false, fetchImpl = fetch } = {}) => {
+export const listGoogleDriveChildren = async (parentId, { accessToken, pageToken = '', pageSize = 50, includeTrashed = false, resourceKey, fetchImpl = fetch } = {}) => {
   const params = new URLSearchParams({ q: `'${String(parentId).replace(/'/g, "\\'")}' in parents${includeTrashed ? '' : ' and trashed = false'}`, fields: `nextPageToken,files(${driveFields})`, pageSize: String(Math.min(Math.max(Number(pageSize) || 50, 1), 100)), orderBy: 'folder,name', includeItemsFromAllDrives: 'true', supportsAllDrives: 'true', spaces: 'drive' });
   if (pageToken) params.set('pageToken', pageToken);
-  return driveRequest(`https://www.googleapis.com/drive/v3/files?${params}`, accessToken, fetchImpl);
+  return driveRequest(`https://www.googleapis.com/drive/v3/files?${params}`, accessToken, fetchImpl, resourceKey ? { [String(parentId)]: String(resourceKey) } : null);
 };
 export const googleDriveItemIsWithinRoot = async (itemId, rootId, { accessToken, fetchImpl = fetch } = {}) => {
   let current = String(itemId);
