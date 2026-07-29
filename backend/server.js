@@ -925,12 +925,14 @@ const normalizeMeetingMetadataPayload = (body = {}, existing = null) => {
 
   const startAt = payload.meeting_start_at ?? existing?.meeting_start_at ?? null;
   const endAt = payload.meeting_end_at ?? existing?.meeting_end_at ?? null;
-  if (startAt && endAt && new Date(endAt).getTime() < new Date(startAt).getTime()) {
+  const updatesMeetingRange = has('meeting_start_at') || has('meeting_end_at');
+  if (updatesMeetingRange && startAt && endAt && new Date(endAt).getTime() < new Date(startAt).getTime()) {
     throw meetingValidationError('meeting_end_at must be after meeting_start_at');
   }
   const scheduledStart = payload.scheduled_start_at ?? existing?.scheduled_start_at ?? null;
   const scheduledEnd = payload.scheduled_end_at ?? existing?.scheduled_end_at ?? null;
-  if (scheduledStart && scheduledEnd && new Date(scheduledEnd).getTime() < new Date(scheduledStart).getTime()) {
+  const updatesScheduledRange = has('scheduled_start_at') || has('scheduled_end_at');
+  if (updatesScheduledRange && scheduledStart && scheduledEnd && new Date(scheduledEnd).getTime() < new Date(scheduledStart).getTime()) {
     throw meetingValidationError('scheduled_end_at must be after scheduled_start_at');
   }
 

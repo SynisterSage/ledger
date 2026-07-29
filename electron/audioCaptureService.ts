@@ -36,6 +36,16 @@ export type AudioCaptureStatus = {
   queueDepth: number;
   diskAvailableBytes: number;
 };
+export type AudioInputDevice = {
+  id: string;
+  name: string;
+  kind: 'input';
+  available: boolean;
+  isBluetooth: boolean;
+  isDefault: boolean;
+  isOutputDefault: boolean;
+  channelCount: number;
+};
 
 export type AudioLevelEvent = { source: AudioSourceName; level: number };
 export type AudioErrorEvent = { source: AudioSourceName; error: string };
@@ -104,7 +114,28 @@ export class MeetingAudioCaptureService {
     };
   }
 
-  async start(input: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean }) {
+  async devices() {
+    const response = await this.invoke({ command: 'devices' });
+    return {
+      devices: Array.isArray(response.devices) ? response.devices.filter((device) => device && typeof device.id === 'string' && typeof device.name === 'string').map((device) => ({
+        id: device.id,
+        name: device.name,
+        kind: 'input' as const,
+        available: device.available !== false,
+        isBluetooth: device.isBluetooth === true,
+        isDefault: device.isDefault === true,
+        isOutputDefault: device.isOutputDefault === true,
+        channelCount: Number(device.channelCount) || 1,
+      })) as AudioInputDevice[] : [],
+      outputDevice: response.outputDevice && typeof response.outputDevice.id === 'string' ? {
+        id: response.outputDevice.id,
+        name: String(response.outputDevice.name || 'Current output'),
+        isBluetooth: response.outputDevice.isBluetooth === true,
+      } : null,
+    };
+  }
+
+  async start(input: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null }) {
     this.validateIdentity(input.noteId, input.workspaceId);
     if (this.activeSession) {
       if (this.activeSession.noteId === input.noteId) return this.publicStatus();
@@ -124,7 +155,7 @@ export class MeetingAudioCaptureService {
       enabledSources: [input.microphone ? 'user_microphone' : null, input.systemAudio ? 'system_audio' : null].filter(Boolean) as RecordingSource[],
       directoryRef: sessionId,
     });
-    const response = await this.invoke({ command: 'start', sessionId, directory, microphone: input.microphone, systemAudio: input.systemAudio });
+    const response = await this.invoke({ command: 'start', sessionId, directory, microphone: input.microphone, systemAudio: input.systemAudio, microphoneDeviceId: input.microphone ? input.microphoneDeviceId ?? null : null });
     if (!response.ok) {
       this.sessionStore.setStatus(sessionId, 'discarded');
       throw new Error(response.error || 'Audio capture could not start.');
@@ -149,7 +180,7 @@ export class MeetingAudioCaptureService {
     return this.publicStatus();
   }
 
-  async testSource(source: AudioSourceName) {
+  async testSource(source: AudioSourceName, microphoneDeviceId?: string | null) {
     if (!SOURCE_NAMES.has(source)) throw new Error('Invalid audio source.');
     if (this.activeSession) throw new Error('Stop the current audio test before starting another one.');
     this.assertDiskSpace();
@@ -165,7 +196,7 @@ export class MeetingAudioCaptureService {
       enabledSources: [source],
       directoryRef: sessionId,
     });
-    const response = await this.invoke({ command: 'test-source', sessionId, directory, microphone: source === 'user_microphone', systemAudio: source === 'system_audio' });
+    const response = await this.invoke({ command: 'test-source', sessionId, directory, microphone: source === 'user_microphone', systemAudio: source === 'system_audio', microphoneDeviceId: source === 'user_microphone' ? microphoneDeviceId ?? null : null });
     if (!response.ok) {
       this.sessionStore.setStatus(sessionId, 'discarded');
       throw new Error(response.error || 'Audio test could not start.');
@@ -250,14 +281,16 @@ export class MeetingAudioCaptureService {
 
   status() { return this.publicStatus(); }
 
-  async reveal(sessionId: string, source: AudioSourceName) {
-    if (!safeId(sessionId) || !SOURCE_NAMES.has(source)) throw new Error('Invalid audio file reference.');
-    const directory = this.completedDirectories.get(sessionId) ?? (this.sessionStore.get(sessionId) ? path.join(app.getPath('temp'), 'ledger-meeting-audio', sessionId) : null);
-    if (!directory) throw new Error('That temporary recording is no longer available.');
-    const firstChunk = this.sessionStore.get(sessionId)?.chunks.find((chunk) => chunk.source === source);
-    const file = firstChunk ? path.join(directory, firstChunk.fileName) : null;
-    if (!file || !fs.existsSync(file)) throw new Error('The requested temporary recording file is not available.');
-    await shell.showItemInFolder(file);
+  async reveal(sessionId: string) {
+    if (!safeId(sessionId)) throw new Error('Invalid recording session.');
+    const session = this.sessionStore.get(sessionId);
+    if (!session || session.kind !== 'meeting' || !session.noteId || !session.workspaceId) {
+      throw new Error('That meeting recording is not available for this workspace.');
+    }
+    const directory = this.completedDirectories.get(sessionId) ?? path.join(app.getPath('temp'), 'ledger-meeting-audio', session.directoryRef);
+    if (!fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) throw new Error('The recording folder is no longer available.');
+    const error = await shell.openPath(directory);
+    if (error) shell.showItemInFolder(directory);
     return true;
   }
 

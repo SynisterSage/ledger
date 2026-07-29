@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import CoreMedia
 import CoreGraphics
 import Foundation
@@ -26,6 +27,7 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
     private var isPaused = false
     private var systemStreamOutputAttached = false
     private var microphoneLevelTimer: DispatchSourceTimer?
+    private var originalDefaultInputDevice: AudioDeviceID?
     private var lastSystemLevelAt = Date.distantPast
     private let outputLock = NSLock()
 
@@ -37,6 +39,7 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         switch command {
         case "permission-status": permissionStatus()
         case "request-permissions": requestPermissions()
+        case "devices": devices()
         case "start": start(input)
         case "test-source": start(input)
         case "pause": pause()
@@ -96,6 +99,96 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         }
     }
 
+    private struct AudioDeviceInfo {
+        let id: AudioDeviceID
+        let uid: String
+        let name: String
+        let isBluetooth: Bool
+    }
+
+    private func devices() {
+        let currentInput = defaultDevice(selector: kAudioHardwarePropertyDefaultInputDevice)
+        let currentOutput = defaultDevice(selector: kAudioHardwarePropertyDefaultOutputDevice)
+        let items = audioDevices().compactMap { device -> [String: Any]? in
+            let inputChannels = channelCount(device.id, scope: kAudioDevicePropertyScopeInput)
+            guard inputChannels > 0 else { return nil }
+            return [
+                "id": device.uid,
+                "name": device.name,
+                "kind": "input",
+                "available": true,
+                "isBluetooth": device.isBluetooth,
+                "isDefault": device.id == currentInput,
+                "isOutputDefault": device.id == currentOutput,
+                "channelCount": inputChannels
+            ]
+        }
+        let output = audioDevices().first { $0.id == currentOutput }
+        emit(["ok": true, "devices": items, "outputDevice": output.map { ["id": $0.uid, "name": $0.name, "isBluetooth": $0.isBluetooth] } as Any])
+    }
+
+    private func selectInputDevice(_ uid: String) -> String? {
+        guard let device = audioDevices().first(where: { $0.uid == uid && channelCount($0.id, scope: kAudioDevicePropertyScopeInput) > 0 }) else {
+            return "The selected microphone is no longer available."
+        }
+        if originalDefaultInputDevice == nil { originalDefaultInputDevice = defaultDevice(selector: kAudioHardwarePropertyDefaultInputDevice) }
+        var selected = device.id
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        let status = AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &selected)
+        return status == noErr ? nil : "macOS could not select that microphone."
+    }
+
+    private func audioDevices() -> [AudioDeviceInfo] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return [] }
+        let count = Int(size) / MemoryLayout<AudioDeviceID>.size
+        var ids = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { id in
+            guard let uid = deviceString(id, selector: kAudioDevicePropertyDeviceUID), !uid.isEmpty else { return nil }
+            let name = deviceString(id, selector: kAudioObjectPropertyName) ?? "Microphone"
+            let transport = deviceUInt32(id, selector: kAudioDevicePropertyTransportType) ?? 0
+            let isBluetooth = [0x626c7574, 0x626c7565, 0x626c7568].contains(transport)
+            return AudioDeviceInfo(id: id, uid: uid, name: name, isBluetooth: isBluetooth)
+        }
+    }
+
+    private func defaultDevice(selector: AudioObjectPropertySelector) -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var value = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &value) == noErr, value != 0 else { return nil }
+        return value
+    }
+
+    private func deviceString(_ id: AudioDeviceID, selector: AudioObjectPropertySelector) -> String? {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr, let value else { return nil }
+        return value.takeUnretainedValue() as String
+    }
+
+    private func deviceUInt32(_ id: AudioDeviceID, selector: AudioObjectPropertySelector) -> UInt32? {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return nil }
+        return value
+    }
+
+    private func channelCount(_ id: AudioDeviceID, scope: AudioObjectPropertyScope) -> Int {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr else { return 0 }
+        let pointer = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { pointer.deallocate() }
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, pointer) == noErr else { return 0 }
+        let list = UnsafeMutableAudioBufferListPointer(pointer.assumingMemoryBound(to: AudioBufferList.self))
+        return list.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
     private func fileSettings() -> [String: Any] {
         [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
@@ -125,12 +218,19 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         sessionDirectory = directory
         microphoneChunkStartAt = nil
         systemChunkStartAt = nil
+        systemAudioFormat = nil
         microphoneSequence = 0
         systemSequence = 0
         startedAt = Date()
         pausedAt = nil
         accumulatedPause = 0
         isPaused = false
+
+        if wantMicrophone, let deviceId = input["microphoneDeviceId"] as? String, let error = selectInputDevice(deviceId) {
+            cleanupSession()
+            emit(errorPayload("device_unavailable", error))
+            return
+        }
 
         var sources: [[String: Any]] = []
         var warnings: [[String: Any]] = []
@@ -164,7 +264,9 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
             if let systemError {
                 warnings.append(["source": "system_audio", "error": systemError])
             } else {
-                sources.append(["source": "system_audio", "sampleRate": 16_000, "channels": 1, "active": true])
+                // ScreenCaptureKit delivers the display mix as standard 48 kHz
+                // PCM on macOS. Whisper resamples it during transcription.
+                sources.append(["source": "system_audio", "sampleRate": 48_000, "channels": 2, "active": true])
             }
         }
 
@@ -188,8 +290,9 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
                     let configuration = SCStreamConfiguration()
                     configuration.capturesAudio = true
                     configuration.excludesCurrentProcessAudio = false
-                    configuration.sampleRate = 16_000
-                    configuration.channelCount = 1
+                    // Preserve the native display-mix format. Forcing 16 kHz
+                    // mono can produce a live stream with no usable buffers on
+                    // some macOS versions.
                     let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
                     try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: workQueue)
                     systemStreamOutputAttached = true
@@ -336,10 +439,17 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         systemFileName = nil
         microphoneChunkStartAt = nil
         systemChunkStartAt = nil
+        systemAudioFormat = nil
         startedAt = nil
         pausedAt = nil
         accumulatedPause = 0
         isPaused = false
+        if let originalDefaultInputDevice {
+            var restored = originalDefaultInputDevice
+            var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            _ = AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &restored)
+            self.originalDefaultInputDevice = nil
+        }
     }
 
     private func iso(_ date: Date?) -> String? { date.map { ISO8601DateFormatter().string(from: $0) } }
@@ -370,13 +480,44 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
     func stream(_ stream: SCStream, didStopWithError error: Error) { emit(["event": "error", "source": "system_audio", "error": error.localizedDescription]) }
 
     private func makePCMBuffer(_ sampleBuffer: CMSampleBuffer, format: AVAudioFormat) -> AVAudioPCMBuffer? {
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer), let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer), let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else { return nil }
-        let length = CMBlockBufferGetDataLength(blockBuffer)
-        guard let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(length) / format.streamDescription.pointee.mBytesPerFrame) else { return nil }
-        pcm.frameLength = pcm.frameCapacity
-        guard let channelData = pcm.audioBufferList.pointee.mBuffers.mData else { return nil }
-        CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: channelData)
-        _ = asbd
+        var listSize = 0
+        var retainedBlockBuffer: CMBlockBuffer?
+        _ = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: &listSize,
+            bufferListOut: nil,
+            bufferListSize: 0,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: 0,
+            blockBufferOut: &retainedBlockBuffer
+        )
+        guard listSize > 0 else { return nil }
+        let sourcePointer = UnsafeMutableRawPointer.allocate(byteCount: listSize, alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { sourcePointer.deallocate() }
+        guard CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: &listSize,
+            bufferListOut: sourcePointer.assumingMemoryBound(to: AudioBufferList.self),
+            bufferListSize: listSize,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: 0,
+            blockBufferOut: &retainedBlockBuffer
+        ) == noErr else { return nil }
+
+        let frameCount = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return nil }
+        pcm.frameLength = frameCount
+        let sourceBuffers = UnsafeMutableAudioBufferListPointer(sourcePointer.assumingMemoryBound(to: AudioBufferList.self))
+        let destinationBuffers = UnsafeMutableAudioBufferListPointer(pcm.mutableAudioBufferList)
+        guard sourceBuffers.count == destinationBuffers.count else { return nil }
+        for index in 0..<sourceBuffers.count {
+            let source = sourceBuffers[index]
+            let destination = destinationBuffers[index]
+            guard let sourceData = source.mData, let destinationData = destination.mData else { return nil }
+            memcpy(destinationData, sourceData, min(Int(source.mDataByteSize), Int(destination.mDataByteSize)))
+        }
         return pcm
     }
 

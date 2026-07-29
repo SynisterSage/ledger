@@ -158,20 +158,24 @@ ipcMain.handle('meeting-audio:discard-recovery', (_event, sessionId: unknown) =>
   if (typeof sessionId !== 'string') throw new Error('Invalid recording session.');
   return meetingAudioCaptureService.discard(sessionId);
 });
-ipcMain.handle('meeting-audio:start', (_event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown }) => {
+ipcMain.handle('meeting-audio:devices', () => meetingAudioCaptureService.devices());
+ipcMain.handle('meeting-audio:start', (_event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown }) => {
   if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Meeting recording identity is invalid.');
-  return meetingAudioCaptureService.start({ noteId: payload.noteId, workspaceId: payload.workspaceId, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false });
+  if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
+  return meetingAudioCaptureService.start({ noteId: payload.noteId, workspaceId: payload.workspaceId, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined });
 });
-ipcMain.handle('meeting-audio:test-source', (_event, source: unknown) => {
+ipcMain.handle('meeting-audio:test-source', (_event, payload: { source?: unknown; microphoneDeviceId?: unknown }) => {
+  const source = payload?.source;
   if (!validAudioSource(source)) throw new Error('Invalid audio source.');
-  return meetingAudioCaptureService.testSource(source);
+  if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
+  return meetingAudioCaptureService.testSource(source, payload.microphoneDeviceId as string | null | undefined);
 });
 ipcMain.handle('meeting-audio:pause', () => meetingAudioCaptureService.pause());
 ipcMain.handle('meeting-audio:resume', () => meetingAudioCaptureService.resume());
 ipcMain.handle('meeting-audio:stop', () => meetingAudioCaptureService.stop());
-ipcMain.handle('meeting-audio:reveal', (_event, payload: { sessionId?: unknown; source?: unknown }) => {
-  if (typeof payload?.sessionId !== 'string' || !validAudioSource(payload.source)) throw new Error('Invalid audio file reference.');
-  return meetingAudioCaptureService.reveal(payload.sessionId, payload.source);
+ipcMain.handle('meeting-audio:reveal', (_event, payload: { sessionId?: unknown }) => {
+  if (typeof payload?.sessionId !== 'string') throw new Error('Invalid recording session.');
+  return meetingAudioCaptureService.reveal(payload.sessionId);
 });
 ipcMain.handle('meeting-audio:delete-audio', (_event, payload: { sessionId?: unknown; source?: unknown }) => {
   if (typeof payload?.sessionId !== 'string' || (payload.source !== undefined && payload.source !== 'user_microphone' && payload.source !== 'system_audio')) throw new Error('Invalid audio deletion request.');

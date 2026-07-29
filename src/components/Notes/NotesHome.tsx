@@ -189,25 +189,40 @@ const HomeSection = ({
 
 const UpcomingMeetingsSection = ({
   meetings,
+  collapsed,
+  onToggle,
   onStart,
   onOpenEvent,
 }: {
   meetings: NotesHomeUpcomingMeeting[];
+  collapsed: boolean;
+  onToggle: (id: string) => void;
   onStart?: (event: NotesHomeUpcomingMeeting) => void;
   onOpenEvent?: (event: NotesHomeUpcomingMeeting) => void;
 }) => {
   if (!meetings.length) return null;
   return (
-    <HomeSection id="upcoming-meetings" title="Upcoming meetings" count={meetings.length} collapsed={false} onToggle={() => {}}>
+    <HomeSection
+      id="upcoming-meetings"
+      title="Upcoming meetings"
+      count={meetings.length}
+      collapsed={collapsed}
+      onToggle={onToggle}
+    >
       {meetings.slice(0, 5).map((meeting) => {
         const date = new Date(meeting.start_at);
         const time = meeting.all_day ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : date.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
         return (
           <div key={meeting.id} className="flex items-center gap-2 rounded-lg px-3 py-1.5 hover:bg-[var(--ledger-surface-muted)]">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)]"><CalendarDays size={13} /></span>
-            <button type="button" onClick={() => (meeting.note_id ? onOpenEvent?.(meeting) : onStart?.(meeting))} className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-[var(--ledger-text-primary)]">{meeting.title}</button>
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)]"><CalendarDays size={13} /></span>
+            <button
+              type="button"
+              onClick={() => (meeting.note_id ? onOpenEvent?.(meeting) : onStart?.(meeting))}
+              className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-[var(--ledger-text-primary)]"
+            >
+              {meeting.title}
+            </button>
             <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{time}</span>
-            <button type="button" onClick={() => (meeting.note_id ? onOpenEvent?.(meeting) : onStart?.(meeting))} className="shrink-0 text-[11px] font-medium text-[var(--ledger-accent)]">{meeting.note_id ? 'Open' : 'Start'}</button>
           </div>
         );
       })}
@@ -973,7 +988,13 @@ export const NotesHome = ({
             }
           />
         </div>
-        <UpcomingMeetingsSection meetings={upcomingMeetings} onStart={onStartMeetingFromEvent} onOpenEvent={onOpenCalendarEvent} />
+        <UpcomingMeetingsSection
+          meetings={upcomingMeetings}
+          collapsed={collapsed.has('upcoming-meetings')}
+          onToggle={toggle}
+          onStart={onStartMeetingFromEvent}
+          onOpenEvent={onOpenCalendarEvent}
+        />
         <div className="flex min-h-[260px] items-center justify-center px-6 py-8">
           <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
             <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
@@ -1039,7 +1060,13 @@ export const NotesHome = ({
             }
           />
         </div>
-        <UpcomingMeetingsSection meetings={upcomingMeetings} onStart={onStartMeetingFromEvent} onOpenEvent={onOpenCalendarEvent} />
+        <UpcomingMeetingsSection
+          meetings={upcomingMeetings}
+          collapsed={collapsed.has('upcoming-meetings')}
+          onToggle={toggle}
+          onStart={onStartMeetingFromEvent}
+          onOpenEvent={onOpenCalendarEvent}
+        />
         <div className="space-y-1.5">
           <HomeSection
             id="continue"

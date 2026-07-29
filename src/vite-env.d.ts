@@ -58,6 +58,7 @@ interface Window {
     supabasePublishableKey?: string;
   };
   meetingAudio?: {
+    devices: () => Promise<{ devices: Array<{ id: string; name: string; kind: 'input'; available: boolean; isBluetooth: boolean; isDefault: boolean; isOutputDefault: boolean; channelCount: number }>; outputDevice: { id: string; name: string; isBluetooth: boolean } | null }>;
     permissions: () => Promise<{
       microphone: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
       systemAudio: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
@@ -72,12 +73,12 @@ interface Window {
     inspect: (sessionId?: string) => Promise<unknown>;
     recover: (payload: { sessionId: string; noteId: string; workspaceId: string }) => Promise<unknown>;
     discardRecovery: (sessionId: string) => Promise<unknown>;
-    start: (payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean }) => Promise<unknown>;
-    testSource: (source: 'user_microphone' | 'system_audio') => Promise<unknown>;
+    start: (payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null }) => Promise<unknown>;
+    testSource: (source: 'user_microphone' | 'system_audio', microphoneDeviceId?: string | null) => Promise<unknown>;
     pause: () => Promise<unknown>;
     resume: () => Promise<unknown>;
     stop: () => Promise<unknown>;
-    reveal: (payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
+    reveal: (payload: { sessionId: string }) => Promise<unknown>;
     deleteAudio: (payload: { sessionId: string; source?: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
     play: (payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
     onLevel: (listener: (event: { source: 'user_microphone' | 'system_audio'; level: number }) => void) => () => void;

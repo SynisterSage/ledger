@@ -10,7 +10,7 @@ mkdirSync(outputDir, { recursive: true });
 if (process.platform !== 'darwin') process.exit(0);
 const moduleCachePath = path.join('/private/tmp', 'ledger-swift-module-cache');
 execFileSync('swiftc', ['-module-cache-path', moduleCachePath, '-O', '-framework', 'EventKit', '-framework', 'Foundation', path.join(outputDir, 'AppleCalendarBridge.swift'), '-o', output], { stdio: 'inherit' });
-execFileSync('swiftc', ['-module-cache-path', moduleCachePath, '-O', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'CoreGraphics', '-framework', 'ScreenCaptureKit', '-framework', 'Foundation', path.join(outputDir, 'LedgerAudioCaptureBridge.swift'), '-o', audioOutput], { stdio: 'inherit' });
+execFileSync('swiftc', ['-module-cache-path', moduleCachePath, '-O', '-framework', 'AVFoundation', '-framework', 'CoreAudio', '-framework', 'CoreMedia', '-framework', 'CoreGraphics', '-framework', 'ScreenCaptureKit', '-framework', 'Foundation', path.join(outputDir, 'LedgerAudioCaptureBridge.swift'), '-o', audioOutput], { stdio: 'inherit' });
 if (!existsSync(path.join(outputDir, 'whisper-cli'))) {
   throw new Error('native/whisper-cli is required for packaged local transcription builds. Build it from the pinned whisper.cpp runtime before packaging.');
 }

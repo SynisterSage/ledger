@@ -87,22 +87,23 @@ contextBridge.exposeInMainWorld('meetingAudio', {
     return ipcRenderer.invoke('meeting-audio:open-system-settings', area);
   },
   status() { return ipcRenderer.invoke('meeting-audio:status'); },
+  devices() { return ipcRenderer.invoke('meeting-audio:devices'); },
   recoveries() { return ipcRenderer.invoke('meeting-audio:recoveries'); },
   inspect(sessionId?: string) { return ipcRenderer.invoke('meeting-audio:inspect', sessionId); },
   recover(payload: { sessionId: string; noteId: string; workspaceId: string }) {
     return ipcRenderer.invoke('meeting-audio:recover', payload);
   },
   discardRecovery(sessionId: string) { return ipcRenderer.invoke('meeting-audio:discard-recovery', sessionId); },
-  start(payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean }) {
+  start(payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null }) {
     return ipcRenderer.invoke('meeting-audio:start', payload);
   },
-  testSource(source: 'user_microphone' | 'system_audio') {
-    return ipcRenderer.invoke('meeting-audio:test-source', source);
+  testSource(source: 'user_microphone' | 'system_audio', microphoneDeviceId?: string | null) {
+    return ipcRenderer.invoke('meeting-audio:test-source', { source, microphoneDeviceId });
   },
   pause() { return ipcRenderer.invoke('meeting-audio:pause'); },
   resume() { return ipcRenderer.invoke('meeting-audio:resume'); },
   stop() { return ipcRenderer.invoke('meeting-audio:stop'); },
-  reveal(payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) {
+  reveal(payload: { sessionId: string }) {
     return ipcRenderer.invoke('meeting-audio:reveal', payload);
   },
   deleteAudio(payload: { sessionId: string; source?: 'user_microphone' | 'system_audio' }) {
