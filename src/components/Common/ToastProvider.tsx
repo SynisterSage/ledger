@@ -116,7 +116,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 )}
                 {t.icon === 'ledger' && (
                   <img
-                    src="/logo-color.svg"
+                    src={`${import.meta.env.BASE_URL}logo-color.svg`}
                     alt="Ledger"
                     className="mt-0.5 h-4 w-4 shrink-0"
                   />

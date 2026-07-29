@@ -6403,7 +6403,7 @@ export const ProjectsWindow = () => {
             </select>}
 
             {newProjectGithubRepositories.length > 0 && <label className="inline-flex h-8 min-w-[190px] items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-xs text-[var(--ledger-text-secondary)]">
-              <img src="/github-mark.svg" alt="" className="h-3.5 w-3.5 dark:invert" />
+              <img src={`${import.meta.env.BASE_URL}github-mark.svg`} alt="" className="h-3.5 w-3.5 dark:invert" />
               <span className="sr-only">GitHub repository</span>
               <select value={newProjectGithubRepositoryId} onChange={(event) => setNewProjectGithubRepositoryId(event.target.value)} className="min-w-0 flex-1 bg-transparent text-xs outline-none">
                 <option value="">GitHub repository (optional)</option>

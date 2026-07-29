@@ -7393,10 +7393,32 @@ ipcMain.handle('window:get-tab-detach-session', (event, transferId: unknown) => 
 });
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {
-  if (!/^https?:\/\//i.test(url) && !/^webcal:\/\//i.test(url)) {
-    throw new Error('Unsupported external URL protocol');
+  if (typeof url !== 'string' || (!/^https?:\/\//i.test(url) && !/^webcal:\/\//i.test(url))) {
+    return { ok: false, error: 'Unsupported external URL protocol.' };
   }
-  await shell.openExternal(url);
+  if (process.platform === 'darwin' && /^webcal:\/\//i.test(url)) {
+    try {
+      await execFileAsync('/usr/bin/open', ['-a', 'Calendar', '--', url]);
+      return { ok: true };
+    } catch (calendarError) {
+      try {
+        await shell.openExternal(url);
+        return { ok: true };
+      } catch (fallbackError) {
+        console.warn('[electron] Could not open Apple Calendar subscription', {
+          calendarError: calendarError instanceof Error ? calendarError.message : String(calendarError),
+          fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        });
+        return { ok: false, error: 'macOS could not open the calendar subscription.' };
+      }
+    }
+  }
+  try {
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Could not open the external link.' };
+  }
 });
 
 ipcMain.handle('window:open-checkin', () => {

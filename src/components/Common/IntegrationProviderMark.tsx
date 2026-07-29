@@ -33,11 +33,11 @@ export function IntegrationProviderMark({
   const label = providerLabels[key];
 
   if (key === 'github') {
-    return <img src="/github-mark.svg" alt={label} title={label} className={className} style={{ width: size, height: size }} />;
+    return <img src={`${import.meta.env.BASE_URL}github-mark.svg`} alt={label} title={label} className={className} style={{ width: size, height: size }} />;
   }
   if (key === 'figma') return <span role="img" aria-label={label} className={className}><FigmaMark size={size} /></span>;
   if (key === 'slack') {
-    return <img src="/slack.svg" alt={label} title={label} className={className} style={{ width: size, height: size }} />;
+    return <img src={`${import.meta.env.BASE_URL}slack.svg`} alt={label} title={label} className={className} style={{ width: size, height: size }} />;
   }
   return <Globe size={size} aria-label={label} className={className} />;
 }

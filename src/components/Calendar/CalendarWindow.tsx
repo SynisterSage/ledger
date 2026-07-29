@@ -22,8 +22,8 @@ import {
   Flag,
   Inbox,
   MoreHorizontal,
-  ExternalLink,
   RefreshCw,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -61,7 +61,6 @@ import {
   type CalendarSubscriptionDetails,
   type CalendarSubscriptionSettings,
 } from './CalendarSubscriptionModal';
-import { AppleCalendarConnection } from './AppleCalendarConnection';
 import { useAppleCalendar } from './appleCalendar';
 import { useAppleReminders } from './appleReminders';
 
@@ -391,7 +390,10 @@ const endOfLocalDay = (date: Date) => {
 };
 const baseEventId = (id: string) => id.split('__')[0];
 const baseReminderId = (id: string) => id.split('__')[0];
-const ICAL_SERVICE_URL = (import.meta.env.VITE_ICAL_SERVICE_URL ?? '').replace(/\/$/, '');
+const configuredIcalServiceUrl = (import.meta.env.VITE_ICAL_SERVICE_URL ?? 'https://ledger-jloh.onrender.com').trim().replace(/\/$/, '');
+const ICAL_SERVICE_URL = configuredIcalServiceUrl
+  ? (/^https?:\/\//i.test(configuredIcalServiceUrl) ? configuredIcalServiceUrl : `https://${configuredIcalServiceUrl}`)
+  : '';
 
 type ParsedIcsEvent = {
   title: string;
@@ -3847,11 +3849,15 @@ export const CalendarWindow = () => {
     if (!calendarSubscriptionSettings) void loadCalendarSubscription();
   };
 
+  useEffect(() => {
+    if (user && !calendarSubscriptionSettings) void loadCalendarSubscription();
+  }, [user, calendarSubscriptionSettings]);
+
   const getAppleSubscriptionUrl = async () => {
     if (!user) return;
     if (appleSubscriptionUrl) return appleSubscriptionUrl;
     if (!ICAL_SERVICE_URL) {
-      setError('Missing VITE_ICAL_SERVICE_URL in frontend environment.');
+      setError('Calendar subscription service is not configured. Set VITE_ICAL_SERVICE_URL to the Ledger iCal service URL.');
       return;
     }
 
@@ -3925,13 +3931,16 @@ export const CalendarWindow = () => {
     const url = await getAppleSubscriptionUrl();
     if (!url) return;
 
-    const webcalUrl = url.replace(/^https?:\/\//i, 'webcal://');
+    const webcalUrl = /^webcal:\/\//i.test(url)
+      ? url
+      : `webcal://${url.replace(/^https?:\/\//i, '')}`;
 
     try {
-      await window.desktopWindow?.openExternal(webcalUrl);
+      const result = await window.desktopWindow?.openExternal(webcalUrl);
+      if (result && !result.ok) throw new Error(result.error || 'macOS could not open the calendar subscription.');
       setAppleSyncMessage('Opened Apple Calendar. Add Ledger as a read-only calendar subscription.');
-    } catch {
-      setError('Could not open Apple Calendar. Use Copy link and add the URL manually.');
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : 'Could not open Apple Calendar. Use Copy link and add the URL manually.');
     }
   };
 
@@ -4292,7 +4301,7 @@ export const CalendarWindow = () => {
         open={Boolean(calendarHeaderMenu)}
         x={calendarHeaderMenu?.x ?? 0}
         y={calendarHeaderMenu?.y ?? 0}
-        width={210}
+        width={260}
         onClose={() => setCalendarHeaderMenu(null)}
         ariaLabel="Calendar actions"
         groupLabelCase="normal"
@@ -4302,24 +4311,24 @@ export const CalendarWindow = () => {
             items: [
               {
                 id: 'new-event',
-                label: 'New Event',
+            label: 'New event',
                 icon: <CalendarPlus size={13} />,
                 onClick: () => openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event'),
               },
               {
                 id: 'new-reminder',
-                label: 'New Reminder',
+            label: 'New reminder',
                 icon: <BellRing size={13} />,
                 onClick: () => openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'reminder'),
               },
             ],
           },
           {
-            label: 'Connect',
+            label: 'Import',
             items: [
               {
                 id: 'import-ics',
-                label: isImportingIcs ? 'Importing…' : 'Import .ics',
+                label: isImportingIcs ? 'Importing…' : 'Import calendar file…',
                 icon: isImportingIcs ? (
                   <Loader2 size={13} className="animate-spin" />
                 ) : (
@@ -4331,25 +4340,32 @@ export const CalendarWindow = () => {
             ],
           },
           {
-            label: 'Ledger subscription · read-only',
-            items: [
-              {
-                id: 'subscribe-ledger-calendar',
-                label: 'Subscribe to Ledger Calendar',
-                icon: <CalendarDays size={13} />,
-                onClick: openCalendarSubscriptionSettings,
-              },
+            label: 'Use Ledger in other calendars',
+            items: calendarSubscriptionSettings ? [
               {
                 id: 'open-apple-calendar',
-                label: 'Open in Apple Calendar',
-                icon: <ExternalLink size={13} />,
+                label: 'Add to Apple Calendar',
+                icon: <img src={`${import.meta.env.BASE_URL}apple.svg`} alt="" className="h-[13px] w-[13px] object-contain dark:invert" />,
                 onClick: () => void openAppleCalendarSubscription(),
               },
               {
                 id: 'copy-ledger-calendar-link',
-                label: 'Copy link (read-only)',
+                label: 'Copy calendar link',
                 icon: <Copy size={13} />,
                 onClick: () => void copyAppleCalendarSubscription(),
+              },
+              {
+                id: 'manage-calendar-sharing',
+                label: 'Manage calendar sharing…',
+                icon: <SlidersHorizontal size={13} />,
+                onClick: openCalendarSubscriptionSettings,
+              },
+            ] : [
+              {
+                id: 'setup-calendar-sharing',
+                label: 'Set up calendar sharing…',
+                icon: <SlidersHorizontal size={13} />,
+                onClick: openCalendarSubscriptionSettings,
               },
             ],
           },
@@ -4599,7 +4615,7 @@ export const CalendarWindow = () => {
                     <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">Connected calendars</h2>
                     <button type="button" onClick={() => void Promise.all([appleCalendar.refreshCalendars(), appleCalendar.refreshEvents(true), appleReminders.refreshLists(), appleReminders.refreshReminders(true)])} className="text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]" title="Refresh Apple calendars and reminders"><RefreshCw size={12} /></button>
                   </div>
-                  {appleCalendar.connected || appleReminders.connected ? <div className="space-y-2"><div className="flex items-center justify-between"><p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Calendar</p>{(appleCalendar.syncStatus === 'syncing' || appleReminders.syncStatus === 'syncing') && <span className="text-[10px] text-[var(--ledger-text-muted)]">Syncing…</span>}</div>{appleCalendar.connectedCalendars.map((calendar) => <div key={calendar.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: calendar.color }} /><span className="min-w-0 flex-1 truncate">{calendar.title}</span><button type="button" onClick={() => appleCalendar.setCalendarVisible(calendar.id.slice('apple:'.length), calendar.visible === false)} title={calendar.visible === false ? 'Show calendar' : 'Hide calendar'} className="text-[var(--ledger-text-muted)]">{calendar.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}{appleReminders.connected && <><p className="pt-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Reminders</p>{appleReminders.connectedLists.map((list) => <div key={list.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: list.color }} /><span className="min-w-0 flex-1 truncate">{list.title}</span><button type="button" onClick={() => appleReminders.setListVisible(list.id.slice('apple-reminder:'.length), list.visible === false)} title={list.visible === false ? 'Show list' : 'Hide list'} className="text-[var(--ledger-text-muted)]">{list.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}</div> : <AppleCalendarConnection userId={user?.id} compact onChanged={() => setCalendarRefreshToken((value) => value + 1)} />}
+                  {appleCalendar.connected || appleReminders.connected ? <div className="space-y-2">{appleCalendar.connected && <><div className="flex items-center justify-between"><p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Calendar <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">Connected</span></p>{appleCalendar.syncStatus === 'syncing' ? <span className="text-[10px] text-[var(--ledger-text-muted)]">Syncing…</span> : appleCalendar.syncStatus === 'synced' ? <span className="text-[10px] text-[var(--ledger-text-muted)]">Up to date</span> : null}</div>{appleCalendar.connectedCalendars.map((calendar) => <div key={calendar.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: calendar.color }} /><span className="min-w-0 flex-1 truncate">{calendar.title}</span><button type="button" onClick={() => appleCalendar.setCalendarVisible(calendar.id.slice('apple:'.length), calendar.visible === false)} title={calendar.visible === false ? 'Show calendar' : 'Hide calendar'} className="text-[var(--ledger-text-muted)]">{calendar.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}{appleReminders.connected && <><p className="pt-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Reminders <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">Connected</span></p>{appleReminders.connectedLists.map((list) => <div key={list.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: list.color }} /><span className="min-w-0 flex-1 truncate">{list.title}</span><button type="button" onClick={() => appleReminders.setListVisible(list.id.slice('apple-reminder:'.length), list.visible === false)} title={list.visible === false ? 'Show list' : 'Hide list'} className="text-[var(--ledger-text-muted)]">{list.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}</div> : null}
                 </div>
               )}
 

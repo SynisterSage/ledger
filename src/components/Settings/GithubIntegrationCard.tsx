@@ -245,7 +245,7 @@ export const GithubIntegrationCard = ({ workspaceId, canManage }: Props) => {
     return <div aria-label="GitHub integration">
       <div className="flex items-start gap-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]">
-          <img src="/github-mark.svg" alt="" className="h-4 w-4 dark:invert" />
+          <img src={`${import.meta.env.BASE_URL}github-mark.svg`} alt="" className="h-4 w-4 dark:invert" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-[var(--ledger-text-primary)]">
@@ -266,7 +266,7 @@ export const GithubIntegrationCard = ({ workspaceId, canManage }: Props) => {
       <div className="flex min-h-0 items-center gap-2.5 rounded-lg px-0 py-0">
         <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => { setExpanded((value) => !value); setMenuOpen(false); }} aria-expanded={expanded}>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]" aria-hidden="true">
-            <img src="/github-mark.svg" alt="" className="h-4 w-4 dark:invert" />
+            <img src={`${import.meta.env.BASE_URL}github-mark.svg`} alt="" className="h-4 w-4 dark:invert" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">

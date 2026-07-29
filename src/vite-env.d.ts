@@ -156,7 +156,7 @@ interface Window {
     updateWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<void>;
     selectWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<boolean>;
     closeWorkspaceRoute?: (route: ModuleFocusPayload) => Promise<boolean>;
-    openExternal: (url: string) => Promise<void>;
+    openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
     openCheckin: () => Promise<void>;
   };
 }

@@ -97,7 +97,7 @@ export const useAppleCalendar = (userId: string | undefined, start: Date, end: D
   }, [supported, userId]);
 
   const requestAccessAndList = useCallback(async () => {
-    if (!supported || !window.appleCalendar) return;
+    if (!supported || !window.appleCalendar) return false;
     setLoading(true); setError(null);
     try {
       let status = await window.appleCalendar.status();
@@ -107,10 +107,12 @@ export const useAppleCalendar = (userId: string | undefined, start: Date, end: D
         status = await window.appleCalendar.status();
         setPermission(status.status);
       }
-      if (status.status !== 'granted') return;
+      if (status.status !== 'granted') return false;
       await refreshCalendars();
+      return true;
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not connect Apple Calendar.'); }
     finally { setLoading(false); }
+    return false;
   }, [refreshCalendars, supported]);
 
   const saveSelection = useCallback((selected: AppleCalendar[]) => {

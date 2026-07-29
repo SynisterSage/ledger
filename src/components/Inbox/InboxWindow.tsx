@@ -696,7 +696,7 @@ const stripRepeatedPreviewMetadata = (
 
 const GithubMark = ({ size = 13, className = '' }: { size?: number; className?: string }) => (
   <img
-    src="/github-mark.svg"
+    src={`${import.meta.env.BASE_URL}github-mark.svg`}
     alt=""
     className={className}
     style={{ width: size, height: size }}
@@ -3255,7 +3255,7 @@ export default function IntakeWindow() {
                               }
                               className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
                             >
-                              {selectedItemIsFigma ? <FigmaMark size={14} /> : selectedItemIsGithub ? <img src="/github-mark.svg" alt="" className="h-3.5 w-3.5" /> : <ExternalLink size={12} />}
+                              {selectedItemIsFigma ? <FigmaMark size={14} /> : selectedItemIsGithub ? <img src={`${import.meta.env.BASE_URL}github-mark.svg`} alt="" className="h-3.5 w-3.5" /> : <ExternalLink size={12} />}
                               {selectedItemIsFigma ? 'Open in Figma' : selectedItemIsGithub ? 'Open in GitHub' : 'Open source'}
                             </button>
                           ) : null}
