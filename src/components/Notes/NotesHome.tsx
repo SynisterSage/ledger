@@ -12,6 +12,7 @@ import {
   FolderKanban,
   Link2,
   Lightbulb,
+  Mic,
   MoreHorizontal,
   Plus,
   Search,
@@ -41,6 +42,7 @@ export type NotesHomeNote = {
   section_id?: string | null;
   parent_id?: string | null;
   updated_at: string;
+  mode?: 'text' | 'mind_map' | 'meeting_note';
 };
 
 export type NotesHomeSection = { id: string; name: string; parent_id?: string | null };
@@ -54,6 +56,16 @@ export type NotesHomeTemplate = {
   usage_count?: number;
   last_used_at?: string | null;
   is_system?: boolean;
+};
+export type NotesHomeUpcomingMeeting = {
+  id: string;
+  title: string;
+  start_at: string;
+  end_at?: string | null;
+  note_id?: string | null;
+  note_title?: string | null;
+  status?: string | null;
+  all_day?: boolean;
 };
 
 type NotesHomeRecentFolder = {
@@ -71,8 +83,21 @@ type Props = {
   workspaceId?: string | null;
   userId?: string | null;
   currentSectionId?: string | null;
+  activeMeetingNoteId?: string | null;
+  activeMeetingStatus?:
+    | 'idle'
+    | 'recording'
+    | 'paused'
+    | 'processing'
+    | 'complete'
+    | 'failed'
+    | null;
   onOpenNote: (note: NotesHomeNote) => void;
   onNewNote: (sectionId?: string | null) => void;
+  onStartMeetingNotes: (sectionId?: string | null) => void;
+  upcomingMeetings?: NotesHomeUpcomingMeeting[];
+  onStartMeetingFromEvent?: (event: NotesHomeUpcomingMeeting) => void;
+  onOpenCalendarEvent?: (event: NotesHomeUpcomingMeeting) => void;
   onBrowseTemplates: () => void;
   onOpenTemplate: (templateId: string) => void;
   onUseTemplate: (templateId: string) => void;
@@ -162,6 +187,34 @@ const HomeSection = ({
   </section>
 );
 
+const UpcomingMeetingsSection = ({
+  meetings,
+  onStart,
+  onOpenEvent,
+}: {
+  meetings: NotesHomeUpcomingMeeting[];
+  onStart?: (event: NotesHomeUpcomingMeeting) => void;
+  onOpenEvent?: (event: NotesHomeUpcomingMeeting) => void;
+}) => {
+  if (!meetings.length) return null;
+  return (
+    <HomeSection id="upcoming-meetings" title="Upcoming meetings" count={meetings.length} collapsed={false} onToggle={() => {}}>
+      {meetings.slice(0, 5).map((meeting) => {
+        const date = new Date(meeting.start_at);
+        const time = meeting.all_day ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : date.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+        return (
+          <div key={meeting.id} className="flex items-center gap-2 rounded-lg px-3 py-1.5 hover:bg-[var(--ledger-surface-muted)]">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)]"><CalendarDays size={13} /></span>
+            <button type="button" onClick={() => (meeting.note_id ? onOpenEvent?.(meeting) : onStart?.(meeting))} className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-[var(--ledger-text-primary)]">{meeting.title}</button>
+            <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{time}</span>
+            <button type="button" onClick={() => (meeting.note_id ? onOpenEvent?.(meeting) : onStart?.(meeting))} className="shrink-0 text-[11px] font-medium text-[var(--ledger-accent)]">{meeting.note_id ? 'Open' : 'Start'}</button>
+          </div>
+        );
+      })}
+    </HomeSection>
+  );
+};
+
 const ResourceRow = ({
   icon,
   title,
@@ -233,6 +286,7 @@ const TemplateTypeIcon = ({ template }: { template: NotesHomeTemplate }) => {
 const TemplateLauncher = ({
   templates,
   onNewNote,
+  onStartMeetingNotes,
   onBrowseTemplates,
   onOpenTemplate,
   onNewNoteContextMenu,
@@ -240,6 +294,7 @@ const TemplateLauncher = ({
 }: {
   templates: NotesHomeTemplate[];
   onNewNote: () => void;
+  onStartMeetingNotes: () => void;
   onBrowseTemplates: () => void;
   onOpenTemplate: (templateId: string) => void;
   onNewNoteContextMenu: (event: ReactMouseEvent<HTMLButtonElement>) => void;
@@ -258,6 +313,18 @@ const TemplateLauncher = ({
         </span>
         <span className="mt-auto block w-full truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
           New note
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onStartMeetingNotes}
+        className="group flex h-[76px] min-w-[124px] flex-1 basis-0 flex-col justify-between rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2.5 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)]">
+          <Mic size={14} />
+        </span>
+        <span className="mt-auto block w-full truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
+          Start meeting notes
         </span>
       </button>
       {templates.map((template) => (
@@ -313,8 +380,14 @@ export const NotesHome = ({
   workspaceId,
   userId,
   currentSectionId,
+  activeMeetingNoteId,
+  activeMeetingStatus,
   onOpenNote,
   onNewNote,
+  onStartMeetingNotes,
+  upcomingMeetings = [],
+  onStartMeetingFromEvent,
+  onOpenCalendarEvent,
   onBrowseTemplates,
   onOpenTemplate,
   onUseTemplate,
@@ -783,7 +856,20 @@ export const NotesHome = ({
   ) => (
     <ResourceRow
       key={note.id}
-      icon={<FileText size={14} />}
+      icon={
+        <span className="relative flex items-center">
+          {note.mode === 'meeting_note' ? <Mic size={14} /> : <FileText size={14} />}
+          {note.id === activeMeetingNoteId &&
+            (activeMeetingStatus === 'recording' || activeMeetingStatus === 'processing') && (
+              <span
+                className={`absolute -right-1.5 -top-1 h-2 w-2 rounded-full border border-[var(--ledger-surface-card)] ${
+                  activeMeetingStatus === 'recording' ? 'bg-[var(--ledger-accent)]' : 'bg-amber-500'
+                }`}
+                aria-label={activeMeetingStatus === 'recording' ? 'Recording' : 'Processing'}
+              />
+            )}
+        </span>
+      }
       title={note.title || 'Untitled note'}
       meta={sectionName.get(note.section_id ?? '') ?? 'Unsorted'}
       end={end ?? relativeTime(note.updated_at)}
@@ -878,6 +964,7 @@ export const NotesHome = ({
           <TemplateLauncher
             templates={templateShortcuts}
             onNewNote={() => onNewNote(currentSectionId)}
+            onStartMeetingNotes={() => onStartMeetingNotes(currentSectionId)}
             onBrowseTemplates={onBrowseTemplates}
             onOpenTemplate={onOpenTemplate}
             onNewNoteContextMenu={(event) => openMenuAt({ kind: 'blank' }, event)}
@@ -886,6 +973,7 @@ export const NotesHome = ({
             }
           />
         </div>
+        <UpcomingMeetingsSection meetings={upcomingMeetings} onStart={onStartMeetingFromEvent} onOpenEvent={onOpenCalendarEvent} />
         <div className="flex min-h-[260px] items-center justify-center px-6 py-8">
           <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
             <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
@@ -942,6 +1030,7 @@ export const NotesHome = ({
           <TemplateLauncher
             templates={templateShortcuts}
             onNewNote={() => onNewNote(currentSectionId)}
+            onStartMeetingNotes={() => onStartMeetingNotes(currentSectionId)}
             onBrowseTemplates={onBrowseTemplates}
             onOpenTemplate={onOpenTemplate}
             onNewNoteContextMenu={(event) => openMenuAt({ kind: 'blank' }, event)}
@@ -950,6 +1039,7 @@ export const NotesHome = ({
             }
           />
         </div>
+        <UpcomingMeetingsSection meetings={upcomingMeetings} onStart={onStartMeetingFromEvent} onOpenEvent={onOpenCalendarEvent} />
         <div className="space-y-1.5">
           <HomeSection
             id="continue"

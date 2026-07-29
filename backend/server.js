@@ -798,6 +798,247 @@ const noteSummarySelectColumns =
 
 const NOTE_VERSION_LIMIT = 25;
 const NOTE_AUTOSAVE_CHECKPOINT_INTERVAL_MS = 10 * 60 * 1000;
+const NOTE_MODES = ['text', 'mind_map', 'meeting_note'];
+const MEETING_TRANSCRIPTION_STATUSES = [
+  'idle',
+  'recording',
+  'paused',
+  'processing',
+  'complete',
+  'failed',
+];
+const MEETING_AUDIO_RETENTION_VALUES = ['delete_after_transcription', 'retain'];
+const MEETING_AUDIO_SOURCES = ['user_microphone', 'system_audio'];
+const MEETING_CALENDAR_PROVIDERS = ['ledger', 'google', 'apple'];
+
+const normalizeNoteMode = (value) =>
+  NOTE_MODES.includes(String(value ?? '')) ? String(value) : 'text';
+
+const meetingValidationError = (message) => {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+};
+
+const normalizeMeetingTimestamp = (value, fieldName) => {
+  if (value === undefined) return undefined;
+  if (value === null || String(value).trim() === '') return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) throw meetingValidationError(`Invalid ${fieldName}`);
+  return parsed.toISOString();
+};
+
+const normalizeMeetingInteger = (value, fieldName, { min = 0 } = {}) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    throw meetingValidationError(`Invalid ${fieldName}`);
+  }
+  return parsed;
+};
+
+const normalizeMeetingMetadataPayload = (body = {}, existing = null) => {
+  const payload = {};
+  const has = (key) => Object.prototype.hasOwnProperty.call(body, key);
+  const status = body.transcription_status;
+  const retention = body.audio_retention;
+
+  if (has('calendar_event_id')) {
+    const value = normalizeNullableText(body.calendar_event_id);
+    if (value && !isUuidLike(value)) throw meetingValidationError('Invalid calendar_event_id');
+    payload.calendar_event_id = value;
+  }
+  if (has('calendar_series_id')) {
+    const value = normalizeNullableText(body.calendar_series_id);
+    if (value && !isUuidLike(value)) throw meetingValidationError('Invalid calendar_series_id');
+    payload.calendar_series_id = value;
+  }
+  if (has('calendar_provider')) {
+    const value = normalizeNullableText(body.calendar_provider)?.toLowerCase() ?? null;
+    if (value && !MEETING_CALENDAR_PROVIDERS.includes(value)) throw meetingValidationError('Invalid calendar_provider');
+    payload.calendar_provider = value;
+  }
+  for (const field of ['calendar_event_key', 'calendar_series_key', 'calendar_source_name', 'calendar_event_title']) {
+    if (has(field)) {
+      const value = normalizeNullableText(body[field]);
+      if (value && value.length > 500) throw meetingValidationError(`${field} is too long`);
+      payload[field] = value;
+    }
+  }
+  if (has('scheduled_start_at')) payload.scheduled_start_at = normalizeMeetingTimestamp(body.scheduled_start_at, 'scheduled_start_at');
+  if (has('scheduled_end_at')) payload.scheduled_end_at = normalizeMeetingTimestamp(body.scheduled_end_at, 'scheduled_end_at');
+  if (has('calendar_event_deleted')) {
+    if (typeof body.calendar_event_deleted !== 'boolean') throw meetingValidationError('calendar_event_deleted must be a boolean');
+    payload.calendar_event_deleted = body.calendar_event_deleted;
+  }
+  if (has('meeting_start_at')) {
+    payload.meeting_start_at = normalizeMeetingTimestamp(body.meeting_start_at, 'meeting_start_at');
+  }
+  if (has('meeting_end_at')) {
+    payload.meeting_end_at = normalizeMeetingTimestamp(body.meeting_end_at, 'meeting_end_at');
+  }
+  if (has('duration_seconds')) {
+    payload.duration_seconds = normalizeMeetingInteger(body.duration_seconds, 'duration_seconds');
+  }
+  if (has('transcription_status')) {
+    if (!MEETING_TRANSCRIPTION_STATUSES.includes(String(status))) {
+      throw meetingValidationError('Invalid transcription_status');
+    }
+    payload.transcription_status = String(status);
+  }
+  if (has('microphone_enabled')) {
+    if (typeof body.microphone_enabled !== 'boolean') {
+      throw meetingValidationError('microphone_enabled must be a boolean');
+    }
+    payload.microphone_enabled = body.microphone_enabled;
+  }
+  if (has('system_audio_enabled')) {
+    if (typeof body.system_audio_enabled !== 'boolean') {
+      throw meetingValidationError('system_audio_enabled must be a boolean');
+    }
+    payload.system_audio_enabled = body.system_audio_enabled;
+  }
+  if (has('audio_retention')) {
+    if (!MEETING_AUDIO_RETENTION_VALUES.includes(String(retention))) {
+      throw meetingValidationError('Invalid audio_retention');
+    }
+    payload.audio_retention = String(retention);
+  }
+  if (has('attendees')) {
+    if (body.attendees !== null && !Array.isArray(body.attendees)) {
+      throw meetingValidationError('attendees must be an array or null');
+    }
+    try {
+      JSON.stringify(body.attendees);
+    } catch {
+      throw meetingValidationError('attendees must be valid JSON');
+    }
+    payload.attendees = body.attendees;
+  }
+  if (has('transcription_error')) {
+    payload.transcription_error = normalizeNullableText(body.transcription_error);
+    if (payload.transcription_error && payload.transcription_error.length > 4000) {
+      throw meetingValidationError('transcription_error is too long');
+    }
+  }
+
+  const startAt = payload.meeting_start_at ?? existing?.meeting_start_at ?? null;
+  const endAt = payload.meeting_end_at ?? existing?.meeting_end_at ?? null;
+  if (startAt && endAt && new Date(endAt).getTime() < new Date(startAt).getTime()) {
+    throw meetingValidationError('meeting_end_at must be after meeting_start_at');
+  }
+  const scheduledStart = payload.scheduled_start_at ?? existing?.scheduled_start_at ?? null;
+  const scheduledEnd = payload.scheduled_end_at ?? existing?.scheduled_end_at ?? null;
+  if (scheduledStart && scheduledEnd && new Date(scheduledEnd).getTime() < new Date(scheduledStart).getTime()) {
+    throw meetingValidationError('scheduled_end_at must be after scheduled_start_at');
+  }
+
+  return payload;
+};
+
+const ensureMeetingCalendarEvent = async (workspaceId, calendarEventId) => {
+  if (!calendarEventId) return;
+  const { data, error } = await supabase
+    .from('events')
+    .select('id, workspace_id')
+    .eq('id', calendarEventId)
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    const missing = new Error('Calendar event not found in this workspace');
+    missing.statusCode = 404;
+    throw missing;
+  }
+};
+
+const ensureMeetingNoteAccess = async (req, noteId, minimumRole = 'viewer') => {
+  if (!isUuidLike(noteId)) {
+    const error = new Error('Invalid note id');
+    error.statusCode = 400;
+    throw error;
+  }
+  const workspaceId = await resolveWorkspaceIdForRequest(req);
+  await requireWorkspaceAccess(req.authUser.id, workspaceId, minimumRole);
+  const { data: note, error } = await supabase
+    .from('notes')
+    .select('id, workspace_id, mode')
+    .eq('id', noteId)
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!note) {
+    const missing = new Error('Note not found.');
+    missing.statusCode = 404;
+    throw missing;
+  }
+  return { note, workspaceId };
+};
+
+const initializeMeetingMetadata = async (workspaceId, noteId, body = {}) => {
+  const payload = normalizeMeetingMetadataPayload(body);
+  await ensureMeetingCalendarEvent(workspaceId, payload.calendar_event_id ?? null);
+  const { data, error } = await supabase
+    .from('meeting_note_metadata')
+    .upsert(
+      {
+        note_id: noteId,
+        workspace_id: workspaceId,
+        ...payload,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'note_id' }
+    )
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+const normalizeTranscriptSegment = (body = {}, { allowId = false } = {}) => {
+  const audioSource = String(body.audio_source ?? '').trim();
+  if (!MEETING_AUDIO_SOURCES.includes(audioSource)) {
+    throw meetingValidationError('Invalid audio_source');
+  }
+  const startMs = normalizeMeetingInteger(body.start_ms, 'start_ms');
+  const endMs = normalizeMeetingInteger(body.end_ms, 'end_ms');
+  const segmentOrder = normalizeMeetingInteger(body.segment_order, 'segment_order');
+  if (startMs === null || endMs === null || segmentOrder === null) {
+    throw meetingValidationError('start_ms, end_ms, and segment_order are required');
+  }
+  if (endMs < startMs) throw meetingValidationError('end_ms must be after start_ms');
+  const transcriptText = String(body.transcript_text ?? '');
+  if (!transcriptText.trim()) throw meetingValidationError('transcript_text is required');
+  const confidence = body.confidence === undefined || body.confidence === null || body.confidence === ''
+    ? null
+    : Number(body.confidence);
+  if (confidence !== null) {
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+      throw meetingValidationError('confidence must be between 0 and 1');
+    }
+  }
+  const speakerLabel = normalizeNullableText(body.speaker_label);
+  if (speakerLabel && speakerLabel.length > 255) {
+    throw meetingValidationError('speaker_label is too long');
+  }
+  const segment = {
+    audio_source: audioSource,
+    speaker_label: speakerLabel,
+    start_ms: startMs,
+    end_ms: endMs,
+    transcript_text: transcriptText,
+    confidence,
+    segment_order: segmentOrder,
+    updated_at: new Date().toISOString(),
+  };
+  if (allowId && body.id !== undefined) {
+    const id = normalizeNullableText(body.id);
+    if (!id || !isUuidLike(id)) throw meetingValidationError('Invalid transcript segment id');
+    segment.id = id;
+  }
+  return segment;
+};
 
 const createNoteVersionSnapshot = async (workspaceId, actorUserId, noteRow, reason = 'update') => {
   if (!noteRow?.id) return;
@@ -19352,6 +19593,18 @@ app.delete('/api/calendars/:id', authMiddleware, rateLimit('write'), async (req,
   }
 });
 
+const decorateEventMeetingLinks = async (rows) => {
+  const noteIds = [...new Set((rows ?? []).map((row) => row.note_id).filter(Boolean))];
+  if (!noteIds.length) return rows ?? [];
+  const result = await supabase.from('meeting_note_metadata').select('note_id, transcription_status, calendar_event_deleted').in('note_id', noteIds);
+  if (result.error) throw result.error;
+  const byNoteId = new Map((result.data ?? []).map((row) => [row.note_id, row]));
+  return (rows ?? []).map((row) => {
+    const meeting = byNoteId.get(row.note_id);
+    return meeting ? { ...row, meeting_transcription_status: meeting.transcription_status, meeting_event_deleted: Boolean(meeting.calendar_event_deleted) } : row;
+  });
+};
+
 app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceIds = await getCalendarScopeWorkspaceIds(req);
@@ -19406,8 +19659,9 @@ app.get('/api/events', authMiddleware, rateLimit('read'), async (req, res) => {
       );
     }
 
+    const decoratedRows = await decorateEventMeetingLinks(rows);
     res.json(
-      rows.map((event) =>
+      decoratedRows.map((event) =>
         overdueEvents.some((overdue) => overdue.id === event.id)
           ? {
               ...event,
@@ -19495,7 +19749,7 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
     const projectById = new Map((projectData || []).map((project) => [project.id, project]));
     const noteById = new Map((noteData || []).map((note) => [note.id, note]));
     const calendarById = new Map((calendarData || []).map((calendar) => [calendar.id, calendar]));
-    const filtered = rows;
+    const filtered = await decorateEventMeetingLinks(rows);
 
     res.json(
       filtered.map((event) => ({
@@ -19676,7 +19930,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
   try {
     const { data: existingEvent, error: existingError } = await supabase
       .from('events')
-      .select('id, workspace_id, start_at, end_at, calendar_id, project_id, note_id')
+      .select('id, workspace_id, start_at, end_at, calendar_id, project_id, note_id, series_id, series_type')
       .eq('id', req.params.id)
       .single();
 
@@ -19730,6 +19984,9 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
     if (nextNoteId && !isUuidLike(nextNoteId)) {
       return res.status(400).json({ error: 'Invalid note_id' });
     }
+    if (req.body?.series_id !== undefined && req.body.series_id !== null && !isUuidLike(String(req.body.series_id))) {
+      return res.status(400).json({ error: 'Invalid series_id' });
+    }
 
     const effectiveProjectId = hasProjectId ? nextProjectId : existingEvent.project_id ?? null;
     const effectiveNoteId = hasNoteId ? nextNoteId : existingEvent.note_id ?? null;
@@ -19781,6 +20038,8 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       'color',
       'status',
       'recurrence_rule',
+      'series_id',
+      'series_type',
       'notes',
       'location',
       'note_id',
@@ -19821,6 +20080,17 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
 
     if (error) throw error;
     await syncLegacyCalendarContextLinks(eventWorkspaceId, 'event', existingEvent.id, effectiveProjectId, effectiveNoteId, req.authUser.id);
+    if (existingEvent.note_id) {
+      const meetingPatch = {};
+      if (req.body?.start_at !== undefined) meetingPatch.scheduled_start_at = normalizeMeetingTimestamp(req.body.start_at, 'start_at');
+      if (req.body?.end_at !== undefined) meetingPatch.scheduled_end_at = normalizeMeetingTimestamp(req.body.end_at, 'end_at');
+      if (req.body?.title !== undefined) meetingPatch.calendar_event_title = String(req.body.title ?? '').trim() || 'Meeting';
+      if (req.body?.series_id !== undefined) meetingPatch.calendar_series_id = normalizeNullableText(req.body.series_id);
+      if (Object.keys(meetingPatch).length) {
+        const metadataUpdate = await supabase.from('meeting_note_metadata').update({ ...meetingPatch, updated_at: new Date().toISOString() }).eq('workspace_id', eventWorkspaceId).eq('note_id', existingEvent.note_id);
+        if (metadataUpdate.error) throw metadataUpdate.error;
+      }
+    }
     res.json(data);
   } catch (error) {
     return respondWithError(res, error);
@@ -19852,6 +20122,8 @@ app.delete('/api/events/:id', authMiddleware, rateLimit('write'), async (req, re
       })
       .eq('workspace_id', workspaceId)
       .eq('linked_event_id', req.params.id);
+    const preserveMeeting = await supabase.from('meeting_note_metadata').update({ calendar_event_deleted: true, updated_at: nowIso }).eq('workspace_id', workspaceId).eq('calendar_event_id', req.params.id);
+    if (preserveMeeting.error) throw preserveMeeting.error;
     const { error } = await supabase
       .from('events')
       .delete()
@@ -19983,6 +20255,30 @@ async function searchWorkspaceContent({
   if (workspaceResult.error) throw workspaceResult.error;
   if (githubReferencesResult.error) throw githubReferencesResult.error;
 
+  const [meetingMetadataResult, transcriptResult] = await Promise.all([
+    supabase
+      .from('meeting_note_metadata')
+      .select('note_id, calendar_event_title, calendar_source_name, attendees, calendar_series_key')
+      .eq('workspace_id', workspaceId)
+      .limit(500),
+    supabase
+      .from('meeting_note_transcript_segments')
+      .select('id, note_id, transcript_text, speaker_label, audio_source, start_ms, updated_at')
+      .eq('workspace_id', workspaceId)
+      .is('deleted_at', null)
+      .ilike('transcript_text', like)
+      .order('updated_at', { ascending: false })
+      .limit(50),
+  ]);
+  if (meetingMetadataResult.error) throw meetingMetadataResult.error;
+  if (transcriptResult.error) throw transcriptResult.error;
+  const transcriptNoteIds = [...new Set((transcriptResult.data ?? []).map((row) => row.note_id).filter(Boolean))];
+  const transcriptNotesResult = transcriptNoteIds.length
+    ? await supabase.from('notes').select('id, title, mode').eq('workspace_id', workspaceId).in('id', transcriptNoteIds)
+    : { data: [], error: null };
+  if (transcriptNotesResult.error) throw transcriptNotesResult.error;
+  const transcriptNoteById = new Map((transcriptNotesResult.data ?? []).map((row) => [row.id, row]));
+
   const memberUserIds = [
     ...new Set([
       ...(membersResult.data ?? []).map((row) => row.user_id).filter(Boolean),
@@ -20021,6 +20317,48 @@ async function searchWorkspaceContent({
       ),
     };
   });
+
+  const transcriptMatches = (transcriptResult.data ?? []).map((row) => {
+    const note = transcriptNoteById.get(row.note_id);
+    const preview = truncatePreview(String(row.transcript_text ?? ''), 120);
+    return {
+      type: 'transcript',
+      id: row.id,
+      note_id: row.note_id,
+      segment_id: row.id,
+      title: note?.title ?? 'Meeting transcript',
+      preview,
+      snippet: preview,
+      workspace_id: workspaceId,
+      workspace_name: workspaceName,
+      source_type: 'transcript',
+      source_id: row.id,
+      start_ms: row.start_ms ?? 0,
+      speaker_label: row.speaker_label ?? (row.audio_source === 'user_microphone' ? 'You' : 'Meeting'),
+      updated_at: row.updated_at ?? null,
+      icon: 'Mic',
+      score: scoreSearchResult(note?.title ?? '', normalizedQuery, row.transcript_text ?? '', true),
+    };
+  });
+
+  const meetingMetadataMatches = (meetingMetadataResult.data ?? []).filter((row) =>
+    [row.calendar_event_title, row.calendar_source_name, JSON.stringify(row.attendees ?? [])]
+      .some((value) => normalizeSearchTerm(value).includes(normalizedQuery))
+  ).map((row) => ({
+    type: 'meeting_metadata',
+    id: row.note_id,
+    note_id: row.note_id,
+    title: 'Meeting details',
+    preview: truncatePreview([row.calendar_event_title, row.calendar_source_name].filter(Boolean).join(' · ') || 'Meeting metadata', 120),
+    snippet: truncatePreview([row.calendar_event_title, row.calendar_source_name].filter(Boolean).join(' · ') || 'Meeting metadata', 120),
+    workspace_id: workspaceId,
+    workspace_name: workspaceName,
+    source_type: 'meeting_metadata',
+    source_id: row.note_id,
+    updated_at: null,
+    icon: 'Calendar',
+    score: scoreSearchResult(row.calendar_event_title ?? '', normalizedQuery, row.calendar_source_name ?? '', true),
+  }));
 
   const projects = (projectsResult.data ?? []).map((row) => {
     const preview = truncatePreview(
@@ -20220,7 +20558,7 @@ async function searchWorkspaceContent({
     };
   });
 
-  return [...notes, ...projects, ...tasks, ...events, ...reminders, ...people, ...teams, ...intake, ...githubExternal]
+  return [...notes, ...transcriptMatches, ...meetingMetadataMatches, ...projects, ...tasks, ...events, ...reminders, ...people, ...teams, ...intake, ...githubExternal]
     .sort((left, right) => {
       if (left.score !== right.score) return left.score - right.score;
       return String(left.title).localeCompare(String(right.title));
@@ -21169,7 +21507,7 @@ app.post(
       const mood = req.body?.mood ? String(req.body.mood).trim() : null;
       const source = req.body?.source ? String(req.body.source).trim() : 'workspace';
       const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
-      const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text';
+      const mode = normalizeNoteMode(req.body?.mode);
       const mindMapStructure =
         mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null;
       const requestedSectionId = req.body?.section_id ? String(req.body.section_id).trim() : null;
@@ -21257,12 +21595,135 @@ app.post(
         .single();
 
       if (error) throw error;
+      if (mode === 'meeting_note') {
+        await initializeMeetingMetadata(workspaceId, data.id, req.body?.meeting_metadata ?? {});
+      }
       res.json(mapNoteResponse(data));
     } catch (error) {
       return respondWithError(res, error);
     }
   }
 );
+
+const meetingNoteAgendaHtml = '<h2>Agenda</h2><p></p><h2>Notes</h2><p></p><h2>Decisions</h2><p></p><h2>Action Items</h2><ul><li>[ ] </li></ul>';
+
+const findCalendarMeetingNote = async ({ workspaceId, eventId, provider, eventKey }) => {
+  if (eventId) {
+    const result = await supabase.from('meeting_note_metadata').select('*').eq('workspace_id', workspaceId).eq('calendar_event_id', eventId).maybeSingle();
+    if (result.error) throw result.error;
+    if (result.data) {
+      const note = await supabase.from('notes').select(noteSelectColumns).eq('workspace_id', workspaceId).eq('id', result.data.note_id).maybeSingle();
+      if (note.error) throw note.error;
+      return note.data ? { note: mapNoteResponse(note.data), metadata: result.data } : null;
+    }
+  }
+  if (provider && eventKey) {
+    const result = await supabase.from('meeting_note_metadata').select('*').eq('workspace_id', workspaceId).eq('calendar_provider', provider).eq('calendar_event_key', eventKey).maybeSingle();
+    if (result.error) throw result.error;
+    if (result.data) {
+      const note = await supabase.from('notes').select(noteSelectColumns).eq('workspace_id', workspaceId).eq('id', result.data.note_id).maybeSingle();
+      if (note.error) throw note.error;
+      return note.data ? { note: mapNoteResponse(note.data), metadata: result.data } : null;
+    }
+  }
+  return null;
+};
+
+app.get('/api/meeting-notes/calendar-link', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const eventId = normalizeNullableText(req.query?.event_id);
+    const provider = normalizeNullableText(req.query?.calendar_provider)?.toLowerCase() ?? null;
+    const eventKey = normalizeNullableText(req.query?.calendar_event_key);
+    if (eventId && !isUuidLike(eventId)) return res.status(400).json({ error: 'Invalid event_id' });
+    if (!eventId && !(provider && eventKey)) return res.status(400).json({ error: 'A calendar event identity is required.' });
+    if (eventId && !(await ensureWorkspaceResource('events', eventId, workspaceId))) return res.status(404).json({ error: 'Event not found.' });
+    res.json(await findCalendarMeetingNote({ workspaceId, eventId, provider, eventKey }));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.get('/api/meeting-notes/:noteId/series', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.noteId, 'viewer');
+    const current = await supabase.from('meeting_note_metadata').select('calendar_provider, calendar_series_key, calendar_series_id').eq('workspace_id', workspaceId).eq('note_id', req.params.noteId).maybeSingle();
+    if (current.error) throw current.error;
+    if (!current.data || (!current.data.calendar_series_key && !current.data.calendar_series_id)) return res.json([]);
+    let query = supabase.from('meeting_note_metadata').select('note_id, calendar_event_key, calendar_event_title, scheduled_start_at, scheduled_end_at, transcription_status, calendar_event_deleted').eq('workspace_id', workspaceId);
+    if (current.data.calendar_series_key) query = query.eq('calendar_provider', current.data.calendar_provider).eq('calendar_series_key', current.data.calendar_series_key);
+    else query = query.eq('calendar_series_id', current.data.calendar_series_id);
+    const result = await query.order('scheduled_start_at', { ascending: true, nullsFirst: false });
+    if (result.error) throw result.error;
+    const noteIds = (result.data ?? []).map((row) => row.note_id).filter(Boolean);
+    const notes = noteIds.length ? await supabase.from('notes').select('id, title, parent_id, mode').eq('workspace_id', workspaceId).in('id', noteIds) : { data: [], error: null };
+    if (notes.error) throw notes.error;
+    const noteById = new Map((notes.data ?? []).map((note) => [note.id, note]));
+    res.json((result.data ?? []).map((row) => ({ ...row, note: noteById.get(row.note_id) ?? null })));
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/meeting-notes/from-calendar', authMiddleware, rateLimit('write'), quotaGuard('notes'), async (req, res) => {
+  try {
+    const workspaceId = req.workspaceId ?? (await resolveWorkspaceIdForRequest(req));
+    const requestedEventId = normalizeNullableText(req.body?.event_id);
+    if (requestedEventId && !isUuidLike(requestedEventId)) return res.status(400).json({ error: 'Invalid event_id' });
+    let event = null;
+    if (requestedEventId) {
+      const result = await supabase.from('events').select(eventSelectColumns).eq('workspace_id', workspaceId).eq('id', requestedEventId).maybeSingle();
+      if (result.error) throw result.error;
+      if (!result.data) return res.status(404).json({ error: 'Event not found in this workspace.' });
+      event = result.data;
+    }
+    const provider = event
+      ? (String(event.source_platform ?? '').toLowerCase() === 'google' ? 'google' : 'ledger')
+      : normalizeNullableText(req.body?.calendar_provider)?.toLowerCase();
+    const eventKey = event ? event.id : normalizeNullableText(req.body?.calendar_event_key);
+    if (!provider || !MEETING_CALENDAR_PROVIDERS.includes(provider) || !eventKey) return res.status(400).json({ error: 'A supported calendar event identity is required.' });
+    const existing = await findCalendarMeetingNote({ workspaceId, eventId: event?.id ?? null, provider, eventKey });
+    if (existing) return res.json({ existing: true, note: existing.note, meeting_metadata: existing.metadata });
+    if (event?.note_id) {
+      const linked = await supabase.from('notes').select('id, mode').eq('workspace_id', workspaceId).eq('id', event.note_id).maybeSingle();
+      if (linked.error) throw linked.error;
+      if (linked.data?.mode !== 'meeting_note') return res.status(409).json({ error: 'This event already has a regular note linked. Choose Create another meeting note to continue.' });
+    }
+
+    const title = String(event?.title ?? req.body?.title ?? 'Meeting').trim() || 'Meeting';
+    const scheduledStart = event?.start_at ?? normalizeMeetingTimestamp(req.body?.scheduled_start_at, 'scheduled_start_at');
+    const scheduledEnd = event?.end_at ?? normalizeMeetingTimestamp(req.body?.scheduled_end_at, 'scheduled_end_at');
+    const projectId = event?.project_id ?? normalizeNullableText(req.body?.project_id);
+    if (projectId && !(await ensureWorkspaceResource('projects', projectId, workspaceId))) return res.status(404).json({ error: 'Project not found in this workspace.' });
+    const seriesKey = event?.series_id ?? normalizeNullableText(req.body?.calendar_series_key);
+    let parentId = normalizeNullableText(req.body?.parent_note_id);
+    let parentNote = null;
+    if (seriesKey && !parentId) {
+      const parentResult = await supabase.from('meeting_note_metadata').select('note_id').eq('workspace_id', workspaceId).eq('calendar_provider', provider).eq('calendar_series_key', seriesKey).is('calendar_event_key', null).maybeSingle();
+      if (parentResult.error) throw parentResult.error;
+      parentId = parentResult.data?.note_id ?? null;
+    }
+    if (parentId && !(await ensureWorkspaceResource('notes', parentId, workspaceId))) return res.status(404).json({ error: 'Recurring meeting parent note not found.' });
+    if (seriesKey && !parentId) {
+      const parentInsert = await supabase.from('notes').insert({ workspace_id: workspaceId, user_id: req.authUser.id, updated_by: req.authUser.id, title, content: `${title} recurring meeting`, content_html: `<h2>${normalizeNoteHtml(title)}</h2><p>Recurring meeting series.</p>`, date: new Date().toISOString().slice(0, 10), source: 'meeting', mode: 'meeting_note', parent_id: null, section_id: null, sort_order: 0, depth: 0 }).select(noteSelectColumns).single();
+      if (parentInsert.error) throw parentInsert.error;
+      parentNote = parentInsert.data;
+      parentId = parentInsert.data.id;
+      await initializeMeetingMetadata(workspaceId, parentId, { calendar_provider: provider, calendar_series_key: seriesKey, calendar_event_title: title, calendar_source_name: req.body?.calendar_source_name ?? null });
+    }
+
+    const parent = parentId ? await supabase.from('notes').select('depth').eq('workspace_id', workspaceId).eq('id', parentId).maybeSingle() : null;
+    if (parent?.error) throw parent.error;
+    const inserted = await supabase.from('notes').insert({ workspace_id: workspaceId, user_id: req.authUser.id, updated_by: req.authUser.id, title, content: '', content_html: meetingNoteAgendaHtml, date: scheduledStart ? new Date(scheduledStart).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10), source: 'meeting', mode: 'meeting_note', parent_id: parentId || null, section_id: null, sort_order: 0, depth: parentId ? Number(parent.data?.depth ?? 0) + 1 : 0 }).select(noteSelectColumns).single();
+    if (inserted.error) throw inserted.error;
+    const metadata = await initializeMeetingMetadata(workspaceId, inserted.data.id, { calendar_event_id: event?.id ?? null, calendar_series_id: event?.series_id ?? null, calendar_provider: provider, calendar_event_key: eventKey, calendar_series_key: seriesKey, calendar_source_name: event?.source_platform ?? req.body?.calendar_source_name ?? null, calendar_event_title: title, scheduled_start_at: scheduledStart, scheduled_end_at: scheduledEnd, attendees: event?.attendees ?? req.body?.attendees ?? null, audio_retention: req.body?.audio_retention ?? 'delete_after_transcription' });
+    if (event) {
+      const updatedEvent = await supabase.from('events').update({ note_id: inserted.data.id, updated_by: req.authUser.id }).eq('workspace_id', workspaceId).eq('id', event.id).select(eventSelectColumns).single();
+      if (updatedEvent.error) throw updatedEvent.error;
+    }
+    if (projectId) {
+      const projectLink = await supabase.from('project_note_links').upsert({ workspace_id: workspaceId, project_id: projectId, note_id: inserted.data.id, created_by: req.authUser.id }, { onConflict: 'workspace_id,project_id,note_id' });
+      if (projectLink.error) throw projectLink.error;
+    }
+    res.status(201).json({ existing: false, note: mapNoteResponse(inserted.data), meeting_metadata: metadata, parent_note: parentNote ? mapNoteResponse(parentNote) : null });
+  } catch (error) { return respondWithError(res, error); }
+});
 
 app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
@@ -21299,7 +21760,7 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
     if (req.body?.source !== undefined)
       update.source = String(req.body.source ?? 'workspace').trim() || 'workspace';
     if (req.body?.mode !== undefined) {
-      const validMode = ['text', 'mind_map'].includes(req.body.mode) ? req.body.mode : 'text';
+      const validMode = normalizeNoteMode(req.body.mode);
       update.mode = validMode;
     }
     if (req.body?.mind_map_structure !== undefined) {
@@ -21369,7 +21830,215 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
       .single();
 
     if (error) throw error;
+    if (update.mode === 'meeting_note') {
+      await initializeMeetingMetadata(workspaceId, req.params.id, req.body?.meeting_metadata ?? {});
+    }
     res.json(mapNoteResponse(data));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/notes/:id/meeting', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'viewer');
+    const { data, error } = await supabase
+      .from('meeting_note_metadata')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Meeting metadata not found.' });
+    res.json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notes/:id/meeting', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { note, workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    if (note.mode !== 'meeting_note') {
+      const { error: modeError } = await supabase
+        .from('notes')
+        .update({ mode: 'meeting_note', updated_by: req.authUser.id, updated_at: new Date().toISOString() })
+        .eq('workspace_id', workspaceId)
+        .eq('id', req.params.id);
+      if (modeError) throw modeError;
+    }
+    res.status(201).json(await initializeMeetingMetadata(workspaceId, req.params.id, req.body ?? {}));
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/notes/:id/meeting', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    const { data: existing, error: existingError } = await supabase
+      .from('meeting_note_metadata')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) return res.status(404).json({ error: 'Meeting metadata not found.' });
+
+    const payload = normalizeMeetingMetadataPayload(req.body ?? {}, existing);
+    await ensureMeetingCalendarEvent(workspaceId, payload.calendar_event_id ?? existing.calendar_event_id);
+    if (!Object.keys(payload).length) return res.json(existing);
+    const { data, error } = await supabase
+      .from('meeting_note_metadata')
+      .update({ ...payload, updated_at: new Date().toISOString() })
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/notes/:id/transcript-segments', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'viewer');
+    const { data, error } = await supabase
+      .from('meeting_note_transcript_segments')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .is('deleted_at', null)
+      .order('start_ms', { ascending: true })
+      .order('segment_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    res.json(Array.isArray(data) ? data : []);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notes/:id/transcript-segments', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    const segment = normalizeTranscriptSegment(req.body ?? {});
+    const { data, error } = await supabase
+      .from('meeting_note_transcript_segments')
+      .insert({ note_id: req.params.id, workspace_id: workspaceId, ...segment })
+      .select('*')
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notes/:id/transcript-segments/bulk', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    const rows = Array.isArray(req.body?.segments) ? req.body.segments : null;
+    if (!rows) return res.status(400).json({ error: 'segments must be an array' });
+    if (rows.length > 2000) return res.status(400).json({ error: 'Too many transcript segments' });
+    if (!rows.length) return res.status(201).json([]);
+    const segments = rows.map((row) => normalizeTranscriptSegment(row, { allowId: true }));
+    const { data, error } = await supabase
+      .from('meeting_note_transcript_segments')
+      .upsert(segments.map((segment) => ({ note_id: req.params.id, workspace_id: workspaceId, ...segment })), { onConflict: 'id', ignoreDuplicates: true })
+      .select('*');
+    if (error) throw error;
+    res.status(201).json(Array.isArray(data) ? data : []);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/notes/:id/transcript-segments/:segmentId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    if (!isUuidLike(req.params.segmentId)) return res.status(400).json({ error: 'Invalid transcript segment id' });
+    const { data: existing, error: existingError } = await supabase
+      .from('meeting_note_transcript_segments')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .eq('id', req.params.segmentId)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) return res.status(404).json({ error: 'Transcript segment not found.' });
+    const update = normalizeTranscriptSegment({ ...existing, ...(req.body ?? {}) });
+    delete update.updated_at;
+    const { data, error } = await supabase
+      .from('meeting_note_transcript_segments')
+      .update({ ...update, updated_at: new Date().toISOString() })
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .eq('id', req.params.segmentId)
+      .select('*')
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/notes/:id/transcript-segments/:segmentId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    if (!isUuidLike(req.params.segmentId)) return res.status(400).json({ error: 'Invalid transcript segment id' });
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('meeting_note_transcript_segments')
+      .update({ deleted_at: nowIso, deleted_by: req.authUser.id, updated_at: nowIso })
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .eq('id', req.params.segmentId)
+      .is('deleted_at', null)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Transcript segment not found.' });
+    res.json({ success: true, segment: data });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notes/:id/transcript-segments/:segmentId/restore', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    if (!isUuidLike(req.params.segmentId)) return res.status(400).json({ error: 'Invalid transcript segment id' });
+    const { data, error } = await supabase
+      .from('meeting_note_transcript_segments')
+      .update({ deleted_at: null, deleted_by: null, updated_at: new Date().toISOString() })
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .eq('id', req.params.segmentId)
+      .not('deleted_at', 'is', null)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Deleted transcript segment not found.' });
+    res.json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/notes/:id/transcript', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    const { error } = await supabase
+      .from('meeting_note_transcript_segments')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -21405,7 +22074,7 @@ app.post(
       const mood = req.body?.mood ? String(req.body.mood).trim() : null;
       const source = req.body?.source ? String(req.body.source).trim() : 'workspace';
       const sourcePlatform = normalizeCaptureSourcePlatform(req.body?.source_platform);
-      const mode = ['text', 'mind_map'].includes(req.body?.mode) ? req.body.mode : 'text';
+      const mode = normalizeNoteMode(req.body?.mode);
       const mindMapStructure =
         mode === 'mind_map' && req.body?.mind_map_structure ? req.body.mind_map_structure : null;
       const content_html = normalizeNoteHtml(
@@ -21448,6 +22117,9 @@ app.post(
         )
         .single();
       if (error) throw error;
+      if (mode === 'meeting_note') {
+        await initializeMeetingMetadata(workspaceId, data.id, req.body?.meeting_metadata ?? {});
+      }
       res.json(mapNoteResponse(data));
     } catch (error) {
       return respondWithError(res, error);
@@ -21606,6 +22278,9 @@ app.post(
         .single();
 
       if (error) throw error;
+      if (source.mode === 'meeting_note') {
+        await initializeMeetingMetadata(workspaceId, data.id);
+      }
       res.json(mapNoteResponse(data));
     } catch (error) {
       return respondWithError(res, error);
@@ -21746,7 +22421,7 @@ app.post(
         date: version.date ?? new Date().toISOString().slice(0, 10),
         mood: version.mood ?? null,
         source: version.source ?? 'workspace',
-        mode: version.mode === 'mind_map' ? 'mind_map' : 'text',
+        mode: normalizeNoteMode(version.mode),
         mind_map_structure: version.mind_map_structure ?? null,
         parent_id: version.parent_id ?? null,
         section_id: version.section_id ?? null,
@@ -21767,6 +22442,10 @@ app.post(
         )
         .single();
       if (restoreError) throw restoreError;
+
+      if (payload.mode === 'meeting_note') {
+        await initializeMeetingMetadata(workspaceId, id);
+      }
 
       res.json(mapNoteResponse(restored));
     } catch (error) {

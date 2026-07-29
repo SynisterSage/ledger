@@ -29,6 +29,7 @@ import {
   Info,
   Inbox,
   MoreHorizontal,
+  Mic,
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -226,7 +227,8 @@ type SettingsSectionId =
   | 'integrations'
   | 'sidebar'
   | 'shortcuts'
-  | 'accessibility';
+  | 'accessibility'
+  | 'meeting_notes';
 type SettingsNavGroupId = 'account' | 'workspace' | 'preferences';
 
 type SettingsNavSection = {
@@ -316,6 +318,12 @@ const settingsNavGroups: Array<{
         description: 'Comfort and readability options',
         icon: SlidersHorizontal,
       },
+      {
+        id: 'meeting_notes',
+        label: 'Meeting Notes',
+        description: 'Local audio, transcription, and privacy',
+        icon: Mic,
+      },
     ],
   },
 ];
@@ -334,7 +342,8 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
     section === 'integrations' ||
     section === 'sidebar' ||
     section === 'shortcuts' ||
-    section === 'accessibility'
+    section === 'accessibility' ||
+    section === 'meeting_notes'
   );
 };
 
@@ -828,6 +837,19 @@ export const SettingsWindow = () => {
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
+  const [meetingDefaultRetention, setMeetingDefaultRetention] = useState<'delete_after_transcription' | 'retain'>(() => {
+    try { return localStorage.getItem('ledger.meeting.default-retention') === 'retain' ? 'retain' : 'delete_after_transcription'; } catch { return 'delete_after_transcription'; }
+  });
+  const [meetingConsentReminder, setMeetingConsentReminder] = useState(true);
+  const [meetingDefaultTimestamps, setMeetingDefaultTimestamps] = useState(true);
+  const [meetingModelStatus, setMeetingModelStatus] = useState<{ installed?: boolean; downloading?: boolean; label?: string; approximateBytes?: number } | null>(null);
+  useEffect(() => {
+    try { localStorage.setItem('ledger.meeting.default-retention', meetingDefaultRetention); } catch {}
+  }, [meetingDefaultRetention]);
+  useEffect(() => {
+    if (activeSection !== 'meeting_notes' || !window.meetingTranscription) return;
+    void window.meetingTranscription.modelStatus().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus)).catch(() => setMeetingModelStatus(null));
+  }, [activeSection]);
   const [googleDriveStatus, setGoogleDriveStatus] = useState<{ status?: string; provider_account_email?: string | null }>({ status: 'disconnected' });
   useEffect(() => {
     if (activeSection !== 'integrations') return;
@@ -4979,6 +5001,27 @@ export const SettingsWindow = () => {
                     </div>
                   </section>
                   </div>
+                </section>
+              )}
+
+              {activeSection === 'meeting_notes' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-meeting-notes">
+                  <h2 id="settings-meeting-notes" className={settingsTheme.pageTitle}>Meeting Notes</h2>
+                  <p className={settingsTheme.pageSubtitle + ' mt-1'}>Local speech recognition, audio retention, and privacy controls.</p>
+                  <p className={settingsTheme.pageStatus + ' mt-2'}>Transcription runs on this computer. No transcription API key, cloud transcription service, or LLM is required.</p>
+                  <section className={settingsTheme.sectionShell + ' mt-5'} aria-labelledby="meeting-privacy">
+                    <h3 id="meeting-privacy" className={settingsTheme.sectionTitle}>Privacy and storage</h3>
+                    <div className={settingsTheme.sectionRows}>
+                      <label className="flex items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className={settingsTheme.label}>Default audio retention</span><span className={settingsTheme.help}>Audio is deleted only after transcript storage succeeds.</span></span><select value={meetingDefaultRetention} onChange={(event) => setMeetingDefaultRetention(event.target.value as typeof meetingDefaultRetention)} className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1 text-xs"><option value="delete_after_transcription">Delete after transcription</option><option value="retain">Retain until deleted</option></select></label>
+                      <div className="flex items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className={settingsTheme.label}>Consent reminder</span><span className={settingsTheme.help}>Remind me that meeting participants may need to consent.</span></span><InlineSwitch checked={meetingConsentReminder} onToggle={() => setMeetingConsentReminder((current) => !current)} label="Meeting consent reminder" /></div>
+                      <div className="flex items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className={settingsTheme.label}>Transcript timestamps</span><span className={settingsTheme.help}>Show timestamps by default when reviewing transcripts.</span></span><InlineSwitch checked={meetingDefaultTimestamps} onToggle={() => setMeetingDefaultTimestamps((current) => !current)} label="Transcript timestamps" /></div>
+                    </div>
+                  </section>
+                  <section className={settingsTheme.sectionShell + ' mt-5'} aria-labelledby="meeting-model">
+                    <h3 id="meeting-model" className={settingsTheme.sectionTitle}>Local transcription model</h3>
+                    <div className="px-4 py-3 text-sm"><p className={settingsTheme.label}>{meetingModelStatus?.installed ? meetingModelStatus.label || 'Whisper model installed' : 'Model not installed'}</p><p className={settingsTheme.help}>The optional model is stored in Ledger application data and remains available when the app bundle moves or updates.</p><div className="mt-3 flex gap-2">{window.meetingTranscription && !meetingModelStatus?.installed && <button type="button" onClick={() => void window.meetingTranscription!.downloadModel().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus))} className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white">Install model</button>}{window.meetingTranscription && meetingModelStatus?.installed && <button type="button" onClick={() => void window.meetingTranscription!.deleteModel().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus))} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-xs text-[var(--ledger-danger)]">Delete model</button>}</div></div>
+                  </section>
+                  <p className="mt-4 text-xs leading-5 text-[var(--ledger-text-muted)]">Audio may remain temporarily on this computer until transcription succeeds. Meeting content is not sent to an LLM. You are responsible for any consent required by your meeting.</p>
                 </section>
               )}
 

@@ -22,6 +22,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/sidebarPreferences';
 import { desktopTokens } from '../src/theme/desktopTokens';
+import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
+import { LocalTranscriptionService } from './transcriptionService';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -42,6 +44,97 @@ let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
 let tray: Tray | null = null;
 let isQuittingApp = false;
 let appleCalendarWatcher: ReturnType<typeof spawn> | null = null;
+const meetingAudioCaptureService = new MeetingAudioCaptureService();
+const localTranscriptionService = new LocalTranscriptionService();
+
+function broadcastMeetingAudioEvent(channel: string, payload: unknown) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
+
+meetingAudioCaptureService.onLevel((event) => broadcastMeetingAudioEvent('meeting-audio:level', event));
+meetingAudioCaptureService.onError((event) => broadcastMeetingAudioEvent('meeting-audio:error', event));
+localTranscriptionService.onProgress((event) => broadcastMeetingAudioEvent('meeting-transcription:progress', event));
+localTranscriptionService.modelManager.onChange((event) => broadcastMeetingAudioEvent('meeting-transcription:model', event));
+
+const validAudioSource = (value: unknown): value is AudioSourceName => value === 'user_microphone' || value === 'system_audio';
+
+ipcMain.handle('meeting-audio:permissions', () => meetingAudioCaptureService.permissions());
+ipcMain.handle('meeting-audio:request-permissions', () => meetingAudioCaptureService.requestPermissions());
+ipcMain.handle('meeting-audio:open-system-settings', async (_event, area: unknown) => {
+  if (process.platform !== 'darwin') return false;
+  const target = area === 'microphone' ? 'Privacy_Microphone' : area === 'screen-recording' ? 'Privacy_ScreenCapture' : null;
+  if (!target) throw new Error('Invalid macOS permission area.');
+  await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${target}`);
+  return true;
+});
+ipcMain.handle('meeting-audio:status', () => meetingAudioCaptureService.status());
+ipcMain.handle('meeting-audio:recoveries', () => meetingAudioCaptureService.recoveries());
+ipcMain.handle('meeting-audio:inspect', (_event, sessionId?: unknown) => {
+  if (sessionId !== undefined && typeof sessionId !== 'string') throw new Error('Invalid recording session.');
+  return meetingAudioCaptureService.inspect(sessionId);
+});
+ipcMain.handle('meeting-audio:recover', (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown }) => {
+  if (typeof payload?.sessionId !== 'string' || typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Invalid recovery request.');
+  return meetingAudioCaptureService.recover(payload.sessionId, payload.noteId, payload.workspaceId);
+});
+ipcMain.handle('meeting-audio:discard-recovery', (_event, sessionId: unknown) => {
+  if (typeof sessionId !== 'string') throw new Error('Invalid recording session.');
+  return meetingAudioCaptureService.discard(sessionId);
+});
+ipcMain.handle('meeting-audio:start', (_event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown }) => {
+  if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Meeting recording identity is invalid.');
+  return meetingAudioCaptureService.start({ noteId: payload.noteId, workspaceId: payload.workspaceId, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false });
+});
+ipcMain.handle('meeting-audio:test-source', (_event, source: unknown) => {
+  if (!validAudioSource(source)) throw new Error('Invalid audio source.');
+  return meetingAudioCaptureService.testSource(source);
+});
+ipcMain.handle('meeting-audio:pause', () => meetingAudioCaptureService.pause());
+ipcMain.handle('meeting-audio:resume', () => meetingAudioCaptureService.resume());
+ipcMain.handle('meeting-audio:stop', () => meetingAudioCaptureService.stop());
+ipcMain.handle('meeting-audio:reveal', (_event, payload: { sessionId?: unknown; source?: unknown }) => {
+  if (typeof payload?.sessionId !== 'string' || !validAudioSource(payload.source)) throw new Error('Invalid audio file reference.');
+  return meetingAudioCaptureService.reveal(payload.sessionId, payload.source);
+});
+ipcMain.handle('meeting-audio:delete-audio', (_event, payload: { sessionId?: unknown; source?: unknown }) => {
+  if (typeof payload?.sessionId !== 'string' || (payload.source !== undefined && payload.source !== 'user_microphone' && payload.source !== 'system_audio')) throw new Error('Invalid audio deletion request.');
+  return meetingAudioCaptureService.deleteAudio(payload.sessionId, payload.source);
+});
+ipcMain.handle('meeting-audio:play', (_event, payload: { sessionId?: unknown; source?: unknown }) => {
+  if (typeof payload?.sessionId !== 'string' || (payload.source !== 'user_microphone' && payload.source !== 'system_audio')) throw new Error('Invalid audio playback request.');
+  return meetingAudioCaptureService.play(payload.sessionId, payload.source);
+});
+
+ipcMain.handle('meeting-transcription:model-status', () => localTranscriptionService.modelStatus());
+ipcMain.handle('meeting-transcription:download-model', () => localTranscriptionService.downloadModel());
+ipcMain.handle('meeting-transcription:cancel-model-download', () => localTranscriptionService.cancelModelDownload());
+ipcMain.handle('meeting-transcription:delete-model', () => localTranscriptionService.deleteModel());
+ipcMain.handle('meeting-transcription:status', (_event, jobId?: unknown) => {
+  if (jobId !== undefined && typeof jobId !== 'string') throw new Error('Invalid transcription job.');
+  return localTranscriptionService.status(jobId);
+});
+ipcMain.handle('meeting-transcription:start', (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown; force?: unknown }) => {
+  if (typeof payload?.sessionId !== 'string' || typeof payload.noteId !== 'string' || typeof payload.workspaceId !== 'string') throw new Error('Invalid transcription request.');
+  return localTranscriptionService.start({ sessionId: payload.sessionId, noteId: payload.noteId, workspaceId: payload.workspaceId, force: payload.force === true });
+});
+ipcMain.handle('meeting-transcription:cancel', (_event, jobId: unknown) => {
+  if (typeof jobId !== 'string') throw new Error('Invalid transcription job.');
+  return localTranscriptionService.cancel(jobId);
+});
+ipcMain.handle('meeting-transcription:results', (_event, jobId: unknown) => {
+  if (typeof jobId !== 'string') throw new Error('Invalid transcription job.');
+  return localTranscriptionService.results(jobId);
+});
+ipcMain.handle('meeting-transcription:complete', (_event, payload: { jobId?: unknown; retention?: unknown }) => {
+  if (typeof payload?.jobId !== 'string' || (payload.retention !== 'retain' && payload.retention !== 'delete_after_transcription')) throw new Error('Invalid transcription completion request.');
+  return localTranscriptionService.complete(payload.jobId, payload.retention);
+});
+ipcMain.handle('meeting-transcription:fail', (_event, payload: { jobId?: unknown; error?: unknown }) => {
+  if (typeof payload?.jobId !== 'string' || typeof payload.error !== 'string') throw new Error('Invalid transcription failure request.');
+  return localTranscriptionService.fail(payload.jobId, payload.error);
+});
 
 function appleCalendarBridgePath() {
   return app.isPackaged
@@ -6542,6 +6635,18 @@ app.on('will-quit', () => {
     tray = null;
   }
   globalShortcut.unregisterAll();
+});
+
+let audioShutdownInProgress = false;
+app.on('before-quit', (event) => {
+  if (audioShutdownInProgress) return;
+  if (!meetingAudioCaptureService.isActive) {
+    void localTranscriptionService.shutdown();
+    return;
+  }
+  audioShutdownInProgress = true;
+  event.preventDefault();
+  void Promise.all([meetingAudioCaptureService.shutdown(), localTranscriptionService.shutdown()]).finally(() => app.quit());
 });
 
 app.on('activate', () => {

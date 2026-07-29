@@ -2,12 +2,13 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Download, Loader2, Check } from 'lucide-react';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
+import type { NoteMode } from '../../types/notes';
 
 interface BulkExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onExport: (format: 'pdf' | 'png' | 'html' | 'txt', selectedIds: Set<string>) => Promise<void>;
-  notes: Array<{ id: string; title: string; mode?: 'text' | 'mind_map' }>;
+  notes: Array<{ id: string; title: string; mode?: NoteMode }>;
   isMindMapOnly?: boolean;
 }
 

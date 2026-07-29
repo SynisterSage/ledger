@@ -15,6 +15,7 @@ import {
   ListTree,
   Maximize2,
   Minimize2,
+  Mic,
   Monitor,
   MousePointer2,
   Palette,
@@ -45,6 +46,8 @@ type SearchResultType =
   | 'person'
   | 'team'
   | 'intake'
+  | 'transcript'
+  | 'meeting_metadata'
   | 'github'
   | 'command';
 type SearchCategory = 'navigate' | 'action' | 'resource' | 'settings';
@@ -61,6 +64,9 @@ type SearchResult = {
   actionId?: string;
   provider?: string | null;
   source_provider?: string | null;
+  note_id?: string | null;
+  segment_id?: string | null;
+  start_ms?: number;
 };
 
 const settingsSearchEntries: Array<{
@@ -147,6 +153,14 @@ const settingsSearchEntries: Array<{
     ],
   },
   {
+    pageId: 'meeting_notes',
+    pageTitle: 'Meeting Notes',
+    sections: [
+      { id: 'meeting-privacy', title: 'Privacy and storage' },
+      { id: 'meeting-model', title: 'Local transcription model' },
+    ],
+  },
+  {
     pageId: 'shortcuts',
     pageTitle: 'Keyboard shortcuts',
     sections: [
@@ -192,6 +206,8 @@ const iconMap: Record<SearchResultType, typeof FileText> = {
   person: Briefcase,
   team: Briefcase,
   intake: FileText,
+  transcript: FileText,
+  meeting_metadata: CalendarDays,
   github: Plug2,
   command: Search,
 };
@@ -232,6 +248,7 @@ const settingsPageIconMap: Record<string, typeof FileText> = {
   integrations: Plug2,
   sidebar: PanelLeft,
   accessibility: Accessibility,
+  meeting_notes: Mic,
   shortcuts: Keyboard,
 };
 
@@ -578,6 +595,8 @@ export const SearchModal = () => {
                   'person',
                   'team',
                   'intake',
+                  'transcript',
+                  'meeting_metadata',
                   'github',
                 ].includes(rawType)
                   ? (rawType as SearchResultType)
@@ -741,6 +760,11 @@ export const SearchModal = () => {
         }
       } else if (result.type === 'note') {
         void window.desktopWindow?.toggleModule('notes', { focusNoteId: result.id });
+      } else if (result.type === 'transcript' || result.type === 'meeting_metadata') {
+        void window.desktopWindow?.toggleModule('notes', {
+          focusNoteId: result.note_id ?? result.id,
+          focusContext: result.type === 'transcript' && result.segment_id ? `transcript-segment:${result.segment_id}` : undefined,
+        });
       } else if (result.type === 'project') {
         void window.desktopWindow?.toggleModule('projects', { focusProjectId: result.id });
       } else if (result.type === 'task') {
@@ -927,7 +951,7 @@ export const SearchModal = () => {
                     )}
                     {result.type !== 'command' && (
                       <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
-                        {result.type}
+                        {result.type === 'meeting_metadata' ? 'Meeting metadata' : result.type === 'transcript' ? 'Transcript' : result.type}
                       </span>
                     )}
                   </button>

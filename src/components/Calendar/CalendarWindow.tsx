@@ -24,6 +24,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   SlidersHorizontal,
+  Mic,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -140,6 +141,9 @@ type EventRow = {
   location?: string | null;
   time_zone?: string | null;
   url?: string | null;
+  attendees?: unknown[] | null;
+  meeting_transcription_status?: 'idle' | 'recording' | 'paused' | 'processing' | 'complete' | 'failed' | null;
+  meeting_event_deleted?: boolean;
 };
 
 type ReminderRow = {
@@ -248,6 +252,7 @@ type CalendarDataCacheEntry = {
 type NoteRow = {
   id: string;
   title: string;
+  mode?: 'text' | 'mind_map' | 'meeting_note';
 };
 
 type GridQuickAddState = {
@@ -906,6 +911,7 @@ export const CalendarWindow = () => {
   const [linkNotes, setLinkNotes] = useState<NoteRow[]>([]);
   const [isLoadingLinkNotes, setIsLoadingLinkNotes] = useState(false);
   const [isLinkingNote, setIsLinkingNote] = useState(false);
+  const [isCreatingMeetingNote, setIsCreatingMeetingNote] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
@@ -1384,7 +1390,36 @@ export const CalendarWindow = () => {
     }
     previousAppleReminderIdsRef.current = nextIds;
   }, [appleReminders.reminders, reminderEditorReminder, selectedReminder]);
-  useEffect(() => { setAppleEventsForSelection(appleCalendar.events as EventRow[]); }, [appleCalendar.events]);
+  useEffect(() => {
+    let cancelled = false;
+    const appleEvents = appleCalendar.events as EventRow[];
+    setAppleEventsForSelection(appleEvents);
+    if (!appleEvents.length) return () => { cancelled = true; };
+    void Promise.all(appleEvents.map(async (event) => {
+      try {
+        const linked = await api.getMeetingNoteForCalendarEvent({
+          calendar_provider: 'apple',
+          calendar_event_key: event.provider_event_id ?? event.id,
+        }) as { note?: NoteRow; metadata?: { transcription_status?: string; calendar_event_deleted?: boolean } } | null;
+        return linked?.note ? {
+          id: event.id,
+          note_id: linked.note.id,
+          meeting_transcription_status: linked.metadata?.transcription_status as EventRow['meeting_transcription_status'],
+          meeting_event_deleted: linked.metadata?.calendar_event_deleted,
+        } : null;
+      } catch {
+        return null;
+      }
+    })).then((links) => {
+      if (cancelled) return;
+      const byId = new Map(links.filter(Boolean).map((link) => [link!.id, link]));
+      setAppleEventsForSelection((current) => current.map((event) => {
+        const link = byId.get(event.id);
+        return link ? { ...event, ...link } : event;
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [api, appleCalendar.events]);
   useEffect(() => {
     const nextIds = new Set(appleCalendar.events.map((event) => event.id));
     if (selectedEvent?.provider === 'apple' && previousAppleEventIdsRef.current.has(selectedEvent.id) && !nextIds.has(selectedEvent.id)) {
@@ -3471,6 +3506,48 @@ export const CalendarWindow = () => {
     }
   };
 
+  const createMeetingNoteFromEvent = async (event: EventRow, createAnother = false) => {
+    if (!activeWorkspaceId || isCreatingMeetingNote) return;
+    setIsCreatingMeetingNote(true);
+    setError(null);
+    try {
+      const isApple = event.provider === 'apple';
+      const payload = isApple
+        ? {
+            calendar_provider: 'apple' as const,
+            calendar_event_key: event.provider_event_id ?? event.id,
+            calendar_series_key: event.series_id ?? null,
+            calendar_source_name: event.provider_calendar_name ?? null,
+            title: event.title,
+            scheduled_start_at: event.start_at,
+            scheduled_end_at: event.end_at,
+            attendees: event.attendees ?? null,
+            project_id: event.project_id ?? null,
+            ...(createAnother ? { parent_note_id: null } : {}),
+          }
+        : {
+            event_id: baseEventId(event.id),
+            ...(createAnother ? { parent_note_id: null } : {}),
+          };
+      const result = (await api.createMeetingNoteFromCalendar(payload)) as { existing?: boolean; note?: NoteRow; meeting_metadata?: { transcription_status?: string } };
+      const note = result.note;
+      if (!note) throw new Error('The meeting note was not returned.');
+      if (!isApple) {
+        setEvents((current) => current.map((item) => item.id === baseEventId(event.id) ? { ...item, note_id: note.id } : item));
+        setSelectedEvent((current) => current && baseEventId(current.id) === baseEventId(event.id) ? { ...current, note_id: note.id } : current);
+      } else {
+        setAppleEventsForSelection((current) => current.map((item) => item.id === event.id ? { ...item, note_id: note.id } : item));
+        setSelectedEvent((current) => current && current.id === event.id ? { ...current, note_id: note.id } : current);
+      }
+      if (result.existing) setError('This event already has Meeting Notes. Opening the existing note.');
+      void window.desktopWindow?.toggleModule('notes', { focusNoteId: note.id });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not create Meeting Notes for this event.');
+    } finally {
+      setIsCreatingMeetingNote(false);
+    }
+  };
+
   const saveSelectedEventNotes = async () => {
     if (!selectedEventPreview) return;
 
@@ -4613,7 +4690,7 @@ export const CalendarWindow = () => {
                 <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">Connected calendars</h2>
-                    <button type="button" onClick={() => void Promise.all([appleCalendar.refreshCalendars(), appleCalendar.refreshEvents(true), appleReminders.refreshLists(), appleReminders.refreshReminders(true)])} className="text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]" title="Refresh Apple calendars and reminders"><RefreshCw size={12} /></button>
+                    {appleCalendar.connected || appleReminders.connected ? <button type="button" onClick={() => void Promise.all([appleCalendar.refreshCalendars(), appleCalendar.refreshEvents(true), appleReminders.refreshLists(), appleReminders.refreshReminders(true)])} className="text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]" title="Refresh Apple calendars and reminders"><RefreshCw size={12} /></button> : <button type="button" onClick={() => { const buttonRect = calendarNewButtonRef.current?.getBoundingClientRect(); if (!buttonRect) return; setCalendarHeaderMenu((current) => current ? null : { x: buttonRect.left, y: buttonRect.bottom + 6 }); }} className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]" title="Add a calendar connection" aria-label="Add a calendar connection"><Plus size={12} /></button>}
                   </div>
                   {appleCalendar.connected || appleReminders.connected ? <div className="space-y-2">{appleCalendar.connected && <><div className="flex items-center justify-between"><p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Calendar <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">Connected</span></p>{appleCalendar.syncStatus === 'syncing' ? <span className="text-[10px] text-[var(--ledger-text-muted)]">Syncing…</span> : appleCalendar.syncStatus === 'synced' ? <span className="text-[10px] text-[var(--ledger-text-muted)]">Up to date</span> : null}</div>{appleCalendar.connectedCalendars.map((calendar) => <div key={calendar.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: calendar.color }} /><span className="min-w-0 flex-1 truncate">{calendar.title}</span><button type="button" onClick={() => appleCalendar.setCalendarVisible(calendar.id.slice('apple:'.length), calendar.visible === false)} title={calendar.visible === false ? 'Show calendar' : 'Hide calendar'} className="text-[var(--ledger-text-muted)]">{calendar.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}{appleReminders.connected && <><p className="pt-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Reminders <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">Connected</span></p>{appleReminders.connectedLists.map((list) => <div key={list.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: list.color }} /><span className="min-w-0 flex-1 truncate">{list.title}</span><button type="button" onClick={() => appleReminders.setListVisible(list.id.slice('apple-reminder:'.length), list.visible === false)} title={list.visible === false ? 'Show list' : 'Hide list'} className="text-[var(--ledger-text-muted)]">{list.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}</div> : null}
                 </div>
@@ -5578,27 +5655,40 @@ export const CalendarWindow = () => {
                                     Linked note
                                   </span>
                                   {selectedEventNote ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void window.desktopWindow?.toggleModule('notes', {
-                                          focusNoteId: selectedEventNote.id,
-                                        })
-                                      }
-                                      className="max-w-36 truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                                    >
-                                      {selectedEventNote.title} →
-                                    </button>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void window.desktopWindow?.toggleModule('notes', {
+                                            focusNoteId: selectedEventNote.id,
+                                          })
+                                        }
+                                        className="max-w-36 truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
+                                      >
+                                        {selectedEventNote.title} →
+                                      </button>
+                                      {selectedEventNote.mode === 'meeting_note' && <span className="shrink-0 text-[10px] text-[var(--ledger-accent)]">Meeting</span>}
+                                    </div>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => void openLinkNoteModal()}
-                                      className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
-                                    >
-                                      + Link note
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => void createMeetingNoteFromEvent(selectedEventPreview)}
+                                        disabled={isCreatingMeetingNote}
+                                        className="inline-flex items-center gap-1 font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
+                                      >
+                                        <Mic size={12} /> {isCreatingMeetingNote ? 'Creating…' : 'Start meeting notes'}
+                                      </button>
+                                      <button type="button" onClick={() => void openLinkNoteModal()} className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]">+ Link note</button>
+                                    </div>
                                   )}
                                 </div>
+                                {selectedEventPreview.meeting_transcription_status && (
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="text-[var(--ledger-text-muted)]">Meeting status</span>
+                                    <span className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">{selectedEventPreview.meeting_transcription_status}</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -7141,7 +7231,7 @@ export const CalendarWindow = () => {
       {listContextMenu &&
         (() => {
           const menuWidth = 248;
-          const menuHeight = listContextMenu.kind === 'event' ? 292 : 280;
+          const menuHeight = listContextMenu.kind === 'event' ? 338 : 280;
           const viewportPadding = 8;
           const menuActualWidth = Math.min(menuWidth, window.innerWidth - viewportPadding * 2);
           const canOpenBelow =
@@ -7199,25 +7289,29 @@ export const CalendarWindow = () => {
                     const canEditMenuEvent = Boolean(event && canEditEvent(event));
 
                     return (
-                      <button
-                      onClick={() => {
-                        if (!canEditMenuEvent || !event) return;
-                        openEventEditor(event);
-                        setListContextMenu(null);
-                      }}
-                      disabled={!canEditMenuEvent}
-                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${
-                        canEditMenuEvent
-                            ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                            : 'cursor-not-allowed text-[var(--ledger-text-muted)]/60'
-                        }`}
-                      title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
-                    >
-                        <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                        <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                          Edit Event
-                        </span>
-                      </button>
+                      <>
+                        <button
+                          onClick={() => { if (event) void createMeetingNoteFromEvent(event); setListContextMenu(null); }}
+                          disabled={!event || isCreatingMeetingNote}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Mic size={14} className="shrink-0" />
+                          <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">Start meeting notes</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (!canEditMenuEvent || !event) return;
+                            openEventEditor(event);
+                            setListContextMenu(null);
+                          }}
+                          disabled={!canEditMenuEvent}
+                          className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${canEditMenuEvent ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]' : 'cursor-not-allowed text-[var(--ledger-text-muted)]/60'}`}
+                          title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
+                        >
+                          <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                          <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">Edit Event</span>
+                        </button>
+                      </>
                     );
                   })()
                 ) : (

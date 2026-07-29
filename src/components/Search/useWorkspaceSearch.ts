@@ -13,6 +13,8 @@ export type SearchResultType =
   | 'person'
   | 'team'
   | 'intake'
+  | 'transcript'
+  | 'meeting_metadata'
   | 'command';
 export type SearchCategory = 'navigate' | 'action' | 'resource' | 'settings';
 export type SearchResult = {
@@ -38,6 +40,8 @@ export const searchIconMap: Record<SearchResultType, typeof FileText> = {
   person: Briefcase,
   team: Briefcase,
   intake: FileText,
+  transcript: FileText,
+  meeting_metadata: CalendarDays,
   command: Search,
 };
 
@@ -104,7 +108,7 @@ export const useWorkspaceSearch = (query: string, enabled = true) => {
         if (cancelled) return;
         const resources = Array.isArray(data) ? (data as Array<Record<string, unknown>>).map((result) => {
           const rawType = String(result.type ?? 'note').toLowerCase();
-          const type = ['note', 'project', 'task', 'event', 'reminder', 'person', 'team', 'intake'].includes(rawType)
+          const type = ['note', 'project', 'task', 'event', 'reminder', 'person', 'team', 'intake', 'transcript', 'meeting_metadata'].includes(rawType)
             ? (rawType as SearchResultType)
             : 'note';
           return { ...(result as unknown as SearchResult), type, category: 'resource' as const, id: String(result.id ?? ''), title: String(result.title ?? 'Untitled'), preview: String(result.preview ?? ''), icon: String(result.icon ?? '') };

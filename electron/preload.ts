@@ -80,6 +80,72 @@ contextBridge.exposeInMainWorld('appleReminders', {
   openSystemSettings() { return ipcRenderer.invoke('apple-reminders:open-system-settings'); },
 });
 
+contextBridge.exposeInMainWorld('meetingAudio', {
+  permissions() { return ipcRenderer.invoke('meeting-audio:permissions'); },
+  requestPermissions() { return ipcRenderer.invoke('meeting-audio:request-permissions'); },
+  openSystemSettings(area: 'microphone' | 'screen-recording') {
+    return ipcRenderer.invoke('meeting-audio:open-system-settings', area);
+  },
+  status() { return ipcRenderer.invoke('meeting-audio:status'); },
+  recoveries() { return ipcRenderer.invoke('meeting-audio:recoveries'); },
+  inspect(sessionId?: string) { return ipcRenderer.invoke('meeting-audio:inspect', sessionId); },
+  recover(payload: { sessionId: string; noteId: string; workspaceId: string }) {
+    return ipcRenderer.invoke('meeting-audio:recover', payload);
+  },
+  discardRecovery(sessionId: string) { return ipcRenderer.invoke('meeting-audio:discard-recovery', sessionId); },
+  start(payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean }) {
+    return ipcRenderer.invoke('meeting-audio:start', payload);
+  },
+  testSource(source: 'user_microphone' | 'system_audio') {
+    return ipcRenderer.invoke('meeting-audio:test-source', source);
+  },
+  pause() { return ipcRenderer.invoke('meeting-audio:pause'); },
+  resume() { return ipcRenderer.invoke('meeting-audio:resume'); },
+  stop() { return ipcRenderer.invoke('meeting-audio:stop'); },
+  reveal(payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) {
+    return ipcRenderer.invoke('meeting-audio:reveal', payload);
+  },
+  deleteAudio(payload: { sessionId: string; source?: 'user_microphone' | 'system_audio' }) {
+    return ipcRenderer.invoke('meeting-audio:delete-audio', payload);
+  },
+  play(payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) {
+    return ipcRenderer.invoke('meeting-audio:play', payload);
+  },
+  onLevel(listener: (event: { source: 'user_microphone' | 'system_audio'; level: number }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { source: 'user_microphone' | 'system_audio'; level: number }) => listener(payload);
+    ipcRenderer.on('meeting-audio:level', wrapped);
+    return () => ipcRenderer.off('meeting-audio:level', wrapped);
+  },
+  onError(listener: (event: { source: 'user_microphone' | 'system_audio'; error: string }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { source: 'user_microphone' | 'system_audio'; error: string }) => listener(payload);
+    ipcRenderer.on('meeting-audio:error', wrapped);
+    return () => ipcRenderer.off('meeting-audio:error', wrapped);
+  },
+});
+
+contextBridge.exposeInMainWorld('meetingTranscription', {
+  modelStatus() { return ipcRenderer.invoke('meeting-transcription:model-status'); },
+  downloadModel() { return ipcRenderer.invoke('meeting-transcription:download-model'); },
+  cancelModelDownload() { return ipcRenderer.invoke('meeting-transcription:cancel-model-download'); },
+  deleteModel() { return ipcRenderer.invoke('meeting-transcription:delete-model'); },
+  status(jobId?: string) { return ipcRenderer.invoke('meeting-transcription:status', jobId); },
+  start(payload: { sessionId: string; noteId: string; workspaceId: string; force?: boolean }) { return ipcRenderer.invoke('meeting-transcription:start', payload); },
+  cancel(jobId: string) { return ipcRenderer.invoke('meeting-transcription:cancel', jobId); },
+  results(jobId: string) { return ipcRenderer.invoke('meeting-transcription:results', jobId); },
+  complete(payload: { jobId: string; retention: 'delete_after_transcription' | 'retain' }) { return ipcRenderer.invoke('meeting-transcription:complete', payload); },
+  fail(payload: { jobId: string; error: string }) { return ipcRenderer.invoke('meeting-transcription:fail', payload); },
+  onProgress(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('meeting-transcription:progress', wrapped);
+    return () => ipcRenderer.off('meeting-transcription:progress', wrapped);
+  },
+  onModelChange(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('meeting-transcription:model', wrapped);
+    return () => ipcRenderer.off('meeting-transcription:model', wrapped);
+  },
+});
+
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen';
 type ModuleWindowKind =
   | 'new-tab'

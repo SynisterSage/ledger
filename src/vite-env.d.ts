@@ -57,6 +57,46 @@ interface Window {
     supabaseUrl?: string;
     supabasePublishableKey?: string;
   };
+  meetingAudio?: {
+    permissions: () => Promise<{
+      microphone: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
+      systemAudio: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
+    }>;
+    requestPermissions: () => Promise<{
+      microphone: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
+      systemAudio: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
+    }>;
+    openSystemSettings: (area: 'microphone' | 'screen-recording') => Promise<boolean>;
+    status: () => Promise<unknown>;
+    recoveries: () => Promise<unknown>;
+    inspect: (sessionId?: string) => Promise<unknown>;
+    recover: (payload: { sessionId: string; noteId: string; workspaceId: string }) => Promise<unknown>;
+    discardRecovery: (sessionId: string) => Promise<unknown>;
+    start: (payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean }) => Promise<unknown>;
+    testSource: (source: 'user_microphone' | 'system_audio') => Promise<unknown>;
+    pause: () => Promise<unknown>;
+    resume: () => Promise<unknown>;
+    stop: () => Promise<unknown>;
+    reveal: (payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
+    deleteAudio: (payload: { sessionId: string; source?: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
+    play: (payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
+    onLevel: (listener: (event: { source: 'user_microphone' | 'system_audio'; level: number }) => void) => () => void;
+    onError: (listener: (event: { source: 'user_microphone' | 'system_audio'; error: string }) => void) => () => void;
+  };
+  meetingTranscription?: {
+    modelStatus: () => Promise<unknown>;
+    downloadModel: () => Promise<unknown>;
+    cancelModelDownload: () => Promise<unknown>;
+    deleteModel: () => Promise<unknown>;
+    status: (jobId?: string) => Promise<unknown>;
+    start: (payload: { sessionId: string; noteId: string; workspaceId: string; force?: boolean }) => Promise<unknown>;
+    cancel: (jobId: string) => Promise<unknown>;
+    results: (jobId: string) => Promise<unknown>;
+    complete: (payload: { jobId: string; retention: 'delete_after_transcription' | 'retain' }) => Promise<unknown>;
+    fail: (payload: { jobId: string; error: string }) => Promise<unknown>;
+    onProgress: (listener: (event: unknown) => void) => () => void;
+    onModelChange: (listener: (event: unknown) => void) => () => void;
+  };
   desktopWindow?: {
     setMode: (mode: SidebarWindowMode) => Promise<void>;
     setVisible: (isVisible: boolean) => Promise<void>;

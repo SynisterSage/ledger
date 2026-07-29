@@ -6,6 +6,12 @@ import { getInviteBaseUrl } from '../config/invite';
 import { buildLedgerSessionHeaders } from '../utils/deviceSession';
 import type { PinFolder, PinObjectType, PinRecord } from '../utils/pins';
 import authService from '../services/auth';
+import type {
+  MeetingNoteMetadata,
+  MeetingNoteMetadataInput,
+  TranscriptSegment,
+  TranscriptSegmentInput,
+} from '../types/notes';
 
 const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
 
@@ -1174,6 +1180,27 @@ export const useApi = () => {
         const query = params.toString();
         return request(`/api/events/upcoming${query ? `?${query}` : ''}`);
       },
+      getMeetingNoteForCalendarEvent: (payload: { event_id?: string; calendar_provider?: 'ledger' | 'google' | 'apple'; calendar_event_key?: string }) => {
+        const params = new URLSearchParams();
+        if (payload.event_id) params.set('event_id', payload.event_id);
+        if (payload.calendar_provider) params.set('calendar_provider', payload.calendar_provider);
+        if (payload.calendar_event_key) params.set('calendar_event_key', payload.calendar_event_key);
+        return request(`/api/meeting-notes/calendar-link?${params.toString()}`);
+      },
+      createMeetingNoteFromCalendar: (payload: {
+        event_id?: string;
+        calendar_provider?: 'ledger' | 'google' | 'apple';
+        calendar_event_key?: string;
+        calendar_series_key?: string | null;
+        calendar_source_name?: string | null;
+        title?: string;
+        scheduled_start_at?: string | null;
+        scheduled_end_at?: string | null;
+        attendees?: unknown[] | null;
+        project_id?: string | null;
+        parent_note_id?: string | null;
+        audio_retention?: 'delete_after_transcription' | 'retain';
+      }) => request('/api/meeting-notes/from-calendar', { method: 'POST', body: JSON.stringify(payload) }),
       createEvent: (payload: {
         title: string;
         start_at: string;
@@ -1286,12 +1313,13 @@ export const useApi = () => {
           date?: string;
           mood?: string | null;
           source?: string;
-          mode?: 'text' | 'mind_map';
+          mode?: 'text' | 'mind_map' | 'meeting_note';
           mind_map_structure?: unknown;
           content_html?: string;
           parent_id?: string | null;
           sort_order?: number;
           section_id?: string | null;
+          meeting_metadata?: MeetingNoteMetadataInput;
         }
       ) =>
         request('/api/notes', {
@@ -1307,11 +1335,12 @@ export const useApi = () => {
           date?: string;
           mood?: string | null;
           source?: string;
-          mode?: 'text' | 'mind_map';
+          mode?: 'text' | 'mind_map' | 'meeting_note';
           mind_map_structure?: unknown;
           parent_id?: string | null;
           sort_order?: number;
           section_id?: string | null;
+          meeting_metadata?: MeetingNoteMetadataInput;
         }
       ) =>
         request(`/api/notes/${id}`, {
@@ -1327,9 +1356,10 @@ export const useApi = () => {
           date?: string;
           mood?: string | null;
           source?: string;
-          mode?: 'text' | 'mind_map';
+          mode?: 'text' | 'mind_map' | 'meeting_note';
           mind_map_structure?: unknown;
           section_id?: string | null;
+          meeting_metadata?: MeetingNoteMetadataInput;
         }
       ) =>
         request(`/api/notes/${id}/children`, {
@@ -1340,6 +1370,52 @@ export const useApi = () => {
         request(`/api/notes/${id}/duplicate`, {
           method: 'POST',
         }),
+      getMeetingMetadata: (noteId: string) =>
+        request(`/api/notes/${noteId}/meeting`) as Promise<MeetingNoteMetadata>,
+      createMeetingMetadata: (noteId: string, payload?: MeetingNoteMetadataInput) =>
+        request(`/api/notes/${noteId}/meeting`, {
+          method: 'POST',
+          body: JSON.stringify(payload ?? {}),
+        }) as Promise<MeetingNoteMetadata>,
+      updateMeetingMetadata: (noteId: string, payload: MeetingNoteMetadataInput) =>
+        request(`/api/notes/${noteId}/meeting`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }) as Promise<MeetingNoteMetadata>,
+      getMeetingSeries: (noteId: string) => request(`/api/meeting-notes/${noteId}/series`),
+      getTranscriptSegments: (noteId: string) =>
+        request(`/api/notes/${noteId}/transcript-segments`) as Promise<TranscriptSegment[]>,
+      createTranscriptSegment: (noteId: string, payload: TranscriptSegmentInput) =>
+        request(`/api/notes/${noteId}/transcript-segments`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }) as Promise<TranscriptSegment>,
+      bulkCreateTranscriptSegments: (noteId: string, segments: TranscriptSegmentInput[]) =>
+        request(`/api/notes/${noteId}/transcript-segments/bulk`, {
+          method: 'POST',
+          body: JSON.stringify({ segments }),
+        }) as Promise<TranscriptSegment[]>,
+      updateTranscriptSegment: (
+        noteId: string,
+        segmentId: string,
+        payload: Partial<TranscriptSegmentInput>
+      ) =>
+        request(`/api/notes/${noteId}/transcript-segments/${segmentId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }) as Promise<TranscriptSegment>,
+      deleteTranscriptSegment: (noteId: string, segmentId: string) =>
+        request(`/api/notes/${noteId}/transcript-segments/${segmentId}`, {
+          method: 'DELETE',
+        }) as Promise<{ success: boolean }>,
+      restoreTranscriptSegment: (noteId: string, segmentId: string) =>
+        request(`/api/notes/${noteId}/transcript-segments/${segmentId}/restore`, {
+          method: 'POST',
+        }) as Promise<TranscriptSegment>,
+      clearTranscript: (noteId: string) =>
+        request(`/api/notes/${noteId}/transcript`, {
+          method: 'DELETE',
+        }) as Promise<{ success: boolean }>,
       moveNoteParent: (id: string, parent_id: string | null) =>
         request(`/api/notes/${id}/parent`, {
           method: 'PATCH',
