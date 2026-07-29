@@ -9,6 +9,9 @@
     'node_modules/node-window-manager/**/*',
   ],
   productName: 'Ledger',
+  // Never ship a macOS build with ad-hoc signing. The audio helper must be
+  // signed under the same Developer ID team as Ledger.app for TCC access.
+  forceCodeSigning: true,
   directories: {
     output: 'release/${version}',
   },
@@ -16,6 +19,7 @@
   extraResources: [{ from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli'] }],
   mac: {
     target: ['dmg'],
+    identity: 'ALEXANDER RAY FERGUSON (CAY3N8J725)',
     icon: 'public/icon.png',
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
@@ -26,6 +30,7 @@
       NSCalendarsFullAccessUsageDescription: 'Ledger uses calendar access to show events from calendars you choose alongside your Ledger work.',
       NSRemindersFullAccessUsageDescription: 'Ledger uses Reminders access to show reminders from lists you choose alongside your Ledger work.',
       NSMicrophoneUsageDescription: 'Ledger uses microphone access to capture your voice during Meeting Notes.',
+      NSScreenCaptureUsageDescription: 'Ledger uses Screen & System Audio Recording access to capture meeting audio playing through your computer.',
       NSAudioCaptureUsageDescription: 'Ledger uses system-audio access to hear meeting participants during Meeting Notes.',
     },
   },

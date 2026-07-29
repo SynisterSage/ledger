@@ -259,7 +259,13 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         if wantSystemAudio {
             let semaphore = DispatchSemaphore(value: 0)
             var systemError: String?
-            startSystemAudio { error in systemError = error; semaphore.signal() }
+            // SCShareableContent/SCStream can complete asynchronously on a
+            // macOS TCC queue. Never block the bridge's main run loop while
+            // waiting for that callback; doing so leaves the renderer's
+            // meeting controls stuck in their loading state.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.startSystemAudio { error in systemError = error; semaphore.signal() }
+            }
             semaphore.wait()
             if let systemError {
                 warnings.append(["source": "system_audio", "error": systemError])
@@ -272,7 +278,8 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
 
         guard !sources.isEmpty else {
             cleanupSession()
-            emit(errorPayload("no_sources_started", "Ledger could not start microphone or system audio."))
+            let detail = warnings.map { "\($0["source"] as? String ?? "Audio"): \($0["error"] as? String ?? "source unavailable")" }.joined(separator: " ")
+            emit(errorPayload("no_sources_started", detail.isEmpty ? "Ledger could not start microphone or system audio." : "No audio source started: \(detail)"))
             return
         }
         var response: [String: Any] = ["ok": true, "sessionId": requestedSession, "sources": sources]
@@ -296,10 +303,19 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
                     let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
                     try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: workQueue)
                     systemStreamOutputAttached = true
-                    try await stream.startCapture()
                     systemStream = stream
+                    // ScreenCaptureKit can begin delivering audio before the
+                    // startCapture() awaitable resolves on newer macOS
+                    // versions. Signal readiness once the output is attached
+                    // so Electron does not time out while audio is already
+                    // flowing; a later start failure is reported as a source
+                    // error through the stream delegate.
                     completion(nil)
-                } catch { completion(error.localizedDescription) }
+                    try await stream.startCapture()
+                } catch {
+                    emit(["event": "error", "source": "system_audio", "error": error.localizedDescription])
+                    completion(error.localizedDescription)
+                }
             }
         } else {
             completion("System-audio capture requires macOS 13 or later.")

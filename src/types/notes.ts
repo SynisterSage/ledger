@@ -63,3 +63,26 @@ export type TranscriptSegmentInput = Omit<
   TranscriptSegment,
   'id' | 'note_id' | 'workspace_id' | 'created_at' | 'updated_at'
 > & { id?: string };
+
+export type MeetingTranscriptLinkType =
+  | 'ledger_item'
+  | 'action_item'
+  | 'decision'
+  | 'key_point'
+  | 'meeting_note';
+
+export type MeetingTranscriptLink = {
+  id: string;
+  workspace_id: string;
+  meeting_note_id: string;
+  transcript_segment_id: string;
+  link_type: MeetingTranscriptLinkType;
+  ledger_item_type: 'task' | 'reminder' | 'event' | 'intake' | null;
+  ledger_item_id: string | null;
+  quoted_text: string;
+  timestamp_ms: number;
+  speaker_label: string | null;
+  audio_source: MeetingAudioSource;
+  created_at: string;
+  updated_at: string;
+};

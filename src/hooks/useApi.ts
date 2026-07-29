@@ -1385,6 +1385,20 @@ export const useApi = () => {
       getMeetingSeries: (noteId: string) => request(`/api/meeting-notes/${noteId}/series`),
       getTranscriptSegments: (noteId: string) =>
         request(`/api/notes/${noteId}/transcript-segments`) as Promise<TranscriptSegment[]>,
+      getMeetingTranscriptLinks: (noteId: string) =>
+        request(`/api/notes/${noteId}/transcript-links`),
+      createMeetingTranscriptLink: (noteId: string, segmentId: string, payload: {
+        link_type: 'ledger_item' | 'action_item' | 'decision' | 'key_point' | 'meeting_note';
+        ledger_item_type?: 'task' | 'reminder' | 'event' | 'intake' | null;
+        ledger_item_id?: string | null;
+        quoted_text: string;
+        timestamp_ms: number;
+        speaker_label?: string | null;
+        audio_source: 'user_microphone' | 'system_audio';
+      }) => request(`/api/notes/${noteId}/transcript-segments/${segmentId}/links`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
       createTranscriptSegment: (noteId: string, payload: TranscriptSegmentInput) =>
         request(`/api/notes/${noteId}/transcript-segments`, {
           method: 'POST',

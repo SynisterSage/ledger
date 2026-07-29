@@ -21923,6 +21923,95 @@ app.get('/api/notes/:id/transcript-segments', authMiddleware, rateLimit('read'),
   }
 });
 
+app.get('/api/notes/:id/transcript-links', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'viewer');
+    const { data, error } = await supabase
+      .from('meeting_transcript_links')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('meeting_note_id', req.params.id)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    res.json(Array.isArray(data) ? data : []);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/notes/:id/transcript-segments/:segmentId/links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');
+    if (!isUuidLike(req.params.segmentId)) return res.status(400).json({ error: 'Invalid transcript segment id' });
+    const { data: segment, error: segmentError } = await supabase
+      .from('meeting_note_transcript_segments')
+      .select('id, audio_source, speaker_label, start_ms, workspace_id, note_id')
+      .eq('workspace_id', workspaceId)
+      .eq('note_id', req.params.id)
+      .eq('id', req.params.segmentId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (segmentError) throw segmentError;
+    if (!segment) return res.status(404).json({ error: 'Transcript segment not found.' });
+
+    const linkType = String(req.body?.link_type ?? '').trim();
+    const allowedLinkTypes = ['ledger_item', 'action_item', 'decision', 'key_point', 'meeting_note'];
+    if (!allowedLinkTypes.includes(linkType)) return res.status(400).json({ error: 'Invalid transcript link type' });
+    const quotedText = clampMultilineText(req.body?.quoted_text, 20_000);
+    if (!quotedText) return res.status(400).json({ error: 'quoted_text is required' });
+    const timestampMs = Number(req.body?.timestamp_ms ?? segment.start_ms);
+    if (!Number.isInteger(timestampMs) || timestampMs < 0) return res.status(400).json({ error: 'Invalid transcript timestamp' });
+
+    const ledgerItemType = linkType === 'ledger_item' ? String(req.body?.ledger_item_type ?? '').trim() : null;
+    const ledgerItemId = linkType === 'ledger_item' ? String(req.body?.ledger_item_id ?? '').trim() : null;
+    if (linkType === 'ledger_item' && !['task', 'reminder', 'event', 'intake'].includes(ledgerItemType)) {
+      return res.status(400).json({ error: 'Invalid Ledger item type' });
+    }
+    if (linkType === 'ledger_item' && !isUuidLike(ledgerItemId)) return res.status(400).json({ error: 'Invalid Ledger item id' });
+    if (linkType === 'ledger_item') {
+      const tableByType = { task: 'tasks', reminder: 'reminders', event: 'events', intake: 'inbox_items' };
+      if (!(await ensureWorkspaceResource(tableByType[ledgerItemType], ledgerItemId, workspaceId))) {
+        return res.status(404).json({ error: 'Ledger item not found in this workspace' });
+      }
+    }
+
+    const duplicateQuery = supabase
+      .from('meeting_transcript_links')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .eq('meeting_note_id', req.params.id)
+      .eq('transcript_segment_id', req.params.segmentId)
+      .eq('link_type', linkType)
+      .eq('quoted_text', quotedText);
+    if (linkType === 'ledger_item') duplicateQuery.eq('ledger_item_type', ledgerItemType).eq('ledger_item_id', ledgerItemId);
+    const { data: duplicate, error: duplicateError } = await duplicateQuery.maybeSingle();
+    if (duplicateError) throw duplicateError;
+    if (duplicate) return res.json({ ...duplicate, duplicate: true });
+
+    const { data, error } = await supabase
+      .from('meeting_transcript_links')
+      .insert({
+        workspace_id: workspaceId,
+        meeting_note_id: req.params.id,
+        transcript_segment_id: req.params.segmentId,
+        link_type: linkType,
+        ledger_item_type: ledgerItemType,
+        ledger_item_id: ledgerItemId,
+        quoted_text: quotedText,
+        timestamp_ms: timestampMs,
+        speaker_label: segment.speaker_label,
+        audio_source: segment.audio_source,
+        created_by: req.authUser.id,
+      })
+      .select('*')
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.post('/api/notes/:id/transcript-segments', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const { workspaceId } = await ensureMeetingNoteAccess(req, req.params.id, 'member');

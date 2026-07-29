@@ -14,12 +14,18 @@ export type NotesSelectionComposerContext = {
   projectId?: string | null;
   assigneeId?: string | null;
   taskVariant?: 'task' | 'follow-up';
+  transcriptSegmentId?: string;
+  transcriptTimestampMs?: number;
+  transcriptSpeakerLabel?: string | null;
+  transcriptAudioSource?: 'user_microphone' | 'system_audio';
+  sourceLabel?: string;
 };
 
 type Props = {
   context: NotesSelectionComposerContext | null;
   members: Array<{ user_id: string; full_name: string | null; email: string | null }>;
   onClose: () => void;
+  onCreated?: (result: { type: 'task' | 'reminder' | 'event'; id: string }) => void;
 };
 
 type Calendar = { id: string; name: string; color?: string | null };
@@ -32,7 +38,7 @@ const firstLine = (text: string) =>
     ?.trim()
     .slice(0, 120) ?? '';
 
-export const NotesSelectionComposerModal = ({ context, members, onClose }: Props) => {
+export const NotesSelectionComposerModal = ({ context, members, onClose, onCreated }: Props) => {
   const api = useApi();
   const toast = useToast();
   const { activeWorkspaceId } = useWorkspaceContext();
@@ -104,10 +110,10 @@ export const NotesSelectionComposerModal = ({ context, members, onClose }: Props
       if (context.kind === 'task') {
         const isFocus = taskMode === 'focus';
         const isLongTerm = taskMode === 'long_term';
-        await api.createTask({
+        const created = await api.createTask({
           title: title.trim(),
           description: context.text,
-          notes: `Created from note ${context.noteId}`,
+          notes: `${context.sourceLabel ?? `Created from note ${context.noteId}`}${context.transcriptTimestampMs != null ? ` · Transcript ${Math.floor(context.transcriptTimestampMs / 1000)}s` : ''}`,
           project_id: context.projectId ?? null,
           due_date: isLongTerm ? dueDate || null : null,
           task_horizon: isLongTerm ? 'long_term' : 'today',
@@ -117,6 +123,7 @@ export const NotesSelectionComposerModal = ({ context, members, onClose }: Props
           assigned_to_user_id: assignee.startsWith('user:') ? assignee.slice(5) : null,
           assigned_to_team_id: assignee.startsWith('team:') ? assignee.slice(5) : null,
         });
+        if (created && typeof (created as { id?: unknown }).id === 'string') onCreated?.({ type: 'task', id: (created as { id: string }).id });
         toast.show('Created task.', { variant: 'success' });
       } else {
         if (!date) throw new Error('Choose a date.');
@@ -133,15 +140,16 @@ export const NotesSelectionComposerModal = ({ context, members, onClose }: Props
           notes: notes.trim() || null,
         };
         if (context.kind === 'reminder') {
-          await api.createReminder({
+          const created = await api.createReminder({
             ...common,
             remind_at: start.toISOString(),
             color: selectedCalendar.color ?? undefined,
             is_done: false,
           });
+          if (created && typeof (created as { id?: unknown }).id === 'string') onCreated?.({ type: 'reminder', id: (created as { id: string }).id });
           toast.show('Saved reminder.', { variant: 'success' });
         } else {
-          await api.createEvent({
+          const created = await api.createEvent({
             ...common,
             start_at: start.toISOString(),
             end_at: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
@@ -149,6 +157,7 @@ export const NotesSelectionComposerModal = ({ context, members, onClose }: Props
             status: 'planned',
             visibility: 'workspace',
           });
+          if (created && typeof (created as { id?: unknown }).id === 'string') onCreated?.({ type: 'event', id: (created as { id: string }).id });
           toast.show('Saved event.', { variant: 'success' });
         }
         window.ipcRenderer?.send('calendar:items-updated');

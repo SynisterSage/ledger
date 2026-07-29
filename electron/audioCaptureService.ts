@@ -51,6 +51,11 @@ export type AudioLevelEvent = { source: AudioSourceName; level: number };
 export type AudioErrorEvent = { source: AudioSourceName; error: string };
 
 type BridgeResponse = Record<string, any> & { ok?: boolean; event?: string };
+type BridgeRequest = {
+  resolve: (value: BridgeResponse) => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
+};
 type ActiveSession = {
   sessionId: string;
   noteId: string | null;
@@ -73,7 +78,7 @@ export class MeetingAudioCaptureService {
   private bridge: ChildProcessWithoutNullStreams | null = null;
   private bridgeBuffer = '';
   private bridgeQueue: Promise<unknown> = Promise.resolve();
-  private currentRequest: { resolve: (value: BridgeResponse) => void; reject: (error: Error) => void } | null = null;
+  private currentRequest: BridgeRequest | null = null;
   private activeSession: ActiveSession | null = null;
   private completedDirectories = new Map<string, string>();
   private levelListeners = new Set<(event: AudioLevelEvent) => void>();
@@ -155,7 +160,13 @@ export class MeetingAudioCaptureService {
       enabledSources: [input.microphone ? 'user_microphone' : null, input.systemAudio ? 'system_audio' : null].filter(Boolean) as RecordingSource[],
       directoryRef: sessionId,
     });
-    const response = await this.invoke({ command: 'start', sessionId, directory, microphone: input.microphone, systemAudio: input.systemAudio, microphoneDeviceId: input.microphone ? input.microphoneDeviceId ?? null : null });
+    let response: BridgeResponse;
+    try {
+      response = await this.invoke({ command: 'start', sessionId, directory, microphone: input.microphone, systemAudio: input.systemAudio, microphoneDeviceId: input.microphone ? input.microphoneDeviceId ?? null : null });
+    } catch (error) {
+      this.sessionStore.setStatus(sessionId, 'discarded');
+      throw error;
+    }
     if (!response.ok) {
       this.sessionStore.setStatus(sessionId, 'discarded');
       throw new Error(response.error || 'Audio capture could not start.');
@@ -437,7 +448,15 @@ export class MeetingAudioCaptureService {
       this.ensureBridge();
       return await new Promise<BridgeResponse>((resolve, reject) => {
         if (!this.bridge?.stdin.writable) { reject(new Error('The macOS audio capture helper is unavailable.')); return; }
-        this.currentRequest = { resolve, reject };
+        const timeout = setTimeout(() => {
+          if (this.currentRequest?.timeout !== timeout) return;
+          this.currentRequest = null;
+          const helper = this.bridge;
+          this.bridge = null;
+          helper?.kill();
+          reject(new Error('The macOS audio capture helper timed out. The meeting controls were unlocked; try again after checking audio permissions.'));
+        }, 15_000);
+        this.currentRequest = { resolve, reject, timeout };
         this.bridge.stdin.write(`${JSON.stringify(payload)}\n`);
       });
     };
@@ -489,6 +508,7 @@ export class MeetingAudioCaptureService {
       } else if (this.currentRequest) {
         const request = this.currentRequest;
         this.currentRequest = null;
+        clearTimeout(request.timeout);
         request.resolve(payload);
       }
     }
@@ -498,6 +518,7 @@ export class MeetingAudioCaptureService {
     if (!this.currentRequest) return;
     const request = this.currentRequest;
     this.currentRequest = null;
+    clearTimeout(request.timeout);
     request.reject(error);
   }
 

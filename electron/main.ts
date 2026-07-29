@@ -66,19 +66,22 @@ localTranscriptionService.modelManager.onChange((event) => broadcastMeetingAudio
 
 const validAudioSource = (value: unknown): value is AudioSourceName => value === 'user_microphone' || value === 'system_audio';
 
-const getMacScreenPermission = () => {
+const getMacScreenPermission = async () => {
   if (process.platform !== 'darwin') return null;
+  let statusValue: 'granted' | 'denied' | 'restricted' | 'not_requested' | null = null;
   try {
     const status = systemPreferences.getMediaAccessStatus('screen');
-    if (status === 'granted') return 'granted' as const;
-    if (status === 'denied') return 'denied' as const;
-    if (status === 'restricted') return 'restricted' as const;
-    if (status === 'not-determined') return 'not_requested' as const;
+    if (status === 'granted') statusValue = 'granted';
+    else if (status === 'denied') statusValue = 'denied';
+    else if (status === 'restricted') statusValue = 'restricted';
+    else if (status === 'not-determined') statusValue = 'not_requested';
   } catch {
-    // Older Electron/macOS combinations may not expose screen status here;
-    // the native bridge remains the fallback.
+    // Older Electron/macOS combinations may not expose screen status here.
   }
-  return null;
+  // Reading permission state must remain passive. Calling desktopCapturer here
+  // can cause macOS to present the Screen & System Audio Recording prompt, so
+  // this function must never probe or request capture as a side effect.
+  return statusValue;
 };
 
 const getMacMicrophonePermission = () => {
@@ -105,7 +108,7 @@ const touchMacScreenCapturePermission = async () => {
   try {
     await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 0, height: 0 },
+      thumbnailSize: { width: 1, height: 1 },
       fetchWindowIcons: false,
     });
   } catch {
@@ -117,7 +120,7 @@ const touchMacScreenCapturePermission = async () => {
 const meetingAudioPermissions = async () => {
   const permissions = await meetingAudioCaptureService.permissions();
   const microphonePermission = getMacMicrophonePermission();
-  const screenPermission = getMacScreenPermission();
+  const screenPermission = await getMacScreenPermission();
   return {
     ...permissions,
     microphone: microphonePermission ?? permissions.microphone,
@@ -162,7 +165,15 @@ ipcMain.handle('meeting-audio:devices', () => meetingAudioCaptureService.devices
 ipcMain.handle('meeting-audio:start', (_event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown }) => {
   if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Meeting recording identity is invalid.');
   if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
-  return meetingAudioCaptureService.start({ noteId: payload.noteId, workspaceId: payload.workspaceId, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined });
+  const start = async () => {
+    // Do not await a macOS desktopCapturer prompt here. On some macOS builds
+    // that promise remains pending while TCC is showing or reconciling the
+    // permission sheet, which would leave the renderer's Start action locked.
+    // The explicit setup flow handles permission requests; capture itself
+    // reports a bounded native error if access is unavailable.
+    return meetingAudioCaptureService.start({ noteId: payload.noteId as string, workspaceId: payload.workspaceId as string, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined });
+  };
+  return start();
 });
 ipcMain.handle('meeting-audio:test-source', (_event, payload: { source?: unknown; microphoneDeviceId?: unknown }) => {
   const source = payload?.source;
@@ -6719,10 +6730,6 @@ app.on('will-quit', () => {
 let audioShutdownInProgress = false;
 app.on('before-quit', (event) => {
   if (audioShutdownInProgress) return;
-  if (!meetingAudioCaptureService.isActive) {
-    void localTranscriptionService.shutdown();
-    return;
-  }
   audioShutdownInProgress = true;
   event.preventDefault();
   void Promise.all([meetingAudioCaptureService.shutdown(), localTranscriptionService.shutdown()]).finally(() => app.quit());
