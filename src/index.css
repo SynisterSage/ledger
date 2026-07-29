@@ -18,7 +18,7 @@ body {
 /* Window / modal radius variables — used to keep modal backdrops
    visually consistent with the rounded Electron BrowserWindow. */
 :root {
-  --window-radius: 24px;
+  --window-radius: 18px;
   --modal-backdrop-radius: var(--window-radius);
 
   /* Light mode defaults */
@@ -55,7 +55,7 @@ body {
   --ledger-surface-radius: 16px;
   --ledger-sheet-radius: 24px;
   --ledger-pill-radius: 999px;
-  --ledger-window-radius: 24px;
+  --ledger-window-radius: 18px;
   --ledger-sidebar-surface-rgb: 246 247 249;
   --ledger-screen-x: 20px;
   --ledger-screen-y: 24px;

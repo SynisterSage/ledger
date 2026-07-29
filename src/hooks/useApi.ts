@@ -1129,6 +1129,30 @@ export const useApi = () => {
         request(`/api/calendars/${id}`, {
           method: 'DELETE',
         }),
+      getCalendarSubscription: () => request('/api/calendar-subscription'),
+      createCalendarSubscription: () =>
+        request('/api/calendar-subscription', {
+          method: 'POST',
+        }),
+      enableCalendarSubscription: () =>
+        request('/api/calendar-subscription/enable', { method: 'POST' }),
+      disableCalendarSubscription: () =>
+        request('/api/calendar-subscription/disable', { method: 'POST' }),
+      regenerateCalendarSubscription: () =>
+        request('/api/calendar-subscription/regenerate', { method: 'POST' }),
+      updateCalendarSubscription: (payload: {
+        calendar_ids: string[];
+        include_events: boolean;
+        include_reminders: boolean;
+        include_tasks: boolean;
+        include_milestones: boolean;
+        include_project_deadlines: boolean;
+        include_completed?: boolean;
+      }) =>
+        request('/api/calendar-subscription', {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        }),
 
       // Events
       getEvents: (

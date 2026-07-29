@@ -33,6 +33,7 @@ import { githubConnectionHealth, githubSafeErrorCode, githubSafeErrorMessage, is
 import { createSupabaseTraceFetch } from './request-instrumentation.js';
 import { getAllowedCorsOrigins, isAllowedCorsOrigin } from './cors-origins.js';
 import { GOOGLE_DRIVE_MAX_UPLOAD_BYTES, assertBase64Size } from './integrations/google-drive-upload.js';
+import { createCalendarSubscriptionToken, hashCalendarSubscriptionToken } from './calendar-subscription-security.js';
 
 dotenv.config();
 
@@ -521,6 +522,31 @@ const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at';
 const reminderDashboardSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at';
+const calendarSubscriptionTypes = [
+  'include_events',
+  'include_reminders',
+  'include_tasks',
+  'include_milestones',
+  'include_project_deadlines',
+];
+const calendarSubscriptionSettings = (row, calendarIds = []) => ({
+  id: row.id,
+  workspace_id: row.workspace_id,
+  enabled: Boolean(row.enabled),
+  include_events: Boolean(row.include_events),
+  include_reminders: Boolean(row.include_reminders),
+  include_tasks: Boolean(row.include_tasks),
+  include_milestones: Boolean(row.include_milestones),
+  include_project_deadlines: Boolean(row.include_project_deadlines),
+  include_completed: Boolean(row.include_completed),
+  calendar_ids: calendarIds,
+  status: row.enabled ? 'active' : 'disabled',
+  last_accessed_at: row.last_accessed_at ?? null,
+  last_generated_at: row.last_generated_at ?? null,
+  last_error_at: row.last_error_at ?? null,
+  last_error: row.last_error ?? null,
+  updated_at: row.updated_at,
+});
 const noteSmartLinkSelectColumns =
   'id, workspace_id, note_id, source_key, source_text, source_start_offset, source_end_offset, linked_event_id, linked_reminder_id, dismissed_at, created_by, updated_by, created_at, updated_at';
 const notePersonLinkSelectColumns =
@@ -18950,6 +18976,280 @@ app.delete('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res
     const resolved = await supabase.from('github_attention_signals').update({ status: 'resolved', resolved_at: now, updated_at: now }).eq('workspace_id', workspaceId).eq('target_type', 'task').eq('target_id', req.params.id).eq('status', 'active');
     if (resolved.error && !isMissingRelationError(resolved.error, 'github_attention_signals')) throw resolved.error;
     res.json({ success: true });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+const ensureCalendarSubscription = async (userId, workspaceId) => {
+  const existing = await supabase
+    .from('calendar_subscriptions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+
+  let subscription = existing.data;
+  let token = null;
+  if (subscription) {
+    const tokenRows = await supabase
+      .from('calendar_sync_tokens')
+      .select('token')
+      .eq('user_id', userId)
+      .eq('workspace_id', workspaceId)
+      .eq('is_active', true);
+    if (tokenRows.error) throw tokenRows.error;
+    token = tokenRows.data?.find((row) => hashCalendarSubscriptionToken(row.token) === subscription.token_hash)?.token ?? null;
+  }
+
+  if (!subscription || !token) {
+    const tokenLookup = await supabase
+      .from('calendar_sync_tokens')
+      .select('id, token, workspace_id')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .or(`workspace_id.eq.${workspaceId},workspace_id.is.null`)
+      .order('workspace_id', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (tokenLookup.error) throw tokenLookup.error;
+
+    token = tokenLookup.data?.token ?? createCalendarSubscriptionToken();
+    if (tokenLookup.data && !tokenLookup.data.workspace_id) {
+      const claimed = await supabase
+        .from('calendar_sync_tokens')
+        .update({ workspace_id: workspaceId })
+        .eq('id', tokenLookup.data.id);
+      if (claimed.error) throw claimed.error;
+    } else if (!tokenLookup.data) {
+      const createdToken = await supabase
+        .from('calendar_sync_tokens')
+        .insert({ user_id: userId, workspace_id: workspaceId, token, is_active: true })
+        .select('token')
+        .single();
+      if (createdToken.error) throw createdToken.error;
+    }
+
+    const tokenHash = hashCalendarSubscriptionToken(token);
+    if (!subscription) {
+      const generatedAt = new Date().toISOString();
+      const created = await supabase
+        .from('calendar_subscriptions')
+        .insert({
+          user_id: userId,
+          workspace_id: workspaceId,
+          token_hash: tokenHash,
+          last_generated_at: generatedAt,
+          // Legacy tokens previously exported events only. Preserve that
+          // behavior when a legacy URL is first adopted by this workspace.
+          include_reminders: !tokenLookup.data,
+        })
+        .select('*')
+        .single();
+      if (created.error) throw created.error;
+      subscription = created.data;
+
+      const calendars = await supabase
+        .from('calendars')
+        .select('id')
+        .eq('workspace_id', workspaceId);
+      if (calendars.error) throw calendars.error;
+      if (calendars.data?.length) {
+        const links = await supabase.from('calendar_subscription_calendars').insert(
+          calendars.data.map((calendar) => ({ subscription_id: subscription.id, calendar_id: calendar.id }))
+        );
+        if (links.error) throw links.error;
+      }
+    } else if (!tokenLookup.data || tokenLookup.data.workspace_id !== workspaceId || hashCalendarSubscriptionToken(token) !== subscription.token_hash) {
+      const refreshed = await supabase
+        .from('calendar_subscriptions')
+        .update({ token_hash: tokenHash, updated_at: new Date().toISOString(), last_generated_at: new Date().toISOString() })
+        .eq('id', subscription.id)
+        .select('*')
+        .single();
+      if (refreshed.error) throw refreshed.error;
+      subscription = refreshed.data;
+    }
+  }
+
+  const links = await supabase
+    .from('calendar_subscription_calendars')
+    .select('calendar_id')
+    .eq('subscription_id', subscription.id);
+  if (links.error) throw links.error;
+  if (!token) {
+    throw new Error('Calendar subscription token not found.');
+  }
+  return { subscription, token, calendarIds: (links.data ?? []).map((link) => link.calendar_id) };
+};
+
+const validateCalendarSubscriptionUpdate = async (workspaceId, body) => {
+  const values = Object.fromEntries(
+    calendarSubscriptionTypes.map((key) => [key, body?.[key] === undefined ? undefined : Boolean(body[key])])
+  );
+  const selectedCalendarIds = Array.isArray(body?.calendar_ids)
+    ? Array.from(new Set(body.calendar_ids.map((id) => String(id)).filter(Boolean)))
+    : [];
+  const calendarResult = await supabase
+    .from('calendars')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .in('id', selectedCalendarIds.length ? selectedCalendarIds : ['00000000-0000-0000-0000-000000000000']);
+  if (calendarResult.error) throw calendarResult.error;
+  if (calendarResult.data?.length !== selectedCalendarIds.length) {
+    throw Object.assign(new Error('Selected calendars must belong to the active workspace.'), { status: 400 });
+  }
+
+  const next = {
+    ...values,
+    include_completed: body?.include_completed === undefined ? undefined : Boolean(body.include_completed),
+  };
+  const enabledTypeCount = calendarSubscriptionTypes.filter((key) => next[key] === true).length;
+  if (enabledTypeCount === 0) {
+    throw Object.assign(new Error('Select at least one item type for the subscription.'), { status: 400 });
+  }
+  if ((next.include_events === true || next.include_reminders === true) && selectedCalendarIds.length === 0) {
+    throw Object.assign(new Error('Select at least one Ledger calendar for events or reminders.'), { status: 400 });
+  }
+  return { next, selectedCalendarIds };
+};
+
+const serializeCalendarSubscription = ({ subscription, token, calendarIds }) => ({
+  ...calendarSubscriptionSettings(subscription, calendarIds),
+  feed_token: token,
+});
+
+app.get('/api/calendar-subscription', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await ensureCalendarSubscription(req.authUser.id, workspaceId);
+    const calendars = await supabase
+      .from('calendars')
+      .select('id, name, color, workspace_id')
+      .eq('workspace_id', workspaceId)
+      .order('name', { ascending: true });
+    if (calendars.error) throw calendars.error;
+    const workspace = await supabase.from('workspaces').select('id, name').eq('id', workspaceId).maybeSingle();
+    if (workspace.error) throw workspace.error;
+    res.json({ subscription: serializeCalendarSubscription(result), workspace: workspace.data ?? { id: workspaceId, name: 'Current workspace' }, calendars: calendars.data ?? [] });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/calendar-subscription', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await ensureCalendarSubscription(req.authUser.id, workspaceId);
+    res.status(201).json({ subscription: serializeCalendarSubscription(result) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/calendar-subscription/enable', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await ensureCalendarSubscription(req.authUser.id, workspaceId);
+    const now = new Date().toISOString();
+    const saved = await supabase
+      .from('calendar_subscriptions')
+      .update({ enabled: true, updated_at: now, last_error: null, last_error_at: null })
+      .eq('id', result.subscription.id)
+      .eq('user_id', req.authUser.id)
+      .eq('workspace_id', workspaceId)
+      .select('*')
+      .single();
+    if (saved.error) throw saved.error;
+    res.json({ subscription: serializeCalendarSubscription({ ...result, subscription: saved.data }) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/calendar-subscription/disable', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await ensureCalendarSubscription(req.authUser.id, workspaceId);
+    const saved = await supabase
+      .from('calendar_subscriptions')
+      .update({ enabled: false, updated_at: new Date().toISOString() })
+      .eq('id', result.subscription.id)
+      .eq('user_id', req.authUser.id)
+      .eq('workspace_id', workspaceId)
+      .select('*')
+      .single();
+    if (saved.error) throw saved.error;
+    res.json({ subscription: serializeCalendarSubscription({ ...result, subscription: saved.data }) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/calendar-subscription/regenerate', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await ensureCalendarSubscription(req.authUser.id, workspaceId);
+    const now = new Date().toISOString();
+    const nextToken = createCalendarSubscriptionToken();
+    const revoked = await supabase
+      .from('calendar_sync_tokens')
+      .update({ is_active: false, revoked_at: now })
+      .eq('user_id', req.authUser.id)
+      .eq('workspace_id', workspaceId)
+      .eq('is_active', true);
+    if (revoked.error) throw revoked.error;
+    const createdToken = await supabase
+      .from('calendar_sync_tokens')
+      .insert({ user_id: req.authUser.id, workspace_id: workspaceId, token: nextToken, is_active: true })
+      .select('token')
+      .single();
+    if (createdToken.error) throw createdToken.error;
+    const saved = await supabase
+      .from('calendar_subscriptions')
+      .update({ token_hash: hashCalendarSubscriptionToken(nextToken), updated_at: now, last_generated_at: now })
+      .eq('id', result.subscription.id)
+      .eq('user_id', req.authUser.id)
+      .eq('workspace_id', workspaceId)
+      .select('*')
+      .single();
+    if (saved.error) throw saved.error;
+    res.json({ subscription: serializeCalendarSubscription({ ...result, subscription: saved.data, token: createdToken.data.token }) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.put('/api/calendar-subscription', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const result = await ensureCalendarSubscription(req.authUser.id, workspaceId);
+    const { next, selectedCalendarIds } = await validateCalendarSubscriptionUpdate(workspaceId, req.body);
+    const update = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined));
+    update.updated_at = new Date().toISOString();
+    const saved = await supabase
+      .from('calendar_subscriptions')
+      .update(update)
+      .eq('id', result.subscription.id)
+      .eq('user_id', req.authUser.id)
+      .eq('workspace_id', workspaceId)
+      .select('*')
+      .single();
+    if (saved.error) throw saved.error;
+
+    const removed = await supabase
+      .from('calendar_subscription_calendars')
+      .delete()
+      .eq('subscription_id', result.subscription.id);
+    if (removed.error) throw removed.error;
+    if (selectedCalendarIds.length) {
+      const links = await supabase.from('calendar_subscription_calendars').insert(
+        selectedCalendarIds.map((calendarId) => ({ subscription_id: result.subscription.id, calendar_id: calendarId }))
+      );
+      if (links.error) throw links.error;
+    }
+    res.json({ subscription: serializeCalendarSubscription({ ...result, subscription: saved.data, calendarIds: selectedCalendarIds }) });
   } catch (error) {
     return respondWithError(res, error);
   }

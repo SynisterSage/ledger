@@ -110,7 +110,7 @@ const sharedRadius = {
   surface: 16,
   sheet: 24,
   pill: 999,
-  window: 24,
+  window: 18,
 } as const;
 
 const sharedShadows = {

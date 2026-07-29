@@ -314,7 +314,7 @@ export const LedgerTab = ({
 
 export const LedgerTabStrip = () => {
   const { activeWorkspaceId } = useWorkspaceContext();
-  const { getNotes, getPerson, getProjects, getTeams } = useApi();
+  const { getNoteById, getPerson, getProjects, getTeams } = useApi();
   const toast = useToast();
   const [navigationState, setNavigationState] = useState<NavigationState>({});
   const [tabOrder, setTabOrder] = useState<LedgerRoute[]>(getInitialTabOrder);
@@ -331,7 +331,6 @@ export const LedgerTabStrip = () => {
   const currentRouteRef = useRef<LedgerRoute | null>(null);
   const visualCurrentRouteRef = useRef<LedgerRoute | null>(null);
   const closedTabKeysRef = useRef<Set<string>>(new Set());
-  const pendingCloseKeyRef = useRef<string | null>(null);
   const suppressInitialRouteRef = useRef(false);
   const tabDragRef = useRef<{
     route: LedgerRoute;
@@ -429,19 +428,23 @@ export const LedgerTabStrip = () => {
     }
 
     let cancelled = false;
-    void getNotes()
-      .then((payload) => {
-        if (cancelled) return;
-        const rows = Array.isArray(payload)
-          ? payload
-          : Array.isArray((payload as { notes?: unknown[] })?.notes)
-          ? (payload as { notes: unknown[] }).notes
-          : [];
-        const titles: Record<string, string> = {};
-        for (const note of rows as Array<{ id?: string; title?: string }>) {
-          if (note.id && note.title?.trim()) titles[note.id] = note.title.trim();
+    void Promise.all(
+      noteIds.map(async (noteId) => {
+        try {
+          const note = (await getNoteById(noteId)) as { id?: string; title?: string };
+          return note.id && note.title?.trim() ? [note.id, note.title.trim()] as const : null;
+        } catch {
+          return null;
         }
-        if (!cancelled) setNoteTitles(titles);
+      })
+    )
+      .then((entries) => {
+        if (cancelled) return;
+        const titles: Record<string, string> = {};
+        for (const entry of entries) {
+          if (entry) titles[entry[0]] = entry[1];
+        }
+        setNoteTitles(titles);
       })
       .catch(() => {
         // Keep the fallback note label if metadata is unavailable.
@@ -450,7 +453,7 @@ export const LedgerTabStrip = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, getNotes, noteIds]);
+  }, [activeWorkspaceId, getNoteById, noteIds]);
 
   useEffect(() => {
     if (circlePersonIds.length === 0) {
@@ -727,6 +730,10 @@ export const LedgerTabStrip = () => {
     const handleRouteChanged = (_event: unknown, nextRoute?: ModuleFocusPayload | null) => {
       const route = normalizeRoute(nextRoute);
       if (!route) return;
+      // A kept-alive module can acknowledge the route that was visible just
+      // before its tab was closed. The tab-local closed set is the guard
+      // against letting that late acknowledgement resurrect the tab.
+      if (closedTabKeysRef.current.has(routeKey(route))) return;
 
       // This is the authoritative acknowledgement from Electron that the
       // keep-alive workspace surface has actually switched. Navigation-state
@@ -754,19 +761,12 @@ export const LedgerTabStrip = () => {
       const route = normalizeRoute(nextRoute);
       if (!route) return;
       const key = routeKey(route);
-      if (closedTabKeysRef.current.has(key) && pendingCloseKeyRef.current === key) return;
+      // IPC route requests can be late acknowledgements from a keep-alive
+      // module. A closed tab is reopened only by the explicit local tab
+      // selection path below, never by a delayed request from Electron.
+      if (closedTabKeysRef.current.has(key)) return;
       rememberRouteHint(route);
       setVisualRouteOverride(route);
-      if (!closedTabKeysRef.current.has(key)) return;
-      // A keep-alive module can publish its previous route after an active tab
-      // was closed. Do not treat that late broadcast as an intentional reopen.
-      // Explicit tab selection is handled by the local route event below.
-      const visualOverride = visualCurrentRouteRef.current;
-      if (visualOverride && !sameRoute(visualOverride, route)) return;
-      const nextClosed = new Set(closedTabKeysRef.current);
-      nextClosed.delete(key);
-      closedTabKeysRef.current = nextClosed;
-      setClosedTabKeys(nextClosed);
     };
 
     const handleLocalRouteRequested = (event: Event) => {
@@ -1000,10 +1000,9 @@ export const LedgerTabStrip = () => {
 
   const closeTab = useCallback((route: LedgerRoute) => {
     const key = routeKey(route);
-    pendingCloseKeyRef.current = key;
-    window.setTimeout(() => {
-      if (pendingCloseKeyRef.current === key) pendingCloseKeyRef.current = null;
-    }, 1500);
+    window.dispatchEvent(
+      new CustomEvent('ledger:workspace-route-closed', { detail: { ...route } })
+    );
     const currentTabOrder = tabOrderRef.current;
     const index = currentTabOrder.findIndex((item) => sameRoute(item, route));
     if (index < 0) return;
@@ -1015,6 +1014,9 @@ export const LedgerTabStrip = () => {
     nextClosed.add(key);
     closedTabKeysRef.current = nextClosed;
     setClosedTabKeys(nextClosed);
+    window.dispatchEvent(
+      new CustomEvent('ledger:workspace-route-closed', { detail: { ...route } })
+    );
     setIsOverflowOpen(false);
     try {
       sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(nextOrder));
@@ -1084,6 +1086,23 @@ export const LedgerTabStrip = () => {
     }
     void window.desktopWindow?.closeWorkspaceRoute?.(route);
   }, []);
+
+  useEffect(() => {
+    const handleExternalRouteClosed = (event: Event) => {
+      const route = normalizeRoute(
+        (event as CustomEvent<ModuleFocusPayload>).detail as ModuleFocusPayload | undefined
+      );
+      if (!route) return;
+      const key = routeKey(route);
+      if (closedTabKeysRef.current.has(key)) return;
+      const tab = tabOrderRef.current.find((candidate) => sameRoute(candidate, route));
+      if (tab) closeTab(tab);
+    };
+
+    window.addEventListener('ledger:workspace-route-closed', handleExternalRouteClosed);
+    return () =>
+      window.removeEventListener('ledger:workspace-route-closed', handleExternalRouteClosed);
+  }, [closeTab]);
 
   const finishTabDrag = useCallback(
     async (event: ReactPointerEvent<HTMLDivElement>) => {

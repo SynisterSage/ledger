@@ -282,7 +282,7 @@ export const QuickCaptureWindow = ({
   );
 
   const shellClassName =
-    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-3xl border border-gray-200 bg-[#FFF9F4] shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
+    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[var(--ledger-window-radius)] border border-gray-200 bg-[#FFF9F4] shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
 
   const scrollAreaClassName =
     'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';

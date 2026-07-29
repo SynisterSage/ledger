@@ -5983,7 +5983,7 @@ export const ProjectsWindow = () => {
 
   return (
     <div
-      className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none"
+      className="relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none"
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <CloseGuardModal

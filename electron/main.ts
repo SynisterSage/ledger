@@ -41,6 +41,104 @@ let pendingInviteToken: string | null = null;
 let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
 let tray: Tray | null = null;
 let isQuittingApp = false;
+let appleCalendarWatcher: ReturnType<typeof spawn> | null = null;
+
+function appleCalendarBridgePath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'AppleCalendarBridge')
+    : path.join(app.getAppPath(), 'native', 'AppleCalendarBridge');
+}
+
+async function runAppleCalendarBridge(payload: Record<string, unknown>) {
+  if (process.platform !== 'darwin') return { ok: false, error: 'Apple Calendar is only available in the macOS app.' };
+  return await new Promise<Record<string, unknown>>((resolve) => {
+    const child = spawn(appleCalendarBridgePath(), [], { stdio: ['pipe', 'pipe', 'ignore'] });
+    let stdout = '';
+    child.stdout.on('data', (chunk) => { stdout += String(chunk); });
+    child.once('error', (error) => {
+      console.warn('[electron] Apple Calendar bridge unavailable', error.message);
+      resolve({ ok: false, error: 'Apple Calendar is unavailable in this build.' });
+    });
+    child.once('close', () => {
+      const line = stdout.trim().split('\n').filter(Boolean).pop();
+      try { resolve(line ? JSON.parse(line) : { ok: false, error: 'Apple Calendar returned no response.' }); }
+      catch { resolve({ ok: false, error: 'Apple Calendar returned an invalid response.' }); }
+    });
+    child.stdin.write(`${JSON.stringify(payload)}\n`);
+    child.stdin.end();
+  });
+}
+
+function startAppleCalendarWatcher() {
+  if (process.platform !== 'darwin' || appleCalendarWatcher) return;
+  try {
+    const watcher = spawn(appleCalendarBridgePath(), ['--watch'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    appleCalendarWatcher = watcher;
+    let buffer = '';
+    watcher.stdout.on('data', (chunk) => {
+      buffer += String(chunk);
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      if (lines.some((line) => line.includes('"changed":true'))) {
+        for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('apple-calendar:changed');
+      }
+    });
+    watcher.once('exit', () => { appleCalendarWatcher = null; });
+  } catch (error) {
+    console.warn('[electron] Could not start Apple Calendar watcher', error instanceof Error ? error.message : 'unknown error');
+  }
+}
+
+function stopAppleCalendarWatcher() {
+  if (!appleCalendarWatcher) return;
+  appleCalendarWatcher.kill();
+  appleCalendarWatcher = null;
+}
+
+ipcMain.handle('apple-calendar:status', () => runAppleCalendarBridge({ command: 'status' }));
+ipcMain.handle('apple-calendar:request-access', () => runAppleCalendarBridge({ command: 'request' }));
+ipcMain.handle('apple-calendar:list-calendars', () => runAppleCalendarBridge({ command: 'calendars' }));
+ipcMain.handle('apple-calendar:events', (_event, payload: { start?: string; end?: string; calendarIds?: string[] }) =>
+  runAppleCalendarBridge({ command: 'events', start: payload?.start, end: payload?.end, calendarIds: payload?.calendarIds ?? [] })
+);
+ipcMain.handle('apple-calendar:refresh-range', (_event, payload: { start?: string; end?: string; calendarIds?: string[] }) =>
+  runAppleCalendarBridge({ command: 'refresh-range', start: payload?.start, end: payload?.end, calendarIds: payload?.calendarIds ?? [] })
+);
+ipcMain.handle('apple-calendar:get-event', (_event, payload: { eventId?: string }) => runAppleCalendarBridge({ command: 'get-event', eventId: payload?.eventId }));
+ipcMain.handle('apple-calendar:connection-status', () => runAppleCalendarBridge({ command: 'connection-status' }));
+ipcMain.handle('apple-calendar:writable-calendars', () => runAppleCalendarBridge({ command: 'writable-calendars' }));
+ipcMain.handle('apple-calendar:create-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'create' }));
+ipcMain.handle('apple-calendar:update-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'update' }));
+ipcMain.handle('apple-calendar:delete-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'delete' }));
+ipcMain.handle('apple-calendar:move-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'move' }));
+ipcMain.handle('apple-calendar:open-system-settings', async () => {
+  if (process.platform !== 'darwin') return false;
+  await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars');
+  return true;
+});
+ipcMain.handle('apple-reminders:permission-status', () => runAppleCalendarBridge({ command: 'permission-status' }));
+ipcMain.handle('apple-reminders:connection-status', () => runAppleCalendarBridge({ command: 'get-connection-status' }));
+ipcMain.handle('apple-reminders:request-access', () => runAppleCalendarBridge({ command: 'request-access' }));
+ipcMain.handle('apple-reminders:get-lists', () => runAppleCalendarBridge({ command: 'lists' }));
+ipcMain.handle('apple-reminders:get-writable-lists', () => runAppleCalendarBridge({ command: 'get-writable-lists' }));
+ipcMain.handle('apple-reminders:get-reminder', (_event, payload: { reminderId?: string }) => runAppleCalendarBridge({ command: 'get-reminder', reminderId: payload?.reminderId }));
+ipcMain.handle('apple-reminders:create-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'create-reminder' }));
+ipcMain.handle('apple-reminders:update-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'update-reminder' }));
+ipcMain.handle('apple-reminders:set-completed', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'set-completed' }));
+ipcMain.handle('apple-reminders:move-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'move-reminder' }));
+ipcMain.handle('apple-reminders:delete-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'delete-reminder' }));
+ipcMain.handle('apple-reminders:fetch-reminders', (_event, payload: { start?: string; end?: string; listIds?: string[] }) =>
+  runAppleCalendarBridge({ command: 'fetch-reminders', start: payload?.start, end: payload?.end, listIds: payload?.listIds ?? [] })
+);
+ipcMain.handle('apple-reminders:refresh', (_event, payload: { start?: string; end?: string; listIds?: string[] }) =>
+  runAppleCalendarBridge({ command: 'refresh', start: payload?.start, end: payload?.end, listIds: payload?.listIds ?? [] })
+);
+ipcMain.handle('apple-reminders:disconnect', () => true);
+ipcMain.handle('apple-reminders:open-system-settings', async () => {
+  if (process.platform !== 'darwin') return false;
+  await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders');
+  return true;
+});
 
 if (process.platform === 'win32') {
   // Command buffer / GPUControl errors on some Windows drivers can freeze
@@ -851,6 +949,8 @@ let currentSidebarPreferences = { ...defaultSidebarPreferences };
 let currentSidebarShellFullscreen = false;
 let currentFloatingDockTarget: FloatingDockTarget | null = null;
 let currentFloatingDockBounds: Rect | null = null;
+let floatingDockGeneration = 0;
+let workspaceDockAutoAttachSuppressed = false;
 let currentFloatingDockAttachmentStatus: FloatingDockAttachmentStatus = 'detached';
 let currentFloatingDockMisses = 0;
 let currentFloatingDockDisplayId: number | null = null;
@@ -906,8 +1006,8 @@ const moduleWindowFullscreenBoundsMemory = new Map<ModuleWindowKind, Electron.Re
 let workspaceShellFullscreenRestoreBounds: Electron.Rectangle | null = null;
 
 const WINDOW_MARGIN = 16;
-const RAIL_SIZE = 64;
-const COLLAPSED_SIZE = 64;
+const RAIL_SIZE = 56;
+const COLLAPSED_SIZE = 56;
 const EXPANDED_WIDTH = 320;
 const HORIZONTAL_DOCK_WIDTH = 1120;
 const HORIZONTAL_DOCK_HEIGHT = 144;
@@ -962,6 +1062,12 @@ function setWorkspaceWindowAsFloatingDockTarget(kindOverride?: ModuleWindowKind)
   if (!shouldAttachWorkspaceWindowToSidebar()) return;
   if (!sidebarWin || sidebarWin.isDestroyed()) return;
   if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
+  if (workspaceDockAutoAttachSuppressed && !currentFloatingDockTarget) return;
+
+  const workspaceTargetId = getWorkspaceDockTargetId(workspaceModuleWin);
+  if (currentFloatingDockTarget && currentFloatingDockTarget.id !== workspaceTargetId) {
+    return;
+  }
 
   const targetBounds = getWorkspaceDockTargetBounds();
   if (!targetBounds) return;
@@ -2711,6 +2817,10 @@ function getFloatingDockStatePayload(
 }
 
 function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds: Rect | null) {
+  floatingDockGeneration += 1;
+  if (target) {
+    workspaceDockAutoAttachSuppressed = !isWorkspaceDockTarget(target);
+  }
   currentFloatingDockTarget = target;
   currentFloatingDockBounds = bounds;
   currentFloatingDockMisses = 0;
@@ -2730,6 +2840,7 @@ function isFloatingDockHoldActive() {
 function clearCurrentFloatingDockTarget(
   attachmentStatus: Exclude<FloatingDockAttachmentStatus, 'attached'> = 'detached'
 ) {
+  floatingDockGeneration += 1;
   stopFloatingDockNativeTracker();
   stopMacDockHelperTracking();
   currentFloatingDockTarget = null;
@@ -3782,6 +3893,7 @@ async function getMacAccessibilityDockTargetAtEdge(probe: {
 async function refreshFloatingDockTarget() {
   if (floatingDockRefreshInFlight) return;
   floatingDockRefreshInFlight = true;
+  const refreshGeneration = floatingDockGeneration;
   try {
     if (!sidebarWin || sidebarWin.isDestroyed()) return;
     if (currentSidebarPosition !== 'floating') return;
@@ -3824,6 +3936,7 @@ async function refreshFloatingDockTarget() {
       if (Date.now() - windowsNativeDockRequeryAt >= 500) {
         windowsNativeDockRequeryAt = Date.now();
         const targetHandleBounds = await queryWindowsDockTargetBounds(currentFloatingDockTarget.id);
+        if (refreshGeneration !== floatingDockGeneration || floatingDockDragActive) return;
         if (targetHandleBounds?.kind === 'state') {
           if (targetHandleBounds.state === 'minimized') {
             writeWindowsDockTrace('refresh-windows-native-requery', {
@@ -3918,6 +4031,7 @@ async function refreshFloatingDockTarget() {
     );
 
     if (!sidebarWin || sidebarWin.isDestroyed()) return;
+    if (refreshGeneration !== floatingDockGeneration || floatingDockDragActive) return;
 
     if (!target) {
       if (isFloatingDockHoldActive() && currentFloatingDockTarget && currentFloatingDockBounds) {
@@ -3967,6 +4081,7 @@ async function refreshFloatingDockTarget() {
 
     currentFloatingDockMisses = 0;
     currentFloatingDockTarget = target.target;
+    workspaceDockAutoAttachSuppressed = !isWorkspaceDockTarget(target.target);
     currentFloatingDockBounds = target.bounds;
     if (isFullscreenLikeBounds(target.bounds)) {
       sendFloatingDockChanged(false, 'suspended_fullscreen');
@@ -4643,6 +4758,7 @@ async function dockFloatingSidebarToTarget() {
   if (!currentSidebarPreferences.floatingDockEnabled) return null;
 
   floatingDockDragActive = false;
+  const dockGeneration = floatingDockGeneration;
 
   // Use the cached dock target if available, otherwise query for a new one
   let target: DockTargetResult | null =
@@ -4664,6 +4780,8 @@ async function dockFloatingSidebarToTarget() {
   if (!target && process.platform !== 'win32') {
     target = await getFloatingDockTargetAtCursor();
   }
+
+  if (dockGeneration !== floatingDockGeneration || floatingDockDragActive) return null;
 
   if (!target) {
     writeWindowsDockTrace('manual-dock-skip', {
@@ -5061,7 +5179,9 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
     currentSidebarPosition === 'floating' &&
     Boolean(workspaceModuleWin && !workspaceModuleWin.isDestroyed()) &&
     Boolean(workspaceModuleKind) &&
-    shouldAttachWorkspaceWindowToSidebar();
+    shouldAttachWorkspaceWindowToSidebar() &&
+    !workspaceDockAutoAttachSuppressed;
+  const workspaceDockGenerationAtSchedule = floatingDockGeneration;
   if (currentSidebarPosition === 'floating' && currentFloatingDockTarget) {
     holdCurrentFloatingDockTarget(2000);
   }
@@ -5088,6 +5208,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   if (shouldRefreshLedgerWorkspaceDock) {
     setTimeout(() => {
       if (floatingDockDragActive) return;
+      if (workspaceDockGenerationAtSchedule !== floatingDockGeneration) return;
       if (currentSidebarPosition !== 'floating') return;
       if (!workspaceModuleKind || !workspaceModuleWin || workspaceModuleWin.isDestroyed()) return;
       if (!shouldAttachWorkspaceWindowToSidebar()) return;
@@ -5624,7 +5745,7 @@ function routeFromModuleArgs(
 }
 
 function recordWorkspaceRoute(route: WorkspaceModuleRoute) {
-  if (workspaceModuleClosedRouteKeys.has(workspaceRouteKey(route))) return;
+  if (workspaceModuleClosedRouteKeys.has(workspaceTabRouteKey(route))) return;
 
   const existingIndex = workspaceModuleRecentRoutes.findIndex((entry) =>
     isSameWorkspaceRoute(entry, route)
@@ -5637,17 +5758,24 @@ function recordWorkspaceRoute(route: WorkspaceModuleRoute) {
   workspaceModuleRecentRoutes.length = Math.min(workspaceModuleRecentRoutes.length, 12);
 }
 
-function workspaceRouteKey(route: WorkspaceModuleRoute) {
-  return [
-    route.kind,
-    route.focusDate ?? '',
-    route.focusProjectId ?? '',
-    route.focusNoteId ?? '',
-    route.focusTaskId ?? '',
-    route.focusInboxId ?? '',
-    route.focusContext ?? '',
-    route.focusSection ?? '',
-  ].join('|');
+// The tab strip treats module view state as belonging to the tab. Keep the
+// Electron close tombstone in the same identity space so a late route update
+// for Notes Home (or a project view) cannot reopen the tab with different
+// focus metadata.
+function workspaceTabRouteKey(route: WorkspaceModuleRoute) {
+  if (route.kind === 'new-tab') return `new-tab|${route.focusContext ?? 'default'}`;
+  switch (route.kind) {
+    case 'notes':
+      return route.focusNoteId ? `notes|note|${route.focusNoteId}` : 'notes|home';
+    case 'projects':
+      return route.focusProjectId ? `projects|project|${route.focusProjectId}` : 'projects|home';
+    case 'circle':
+      return 'circle';
+    case 'teams':
+      return 'teams';
+    default:
+      return route.kind;
+  }
 }
 
 function isSameWorkspaceRoute(a: WorkspaceModuleRoute | null, b: WorkspaceModuleRoute) {
@@ -5732,7 +5860,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
   if (!moduleWin || moduleWin.isDestroyed()) return false;
 
   // Selecting a route intentionally reopens it, so it is safe to record again.
-  workspaceModuleClosedRouteKeys.delete(workspaceRouteKey(route));
+  workspaceModuleClosedRouteKeys.delete(workspaceTabRouteKey(route));
 
   const currentRoute = getCurrentWorkspaceRoute();
   if (pushHistory && currentRoute && !isSameWorkspaceRoute(currentRoute, route)) {
@@ -5802,20 +5930,22 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
 function removeWorkspaceRouteFromHistory(route: WorkspaceModuleRoute) {
   const removeMatching = (routes: WorkspaceModuleRoute[]) => {
     for (let index = routes.length - 1; index >= 0; index -= 1) {
-      if (isSameWorkspaceRoute(routes[index], route)) routes.splice(index, 1);
+      if (workspaceTabRouteKey(routes[index]) === workspaceTabRouteKey(route)) {
+        routes.splice(index, 1);
+      }
     }
   };
 
   removeMatching(workspaceModuleBackStack);
   removeMatching(workspaceModuleForwardStack);
   removeMatching(workspaceModuleRecentRoutes);
-  workspaceModuleClosedRouteKeys.add(workspaceRouteKey(route));
+  workspaceModuleClosedRouteKeys.add(workspaceTabRouteKey(route));
 }
 
 function updateWorkspaceModuleRoute(route: WorkspaceModuleRoute, pushHistory = true) {
   const moduleWin = workspaceModuleWin;
   if (!moduleWin || moduleWin.isDestroyed()) return false;
-  if (workspaceModuleClosedRouteKeys.has(workspaceRouteKey(route))) return false;
+  if (workspaceModuleClosedRouteKeys.has(workspaceTabRouteKey(route))) return false;
   if (!pushHistory) {
     // Calendar date changes are view state, not separate workspace destinations.
     // Drop any legacy same-module entries so an existing process cannot replay
@@ -6406,6 +6536,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   isQuittingApp = true;
+  stopAppleCalendarWatcher();
   if (tray) {
     tray.destroy();
     tray = null;
@@ -6498,11 +6629,13 @@ ipcMain.handle(
       preferences.position === 'bottom'
     ) {
       currentSidebarPosition = preferences.position;
+      workspaceDockAutoAttachSuppressed = false;
       clearCurrentFloatingDockTarget();
       stopFloatingDockTracking();
     } else if (preferences.position === 'floating') {
       currentSidebarPosition = 'floating';
       if (previousSidebarPosition !== 'floating') {
+        workspaceDockAutoAttachSuppressed = false;
         clearCurrentFloatingDockTarget();
         stopFloatingDockTracking();
       }
@@ -6588,6 +6721,7 @@ ipcMain.handle(
 
 ipcMain.handle('window:begin-floating-drag', () => {
   floatingDockDragActive = true;
+  workspaceDockAutoAttachSuppressed = true;
   clearCurrentFloatingDockTarget();
   stopFloatingDockTracking();
 
@@ -6720,6 +6854,7 @@ ipcMain.handle('window:dock-floating-window', async () => {
 ipcMain.handle('window:detach-floating-window', () => {
   floatingDockDragActive = false;
   floatingDragStart = null;
+  workspaceDockAutoAttachSuppressed = true;
   clearCurrentFloatingDockTarget();
   stopFloatingDockTracking();
   return null;
@@ -7447,6 +7582,7 @@ function syncTouchBar() {
 }
 
 app.whenReady().then(() => {
+  startAppleCalendarWatcher();
   loadNotificationDeliveryState();
   registerLedgerProtocol();
   // A remembered module window may refer to a display that was disconnected

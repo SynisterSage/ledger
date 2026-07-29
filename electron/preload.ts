@@ -39,6 +39,47 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // ...
 });
 
+contextBridge.exposeInMainWorld('appleCalendar', {
+  status() { return ipcRenderer.invoke('apple-calendar:status'); },
+  requestAccess() { return ipcRenderer.invoke('apple-calendar:request-access'); },
+  listCalendars() { return ipcRenderer.invoke('apple-calendar:list-calendars'); },
+  events(payload: { start: string; end: string; calendarIds: string[] }) {
+    return ipcRenderer.invoke('apple-calendar:events', payload);
+  },
+  refreshRange(payload: { start: string; end: string; calendarIds: string[] }) { return ipcRenderer.invoke('apple-calendar:refresh-range', payload); },
+  getEvent(payload: { eventId: string }) { return ipcRenderer.invoke('apple-calendar:get-event', payload); },
+  connectionStatus() { return ipcRenderer.invoke('apple-calendar:connection-status'); },
+  writableCalendars() { return ipcRenderer.invoke('apple-calendar:writable-calendars'); },
+  createEvent(payload: Record<string, unknown>) { return ipcRenderer.invoke('apple-calendar:create-event', payload); },
+  updateEvent(payload: Record<string, unknown>) { return ipcRenderer.invoke('apple-calendar:update-event', payload); },
+  deleteEvent(payload: { eventId: string; span?: 'thisEvent' | 'futureEvents' }) { return ipcRenderer.invoke('apple-calendar:delete-event', payload); },
+  moveEvent(payload: { eventId: string; calendarId: string; span?: 'thisEvent' | 'futureEvents' }) { return ipcRenderer.invoke('apple-calendar:move-event', payload); },
+  openSystemSettings() { return ipcRenderer.invoke('apple-calendar:open-system-settings'); },
+  onChanged(listener: () => void) {
+    const wrapped = () => listener();
+    ipcRenderer.on('apple-calendar:changed', wrapped);
+    return () => ipcRenderer.off('apple-calendar:changed', wrapped);
+  },
+});
+
+contextBridge.exposeInMainWorld('appleReminders', {
+  getPermissionStatus() { return ipcRenderer.invoke('apple-reminders:permission-status'); },
+  getConnectionStatus() { return ipcRenderer.invoke('apple-reminders:connection-status'); },
+  requestAccess() { return ipcRenderer.invoke('apple-reminders:request-access'); },
+  getLists() { return ipcRenderer.invoke('apple-reminders:get-lists'); },
+  getWritableLists() { return ipcRenderer.invoke('apple-reminders:get-writable-lists'); },
+  getReminder(payload: { reminderId: string }) { return ipcRenderer.invoke('apple-reminders:get-reminder', payload); },
+  createReminder(payload: Record<string, unknown>) { return ipcRenderer.invoke('apple-reminders:create-reminder', payload); },
+  updateReminder(payload: Record<string, unknown>) { return ipcRenderer.invoke('apple-reminders:update-reminder', payload); },
+  setCompleted(payload: { reminderId: string; completed: boolean; listId?: string }) { return ipcRenderer.invoke('apple-reminders:set-completed', payload); },
+  moveReminder(payload: { reminderId: string; listId: string }) { return ipcRenderer.invoke('apple-reminders:move-reminder', payload); },
+  deleteReminder(payload: { reminderId: string }) { return ipcRenderer.invoke('apple-reminders:delete-reminder', payload); },
+  fetchReminders(payload: { start: string; end: string; listIds: string[] }) { return ipcRenderer.invoke('apple-reminders:fetch-reminders', payload); },
+  refresh(payload: { start: string; end: string; listIds: string[] }) { return ipcRenderer.invoke('apple-reminders:refresh', payload); },
+  disconnect() { return ipcRenderer.invoke('apple-reminders:disconnect'); },
+  openSystemSettings() { return ipcRenderer.invoke('apple-reminders:open-system-settings'); },
+});
+
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen';
 type ModuleWindowKind =
   | 'new-tab'

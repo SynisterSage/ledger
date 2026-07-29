@@ -167,7 +167,7 @@ type CircleTaskType = 'focus' | 'short_term' | 'long_term';
 
 const circleTheme = {
   shell:
-    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
+    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
   body: 'flex min-h-0 flex-1 overflow-hidden',
   leftPane:
     'flex h-full w-[300px] min-w-[260px] max-w-[320px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]',

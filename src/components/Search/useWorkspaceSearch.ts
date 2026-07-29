@@ -60,6 +60,7 @@ const commands: Array<SearchResult & { keywords: string[]; personal?: boolean }>
   { id: 'navigate-checkin', type: 'command', category: 'navigate', title: 'Daily Check-In', preview: 'Open your daily review', icon: '', actionId: 'checkin', keywords: ['check-in', 'checkin', 'review'] },
   { id: 'navigate-templates', type: 'command', category: 'navigate', title: 'Templates', preview: 'Browse note templates', icon: '', actionId: 'templates', keywords: ['template'] },
   { id: 'navigate-settings', type: 'command', category: 'navigate', title: 'Settings', preview: 'Open Settings', icon: '', actionId: 'settings', keywords: ['settings', 'preferences'] },
+  { id: 'navigate-workspace', type: 'command', category: 'navigate', title: 'Switch workspace', preview: 'Move to another workspace', icon: '', actionId: 'switch-workspace', keywords: ['workspace', 'switch', 'team'] },
   { id: 'action-new-note', type: 'command', category: 'action', title: 'New note', preview: 'Create a blank note', icon: '', actionId: 'new-note', keywords: ['new', 'note', 'create'] },
   { id: 'action-new-task', type: 'command', category: 'action', title: 'New task', preview: 'Create a task', icon: '', actionId: 'new-task', keywords: ['new', 'task', 'create', 'todo'] },
   { id: 'action-create-project', type: 'command', category: 'action', title: 'Create project', preview: 'Start a new project', icon: '', actionId: 'create-project', keywords: ['new', 'project', 'create'] },

@@ -709,6 +709,14 @@ export const ModuleWindowHeader = ({
   };
 
   const currentRoute = workspaceNavigationState.currentRoute ?? null;
+  const handleClose = () => {
+    if (currentRoute) {
+      window.dispatchEvent(
+        new CustomEvent('ledger:workspace-route-closed', { detail: { ...currentRoute } })
+      );
+    }
+    onClose();
+  };
   const isCurrentRoute = (route: WorkspaceRoute) =>
     currentRoute?.kind === route.kind &&
     (currentRoute.focusDate ?? null) === (route.focusDate ?? null) &&
@@ -804,7 +812,7 @@ export const ModuleWindowHeader = ({
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               onMouseDown={triggerOnPrimaryMouseDown}
               title={closeLabel}
               aria-label={closeLabel}

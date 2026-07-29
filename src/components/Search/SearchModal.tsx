@@ -218,6 +218,7 @@ const commandIconMap: Record<string, typeof FileText> = {
   integrations: Plug2,
   shortcuts: Keyboard,
   workspace: BriefcaseBusiness,
+  'switch-workspace': BriefcaseBusiness,
   appearance: Palette,
 };
 
@@ -392,6 +393,16 @@ const ledgerSearchCommands: Array<SearchResult & { keywords: string[]; personal?
     icon: '',
     actionId: 'settings',
     keywords: ['settings', 'preferences'],
+  },
+  {
+    id: 'navigate-workspace',
+    type: 'command',
+    category: 'navigate',
+    title: 'Switch workspace',
+    preview: 'Move to another workspace',
+    icon: '',
+    actionId: 'switch-workspace',
+    keywords: ['workspace', 'switch', 'team'],
   },
   {
     id: 'action-new-note',
@@ -651,6 +662,13 @@ export const SearchModal = () => {
           case 'settings':
             void window.desktopWindow?.openModule('settings');
             break;
+          case 'switch-workspace': {
+            const detail: { handled?: boolean; preferredVariant?: 'header' | 'sidebar' } = {
+              preferredVariant: 'header',
+            };
+            window.dispatchEvent(new CustomEvent('ledger:open-workspace-switcher', { detail }));
+            break;
+          }
           case 'projects':
           case 'create-project':
             void window.desktopWindow?.openModule('projects');

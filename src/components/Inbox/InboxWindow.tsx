@@ -43,7 +43,6 @@ import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { FigmaMark } from '../Common/FigmaMark';
-import { GoogleDriveIntakeCaptureButton } from './GoogleDriveIntakeCaptureButton';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
@@ -132,7 +131,7 @@ const statusLabels: Array<{ value: InboxStatus; label: string }> = [
 
 const inboxTheme = {
   shell:
-    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
+    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
   contentShell: 'bg-[var(--ledger-background)]',
   iconButton:
     'inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
@@ -3086,7 +3085,6 @@ export default function IntakeWindow() {
         }
         secondaryActions={
           <div className="flex items-center gap-1.5">
-            <GoogleDriveIntakeCaptureButton onCaptured={() => void loadInbox(true, { force: true })} />
             <ModuleHeaderStripAction
               icon={
                 refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />

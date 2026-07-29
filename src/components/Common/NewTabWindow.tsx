@@ -15,25 +15,6 @@ import {
 } from '../Search/useWorkspaceSearch';
 import { IntegrationProviderMark, normalizeIntegrationProvider } from './IntegrationProviderMark';
 
-type RecentRoute = ModuleFocusPayload & { kind: ModuleWindowKind };
-type RouteIcon = typeof LayoutList;
-
-const getRecentRoutesStorageKey = (workspaceId: string) =>
-  `ledger:new-tab-recent-routes:${workspaceId}`;
-
-const MAX_VISIBLE_RECENT_ROUTES = 8;
-const MAX_STORED_RECENT_ROUTES = 12;
-
-const normalizeRecentRoutes = (routes: unknown): RecentRoute[] => {
-  if (!Array.isArray(routes)) return [];
-  return routes.filter(
-    (route): route is RecentRoute =>
-      Boolean(route && typeof route === 'object' && 'kind' in route && route.kind !== 'new-tab')
-  );
-};
-
-const visibleRecentRoutes = (routes: RecentRoute[]) => routes.slice(0, MAX_VISIBLE_RECENT_ROUTES);
-
 const destinations: Array<{
   label: string;
   kind: ModuleWindowKind;
@@ -48,29 +29,6 @@ const destinations: Array<{
   { label: 'Notifications', kind: 'notifications', icon: Bell },
 ];
 
-const routeLabel = (route: RecentRoute) => {
-  if (route.kind === 'dashboard') return 'Overview';
-  if (route.kind === 'projects') return route.focusProjectId ? 'Project' : 'Projects';
-  if (route.kind === 'notes') {
-    if (route.focusContext === 'home' || !route.focusNoteId) return 'Notes Home';
-    return 'Note';
-  }
-  if (route.kind === 'calendar') return route.focusDate ? 'Calendar Day' : 'Calendar';
-  if (route.kind === 'inbox') return 'Intake';
-  if (route.kind === 'notifications') return 'Notifications';
-  return route.kind[0].toUpperCase() + route.kind.slice(1);
-};
-
-const getRecentRouteIcon = (route: RecentRoute): RouteIcon => {
-  if (route.kind === 'dashboard') return LayoutList;
-  if (route.kind === 'projects') return FolderKanban;
-  if (route.kind === 'notes') return FileText;
-  if (route.kind === 'calendar') return CalendarDays;
-  if (route.kind === 'inbox') return Funnel;
-  if (route.kind === 'notifications') return Bell;
-  return Search;
-};
-
 export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
@@ -80,7 +38,6 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const quickNavRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
-  const [recentRoutes, setRecentRoutes] = useState<RecentRoute[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [isSlackEnabled, setIsSlackEnabled] = useState(false);
@@ -163,59 +120,8 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
     : destinations;
 
   useEffect(() => {
-    if (!activeWorkspaceId) {
-      setRecentRoutes([]);
-      return;
-    }
-
-    const storageKey = getRecentRoutesStorageKey(activeWorkspaceId);
-    let storedRoutes: RecentRoute[] = [];
-    try {
-      storedRoutes = normalizeRecentRoutes(JSON.parse(localStorage.getItem(storageKey) ?? '[]'));
-      setRecentRoutes(visibleRecentRoutes(storedRoutes));
-    } catch {
-      setRecentRoutes([]);
-    }
-
-    let mounted = true;
-    const applyRecentRoutes = (routes: unknown, preserveStoredWhenEmpty = false) => {
-      const normalizedRoutes = normalizeRecentRoutes(routes);
-      if (normalizedRoutes.length === 0 && preserveStoredWhenEmpty && storedRoutes.length > 0) {
-        return;
-      }
-
-      const nextRoutes = visibleRecentRoutes(normalizedRoutes);
-      if (!mounted) return;
-      setRecentRoutes(nextRoutes);
-      try {
-        if (normalizedRoutes.length > 0) {
-          localStorage.setItem(
-            storageKey,
-            JSON.stringify(normalizedRoutes.slice(0, MAX_STORED_RECENT_ROUTES))
-          );
-        } else {
-          localStorage.removeItem(storageKey);
-        }
-      } catch {
-        // Ignore unavailable storage.
-      }
-    };
-
     inputRef.current?.focus();
-    void window.desktopWindow?.getWorkspaceNavigationState?.().then((state) => {
-      applyRecentRoutes(state?.recentRoutes, true);
-    });
-
-    const handleNavigationState = (_event: unknown, state?: { recentRoutes?: unknown[] }) => {
-      applyRecentRoutes(state?.recentRoutes);
-    };
-    window.ipcRenderer?.on?.('workspace:navigation-state', handleNavigationState as any);
-
-    return () => {
-      mounted = false;
-      window.ipcRenderer?.off?.('workspace:navigation-state', handleNavigationState as any);
-    };
-  }, [activeWorkspaceId]);
+  }, []);
 
   const openDestination = (kind: ModuleWindowKind, route?: ModuleFocusPayload) => {
     void window.desktopWindow?.openModule(kind, { kind, ...(route ?? {}) });
@@ -247,6 +153,13 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
 
   const openSearchResult = (result: SearchResult) => {
     if (result.type === 'command') {
+      if (result.actionId === 'switch-workspace') {
+        const detail: { handled?: boolean; preferredVariant?: 'header' | 'sidebar' } = {
+          preferredVariant: 'header',
+        };
+        window.dispatchEvent(new CustomEvent('ledger:open-workspace-switcher', { detail }));
+        return;
+      }
       const routeByAction: Record<string, { kind: ModuleWindowKind; focus?: ModuleFocusPayload }> = {
         overview: { kind: 'dashboard' },
         projects: { kind: 'projects' },
@@ -281,7 +194,7 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div
-      className="relative flex h-screen min-h-0 flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
+      className="relative flex h-screen min-h-0 flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <ModuleWindowHeader
@@ -314,7 +227,6 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
         }
         showBodyHeader={false}
         showWorkspaceNavigation
-        showHistoryControl
       />
       <main className="min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
         <div className="mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
@@ -426,53 +338,6 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
             </div>
           )}
 
-          {!trimmedQuery && recentRoutes.length > 0 && (
-            <section className="mt-16">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Recent</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRecentRoutes([]);
-                    if (activeWorkspaceId) {
-                      try {
-                        localStorage.removeItem(getRecentRoutesStorageKey(activeWorkspaceId));
-                      } catch {
-                        // Ignore unavailable storage.
-                      }
-                    }
-                    void window.desktopWindow?.clearWorkspaceRecent?.();
-                  }}
-                  className="rounded-md px-1.5 py-1 text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
-                >
-                  Clear recent
-                </button>
-              </div>
-              <div className="space-y-0.5">
-                {recentRoutes.map((route, index) => {
-                  const Icon = getRecentRouteIcon(route);
-                  return (
-                    <button
-                      key={`${route.kind}-${route.focusProjectId ?? route.focusNoteId ?? route.focusDate ?? index}`}
-                      type="button"
-                      onClick={() => openDestination(route.kind, route)}
-                      className="flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-                    >
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background-muted)] text-[var(--ledger-text-secondary)]">
-                        <Icon size={13} />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                        {routeLabel(route)}
-                      </span>
-                      <span className="shrink-0 text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                        {route.kind}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
         </div>
       </main>
     </div>

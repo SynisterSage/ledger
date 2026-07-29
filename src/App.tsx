@@ -179,6 +179,25 @@ const getKeepAliveModuleKey = (
 const isNewTabRoute = (route: WorkspaceShellRoute | ModuleFocusPayload | null | undefined) =>
   route?.kind === 'new-tab';
 
+const workspaceShellRouteKey = (route: ModuleFocusPayload | null | undefined): string =>
+  route
+    ? route.kind === 'new-tab'
+      ? `new-tab|${route.focusContext ?? 'default'}`
+      : route.kind === 'notes'
+        ? route.focusNoteId
+          ? `notes|note|${route.focusNoteId}`
+          : 'notes|home'
+        : route.kind === 'projects'
+          ? route.focusProjectId
+            ? `projects|project|${route.focusProjectId}`
+            : 'projects|home'
+          : route.kind === 'circle'
+            ? 'circle'
+            : route.kind === 'teams'
+              ? 'teams'
+              : String(route.kind ?? '')
+    : '';
+
 const getWorkspaceShellRouteFromLocation = (): WorkspaceShellRoute => {
   const params = new URLSearchParams(window.location.search);
   return {
@@ -215,7 +234,7 @@ const dashboardSkeletonBorder = 'var(--ledger-border-subtle)';
 
 const dashboardTheme = {
   shell:
-    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
+    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
   content: 'bg-[var(--ledger-background)]',
   page: 'mx-auto max-w-6xl space-y-10',
   hero: 'max-w-3xl space-y-8',
@@ -521,7 +540,7 @@ function InviteSuccessScreen({
       className="relative flex min-h-screen items-center justify-center bg-transparent p-3 text-[var(--ledger-text-primary)]"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
+      <div className="absolute inset-3 rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
       <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] items-center justify-center px-8">
         <div className="w-full max-w-sm rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-7 text-center shadow-[0_18px_50px_rgba(17,24,39,0.18)]">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:rgba(255,95,64,0.12)]">
@@ -664,7 +683,7 @@ function OnboardingFlow({
       className="relative min-h-screen overflow-hidden bg-transparent p-3 text-[var(--ledger-text-primary)]"
       style={dragRegionStyle}
     >
-      <div className="absolute inset-3 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
+      <div className="absolute inset-3 rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" />
       <button
         type="button"
         onClick={() => {
@@ -8146,6 +8165,8 @@ function AppShell() {
   useEffect(() => {
     if (!isModuleWindow) return;
 
+    const closedRouteKeys = new Set<string>();
+
     const applyWorkspaceRoute = (route?: ModuleFocusPayload | null) => {
       if (!route?.kind) return;
       const nextRoute: WorkspaceShellRoute = {
@@ -8164,23 +8185,38 @@ function AppShell() {
     };
 
     const handleWorkspaceRouteChanged = (_event: unknown, route?: ModuleFocusPayload) => {
+      if (closedRouteKeys.has(workspaceShellRouteKey(route))) return;
       applyWorkspaceRoute(route);
     };
+    const handleWorkspaceRouteRequested = (_event: unknown, route?: ModuleFocusPayload) => {
+      if (closedRouteKeys.has(workspaceShellRouteKey(route))) return;
+      applyWorkspaceRoute(route);
+    };
+    const handleWorkspaceRouteClosed = (event: Event) => {
+      const route = (event as CustomEvent<ModuleFocusPayload>).detail;
+      const key = workspaceShellRouteKey(route);
+      if (key) closedRouteKeys.add(key);
+    };
     const handleLocalWorkspaceRouteRequested = (event: Event) => {
-      applyWorkspaceRoute(
-        (event as CustomEvent<ModuleFocusPayload>).detail as ModuleFocusPayload | undefined
-      );
+      const route = (event as CustomEvent<ModuleFocusPayload>).detail as
+        | ModuleFocusPayload
+        | undefined;
+      const key = workspaceShellRouteKey(route);
+      if (key) closedRouteKeys.delete(key);
+      applyWorkspaceRoute(route);
     };
 
     window.ipcRenderer?.on('workspace:route-changed', handleWorkspaceRouteChanged as any);
-    window.ipcRenderer?.on('workspace:route-requested', handleWorkspaceRouteChanged as any);
+    window.ipcRenderer?.on('workspace:route-requested', handleWorkspaceRouteRequested as any);
+    window.addEventListener('ledger:workspace-route-closed', handleWorkspaceRouteClosed);
     window.addEventListener(
       'ledger:workspace-route-requested',
       handleLocalWorkspaceRouteRequested
     );
     return () => {
       window.ipcRenderer?.off('workspace:route-changed', handleWorkspaceRouteChanged as any);
-      window.ipcRenderer?.off('workspace:route-requested', handleWorkspaceRouteChanged as any);
+      window.ipcRenderer?.off('workspace:route-requested', handleWorkspaceRouteRequested as any);
+      window.removeEventListener('ledger:workspace-route-closed', handleWorkspaceRouteClosed);
       window.removeEventListener(
         'ledger:workspace-route-requested',
         handleLocalWorkspaceRouteRequested
@@ -8350,6 +8386,23 @@ function AppShell() {
     return () => {
       window.removeEventListener('keydown', handleModuleNavigation);
     };
+  }, [isLoading, user]);
+
+  useEffect(() => {
+    const handleWorkspaceSwitcherShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
+      if (event.key.toLowerCase() !== 'm') return;
+      if (!user || isLoading) return;
+
+      event.preventDefault();
+      const detail: { handled?: boolean; preferredVariant?: 'header' | 'sidebar' } = {
+        preferredVariant: 'header',
+      };
+      window.dispatchEvent(new CustomEvent('ledger:open-workspace-switcher', { detail }));
+    };
+
+    window.addEventListener('keydown', handleWorkspaceSwitcherShortcut);
+    return () => window.removeEventListener('keydown', handleWorkspaceSwitcherShortcut);
   }, [isLoading, user]);
 
   useEffect(() => {

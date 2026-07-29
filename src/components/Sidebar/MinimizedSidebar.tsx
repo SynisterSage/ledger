@@ -41,24 +41,24 @@ export const MinimizedSidebar = ({
       className={`flex ${sidebarTheme.shellRail} ${
         isHorizontal
           ? 'h-full w-full flex-row items-center justify-between px-4 bg-transparent'
-          : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-4'
+          : 'h-full w-full flex-col items-center justify-between bg-transparent px-0 py-3'
       }`}
     >
       <div
         className={`${
           isHorizontal
             ? 'flex w-full flex-row items-center justify-between'
-            : 'mx-auto flex h-full w-11 flex-col items-center justify-between'
+            : 'mx-auto flex h-full w-10 flex-col items-center justify-between'
         } shrink-0`}
       >
         <HoldToQuitLogo
           onClick={() => collapseSidebar()}
-          className="flex h-11 w-11 items-center justify-center bg-transparent transition-opacity duration-150 hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+          className="flex h-10 w-10 items-center justify-center bg-transparent transition-opacity duration-150 hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
           imageClassName="h-7 w-7 opacity-100"
           title="Ledger"
         />
 
-        <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-4 self-center'}`}>
+        <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3 self-center'}`}>
           <button
             aria-label="Open search"
             onClick={() => {
@@ -123,7 +123,7 @@ export const MinimizedSidebar = ({
           <button
             onClick={() => void window.desktopWindow?.quitApp()}
             onMouseDown={(e) => e.stopPropagation()}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors duration-150 text-[var(--ledger-text-secondary)] hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-150 text-[var(--ledger-text-secondary)] hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
             title="Exit Ledger"
             aria-label="Exit Ledger"
           >

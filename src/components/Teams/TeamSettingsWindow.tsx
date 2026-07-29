@@ -47,7 +47,7 @@ const teamColors = ['#FF5F40', '#D97706', '#0F766E', '#2563EB', '#7C3AED', '#475
 
 const settingsTheme = {
   shell:
-    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
+    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
   content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-6 py-7',
   page: 'mx-auto flex min-h-full w-full max-w-4xl flex-col gap-7',
   pageTitle: 'text-[32px] font-normal leading-tight tracking-tight text-[var(--ledger-text-primary)]',

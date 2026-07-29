@@ -25,7 +25,6 @@ type WorkspaceSwitcherMenuProps = {
   compact?: boolean;
 };
 
-type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
 type AppRegionStyle = CSSProperties & {
   WebkitAppRegion?: 'drag' | 'no-drag';
 };
@@ -37,11 +36,8 @@ const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 
 const getWorkspaceLabel = (workspace?: {
   is_personal?: boolean;
-  role?: WorkspaceRole;
 }) => {
   if (workspace?.is_personal) return 'Personal workspace';
-  const role = String(workspace?.role ?? '').toLowerCase();
-  if (role === 'owner' || role === 'admin') return 'Shared workspace · Manage access';
   return 'Shared workspace';
 };
 
@@ -97,10 +93,16 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
       ? `${triggerBaseClass} ${compact ? 'max-w-56' : 'max-w-60'} text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]`
       : `${triggerBaseClass} ${compact ? 'max-w-52' : 'max-w-56'} px-0 text-[var(--ledger-text-secondary)]`;
 
-  const openSettingsSection = (focusSection: 'account' | 'workspace' | 'integrations' | 'sidebar') => {
+  const openSettingsSection = (
+    focusSection: 'account' | 'workspace' | 'members' | 'integrations' | 'sidebar'
+  ) => {
+    const route = { kind: 'settings' as const, focusSection };
+    // This is an intentional destination selected from the workspace menu.
+    // Clear any closed-tab tombstone before Electron reuses the Settings
+    // module, otherwise the shared tab strip can immediately prune it again.
+    window.dispatchEvent(new CustomEvent('ledger:workspace-route-requested', { detail: route }));
     void window.desktopWindow?.openModule('settings', {
-      kind: 'settings',
-      focusSection,
+      ...route,
     });
   };
 
@@ -130,10 +132,10 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
     const switchRect = switchRowRef.current?.getBoundingClientRect();
     if (!menuRect || !switchRect) return;
 
-    const canOpenRight = menuRect.right + submenuWidth + 12 <= window.innerWidth - viewportPadding;
+    const canOpenRight = menuRect.right + submenuWidth + 8 <= window.innerWidth - viewportPadding;
     const left = canOpenRight
-      ? Math.min(menuRect.right + 8, window.innerWidth - submenuWidth - viewportPadding)
-      : Math.max(viewportPadding, menuRect.left - submenuWidth - 8);
+      ? Math.min(menuRect.right + 4, window.innerWidth - submenuWidth - viewportPadding)
+      : Math.max(viewportPadding, menuRect.left - submenuWidth - 4);
     const top = Math.max(viewportPadding, Math.min(switchRect.top, window.innerHeight - 360));
 
     setSubmenuStyle({
@@ -219,16 +221,44 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
     setWorkspaceTeams([]);
   }, [activeWorkspaceId, isPersonalWorkspace]);
 
-  const openMenu = async () => {
+  const openMenu = async (openWorkspaceSubmenu = false) => {
     updateMenuPosition();
     setIsOpen(true);
-    setSubmenuOpen(false);
+    setSubmenuOpen(openWorkspaceSubmenu);
     setInviteModalOpen(false);
     setCreateModalOpen(false);
     if (!isPersonalWorkspace && workspaceTeams.length === 0 && !workspaceLoadingTeams) {
       void loadWorkspaceTeams();
     }
   };
+
+  useEffect(() => {
+    const handleOpenWorkspaceSwitcher = (event: Event) => {
+      const detail = (event as CustomEvent<{ handled?: boolean; preferredVariant?: 'header' | 'sidebar' }>).detail;
+      if (detail?.preferredVariant && detail.preferredVariant !== variant) return;
+      if (detail?.handled) return;
+      const buttonBounds = buttonRef.current?.getBoundingClientRect();
+      if (
+        !buttonBounds ||
+        buttonBounds.width <= 0 ||
+        buttonBounds.height <= 0 ||
+        buttonRef.current?.getClientRects().length === 0
+      ) {
+        return;
+      }
+      if (detail) detail.handled = true;
+      void openMenu(true);
+      window.setTimeout(() => {
+        submenuRef.current
+          ?.querySelector<HTMLElement>('[data-switcher-subrow="true"]')
+          ?.focus();
+      }, 0);
+    };
+
+    window.addEventListener('ledger:open-workspace-switcher', handleOpenWorkspaceSwitcher);
+    return () =>
+      window.removeEventListener('ledger:open-workspace-switcher', handleOpenWorkspaceSwitcher);
+  }, [activeWorkspaceId, isPersonalWorkspace, variant, workspaceLoadingTeams, workspaceTeams.length]);
 
   const openInviteModal = async () => {
     setCreateModalOpen(false);
@@ -322,7 +352,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
             icon: Users,
             action: () => {
               closeAllMenus();
-              openSettingsSection('workspace');
+              openSettingsSection('members');
             },
           },
         ]
@@ -421,7 +451,17 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
           >
             {workspaceInitials}
           </span>
-          <span className="min-w-0 truncate">{workspaceName}</span>
+          <span className="flex min-w-0 items-center gap-1.5 truncate">
+            <span className="truncate">{workspaceName}</span>
+            {variant !== 'header' && !isPersonalWorkspace && (
+              <Users
+                size={12}
+                strokeWidth={2.25}
+                className="shrink-0 text-[var(--ledger-text-muted)]"
+                aria-label="Shared workspace"
+              />
+            )}
+          </span>
           {isOpen ? (
             <ChevronUp size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
           ) : (
@@ -558,18 +598,28 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                           type="button"
                           data-switcher-subrow="true"
                           onClick={() => void selectWorkspace(workspace.id)}
-                          className={`flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+                        className={`flex min-h-7 w-full items-center gap-2 rounded-md px-2.5 py-1 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
                             isActive
-                              ? 'bg-[color:rgba(255,95,64,0.06)] text-[var(--ledger-text-primary)]'
+                              ? 'bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-primary)]'
                               : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                           }`}
                         >
-                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md bg-[color:rgba(255,95,64,0.1)] text-[9px] font-semibold text-[var(--ledger-accent)]">
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-accent)]">
                             {getWorkspaceInitials(workspace.name)}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium leading-4">{workspace.name}</span>
-                            <span className="block truncate text-[10px] leading-4 text-[var(--ledger-text-muted)]">
+                            <span className="flex items-center gap-1.5 truncate text-[12px] font-medium leading-4">
+                              <span className="truncate">{workspace.name}</span>
+                              {!workspace.is_personal && (
+                                <Users
+                                  size={11}
+                                  strokeWidth={2.25}
+                                  className="shrink-0 text-[var(--ledger-text-muted)]"
+                                  aria-label="Shared workspace"
+                                />
+                              )}
+                            </span>
+                            <span className="block truncate text-[10px] leading-3.5 text-[var(--ledger-text-muted)]">
                               {getWorkspaceLabel(workspace)}
                             </span>
                           </span>

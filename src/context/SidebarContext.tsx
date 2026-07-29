@@ -498,7 +498,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       sidebarPlacement === 'floating' ? floatingDockSide ?? 'left' : sidebarPlacement;
     const sidebarMode: SidebarAttachmentMode =
       shellFullscreen && isSidebarVisible ? 'attached' : 'overlay';
-    const verticalSidebarWidth = state === 'expanded' ? 320 : 64;
+    const verticalSidebarWidth = state === 'expanded' ? 320 : 56;
     const horizontalSidebarHeight = state === 'expanded' ? 144 : 60;
     const isVerticalPlacement = effectivePlacement === 'left' || effectivePlacement === 'right';
     const attachedWidth = isVerticalPlacement ? verticalSidebarWidth : 0;

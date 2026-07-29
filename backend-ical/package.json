@@ -5,6 +5,7 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
+    "test": "node --test ical-format.test.js",
     "start": "node server.js"
   },
   "dependencies": {

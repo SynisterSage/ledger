@@ -36,7 +36,6 @@ export const SidebarContainer = () => {
   const AUTO_HIDE_FADE_MS = 300;
   const isFloating = position === 'floating';
   const isHorizontal = position === 'top' || position === 'bottom';
-  const isCollapsedIconMode = state === 'minimized' && !isExpanded;
   const isFullscreenAttachedShell = workspaceShellLayout.shellFullscreen && state !== 'fullscreen';
   const motionDurationMs = prefersReducedMotion ? 0 : 160;
   const motionClass = prefersReducedMotion
@@ -175,34 +174,30 @@ export const SidebarContainer = () => {
       : isExpanded
       ? isHorizontal
         ? 'w-auto h-[60px]'
-        : 'w-16 h-full'
+        : 'w-14 h-full'
       : isHorizontal
-      ? 'w-auto h-[60px]'
-      : 'w-16 h-16';
+        ? 'w-auto h-[60px]'
+        : 'w-14 h-14';
   const shellRadiusClass =
     isFullscreenAttachedShell && position === 'left'
-      ? 'rounded-l-3xl rounded-r-none'
+      ? 'rounded-l-[var(--ledger-window-radius)] rounded-r-none'
       : isFullscreenAttachedShell && position === 'right'
-      ? 'rounded-r-3xl rounded-l-none'
+      ? 'rounded-r-[var(--ledger-window-radius)] rounded-l-none'
       : isFullscreenAttachedShell && position === 'top'
-      ? 'rounded-t-3xl rounded-b-none'
+      ? 'rounded-t-[var(--ledger-window-radius)] rounded-b-none'
       : isFullscreenAttachedShell && position === 'bottom'
-      ? 'rounded-b-3xl rounded-t-none'
-      : isCollapsedIconMode && !isWindowsPlatform
-      ? 'rounded-2xl'
-      : 'rounded-3xl';
+      ? 'rounded-b-[var(--ledger-window-radius)] rounded-t-none'
+      : 'rounded-[var(--ledger-window-radius)]';
   const shellClipRadius =
     isFullscreenAttachedShell && position === 'left'
-      ? '24px 0 0 24px'
+      ? 'var(--ledger-window-radius) 0 0 var(--ledger-window-radius)'
       : isFullscreenAttachedShell && position === 'right'
-      ? '0 24px 24px 0'
+      ? '0 var(--ledger-window-radius) var(--ledger-window-radius) 0'
       : isFullscreenAttachedShell && position === 'top'
-      ? '24px 24px 0 0'
+      ? 'var(--ledger-window-radius) var(--ledger-window-radius) 0 0'
       : isFullscreenAttachedShell && position === 'bottom'
-      ? '0 0 24px 24px'
-      : isCollapsedIconMode && !isWindowsPlatform
-      ? '16px'
-      : '24px';
+      ? '0 0 var(--ledger-window-radius) var(--ledger-window-radius)'
+      : 'var(--ledger-window-radius)';
   const shellOverflowClass = 'overflow-hidden';
   const glassAttachmentClass =
     !isFloating && workspaceShellLayout.sidebarMode === 'attached'

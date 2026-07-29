@@ -11,7 +11,7 @@ export const sidebarTheme = {
   popover:
     'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
   menu:
-    'fixed z-50 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-menu-background)] py-1 shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
+    'fixed z-50 overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-menu-background)] py-1 shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
   menuItem:
     'w-full text-left px-4 py-2 text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] flex items-center gap-2',
   menuItemAccent:
@@ -19,7 +19,7 @@ export const sidebarTheme = {
   menuItemDanger:
     'w-full text-left px-4 py-2 text-sm text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] flex items-center gap-2',
   railIcon:
-    `inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors duration-150 active:scale-95 ${accentFocus}`,
+    `inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-150 active:scale-95 ${accentFocus}`,
   railIconNeutral:
     'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   railIconDanger:

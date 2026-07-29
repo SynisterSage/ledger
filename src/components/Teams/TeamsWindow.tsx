@@ -352,7 +352,7 @@ const tabs = ['Overview', 'Notes', 'Members'] as const;
 
 const teamsTheme = {
   shell:
-    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
+    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
   content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-4 py-4 lg:px-5 lg:py-5',
   page: 'mx-auto flex min-h-full w-full max-w-[1280px] flex-col gap-4',
   pageTitle:

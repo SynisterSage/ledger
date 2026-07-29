@@ -21,7 +21,7 @@ const inputClassName =
 const iconInputClassName =
   'h-11 w-full rounded-lg border border-(--ledger-border-subtle) bg-(--ledger-input-background) pl-9 pr-3.5 text-sm text-(--ledger-text-primary) transition placeholder:text-(--ledger-placeholder) focus:border-(--ledger-border-strong) focus:outline-none focus:ring-2 focus:ring-(--ledger-border-strong)/20';
 const authFrameClassName =
-  'absolute inset-3 rounded-3xl border border-(--ledger-border-subtle) bg-(--ledger-background) shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]';
+  'absolute inset-3 rounded-[var(--ledger-window-radius)] border border-(--ledger-border-subtle) bg-(--ledger-background) shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]';
 const authSurfaceClassName =
   'relative z-10 h-full w-full overflow-hidden rounded-3xl bg-(--ledger-background)';
 const authTextPrimaryClassName = 'text-(--ledger-text-primary)';

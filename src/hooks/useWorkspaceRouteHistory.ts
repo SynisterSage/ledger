@@ -130,6 +130,12 @@ export const useWorkspaceRouteHistory = (
     const nextSearch = buildWorkspaceRouteSearch(route);
     const nextUrl = `${window.location.pathname}?${nextSearch}${window.location.hash}`;
     window.history.replaceState({}, '', nextUrl);
+    // Route changes made by the live module (for example opening a note from
+    // Notes Home) are intentional navigation. Let the shared tab strip clear
+    // any close tombstone before Electron acknowledges the new route.
+    window.dispatchEvent(
+      new CustomEvent('ledger:workspace-route-requested', { detail: { ...route } })
+    );
     void window.desktopWindow?.updateWorkspaceRoute?.({
       ...route,
       historyMode: options.pushHistory === false ? 'replace' : 'push',

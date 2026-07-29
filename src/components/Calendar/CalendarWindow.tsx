@@ -1,6 +1,9 @@
 import {
   CalendarDays,
+  CalendarClock,
   Check,
+  CheckSquare,
+  Copy,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -16,8 +19,11 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  Flag,
   Inbox,
   MoreHorizontal,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -49,6 +55,15 @@ import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import {
+  CalendarSubscriptionModal,
+  type CalendarSubscriptionCalendar,
+  type CalendarSubscriptionDetails,
+  type CalendarSubscriptionSettings,
+} from './CalendarSubscriptionModal';
+import { AppleCalendarConnection } from './AppleCalendarConnection';
+import { useAppleCalendar } from './appleCalendar';
+import { useAppleReminders } from './appleReminders';
 
 // Get RRule from the module - handles both ESM and CommonJS
 const RRule = (rruleModule as any).RRule || (rruleModule as any).default?.RRule || rruleModule;
@@ -119,6 +134,13 @@ type EventRow = {
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
+  provider?: 'apple';
+  provider_calendar_name?: string;
+  provider_event_id?: string;
+  provider_last_modified?: string | null;
+  location?: string | null;
+  time_zone?: string | null;
+  url?: string | null;
 };
 
 type ReminderRow = {
@@ -128,7 +150,8 @@ type ReminderRow = {
   calendar_id: string;
   color?: string;
   is_done: boolean;
-  recurrence_rule?: 'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates';
+  recurrence_rule?: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'weekdays' | 'specific_dates';
+  priority?: number;
   project_id?: string | null;
   note_id?: string | null;
   notes?: string | null;
@@ -137,6 +160,11 @@ type ReminderRow = {
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
+  all_day?: boolean;
+  provider?: 'apple-reminders';
+  provider_list_name?: string;
+  provider_reminder_id?: string;
+  provider_last_modified?: string | null;
 };
 
 type CalendarPreferenceSnapshot = {
@@ -170,6 +198,9 @@ type TaskRow = {
   title: string;
   status?: string | null;
   project_id?: string | null;
+  milestone_id?: string | null;
+  due_date?: string | null;
+  due_time?: string | null;
   description?: string | null;
   notes?: string | null;
   created_at?: string;
@@ -179,6 +210,28 @@ type ProjectRow = {
   id: string;
   name: string;
   color?: string;
+  end_date?: string | null;
+  status?: string | null;
+};
+
+type MilestoneRow = {
+  id: string;
+  title: string;
+  milestone_date?: string | null;
+  completed?: boolean;
+  project_id?: string | null;
+};
+
+type DueDateItem = {
+  id: string;
+  sourceId: string;
+  kind: 'task' | 'project' | 'milestone';
+  title: string;
+  date: string;
+  time?: string | null;
+  completed: boolean;
+  color: string;
+  projectId?: string | null;
 };
 
 type CalendarDataCacheEntry = {
@@ -187,6 +240,8 @@ type CalendarDataCacheEntry = {
   events: EventRow[];
   reminders: ReminderRow[];
   projects: ProjectRow[];
+  milestones: MilestoneRow[];
+  tasks: TaskRow[];
   notes: NoteRow[];
   followUpTasksByEvent: Record<string, TaskRow[]>;
 };
@@ -733,10 +788,8 @@ export const CalendarWindow = () => {
   const api = useApi();
   const viewportWidth = useViewportWidth();
   const centerScrollRef = useRef<HTMLDivElement | null>(null);
-  const monthGridRef = useRef<HTMLDivElement | null>(null);
   const hasAutoScrolledToNowRef = useRef(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const [monthCellHeight, setMonthCellHeight] = useState(122);
   const hasLoadedDataRef = useRef(false);
   const calendarDataCacheRef = useRef(new Map<string, CalendarDataCacheEntry>());
   const hasAppliedInitialFocusContextRef = useRef(false);
@@ -762,14 +815,18 @@ export const CalendarWindow = () => {
   const [editingCalendarId, setEditingCalendarId] = useState<string | null>(null);
   const [editingCalendarName, setEditingCalendarName] = useState('');
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [appleEventsForSelection, setAppleEventsForSelection] = useState<EventRow[]>([]);
   const [reminders, setReminders] = useState<ReminderRow[]>([]);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [milestones, setMilestones] = useState<MilestoneRow[]>([]);
+  const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedData, setHasLoadedData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
+  const appliedCalendarDataFingerprintRef = useRef<string | null>(null);
 
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -778,6 +835,9 @@ export const CalendarWindow = () => {
   const [newEventDurationValue, setNewEventDurationValue] = useState(30);
   const [newEventDurationUnit, setNewEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
   const [newEventAllDay, setNewEventAllDay] = useState(false);
+  const [newReminderPriority, setNewReminderPriority] = useState(0);
+  const [newEventLocation, setNewEventLocation] = useState('');
+  const [newEventUrl, setNewEventUrl] = useState('');
   const [newEventRecurrence, setNewEventRecurrence] = useState<
     'none' | 'daily' | 'weekly' | 'monthly' | 'weekdays' | 'specific_dates'
   >('none');
@@ -790,6 +850,17 @@ export const CalendarWindow = () => {
   const [newEventVisibility, setNewEventVisibility] = useState<'private' | 'workspace'>('private');
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [, setIsSyncingApple] = useState(false);
+  const [appleSubscriptionUrl, setAppleSubscriptionUrl] = useState<string | null>(null);
+  const [isCalendarSubscriptionModalOpen, setIsCalendarSubscriptionModalOpen] = useState(false);
+  const [isLoadingCalendarSubscription, setIsLoadingCalendarSubscription] = useState(false);
+  const [isSavingCalendarSubscription, setIsSavingCalendarSubscription] = useState(false);
+  const [calendarSubscriptionSettings, setCalendarSubscriptionSettings] =
+    useState<CalendarSubscriptionDetails | null>(null);
+  const [calendarSubscriptionWorkspaceName, setCalendarSubscriptionWorkspaceName] = useState<string | null>(null);
+  const [calendarSubscriptionCalendars, setCalendarSubscriptionCalendars] = useState<
+    CalendarSubscriptionCalendar[]
+  >([]);
+  const [calendarSubscriptionError, setCalendarSubscriptionError] = useState<string | null>(null);
   const [appleSyncMessage, setAppleSyncMessage] = useState<string | null>(null);
   const [isAppleSyncMessageVisible, setIsAppleSyncMessageVisible] = useState(false);
   const [isImportingIcs, setIsImportingIcs] = useState(false);
@@ -797,6 +868,7 @@ export const CalendarWindow = () => {
     x: number;
     y: number;
   } | null>(null);
+  const calendarNewButtonRef = useRef<HTMLButtonElement | null>(null);
   const calendarHeaderMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isImportMessageVisible, setIsImportMessageVisible] = useState(false);
@@ -810,8 +882,12 @@ export const CalendarWindow = () => {
   const [listContextMenu, setListContextMenu] = useState<ListContextMenuState | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
   const [eventEditorEvent, setEventEditorEvent] = useState<EventRow | null>(null);
+  const [appleEditorSnapshot, setAppleEditorSnapshot] = useState<EventRow | null>(null);
+  const previousAppleEventIdsRef = useRef<Set<string>>(new Set());
   const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null);
   const [reminderEditorReminder, setReminderEditorReminder] = useState<ReminderRow | null>(null);
+  const [appleReminderEditorSnapshot, setAppleReminderEditorSnapshot] = useState<ReminderRow | null>(null);
+  const previousAppleReminderIdsRef = useRef<Set<string>>(new Set());
   const [pendingFocusEventId, setPendingFocusEventId] = useState<string | null>(null);
   const [pendingFocusReminderId, setPendingFocusReminderId] = useState<string | null>(null);
   const [eventNotesDrafts, setEventNotesDrafts] = useState<Record<string, string>>({});
@@ -831,6 +907,10 @@ export const CalendarWindow = () => {
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
+  const [editAllDay, setEditAllDay] = useState(false);
+  const [editLocation, setEditLocation] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [editRecurrenceSpan, setEditRecurrenceSpan] = useState<'thisEvent' | 'futureEvents'>('thisEvent');
   const [editDurationValue, setEditDurationValue] = useState(30);
   const [editDurationUnit, setEditDurationUnit] = useState<'minutes' | 'hours'>('minutes');
   const [editStatus, setEditStatus] = useState<'planned' | 'done' | 'missed' | 'cancelled'>(
@@ -850,6 +930,9 @@ export const CalendarWindow = () => {
   const [reminderEditCalendarId, setReminderEditCalendarId] = useState('');
   const [reminderEditColor, setReminderEditColor] = useState('#F59E0B');
   const [reminderEditDone, setReminderEditDone] = useState(false);
+  const [reminderEditNotes, setReminderEditNotes] = useState('');
+  const [reminderEditPriority, setReminderEditPriority] = useState(0);
+  const [reminderEditRecurrence, setReminderEditRecurrence] = useState<string>('none');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [isDeletingReminder, setIsDeletingReminder] = useState(false);
@@ -1069,7 +1152,7 @@ export const CalendarWindow = () => {
       : null;
   const selectedEventPreview = useMemo(() => {
     if (!selectedEvent) return null;
-    const fresh = events.find((row) => row.id === baseEventId(selectedEvent.id));
+    const fresh = [...events, ...appleEventsForSelection].find((row) => row.id === baseEventId(selectedEvent.id));
     if (!fresh) return null;
     if (fresh.id === selectedEvent.id) return fresh;
     return {
@@ -1078,12 +1161,12 @@ export const CalendarWindow = () => {
       start_at: selectedEvent.start_at,
       end_at: selectedEvent.end_at,
     };
-  }, [events, selectedEvent]);
+  }, [appleEventsForSelection, events, selectedEvent]);
   const isInitialLoading = isLoading && !hasLoadedData;
 
   const focusEventById = (eventIdRaw: string) => {
     const eventId = baseEventId(eventIdRaw);
-    const target = events.find((event) => baseEventId(event.id) === eventId) ?? null;
+    const target = [...events, ...appleEventsForSelection].find((event) => baseEventId(event.id) === eventId) ?? null;
     if (!target) {
       setPendingFocusEventId(eventId);
       return;
@@ -1275,6 +1358,42 @@ export const CalendarWindow = () => {
     };
   }, [viewAnchor, viewMode, calendarPreferences.showWeekends, calendarPreferences.weekStartsOn]);
 
+  const appleCalendar = useAppleCalendar(user?.id, viewConfig.start, viewConfig.end);
+  const appleReminders = useAppleReminders(user?.id, viewConfig.start, viewConfig.end);
+  const allCalendarRows = useMemo(
+    () => [...calendars, ...appleCalendar.connectedCalendars.map((calendar) => ({ ...calendar, is_visible: calendar.visible })), ...appleReminders.connectedLists.map((list) => ({ ...list, id: list.id, name: list.title, is_visible: list.visible, is_reminder_list: true }))],
+    [appleCalendar.connectedCalendars, appleReminders.connectedLists, calendars]
+  );
+  const allEvents = useMemo<EventRow[]>(() => [...events, ...(appleCalendar.events as EventRow[])], [appleCalendar.events, events]);
+  useEffect(() => {
+    setReminders((current) => [...current.filter((reminder) => reminder.provider !== 'apple-reminders'), ...(appleReminders.reminders as ReminderRow[])]);
+  }, [appleReminders.reminders]);
+  useEffect(() => {
+    const nextIds = new Set(appleReminders.reminders.map((reminder) => reminder.provider_reminder_id).filter((id): id is string => Boolean(id)));
+    const selectedProviderId = selectedReminder?.provider === 'apple-reminders' ? selectedReminder.provider_reminder_id : null;
+    if (selectedProviderId && previousAppleReminderIdsRef.current.has(selectedProviderId) && !nextIds.has(selectedProviderId)) {
+      setSelectedReminder(null);
+      setReminderEditorReminder(null);
+      setAppleReminderEditorSnapshot(null);
+      setError('This reminder was removed from Apple Reminders.');
+    } else if (selectedProviderId) {
+      const latest = appleReminders.reminders.find((reminder) => reminder.provider_reminder_id === selectedProviderId) as ReminderRow | undefined;
+      if (latest && !reminderEditorReminder) setSelectedReminder(latest);
+    }
+    previousAppleReminderIdsRef.current = nextIds;
+  }, [appleReminders.reminders, reminderEditorReminder, selectedReminder]);
+  useEffect(() => { setAppleEventsForSelection(appleCalendar.events as EventRow[]); }, [appleCalendar.events]);
+  useEffect(() => {
+    const nextIds = new Set(appleCalendar.events.map((event) => event.id));
+    if (selectedEvent?.provider === 'apple' && previousAppleEventIdsRef.current.has(selectedEvent.id) && !nextIds.has(selectedEvent.id)) {
+      setSelectedEvent(null);
+      setEventEditorEvent(null);
+      setAppleEditorSnapshot(null);
+      setError('This event was removed from Apple Calendar.');
+    }
+    previousAppleEventIdsRef.current = nextIds;
+  }, [appleCalendar.events, selectedEvent]);
+
   const todayKey = formatDateKey(currentTime);
   const visibleToday = viewConfig.dates.some((date) => formatDateKey(date) === todayKey);
   const todayColumnIndex = viewConfig.dates.findIndex((date) => formatDateKey(date) === todayKey);
@@ -1283,22 +1402,6 @@ export const CalendarWindow = () => {
   useEffect(() => {
     hasAutoScrolledToNowRef.current = false;
   }, [viewAnchor, viewMode]);
-
-  useEffect(() => {
-    if (viewMode !== 'month') return;
-    const grid = monthGridRef.current;
-    if (!grid) return;
-
-    const measure = () => {
-      const cell = grid.querySelector<HTMLElement>('[data-month-cell="true"]');
-      if (cell) setMonthCellHeight(cell.getBoundingClientRect().height);
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(grid);
-    return () => observer.disconnect();
-  }, [viewMode, viewConfig.dates.length]);
 
   useEffect(() => {
     if (viewMode === 'month' || !visibleToday || hasAutoScrolledToNowRef.current) return;
@@ -1316,11 +1419,15 @@ export const CalendarWindow = () => {
   }, [currentTime, viewMode, visibleToday]);
 
   const visibleCalendarIdsMemo = useMemo(() => {
-    return new Set(calendars.filter((calendar) => calendar.is_visible !== false).map((c) => c.id));
-  }, [calendars]);
+    return new Set(
+      allCalendarRows
+        .filter((calendar) => calendar.is_visible !== false && (calendar as { available?: boolean }).available !== false)
+        .map((c) => c.id)
+    );
+  }, [allCalendarRows]);
 
   const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
-  const canEditEvent = (_event: EventRow) => true;
+  const canEditEvent = (event: EventRow) => event.provider !== 'apple' || Boolean(appleCalendar.connectedCalendars.find((calendar) => calendar.id === event.calendar_id)?.allowsContentModifications);
   const isPastReminder = (reminder: ReminderRow) =>
     new Date(reminder.remind_at).getTime() < Date.now();
   const isPastEventMuted = (event: EventRow) =>
@@ -1347,7 +1454,7 @@ export const CalendarWindow = () => {
     const expanded: EventRow[] = [];
     // Use the precomputed visibleCalendarIds to filter events
     const visibleCalendarIds = visibleCalendarIdsMemo;
-    for (const event of events) {
+    for (const event of allEvents) {
       if (!visibleCalendarIds.has(event.calendar_id)) continue;
       if (calendarPreferences.showCompletedItems === 'hidden' && event.status === 'done') continue;
       if (shouldHidePastEvent(event)) continue;
@@ -1419,7 +1526,7 @@ export const CalendarWindow = () => {
     expanded.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
     return expanded;
   }, [
-    events,
+    allEvents,
     viewConfig.start,
     viewConfig.end,
     visibleCalendarIdsMemo,
@@ -1427,14 +1534,141 @@ export const CalendarWindow = () => {
   ]);
 
   const calendarById = useMemo(
-    () => new Map(calendars.map((calendar) => [calendar.id, calendar])),
-    [calendars]
+    () => new Map(allCalendarRows.map((calendar) => [calendar.id, calendar])),
+    [allCalendarRows]
   );
   const projectById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
   );
   const noteById = useMemo(() => new Map(notes.map((note) => [note.id, note])), [notes]);
+
+  const dueDateItems = useMemo<DueDateItem[]>(() => {
+    const items: DueDateItem[] = [];
+    const shouldShowCompleted = calendarPreferences.showCompletedItems !== 'hidden';
+
+    for (const task of tasks) {
+      if (!task.due_date) continue;
+      const completed = ['completed', 'done', 'cancelled'].includes(
+        String(task.status ?? '').toLowerCase()
+      );
+      if (completed && !shouldShowCompleted) continue;
+      items.push({
+        id: `task:${task.id}`,
+        sourceId: task.id,
+        kind: 'task',
+        title: task.title,
+        date: task.due_date,
+        time: task.due_time,
+        completed,
+        color: '#64748B',
+        projectId: task.project_id,
+      });
+    }
+
+    for (const project of projects) {
+      if (!project.end_date) continue;
+      const completed = String(project.status ?? '').toLowerCase() === 'completed';
+      if (completed && !shouldShowCompleted) continue;
+      items.push({
+        id: `project:${project.id}`,
+        sourceId: project.id,
+        kind: 'project',
+        title: project.name,
+        date: project.end_date,
+        completed,
+        color: project.color ?? 'var(--ledger-accent)',
+      });
+    }
+
+    for (const milestone of milestones) {
+      if (!milestone.milestone_date) continue;
+      if (milestone.completed && !shouldShowCompleted) continue;
+      items.push({
+        id: `milestone:${milestone.id}`,
+        sourceId: milestone.id,
+        kind: 'milestone',
+        title: milestone.title,
+        date: milestone.milestone_date,
+        completed: Boolean(milestone.completed),
+        color: '#A855F7',
+        projectId: milestone.project_id,
+      });
+    }
+
+    return items;
+  }, [calendarPreferences.showCompletedItems, milestones, projects, tasks]);
+
+  const dueItemsByDay = useMemo(() => {
+    const grouped: Record<string, DueDateItem[]> = {};
+    for (const date of viewConfig.dates) grouped[formatDateKey(date)] = [];
+    for (const item of dueDateItems) {
+      const key = formatDateKey(new Date(`${item.date}T00:00:00`));
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(item);
+    }
+    for (const key of Object.keys(grouped)) {
+      grouped[key].sort((left, right) => {
+        const leftTime = left.time ? `${left.date}T${left.time}` : `${left.date}T23:59`;
+        const rightTime = right.time ? `${right.date}T${right.time}` : `${right.date}T23:59`;
+        return leftTime.localeCompare(rightTime) || left.title.localeCompare(right.title);
+      });
+    }
+    return grouped;
+  }, [dueDateItems, viewConfig.dates]);
+
+  const openDueDateItem = useCallback((item: DueDateItem) => {
+    if (item.kind === 'project') {
+      void window.desktopWindow?.toggleModule('projects', { focusProjectId: item.sourceId });
+      return;
+    }
+    void window.desktopWindow?.toggleModule('projects', {
+      focusProjectId: item.projectId ?? undefined,
+      focusTaskId: item.kind === 'task' ? item.sourceId : undefined,
+    });
+  }, []);
+
+  const renderDueDateRow = (item: DueDateItem, className = '') => (
+    <div
+      key={item.id}
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        event.stopPropagation();
+        openDueDateItem(item);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openDueDateItem(item);
+        }
+      }}
+      className={`flex min-h-4 cursor-pointer items-center truncate px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors hover:bg-[var(--ledger-surface-hover)] ${
+        item.completed ? 'line-through opacity-55' : ''
+      } ${className}`}
+      title={`${item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'}: ${item.title}`}
+    >
+      <span
+        className="mr-1 flex h-3 w-3 shrink-0 items-center justify-center"
+        style={{ color: item.color }}
+        aria-hidden="true"
+      >
+        {item.kind === 'task' ? (
+          <CheckSquare size={11} strokeWidth={1.8} />
+        ) : item.kind === 'milestone' ? (
+          <Flag size={11} strokeWidth={1.8} />
+        ) : (
+          <CalendarClock size={11} strokeWidth={1.8} />
+        )}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{item.title}</span>
+      {item.time && (
+        <span className="ml-auto shrink-0 pl-1 text-[10px] text-[var(--ledger-text-muted)]">
+          {item.time}
+        </span>
+      )}
+    </div>
+  );
 
   const eventsByDay = useMemo(() => {
     const grouped: Record<string, EventRow[]> = {};
@@ -1611,6 +1845,7 @@ export const CalendarWindow = () => {
   const selectedContextDayKey = formatDateKey(selectedContextDate);
   const selectedContextDayEvents = eventsByDay[selectedContextDayKey] ?? [];
   const selectedContextDayReminders = remindersByDay[selectedContextDayKey] ?? [];
+  const selectedContextDayDueItems = dueItemsByDay[selectedContextDayKey] ?? [];
   const activeVisibleEvents = visibleEvents.filter((event) => event.status !== 'done');
   const activeRemindersByDay = Object.values(remindersByDay).reduce(
     (total, items) => total + items.filter((reminder) => !reminder.is_done).length,
@@ -1999,6 +2234,10 @@ export const CalendarWindow = () => {
     () => (overflowDayKey ? remindersByDay[overflowDayKey] ?? [] : []),
     [overflowDayKey, remindersByDay]
   );
+  const overflowDueItems = useMemo(
+    () => (overflowDayKey ? dueItemsByDay[overflowDayKey] ?? [] : []),
+    [dueItemsByDay, overflowDayKey]
+  );
   const showWorkspaceNames = effectiveCalendarScope === 'all_accessible_workspaces';
 
   useEffect(() => {
@@ -2010,6 +2249,8 @@ export const CalendarWindow = () => {
           setCalendars([]);
           setEvents([]);
           setReminders([]);
+          setMilestones([]);
+          setTasks([]);
           setHasLoadedData(false);
           setIsLoading(false);
         }
@@ -2033,6 +2274,8 @@ export const CalendarWindow = () => {
         setEvents(cached.events);
         setReminders(cached.reminders);
         setProjects(cached.projects);
+        setMilestones(cached.milestones);
+        setTasks(cached.tasks);
         setNotes(cached.notes);
         setFollowUpTasksByEvent(cached.followUpTasksByEvent);
         hasLoadedDataRef.current = true;
@@ -2067,11 +2310,6 @@ export const CalendarWindow = () => {
           finalCalendars = [createdCalendar as CalendarRow];
         }
 
-        setCalendars(finalCalendars);
-        setCalendarColorDrafts(
-          Object.fromEntries(finalCalendars.map((calendar) => [calendar.id, calendar.color]))
-        );
-
         const [eventRows, reminderRows] = await Promise.all([
           api.getEvents(viewConfig.start.toISOString(), viewConfig.end.toISOString(), {
             scope: effectiveCalendarScope,
@@ -2081,12 +2319,10 @@ export const CalendarWindow = () => {
 
         if (cancelled) return;
 
-        setEvents((eventRows ?? []) as EventRow[]);
         const filteredReminders = ((reminderRows ?? []) as ReminderRow[]).filter((reminder) => {
             const remindAt = new Date(reminder.remind_at).getTime();
             return remindAt >= viewConfig.start.getTime() && remindAt < viewConfig.end.getTime();
           });
-        setReminders(filteredReminders);
 
         const eventRowsById = new Set(((eventRows ?? []) as EventRow[]).map((event) => event.id));
         const reminderRowsById = new Set(
@@ -2102,29 +2338,60 @@ export const CalendarWindow = () => {
           current && !reminderRowsById.has(current.id) ? null : current
         );
 
-        const [projectResult, noteResult, taskResult] = await Promise.allSettled([
+        const [projectResult, noteResult, taskResult, milestoneResult] = await Promise.allSettled([
           api.getProjects({ includeCompleted: true }),
           api.getNotes(),
           api.getTasks(),
+          api.getWorkspaceProjectMilestones(),
         ]);
 
         if (cancelled) return;
 
-        setProjects(
+        const loadedProjects =
           projectResult.status === 'fulfilled' && Array.isArray(projectResult.value)
             ? (projectResult.value as ProjectRow[])
-            : []
-        );
-        setNotes(
+            : [];
+        const loadedTasks =
+          taskResult.status === 'fulfilled' && Array.isArray(taskResult.value)
+            ? (taskResult.value as TaskRow[])
+            : [];
+        const loadedMilestones =
+          milestoneResult.status === 'fulfilled' && Array.isArray(milestoneResult.value)
+            ? (milestoneResult.value as MilestoneRow[])
+            : [];
+        const loadedNotes =
           noteResult.status === 'fulfilled' &&
-            noteResult.value &&
-            Array.isArray((noteResult.value as { notes?: NoteRow[] }).notes)
+          noteResult.value &&
+          Array.isArray((noteResult.value as { notes?: NoteRow[] }).notes)
             ? (noteResult.value as { notes: NoteRow[] }).notes ?? []
-            : []
-        );
+            : [];
+        const nextCalendarDataFingerprint = JSON.stringify({
+          calendars: finalCalendars.map((calendar) => [calendar.id, calendar.name, calendar.color, calendar.is_visible]),
+          events: (eventRows ?? []).map((event: EventRow) => [event.id, event.start_at, event.end_at, event.status]),
+          reminders: filteredReminders.map((reminder) => [reminder.id, reminder.remind_at, reminder.is_done]),
+          projects: loadedProjects.map((project) => [project.id, project.name, project.end_date, project.status, project.color]),
+          tasks: loadedTasks.map((task) => [task.id, task.title, task.due_date, task.due_time, task.status, task.project_id]),
+          milestones: loadedMilestones.map((milestone) => [milestone.id, milestone.title, milestone.milestone_date, milestone.completed, milestone.project_id]),
+          notes: loadedNotes.map((note) => [note.id, note.title]),
+        });
+        const shouldApplyCalendarData =
+          appliedCalendarDataFingerprintRef.current !== nextCalendarDataFingerprint;
+        if (shouldApplyCalendarData) {
+          setCalendars(finalCalendars);
+          setCalendarColorDrafts(
+            Object.fromEntries(finalCalendars.map((calendar) => [calendar.id, calendar.color]))
+          );
+          setEvents((eventRows ?? []) as EventRow[]);
+          setReminders(filteredReminders);
+          setProjects(loadedProjects);
+          setTasks(loadedTasks);
+          setMilestones(loadedMilestones);
+          setNotes(loadedNotes);
+          appliedCalendarDataFingerprintRef.current = nextCalendarDataFingerprint;
+        }
         let followUpMap: Record<string, TaskRow[]> = {};
         if (taskResult.status === 'fulfilled' && Array.isArray(taskResult.value)) {
-          for (const task of taskResult.value as TaskRow[]) {
+          for (const task of loadedTasks) {
             const marker = String(task.description ?? '');
             if (!marker.startsWith('calendar_followup:')) continue;
             const eventId = baseEventId(marker.slice('calendar_followup:'.length).trim());
@@ -2138,17 +2405,16 @@ export const CalendarWindow = () => {
                 new Date(right.created_at ?? 0).getTime() - new Date(left.created_at ?? 0).getTime()
             );
           });
-          setFollowUpTasksByEvent(followUpMap);
+          if (shouldApplyCalendarData) setFollowUpTasksByEvent(followUpMap);
         }
         calendarDataCacheRef.current.set(cacheKey, {
           updatedAt: Date.now(),
           calendars: finalCalendars,
           events: (eventRows ?? []) as EventRow[],
           reminders: filteredReminders,
-          projects:
-            projectResult.status === 'fulfilled' && Array.isArray(projectResult.value)
-              ? (projectResult.value as ProjectRow[])
-              : [],
+          projects: loadedProjects,
+          milestones: loadedMilestones,
+          tasks: loadedTasks,
           notes:
             noteResult.status === 'fulfilled' &&
             noteResult.value &&
@@ -2167,6 +2433,8 @@ export const CalendarWindow = () => {
             setCalendars([]);
             setEvents([]);
             setReminders([]);
+            setMilestones([]);
+            setTasks([]);
           }
         }
       } finally {
@@ -2426,6 +2694,8 @@ export const CalendarWindow = () => {
     setNewEventDurationValue(defaultDuration.value);
     setNewEventDurationUnit(defaultDuration.unit);
     setNewEventAllDay(false);
+    setNewEventLocation('');
+    setNewEventUrl('');
     setNewEventTitle(title);
     setNewEventRecurrence('none');
     setNewEventSpecificDates([]);
@@ -2472,6 +2742,8 @@ export const CalendarWindow = () => {
     setNewEventDurationValue(defaultDuration.value);
     setNewEventDurationUnit(defaultDuration.unit);
     setNewEventAllDay(mode === 'event' && !context.hasExplicitTime);
+    setNewEventLocation('');
+    setNewEventUrl('');
     setNewEventTitle(context.suggestedTitle || context.noteTitle || 'Untitled event');
     setNewEventRecurrence('none');
     setNewEventSpecificDates([]);
@@ -2614,7 +2886,7 @@ export const CalendarWindow = () => {
   }, [viewAnchor, viewMode]);
 
   const createQuickEvent = async () => {
-    if (!user || !newEventTitle.trim() || calendars.length === 0) return;
+    if (!user || !newEventTitle.trim() || (calendars.length === 0 && appleCalendar.connectedCalendars.length === 0 && appleReminders.connectedLists.length === 0)) return;
     if (newEventRecurrence === 'specific_dates' && newEventSpecificDates.length === 0) {
       setError('Choose at least one date.');
       return;
@@ -2622,9 +2894,10 @@ export const CalendarWindow = () => {
 
     const smartDateContext = smartDateComposerContextRef.current;
 
-    const selectedCalendar =
-      calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar();
-    if (!selectedCalendar) return;
+    const appleDestination = appleCalendar.connectedCalendars.find((calendar) => calendar.id === composerCalendarId);
+    const appleReminderDestination = composerMode === 'reminder' ? appleReminders.connectedLists.find((list) => list.id === composerCalendarId) : undefined;
+    const selectedCalendar = calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar();
+    if (!selectedCalendar && !appleDestination && !appleReminderDestination) return;
     const start = newEventAllDay
       ? new Date(`${newEventDate}T00:00:00`)
       : new Date(`${newEventDate}T${newEventTime}:00`);
@@ -2640,6 +2913,14 @@ export const CalendarWindow = () => {
     setError(null);
 
     if (composerMode === 'reminder') {
+      if (appleReminderDestination) {
+        try {
+          await appleReminders.createReminder({ listId: appleReminderDestination.id.slice('apple-reminder:'.length), title: newEventTitle.trim(), notes: composerNotes.trim() || null, dueAt: start.toISOString(), allDay: newEventAllDay, priority: newReminderPriority, recurrence: newEventRecurrence === 'specific_dates' ? 'none' : newEventRecurrence, completed: false });
+          setIsSavingEvent(false); setIsComposerOpen(false); setNewEventTitle(''); setComposerNotes('');
+        } catch (error) { setIsSavingEvent(false); setError(error instanceof Error ? error.message : 'Ledger couldn’t save this reminder to Apple Reminders.'); }
+        return;
+      }
+      if (appleDestination) { setIsSavingEvent(false); setError('Choose an Apple Reminders list or Ledger calendar for a reminder.'); return; }
       const reminderCalendarPreference =
         calendarPreferences.reminderDestination ?? 'today-calendar';
       const selectedReminderCalendar =
@@ -2716,6 +2997,32 @@ export const CalendarWindow = () => {
           console.error('Failed to persist smart reminder link', linkError);
         }
       }
+      return;
+    }
+
+    if (appleDestination) {
+      try {
+        const created = await appleCalendar.createEvent({
+          calendarId: appleDestination.id.slice('apple:'.length),
+          title: newEventTitle.trim(),
+          start: start.toISOString(),
+          end: end.toISOString(),
+          allDay: newEventAllDay,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          notes: composerNotes.trim() || null,
+          location: newEventLocation.trim() || null,
+          url: newEventUrl.trim() || null,
+          recurrence: newEventRecurrence === 'specific_dates' ? 'none' : newEventRecurrence,
+        }) as EventRow;
+        setAppleEventsForSelection((prev) => [...prev.filter((event) => event.id !== created.id), created]);
+        setSelectedEvent(created);
+        setSelectedReminder(null);
+        setIsComposerOpen(false);
+        setNewEventTitle('');
+        notifyCalendarItemsUpdated();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Ledger could not save this event to Apple Calendar.');
+      } finally { setIsSavingEvent(false); }
       return;
     }
 
@@ -2825,6 +3132,15 @@ export const CalendarWindow = () => {
   };
 
   const toggleReminderDone = async (reminder: ReminderRow) => {
+    if (reminder.provider === 'apple-reminders') {
+      const previousDone = reminder.is_done;
+      setReminders((prev) => prev.map((item) => item.provider_reminder_id === reminder.provider_reminder_id ? { ...item, is_done: !previousDone } : item));
+      try {
+        await appleReminders.setCompleted({ reminderId: reminder.provider_reminder_id, completed: !reminder.is_done, listId: reminder.calendar_id.slice('apple-reminder:'.length) });
+        await appleReminders.refreshReminders(true);
+      } catch (error) { setReminders((prev) => prev.map((item) => item.provider_reminder_id === reminder.provider_reminder_id ? { ...item, is_done: previousDone } : item)); setError(error instanceof Error ? error.message : 'Ledger couldn’t save this reminder to Apple Reminders.'); }
+      return;
+    }
     try {
       const targetId = baseReminderId(reminder.id);
       const updated = (await api.updateReminder(targetId, {
@@ -2849,6 +3165,13 @@ export const CalendarWindow = () => {
 
   const quickDeleteReminder = async (reminderId: string) => {
     try {
+      const providerReminder = reminders.find((item) => item.id === reminderId || item.id.startsWith(`${reminderId}__`));
+      if (providerReminder?.provider === 'apple-reminders') {
+        if (!window.confirm('Delete this reminder from Apple Reminders? It will also be removed from your other Apple devices using this account.')) return;
+        await appleReminders.deleteReminder({ reminderId: providerReminder.provider_reminder_id });
+        setReminders((prev) => prev.filter((item) => item.provider_reminder_id !== providerReminder.provider_reminder_id));
+        return;
+      }
       const targetId = baseReminderId(reminderId);
       await api.deleteReminder(targetId);
       setReminders((prev) =>
@@ -2867,15 +3190,18 @@ export const CalendarWindow = () => {
     setReminderEditorReminder(source);
     setReminderEditTitle(source.title);
     setReminderEditDate(formatDateKey(start));
-    setReminderEditTime(
-      `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
-    );
+    setReminderEditTime(source.all_day ? '' : `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`);
     setReminderEditCalendarId(source.calendar_id);
     setReminderEditColor(source.color ?? '#F59E0B');
     setReminderEditDone(source.is_done);
+    setReminderEditNotes(source.notes ?? '');
+    setReminderEditPriority(source.priority ?? 0);
+    setReminderEditRecurrence(source.recurrence_rule ?? 'none');
+    setAppleReminderEditorSnapshot(source.provider === 'apple-reminders' ? { ...source } : null);
   };
 
   const snoozeReminderByMinutes = async (reminder: ReminderRow, minutes: number) => {
+    if (reminder.provider === 'apple-reminders') return;
     const snoozeUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
     try {
       const targetId = baseReminderId(reminder.id);
@@ -2897,6 +3223,35 @@ export const CalendarWindow = () => {
     if (!reminderEditorReminder || !reminderEditTitle.trim()) return;
     setIsSavingEdit(true);
     setError(null);
+
+    if (reminderEditorReminder.provider === 'apple-reminders') {
+      try {
+        const latest = await appleReminders.refetchReminder(reminderEditorReminder.provider_reminder_id ?? '');
+        const snapshot = appleReminderEditorSnapshot ?? reminderEditorReminder;
+        const fields = ['title', 'notes', 'remind_at', 'all_day', 'priority', 'is_done', 'recurrence_rule', 'calendar_id'] as const;
+        const latestValues: Record<string, unknown> = { title: latest.title, notes: latest.notes ?? null, remind_at: latest.remind_at, all_day: latest.all_day, priority: latest.priority ?? 0, is_done: latest.is_done, recurrence_rule: latest.recurrence_rule ?? 'none', calendar_id: latest.calendar_id };
+        const snapshotValues: Record<string, unknown> = { title: snapshot.title, notes: snapshot.notes ?? null, remind_at: snapshot.remind_at, all_day: snapshot.all_day, priority: snapshot.priority ?? 0, is_done: snapshot.is_done, recurrence_rule: snapshot.recurrence_rule ?? 'none', calendar_id: snapshot.calendar_id };
+        const mineValues: Record<string, unknown> = { title: reminderEditTitle.trim(), notes: reminderEditNotes.trim() || null, remind_at: new Date(`${reminderEditDate}T${reminderEditTime || '00:00'}:00`).toISOString(), all_day: !reminderEditTime, priority: reminderEditPriority, is_done: reminderEditDone, recurrence_rule: reminderEditRecurrence, calendar_id: reminderEditCalendarId };
+        const externallyChanged = fields.filter((field) => latestValues[field] !== snapshotValues[field]);
+        const mineChanged = fields.filter((field) => mineValues[field] !== snapshotValues[field]);
+        if (externallyChanged.some((field) => mineChanged.includes(field))) {
+          const useMine = window.confirm('This reminder changed in Apple Reminders while you were editing it. Press OK to use your changes, or Cancel to keep the Apple version.');
+          if (!useMine) { openReminderEditor(latest as ReminderRow); setIsSavingEdit(false); return; }
+        }
+        const desired = { ...mineValues };
+        for (const field of fields) if (!mineChanged.includes(field)) desired[field] = latestValues[field];
+        const listId = String(desired.calendar_id).replace(/^apple-reminder:/, '') || latest.calendar_id.replace(/^apple-reminder:/, '');
+        const dueAt = String(desired.remind_at);
+        const updated = await appleReminders.updateReminder({ reminderId: latest.provider_reminder_id, listId, title: String(desired.title), notes: desired.notes, dueAt, allDay: Boolean(desired.all_day), priority: Number(desired.priority ?? 0), completed: Boolean(desired.is_done), recurrence: String(desired.recurrence_rule ?? 'none') });
+        setSelectedReminder(updated as ReminderRow); setReminderEditorReminder(updated as ReminderRow);
+        setAppleReminderEditorSnapshot(updated as ReminderRow);
+      } catch (error) {
+        if (error && typeof error === 'object' && 'notFound' in error && (error as { notFound?: boolean }).notFound) { setReminders((prev) => prev.filter((item) => item.provider_reminder_id !== reminderEditorReminder.provider_reminder_id)); setSelectedReminder(null); setReminderEditorReminder(null); setError('This reminder was removed from Apple Reminders.'); }
+        else setError(error instanceof Error ? error.message : 'Ledger couldn’t save this reminder to Apple Reminders.');
+      }
+      finally { setIsSavingEdit(false); }
+      return;
+    }
 
     const originalReminderDate = new Date(reminderEditorReminder.remind_at);
     const remindAt = new Date(`${reminderEditDate}T${reminderEditTime}:00`);
@@ -2943,6 +3298,14 @@ export const CalendarWindow = () => {
 
   const deleteReminderFromEditor = async () => {
     if (!reminderEditorReminder) return;
+    if (reminderEditorReminder.provider === 'apple-reminders') {
+      if (!window.confirm('Delete this reminder from Apple Reminders? It will also be removed from your other Apple devices using this account.')) return;
+      setIsDeletingReminder(true);
+      try { await appleReminders.deleteReminder({ reminderId: reminderEditorReminder.provider_reminder_id }); setReminders((prev) => prev.filter((item) => item.provider_reminder_id !== reminderEditorReminder.provider_reminder_id)); setSelectedReminder(null); setReminderEditorReminder(null); }
+      catch (error) { setError(error instanceof Error ? error.message : 'Ledger couldn’t delete this reminder from Apple Reminders.'); }
+      finally { setIsDeletingReminder(false); }
+      return;
+    }
     setIsDeletingReminder(true);
     setError(null);
 
@@ -2971,11 +3334,16 @@ export const CalendarWindow = () => {
     const durationDisplay = getDurationDisplay(durationMinutes);
     setSelectedEvent(event);
     setEventEditorEvent(source);
+    setAppleEditorSnapshot(source.provider === 'apple' ? { ...source } : null);
     setEditTitle(source.title);
     setEditDate(formatDateKey(start));
     setEditTime(
       `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
     );
+    setEditAllDay(Boolean(source.all_day));
+    setEditLocation(source.location ?? '');
+    setEditUrl((source as EventRow & { url?: string | null }).url ?? '');
+    setEditRecurrenceSpan('thisEvent');
     setEditDurationValue(durationDisplay.value);
     setEditDurationUnit(durationDisplay.unit);
     setEditStatus(source.status ?? 'planned');
@@ -3129,6 +3497,7 @@ export const CalendarWindow = () => {
     const start = new Date(`${editDate}T${editTime}:00`);
     const durationMinutes = getDurationMinutes(editDurationValue, editDurationUnit);
     const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+    if (eventEditorEvent.provider === 'apple' && editAllDay) end.setTime(start.getTime() + 24 * 60 * 60 * 1000);
 
     setIsSavingEdit(true);
     setError(null);
@@ -3138,6 +3507,76 @@ export const CalendarWindow = () => {
 
     let updated: EventRow;
     try {
+      if (eventEditorEvent.provider === 'apple') {
+        let appleTitle = editTitle.trim();
+        let appleLocation = editLocation.trim();
+        let appleRecurrence = editRecurrence;
+        let appleCalendarIdValue = resolvedEventCalendarId;
+        let latestApple = eventEditorEvent;
+        if (eventEditorEvent.provider_event_id && appleEditorSnapshot) {
+          try {
+            latestApple = await appleCalendar.refetchEvent(eventEditorEvent.provider_event_id) as EventRow;
+            const fieldValue = (event: EventRow, field: string) => field === 'calendar_id' ? event.calendar_id : field === 'all_day' ? Boolean(event.all_day) : field === 'location' ? event.location ?? '' : field === 'notes' ? event.notes ?? '' : field === 'recurrence_rule' ? event.recurrence_rule ?? 'none' : (event as Record<string, unknown>)[field] ?? '';
+            const desired: Record<string, unknown> = { title: appleTitle, start_at: start.toISOString(), end_at: end.toISOString(), all_day: editAllDay, location: appleLocation, notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? '', calendar_id: appleCalendarIdValue, recurrence_rule: appleRecurrence };
+            const fields = ['title', 'start_at', 'end_at', 'all_day', 'location', 'notes', 'calendar_id', 'recurrence_rule'];
+            const externallyChanged = fields.filter((field) => fieldValue(latestApple, field) !== fieldValue(appleEditorSnapshot, field));
+            const mineChanged = fields.filter((field) => desired[field] !== fieldValue(appleEditorSnapshot, field));
+            const conflict = externallyChanged.some((field) => mineChanged.includes(field));
+            if (conflict) {
+              const useMine = window.confirm('This event changed in Apple Calendar while you were editing it. Press OK to use my changes, or Cancel to keep the Apple version.');
+              if (!useMine) {
+                setAppleEventsForSelection((prev) => prev.map((event) => event.provider_event_id === latestApple.provider_event_id ? latestApple : event));
+                setSelectedEvent(latestApple);
+                setEventEditorEvent(null);
+                setAppleEditorSnapshot(null);
+                setIsSavingEdit(false);
+                return;
+              }
+            } else {
+              if (!mineChanged.includes('title')) desired.title = latestApple.title;
+              if (!mineChanged.includes('location')) desired.location = latestApple.location ?? '';
+              if (!mineChanged.includes('notes')) desired.notes = latestApple.notes ?? '';
+              if (!mineChanged.includes('calendar_id')) desired.calendar_id = latestApple.calendar_id;
+              if (!mineChanged.includes('recurrence_rule')) desired.recurrence_rule = latestApple.recurrence_rule ?? 'none';
+            }
+            appleTitle = String(desired.title);
+            appleLocation = String(desired.location);
+            appleRecurrence = String(desired.recurrence_rule) as typeof appleRecurrence;
+            appleCalendarIdValue = String(desired.calendar_id);
+          } catch (error) {
+            if ((error as { notFound?: boolean })?.notFound) {
+              setAppleEventsForSelection((prev) => prev.filter((event) => event.provider_event_id !== eventEditorEvent.provider_event_id));
+              setSelectedEvent(null); setEventEditorEvent(null); setAppleEditorSnapshot(null);
+            }
+            setError(error instanceof Error ? error.message : 'Could not check the latest Apple Calendar event.');
+            setIsSavingEdit(false);
+            return;
+          }
+        }
+        const appleCalendarId = appleCalendarIdValue.startsWith('apple:')
+          ? appleCalendarIdValue.slice('apple:'.length)
+          : appleCalendarIdValue;
+        updated = await appleCalendar.updateEvent({
+          eventId: eventEditorEvent.provider_event_id,
+          calendarId: appleCalendarId,
+          title: appleTitle,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          allDay: editAllDay,
+          timeZone: eventEditorEvent.time_zone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+          location: appleLocation || null,
+          url: editUrl.trim() || null,
+          notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? null,
+          recurrence: appleRecurrence,
+          span: editRecurrenceSpan,
+        }) as EventRow;
+        setAppleEventsForSelection((prev) => prev.map((event) => event.provider_event_id === updated.provider_event_id ? updated : event));
+        setSelectedEvent(updated);
+        setEventEditorEvent(null);
+        notifyCalendarItemsUpdated();
+        setIsSavingEdit(false);
+        return;
+      }
       updated = (await api.updateEvent(eventEditorEvent.id, {
         title: editTitle.trim(),
         start_at: start.toISOString(),
@@ -3153,6 +3592,11 @@ export const CalendarWindow = () => {
       })) as EventRow;
     } catch (error) {
       console.error('Could not update event:', error);
+      if ((error as { notFound?: boolean })?.notFound) {
+        setAppleEventsForSelection((prev) => prev.filter((event) => event.id !== eventEditorEvent.id));
+        setSelectedEvent(null);
+        setEventEditorEvent(null);
+      }
       setError(error instanceof Error ? error.message : 'Could not update event.');
       setIsSavingEdit(false);
       return;
@@ -3191,6 +3635,16 @@ export const CalendarWindow = () => {
     setError(null);
 
     try {
+      if (eventEditorEvent.provider === 'apple') {
+        if (!window.confirm('Delete this event from Apple Calendar? It will also be removed from Calendar on your Mac and other devices connected to this account.')) { setIsDeletingEvent(false); return; }
+        await appleCalendar.deleteEvent({ eventId: eventEditorEvent.provider_event_id, span: editRecurrenceSpan });
+        setAppleEventsForSelection((prev) => prev.filter((event) => event.provider_event_id !== eventEditorEvent.provider_event_id));
+        setSelectedEvent(null);
+        setEventEditorEvent(null);
+        setConfirmDelete(false);
+        notifyCalendarItemsUpdated();
+        return;
+      }
       await api.deleteEvent(eventEditorEvent.id);
       setEvents((prev) => prev.filter((evt) => evt.id !== eventEditorEvent.id));
       setSelectedEvent((current) => (current?.id === eventEditorEvent.id ? null : current));
@@ -3198,6 +3652,11 @@ export const CalendarWindow = () => {
       setConfirmDelete(false);
       notifyCalendarItemsUpdated();
     } catch (error) {
+      if ((error as { notFound?: boolean })?.notFound) {
+        setAppleEventsForSelection((prev) => prev.filter((event) => event.id !== eventEditorEvent.id));
+        setSelectedEvent(null);
+        setEventEditorEvent(null);
+      }
       setError('Could not delete event.');
     } finally {
       setIsDeletingEvent(false);
@@ -3355,8 +3814,42 @@ export const CalendarWindow = () => {
     setGridQuickTitle('');
   };
 
-  const syncAppleCalendar = async () => {
+  const loadCalendarSubscription = async () => {
     if (!user) return;
+    setIsLoadingCalendarSubscription(true);
+    setCalendarSubscriptionError(null);
+    try {
+      const payload = (await api.getCalendarSubscription()) as {
+        subscription?: CalendarSubscriptionDetails & { feed_token?: string };
+        calendars?: CalendarSubscriptionCalendar[];
+        workspace?: { name?: string | null };
+      };
+      if (!payload.subscription) throw new Error('Subscription settings were not returned.');
+      setCalendarSubscriptionSettings(payload.subscription);
+      setCalendarSubscriptionCalendars(payload.calendars ?? []);
+      setCalendarSubscriptionWorkspaceName(payload.workspace?.name ?? null);
+      if (payload.subscription.feed_token) {
+        setAppleSubscriptionUrl(`${ICAL_SERVICE_URL}/ical/${payload.subscription.feed_token}.ics`);
+      }
+      return payload.subscription;
+    } catch (subscriptionErr) {
+      setCalendarSubscriptionError(
+        subscriptionErr instanceof Error ? subscriptionErr.message : 'Could not load subscription settings.'
+      );
+      return undefined;
+    } finally {
+      setIsLoadingCalendarSubscription(false);
+    }
+  };
+
+  const openCalendarSubscriptionSettings = () => {
+    setIsCalendarSubscriptionModalOpen(true);
+    if (!calendarSubscriptionSettings) void loadCalendarSubscription();
+  };
+
+  const getAppleSubscriptionUrl = async () => {
+    if (!user) return;
+    if (appleSubscriptionUrl) return appleSubscriptionUrl;
     if (!ICAL_SERVICE_URL) {
       setError('Missing VITE_ICAL_SERVICE_URL in frontend environment.');
       return;
@@ -3367,36 +3860,95 @@ export const CalendarWindow = () => {
     setAppleSyncMessage(null);
 
     try {
-      const response = await fetch(`${ICAL_SERVICE_URL}/sync-tokens`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      });
-
-      const json = (await response.json()) as { token?: string; error?: string };
-      if (!response.ok || !json.token) {
-        throw new Error(json.error || 'Failed to generate sync token');
-      }
-
-      const url = `${ICAL_SERVICE_URL}/ical/${json.token}.ics`;
-      const webcalUrl = url.replace(/^https?:\/\//i, 'webcal://');
-
-      try {
-        await window.desktopWindow?.openExternal(webcalUrl);
-        setAppleSyncMessage('Opened Apple Calendar subscription. Confirm once to finish sync.');
-      } catch {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(url);
-          setAppleSyncMessage('Could not auto-open Calendar. iCal link copied instead.');
-        } else {
-          setAppleSyncMessage(`Could not auto-open Calendar. Copy this URL: ${url}`);
-        }
-      }
+      const subscription = await loadCalendarSubscription();
+      const token = subscription?.feed_token;
+      if (!token) throw new Error('Subscription link was not returned.');
+      const url = `${ICAL_SERVICE_URL}/ical/${token}.ics`;
+      setAppleSubscriptionUrl(url);
+      return url;
     } catch (syncErr) {
-      const message = syncErr instanceof Error ? syncErr.message : 'Sync setup failed';
-      setError(`Could not generate Apple iCal link. ${message}`);
+      const message = syncErr instanceof Error ? syncErr.message : 'Subscription setup failed';
+      setError(`Could not generate Ledger calendar link. ${message}`);
+      return undefined;
     } finally {
       setIsSyncingApple(false);
+    }
+  };
+
+  const saveCalendarSubscription = async (settings: CalendarSubscriptionSettings) => {
+    setIsSavingCalendarSubscription(true);
+    setCalendarSubscriptionError(null);
+    try {
+      const response = (await api.updateCalendarSubscription(settings)) as {
+        subscription?: CalendarSubscriptionDetails & { feed_token?: string };
+      };
+      if (!response.subscription) throw new Error('Subscription settings were not saved.');
+      setCalendarSubscriptionSettings(response.subscription);
+      if (response.subscription.feed_token) {
+        setAppleSubscriptionUrl(`${ICAL_SERVICE_URL}/ical/${response.subscription.feed_token}.ics`);
+      }
+      setAppleSyncMessage('Ledger Calendar subscription settings saved.');
+    } catch (saveErr) {
+      setCalendarSubscriptionError(
+        saveErr instanceof Error ? saveErr.message : 'Could not save subscription settings.'
+      );
+    } finally {
+      setIsSavingCalendarSubscription(false);
+    }
+  };
+
+  const updateCalendarSubscriptionLifecycle = async (action: 'enable' | 'disable' | 'regenerate') => {
+    if (action === 'regenerate' && !window.confirm('Regenerating the link will stop the current subscription from updating. You will need to add the new link to your calendar apps. Continue?')) return;
+    if (action === 'disable' && !window.confirm('Ledger will stop serving calendar data through this link. Existing items may remain visible until you remove the subscribed calendar. Disable it?')) return;
+    setIsSavingCalendarSubscription(true);
+    setCalendarSubscriptionError(null);
+    try {
+      const response = (await (action === 'enable'
+        ? api.enableCalendarSubscription()
+        : action === 'disable'
+        ? api.disableCalendarSubscription()
+        : api.regenerateCalendarSubscription())) as {
+        subscription?: CalendarSubscriptionDetails & { feed_token?: string };
+      };
+      if (!response.subscription) throw new Error('Subscription update was not returned.');
+      setCalendarSubscriptionSettings(response.subscription);
+      if (response.subscription.feed_token) setAppleSubscriptionUrl(`${ICAL_SERVICE_URL}/ical/${response.subscription.feed_token}.ics`);
+      setAppleSyncMessage(action === 'regenerate' ? 'Subscription link regenerated. Add the new link to your calendar apps.' : action === 'disable' ? 'Ledger Calendar subscription disabled.' : 'Ledger Calendar subscription enabled.');
+    } catch (lifecycleErr) {
+      setCalendarSubscriptionError(lifecycleErr instanceof Error ? lifecycleErr.message : 'Could not update the subscription.');
+    } finally {
+      setIsSavingCalendarSubscription(false);
+    }
+  };
+
+  const openAppleCalendarSubscription = async () => {
+    const url = await getAppleSubscriptionUrl();
+    if (!url) return;
+
+    const webcalUrl = url.replace(/^https?:\/\//i, 'webcal://');
+
+    try {
+      await window.desktopWindow?.openExternal(webcalUrl);
+      setAppleSyncMessage('Opened Apple Calendar. Add Ledger as a read-only calendar subscription.');
+    } catch {
+      setError('Could not open Apple Calendar. Use Copy link and add the URL manually.');
+    }
+  };
+
+  const copyAppleCalendarSubscription = async () => {
+    const url = await getAppleSubscriptionUrl();
+    if (!url) return;
+
+    if (!navigator.clipboard?.writeText) {
+      setAppleSyncMessage(`Copy this read-only calendar URL: ${url}`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setAppleSyncMessage('Read-only Ledger Calendar link copied.');
+    } catch {
+      setError('Could not copy the Ledger Calendar link.');
     }
   };
 
@@ -3585,7 +4137,7 @@ export const CalendarWindow = () => {
 
   return (
     <div
-      className="relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
+      className="relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <CloseGuardModal
@@ -3639,6 +4191,33 @@ export const CalendarWindow = () => {
               ariaLabel="Open notifications center"
             />
           </>
+        }
+        primaryActions={
+          <ModuleHeaderActionButton
+            iconOnly
+            square
+            variant="strip"
+            icon={<Plus size={14} />}
+            buttonRef={calendarNewButtonRef}
+            onClick={() => {
+              const buttonRect = calendarNewButtonRef.current?.getBoundingClientRect();
+              if (!buttonRect) return;
+              setCalendarHeaderMenu((current) =>
+                current
+                  ? null
+                  : {
+                      x: buttonRect.left,
+                      y: buttonRect.bottom + 6,
+                    }
+              );
+            }}
+            title="New event or reminder"
+            ariaLabel="New event or reminder"
+            ariaHasPopup="menu"
+            ariaExpanded={Boolean(calendarHeaderMenu)}
+          >
+            <></>
+          </ModuleHeaderActionButton>
         }
         secondaryActions={
           <ModuleHeaderActionButton
@@ -3749,11 +4328,28 @@ export const CalendarWindow = () => {
                 disabled: isImportingIcs,
                 onClick: () => importInputRef.current?.click(),
               },
+            ],
+          },
+          {
+            label: 'Ledger subscription · read-only',
+            items: [
               {
-                id: 'sync-apple-calendar',
-                label: 'Sync Apple Calendar',
+                id: 'subscribe-ledger-calendar',
+                label: 'Subscribe to Ledger Calendar',
                 icon: <CalendarDays size={13} />,
-                onClick: () => void syncAppleCalendar(),
+                onClick: openCalendarSubscriptionSettings,
+              },
+              {
+                id: 'open-apple-calendar',
+                label: 'Open in Apple Calendar',
+                icon: <ExternalLink size={13} />,
+                onClick: () => void openAppleCalendarSubscription(),
+              },
+              {
+                id: 'copy-ledger-calendar-link',
+                label: 'Copy link (read-only)',
+                icon: <Copy size={13} />,
+                onClick: () => void copyAppleCalendarSubscription(),
               },
             ],
           },
@@ -3789,6 +4385,23 @@ export const CalendarWindow = () => {
           {importMessage}
         </div>
       )}
+
+      <CalendarSubscriptionModal
+        isOpen={isCalendarSubscriptionModalOpen}
+        calendars={calendarSubscriptionCalendars}
+        settings={calendarSubscriptionSettings}
+        workspaceName={calendarSubscriptionWorkspaceName}
+        isLoading={isLoadingCalendarSubscription}
+        isSaving={isSavingCalendarSubscription}
+        error={calendarSubscriptionError}
+        onClose={() => setIsCalendarSubscriptionModalOpen(false)}
+        onSave={(settings) => void saveCalendarSubscription(settings)}
+        onOpenApple={() => void openAppleCalendarSubscription()}
+        onCopyLink={() => void copyAppleCalendarSubscription()}
+        onRegenerate={() => void updateCalendarSubscriptionLifecycle('regenerate')}
+        onDisable={() => void updateCalendarSubscriptionLifecycle('disable')}
+        onEnable={() => void updateCalendarSubscriptionLifecycle('enable')}
+      />
 
       <div className="flex-1 flex overflow-hidden">
         {!isLeftPaneCollapsed ? (
@@ -3980,6 +4593,16 @@ export const CalendarWindow = () => {
                 </div>
               </div>
 
+              {appleCalendar.supported && (
+                <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">Connected calendars</h2>
+                    <button type="button" onClick={() => void Promise.all([appleCalendar.refreshCalendars(), appleCalendar.refreshEvents(true), appleReminders.refreshLists(), appleReminders.refreshReminders(true)])} className="text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]" title="Refresh Apple calendars and reminders"><RefreshCw size={12} /></button>
+                  </div>
+                  {appleCalendar.connected || appleReminders.connected ? <div className="space-y-2"><div className="flex items-center justify-between"><p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Calendar</p>{(appleCalendar.syncStatus === 'syncing' || appleReminders.syncStatus === 'syncing') && <span className="text-[10px] text-[var(--ledger-text-muted)]">Syncing…</span>}</div>{appleCalendar.connectedCalendars.map((calendar) => <div key={calendar.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: calendar.color }} /><span className="min-w-0 flex-1 truncate">{calendar.title}</span><button type="button" onClick={() => appleCalendar.setCalendarVisible(calendar.id.slice('apple:'.length), calendar.visible === false)} title={calendar.visible === false ? 'Show calendar' : 'Hide calendar'} className="text-[var(--ledger-text-muted)]">{calendar.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}{appleReminders.connected && <><p className="pt-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Reminders</p>{appleReminders.connectedLists.map((list) => <div key={list.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: list.color }} /><span className="min-w-0 flex-1 truncate">{list.title}</span><button type="button" onClick={() => appleReminders.setListVisible(list.id.slice('apple-reminder:'.length), list.visible === false)} title={list.visible === false ? 'Show list' : 'Hide list'} className="text-[var(--ledger-text-muted)]">{list.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}</div> : <AppleCalendarConnection userId={user?.id} compact onChanged={() => setCalendarRefreshToken((value) => value + 1)} />}
+                </div>
+              )}
+
               {error && <p className="mt-4 text-xs text-[var(--ledger-danger)]">{error}</p>}
             </aside>
 
@@ -4032,7 +4655,6 @@ export const CalendarWindow = () => {
               ) : viewMode === 'month' ? (
                 <div className="min-w-[720px]">
                   <div
-                    ref={monthGridRef}
                     className="grid grid-cols-7 border-l border-t border-[color:var(--ledger-border-subtle)]"
                   >
                     {days.map((day) => (
@@ -4047,11 +4669,13 @@ export const CalendarWindow = () => {
                       const key = formatDateKey(dayDate);
                       const dayEvents = eventsByDay[key] ?? [];
                       const dayReminders = remindersByDay[key] ?? [];
+                      const dayDueItems = dueItemsByDay[key] ?? [];
                       const monthRowHeight = 16;
                       const monthRowGap = 2;
-                      const monthContentHeight = Math.max(0, monthCellHeight - 8 - 24);
+                      const monthContentHeight = Math.max(0, 122 - 8 - 24);
                       let usedMonthContentHeight = 0;
                       const visibleReminders: ReminderRow[] = [];
+                      const visibleDueItems: DueDateItem[] = [];
                       const visibleEvents: EventRow[] = [];
 
                       for (const reminder of dayReminders) {
@@ -4063,17 +4687,31 @@ export const CalendarWindow = () => {
                         usedMonthContentHeight += rowHeight;
                       }
 
+                      for (const item of dayDueItems) {
+                        const rowHeight =
+                          monthRowHeight +
+                          (visibleReminders.length + visibleDueItems.length + visibleEvents.length > 0
+                            ? monthRowGap
+                            : 0);
+                        if (usedMonthContentHeight + rowHeight > monthContentHeight) break;
+                        visibleDueItems.push(item);
+                        usedMonthContentHeight += rowHeight;
+                      }
+
                       for (const event of dayEvents) {
                         const rowHeight =
                           monthRowHeight +
-                          (visibleReminders.length + visibleEvents.length > 0 ? monthRowGap : 0);
+                          (visibleReminders.length + visibleDueItems.length + visibleEvents.length > 0
+                            ? monthRowGap
+                            : 0);
                         if (usedMonthContentHeight + rowHeight > monthContentHeight) break;
                         visibleEvents.push(event);
                         usedMonthContentHeight += rowHeight;
                       }
 
                       const extraCount =
-                        dayEvents.length + dayReminders.length - visibleEvents.length - visibleReminders.length;
+                        dayEvents.length + dayReminders.length + dayDueItems.length -
+                        visibleEvents.length - visibleReminders.length - visibleDueItems.length;
                       const inMonth = dayDate.getMonth() === viewAnchor.getMonth();
 
                       return (
@@ -4169,12 +4807,13 @@ export const CalendarWindow = () => {
                                     </span>
                                     <span className="min-w-0 flex-1 truncate">{reminder.title}</span>
                                     <span className="ml-auto shrink-0 pl-1 text-[10px] font-normal text-[var(--ledger-text-muted)]">
-                                      {formatCompactCalendarTime(new Date(reminder.remind_at))}
+                                      {reminder.all_day ? 'All day' : formatCompactCalendarTime(new Date(reminder.remind_at))}
                                     </span>
                                   </div>
                                 );
                               })()
                             )}
+                            {visibleDueItems.map((item) => renderDueDateRow(item))}
                             {visibleEvents.map((event) =>
                               (() => {
                                 const calendarColor = getCalendarColor(event.calendar_id);
@@ -4308,8 +4947,17 @@ export const CalendarWindow = () => {
                       const allDayItems = (eventsByDay[key] ?? []).filter((evt) =>
                         isAllDayEvent(evt)
                       );
+                      const allDayDueItems = dueItemsByDay[key] ?? [];
+                      const allDayReminders = (remindersByDay[key] ?? []).filter((reminder) => reminder.all_day);
+                      const allDayItemCount = allDayItems.length + allDayDueItems.length + allDayReminders.length;
                       const visibleAllDayItems = allDayItems.slice(0, 2);
-                      const hiddenAllDayCount = allDayItems.length - visibleAllDayItems.length;
+                      const visibleAllDayReminders = allDayReminders.slice(0, Math.max(0, 2 - visibleAllDayItems.length));
+                      const visibleAllDayDueItems = allDayDueItems.slice(
+                        0,
+                        Math.max(0, 2 - visibleAllDayItems.length - visibleAllDayReminders.length)
+                      );
+                      const hiddenAllDayCount =
+                        allDayItemCount - visibleAllDayItems.length - visibleAllDayDueItems.length - visibleAllDayReminders.length;
 
                       return (
                         <div
@@ -4367,6 +5015,10 @@ export const CalendarWindow = () => {
                                 </button>
                               );
                             })}
+                            {visibleAllDayDueItems.map((item) =>
+                              renderDueDateRow(item, 'rounded px-1.5 py-0.5')
+                            )}
+                            {visibleAllDayReminders.map((reminder) => <button key={reminder.id} onClick={(e) => { e.stopPropagation(); setSelectedEvent(null); setSelectedReminder(reminder); setViewMode('day'); setViewAnchor(dayDate); }} className={`w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] leading-tight ${reminder.is_done ? 'line-through opacity-55' : ''}`} style={{ backgroundColor: `${reminder.color ?? '#F59E0B'}18`, borderLeft: `2px solid ${reminder.color ?? '#F59E0B'}`, color: 'var(--ledger-text-primary)' }}><span className="mr-1">◷</span>{reminder.title}</button>)}
                             {hiddenAllDayCount > 0 && (
                               <button
                                 onClick={(e) => {
@@ -4451,7 +5103,7 @@ export const CalendarWindow = () => {
                                 const dayReminders = remindersByDay[key] ?? [];
                                 const visibleItems = startingEvents;
                                 const remindersForHour = dayReminders.filter(
-                                  (reminder) => new Date(reminder.remind_at).getHours() === hourInt
+                                  (reminder) => !reminder.all_day && new Date(reminder.remind_at).getHours() === hourInt
                                 );
                                 const visibleReminders = remindersForHour.slice(0, 2);
                                 const hiddenReminders =
@@ -4872,6 +5524,7 @@ export const CalendarWindow = () => {
                                   ? 'Workspace'
                                   : 'Private'}
                               </p>
+                              {selectedEventPreview.provider === 'apple' && <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">Apple Calendar · {selectedEventPreview.provider_calendar_name ?? 'Selected calendar'}{!canEditEvent(selectedEventPreview) ? ' — This calendar does not allow Ledger to edit its events.' : ''}</p>}
                               {showWorkspaceNames && selectedEventPreview.workspace_name && (
                                 <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
                                   Workspace · {selectedEventPreview.workspace_name}
@@ -4948,14 +5601,11 @@ export const CalendarWindow = () => {
                             {selectedReminder.title}
                           </p>
                           <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
-                            {new Date(selectedReminder.remind_at).toLocaleString([], {
-                              weekday: 'short',
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
+                            {selectedReminder.all_day
+                              ? new Date(selectedReminder.remind_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+                              : new Date(selectedReminder.remind_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                           </p>
+                          {selectedReminder.provider === 'apple-reminders' && <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">Apple Reminders · {selectedReminder.provider_list_name ?? 'Selected list'}</p>}
                           <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">
                             Reminder context
                           </p>
@@ -5017,12 +5667,7 @@ export const CalendarWindow = () => {
                         </div>
                       </div>
                       <div className="mt-1">
-                        <button
-                          onClick={() => openReminderEditor(selectedReminder)}
-                          className="w-full text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                        >
-                          Open reminder
-                        </button>
+                        {selectedReminder.provider === 'apple-reminders' ? <p className="text-[12px] text-[var(--ledger-text-muted)]">This reminder is owned by Apple Reminders and is read-only in Ledger.</p> : <button onClick={() => openReminderEditor(selectedReminder)} className="w-full text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]">Open reminder</button>}
                       </div>
                     </div>
                   ) : (
@@ -5045,7 +5690,7 @@ export const CalendarWindow = () => {
                   />
                 )}
 
-                {selectedEventPreview && calendarPreferences.eventNotesBehavior !== 'disabled' && (
+                {selectedEventPreview && !selectedEventPreview.provider && calendarPreferences.eventNotesBehavior !== 'disabled' && (
                   <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                     <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Event notes
@@ -5078,7 +5723,7 @@ export const CalendarWindow = () => {
                   </div>
                 )}
 
-                {selectedEventPreview && calendarPreferences.followUpBehavior !== 'none' && (
+                {selectedEventPreview && !selectedEventPreview.provider && calendarPreferences.followUpBehavior !== 'none' && (
                   <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
@@ -5140,12 +5785,13 @@ export const CalendarWindow = () => {
                 <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                   <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Agenda</p>
                   <div className="space-y-1">
-                    {selectedContextDayEvents.length === 0 ? (
+                    {selectedContextDayEvents.length === 0 && selectedContextDayDueItems.length === 0 ? (
                       <p className="text-[14px] text-[var(--ledger-text-muted)]">
-                        No events for this day.
+                        No dated items for this day.
                       </p>
                     ) : (
-                      selectedContextDayEvents.map((event) => {
+                      <>
+                        {selectedContextDayEvents.map((event) => {
                         const isSelected = selectedEventPreview?.id === event.id;
                         const eventColor = getCalendarColor(event.calendar_id);
                         return (
@@ -5185,7 +5831,42 @@ export const CalendarWindow = () => {
                             </div>
                           </button>
                         );
-                      })
+                        })}
+                        {selectedContextDayDueItems.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => openDueDateItem(item)}
+                            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                          >
+                            <span className="flex h-3 w-3 shrink-0 items-center justify-center" style={{ color: item.color }}>
+                              {item.kind === 'task' ? (
+                                <CheckSquare size={11} strokeWidth={1.8} />
+                              ) : item.kind === 'milestone' ? (
+                                <Flag size={11} strokeWidth={1.8} />
+                              ) : (
+                                <CalendarClock size={11} strokeWidth={1.8} />
+                              )}
+                            </span>
+                            <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-[var(--ledger-text-muted)]">
+                              {item.kind === 'task'
+                                ? item.time ?? 'Due'
+                                : item.kind === 'milestone'
+                                ? 'Milestone'
+                                : 'Deadline'}
+                            </p>
+                            <p
+                              className={`min-w-0 flex-1 truncate text-[13px] ${
+                                item.completed
+                                  ? 'text-[var(--ledger-text-muted)] line-through'
+                                  : 'text-[var(--ledger-text-secondary)]'
+                              }`}
+                            >
+                              {item.title}
+                            </p>
+                          </button>
+                        ))}
+                      </>
                     )}
                   </div>
                 </div>
@@ -5254,7 +5935,7 @@ export const CalendarWindow = () => {
                   className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                 />
               </div>
-              {composerMode === 'event' ? (
+              {composerMode === 'event' || composerMode === 'reminder' ? (
                 <label className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
                   <input
                     type="checkbox"
@@ -5265,6 +5946,10 @@ export const CalendarWindow = () => {
                   All day
                 </label>
               ) : null}
+              {composerMode === 'event' && <>
+                <input value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} placeholder="Location (optional)" className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
+                <input value={newEventUrl} onChange={(e) => setNewEventUrl(e.target.value)} placeholder="URL (optional)" type="url" className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
+              </>}
               {composerMode === 'event' && (
                 <div className="grid grid-cols-[1fr_110px] gap-3">
                   <input
@@ -5298,13 +5983,21 @@ export const CalendarWindow = () => {
                   value={composerCalendarId || getDefaultCalendar()?.id || ''}
                   onChange={(e) => setComposerCalendarId(e.target.value)}
                   className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
-                  disabled={calendars.length === 0}
+                  disabled={calendars.length === 0 && appleCalendar.connectedCalendars.length === 0}
                 >
-                  {calendars.map((calendar) => (
-                    <option key={calendar.id} value={calendar.id}>
-                      {calendar.name}
-                    </option>
-                  ))}
+                  <optgroup label="Ledger calendars">
+                    {calendars.map((calendar) => (
+                      <option key={calendar.id} value={calendar.id}>{calendar.name}</option>
+                    ))}
+                  </optgroup>
+                  {appleCalendar.connectedCalendars.length > 0 && <optgroup label="Apple Calendar">
+                    {appleCalendar.connectedCalendars.map((calendar) => (
+                      <option key={calendar.id} value={calendar.id} disabled={!calendar.available || !calendar.allowsContentModifications}>{calendar.title}{!calendar.allowsContentModifications ? ' · Read-only' : ''}</option>
+                    ))}
+                  </optgroup>}
+                  {composerMode === 'reminder' && appleReminders.connectedLists.length > 0 && <optgroup label="Apple Reminders">
+                    {appleReminders.connectedLists.map((list) => <option key={list.id} value={list.id} disabled={!list.available || !list.allowsContentModifications}>{list.title}{!list.allowsContentModifications ? ' · Read-only' : ''}</option>)}
+                  </optgroup>}
                 </select>
                 <ChevronDown
                   size={16}
@@ -5347,6 +6040,7 @@ export const CalendarWindow = () => {
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
+              {composerMode === 'reminder' && <select value={newReminderPriority} onChange={(e) => setNewReminderPriority(Number(e.target.value))} className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm"><option value={0}>No priority</option><option value={1}>High priority</option><option value={5}>Medium priority</option><option value={9}>Low priority</option></select>}
               <div className="relative">
                 <select
                   value={composerNoteId}
@@ -5424,7 +6118,7 @@ export const CalendarWindow = () => {
                 disabled={
                   isSavingEvent ||
                   !newEventTitle.trim() ||
-                  calendars.length === 0 ||
+                  calendars.length === 0 && appleCalendar.connectedCalendars.length === 0 && appleReminders.connectedLists.length === 0 ||
                   Boolean(specificDatesValidationMessage)
                 }
                 className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
@@ -5605,6 +6299,11 @@ export const CalendarWindow = () => {
                   className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0"
                 />
               </label>
+              <textarea value={reminderEditNotes} onChange={(e) => setReminderEditNotes(e.target.value)} placeholder="Notes (optional)" rows={3} className="w-full rounded-md border border-[#E2D4C4] px-3 py-2 text-sm" />
+              <div className="grid grid-cols-2 gap-2">
+                <select value={reminderEditPriority} onChange={(e) => setReminderEditPriority(Number(e.target.value))} className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm"><option value={0}>No priority</option><option value={1}>High priority</option><option value={5}>Medium priority</option><option value={9}>Low priority</option></select>
+                <select value={reminderEditRecurrence} onChange={(e) => setReminderEditRecurrence(e.target.value)} className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm"><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
+              </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
@@ -5805,6 +6504,11 @@ export const CalendarWindow = () => {
                   className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
               </div>
+              {eventEditorEvent.provider === 'apple' && <>
+                <label className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" checked={editAllDay} onChange={(e) => setEditAllDay(e.target.checked)} /> All day</label>
+                <input value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="Location (optional)" className="h-9 w-full rounded-md border border-[#E2D4C4] px-3 text-sm" />
+                <input value={editUrl} onChange={(e) => setEditUrl(e.target.value)} placeholder="URL (optional)" type="url" className="h-9 w-full rounded-md border border-[#E2D4C4] px-3 text-sm" />
+              </>}
               <div className="grid grid-cols-[1fr_92px] gap-2">
                 <input
                   type="number"
@@ -5924,11 +6628,8 @@ export const CalendarWindow = () => {
                   onChange={(e) => setEditCalendarId(e.target.value)}
                   className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
-                  {calendars.map((calendar) => (
-                    <option key={calendar.id} value={calendar.id}>
-                      {calendar.name}
-                    </option>
-                  ))}
+                  <optgroup label="Ledger calendars">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</optgroup>
+                  <optgroup label="Apple Calendar">{appleCalendar.connectedCalendars.map((calendar) => <option key={calendar.id} value={calendar.id} disabled={!calendar.available || !calendar.allowsContentModifications}>{calendar.title}{!calendar.allowsContentModifications ? ' · Read-only' : ''}</option>)}</optgroup>
                 </select>
                 <span
                   className="pointer-events-none absolute right-8 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-[#E2D4C4]"
@@ -5939,7 +6640,10 @@ export const CalendarWindow = () => {
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
+              {eventEditorEvent.provider === 'apple' && eventEditorEvent.recurrence_rule !== 'none' && <div className="relative"><select value={editRecurrenceSpan} onChange={(e) => setEditRecurrenceSpan(e.target.value as 'thisEvent' | 'futureEvents')} className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm"><option value="thisEvent">This event</option><option value="futureEvents">This and future events</option></select><ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" /></div>}
+              {eventEditorEvent.provider === 'apple' && <textarea value={eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? ''} onChange={(e) => setEventNotesDrafts((prev) => ({ ...prev, [eventEditorEvent.id]: e.target.value }))} placeholder="Notes (optional)" rows={3} className="w-full rounded-md border border-[#E2D4C4] px-3 py-2 text-sm" />}
             </div>
+            {eventEditorEvent.provider === 'apple' && <p className="mt-3 text-xs text-[var(--ledger-text-muted)]">Apple Calendar · {eventEditorEvent.provider_calendar_name ?? 'Selected calendar'}{!appleCalendar.connectedCalendars.find((calendar) => calendar.id === eventEditorEvent.calendar_id)?.allowsContentModifications ? ' — This calendar does not allow Ledger to edit its events.' : ''}</p>}
 
             <div className="mt-4 flex items-center justify-between">
               <div>
@@ -5970,6 +6674,7 @@ export const CalendarWindow = () => {
               </div>
 
               <div className="flex items-center gap-2">
+                {eventEditorEvent.provider === 'apple' && <button type="button" onClick={() => void window.desktopWindow?.openExternal('ical://')} className="rounded-md bg-[#FFF1E3] px-3 py-2 text-xs font-medium text-gray-700 hover:bg-[#EDE3D8]">Open in Apple Calendar</button>}
                 <button
                   onClick={() => {
                     setEventEditorEvent(null);
@@ -6005,6 +6710,7 @@ export const CalendarWindow = () => {
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Edit Reminder</h3>
+              {reminderEditorReminder.provider === 'apple-reminders' && <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Apple Reminders · {reminderEditorReminder.provider_list_name ?? 'Selected list'}{!appleReminders.connectedLists.find((list) => list.id === reminderEditorReminder.calendar_id)?.allowsContentModifications ? ' — This reminder list does not allow Ledger to make changes.' : ''}</p>}
               <div className="flex items-center gap-1">
                 <PinActionButton
                   objectType="reminder"
@@ -6082,6 +6788,7 @@ export const CalendarWindow = () => {
                       {calendar.name}
                     </option>
                   ))}
+                  {reminderEditorReminder.provider === 'apple-reminders' && <optgroup label="Apple Reminders">{appleReminders.connectedLists.map((list) => <option key={list.id} value={list.id} disabled={!list.available || !list.allowsContentModifications}>{list.title}{!list.allowsContentModifications ? ' · Read-only' : ''}</option>)}</optgroup>}
                 </select>
                 <span
                   className="pointer-events-none absolute right-8 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-[#E2D4C4]"
@@ -6170,6 +6877,34 @@ export const CalendarWindow = () => {
                       <span className="font-medium">{reminder.title}</span>
                       <span className="ml-2 text-gray-600">
                         {formatCalendarTime(new Date(reminder.remind_at))}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-medium text-gray-500">Due items</p>
+                <div className="space-y-1.5">
+                  {overflowDueItems.length === 0 && (
+                    <p className="text-xs text-gray-500">No tasks, deadlines, or milestones.</p>
+                  )}
+                  {overflowDueItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        openDueDateItem(item);
+                        setOverflowDayKey(null);
+                      }}
+                      className="w-full rounded-md border border-[#E2D4C4] bg-[#FFF8F2] px-2.5 py-2 text-left text-xs text-gray-800"
+                    >
+                      <span className="font-medium">{item.title}</span>
+                      <span className="ml-2 text-gray-600">
+                        {item.kind === 'task'
+                          ? item.time ?? 'Due'
+                          : item.kind === 'milestone'
+                          ? 'Milestone'
+                          : 'Deadline'}
                       </span>
                     </button>
                   ))}

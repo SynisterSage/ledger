@@ -64,6 +64,7 @@ import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegr
 import { SlackIntegrationPage } from './SlackIntegrationPage';
 import { GoogleDriveIntegrationPage } from './GoogleDriveIntegrationPage';
 import { GithubIntegrationCard } from './GithubIntegrationCard';
+import { AppleCalendarConnection } from '../Calendar/AppleCalendarConnection';
 
 type UserPreferences = {
   weekStartsOn: 'sunday' | 'monday';
@@ -407,6 +408,7 @@ const shortcutSections: Array<{
       { keys: '⌘/Ctrl + ⌥/Alt + 3', description: 'notes' },
       { keys: '⌘/Ctrl + ⌥/Alt + 4', description: 'projects' },
       { keys: '⌘/Ctrl + ⌥/Alt + 5', description: 'settings' },
+      { keys: '⌘/Ctrl + ⇧ + M', description: 'switch workspace' },
     ],
   },
   {
@@ -537,7 +539,7 @@ const inlineSwitchClassName =
 
 const settingsTheme = {
   shell:
-    'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
+    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
   root: 'flex-1 overflow-hidden bg-[var(--ledger-background)]',
   aside:
     'overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pb-3 pt-8',
@@ -4569,6 +4571,9 @@ export const SettingsWindow = () => {
                         Connected
                       </h3>
                       <div className={settingsTheme.sectionRows}>
+                        <div className="px-4 py-2.5">
+                          <AppleCalendarConnection userId={user?.id} />
+                        </div>
                         <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><FigmaMark /></span>
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Attach designs to Ledger work and preview them without leaving your workspace.</p></div>

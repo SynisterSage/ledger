@@ -25,7 +25,7 @@ export const CollapsedSidebar = ({
     <div
       className={`flex h-full w-full ${
         isHorizontal
-          ? 'flex-row items-center justify-between px-4 py-3'
+          ? 'flex-row items-center justify-between px-3 py-2'
           : 'items-center justify-center'
       }`}
       onMouseDown={(e) => {
@@ -124,7 +124,7 @@ export const CollapsedSidebar = ({
             <button
               onClick={() => void window.desktopWindow?.quitApp()}
               onMouseDown={(e) => e.stopPropagation()}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition-colors duration-150 hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition-colors duration-150 hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
               title="Exit Ledger"
               aria-label="Exit Ledger"
             >
@@ -135,8 +135,8 @@ export const CollapsedSidebar = ({
       ) : (
         <HoldToQuitLogo
           onClick={handleClick}
-          className="flex h-11 w-11 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-          imageClassName="block h-8 w-8 opacity-100"
+          className="flex h-10 w-10 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+          imageClassName="block h-7 w-7 opacity-100"
           title="Ledger"
         />
       )}

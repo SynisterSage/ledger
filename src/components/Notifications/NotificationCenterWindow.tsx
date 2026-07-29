@@ -474,7 +474,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
       className={
         isTray
           ? 'relative flex max-h-[min(680px,calc(100vh-56px))] min-h-0 flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]'
-          : 'relative flex h-screen flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[var(--ledger-shadow)]'
+          : 'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[var(--ledger-shadow)]'
       }
     >
       {!isTray && <ModuleWindowHeader
