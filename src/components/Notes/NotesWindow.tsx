@@ -887,7 +887,7 @@ const MeetingAudioSetup = ({
         <div>
           <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Set up Meeting Notes audio</p>
           <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-secondary)]">
-            Ledger needs microphone access to hear you and system-audio access to hear meeting participants. macOS may describe system-audio access as Screen Recording; Ledger captures audio, not video.
+            Ledger needs microphone access to hear you and system-audio access to hear meeting participants. macOS may describe system-audio access as Screen &amp; System Audio Recording; Ledger captures audio, not video.
           </p>
         </div>
         <button type="button" onClick={onClose} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" aria-label="Close audio setup">
@@ -905,7 +905,7 @@ const MeetingAudioSetup = ({
         <div className="mt-4 space-y-2">
           {([
             ['user_microphone', 'Microphone', 'microphone', 'Ledger uses this source to hear your voice.'],
-            ['system_audio', 'System audio', 'screen-recording', 'Ledger uses this source to hear audio playing through your computer.'],
+            ['system_audio', 'System audio', 'screen-recording', 'Ledger uses this source to hear audio playing through your computer. Add Ledger to Screen & System Audio Recording in macOS Settings.'],
           ] as const).map(([source, label, permissionKey, description]) => {
             const permission = permissions?.[permissionKey === 'microphone' ? 'microphone' : 'systemAudio'] ?? 'not_requested';
             const isTesting = testingSource === source;
@@ -935,12 +935,15 @@ const MeetingAudioSetup = ({
               </div>
             );
           })}
+          <p className="mt-2 text-[10px] leading-4 text-[var(--ledger-text-muted)]">
+            System-audio permission is managed manually by macOS. If Ledger is not listed, use the <strong className="font-medium text-[var(--ledger-text-secondary)]">+</strong> button in Screen &amp; System Audio Recording to add the packaged Ledger app, then restart Ledger if macOS requests it.
+          </p>
         </div>
       )}
       <div className="mt-4 flex justify-end gap-2">
         {window.meetingAudio && (
           <button type="button" onClick={onRequestPermissions} disabled={isBusy} className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-40">
-            {isBusy ? 'Checking…' : 'Request permissions'}
+            {isBusy ? 'Checking microphone…' : 'Check permissions'}
           </button>
         )}
         <button type="button" onClick={onClose} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
@@ -1030,6 +1033,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const intakeSubmissionRef = useRef(false);
   const noteNavigationRequestRef = useRef(0);
   const initialTryActionHandledRef = useRef(false);
+  const noteViewerPollingDisabledForNoteRef = useRef<string | null>(null);
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([]);
@@ -1075,6 +1079,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [draftContent, setDraftContent] = useState('');
   const [draftDate, setDraftDate] = useState(todayKey());
   const [draftMood, setDraftMood] = useState('');
+  const [meetingCenterView, setMeetingCenterView] = useState<'write' | 'transcript'>('write');
   const [isDirty, setIsDirty] = useState(false);
   const [showSavingIndicator, setShowSavingIndicator] = useState(false);
   const [isHydratingNote, setIsHydratingNote] = useState(false);
@@ -2195,7 +2200,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     let cancelled = false;
 
     const loadNoteViewers = async () => {
-      if (!selectedNoteId) return;
+      if (
+        !selectedNoteId ||
+        noteViewerPollingDisabledForNoteRef.current === selectedNoteId
+      ) return;
       try {
         const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[] | null;
         if (cancelled) return;
@@ -2209,6 +2217,13 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           .filter(Boolean) as WorkspaceMember[];
         setNoteViewers(members);
       } catch (e) {
+        const status = (e as { status?: number } | null)?.status;
+        // Older deployments may not expose note versions yet, and a rate
+        // limit should not turn the passive viewer indicator into a request
+        // storm. Retry when the user opens a different note.
+        if (status === 404 || status === 429) {
+          noteViewerPollingDisabledForNoteRef.current = selectedNoteId;
+        }
         if (!cancelled) setNoteViewers([]);
       }
     };
@@ -2307,6 +2322,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     const noteId = selectedNoteId;
     const shouldLoad = Boolean(activeWorkspaceId && noteId && isMeetingNote);
     setMeetingMetadata(null);
+    setMeetingCenterView('write');
     setMeetingSeriesOccurrences([]);
     setMeetingMetadataError(null);
     setTranscriptSegments([]);
@@ -6093,6 +6109,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       <button
                         type="button"
                         onClick={() => {
+                          if (isMeetingNote) setMeetingCenterView('write');
                           if (draftMode === 'mind_map') {
                             setDraftMode('text');
                             isDirtyRef.current = true;
@@ -6125,6 +6142,21 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       >
                         Mind Map
                       </button>
+                      {isMeetingNote && (
+                        <button
+                          type="button"
+                          onClick={() => setMeetingCenterView('transcript')}
+                          className={`h-7 rounded-md px-2.5 text-xs font-medium ${
+                            meetingCenterView === 'transcript'
+                              ? 'bg-[var(--ledger-accent)] text-white'
+                              : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
+                          }`}
+                          aria-pressed={meetingCenterView === 'transcript'}
+                          title="View and edit the transcript"
+                        >
+                          Transcribe
+                        </button>
+                      )}
                     </div>
                   </div>
                   {isMeetingNote && (
@@ -6214,11 +6246,31 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
                 <div className="flex-1 min-h-0 overflow-auto bg-[var(--ledger-surface-muted)] p-6">
                   <div className="max-w-3xl mx-auto space-y-6">
-                    {draftMode !== 'mind_map' ? (
+                    {isMeetingNote && meetingCenterView === 'transcript' ? (
+                      <MeetingTranscriptSection
+                        metadata={meetingMetadata}
+                        segments={transcriptSegments}
+                        drafts={transcriptDrafts}
+                        speakerDrafts={transcriptSpeakerDrafts}
+                        isLoading={isLoadingTranscript}
+                        isExpanded
+                        onToggle={() => {}}
+                        onDraftChange={(segmentId, value) =>
+                          setTranscriptDrafts((current) => ({ ...current, [segmentId]: value }))
+                        }
+                        onCommit={(segment) => void commitTranscriptSegment(segment)}
+                        onSpeakerChange={(segment, speakerLabel) => setTranscriptSpeakerDrafts((current) => ({ ...current, [segment.id]: speakerLabel }))}
+                        onDelete={(segment) => void deleteTranscriptSegment(segment)}
+                        onMerge={(segment, next) => void mergeTranscriptSegments(segment, next)}
+                        onSplit={(segment, position) => void splitTranscriptSegment(segment, position)}
+                        deletedSegments={deletedTranscriptSegments}
+                        onRestore={(segment) => void restoreTranscriptSegment(segment)}
+                      />
+                    ) : draftMode !== 'mind_map' ? (
                       <RichTextEditor
                         editorKey={`${selectedNote.id}:${editorRefreshTick}`}
                         noteId={selectedNote.id}
-                        targetType={/meeting/i.test(selectedNote.source ?? '') ? 'meetingNote' : 'note'}
+                        targetType={isMeetingNote ? 'meetingNote' : 'note'}
                         noteTitle={selectedNote.title}
                         noteProjectId={selectedNoteProjectLinks[0]?.project_id ?? null}
                         initialValue={draftContent}
@@ -6291,7 +6343,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         />
                       </div>
                     )}
-                    {isMeetingNote && (
+                    {isMeetingNote && meetingCenterView !== 'transcript' && (
                       <MeetingTranscriptSection
                         metadata={meetingMetadata}
                         segments={transcriptSegments}

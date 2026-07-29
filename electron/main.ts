@@ -60,8 +60,57 @@ localTranscriptionService.modelManager.onChange((event) => broadcastMeetingAudio
 
 const validAudioSource = (value: unknown): value is AudioSourceName => value === 'user_microphone' || value === 'system_audio';
 
-ipcMain.handle('meeting-audio:permissions', () => meetingAudioCaptureService.permissions());
-ipcMain.handle('meeting-audio:request-permissions', () => meetingAudioCaptureService.requestPermissions());
+const getMacScreenPermission = () => {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const status = systemPreferences.getMediaAccessStatus('screen');
+    if (status === 'granted') return 'granted' as const;
+    if (status === 'denied') return 'denied' as const;
+    if (status === 'restricted') return 'restricted' as const;
+    if (status === 'not-determined') return 'not_requested' as const;
+  } catch {
+    // Older Electron/macOS combinations may not expose screen status here;
+    // the native bridge remains the fallback.
+  }
+  return null;
+};
+
+const getMacMicrophonePermission = () => {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const status = systemPreferences.getMediaAccessStatus('microphone');
+    if (status === 'granted') return 'granted' as const;
+    if (status === 'denied') return 'denied' as const;
+    if (status === 'restricted') return 'restricted' as const;
+    if (status === 'not-determined') return 'not_requested' as const;
+  } catch {
+    // Fall back to the native bridge on older Electron/macOS combinations.
+  }
+  return null;
+};
+
+const meetingAudioPermissions = async () => {
+  const permissions = await meetingAudioCaptureService.permissions();
+  const microphonePermission = getMacMicrophonePermission();
+  const screenPermission = getMacScreenPermission();
+  return {
+    ...permissions,
+    microphone: microphonePermission ?? permissions.microphone,
+    systemAudio: screenPermission ?? permissions.systemAudio,
+  };
+};
+
+ipcMain.handle('meeting-audio:permissions', meetingAudioPermissions);
+ipcMain.handle('meeting-audio:request-permissions', async () => {
+  if (process.platform === 'darwin') {
+    // Request from the Ledger app process so TCC associates the permission
+    // with Ledger.app, not the standalone capture helper executable.
+    await systemPreferences.askForMediaAccess('microphone');
+  } else {
+    await meetingAudioCaptureService.requestPermissions();
+  }
+  return meetingAudioPermissions();
+});
 ipcMain.handle('meeting-audio:open-system-settings', async (_event, area: unknown) => {
   if (process.platform !== 'darwin') return false;
   const target = area === 'microphone' ? 'Privacy_Microphone' : area === 'screen-recording' ? 'Privacy_ScreenCapture' : null;

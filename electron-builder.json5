@@ -19,6 +19,7 @@
     icon: 'public/icon.png',
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
+    binaries: ['native/LedgerAudioCaptureBridge'],
     artifactName: '${productName}-Mac-${version}-Installer.${ext}',
     extendInfo: {
       NSCalendarsUsageDescription: 'Ledger uses calendar access to show events from calendars you choose alongside your Ledger work.',

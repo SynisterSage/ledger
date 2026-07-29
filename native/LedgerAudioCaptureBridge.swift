@@ -83,11 +83,13 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
     private func requestPermissions() {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
             DispatchQueue.main.async {
-                var screenState = self?.screenPermission() ?? "unavailable"
-                if #available(macOS 10.15, *) {
-                    let requested = CGRequestScreenCaptureAccess()
-                    if !requested && screenState == "not_requested" { screenState = "denied" }
-                }
+                // macOS does not provide a reliable in-app prompt for Screen
+                // & System Audio Recording from this standalone capture
+                // helper. Calling CGRequestScreenCaptureAccess here can leave
+                // the IPC request pending while the app is absent from the
+                // System Settings list. Report the current state and let the
+                // renderer open the user-facing settings page instead.
+                let screenState = self?.screenPermission() ?? "unavailable"
                 let microphoneState = self?.microphonePermission() ?? "unavailable"
                 self?.emit(["ok": true, "microphone": microphoneState, "systemAudio": screenState])
             }

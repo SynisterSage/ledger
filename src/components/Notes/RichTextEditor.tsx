@@ -1304,12 +1304,19 @@ export function RichTextEditor({
         <ToolbarPlugin onAutoCorrect={onAutoCorrect} />
         <div className="relative mt-2">
           <RichTextBehaviorPlugin />
-          <SmartDatePlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
-          <SmartPersonPlugin
-            noteId={noteId}
-            onAssignTask={(person) => onPersonTaskAction?.('task', person)}
-            onCreateFollowUp={(person) => onPersonTaskAction?.('follow-up', person)}
-          />
+          {/* Meeting notes use the transcript as their separate capture surface.
+              The automatic text-entity scanners can repeatedly re-transform
+              imported meeting content, so keep them off this editor variant. */}
+          {targetType !== 'meetingNote' && (
+            <SmartDatePlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
+          )}
+          {targetType !== 'meetingNote' && (
+            <SmartPersonPlugin
+              noteId={noteId}
+              onAssignTask={(person) => onPersonTaskAction?.('task', person)}
+              onCreateFollowUp={(person) => onPersonTaskAction?.('follow-up', person)}
+            />
+          )}
           <EditorContextMenuPlugin
             onCreateTask={onCreateTask}
             onCreateReminder={onCreateReminder}
