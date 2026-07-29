@@ -3523,11 +3523,15 @@ export const CalendarWindow = () => {
             scheduled_end_at: event.end_at,
             attendees: event.attendees ?? null,
             project_id: event.project_id ?? null,
+            microphone_enabled: true,
+            system_audio_enabled: true,
             ...(createAnother ? { parent_note_id: null } : {}),
           }
         : {
-            event_id: baseEventId(event.id),
-            ...(createAnother ? { parent_note_id: null } : {}),
+          event_id: baseEventId(event.id),
+          microphone_enabled: true,
+          system_audio_enabled: true,
+          ...(createAnother ? { parent_note_id: null } : {}),
           };
       const result = (await api.createMeetingNoteFromCalendar(payload)) as { existing?: boolean; note?: NoteRow; meeting_metadata?: { transcription_status?: string } };
       const note = result.note;

@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   Notification,
   ipcMain,
   screen,
@@ -89,6 +90,25 @@ const getMacMicrophonePermission = () => {
   return null;
 };
 
+const touchMacScreenCapturePermission = async () => {
+  if (process.platform !== 'darwin') return;
+
+  // TCC does not add Ledger to Screen & System Audio Recording merely because
+  // we inspect `getMediaAccessStatus('screen')`. Ask Electron to enumerate a
+  // screen source from the Ledger process so macOS associates the request with
+  // the packaged app instead of the standalone native capture helper.
+  try {
+    await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 0, height: 0 },
+      fetchWindowIcons: false,
+    });
+  } catch {
+    // Permission state is read immediately below. A denied/unavailable source
+    // must not prevent the microphone permission result from being returned.
+  }
+};
+
 const meetingAudioPermissions = async () => {
   const permissions = await meetingAudioCaptureService.permissions();
   const microphonePermission = getMacMicrophonePermission();
@@ -106,6 +126,7 @@ ipcMain.handle('meeting-audio:request-permissions', async () => {
     // Request from the Ledger app process so TCC associates the permission
     // with Ledger.app, not the standalone capture helper executable.
     await systemPreferences.askForMediaAccess('microphone');
+    await touchMacScreenCapturePermission();
   } else {
     await meetingAudioCaptureService.requestPermissions();
   }

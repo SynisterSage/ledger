@@ -26,6 +26,7 @@
       NSCalendarsFullAccessUsageDescription: 'Ledger uses calendar access to show events from calendars you choose alongside your Ledger work.',
       NSRemindersFullAccessUsageDescription: 'Ledger uses Reminders access to show reminders from lists you choose alongside your Ledger work.',
       NSMicrophoneUsageDescription: 'Ledger uses microphone access to capture your voice during Meeting Notes.',
+      NSAudioCaptureUsageDescription: 'Ledger uses system-audio access to hear meeting participants during Meeting Notes.',
     },
   },
   win: {

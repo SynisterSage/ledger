@@ -2445,6 +2445,14 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     [api, isMeetingNote, meetingMetadata]
   );
 
+  const toggleMeetingSource = useCallback(
+    async (source: 'microphone_enabled' | 'system_audio_enabled') => {
+      if (!meetingMetadata || meetingMetadata.transcription_status !== 'idle') return;
+      await updateMeetingMetadata({ [source]: !meetingMetadata[source] });
+    },
+    [meetingMetadata, updateMeetingMetadata]
+  );
+
   const requestAudioPermissions = useCallback(async () => {
     if (!window.meetingAudio) return;
     setIsAudioBusy(true);
@@ -3736,7 +3744,15 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           mode: 'meeting_note',
           section_id: sectionId,
           meeting_metadata: (() => {
-            try { return { audio_retention: localStorage.getItem('ledger.meeting.default-retention') === 'retain' ? 'retain' as const : 'delete_after_transcription' as const }; } catch { return undefined; }
+            try {
+              return {
+                microphone_enabled: true,
+                system_audio_enabled: true,
+                audio_retention: localStorage.getItem('ledger.meeting.default-retention') === 'retain' ? 'retain' as const : 'delete_after_transcription' as const,
+              };
+            } catch {
+              return { microphone_enabled: true, system_audio_enabled: true };
+            }
           })(),
         })) as NoteRow;
         setNotes((prev) => [created, ...prev]);
@@ -4815,6 +4831,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [saveCurrentNoteAndRefresh, selectedNoteId]);
 
+  const focusNoteHandlersRef = useRef({ openNote, openNoteById });
+  focusNoteHandlersRef.current = { openNote, openNoteById };
+
   useEffect(() => {
     const focusNoteListener = (
       _event: unknown,
@@ -4823,10 +4842,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       if (payload?.kind !== 'notes' || !payload.focusNoteId) return;
       const target = notesRef.current.find((note) => note.id === payload.focusNoteId);
       if (target) {
-        void openNote(target);
+        void focusNoteHandlersRef.current.openNote(target);
         return;
       }
-      void openNoteById(payload.focusNoteId);
+      void focusNoteHandlersRef.current.openNoteById(payload.focusNoteId);
     };
 
     window.ipcRenderer?.on('module:focus-note', focusNoteListener);
@@ -4834,7 +4853,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     return () => {
       window.ipcRenderer?.off('module:focus-note', focusNoteListener);
     };
-  }, [openNote, openNoteById]);
+  }, []);
 
   useEffect(() => {
     if (!lastSavedAt || isDirty || showSavingIndicator) return;
@@ -6218,10 +6237,28 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       </div>
                       <div className="flex w-full items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] pt-1.5 text-[10px] text-[var(--ledger-text-muted)] sm:w-auto sm:border-t-0 sm:pt-0">
                         <span className="inline-flex items-center gap-1" title="Microphone status">
-                          <Mic size={11} /> {meetingMetadata?.microphone_enabled ? 'Mic on' : 'Mic off'}
+                          <button
+                            type="button"
+                            onClick={() => void toggleMeetingSource('microphone_enabled')}
+                            disabled={meetingMetadata?.transcription_status !== 'idle' || Boolean(meetingBusyAction)}
+                            className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-pressed={meetingMetadata?.microphone_enabled === true}
+                            title={meetingMetadata?.microphone_enabled ? 'Turn microphone off' : 'Turn microphone on'}
+                          >
+                            <Mic size={11} /> {meetingMetadata?.microphone_enabled ? 'Mic on' : 'Mic off'}
+                          </button>
                         </span>
                         <span className="inline-flex items-center gap-1" title="System audio status">
-                          <Volume2 size={11} /> {meetingMetadata?.system_audio_enabled ? 'System audio on' : 'System audio off'}
+                          <button
+                            type="button"
+                            onClick={() => void toggleMeetingSource('system_audio_enabled')}
+                            disabled={meetingMetadata?.transcription_status !== 'idle' || Boolean(meetingBusyAction)}
+                            className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-pressed={meetingMetadata?.system_audio_enabled === true}
+                            title={meetingMetadata?.system_audio_enabled ? 'Turn system audio off' : 'Turn system audio on'}
+                          >
+                            <Volume2 size={11} /> {meetingMetadata?.system_audio_enabled ? 'System audio on' : 'System audio off'}
+                          </button>
                         </span>
                         {(['user_microphone', 'system_audio'] as const).map((source) => {
                           const active = audioCaptureStatus?.sources.some((item) => item.source === source && item.active);
