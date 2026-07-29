@@ -25,12 +25,13 @@ type RuntimeSegment = { offsets?: { from?: number; to?: number }; timestamps?: {
 export class LocalTranscriptionService {
   readonly modelManager = new TranscriptionModelManager();
   private readonly jobs = new TranscriptionJobStore();
-  private readonly sessions = new RecordingSessionStore();
+  private readonly sessions: RecordingSessionStore;
   private process: ChildProcess | null = null;
   private cancelRequested = false;
   private progressListeners = new Set<(value: TranscriptionProgress) => void>();
 
-  constructor() {
+  constructor(sessions = new RecordingSessionStore()) {
+    this.sessions = sessions;
     // Incomplete jobs are deliberately returned to queued so startup can resume them.
     setTimeout(() => this.resumePending(), 1000);
   }

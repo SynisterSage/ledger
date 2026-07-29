@@ -68,10 +68,11 @@ export class MeetingAudioCaptureService {
   private completedDirectories = new Map<string, string>();
   private levelListeners = new Set<(event: AudioLevelEvent) => void>();
   private errorListeners = new Set<(event: AudioErrorEvent) => void>();
-  private readonly sessionStore = new RecordingSessionStore();
+  private readonly sessionStore: RecordingSessionStore;
   private diskTimer: NodeJS.Timeout | null = null;
 
-  constructor() {
+  constructor(sessionStore = new RecordingSessionStore()) {
+    this.sessionStore = sessionStore;
     this.cleanAbandonedDirectories();
   }
 

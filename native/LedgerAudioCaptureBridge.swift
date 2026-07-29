@@ -264,10 +264,10 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
     private func pause() {
         guard sessionId != nil, !isPaused else { emit(errorPayload("invalid_state", "Audio capture is not currently recording.")); return }
         microphoneRecorder?.pause()
-        if #available(macOS 13.0, *), let systemStream, systemStreamOutputAttached {
-            try? systemStream.removeStreamOutput(self, type: .audio)
-            systemStreamOutputAttached = false
-        }
+        // Keep the SCStream alive while paused. Removing/re-adding its output
+        // can wait on ScreenCaptureKit's callback queue and leave the line
+        // protocol unable to return the pause response. The output callback
+        // ignores samples while `isPaused` is true.
         pausedAt = Date()
         isPaused = true
         emit(["ok": true, "state": "paused"])
@@ -277,10 +277,6 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         guard sessionId != nil, isPaused else { emit(errorPayload("invalid_state", "Audio capture is not paused.")); return }
         if let pausedAt { accumulatedPause += Date().timeIntervalSince(pausedAt) }
         microphoneRecorder?.record()
-        if #available(macOS 13.0, *), let systemStream, !systemStreamOutputAttached {
-            try? systemStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: workQueue)
-            systemStreamOutputAttached = true
-        }
         self.pausedAt = nil
         isPaused = false
         emit(["ok": true, "state": "recording"])
@@ -293,23 +289,38 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         microphoneRecorder = nil
         microphoneLevelTimer?.cancel()
         microphoneLevelTimer = nil
+        let hadMicrophone = microphoneSequence > 0 || microphoneFileName != nil
+        let stream = systemStream
         if #available(macOS 13.0, *) {
-            let semaphore = DispatchSemaphore(value: 0)
-            systemStream?.stopCapture { _ in semaphore.signal() }
-            semaphore.wait()
+            // `stopCapture` completes asynchronously. Waiting here deadlocks
+            // when ScreenCaptureKit delivers completion on the bridge's main
+            // queue, which is why Stop previously stayed disabled forever.
+            stream?.stopCapture { [weak self] _ in
+                self?.finishStop(activeSession: activeSession, hadMicrophone: hadMicrophone)
+            }
+            if stream != nil { return }
         }
-        workQueue.sync {}
-        finalizeSystemChunk(endAt: Date())
-        systemStream = nil
-        systemStreamOutputAttached = false
-        systemAudioFile = nil
-        let endedAt = Date()
-        let sources: [[String: Any]] = [
-            microphoneRecorder != nil || microphoneSequence > 0 ? ["source": "user_microphone", "active": true] : nil,
-            systemAudioFile != nil || systemSequence > 0 ? ["source": "system_audio", "active": true] : nil
-        ].compactMap { $0 }
-        emit(["ok": true, "sessionId": activeSession, "state": "stopped", "startedAt": iso(startedAt) ?? "", "endedAt": iso(endedAt) ?? "", "durationSeconds": max(0, endedAt.timeIntervalSince(startedAt ?? endedAt) - accumulatedPause), "sources": sources])
-        cleanupSession()
+        finishStop(activeSession: activeSession, hadMicrophone: hadMicrophone)
+    }
+
+    private func finishStop(activeSession: String, hadMicrophone: Bool) {
+        // Never synchronously wait on the callback queue. ScreenCaptureKit
+        // may invoke stop completion from the same queue used for samples.
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            self.finalizeSystemChunk(endAt: Date())
+            let hadSystemAudio = self.systemSequence > 0 || self.systemFileName != nil
+            self.systemStream = nil
+            self.systemStreamOutputAttached = false
+            self.systemAudioFile = nil
+            let endedAt = Date()
+            let sources: [[String: Any]] = [
+                hadMicrophone ? ["source": "user_microphone", "active": true] : nil,
+                hadSystemAudio ? ["source": "system_audio", "active": true] : nil
+            ].compactMap { $0 }
+            self.emit(["ok": true, "sessionId": activeSession, "state": "stopped", "startedAt": self.iso(self.startedAt) ?? "", "endedAt": self.iso(endedAt) ?? "", "durationSeconds": max(0, endedAt.timeIntervalSince(self.startedAt ?? endedAt) - self.accumulatedPause), "sources": sources])
+            self.cleanupSession()
+        }
     }
 
     private func cleanupSession() {
@@ -339,6 +350,7 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
 
     @available(macOS 13.0, *)
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard !isPaused else { return }
         guard type == .audio, CMSampleBufferIsValid(sampleBuffer), let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer), let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else { return }
         if systemAudioFormat == nil { systemAudioFormat = AVAudioFormat(streamDescription: asbd) }
         guard let format = systemAudioFormat, let buffer = makePCMBuffer(sampleBuffer, format: format) else { return }

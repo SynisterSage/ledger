@@ -2646,10 +2646,13 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       });
       if (window.meetingTranscription && capture?.sessionId) {
         try {
+          const recordingNoteId = capture.noteId || selectedNoteIdRef.current;
+          const recordingWorkspaceId = capture.workspaceId || activeWorkspaceId;
+          if (!recordingNoteId || !recordingWorkspaceId) throw new Error('The finalized recording is missing its note workspace identity.');
           const job = await window.meetingTranscription.start({
             sessionId: capture.sessionId,
-            noteId: selectedNoteIdRef.current!,
-            workspaceId: activeWorkspaceId!,
+            noteId: recordingNoteId,
+            workspaceId: recordingWorkspaceId,
           }) as TranscriptionJobStatus;
           setTranscriptionJob(job);
         } catch (transcriptionError) {
@@ -2892,6 +2895,14 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     catch (error) { setAudioError(error instanceof Error ? error.message : 'Could not open retained audio.'); }
   }, [audioCaptureStatus?.sessionId, transcriptionJob?.sessionId]);
 
+  const stopAndDiscardRecordingForNote = useCallback(async (noteId: string) => {
+    if (!window.meetingAudio) return;
+    const status = await window.meetingAudio.status() as MeetingAudioStatus;
+    if (status.noteId !== noteId || !['recording', 'paused'].includes(status.state)) return;
+    const stopped = await window.meetingAudio.stop() as MeetingAudioStatus;
+    if (stopped.sessionId) await window.meetingAudio.discardRecovery(stopped.sessionId);
+  }, []);
+
   const handleBulkDeleteSelectedNotes = useCallback(async () => {
     if (selectedNoteIds.length === 0) return;
 
@@ -2906,6 +2917,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
     try {
       for (const note of selectedNotes) {
+        await stopAndDiscardRecordingForNote(note.id);
         await api.deleteNote(note.id);
       }
 
@@ -2949,7 +2961,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       setIsDeleting(false);
       closeNoteContextMenu();
     }
-  }, [api, clearSidebarSelection, closeNoteContextMenu, notes, selectedNoteIds, syncDraftFromNote]);
+  }, [api, clearSidebarSelection, closeNoteContextMenu, notes, selectedNoteIds, stopAndDiscardRecordingForNote, syncDraftFromNote]);
 
   const refreshTemplates = useCallback(async () => {
     try {
@@ -4486,6 +4498,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     setError(null);
 
     try {
+      await stopAndDiscardRecordingForNote(selectedNote.id);
       await api.deleteNote(selectedNote.id);
       setNotes((prev) => {
         const next = prev.filter((note) => note.id !== selectedNote.id);
@@ -4518,7 +4531,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     } finally {
       setIsDeleting(false);
     }
-  }, [api, selectedNote, syncDraftFromNote]);
+  }, [api, selectedNote, syncDraftFromNote, stopAndDiscardRecordingForNote]);
 
   const deleteNoteById = useCallback(
     async (noteId: string) => {
@@ -4534,6 +4547,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       setError(null);
 
       try {
+        await stopAndDiscardRecordingForNote(noteId);
         await api.deleteNote(noteId);
         setNotes((prev) => {
           const next = prev.filter((note) => note.id !== noteId);
@@ -4567,7 +4581,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         setIsDeleting(false);
       }
     },
-    [api, notes, syncDraftFromNote]
+    [api, notes, stopAndDiscardRecordingForNote, syncDraftFromNote]
   );
 
   useEffect(() => {

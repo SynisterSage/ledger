@@ -25,6 +25,7 @@ import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/s
 import { desktopTokens } from '../src/theme/desktopTokens';
 import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
 import { LocalTranscriptionService } from './transcriptionService';
+import { RecordingSessionStore } from './recordingSessionStore';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -45,8 +46,12 @@ let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
 let tray: Tray | null = null;
 let isQuittingApp = false;
 let appleCalendarWatcher: ReturnType<typeof spawn> | null = null;
-const meetingAudioCaptureService = new MeetingAudioCaptureService();
-const localTranscriptionService = new LocalTranscriptionService();
+// Both services must use the same in-process session store. A second store
+// instance only sees the file as it existed at startup, so transcription would
+// reject a recording finalized moments earlier as belonging to no session.
+const recordingSessionStore = new RecordingSessionStore();
+const meetingAudioCaptureService = new MeetingAudioCaptureService(recordingSessionStore);
+const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore);
 
 function broadcastMeetingAudioEvent(channel: string, payload: unknown) {
   for (const win of BrowserWindow.getAllWindows()) {
