@@ -11,20 +11,26 @@ import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { AutoLinkPlugin, createLinkMatcherWithRegExp } from '@lexical/react/LexicalAutoLinkPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import {
-  Bold,
-  Italic,
-  Underline,
   List,
   ListOrdered,
-  Link2,
-  Code2,
   ChevronDown,
+  CheckSquare,
+  MoreHorizontal,
+  Redo2,
   SpellCheck,
+  Undo2,
 } from 'lucide-react';
 import { AutoLinkNode, LinkNode, $createLinkNode } from '@lexical/link';
-import { TOGGLE_LINK_COMMAND } from '@lexical/link';
 import { ListItemNode, ListNode } from '@lexical/list';
-import { INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from '@lexical/list';
+import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
+import { CheckListPlugin } from '@lexical/react/LexicalCheckListPlugin';
+import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
+import { HorizontalRulePlugin } from '@lexical/react/LexicalHorizontalRulePlugin';
+import {
+  INSERT_CHECK_LIST_COMMAND,
+  INSERT_ORDERED_LIST_COMMAND,
+  INSERT_UNORDERED_LIST_COMMAND,
+} from '@lexical/list';
 import { CodeHighlightNode, CodeNode } from '@lexical/code';
 import { HorizontalRuleNode } from '@lexical/react/LexicalHorizontalRuleNode';
 import { HeadingNode, QuoteNode, registerRichText } from '@lexical/rich-text';
@@ -58,19 +64,40 @@ import {
 } from 'lexical';
 import { $setBlocksType } from '@lexical/selection';
 import { $createHeadingNode, $createQuoteNode } from '@lexical/rich-text';
+import { $createCodeNode } from '@lexical/code';
 import { $createImageNode, $isImageNode, ImageNode } from './nodes/ImageNode';
-import { SmartDateNode } from './nodes/SmartDateNode';
+import { $isSmartDateNode, SmartDateNode } from './nodes/SmartDateNode';
 import { SmartDatePlugin } from './SmartDatePlugin';
 import { SmartPersonNode } from './nodes/SmartPersonNode';
-import { $createExternalEmbedNode, ExternalEmbedNode, ExternalEmbedProvider } from '../ExternalEmbeds/ExternalEmbedNode';
-import { useApi } from '../../hooks/useApi';
+import {
+  $createExternalEmbedNode,
+  ExternalEmbedNode,
+  ExternalEmbedProvider,
+} from '../ExternalEmbeds/ExternalEmbedNode';
 import { SmartPersonPlugin } from './SmartPersonPlugin';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
-import { ModalCloseButton } from '../Common/ModalCloseButton';
-import { ModalOverlay } from '../Common/ModalOverlay';
 import { NotesEditorContextMenu, type EditorContextMenuPosition } from './NotesEditorContextMenu';
+import type {
+  SelectedContentAction,
+  SelectedContentPayload,
+  SelectedContentPersonAction,
+} from './editor/types/selectedContent';
+import type {
+  EditorExternalEmbedRequest,
+  EditorExternalEmbedResult,
+} from './editor/types/externalEmbed';
+import { BlockInsertionPlugin } from './editor/plugins/BlockInsertionPlugin';
+import { SlashCommandPlugin } from './editor/plugins/SlashCommandPlugin';
+import { BlockHandlePlugin } from './editor/plugins/BlockHandlePlugin';
+import { SelectionFormattingPlugin } from './editor/plugins/SelectionFormattingPlugin';
+import { INSERT_IMAGE_COMMAND } from './editor/commands/blocks';
+import { CalloutNode } from './editor/nodes/CalloutNode';
+import { ToggleNode } from './editor/nodes/ToggleNode';
+import { FileAttachmentNode } from './editor/nodes/FileAttachmentNode';
+import type { AttachmentUploadRequest, AttachmentUploadResult } from './editor/types/blocks';
+import { sanitizeEditorHtml } from './editor/utils/html';
 
 type Props = {
   initialValue?: string | null;
@@ -83,17 +110,45 @@ type Props = {
   onFocus?: () => void;
   onBlur?: () => void;
   onAutoCorrect?: () => void | Promise<void>;
-  onCreateTask?: (selectedText: string) => void;
+  onCreateTask?: SelectedContentAction;
   onPersonTaskAction?: (
     action: 'task' | 'follow-up',
     person: { id: string; name: string; sourceText: string }
   ) => void;
-  onCreateReminder?: (selectedText: string) => void;
-  onCreateEvent?: (selectedText: string) => void;
-  onSendToIntake?: (selectedText: string) => void | Promise<void>;
-  onLinkProject?: (selectedText: string) => void;
-  onLinkPerson?: (selectedText: string, personId: string) => void;
-  onSearch?: (selectedText: string) => void;
+  onCreateReminder?: SelectedContentAction;
+  onCreateEvent?: SelectedContentAction;
+  onSendToIntake?: SelectedContentAction;
+  onLinkProject?: SelectedContentAction;
+  onLinkPerson?: SelectedContentPersonAction;
+  onSearch?: SelectedContentAction;
+  onCreateExternalEmbed?: (
+    request: EditorExternalEmbedRequest
+  ) => Promise<EditorExternalEmbedResult>;
+  onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
+};
+
+const getSelectedContentPayload = (
+  noteId: string | null | undefined,
+  selection: ReturnType<typeof $getSelection>
+): SelectedContentPayload | null => {
+  if (!noteId || !$isRangeSelection(selection)) return null;
+  const plainText = selection.getTextContent().trim();
+  if (!plainText) return null;
+
+  const anchorNode = selection.anchor.getNode();
+  const blockKey =
+    anchorNode.getKey() === 'root' ? undefined : anchorNode.getTopLevelElementOrThrow().getKey();
+
+  const smartDates = selection
+    .getNodes()
+    .filter($isSmartDateNode)
+    .map((node) => ({
+      text: node.getTextContent(),
+      date: node.getSmartDateKey(),
+      state: node.getSmartDateState(),
+    }));
+
+  return { noteId, plainText, blockKey, source: 'selection', smartDates };
 };
 
 const editorConfig = {
@@ -104,6 +159,9 @@ const editorConfig = {
     HorizontalRuleNode,
     ListNode,
     ListItemNode,
+    TableNode,
+    TableCellNode,
+    TableRowNode,
     LinkNode,
     AutoLinkNode,
     CodeNode,
@@ -112,6 +170,9 @@ const editorConfig = {
     SmartDateNode,
     SmartPersonNode,
     ExternalEmbedNode,
+    CalloutNode,
+    ToggleNode,
+    FileAttachmentNode,
   ],
   theme: {
     text: {
@@ -135,6 +196,9 @@ const editorConfig = {
       ol: 'list-decimal list-inside',
       ul: 'list-disc list-inside',
       listitem: 'mb-1',
+      checklist: 'list-none pl-0',
+      listitemChecked: 'text-[var(--ledger-text-muted)] line-through',
+      listitemUnchecked: 'text-[var(--ledger-text-primary)]',
     },
     code: 'rounded bg-[var(--ledger-surface-hover)] px-2 py-1 font-mono text-sm text-[var(--ledger-text-primary)]',
     codeHighlight: {
@@ -184,7 +248,7 @@ const LoadHtmlPlugin = ({ html, editorKey }: { html?: string | null; editorKey?:
         }
 
         const parser = new DOMParser();
-        const dom = parser.parseFromString(initialHtml, 'text/html');
+        const dom = parser.parseFromString(sanitizeEditorHtml(initialHtml), 'text/html');
         const nodes = $generateNodesFromDOM(editor, dom);
         if (nodes.length > 0) {
           // Loading a note must not move Lexical's selection to the end of the
@@ -290,56 +354,22 @@ const ToolbarButton = ({
   </button>
 );
 
-type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'quote';
+type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'quote' | 'code';
 
-const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise<void> }) => {
+const ToolbarPlugin = ({
+  onAutoCorrect,
+  noteId,
+  onUploadAttachment,
+}: {
+  onAutoCorrect?: () => void | Promise<void>;
+  noteId?: string | null;
+  onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
+}) => {
   const [editor] = useLexicalComposerContext();
   const [blockType, setBlockType] = useState<BlockType>('paragraph');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isSticky, setIsSticky] = useState(false);
   const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
-  const [activeFormats, setActiveFormats] = useState({
-    bold: false,
-    italic: false,
-    underline: false,
-    code: false,
-  });
-  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
-  const [linkUrl, setLinkUrl] = useState('');
-  const savedSelectionRef = useRef<ReturnType<typeof $getSelection> | null>(null);
-
-  const getSelectedText = useCallback(() => {
-    let selectedText = '';
-    editor.getEditorState().read(() => {
-      const selection = $getSelection();
-      if ($isRangeSelection(selection)) {
-        selectedText = selection.getTextContent().trim();
-      }
-    });
-    return selectedText;
-  }, [editor]);
-
-  const isProbablyUrl = useCallback((value: string) => {
-    const text = String(value ?? '').trim();
-    if (!text) return false;
-    return /^(https?:\/\/|mailto:|tel:)/i.test(text) || /^[^\s]+\.[^\s]+/.test(text);
-  }, []);
-
-  const normalizeUrl = useCallback((value: string) => {
-    const text = String(value ?? '').trim();
-    if (!text) return '';
-    if (/^(https?:\/\/|mailto:|tel:)/i.test(text)) return text;
-    if (/^[^\s]+\.[^\s]+/.test(text)) return `https://${text}`;
-    return text;
-  }, []);
-
-  const captureSelection = useCallback(() => {
-    editor.getEditorState().read(() => {
-      const selection = $getSelection();
-      savedSelectionRef.current = $isRangeSelection(selection) ? selection.clone() : null;
-    });
-  }, [editor]);
-
   useEffect(() => {
     const sentinel = toolbarSentinelRef.current;
     if (!sentinel) return;
@@ -378,13 +408,6 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
     editor.getEditorState().read(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
-        setActiveFormats({
-          bold: selection.hasFormat('bold'),
-          italic: selection.hasFormat('italic'),
-          underline: selection.hasFormat('underline'),
-          code: selection.hasFormat('code'),
-        });
-
         const anchorNode = selection.anchor.getNode();
         let element = anchorNode;
         if (anchorNode.getKey() === 'root') {
@@ -400,6 +423,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           else if (tag === 'h2') setBlockType('h2');
           else if (tag === 'h3') setBlockType('h3');
           else if (tag === 'blockquote') setBlockType('quote');
+          else if (tag === 'pre') setBlockType('code');
           else setBlockType('paragraph');
         }
       }
@@ -416,6 +440,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           else if (type === 'h2') $setBlocksType(selection, () => $createHeadingNode('h2'));
           else if (type === 'h3') $setBlocksType(selection, () => $createHeadingNode('h3'));
           else if (type === 'quote') $setBlocksType(selection, () => $createQuoteNode());
+          else if (type === 'code') $setBlocksType(selection, () => $createCodeNode());
           else $setBlocksType(selection, () => $createParagraphNode());
         }
       });
@@ -426,11 +451,12 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
   );
 
   const blockTypeLabels: Record<BlockType, string> = {
-    paragraph: 'Normal',
+    paragraph: 'Text',
     h1: 'H1',
     h2: 'H2',
     h3: 'H3',
     quote: 'Quote',
+    code: 'Code block',
   };
 
   useEffect(() => {
@@ -468,7 +494,7 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           </button>
           {isDropdownOpen && (
             <div className="absolute left-0 top-full z-50 mt-1 min-w-40 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]">
-              {(['paragraph', 'h1', 'h2', 'h3', 'quote'] as BlockType[]).map((type) => (
+              {(['paragraph', 'h1', 'h2', 'h3', 'quote', 'code'] as BlockType[]).map((type) => (
                 <button
                   key={type}
                   type="button"
@@ -487,150 +513,73 @@ const ToolbarPlugin = ({ onAutoCorrect }: { onAutoCorrect?: () => void | Promise
           )}
         </div>
 
+        <BlockInsertionPlugin noteId={noteId} onUploadAttachment={onUploadAttachment} />
+
+        <ToolbarButton
+          title="Undo (Ctrl+Z)"
+          onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
+        >
+          <Undo2 size={14} />
+        </ToolbarButton>
+        <ToolbarButton
+          title="Redo (Ctrl+Shift+Z)"
+          onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
+        >
+          <Redo2 size={14} />
+        </ToolbarButton>
         <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
-
         <ToolbarButton
-          title="Bold (Ctrl+B)"
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}
-          isActive={activeFormats.bold}
-        >
-          <Bold size={14} />
-        </ToolbarButton>
-        <ToolbarButton
-          title="Italic (Ctrl+I)"
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}
-          isActive={activeFormats.italic}
-        >
-          <Italic size={14} />
-        </ToolbarButton>
-        <ToolbarButton
-          title="Underline (Ctrl+U)"
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')}
-          isActive={activeFormats.underline}
-        >
-          <Underline size={14} />
-        </ToolbarButton>
-
-        <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
-
-        <ToolbarButton
-          title="Bullet List"
+          title="Bulleted list"
           onClick={() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined)}
         >
           <List size={14} />
         </ToolbarButton>
         <ToolbarButton
-          title="Numbered List"
+          title="Numbered list"
           onClick={() => editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)}
         >
           <ListOrdered size={14} />
         </ToolbarButton>
         <ToolbarButton
-          title="Inline Code"
-          onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'code')}
-          isActive={activeFormats.code}
+          title="Checklist"
+          onClick={() => editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined)}
         >
-          <Code2 size={14} />
+          <CheckSquare size={14} />
         </ToolbarButton>
-
-        <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
-
-        <ToolbarButton
-          title="Add Link"
-          onMouseDown={() => {
-            captureSelection();
-          }}
-          onClick={() => {
-            const selectedText = getSelectedText();
-            if (!selectedText) return;
-            setLinkUrl(isProbablyUrl(selectedText) ? normalizeUrl(selectedText) : '');
-            setIsLinkModalOpen(true);
-          }}
-        >
-          <Link2 size={14} />
-        </ToolbarButton>
-
-        {onAutoCorrect ? (
-          <ToolbarButton title="Auto-correct spelling" onClick={() => void onAutoCorrect()}>
-            <SpellCheck size={14} />
+        <div className="relative">
+          <ToolbarButton title="More" onClick={() => setIsDropdownOpen((value) => !value)}>
+            <MoreHorizontal size={14} />
           </ToolbarButton>
-        ) : null}
-      </div>
-      <ModalOverlay
-        isOpen={isLinkModalOpen}
-        onClose={() => setIsLinkModalOpen(false)}
-        backdropBorderRadius="inherit"
-        disablePortal
-        manageWindowChrome={false}
-        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            const nextUrl = normalizeUrl(linkUrl.trim());
-            if (
-              !nextUrl ||
-              !/^(?:https?:\/\/|mailto:|tel:)/i.test(nextUrl) ||
-              !savedSelectionRef.current
-            ) {
-              return;
-            }
-            editor.update(() => {
-              const selection = savedSelectionRef.current?.clone();
-              if (!selection) return;
-              $setSelection(selection);
-              editor.dispatchCommand(TOGGLE_LINK_COMMAND, nextUrl);
-            });
-            savedSelectionRef.current = null;
-            setIsLinkModalOpen(false);
-          }}
-        >
-          <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Add link</p>
-              <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-                Link the selected text to a web address.
-              </p>
+          {isDropdownOpen && (
+            <div className="absolute right-0 top-full z-50 mt-1 min-w-40 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
+              <button
+                type="button"
+                className="w-full rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'code');
+                  setIsDropdownOpen(false);
+                }}
+              >
+                Inline code
+              </button>
+              {onAutoCorrect && (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    void onAutoCorrect();
+                    setIsDropdownOpen(false);
+                  }}
+                >
+                  <SpellCheck size={13} /> Auto-correct
+                </button>
+              )}
             </div>
-            <ModalCloseButton
-              onClick={() => setIsLinkModalOpen(false)}
-              ariaLabel="Close link modal"
-            />
-          </div>
-          <div className="space-y-2 p-5">
-            <label
-              className="text-xs font-medium text-[var(--ledger-text-secondary)]"
-              htmlFor="notes-link-url"
-            >
-              URL
-            </label>
-            <input
-              id="notes-link-url"
-              autoFocus
-              value={linkUrl}
-              onChange={(event) => setLinkUrl(event.target.value)}
-              placeholder="https://example.com"
-              className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
-            />
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
-            <button
-              type="button"
-              onClick={() => setIsLinkModalOpen(false)}
-              className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!linkUrl.trim()}
-              className="rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-50"
-            >
-              Add link
-            </button>
-          </div>
-        </form>
-      </ModalOverlay>
+          )}
+        </div>
+      </div>
     </>
   );
 };
@@ -757,6 +706,24 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
 
   useEffect(() => {
     return editor.registerCommand(
+      INSERT_IMAGE_COMMAND,
+      () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (file) void uploadAndInsert(file);
+        };
+        input.click();
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH
+    );
+  }, [editor, uploadAndInsert]);
+
+  useEffect(() => {
+    return editor.registerCommand(
       PASTE_COMMAND,
       (event: ClipboardEvent) => {
         const files = getImageFilesFromClipboard(event);
@@ -808,17 +775,65 @@ const isLikelyFigmaUrl = (value: string) => {
     const url = new URL(value);
     const host = url.hostname.toLowerCase();
     const route = url.pathname.split('/').filter(Boolean)[0]?.toLowerCase();
-    return url.protocol === 'https:' && (host === 'figma.com' || host === 'www.figma.com') && ['design', 'file', 'board'].includes(route ?? '');
-  } catch { return false; }
+    return (
+      url.protocol === 'https:' &&
+      (host === 'figma.com' || host === 'www.figma.com') &&
+      ['design', 'file', 'board'].includes(route ?? '')
+    );
+  } catch {
+    return false;
+  }
 };
-const isLikelyGithubUrl = (value: string) => { try { const url = new URL(value); return url.protocol === 'https:' && ['github.com', 'www.github.com'].includes(url.hostname.toLowerCase()) && url.pathname.split('/').filter(Boolean).length >= 2; } catch { return false; } };
-const isLikelyGoogleDriveUrl = (value: string) => { try { const url = new URL(value); return url.protocol === 'https:' && ['drive.google.com', 'docs.google.com', 'sheets.google.com', 'slides.google.com', 'forms.google.com', 'drawings.google.com'].includes(url.hostname.toLowerCase()) && Boolean(url.searchParams.get('id') || url.pathname.match(/\/d\/[-\w]+/)); } catch { return false; } };
+const isLikelyGithubUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      ['github.com', 'www.github.com'].includes(url.hostname.toLowerCase()) &&
+      url.pathname.split('/').filter(Boolean).length >= 2
+    );
+  } catch {
+    return false;
+  }
+};
+const isLikelyGoogleDriveUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      [
+        'drive.google.com',
+        'docs.google.com',
+        'sheets.google.com',
+        'slides.google.com',
+        'forms.google.com',
+        'drawings.google.com',
+      ].includes(url.hostname.toLowerCase()) &&
+      Boolean(url.searchParams.get('id') || url.pathname.match(/\/d\/[-\w]+/))
+    );
+  } catch {
+    return false;
+  }
+};
 
-const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | null; targetType?: 'note' | 'meetingNote' }) => {
+const FigmaPastePlugin = ({
+  noteId,
+  targetType = 'note',
+  onCreateExternalEmbed,
+}: {
+  noteId?: string | null;
+  targetType?: 'note' | 'meetingNote';
+  onCreateExternalEmbed?: (
+    request: EditorExternalEmbedRequest
+  ) => Promise<EditorExternalEmbedResult>;
+}) => {
   const [editor] = useLexicalComposerContext();
-  const api = useApi();
   const toast = useToast();
-  const [prompt, setPrompt] = useState<{ url: string; nodeKey: string; provider: 'figma' | 'github' | 'google_drive' } | null>(null);
+  const [prompt, setPrompt] = useState<{
+    url: string;
+    nodeKey: string;
+    provider: 'figma' | 'github' | 'google_drive';
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -830,38 +845,57 @@ const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | n
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [prompt]);
 
-  useEffect(() => editor.registerCommand(PASTE_COMMAND, (event: ClipboardEvent) => {
-    if (!noteId) return false;
-    const text = event.clipboardData?.getData('text/plain')?.trim() ?? '';
-    const provider = isLikelyFigmaUrl(text) ? 'figma' : isLikelyGithubUrl(text) ? 'github' : isLikelyGoogleDriveUrl(text) ? 'google_drive' : null;
-    if (!provider) return false;
-    event.preventDefault();
-    let nodeKey: string | null = null;
-    editor.update(() => {
-      const selection = $getSelection();
-      if (!$isRangeSelection(selection)) return;
-      const linkNode = $createLinkNode(text);
-      linkNode.append($createTextNode(text));
-      selection.insertNodes([linkNode]);
-      nodeKey = linkNode.getKey();
-    });
-    if (nodeKey) setPrompt({ url: text, nodeKey, provider });
-    return true;
-  }, COMMAND_PRIORITY_HIGH), [editor, noteId, targetType]);
+  useEffect(
+    () =>
+      editor.registerCommand(
+        PASTE_COMMAND,
+        (event: ClipboardEvent) => {
+          if (!noteId) return false;
+          const text = event.clipboardData?.getData('text/plain')?.trim() ?? '';
+          const provider = isLikelyFigmaUrl(text)
+            ? 'figma'
+            : isLikelyGithubUrl(text)
+            ? 'github'
+            : isLikelyGoogleDriveUrl(text)
+            ? 'google_drive'
+            : null;
+          if (!provider) return false;
+          event.preventDefault();
+          let nodeKey: string | null = null;
+          editor.update(() => {
+            const selection = $getSelection();
+            if (!$isRangeSelection(selection)) return;
+            const linkNode = $createLinkNode(text);
+            linkNode.append($createTextNode(text));
+            selection.insertNodes([linkNode]);
+            nodeKey = linkNode.getKey();
+          });
+          if (nodeKey) setPrompt({ url: text, nodeKey, provider });
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH
+      ),
+    [editor, noteId, targetType]
+  );
 
   const embed = async () => {
     if (!prompt || !noteId || busy) return;
     setBusy(true);
     try {
-      const created = await api.createExternalReference(prompt.provider, prompt.url) as { id: string; normalized_url?: string; external_url?: string };
-      if (prompt.provider === 'github' || prompt.provider === 'google_drive') await api.resolveExternalReference(created.id);
-      await api.linkExternalReferenceWithMetadata(created.id, targetType, noteId, undefined, 'embed');
-      if (prompt.provider === 'figma') { await api.resolveExternalReference(created.id); await api.createExternalReferencePreview(created.id, targetType, noteId); }
-      const canonicalUrl = created.normalized_url || created.external_url || prompt.url;
+      if (!onCreateExternalEmbed) return;
+      const result = await onCreateExternalEmbed({
+        noteId,
+        targetType,
+        provider: prompt.provider,
+        url: prompt.url,
+      });
       editor.update(() => {
         const original = $getNodeByKey(prompt.nodeKey);
         if (!original) return;
-        const embedNode = $createExternalEmbedNode({ externalReferenceId: created.id, externalUrl: canonicalUrl });
+        const embedNode = $createExternalEmbedNode({
+          externalReferenceId: result.externalReferenceId,
+          externalUrl: result.externalUrl,
+        });
         const topLevel = original.getTopLevelElementOrThrow();
         if (!$isElementNode(topLevel)) return;
         if (topLevel.getChildrenSize() === 1) topLevel.replace(embedNode);
@@ -872,12 +906,66 @@ const FigmaPastePlugin = ({ noteId, targetType = 'note' }: { noteId?: string | n
       });
       setPrompt(null);
     } catch (error) {
-      toast.show(error instanceof Error ? error.message : `Could not embed this ${prompt.provider === 'github' ? 'GitHub item' : prompt.provider === 'google_drive' ? 'Google Drive file' : 'Figma design'}.`, { variant: 'error' });
-    } finally { setBusy(false); }
+      toast.show(
+        error instanceof Error
+          ? error.message
+          : `Could not embed this ${
+              prompt.provider === 'github'
+                ? 'GitHub item'
+                : prompt.provider === 'google_drive'
+                ? 'Google Drive file'
+                : 'Figma design'
+            }.`,
+        { variant: 'error' }
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (!prompt) return null;
-  return <div className="absolute right-4 top-3 z-20 flex max-w-[min(420px,calc(100%-2rem))] items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)] shadow-[0_12px_30px_rgba(15,23,42,0.12)]" role="dialog" aria-label="External link detected"><div className="min-w-0"><span className="font-medium">{prompt.provider === 'github' ? 'GitHub link detected' : prompt.provider === 'google_drive' ? 'Google Drive link detected' : 'Figma link detected'}</span><span className="mt-0.5 block text-[10px] leading-4 text-[var(--ledger-text-muted)]">Add a compact linked reference to this note.</span></div><button type="button" onClick={() => void embed()} disabled={busy} className="h-7 shrink-0 rounded-full bg-[var(--ledger-accent)] px-2.5 text-[11px] font-medium text-white disabled:opacity-60">{busy ? 'Embedding…' : prompt.provider === 'github' ? 'Embed item' : prompt.provider === 'google_drive' ? 'Embed file' : 'Embed design'}</button><button type="button" onClick={() => setPrompt(null)} disabled={busy} className="h-7 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] px-2.5 text-[11px] font-medium hover:bg-[var(--ledger-surface-hover)]">Keep as link</button></div>;
+  return (
+    <div
+      className="absolute right-4 top-3 z-20 flex max-w-[min(420px,calc(100%-2rem))] items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-xs text-[var(--ledger-text-secondary)] shadow-[0_12px_30px_rgba(15,23,42,0.12)]"
+      role="dialog"
+      aria-label="External link detected"
+    >
+      <div className="min-w-0">
+        <span className="font-medium">
+          {prompt.provider === 'github'
+            ? 'GitHub link detected'
+            : prompt.provider === 'google_drive'
+            ? 'Google Drive link detected'
+            : 'Figma link detected'}
+        </span>
+        <span className="mt-0.5 block text-[10px] leading-4 text-[var(--ledger-text-muted)]">
+          Add a compact linked reference to this note.
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => void embed()}
+        disabled={busy}
+        className="h-7 shrink-0 rounded-full bg-[var(--ledger-accent)] px-2.5 text-[11px] font-medium text-white disabled:opacity-60"
+      >
+        {busy
+          ? 'Embedding…'
+          : prompt.provider === 'github'
+          ? 'Embed item'
+          : prompt.provider === 'google_drive'
+          ? 'Embed file'
+          : 'Embed design'}
+      </button>
+      <button
+        type="button"
+        onClick={() => setPrompt(null)}
+        disabled={busy}
+        className="h-7 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] px-2.5 text-[11px] font-medium hover:bg-[var(--ledger-surface-hover)]"
+      >
+        Keep as link
+      </button>
+    </div>
+  );
 };
 
 const ResizableImagePlugin = () => {
@@ -987,6 +1075,7 @@ const ResizableImagePlugin = () => {
 };
 
 const EditorContextMenuPlugin = ({
+  noteId,
   canEdit = true,
   onCreateTask,
   onCreateReminder,
@@ -997,6 +1086,7 @@ const EditorContextMenuPlugin = ({
   onSearch,
 }: Pick<
   Props,
+  | 'noteId'
   | 'onCreateTask'
   | 'onCreateReminder'
   | 'onCreateEvent'
@@ -1008,6 +1098,7 @@ const EditorContextMenuPlugin = ({
   const [editor] = useLexicalComposerContext();
   const [position, setPosition] = useState<EditorContextMenuPosition | null>(null);
   const [selectedText, setSelectedText] = useState('');
+  const [selectedBlockKey, setSelectedBlockKey] = useState<string | undefined>();
   const [hasSmartDate, setHasSmartDate] = useState(false);
   const [personId, setPersonId] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
@@ -1063,14 +1154,13 @@ const EditorContextMenuPlugin = ({
     };
   }, [close, position]);
 
-  const getSelectedText = useCallback(() => {
-    let text = '';
+  const getSelectedContent = useCallback(() => {
+    const result: { value: SelectedContentPayload | null } = { value: null };
     editor.getEditorState().read(() => {
-      const selection = $getSelection();
-      if ($isRangeSelection(selection)) text = selection.getTextContent().trim();
+      result.value = getSelectedContentPayload(noteId, $getSelection());
     });
-    return text;
-  }, [editor]);
+    return result.value;
+  }, [editor, noteId]);
 
   useEffect(() => {
     const root = editor.getRootElement();
@@ -1089,7 +1179,7 @@ const EditorContextMenuPlugin = ({
 
       event.preventDefault();
       event.stopPropagation();
-      const text = getSelectedText();
+      const content = getSelectedContent();
       editor.getEditorState().read(() => {
         const selection = $getSelection();
         savedSelectionRef.current = selection?.clone?.() ?? null;
@@ -1097,7 +1187,8 @@ const EditorContextMenuPlugin = ({
       const smartDate = Boolean(target.closest('[data-ledger-smart-date-key]'));
       const person = target.closest('[data-ledger-smart-person-key]');
       const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
-      setSelectedText(text);
+      setSelectedText(content?.plainText ?? '');
+      setSelectedBlockKey(content?.blockKey);
       setHasSmartDate(smartDate);
       setPersonId(person?.getAttribute('data-ledger-smart-person-user-id') ?? null);
       setLinkUrl(
@@ -1108,7 +1199,7 @@ const EditorContextMenuPlugin = ({
 
     root.addEventListener('contextmenu', onContextMenu);
     return () => root.removeEventListener('contextmenu', onContextMenu);
-  }, [editor, getSelectedText]);
+  }, [editor, getSelectedContent]);
 
   if (!position) return null;
 
@@ -1164,6 +1255,10 @@ const EditorContextMenuPlugin = ({
     }
   };
   const hasSelection = Boolean(selectedText);
+  const selectedContent: SelectedContentPayload | null =
+    noteId && selectedText
+      ? { noteId, plainText: selectedText, blockKey: selectedBlockKey, source: 'selection' }
+      : null;
 
   return (
     <NotesEditorContextMenu
@@ -1182,15 +1277,27 @@ const EditorContextMenuPlugin = ({
       onCopy={() => void copySelectedText()}
       onPaste={() => void pasteTextFromClipboard()}
       onSelectAll={() => dispatch(SELECT_ALL_COMMAND)}
-      onCreateTask={() => onCreateTask?.(selectedText)}
-      onCreateReminder={() => onCreateReminder?.(selectedText)}
-      onCreateEvent={() => onCreateEvent?.(selectedText)}
-      onSendToIntake={() => void onSendToIntake?.(selectedText)}
-      onLinkProject={() => onLinkProject?.(selectedText)}
-      onLinkPerson={() => {
-        if (personId) onLinkPerson?.(selectedText, personId);
+      onCreateTask={() => {
+        if (selectedContent) void onCreateTask?.(selectedContent);
       }}
-      onSearch={() => onSearch?.(selectedText)}
+      onCreateReminder={() => {
+        if (selectedContent) void onCreateReminder?.(selectedContent);
+      }}
+      onCreateEvent={() => {
+        if (selectedContent) void onCreateEvent?.(selectedContent);
+      }}
+      onSendToIntake={() => {
+        if (selectedContent) void onSendToIntake?.(selectedContent);
+      }}
+      onLinkProject={() => {
+        if (selectedContent) void onLinkProject?.(selectedContent);
+      }}
+      onLinkPerson={() => {
+        if (personId && selectedContent) void onLinkPerson?.(selectedContent, personId);
+      }}
+      onSearch={() => {
+        if (selectedContent) void onSearch?.(selectedContent);
+      }}
       linkUrl={linkUrl}
       onOpenLink={() => {
         if (linkUrl) openExternalLink(linkUrl);
@@ -1223,6 +1330,8 @@ export function RichTextEditor({
   onLinkProject,
   onLinkPerson,
   onSearch,
+  onCreateExternalEmbed,
+  onUploadAttachment,
 }: Props) {
   const lastChangeTimeRef = React.useRef(0);
   const pendingHtmlRef = React.useRef<string | null>(null);
@@ -1300,63 +1409,96 @@ export function RichTextEditor({
   return (
     <LexicalComposer initialConfig={editorConfig}>
       <ExternalEmbedProvider targetType={targetType} targetId={noteId ?? null} canEdit>
-      <div>
-        <ToolbarPlugin onAutoCorrect={onAutoCorrect} />
-        <div className="relative mt-2">
-          <RichTextBehaviorPlugin />
-          {/* Meeting notes use the transcript as their separate capture surface.
+        <div>
+          <ToolbarPlugin
+            onAutoCorrect={onAutoCorrect}
+            noteId={noteId}
+            onUploadAttachment={onUploadAttachment}
+          />
+          <div className="relative mt-2">
+            <RichTextBehaviorPlugin />
+            {/* Meeting notes use the transcript as their separate capture surface.
               The automatic text-entity scanners can repeatedly re-transform
               imported meeting content, so keep them off this editor variant. */}
-          {targetType !== 'meetingNote' && (
-            <SmartDatePlugin noteId={noteId} noteTitle={noteTitle} noteProjectId={noteProjectId} />
-          )}
-          {targetType !== 'meetingNote' && (
-            <SmartPersonPlugin
-              noteId={noteId}
-              onAssignTask={(person) => onPersonTaskAction?.('task', person)}
-              onCreateFollowUp={(person) => onPersonTaskAction?.('follow-up', person)}
-            />
-          )}
-          <EditorContextMenuPlugin
-            onCreateTask={onCreateTask}
-            onCreateReminder={onCreateReminder}
-            onCreateEvent={onCreateEvent}
-            onSendToIntake={onSendToIntake}
-            onLinkProject={onLinkProject}
-            onLinkPerson={onLinkPerson}
-            onSearch={onSearch}
-          />
-          <RichTextPlugin
-            contentEditable={
-              <ContentEditable
-                onFocus={onFocus}
-                onBlur={onBlur}
-                className="notes-rich-text-editor min-h-[calc(100vh-420px)] rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+            {targetType !== 'meetingNote' && (
+              <SmartDatePlugin
+                noteId={noteId}
+                noteTitle={noteTitle}
+                noteProjectId={noteProjectId}
               />
-            }
-            placeholder={
-              <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-muted)]">
-                Write something...
-              </div>
-            }
-            ErrorBoundary={() => null}
-          />
-          <HistoryPlugin />
-          <LinkPlugin />
-          <AutoLinkPlugin matchers={URL_MATCHERS} />
-          <LinkInteractionPlugin />
-          <LinkScanPlugin editorKey={editorKey} />
-          <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
-          <MarkdownShortcutPlugin />
-          <TabIndentationPlugin />
-          <ListPlugin />
-          <ImagePasteDropPlugin noteId={noteId} />
-          <FigmaPastePlugin noteId={noteId} targetType={targetType} />
-          <ResizableImagePlugin />
-          <ImageCopyPlugin />
-          <OnChangePlugin onChange={handleChange} />
+            )}
+            {targetType !== 'meetingNote' && (
+              <SmartPersonPlugin
+                noteId={noteId}
+                onAssignTask={(person) => onPersonTaskAction?.('task', person)}
+                onCreateFollowUp={(person) => onPersonTaskAction?.('follow-up', person)}
+              />
+            )}
+            <EditorContextMenuPlugin
+              noteId={noteId}
+              onCreateTask={onCreateTask}
+              onCreateReminder={onCreateReminder}
+              onCreateEvent={onCreateEvent}
+              onSendToIntake={onSendToIntake}
+              onLinkProject={onLinkProject}
+              onLinkPerson={onLinkPerson}
+              onSearch={onSearch}
+            />
+            <RichTextPlugin
+              contentEditable={
+                <ContentEditable
+                  onFocus={onFocus}
+                  onBlur={onBlur}
+                  className="notes-rich-text-editor min-h-[calc(100vh-420px)] rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                />
+              }
+              placeholder={
+                <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-muted)]">
+                  Type / for commands
+                </div>
+              }
+              ErrorBoundary={() => null}
+            />
+            <HistoryPlugin />
+            <LinkPlugin />
+            <AutoLinkPlugin matchers={URL_MATCHERS} />
+            <LinkInteractionPlugin />
+            <LinkScanPlugin editorKey={editorKey} />
+            <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
+            <MarkdownShortcutPlugin />
+            <TabIndentationPlugin />
+            <ListPlugin />
+            <CheckListPlugin />
+            <TablePlugin hasTabHandler hasHorizontalScroll />
+            <HorizontalRulePlugin />
+            <SlashCommandPlugin />
+            <BlockHandlePlugin
+              noteId={noteId}
+              onCreateTask={onCreateTask}
+              onCreateReminder={onCreateReminder}
+              onCreateEvent={onCreateEvent}
+              onSendToIntake={onSendToIntake}
+              onLinkContext={onLinkProject}
+            />
+            <SelectionFormattingPlugin
+              noteId={noteId}
+              onCreateTask={onCreateTask}
+              onCreateReminder={onCreateReminder}
+              onCreateEvent={onCreateEvent}
+              onSendToIntake={onSendToIntake}
+              onLinkContext={onLinkProject}
+            />
+            <ImagePasteDropPlugin noteId={noteId} />
+            <FigmaPastePlugin
+              noteId={noteId}
+              targetType={targetType}
+              onCreateExternalEmbed={onCreateExternalEmbed}
+            />
+            <ResizableImagePlugin />
+            <ImageCopyPlugin />
+            <OnChangePlugin onChange={handleChange} />
+          </div>
         </div>
-      </div>
       </ExternalEmbedProvider>
     </LexicalComposer>
   );

@@ -69,6 +69,13 @@ import { PinActionButton } from '../Common/PinActionButton';
 import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
 import { MindMapEditor } from './MindMapEditor';
 import { RichTextEditor } from './RichTextEditor';
+import type { SelectedContentPayload } from './editor/types/selectedContent';
+import type { AttachmentUploadRequest, AttachmentUploadResult } from './editor/types/blocks';
+import type {
+  EditorExternalEmbedRequest,
+  EditorExternalEmbedResult,
+} from './editor/types/externalEmbed';
+import { htmlToPlainText, normalizeEditorHtml } from './editor/utils/html';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { CreateNoteModal } from './CreateNoteModal';
@@ -155,7 +162,12 @@ type MeetingAudioStatus = {
   noteId: string | null;
   workspaceId: string | null;
   kind: 'meeting' | 'test' | null;
-  sources: Array<{ source: 'user_microphone' | 'system_audio'; sampleRate: number; channels: number; active: boolean }>;
+  sources: Array<{
+    source: 'user_microphone' | 'system_audio';
+    sampleRate: number;
+    channels: number;
+    active: boolean;
+  }>;
   startedAt: string | null;
   endedAt: string | null;
   durationSeconds: number;
@@ -174,15 +186,41 @@ type RecordingRecovery = {
   status: string;
   enabledSources: Array<'user_microphone' | 'system_audio'>;
   chunkCount: number;
-  chunks: Array<{ source: 'user_microphone' | 'system_audio'; sequence: number; durationSeconds: number; finalized: boolean; sizeBytes: number }>;
+  chunks: Array<{
+    source: 'user_microphone' | 'system_audio';
+    sequence: number;
+    durationSeconds: number;
+    finalized: boolean;
+    sizeBytes: number;
+  }>;
   durationSeconds: number;
   recoveryState: string;
   sourceErrors: Array<{ source: 'user_microphone' | 'system_audio'; error: string }>;
   warnings: string[];
   diskAvailableBytes: number;
 };
-type TranscriptionModelStatus = { installed: boolean; downloading: boolean; label: string; approximateBytes: number; bytesDownloaded: number; error: string | null };
-type TranscriptionJobStatus = { jobId: string; sessionId: string; noteId: string; workspaceId: string; status: 'queued' | 'preparing' | 'transcribing' | 'merging' | 'complete' | 'failed' | 'cancelled'; progress: number; currentSource: 'user_microphone' | 'system_audio' | null; currentChunkSequence: number | null; completedChunks: number; totalChunks: number; error: string | null; segmentCount: number };
+type TranscriptionModelStatus = {
+  installed: boolean;
+  downloading: boolean;
+  label: string;
+  approximateBytes: number;
+  bytesDownloaded: number;
+  error: string | null;
+};
+type TranscriptionJobStatus = {
+  jobId: string;
+  sessionId: string;
+  noteId: string;
+  workspaceId: string;
+  status: 'queued' | 'preparing' | 'transcribing' | 'merging' | 'complete' | 'failed' | 'cancelled';
+  progress: number;
+  currentSource: 'user_microphone' | 'system_audio' | null;
+  currentChunkSequence: number | null;
+  completedChunks: number;
+  totalChunks: number;
+  error: string | null;
+  segmentCount: number;
+};
 
 type WorkspaceMember = {
   user_id: string;
@@ -280,23 +318,6 @@ const NOTE_SORT_STORAGE_PREFIX = 'notes-sort-preferences:v1';
 const NOTE_LAST_OPENED_STORAGE_PREFIX = 'notes-last-opened:v1';
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
-
-const htmlToPlainText = (value: string) =>
-  String(value ?? '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const normalizeEditorHtml = (value: string) => {
-  const trimmed = String(value ?? '')
-    .trim()
-    .toLowerCase();
-  if (!trimmed || trimmed === '<p><br></p>' || trimmed === '<p></p>') {
-    return '<p></p>';
-  }
-  return String(value ?? '');
-};
 
 type SpellcheckAutocorrectResult = {
   title: string;
@@ -680,7 +701,9 @@ const formatMeetingDuration = (seconds: number) => {
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const remainder = safeSeconds % 60;
   return hours > 0
-    ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+    ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(
+        remainder
+      ).padStart(2, '0')}`
     : `${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
 };
 
@@ -693,7 +716,8 @@ const mergeTranscriptText = (first: string, second: string) => {
   if (!left) return right;
   if (!right) return left;
   if (/[.!?]$/.test(left) && /^[.!?]/.test(right)) right = right.slice(1).trimStart();
-  if (left.endsWith('\n') || right.startsWith('\n')) return `${left}${right}`.replace(/[ \t]+\n/g, '\n');
+  if (left.endsWith('\n') || right.startsWith('\n'))
+    return `${left}${right}`.replace(/[ \t]+\n/g, '\n');
   if (/^[,.;:!?)]/.test(right) || /[(\[{]$/.test(left)) return `${left}${right}`;
   return `${left} ${right}`;
 };
@@ -738,9 +762,22 @@ const appendMeetingTranscriptReference = (
   timestampMs: number,
   segmentId: string
 ) => {
-  const escape = (value: string) => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] ?? character));
-  const reference = `<p data-transcript-segment-reference="${escape(segmentId)}"><strong>From transcript · ${formatTranscriptTimestamp(timestampMs)}</strong><br>${escape(quotedText)}</p>`;
-  const heading = new RegExp(`(<h[1-6][^>]*>\\s*${section.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\s*</h[1-6]>)`, 'i');
+  const escape = (value: string) =>
+    value.replace(
+      /[&<>"']/g,
+      (character) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] ??
+        character)
+    );
+  const reference = `<p data-transcript-segment-reference="${escape(
+    segmentId
+  )}"><strong>From transcript · ${formatTranscriptTimestamp(timestampMs)}</strong><br>${escape(
+    quotedText
+  )}</p>`;
+  const heading = new RegExp(
+    `(<h[1-6][^>]*>\\s*${section.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\s*</h[1-6]>)`,
+    'i'
+  );
   return heading.test(html) ? html.replace(heading, `$1${reference}`) : `${html}${reference}`;
 };
 
@@ -755,9 +792,21 @@ const isRenderableTranscriptSegment = (segment: TranscriptSegment) =>
   );
 
 const safeMeetingExportName = (title: string) =>
-  (title || 'meeting-notes').replace(/[^a-z0-9\s_-]/gi, '').trim().replace(/\s+/g, '-').slice(0, 100) || 'meeting-notes';
+  (title || 'meeting-notes')
+    .replace(/[^a-z0-9\s_-]/gi, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 100) || 'meeting-notes';
 
-const NoteTypeIcon = ({ mode, source, size = 13 }: { mode?: NoteMode; source?: string; size?: number }) => {
+const NoteTypeIcon = ({
+  mode,
+  source,
+  size = 13,
+}: {
+  mode?: NoteMode;
+  source?: string;
+  size?: number;
+}) => {
   const iconClass = 'shrink-0 text-[var(--ledger-text-muted)]';
   if (mode !== 'meeting_note') {
     return <StickyNote size={size} className={iconClass} aria-hidden="true" />;
@@ -768,9 +817,21 @@ const NoteTypeIcon = ({ mode, source, size = 13 }: { mode?: NoteMode; source?: s
   // are available. Fresh meeting notes remain a single mic icon.
   if (source && source !== 'meeting') {
     return (
-      <span className="relative inline-flex shrink-0" style={{ width: size + 3, height: size + 2 }} aria-label="Written note with transcription">
-        <StickyNote size={size} className={`${iconClass} absolute left-0 top-0`} aria-hidden="true" />
-        <Mic size={Math.max(9, size - 2)} className={`${iconClass} absolute bottom-0 right-0 bg-[var(--ledger-surface-card)]`} aria-hidden="true" />
+      <span
+        className="relative inline-flex shrink-0"
+        style={{ width: size + 3, height: size + 2 }}
+        aria-label="Written note with transcription"
+      >
+        <StickyNote
+          size={size}
+          className={`${iconClass} absolute left-0 top-0`}
+          aria-hidden="true"
+        />
+        <Mic
+          size={Math.max(9, size - 2)}
+          className={`${iconClass} absolute bottom-0 right-0 bg-[var(--ledger-surface-card)]`}
+          aria-hidden="true"
+        />
       </span>
     );
   }
@@ -796,8 +857,16 @@ type MeetingTranscriptSectionProps = {
   isMutationBusy: boolean;
   deletedSegments: TranscriptSegment[];
   onRestore: (segment: TranscriptSegment) => void;
-  onCreateLedgerItem: (kind: 'task' | 'reminder' | 'event' | 'intake', segment: TranscriptSegment, quotedText: string) => void;
-  onAddMeetingReference: (kind: 'action_item' | 'decision' | 'key_point' | 'meeting_note', segment: TranscriptSegment, quotedText: string) => void;
+  onCreateLedgerItem: (
+    kind: 'task' | 'reminder' | 'event' | 'intake',
+    segment: TranscriptSegment,
+    quotedText: string
+  ) => void;
+  onAddMeetingReference: (
+    kind: 'action_item' | 'decision' | 'key_point' | 'meeting_note',
+    segment: TranscriptSegment,
+    quotedText: string
+  ) => void;
   transcriptLinks: MeetingTranscriptLink[];
 };
 
@@ -828,34 +897,55 @@ const MeetingTranscriptSection = ({
   const [selectionById, setSelectionById] = useState<Record<string, number>>({});
   const [openSpeakerId, setOpenSpeakerId] = useState<string | null>(null);
   const [customSpeakers, setCustomSpeakers] = useState<string[]>([]);
-  const [splitPreview, setSplitPreview] = useState<{ segment: TranscriptSegment; position: number; firstText: string; secondText: string } | null>(null);
+  const [splitPreview, setSplitPreview] = useState<{
+    segment: TranscriptSegment;
+    position: number;
+    firstText: string;
+    secondText: string;
+  } | null>(null);
   const [splitInstructionId, setSplitInstructionId] = useState<string | null>(null);
   const [mergePreviewId, setMergePreviewId] = useState<string | null>(null);
-  const [mergeConfirmation, setMergeConfirmation] = useState<{ segment: TranscriptSegment; next: TranscriptSegment; sourceConflict: boolean } | null>(null);
+  const [mergeConfirmation, setMergeConfirmation] = useState<{
+    segment: TranscriptSegment;
+    next: TranscriptSegment;
+    sourceConflict: boolean;
+  } | null>(null);
   const [openActionsId, setOpenActionsId] = useState<string | null>(null);
-  const [speakerEditor, setSpeakerEditor] = useState<{ segment: TranscriptSegment; value: string } | null>(null);
+  const [speakerEditor, setSpeakerEditor] = useState<{
+    segment: TranscriptSegment;
+    value: string;
+  } | null>(null);
   const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(isExpanded);
   const [openSubmenu, setOpenSubmenu] = useState<'create' | 'meeting' | null>(null);
-  const [selectionRangeById, setSelectionRangeById] = useState<Record<string, { start: number; end: number }>>({});
+  const [selectionRangeById, setSelectionRangeById] = useState<
+    Record<string, { start: number; end: number }>
+  >({});
   const transcriptTextareasRef = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const attendeeNames = useMemo(() => {
-    const names = (metadata?.attendees ?? []).map((attendee) => {
-      if (typeof attendee === 'string') return attendee.trim();
-      if (!attendee || typeof attendee !== 'object') return '';
-      const value = attendee as Record<string, unknown>;
-      return String(value.name ?? value.full_name ?? value.email ?? '').trim();
-    }).filter(Boolean);
+    const names = (metadata?.attendees ?? [])
+      .map((attendee) => {
+        if (typeof attendee === 'string') return attendee.trim();
+        if (!attendee || typeof attendee !== 'object') return '';
+        const value = attendee as Record<string, unknown>;
+        return String(value.name ?? value.full_name ?? value.email ?? '').trim();
+      })
+      .filter(Boolean);
     return [...new Set(names)];
   }, [metadata?.attendees]);
   const speakerOptions = useMemo(
-    () => [...new Set([
-      'You',
-      'Meeting',
-      'Unknown speaker',
-      ...attendeeNames,
-      ...customSpeakers,
-      ...segments.filter(isRenderableTranscriptSegment).map((segment) => segment.speaker_label?.trim() || '').filter(Boolean),
-    ])],
+    () => [
+      ...new Set([
+        'You',
+        'Meeting',
+        'Unknown speaker',
+        ...attendeeNames,
+        ...customSpeakers,
+        ...segments
+          .filter(isRenderableTranscriptSegment)
+          .map((segment) => segment.speaker_label?.trim() || '')
+          .filter(Boolean),
+      ]),
+    ],
     [attendeeNames, customSpeakers, segments]
   );
   useEffect(() => {
@@ -894,20 +984,30 @@ const MeetingTranscriptSection = ({
     [segments]
   );
   const visibleSegments = useMemo(
-    () => renderableSegments
-      .filter((segment) => filter === 'all' || segment.audio_source === filter)
-      .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order),
+    () =>
+      renderableSegments
+        .filter((segment) => filter === 'all' || segment.audio_source === filter)
+        .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order),
     [filter, renderableSegments]
   );
   const chronologicalSegments = useMemo(
-    () => [...renderableSegments].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order),
+    () =>
+      [...renderableSegments].sort(
+        (a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order
+      ),
     [renderableSegments]
   );
-  const segmentCounts = useMemo(() => ({
-    all: renderableSegments.length,
-    user_microphone: renderableSegments.filter((segment) => segment.audio_source === 'user_microphone').length,
-    system_audio: renderableSegments.filter((segment) => segment.audio_source === 'system_audio').length,
-  }), [renderableSegments]);
+  const segmentCounts = useMemo(
+    () => ({
+      all: renderableSegments.length,
+      user_microphone: renderableSegments.filter(
+        (segment) => segment.audio_source === 'user_microphone'
+      ).length,
+      system_audio: renderableSegments.filter((segment) => segment.audio_source === 'system_audio')
+        .length,
+    }),
+    [renderableSegments]
+  );
   useEffect(() => {
     setMergePreviewId(null);
     setMergeConfirmation(null);
@@ -939,22 +1039,40 @@ const MeetingTranscriptSection = ({
   const quotedTextFor = (segment: TranscriptSegment) => {
     const text = drafts[segment.id] ?? segment.transcript_text;
     const range = selectionRangeById[segment.id];
-    return range && range.end > range.start ? text.slice(range.start, range.end).trim() : text.trim();
+    return range && range.end > range.start
+      ? text.slice(range.start, range.end).trim()
+      : text.trim();
   };
-  const speakerLabelFor = (segment: TranscriptSegment) => segment.speaker_label?.trim() || (segment.audio_source === 'user_microphone' ? 'You' : 'Meeting');
+  const speakerLabelFor = (segment: TranscriptSegment) =>
+    segment.speaker_label?.trim() ||
+    (segment.audio_source === 'user_microphone' ? 'You' : 'Meeting');
   const requestSplit = (segment: TranscriptSegment) => {
     if (isMutationBusy) return;
     const text = drafts[segment.id] ?? segment.transcript_text;
     const position = selectionById[segment.id];
     const textarea = transcriptTextareasRef.current[segment.id];
-    if (position === undefined || position <= 0 || position >= text.length || !text.slice(0, position).trim() || !text.slice(position).trim()) {
+    if (
+      position === undefined ||
+      position <= 0 ||
+      position >= text.length ||
+      !text.slice(0, position).trim() ||
+      !text.slice(position).trim()
+    ) {
       textarea?.focus();
       setSplitInstructionId(segment.id);
-      window.setTimeout(() => setSplitInstructionId((current) => current === segment.id ? null : current), 2200);
+      window.setTimeout(
+        () => setSplitInstructionId((current) => (current === segment.id ? null : current)),
+        2200
+      );
       return;
     }
     setSplitInstructionId(null);
-    setSplitPreview({ segment, position, firstText: text.slice(0, position).trim(), secondText: text.slice(position).trim() });
+    setSplitPreview({
+      segment,
+      position,
+      firstText: text.slice(0, position).trim(),
+      secondText: text.slice(position).trim(),
+    });
   };
   const requestMerge = (segment: TranscriptSegment, next: TranscriptSegment) => {
     if (isMutationBusy) return;
@@ -1002,7 +1120,11 @@ const MeetingTranscriptSection = ({
         <span className="text-[11px] text-[var(--ledger-text-muted)]">
           {renderableSegments.length} segment{renderableSegments.length === 1 ? '' : 's'}
         </span>
-        <span className={`ml-auto inline-flex items-center gap-1 text-[11px] ${meetingStatusTone(status)}`}>
+        <span
+          className={`ml-auto inline-flex items-center gap-1 text-[11px] ${meetingStatusTone(
+            status
+          )}`}
+        >
           {status === 'recording' && <CircleDot size={11} />}
           {status === 'processing' && <Loader2 size={11} className="animate-spin" />}
           {status === 'failed' && <AlertCircle size={11} />}
@@ -1022,196 +1144,668 @@ const MeetingTranscriptSection = ({
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-1.5 border-b border-[color:var(--ledger-border-subtle)] pb-2">
                 {(['all', 'user_microphone', 'system_audio'] as const).map((value) => (
-                  <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} aria-label={`${value === 'all' ? 'All' : value === 'user_microphone' ? 'Microphone' : 'System audio'} ${segmentCounts[value]}`} className={`rounded-md px-2 py-1 text-[10px] ${filter === value ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]'}`}>
-                    {value === 'all' ? 'All' : value === 'user_microphone' ? 'Microphone' : 'System audio'} {segmentCounts[value]}
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFilter(value)}
+                    aria-pressed={filter === value}
+                    aria-label={`${
+                      value === 'all'
+                        ? 'All'
+                        : value === 'user_microphone'
+                        ? 'Microphone'
+                        : 'System audio'
+                    } ${segmentCounts[value]}`}
+                    className={`rounded-md px-2 py-1 text-[10px] ${
+                      filter === value
+                        ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                        : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]'
+                    }`}
+                  >
+                    {value === 'all'
+                      ? 'All'
+                      : value === 'user_microphone'
+                      ? 'Microphone'
+                      : 'System audio'}{' '}
+                    {segmentCounts[value]}
                   </button>
                 ))}
-                <button type="button" onClick={() => setShowTimestamps((current) => !current)} className="ml-auto rounded-md px-2 py-1 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">{showTimestamps ? 'Hide times' : 'Show times'}</button>
+                <button
+                  type="button"
+                  onClick={() => setShowTimestamps((current) => !current)}
+                  className="ml-auto rounded-md px-2 py-1 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                >
+                  {showTimestamps ? 'Hide times' : 'Show times'}
+                </button>
               </div>
               {deletedSegments.length > 0 && (
                 <div className="flex items-center gap-2 rounded-md bg-[var(--ledger-surface-muted)] px-2 py-1.5 text-[10px] text-[var(--ledger-text-muted)]">
                   <span>{deletedSegments.length} recently deleted</span>
-                  <button type="button" onClick={() => onRestore(deletedSegments[deletedSegments.length - 1])} className="font-medium text-[var(--ledger-accent)] hover:underline">Restore latest</button>
+                  <button
+                    type="button"
+                    onClick={() => onRestore(deletedSegments[deletedSegments.length - 1])}
+                    className="font-medium text-[var(--ledger-accent)] hover:underline"
+                  >
+                    Restore latest
+                  </button>
                 </div>
               )}
               {mergeConfirmation && (
-                <div className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-2 text-[10px] text-[var(--ledger-text-secondary)]" role="alertdialog" aria-label="Confirm transcript merge">
+                <div
+                  className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-2 text-[10px] text-[var(--ledger-text-secondary)]"
+                  role="alertdialog"
+                  aria-label="Confirm transcript merge"
+                >
                   {mergeConfirmation.sourceConflict ? (
-                    <p>These segments came from different audio sources. They will stay separate so source provenance is not lost.</p>
+                    <p>
+                      These segments came from different audio sources. They will stay separate so
+                      source provenance is not lost.
+                    </p>
                   ) : (
                     <>
                       <p>Choose the speaker label for the merged segment.</p>
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        <button type="button" onClick={() => { onMerge(mergeConfirmation.segment, mergeConfirmation.next, speakerLabelFor(mergeConfirmation.segment)); setMergeConfirmation(null); }} className="rounded border border-[color:var(--ledger-border-subtle)] px-2 py-1 hover:bg-[var(--ledger-surface-hover)]">Keep {speakerLabelFor(mergeConfirmation.segment)}</button>
-                        <button type="button" onClick={() => { onMerge(mergeConfirmation.segment, mergeConfirmation.next, speakerLabelFor(mergeConfirmation.next)); setMergeConfirmation(null); }} className="rounded border border-[color:var(--ledger-border-subtle)] px-2 py-1 hover:bg-[var(--ledger-surface-hover)]">Keep {speakerLabelFor(mergeConfirmation.next)}</button>
-                        <button type="button" onClick={() => { const value = window.prompt('Speaker label for merged segment', speakerLabelFor(mergeConfirmation.segment)); if (value?.trim()) { setCustomSpeakers((current) => [...new Set([...current, value.trim()])]); onMerge(mergeConfirmation.segment, mergeConfirmation.next, value.trim()); setMergeConfirmation(null); } }} className="rounded border border-[color:var(--ledger-border-subtle)] px-2 py-1 hover:bg-[var(--ledger-surface-hover)]">Choose label…</button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onMerge(
+                              mergeConfirmation.segment,
+                              mergeConfirmation.next,
+                              speakerLabelFor(mergeConfirmation.segment)
+                            );
+                            setMergeConfirmation(null);
+                          }}
+                          className="rounded border border-[color:var(--ledger-border-subtle)] px-2 py-1 hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          Keep {speakerLabelFor(mergeConfirmation.segment)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onMerge(
+                              mergeConfirmation.segment,
+                              mergeConfirmation.next,
+                              speakerLabelFor(mergeConfirmation.next)
+                            );
+                            setMergeConfirmation(null);
+                          }}
+                          className="rounded border border-[color:var(--ledger-border-subtle)] px-2 py-1 hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          Keep {speakerLabelFor(mergeConfirmation.next)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const value = window.prompt(
+                              'Speaker label for merged segment',
+                              speakerLabelFor(mergeConfirmation.segment)
+                            );
+                            if (value?.trim()) {
+                              setCustomSpeakers((current) => [
+                                ...new Set([...current, value.trim()]),
+                              ]);
+                              onMerge(
+                                mergeConfirmation.segment,
+                                mergeConfirmation.next,
+                                value.trim()
+                              );
+                              setMergeConfirmation(null);
+                            }
+                          }}
+                          className="rounded border border-[color:var(--ledger-border-subtle)] px-2 py-1 hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          Choose label…
+                        </button>
                       </div>
                     </>
                   )}
-                  <button type="button" onClick={() => setMergeConfirmation(null)} className="mt-1.5 rounded px-1.5 py-0.5 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Close</button>
+                  <button
+                    type="button"
+                    onClick={() => setMergeConfirmation(null)}
+                    className="mt-1.5 rounded px-1.5 py-0.5 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                  >
+                    Close
+                  </button>
                 </div>
               )}
               {visibleSegments.length === 0 ? (
-                <div className="flex min-h-24 flex-col items-center justify-center px-4 py-5 text-center" role="status">
-                  <p className="text-xs font-medium text-[var(--ledger-text-secondary)]">{filter === 'user_microphone' ? 'No microphone audio captured' : 'No system audio captured'}</p>
-                  <p className="mt-1 max-w-xs text-[10px] leading-4 text-[var(--ledger-text-muted)]">{filter === 'user_microphone' ? 'This meeting does not contain transcript segments recorded from the microphone.' : 'This meeting does not contain transcript segments recorded from computer audio.'}</p>
+                <div
+                  className="flex min-h-24 flex-col items-center justify-center px-4 py-5 text-center"
+                  role="status"
+                >
+                  <p className="text-xs font-medium text-[var(--ledger-text-secondary)]">
+                    {filter === 'user_microphone'
+                      ? 'No microphone audio captured'
+                      : 'No system audio captured'}
+                  </p>
+                  <p className="mt-1 max-w-xs text-[10px] leading-4 text-[var(--ledger-text-muted)]">
+                    {filter === 'user_microphone'
+                      ? 'This meeting does not contain transcript segments recorded from the microphone.'
+                      : 'This meeting does not contain transcript segments recorded from computer audio.'}
+                  </p>
                 </div>
-              ) : visibleSegments.map((segment, visibleIndex) => {
-                const sourceLabel = speakerLabelFor(segment);
-                const nextSegment = visibleSegments[visibleIndex + 1];
-                const chronologicalIndex = chronologicalSegments.findIndex((item) => item.id === segment.id);
-                const chronologicalNext = chronologicalIndex >= 0 ? chronologicalSegments[chronologicalIndex + 1] : null;
-                const mergeBlockedByFilter = Boolean(filter !== 'all' && nextSegment && chronologicalNext?.id !== nextSegment.id);
-                const isMergeTarget = mergePreviewId === segment.id;
-                const isMergeSource = Boolean(nextSegment && mergePreviewId === nextSegment.id);
-                return (
-                  <div key={segment.id} data-transcript-segment={segment.id} className="relative group grid grid-cols-[auto_minmax(0,1fr)] gap-2" tabIndex={0} aria-label={`Transcript segment ${visibleIndex + 1}`}>
-                    <div className="relative min-w-0 pt-2 text-[10px] text-[var(--ledger-text-muted)]">
-                      {showTimestamps && (
-                        <span className={isMergeTarget ? 'invisible' : undefined}>
-                          {formatTranscriptTimestamp(segment.start_ms)}
-                        </span>
-                      )}
-                      {isMergeSource && (
-                        <span className="pointer-events-none absolute left-1/2 top-5 bottom-[-1.25rem] z-10 w-7 -translate-x-1/2 opacity-60" role="status" aria-label="Merge with next segment">
-                          <span className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 border-l border-[color:var(--ledger-border-strong)]" />
-                          <span className="absolute bottom-0 left-1/2 h-2 w-4 border-b border-[color:var(--ledger-border-strong)]" />
-                          <span className="absolute bottom-[-2px] left-[calc(50%+0.6rem)] h-1.5 w-1.5 rotate-[-45deg] border-b border-r border-[color:var(--ledger-border-strong)]" />
-                        </span>
-                      )}
-                    </div>
-                    <div className="min-w-0 rounded-lg bg-[var(--ledger-surface-muted)] px-2.5 py-1.5">
-                      <div className="relative mb-0.5 flex min-h-6 items-center gap-1.5 text-[10px] text-[var(--ledger-text-muted)]">
-                        <span title={segment.audio_source === 'user_microphone' ? 'Captured from microphone' : 'Captured from system audio'} className="inline-flex shrink-0" aria-label={segment.audio_source === 'user_microphone' ? 'Captured from microphone' : 'Captured from system audio'}>
-                          {segment.audio_source === 'user_microphone' ? <Mic size={11} /> : <Volume2 size={11} />}
-                        </span>
-                        <div className="relative" data-speaker-menu>
-                          <button
-                            type="button"
-                            onClick={() => setOpenSpeakerId((current) => current === segment.id ? null : segment.id)}
-                            className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] focus:bg-[var(--ledger-surface-hover)] focus:outline-none"
-                            aria-haspopup="menu"
-                            aria-expanded={openSpeakerId === segment.id}
-                            aria-label={`Speaker label: ${speakerDrafts[segment.id] ?? sourceLabel}`}
+              ) : (
+                visibleSegments.map((segment, visibleIndex) => {
+                  const sourceLabel = speakerLabelFor(segment);
+                  const nextSegment = visibleSegments[visibleIndex + 1];
+                  const chronologicalIndex = chronologicalSegments.findIndex(
+                    (item) => item.id === segment.id
+                  );
+                  const chronologicalNext =
+                    chronologicalIndex >= 0 ? chronologicalSegments[chronologicalIndex + 1] : null;
+                  const mergeBlockedByFilter = Boolean(
+                    filter !== 'all' && nextSegment && chronologicalNext?.id !== nextSegment.id
+                  );
+                  const isMergeTarget = mergePreviewId === segment.id;
+                  const isMergeSource = Boolean(nextSegment && mergePreviewId === nextSegment.id);
+                  return (
+                    <div
+                      key={segment.id}
+                      data-transcript-segment={segment.id}
+                      className="relative group grid grid-cols-[auto_minmax(0,1fr)] gap-2"
+                      tabIndex={0}
+                      aria-label={`Transcript segment ${visibleIndex + 1}`}
+                    >
+                      <div className="relative min-w-0 pt-2 text-[10px] text-[var(--ledger-text-muted)]">
+                        {showTimestamps && (
+                          <span className={isMergeTarget ? 'invisible' : undefined}>
+                            {formatTranscriptTimestamp(segment.start_ms)}
+                          </span>
+                        )}
+                        {isMergeSource && (
+                          <span
+                            className="pointer-events-none absolute left-1/2 top-5 bottom-[-1.25rem] z-10 w-7 -translate-x-1/2 opacity-60"
+                            role="status"
+                            aria-label="Merge with next segment"
                           >
-                            {speakerDrafts[segment.id] ?? sourceLabel}<ChevronDown size={10} />
-                          </button>
-                          {openSpeakerId === segment.id && (
-                            <div role="menu" className="absolute left-0 top-full z-20 mt-1 min-w-36 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
-                              {speakerOptions.map((option) => (
+                            <span className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 border-l border-[color:var(--ledger-border-strong)]" />
+                            <span className="absolute bottom-0 left-1/2 h-2 w-4 border-b border-[color:var(--ledger-border-strong)]" />
+                            <span className="absolute bottom-[-2px] left-[calc(50%+0.6rem)] h-1.5 w-1.5 rotate-[-45deg] border-b border-r border-[color:var(--ledger-border-strong)]" />
+                          </span>
+                        )}
+                      </div>
+                      <div className="min-w-0 rounded-lg bg-[var(--ledger-surface-muted)] px-2.5 py-1.5">
+                        <div className="relative mb-0.5 flex min-h-6 items-center gap-1.5 text-[10px] text-[var(--ledger-text-muted)]">
+                          <span
+                            title={
+                              segment.audio_source === 'user_microphone'
+                                ? 'Captured from microphone'
+                                : 'Captured from system audio'
+                            }
+                            className="inline-flex shrink-0"
+                            aria-label={
+                              segment.audio_source === 'user_microphone'
+                                ? 'Captured from microphone'
+                                : 'Captured from system audio'
+                            }
+                          >
+                            {segment.audio_source === 'user_microphone' ? (
+                              <Mic size={11} />
+                            ) : (
+                              <Volume2 size={11} />
+                            )}
+                          </span>
+                          <div className="relative" data-speaker-menu>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenSpeakerId((current) =>
+                                  current === segment.id ? null : segment.id
+                                )
+                              }
+                              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] focus:bg-[var(--ledger-surface-hover)] focus:outline-none"
+                              aria-haspopup="menu"
+                              aria-expanded={openSpeakerId === segment.id}
+                              aria-label={`Speaker label: ${
+                                speakerDrafts[segment.id] ?? sourceLabel
+                              }`}
+                            >
+                              {speakerDrafts[segment.id] ?? sourceLabel}
+                              <ChevronDown size={10} />
+                            </button>
+                            {openSpeakerId === segment.id && (
+                              <div
+                                role="menu"
+                                className="absolute left-0 top-full z-20 mt-1 min-w-36 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"
+                              >
+                                {speakerOptions.map((option) => (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      onSpeakerChange(segment, option);
+                                      onSpeakerSelect(segment, option);
+                                      setOpenSpeakerId(null);
+                                    }}
+                                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                  >
+                                    {option}
+                                  </button>
+                                ))}
+                                <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />
+                                {speakerEditor?.segment.id === segment.id ? (
+                                  <div
+                                    className="space-y-1.5 px-1 py-1"
+                                    role="group"
+                                    aria-label="Edit speaker name"
+                                  >
+                                    <input
+                                      autoFocus
+                                      value={speakerEditor.value}
+                                      onChange={(event) =>
+                                        setSpeakerEditor((current) =>
+                                          current
+                                            ? { ...current, value: event.target.value }
+                                            : current
+                                        )
+                                      }
+                                      onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                          event.preventDefault();
+                                          saveSpeakerEdit();
+                                        }
+                                        if (event.key === 'Escape') {
+                                          event.preventDefault();
+                                          setSpeakerEditor(null);
+                                        }
+                                      }}
+                                      placeholder="Speaker name"
+                                      aria-label="Speaker name"
+                                      className="h-7 w-full rounded border border-[color:var(--ledger-border-subtle)] bg-transparent px-2 text-[10px] text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-accent)]"
+                                    />
+                                    <div className="flex justify-end gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSpeakerEditor(null)}
+                                        className="rounded px-1.5 py-1 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={saveSpeakerEdit}
+                                        disabled={!speakerEditor.value.trim()}
+                                        className="rounded bg-[var(--ledger-accent)] px-1.5 py-1 text-[10px] text-white disabled:opacity-40"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => setSpeakerEditor({ segment, value: '' })}
+                                      className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                                    >
+                                      Add speaker…
+                                    </button>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() =>
+                                        setSpeakerEditor({
+                                          segment,
+                                          value: speakerDrafts[segment.id] ?? sourceLabel,
+                                        })
+                                      }
+                                      className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                                    >
+                                      Rename speaker…
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div
+                            className="relative ml-auto flex items-center gap-0.5"
+                            data-transcript-actions
+                          >
+                            <button
+                              type="button"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                const textarea = transcriptTextareasRef.current[segment.id];
+                                if (textarea)
+                                  setSelectionRangeById((current) => ({
+                                    ...current,
+                                    [segment.id]: {
+                                      start: textarea.selectionStart,
+                                      end: textarea.selectionEnd,
+                                    },
+                                  }));
+                              }}
+                              onClick={() =>
+                                setOpenActionsId((current) =>
+                                  current === segment.id ? null : segment.id
+                                )
+                              }
+                              className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)]"
+                              aria-label="Transcript segment actions"
+                              aria-haspopup="menu"
+                              aria-expanded={openActionsId === segment.id}
+                            >
+                              <MoreHorizontal size={12} />
+                            </button>
+                            {openActionsId === segment.id && (
+                              <div
+                                role="menu"
+                                className="absolute right-0 top-full z-20 mt-1 min-w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"
+                              >
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() =>
+                                      setOpenSubmenu((current) =>
+                                        current === 'create' ? null : 'create'
+                                      )
+                                    }
+                                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                  >
+                                    Create in Ledger <ChevronRight size={11} />
+                                  </button>
+                                  {openSubmenu === 'create' && (
+                                    <div
+                                      className="absolute right-full top-0 mr-1 min-w-32 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"
+                                      role="menu"
+                                    >
+                                      {(['task', 'reminder', 'event', 'intake'] as const).map(
+                                        (kind) => (
+                                          <button
+                                            key={kind}
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => {
+                                              onCreateLedgerItem(
+                                                kind,
+                                                segment,
+                                                quotedTextFor(segment)
+                                              );
+                                              setOpenActionsId(null);
+                                            }}
+                                            className="flex w-full rounded px-2 py-1.5 text-left text-[10px] capitalize text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                          >
+                                            {kind === 'intake' ? 'Intake item' : kind}
+                                          </button>
+                                        )
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() =>
+                                      setOpenSubmenu((current) =>
+                                        current === 'meeting' ? null : 'meeting'
+                                      )
+                                    }
+                                    className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                  >
+                                    Add to meeting <ChevronRight size={11} />
+                                  </button>
+                                  {openSubmenu === 'meeting' && (
+                                    <div
+                                      className="absolute right-full top-0 mr-1 min-w-36 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"
+                                      role="menu"
+                                    >
+                                      {(
+                                        [
+                                          ['action_item', 'Mark as action item'],
+                                          ['decision', 'Mark as decision'],
+                                          ['key_point', 'Mark as key point'],
+                                          ['meeting_note', 'Add to meeting notes'],
+                                        ] as const
+                                      ).map(([kind, label]) => (
+                                        <button
+                                          key={kind}
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => {
+                                            onAddMeetingReference(
+                                              kind,
+                                              segment,
+                                              quotedTextFor(segment)
+                                            );
+                                            setOpenActionsId(null);
+                                          }}
+                                          className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                        >
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
                                 <button
-                                  key={option}
                                   type="button"
                                   role="menuitem"
-                                  onClick={() => { onSpeakerChange(segment, option); onSpeakerSelect(segment, option); setOpenSpeakerId(null); }}
-                                  className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                  onClick={() => {
+                                    requestSplit(segment);
+                                    setOpenActionsId(null);
+                                  }}
+                                  disabled={isMutationBusy}
+                                  className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
                                 >
-                                  {option}
+                                  Split
                                 </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  title={
+                                    mergeBlockedByFilter
+                                      ? 'Switch to All to merge across the full transcript'
+                                      : undefined
+                                  }
+                                  onClick={() => {
+                                    if (nextSegment && !mergeBlockedByFilter)
+                                      requestMerge(segment, nextSegment);
+                                    setOpenActionsId(null);
+                                  }}
+                                  disabled={!nextSegment || mergeBlockedByFilter || isMutationBusy}
+                                  className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40"
+                                >
+                                  Merge next
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    void navigator.clipboard?.writeText(quotedTextFor(segment));
+                                    setOpenActionsId(null);
+                                  }}
+                                  className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                >
+                                  Copy text
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    const seconds = Math.max(
+                                      0,
+                                      Math.floor(segment.start_ms / 1000)
+                                    );
+                                    const timestamp = `${String(Math.floor(seconds / 60)).padStart(
+                                      2,
+                                      '0'
+                                    )}:${String(seconds % 60).padStart(2, '0')}`;
+                                    void navigator.clipboard?.writeText(
+                                      `[${timestamp}] ${sourceLabel}: ${quotedTextFor(segment)}`
+                                    );
+                                    setOpenActionsId(null);
+                                  }}
+                                  className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                >
+                                  Copy with timestamp
+                                </button>
+                                <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    onDelete(segment);
+                                    setOpenActionsId(null);
+                                  }}
+                                  className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.06)]"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => onDelete(segment)}
+                              className="rounded p-1 text-[var(--ledger-text-muted)] opacity-60 hover:text-[var(--ledger-danger)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
+                              aria-label="Delete transcript segment"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+                        <textarea
+                          ref={(element) => {
+                            transcriptTextareasRef.current[segment.id] = element;
+                          }}
+                          value={drafts[segment.id] ?? segment.transcript_text}
+                          onChange={(event) => onDraftChange(segment.id, event.target.value)}
+                          onKeyDown={(event) => {
+                            // Transcript editing is a native textarea interaction. Keep
+                            // Backspace/Delete and caret navigation away from any
+                            // window-level Notes shortcuts.
+                            event.stopPropagation();
+                          }}
+                          onSelect={(event) => {
+                            const target = event.target as HTMLTextAreaElement;
+                            setSelectionById((current) => ({
+                              ...current,
+                              [segment.id]: target.selectionStart,
+                            }));
+                            setSelectionRangeById((current) => ({
+                              ...current,
+                              [segment.id]: {
+                                start: target.selectionStart,
+                                end: target.selectionEnd,
+                              },
+                            }));
+                          }}
+                          onKeyUp={(event) => {
+                            const target = event.currentTarget;
+                            setSelectionById((current) => ({
+                              ...current,
+                              [segment.id]: target.selectionStart,
+                            }));
+                            setSelectionRangeById((current) => ({
+                              ...current,
+                              [segment.id]: {
+                                start: target.selectionStart,
+                                end: target.selectionEnd,
+                              },
+                            }));
+                          }}
+                          onBlur={() => onCommit(segment)}
+                          rows={1}
+                          className="w-full resize-y bg-transparent text-xs leading-5 text-[var(--ledger-text-primary)] outline-none"
+                          aria-label={`Transcript from ${sourceLabel}`}
+                        />
+                        {splitInstructionId === segment.id && (
+                          <p className="mt-1 text-[10px] text-[var(--ledger-text-muted)]">
+                            Place the cursor where you want to split.
+                          </p>
+                        )}
+                        {splitPreview?.segment.id === segment.id && (
+                          <div
+                            className="mt-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1.5 text-[10px]"
+                            role="dialog"
+                            aria-label="Preview split"
+                          >
+                            <div className="grid gap-1 text-[var(--ledger-text-secondary)]">
+                              <span>Before: {splitPreview.firstText}</span>
+                              <span>After: {splitPreview.secondText}</span>
+                            </div>
+                            <div className="mt-1.5 flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSplit(segment, splitPreview.position);
+                                  setSplitPreview(null);
+                                }}
+                                disabled={isMutationBusy}
+                                className="rounded bg-[var(--ledger-accent)] px-2 py-1 text-white disabled:opacity-40"
+                              >
+                                Split here
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSplitPreview(null)}
+                                className="rounded px-2 py-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="mt-0.5 flex flex-wrap gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                          <button
+                            type="button"
+                            onClick={() => requestSplit(segment)}
+                            disabled={isMutationBusy}
+                            className="rounded px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)] disabled:opacity-40"
+                          >
+                            Split
+                          </button>
+                          {nextSegment && (
+                            <button
+                              type="button"
+                              title={
+                                mergeBlockedByFilter
+                                  ? 'Switch to All to merge across the full transcript'
+                                  : undefined
+                              }
+                              onMouseEnter={() => setMergePreviewId(nextSegment.id)}
+                              onFocus={() => setMergePreviewId(nextSegment.id)}
+                              onMouseLeave={() => setMergePreviewId(null)}
+                              onBlur={() => setMergePreviewId(null)}
+                              onClick={() => {
+                                if (!mergeBlockedByFilter) requestMerge(segment, nextSegment);
+                              }}
+                              disabled={mergeBlockedByFilter || isMutationBusy}
+                              className="rounded px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)] disabled:opacity-40"
+                            >
+                              Merge next
+                            </button>
+                          )}
+                        </div>
+                        {transcriptLinks.filter((link) => link.transcript_segment_id === segment.id)
+                          .length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {transcriptLinks
+                              .filter((link) => link.transcript_segment_id === segment.id)
+                              .map((link) => (
+                                <span
+                                  key={link.id}
+                                  className="rounded bg-[var(--ledger-surface-hover)] px-1.5 py-0.5 text-[9px] text-[var(--ledger-text-muted)]"
+                                >
+                                  {link.link_type === 'ledger_item'
+                                    ? `${link.ledger_item_type} created`
+                                    : link.link_type === 'meeting_note'
+                                    ? 'Added to meeting notes'
+                                    : `Marked ${link.link_type.replace('_', ' ')}`}
+                                </span>
                               ))}
-                              <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />
-                              {speakerEditor?.segment.id === segment.id ? (
-                                <div className="space-y-1.5 px-1 py-1" role="group" aria-label="Edit speaker name">
-                                  <input
-                                    autoFocus
-                                    value={speakerEditor.value}
-                                    onChange={(event) => setSpeakerEditor((current) => current ? { ...current, value: event.target.value } : current)}
-                                    onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveSpeakerEdit(); } if (event.key === 'Escape') { event.preventDefault(); setSpeakerEditor(null); } }}
-                                    placeholder="Speaker name"
-                                    aria-label="Speaker name"
-                                    className="h-7 w-full rounded border border-[color:var(--ledger-border-subtle)] bg-transparent px-2 text-[10px] text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-accent)]"
-                                  />
-                                  <div className="flex justify-end gap-1">
-                                    <button type="button" onClick={() => setSpeakerEditor(null)} className="rounded px-1.5 py-1 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button>
-                                    <button type="button" onClick={saveSpeakerEdit} disabled={!speakerEditor.value.trim()} className="rounded bg-[var(--ledger-accent)] px-1.5 py-1 text-[10px] text-white disabled:opacity-40">Save</button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  <button type="button" role="menuitem" onClick={() => setSpeakerEditor({ segment, value: '' })} className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Add speaker…</button>
-                                  <button type="button" role="menuitem" onClick={() => setSpeakerEditor({ segment, value: speakerDrafts[segment.id] ?? sourceLabel })} className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Rename speaker…</button>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <div className="relative ml-auto flex items-center gap-0.5" data-transcript-actions>
-                          <button type="button" onMouseDown={(event) => {
-                            event.preventDefault();
-                            const textarea = transcriptTextareasRef.current[segment.id];
-                            if (textarea) setSelectionRangeById((current) => ({ ...current, [segment.id]: { start: textarea.selectionStart, end: textarea.selectionEnd } }));
-                          }} onClick={() => setOpenActionsId((current) => current === segment.id ? null : segment.id)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)]" aria-label="Transcript segment actions" aria-haspopup="menu" aria-expanded={openActionsId === segment.id}><MoreHorizontal size={12} /></button>
-                          {openActionsId === segment.id && (
-                            <div role="menu" className="absolute right-0 top-full z-20 mt-1 min-w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
-                              <div className="relative">
-                                <button type="button" role="menuitem" onClick={() => setOpenSubmenu((current) => current === 'create' ? null : 'create')} className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Create in Ledger <ChevronRight size={11} /></button>
-                                {openSubmenu === 'create' && (
-                                  <div className="absolute right-full top-0 mr-1 min-w-32 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]" role="menu">
-                                    {(['task', 'reminder', 'event', 'intake'] as const).map((kind) => <button key={kind} type="button" role="menuitem" onClick={() => { onCreateLedgerItem(kind, segment, quotedTextFor(segment)); setOpenActionsId(null); }} className="flex w-full rounded px-2 py-1.5 text-left text-[10px] capitalize text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">{kind === 'intake' ? 'Intake item' : kind}</button>)}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="relative">
-                                <button type="button" role="menuitem" onClick={() => setOpenSubmenu((current) => current === 'meeting' ? null : 'meeting')} className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Add to meeting <ChevronRight size={11} /></button>
-                                {openSubmenu === 'meeting' && (
-                                  <div className="absolute right-full top-0 mr-1 min-w-36 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]" role="menu">
-                                    {([['action_item', 'Mark as action item'], ['decision', 'Mark as decision'], ['key_point', 'Mark as key point'], ['meeting_note', 'Add to meeting notes']] as const).map(([kind, label]) => <button key={kind} type="button" role="menuitem" onClick={() => { onAddMeetingReference(kind, segment, quotedTextFor(segment)); setOpenActionsId(null); }} className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">{label}</button>)}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                              <button type="button" role="menuitem" onClick={() => { requestSplit(segment); setOpenActionsId(null); }} disabled={isMutationBusy} className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40">Split</button>
-                              <button type="button" role="menuitem" title={mergeBlockedByFilter ? 'Switch to All to merge across the full transcript' : undefined} onClick={() => { if (nextSegment && !mergeBlockedByFilter) requestMerge(segment, nextSegment); setOpenActionsId(null); }} disabled={!nextSegment || mergeBlockedByFilter || isMutationBusy} className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40">Merge next</button>
-                              <button type="button" role="menuitem" onClick={() => { void navigator.clipboard?.writeText(quotedTextFor(segment)); setOpenActionsId(null); }} className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Copy text</button>
-                              <button type="button" role="menuitem" onClick={() => { const seconds = Math.max(0, Math.floor(segment.start_ms / 1000)); const timestamp = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; void navigator.clipboard?.writeText(`[${timestamp}] ${sourceLabel}: ${quotedTextFor(segment)}`); setOpenActionsId(null); }} className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Copy with timestamp</button>
-                              <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
-                              <button type="button" role="menuitem" onClick={() => { onDelete(segment); setOpenActionsId(null); }} className="flex w-full rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.06)]">Delete</button>
-                            </div>
-                          )}
-                          <button type="button" onClick={() => onDelete(segment)} className="rounded p-1 text-[var(--ledger-text-muted)] opacity-60 hover:text-[var(--ledger-danger)] focus:opacity-100 focus:outline-none group-hover:opacity-100" aria-label="Delete transcript segment"><Trash2 size={11} /></button>
-                        </div>
+                          </div>
+                        )}
                       </div>
-                      <textarea
-                        ref={(element) => { transcriptTextareasRef.current[segment.id] = element; }}
-                        value={drafts[segment.id] ?? segment.transcript_text}
-                        onChange={(event) => onDraftChange(segment.id, event.target.value)}
-                        onKeyDown={(event) => {
-                          // Transcript editing is a native textarea interaction. Keep
-                          // Backspace/Delete and caret navigation away from any
-                          // window-level Notes shortcuts.
-                          event.stopPropagation();
-                        }}
-                        onSelect={(event) => { const target = event.target as HTMLTextAreaElement; setSelectionById((current) => ({ ...current, [segment.id]: target.selectionStart })); setSelectionRangeById((current) => ({ ...current, [segment.id]: { start: target.selectionStart, end: target.selectionEnd } })); }}
-                        onKeyUp={(event) => { const target = event.currentTarget; setSelectionById((current) => ({ ...current, [segment.id]: target.selectionStart })); setSelectionRangeById((current) => ({ ...current, [segment.id]: { start: target.selectionStart, end: target.selectionEnd } })); }}
-                        onBlur={() => onCommit(segment)}
-                        rows={1}
-                        className="w-full resize-y bg-transparent text-xs leading-5 text-[var(--ledger-text-primary)] outline-none"
-                        aria-label={`Transcript from ${sourceLabel}`}
-                      />
-                      {splitInstructionId === segment.id && <p className="mt-1 text-[10px] text-[var(--ledger-text-muted)]">Place the cursor where you want to split.</p>}
-                      {splitPreview?.segment.id === segment.id && (
-                        <div className="mt-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1.5 text-[10px]" role="dialog" aria-label="Preview split">
-                          <div className="grid gap-1 text-[var(--ledger-text-secondary)]"><span>Before: {splitPreview.firstText}</span><span>After: {splitPreview.secondText}</span></div>
-                          <div className="mt-1.5 flex gap-1.5"><button type="button" onClick={() => { onSplit(segment, splitPreview.position); setSplitPreview(null); }} disabled={isMutationBusy} className="rounded bg-[var(--ledger-accent)] px-2 py-1 text-white disabled:opacity-40">Split here</button><button type="button" onClick={() => setSplitPreview(null)} className="rounded px-2 py-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button></div>
-                        </div>
-                      )}
-                      <div className="mt-0.5 flex flex-wrap gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                        <button type="button" onClick={() => requestSplit(segment)} disabled={isMutationBusy} className="rounded px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)] disabled:opacity-40">Split</button>
-                        {nextSegment && <button type="button" title={mergeBlockedByFilter ? 'Switch to All to merge across the full transcript' : undefined} onMouseEnter={() => setMergePreviewId(nextSegment.id)} onFocus={() => setMergePreviewId(nextSegment.id)} onMouseLeave={() => setMergePreviewId(null)} onBlur={() => setMergePreviewId(null)} onClick={() => { if (!mergeBlockedByFilter) requestMerge(segment, nextSegment); }} disabled={mergeBlockedByFilter || isMutationBusy} className="rounded px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)] disabled:opacity-40">Merge next</button>}
-                      </div>
-                      {transcriptLinks.filter((link) => link.transcript_segment_id === segment.id).length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {transcriptLinks.filter((link) => link.transcript_segment_id === segment.id).map((link) => (
-                            <span key={link.id} className="rounded bg-[var(--ledger-surface-hover)] px-1.5 py-0.5 text-[9px] text-[var(--ledger-text-muted)]">
-                              {link.link_type === 'ledger_item' ? `${link.ledger_item_type} created` : link.link_type === 'meeting_note' ? 'Added to meeting notes' : `Marked ${link.link_type.replace('_', ' ')}`}
-                            </span>
-                          ))}
-                        </div>
-                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           )}
         </div>
@@ -1237,9 +1831,16 @@ class MeetingTranscriptErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <section className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-5 text-sm text-[var(--ledger-text-secondary)]" role="alert">
-          <p className="font-medium text-[var(--ledger-text-primary)]">Transcript could not be displayed.</p>
-          <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Your recording and note are still safe. Reload the note to try again.</p>
+        <section
+          className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-5 text-sm text-[var(--ledger-text-secondary)]"
+          role="alert"
+        >
+          <p className="font-medium text-[var(--ledger-text-primary)]">
+            Transcript could not be displayed.
+          </p>
+          <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+            Your recording and note are still safe. Reload the note to try again.
+          </p>
           <button
             type="button"
             onClick={() => this.setState({ hasError: false })}
@@ -1256,12 +1857,18 @@ class MeetingTranscriptErrorBoundary extends Component<
 
 const permissionLabel = (state: MeetingAudioPermissionState) => {
   switch (state) {
-    case 'granted': return 'Granted';
-    case 'denied': return 'Denied';
-    case 'restricted': return 'Restricted';
-    case 'requires_restart': return 'Restart Ledger';
-    case 'unavailable': return 'Unavailable';
-    default: return 'Not requested';
+    case 'granted':
+      return 'Granted';
+    case 'denied':
+      return 'Denied';
+    case 'restricted':
+      return 'Restricted';
+    case 'requires_restart':
+      return 'Restart Ledger';
+    case 'unavailable':
+      return 'Unavailable';
+    default:
+      return 'Not requested';
   }
 };
 
@@ -1308,71 +1915,180 @@ const MeetingAudioSetup = ({
     <div role="dialog" aria-modal="true" aria-label="Set up Meeting Notes audio">
       <div className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(255,95,64,0.12)] text-[var(--ledger-accent)]"><Mic size={16} /></span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(255,95,64,0.12)] text-[var(--ledger-accent)]">
+            <Mic size={16} />
+          </span>
           <div>
             <h2 className="text-[15px] font-semibold">Meeting audio setup</h2>
-            <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">Choose what Ledger should hear. Audio stays on this computer.</p>
+            <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+              Choose what Ledger should hear. Audio stays on this computer.
+            </p>
           </div>
         </div>
         <ModalCloseButton onClick={onClose} ariaLabel="Close audio setup" disabled={isBusy} />
       </div>
       <div className="px-5 py-4">
         {audioError && (
-          <div className="mb-3 rounded-lg border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.06)] px-3 py-2 text-[10px] leading-4 text-[var(--ledger-danger)]" role="alert">
+          <div
+            className="mb-3 rounded-lg border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.06)] px-3 py-2 text-[10px] leading-4 text-[var(--ledger-danger)]"
+            role="alert"
+          >
             {audioError}
           </div>
         )}
         {!window.meetingAudio ? (
-          <div className="rounded-lg bg-[color:rgba(217,45,32,0.06)] px-3 py-2 text-xs text-[var(--ledger-danger)]">Meeting audio capture requires the packaged macOS Ledger app.</div>
+          <div className="rounded-lg bg-[color:rgba(217,45,32,0.06)] px-3 py-2 text-xs text-[var(--ledger-danger)]">
+            Meeting audio capture requires the packaged macOS Ledger app.
+          </div>
         ) : (
           <>
             <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--ledger-surface-muted)] px-3 py-2 text-[10px] text-[var(--ledger-text-muted)]">
               <span className="font-medium text-[var(--ledger-text-secondary)]">Microphone</span>
-              <select value={selectedMicrophoneId ?? ''} onChange={(event) => onSelectMicrophone(event.target.value)} className="max-w-48 rounded bg-transparent text-[10px] text-[var(--ledger-text-primary)] outline-none">
-                {devices.length === 0 ? <option value="">No input devices found</option> : devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.isBluetooth ? ' · Bluetooth' : ''}</option>)}
+              <select
+                value={selectedMicrophoneId ?? ''}
+                onChange={(event) => onSelectMicrophone(event.target.value)}
+                className="max-w-48 rounded bg-transparent text-[10px] text-[var(--ledger-text-primary)] outline-none"
+              >
+                {devices.length === 0 ? (
+                  <option value="">No input devices found</option>
+                ) : (
+                  devices.map((device) => (
+                    <option key={device.id} value={device.id}>
+                      {device.name}
+                      {device.isBluetooth ? ' · Bluetooth' : ''}
+                    </option>
+                  ))
+                )}
               </select>
               {outputDevice && <span className="ml-auto">Output: {outputDevice.name}</span>}
             </div>
-            {selectedMicrophoneId && devices.find((device) => device.id === selectedMicrophoneId)?.isBluetooth && outputDevice?.isBluetooth && (
-              <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-800" role="status">
-                <AlertCircle size={12} className="shrink-0" />
-                <span className="flex-1">Headphone audio quality may decrease with this Bluetooth microphone.</span>
-                {devices.find((device) => !device.isBluetooth) && <button type="button" onClick={() => onSelectMicrophone(devices.find((device) => !device.isBluetooth)!.id)} className="font-medium underline underline-offset-2">Use Mac microphone</button>}
-              </div>
-            )}
+            {selectedMicrophoneId &&
+              devices.find((device) => device.id === selectedMicrophoneId)?.isBluetooth &&
+              outputDevice?.isBluetooth && (
+                <div
+                  className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-800"
+                  role="status"
+                >
+                  <AlertCircle size={12} className="shrink-0" />
+                  <span className="flex-1">
+                    Headphone audio quality may decrease with this Bluetooth microphone.
+                  </span>
+                  {devices.find((device) => !device.isBluetooth) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSelectMicrophone(devices.find((device) => !device.isBluetooth)!.id)
+                      }
+                      className="font-medium underline underline-offset-2"
+                    >
+                      Use Mac microphone
+                    </button>
+                  )}
+                </div>
+              )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {([
-                ['user_microphone', 'Microphone', 'microphone', Mic, 'Hear your voice.'],
-                ['system_audio', 'System audio', 'screen-recording', Volume2, 'Hear audio playing through your computer.'],
-              ] as const).map(([source, label, permissionKey, Icon, description]) => {
-                const permission = permissions?.[permissionKey === 'microphone' ? 'microphone' : 'systemAudio'] ?? 'not_requested';
+              {(
+                [
+                  ['user_microphone', 'Microphone', 'microphone', Mic, 'Hear your voice.'],
+                  [
+                    'system_audio',
+                    'System audio',
+                    'screen-recording',
+                    Volume2,
+                    'Hear audio playing through your computer.',
+                  ],
+                ] as const
+              ).map(([source, label, permissionKey, Icon, description]) => {
+                const permission =
+                  permissions?.[permissionKey === 'microphone' ? 'microphone' : 'systemAudio'] ??
+                  'not_requested';
                 const isTesting = testingSource === source;
                 return (
-                  <div key={source} className="flex min-h-28 flex-col justify-between rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-3">
+                  <div
+                    key={source}
+                    className="flex min-h-28 flex-col justify-between rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-3"
+                  >
                     <div className="flex items-start gap-2.5">
-                      <Icon size={16} className="mt-0.5 shrink-0 text-[var(--ledger-text-secondary)]" />
+                      <Icon
+                        size={16}
+                        className="mt-0.5 shrink-0 text-[var(--ledger-text-secondary)]"
+                      />
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2"><p className="text-xs font-semibold">{label}</p><span className={`text-[10px] ${permission === 'granted' ? 'text-emerald-600' : permission === 'denied' ? 'text-[var(--ledger-danger)]' : 'text-[var(--ledger-text-muted)]'}`}>{permissionLabel(permission)}</span></div>
-                        <p className="mt-1 text-[10px] leading-4 text-[var(--ledger-text-muted)]">{description}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold">{label}</p>
+                          <span
+                            className={`text-[10px] ${
+                              permission === 'granted'
+                                ? 'text-emerald-600'
+                                : permission === 'denied'
+                                ? 'text-[var(--ledger-danger)]'
+                                : 'text-[var(--ledger-text-muted)]'
+                            }`}
+                          >
+                            {permissionLabel(permission)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[10px] leading-4 text-[var(--ledger-text-muted)]">
+                          {description}
+                        </p>
                       </div>
                     </div>
                     <div className="mt-3 flex items-center gap-1.5">
-                      {permission !== 'granted' && permission !== 'unavailable' && <button type="button" onClick={() => onOpenSettings(permissionKey)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"><Settings2 size={12} /> Settings</button>}
-                      {permission === 'granted' && <button type="button" onClick={isTesting ? onStopTest : () => onTestSource(source)} disabled={isBusy || Boolean(testingSource && !isTesting)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] disabled:opacity-40">{isTesting ? 'Stop test' : 'Test source'}</button>}
+                      {permission !== 'granted' && permission !== 'unavailable' && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSettings(permissionKey)}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          <Settings2 size={12} /> Settings
+                        </button>
+                      )}
+                      {permission === 'granted' && (
+                        <button
+                          type="button"
+                          onClick={isTesting ? onStopTest : () => onTestSource(source)}
+                          disabled={isBusy || Boolean(testingSource && !isTesting)}
+                          className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] disabled:opacity-40"
+                        >
+                          {isTesting ? 'Stop test' : 'Test source'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <p className="mt-3 text-[10px] leading-4 text-[var(--ledger-text-muted)]">macOS calls system-audio access “Screen &amp; System Audio Recording.” Ledger captures audio, not video. If it is missing from Settings, use <strong>+</strong> to add the packaged Ledger app, then restart if prompted.</p>
+            <p className="mt-3 text-[10px] leading-4 text-[var(--ledger-text-muted)]">
+              macOS calls system-audio access “Screen &amp; System Audio Recording.” Ledger captures
+              audio, not video. If it is missing from Settings, use <strong>+</strong> to add the
+              packaged Ledger app, then restart if prompted.
+            </p>
           </>
         )}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
-        <span className="text-[10px] text-[var(--ledger-text-muted)]">Meeting consent may be required in your location.</span>
+        <span className="text-[10px] text-[var(--ledger-text-muted)]">
+          Meeting consent may be required in your location.
+        </span>
         <div className="flex items-center gap-2">
-          {window.meetingAudio && <button type="button" onClick={onRequestPermissions} disabled={isBusy} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40">{isBusy ? 'Checking…' : 'Check permissions'}</button>}
-          <button type="button" onClick={onClose} disabled={isBusy} className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] disabled:opacity-40">Done</button>
+          {window.meetingAudio && (
+            <button
+              type="button"
+              onClick={onRequestPermissions}
+              disabled={isBusy}
+              className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
+            >
+              {isBusy ? 'Checking…' : 'Check permissions'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isBusy}
+            className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] disabled:opacity-40"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>
@@ -1402,27 +2118,59 @@ const MeetingTranscriptionSetup = ({
     <div role="dialog" aria-modal="true" aria-label="Set up local transcription">
       <div className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(255,95,64,0.12)] text-[var(--ledger-accent)]"><Download size={16} /></span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(255,95,64,0.12)] text-[var(--ledger-accent)]">
+            <Download size={16} />
+          </span>
           <div>
             <h2 className="text-[15px] font-semibold">Install local transcription</h2>
-            <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">Runs locally. No API key required.</p>
+            <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
+              Runs locally. No API key required.
+            </p>
           </div>
         </div>
-        <ModalCloseButton onClick={onClose} ariaLabel="Close transcription setup" disabled={isBusy} />
+        <ModalCloseButton
+          onClick={onClose}
+          ariaLabel="Close transcription setup"
+          disabled={isBusy}
+        />
       </div>
       <div className="flex items-center justify-between gap-4 px-5 py-4">
         <div className="min-w-0">
           <p className="truncate text-xs font-semibold">{model?.label || 'Whisper model'}</p>
-          <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{model?.approximateBytes ? `About ${Math.round(model.approximateBytes / 1024 / 1024)} MB · stored on this computer` : 'Optional local speech-recognition model'}</p>
-          {model?.error && <p className="mt-2 text-xs text-[var(--ledger-danger)]">{model.error}</p>}
+          <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">
+            {model?.approximateBytes
+              ? `About ${Math.round(
+                  model.approximateBytes / 1024 / 1024
+                )} MB · stored on this computer`
+              : 'Optional local speech-recognition model'}
+          </p>
+          {model?.error && (
+            <p className="mt-2 text-xs text-[var(--ledger-danger)]">{model.error}</p>
+          )}
         </div>
-        <button type="button" onClick={onInstall} disabled={isBusy || model?.downloading} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40">
+        <button
+          type="button"
+          onClick={onInstall}
+          disabled={isBusy || model?.downloading}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
+        >
           <Download size={13} />
-          {model?.downloading ? `${Math.round((model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100)}%` : isBusy ? 'Preparing…' : 'Download'}
+          {model?.downloading
+            ? `${Math.round((model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100)}%`
+            : isBusy
+            ? 'Preparing…'
+            : 'Download'}
         </button>
       </div>
       <div className="flex justify-end border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
-        <button type="button" onClick={onClose} disabled={isBusy} className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] disabled:opacity-40">Not now</button>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={isBusy}
+          className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] disabled:opacity-40"
+        >
+          Not now
+        </button>
       </div>
     </div>
   </ModalOverlay>
@@ -1448,27 +2196,60 @@ const RecordingRecoveryNotice = ({
         <AlertCircle size={15} className="mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold">An interrupted meeting recording was found.</p>
-          <p className="mt-1 text-[11px] leading-5 text-amber-800">Review the available audio before attaching it to its original meeting note. Ledger will not attach it across workspaces.</p>
+          <p className="mt-1 text-[11px] leading-5 text-amber-800">
+            Review the available audio before attaching it to its original meeting note. Ledger will
+            not attach it across workspaces.
+          </p>
           <div className="mt-2 space-y-2">
             {recoveries.map((session) => {
-              const canRecover = Boolean(session.noteId && session.workspaceId && session.workspaceId === activeWorkspaceId);
+              const canRecover = Boolean(
+                session.noteId && session.workspaceId && session.workspaceId === activeWorkspaceId
+              );
               return (
-                <div key={session.sessionId} className="rounded-lg border border-amber-200 bg-white/60 px-2.5 py-2">
+                <div
+                  key={session.sessionId}
+                  className="rounded-lg border border-amber-200 bg-white/60 px-2.5 py-2"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-[11px] font-medium">{session.kind === 'test' ? 'Audio test' : 'Meeting recording'}</p>
-                      <p className="text-[10px] text-amber-800">{session.chunkCount} chunks · {formatMeetingDuration(session.durationSeconds)} · {session.enabledSources.join(' + ')}</p>
+                      <p className="truncate text-[11px] font-medium">
+                        {session.kind === 'test' ? 'Audio test' : 'Meeting recording'}
+                      </p>
+                      <p className="text-[10px] text-amber-800">
+                        {session.chunkCount} chunks ·{' '}
+                        {formatMeetingDuration(session.durationSeconds)} ·{' '}
+                        {session.enabledSources.join(' + ')}
+                      </p>
                     </div>
                     <div className="flex shrink-0 gap-1.5">
-                      <button type="button" onClick={() => onRecover(session)} disabled={!canRecover || Boolean(isBusy)} className="rounded-md bg-amber-700 px-2 py-1 text-[10px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40" title={!canRecover ? 'Switch to the original workspace to recover this recording' : undefined}>
+                      <button
+                        type="button"
+                        onClick={() => onRecover(session)}
+                        disabled={!canRecover || Boolean(isBusy)}
+                        className="rounded-md bg-amber-700 px-2 py-1 text-[10px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        title={
+                          !canRecover
+                            ? 'Switch to the original workspace to recover this recording'
+                            : undefined
+                        }
+                      >
                         {isBusy === `recover:${session.sessionId}` ? 'Recovering…' : 'Recover'}
                       </button>
-                      <button type="button" onClick={() => onDiscard(session)} disabled={Boolean(isBusy)} className="rounded-md border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-900 disabled:opacity-40">
+                      <button
+                        type="button"
+                        onClick={() => onDiscard(session)}
+                        disabled={Boolean(isBusy)}
+                        className="rounded-md border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-900 disabled:opacity-40"
+                      >
                         {isBusy === `discard:${session.sessionId}` ? 'Discarding…' : 'Discard'}
                       </button>
                     </div>
                   </div>
-                  {session.sourceErrors.length > 0 && <p className="mt-1 text-[10px] text-amber-800">{session.sourceErrors[0].error}</p>}
+                  {session.sourceErrors.length > 0 && (
+                    <p className="mt-1 text-[10px] text-amber-800">
+                      {session.sourceErrors[0].error}
+                    </p>
+                  )}
                 </div>
               );
             })}
@@ -1522,7 +2303,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialFocusNoteId);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [meetingMetadata, setMeetingMetadata] = useState<MeetingNoteMetadata | null>(null);
-  const [meetingSeriesOccurrences, setMeetingSeriesOccurrences] = useState<MeetingSeriesOccurrence[]>([]);
+  const [meetingSeriesOccurrences, setMeetingSeriesOccurrences] = useState<
+    MeetingSeriesOccurrence[]
+  >([]);
   const [meetingMetadataError, setMeetingMetadataError] = useState<string | null>(null);
   const [isLoadingMeetingMetadata, setIsLoadingMeetingMetadata] = useState(false);
   const [meetingBusyAction, setMeetingBusyAction] = useState<string | null>(null);
@@ -1531,9 +2314,13 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [meetingTimerTick, setMeetingTimerTick] = useState(0);
   const [transcriptSegments, setTranscriptSegments] = useState<TranscriptSegment[]>([]);
   const [transcriptLinks, setTranscriptLinks] = useState<MeetingTranscriptLink[]>([]);
-  const [deletedTranscriptSegments, setDeletedTranscriptSegments] = useState<TranscriptSegment[]>([]);
+  const [deletedTranscriptSegments, setDeletedTranscriptSegments] = useState<TranscriptSegment[]>(
+    []
+  );
   const [transcriptDrafts, setTranscriptDrafts] = useState<Record<string, string>>({});
-  const [transcriptSpeakerDrafts, setTranscriptSpeakerDrafts] = useState<Record<string, string>>({});
+  const [transcriptSpeakerDrafts, setTranscriptSpeakerDrafts] = useState<Record<string, string>>(
+    {}
+  );
   const transcriptDraftsRef = useRef<Record<string, string>>({});
   const transcriptSpeakerDraftsRef = useRef<Record<string, string>>({});
   const transcriptCommitVersionRef = useRef<Record<string, number>>({});
@@ -1549,29 +2336,46 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   }, [transcriptSpeakerDrafts]);
   const [isLoadingTranscript, setIsLoadingTranscript] = useState(false);
   const [audioPermissions, setAudioPermissions] = useState<MeetingAudioPermissions | null>(null);
-  const [audioDevices, setAudioDevices] = useState<MeetingAudioDeviceInfo>({ devices: [], outputDevice: null });
+  const [audioDevices, setAudioDevices] = useState<MeetingAudioDeviceInfo>({
+    devices: [],
+    outputDevice: null,
+  });
   const [selectedMicrophoneId, setSelectedMicrophoneId] = useState<string | null>(() => {
-    try { return window.localStorage.getItem('ledger.meeting.microphone-device') || null; } catch { return null; }
+    try {
+      return window.localStorage.getItem('ledger.meeting.microphone-device') || null;
+    } catch {
+      return null;
+    }
   });
   const [audioDeviceWarning, setAudioDeviceWarning] = useState<string | null>(null);
   const [audioCaptureStatus, setAudioCaptureStatus] = useState<MeetingAudioStatus | null>(null);
-  const [audioSessionInspection, setAudioSessionInspection] = useState<RecordingRecovery | null>(null);
-  const [audioLevels, setAudioLevels] = useState<Record<'user_microphone' | 'system_audio', number>>({
+  const [audioSessionInspection, setAudioSessionInspection] = useState<RecordingRecovery | null>(
+    null
+  );
+  const [audioLevels, setAudioLevels] = useState<
+    Record<'user_microphone' | 'system_audio', number>
+  >({
     user_microphone: 0,
     system_audio: 0,
   });
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isAudioSetupOpen, setIsAudioSetupOpen] = useState(false);
   const [isAudioBusy, setIsAudioBusy] = useState(false);
-  const [testingAudioSource, setTestingAudioSource] = useState<'user_microphone' | 'system_audio' | null>(null);
+  const [testingAudioSource, setTestingAudioSource] = useState<
+    'user_microphone' | 'system_audio' | null
+  >(null);
   const [recordingRecoveries, setRecordingRecoveries] = useState<RecordingRecovery[]>([]);
   const [recordingRecoveryBusy, setRecordingRecoveryBusy] = useState<string | null>(null);
-  const [transcriptionModel, setTranscriptionModel] = useState<TranscriptionModelStatus | null>(null);
+  const [transcriptionModel, setTranscriptionModel] = useState<TranscriptionModelStatus | null>(
+    null
+  );
   const [transcriptionJob, setTranscriptionJob] = useState<TranscriptionJobStatus | null>(null);
   const [transcriptionBusy, setTranscriptionBusy] = useState(false);
   const [isTranscriptionSetupOpen, setIsTranscriptionSetupOpen] = useState(false);
   const meetingRequestRef = useRef(0);
-  const pendingMeetingViewRef = useRef<{ noteId: string; view: 'write' | 'transcript' } | null>(null);
+  const pendingMeetingViewRef = useRef<{ noteId: string; view: 'write' | 'transcript' } | null>(
+    null
+  );
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
   const [draftDate, setDraftDate] = useState(todayKey());
@@ -1622,7 +2426,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [sectionContextMenu, setSectionContextMenu] = useState<SectionContextMenuState | null>(
     null
   );
-  const [notesEmptySpaceMenu, setNotesEmptySpaceMenu] = useState<NotesEmptySpaceMenuState | null>(null);
+  const [notesEmptySpaceMenu, setNotesEmptySpaceMenu] = useState<NotesEmptySpaceMenuState | null>(
+    null
+  );
   const [sortMenu, setSortMenu] = useState<SortMenuState | null>(null);
   const [renamingNoteId, setRenamingNoteId] = useState<string | null>(null);
   const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
@@ -1774,25 +2580,39 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     [notes, selectedNoteId]
   );
   const isMeetingNote = selectedNote?.mode === 'meeting_note';
-  const selectedMicrophone = audioDevices.devices.find((device) => device.id === selectedMicrophoneId) ?? null;
+  const selectedMicrophone =
+    audioDevices.devices.find((device) => device.id === selectedMicrophoneId) ?? null;
   const bluetoothMicWarning = Boolean(
     selectedMicrophone?.isBluetooth && audioDevices.outputDevice?.isBluetooth
   );
   const meetingAudioSessionId = useMemo(() => {
-    const captureMatchesNote = audioCaptureStatus?.sessionId &&
+    const captureMatchesNote =
+      audioCaptureStatus?.sessionId &&
       audioCaptureStatus.noteId === selectedNoteId &&
       audioCaptureStatus.workspaceId === activeWorkspaceId;
-    const jobMatchesNote = transcriptionJob?.sessionId && transcriptionJob.noteId === selectedNoteId && transcriptionJob.workspaceId === activeWorkspaceId;
-    return captureMatchesNote ? audioCaptureStatus.sessionId : jobMatchesNote ? transcriptionJob.sessionId : null;
+    const jobMatchesNote =
+      transcriptionJob?.sessionId &&
+      transcriptionJob.noteId === selectedNoteId &&
+      transcriptionJob.workspaceId === activeWorkspaceId;
+    return captureMatchesNote
+      ? audioCaptureStatus.sessionId
+      : jobMatchesNote
+      ? transcriptionJob.sessionId
+      : null;
   }, [activeWorkspaceId, audioCaptureStatus, selectedNoteId, transcriptionJob]);
   const audioSourceSummaries = useMemo(() => {
     const chunks = audioSessionInspection?.chunks ?? [];
     return (['user_microphone', 'system_audio'] as const).map((source) => {
-      const sourceChunks = chunks.filter((chunk) => chunk.source === source && chunk.finalized && chunk.sizeBytes > 44);
+      const sourceChunks = chunks.filter(
+        (chunk) => chunk.source === source && chunk.finalized && chunk.sizeBytes > 44
+      );
       return {
         source,
         chunkCount: sourceChunks.length,
-        durationSeconds: sourceChunks.reduce((total, chunk) => total + (Number(chunk.durationSeconds) || 0), 0),
+        durationSeconds: sourceChunks.reduce(
+          (total, chunk) => total + (Number(chunk.durationSeconds) || 0),
+          0
+        ),
         sizeBytes: sourceChunks.reduce((total, chunk) => total + (Number(chunk.sizeBytes) || 0), 0),
       };
     });
@@ -1811,33 +2631,49 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const refreshTranscriptionState = useCallback(async (jobId?: string) => {
     const transcription = window.meetingTranscription;
     if (!transcription) return;
-    const [model, jobs] = await Promise.all([transcription.modelStatus(), transcription.status(jobId)]);
+    const [model, jobs] = await Promise.all([
+      transcription.modelStatus(),
+      transcription.status(jobId),
+    ]);
     setTranscriptionModel(model as TranscriptionModelStatus);
-    const candidate = Array.isArray(jobs) ? jobs.find((job) => job.noteId === selectedNoteIdRef.current) : jobs;
-    setTranscriptionJob(candidate ? candidate as TranscriptionJobStatus : null);
+    const candidate = Array.isArray(jobs)
+      ? jobs.find((job) => job.noteId === selectedNoteIdRef.current)
+      : jobs;
+    setTranscriptionJob(candidate ? (candidate as TranscriptionJobStatus) : null);
   }, []);
 
   const refreshAudioDevices = useCallback(async () => {
     if (!window.meetingAudio?.devices) return null;
-    const info = await window.meetingAudio.devices() as MeetingAudioDeviceInfo;
-    const devices = Array.isArray(info.devices) ? info.devices.filter((device) => device.available) : [];
+    const info = (await window.meetingAudio.devices()) as MeetingAudioDeviceInfo;
+    const devices = Array.isArray(info.devices)
+      ? info.devices.filter((device) => device.available)
+      : [];
     const normalized = { devices, outputDevice: info.outputDevice ?? null };
     setAudioDevices(normalized);
     const saved = selectedMicrophoneId;
     const savedDevice = saved ? devices.find((device) => device.id === saved) : null;
-    const preferred = savedDevice
-      ?? (normalized.outputDevice?.isBluetooth ? devices.find((device) => !device.isBluetooth) : null)
-      ?? devices.find((device) => device.isDefault)
-      ?? devices[0]
-      ?? null;
+    const preferred =
+      savedDevice ??
+      (normalized.outputDevice?.isBluetooth
+        ? devices.find((device) => !device.isBluetooth)
+        : null) ??
+      devices.find((device) => device.isDefault) ??
+      devices[0] ??
+      null;
     if (preferred && preferred.id !== selectedMicrophoneId) {
       setSelectedMicrophoneId(preferred.id);
-      try { window.localStorage.setItem('ledger.meeting.microphone-device', preferred.id); } catch {}
+      try {
+        window.localStorage.setItem('ledger.meeting.microphone-device', preferred.id);
+      } catch {}
     }
     if (saved && !savedDevice) {
-      setAudioDeviceWarning('The saved microphone is unavailable. Ledger selected another available input.');
+      setAudioDeviceWarning(
+        'The saved microphone is unavailable. Ledger selected another available input.'
+      );
     } else if (preferred?.isBluetooth && normalized.outputDevice?.isBluetooth) {
-      setAudioDeviceWarning('Headphone audio quality may decrease when using this Bluetooth microphone.');
+      setAudioDeviceWarning(
+        'Headphone audio quality may decrease when using this Bluetooth microphone.'
+      );
     } else {
       setAudioDeviceWarning(null);
     }
@@ -1846,7 +2682,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   useEffect(() => {
     if (!isMeetingNote || !window.meetingAudio?.devices) return;
-    void refreshAudioDevices().catch((error) => setAudioError(error instanceof Error ? error.message : 'Could not load microphones.'));
+    void refreshAudioDevices().catch((error) =>
+      setAudioError(error instanceof Error ? error.message : 'Could not load microphones.')
+    );
   }, [isMeetingNote, refreshAudioDevices]);
 
   useEffect(() => {
@@ -1856,10 +2694,15 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     const offProgress = transcription.onProgress((event) => {
       const progress = event as TranscriptionJobStatus;
       if (progress.noteId && progress.noteId !== selectedNoteIdRef.current) return;
-      setTranscriptionJob((current) => current ? { ...current, ...progress } : current);
+      setTranscriptionJob((current) => (current ? { ...current, ...progress } : current));
     });
-    const offModel = transcription.onModelChange((event) => setTranscriptionModel(event as TranscriptionModelStatus));
-    return () => { offProgress(); offModel(); };
+    const offModel = transcription.onModelChange((event) =>
+      setTranscriptionModel(event as TranscriptionModelStatus)
+    );
+    return () => {
+      offProgress();
+      offModel();
+    };
   }, [activeWorkspaceId, refreshTranscriptionState, selectedNoteId]);
 
   useEffect(() => {
@@ -1870,14 +2713,21 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       return;
     }
     let cancelled = false;
-    void Promise.all([audio.permissions(), audio.status(), audio.recoveries()]).then(([permissions, status, recoveries]) => {
-      if (cancelled) return;
-      setAudioPermissions(permissions);
-      setAudioCaptureStatus(status as MeetingAudioStatus);
-      setRecordingRecoveries(Array.isArray(recoveries) ? recoveries as RecordingRecovery[] : []);
-    }).catch((error) => {
-      if (!cancelled) setAudioError(error instanceof Error ? error.message : 'Could not inspect audio capture.');
-    });
+    void Promise.all([audio.permissions(), audio.status(), audio.recoveries()])
+      .then(([permissions, status, recoveries]) => {
+        if (cancelled) return;
+        setAudioPermissions(permissions);
+        setAudioCaptureStatus(status as MeetingAudioStatus);
+        setRecordingRecoveries(
+          Array.isArray(recoveries) ? (recoveries as RecordingRecovery[]) : []
+        );
+      })
+      .catch((error) => {
+        if (!cancelled)
+          setAudioError(
+            error instanceof Error ? error.message : 'Could not inspect audio capture.'
+          );
+      });
     const offLevel = audio.onLevel(({ source, level }) => {
       setAudioLevels((current) => ({ ...current, [source]: level }));
     });
@@ -1899,19 +2749,32 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       return;
     }
     let cancelled = false;
-    void audio.inspect(sessionId).then((value) => {
-      const inspection = value as RecordingRecovery;
-      if (cancelled) return;
-      if (inspection.noteId !== selectedNoteId || inspection.workspaceId !== activeWorkspaceId) {
-        setAudioSessionInspection(null);
-        return;
-      }
-      setAudioSessionInspection(inspection);
-    }).catch(() => {
-      if (!cancelled) setAudioSessionInspection(null);
-    });
-    return () => { cancelled = true; };
-  }, [activeWorkspaceId, audioCaptureStatus?.chunkCount, audioCaptureStatus?.state, isMeetingNote, meetingAudioSessionId, selectedNoteId, transcriptionJob?.status]);
+    void audio
+      .inspect(sessionId)
+      .then((value) => {
+        const inspection = value as RecordingRecovery;
+        if (cancelled) return;
+        if (inspection.noteId !== selectedNoteId || inspection.workspaceId !== activeWorkspaceId) {
+          setAudioSessionInspection(null);
+          return;
+        }
+        setAudioSessionInspection(inspection);
+      })
+      .catch(() => {
+        if (!cancelled) setAudioSessionInspection(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeWorkspaceId,
+    audioCaptureStatus?.chunkCount,
+    audioCaptureStatus?.state,
+    isMeetingNote,
+    meetingAudioSessionId,
+    selectedNoteId,
+    transcriptionJob?.status,
+  ]);
   const selectedNoteIdSet = useMemo(() => new Set(selectedNoteIds), [selectedNoteIds]);
   const selectedNoteProjectLinks = useMemo(() => {
     if (!selectedNoteId) return [];
@@ -2052,98 +2915,240 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   );
 
   const openEditorOverviewComposer = useCallback(
-    (kind: NotesSelectionComposerKind, selectedText: string, source?: Partial<NotesSelectionComposerContext>) => {
+    (
+      kind: NotesSelectionComposerKind,
+      selectedText: string,
+      source?: Partial<NotesSelectionComposerContext>
+    ) => {
       if (!selectedNoteId) return;
       setSelectionComposerContext({
         kind,
         text: selectedText,
         noteId: selectedNoteId,
         projectId: selectedNoteProjectLinks[0]?.project_id ?? null,
+        sourceLabel: `Created from note “${selectedNote?.title ?? selectedNoteId}”`,
         ...source,
       });
     },
-    [selectedNoteId, selectedNoteProjectLinks]
+    [selectedNote, selectedNoteId, selectedNoteProjectLinks]
   );
 
-  const linkTranscriptToLedgerItem = useCallback(async (segment: TranscriptSegment, quotedText: string, type: 'task' | 'reminder' | 'event' | 'intake', itemId: string) => {
-    if (!selectedNoteId) return;
-    try {
-      const result = await api.createMeetingTranscriptLink(selectedNoteId, segment.id, {
-        link_type: 'ledger_item',
-        ledger_item_type: type,
-        ledger_item_id: itemId,
-        quoted_text: quotedText,
-        timestamp_ms: segment.start_ms,
-        speaker_label: segment.speaker_label,
-        audio_source: segment.audio_source,
-      }) as { duplicate?: boolean };
-      const links = await api.getMeetingTranscriptLinks(selectedNoteId);
-      setTranscriptLinks(Array.isArray(links) ? links as MeetingTranscriptLink[] : []);
-      if (!result?.duplicate) {
-        setDraftContent((current) => appendMeetingTranscriptReference(current, 'Notes', quotedText, segment.start_ms, segment.id));
-        setIsDirty(true);
-        isDirtyRef.current = true;
+  const createEditorExternalEmbed = useCallback(
+    async ({
+      noteId,
+      targetType,
+      provider,
+      url,
+    }: EditorExternalEmbedRequest): Promise<EditorExternalEmbedResult> => {
+      const created = (await api.createExternalReference(provider, url)) as {
+        id: string;
+        normalized_url?: string;
+        external_url?: string;
+      };
+      if (provider === 'github' || provider === 'google_drive') {
+        await api.resolveExternalReference(created.id);
       }
-      toast.show(result?.duplicate ? 'This transcript item is already linked.' : 'Linked to transcript.', { variant: 'success' });
-    } catch (error) {
-      toast.show(error instanceof Error ? error.message : 'Could not link transcript item.', { variant: 'error' });
-    }
-  }, [api, selectedNoteId, toast]);
-
-  const createTranscriptLedgerItem = useCallback((kind: 'task' | 'reminder' | 'event' | 'intake', segment: TranscriptSegment, quotedText: string) => {
-    if (!selectedNoteId || !activeWorkspaceId) return;
-    if (kind === 'intake') {
-      const title = quotedText.split('\n').find((line) => line.trim())?.trim().slice(0, 120) || 'Transcript capture';
-      void api.createIntakeItem({
-        workspace_id: activeWorkspaceId,
-        source: 'manual',
-        source_provider: 'meeting_transcript',
-        suggested_type: 'capture',
-        title,
-        body: quotedText,
-        raw_content: quotedText,
-        reason: `From transcript at ${Math.floor(segment.start_ms / 1000)}s`,
-        source_object_type: 'meeting_transcript_segment',
-        source_object_id: segment.id,
-      }).then((created) => {
-        const id = (created as { id?: string } | null)?.id;
-        if (id) return linkTranscriptToLedgerItem(segment, quotedText, kind, id);
-        throw new Error('Intake item was not created.');
-      }).catch((error) => toast.show(error instanceof Error ? error.message : 'Could not create Intake item.', { variant: 'error' }));
-      return;
-    }
-    openEditorOverviewComposer(kind, quotedText, {
-      transcriptSegmentId: segment.id,
-      transcriptTimestampMs: segment.start_ms,
-      transcriptSpeakerLabel: segment.speaker_label,
-      transcriptAudioSource: segment.audio_source,
-      sourceLabel: `Created from meeting note ${selectedNote?.title ? `“${selectedNote.title}”` : ''}`,
-    });
-  }, [activeWorkspaceId, api, linkTranscriptToLedgerItem, openEditorOverviewComposer, selectedNote, selectedNoteId, toast]);
-
-  const addTranscriptMeetingReference = useCallback(async (kind: 'action_item' | 'decision' | 'key_point' | 'meeting_note', segment: TranscriptSegment, quotedText: string) => {
-    if (!selectedNoteId) return;
-    try {
-      const result = await api.createMeetingTranscriptLink(selectedNoteId, segment.id, {
-        link_type: kind,
-        quoted_text: quotedText,
-        timestamp_ms: segment.start_ms,
-        speaker_label: segment.speaker_label,
-        audio_source: segment.audio_source,
-      }) as { duplicate?: boolean };
-      const links = await api.getMeetingTranscriptLinks(selectedNoteId);
-      setTranscriptLinks(Array.isArray(links) ? links as MeetingTranscriptLink[] : []);
-      if (!result?.duplicate) {
-        const section = kind === 'action_item' ? 'Action Items' : kind === 'decision' ? 'Decisions' : kind === 'key_point' ? 'Key Points' : 'Notes';
-        setDraftContent((current) => appendMeetingTranscriptReference(current, section, quotedText, segment.start_ms, segment.id));
-        setIsDirty(true);
-        isDirtyRef.current = true;
+      await api.linkExternalReferenceWithMetadata(
+        created.id,
+        targetType,
+        noteId,
+        undefined,
+        'embed'
+      );
+      if (provider === 'figma') {
+        await api.resolveExternalReference(created.id);
+        await api.createExternalReferencePreview(created.id, targetType, noteId);
       }
-      toast.show(result?.duplicate ? 'Already added to this meeting.' : `Added to ${kind === 'meeting_note' ? 'meeting notes' : kind.replace('_', ' ')}.`, { variant: 'success' });
-    } catch (error) {
-      toast.show(error instanceof Error ? error.message : 'Could not add transcript reference.', { variant: 'error' });
-    }
-  }, [api, selectedNoteId, toast]);
+      return {
+        externalReferenceId: created.id,
+        externalUrl: created.normalized_url || created.external_url || url,
+      };
+    },
+    [api]
+  );
+
+  const uploadEditorAttachment = useCallback(
+    async ({ noteId, file }: AttachmentUploadRequest): Promise<AttachmentUploadResult> => {
+      if (!activeWorkspaceId) throw new Error('Select a workspace before uploading a file.');
+      const safeName = file.name.replace(/[^a-z0-9._-]/gi, '-').slice(0, 180) || 'attachment';
+      const random = Math.random().toString(36).slice(2, 9);
+      const storagePath = `workspaces/${activeWorkspaceId}/notes/${noteId}/attachments/${Date.now()}-${random}-${safeName}`;
+      const { error } = await supabase.storage.from('note-files').upload(storagePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'application/octet-stream',
+      });
+      if (error) throw error;
+      const url = supabase.storage.from('note-files').getPublicUrl(storagePath).data.publicUrl;
+      return {
+        storagePath,
+        url,
+        fileName: file.name || safeName,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+      };
+    },
+    [activeWorkspaceId]
+  );
+
+  const linkTranscriptToLedgerItem = useCallback(
+    async (
+      segment: TranscriptSegment,
+      quotedText: string,
+      type: 'task' | 'reminder' | 'event' | 'intake',
+      itemId: string
+    ) => {
+      if (!selectedNoteId) return;
+      try {
+        const result = (await api.createMeetingTranscriptLink(selectedNoteId, segment.id, {
+          link_type: 'ledger_item',
+          ledger_item_type: type,
+          ledger_item_id: itemId,
+          quoted_text: quotedText,
+          timestamp_ms: segment.start_ms,
+          speaker_label: segment.speaker_label,
+          audio_source: segment.audio_source,
+        })) as { duplicate?: boolean };
+        const links = await api.getMeetingTranscriptLinks(selectedNoteId);
+        setTranscriptLinks(Array.isArray(links) ? (links as MeetingTranscriptLink[]) : []);
+        if (!result?.duplicate) {
+          setDraftContent((current) =>
+            appendMeetingTranscriptReference(
+              current,
+              'Notes',
+              quotedText,
+              segment.start_ms,
+              segment.id
+            )
+          );
+          setIsDirty(true);
+          isDirtyRef.current = true;
+        }
+        toast.show(
+          result?.duplicate ? 'This transcript item is already linked.' : 'Linked to transcript.',
+          { variant: 'success' }
+        );
+      } catch (error) {
+        toast.show(error instanceof Error ? error.message : 'Could not link transcript item.', {
+          variant: 'error',
+        });
+      }
+    },
+    [api, selectedNoteId, toast]
+  );
+
+  const createTranscriptLedgerItem = useCallback(
+    (
+      kind: 'task' | 'reminder' | 'event' | 'intake',
+      segment: TranscriptSegment,
+      quotedText: string
+    ) => {
+      if (!selectedNoteId || !activeWorkspaceId) return;
+      if (kind === 'intake') {
+        const title =
+          quotedText
+            .split('\n')
+            .find((line) => line.trim())
+            ?.trim()
+            .slice(0, 120) || 'Transcript capture';
+        void api
+          .createIntakeItem({
+            workspace_id: activeWorkspaceId,
+            source: 'manual',
+            source_provider: 'meeting_transcript',
+            suggested_type: 'capture',
+            title,
+            body: quotedText,
+            raw_content: quotedText,
+            reason: `From transcript at ${Math.floor(segment.start_ms / 1000)}s`,
+            source_object_type: 'meeting_transcript_segment',
+            source_object_id: segment.id,
+          })
+          .then((created) => {
+            const id = (created as { id?: string } | null)?.id;
+            if (id) return linkTranscriptToLedgerItem(segment, quotedText, kind, id);
+            throw new Error('Intake item was not created.');
+          })
+          .catch((error) =>
+            toast.show(error instanceof Error ? error.message : 'Could not create Intake item.', {
+              variant: 'error',
+            })
+          );
+        return;
+      }
+      openEditorOverviewComposer(kind, quotedText, {
+        transcriptSegmentId: segment.id,
+        transcriptTimestampMs: segment.start_ms,
+        transcriptSpeakerLabel: segment.speaker_label,
+        transcriptAudioSource: segment.audio_source,
+        sourceLabel: `Created from meeting note ${
+          selectedNote?.title ? `“${selectedNote.title}”` : ''
+        }`,
+      });
+    },
+    [
+      activeWorkspaceId,
+      api,
+      linkTranscriptToLedgerItem,
+      openEditorOverviewComposer,
+      selectedNote,
+      selectedNoteId,
+      toast,
+    ]
+  );
+
+  const addTranscriptMeetingReference = useCallback(
+    async (
+      kind: 'action_item' | 'decision' | 'key_point' | 'meeting_note',
+      segment: TranscriptSegment,
+      quotedText: string
+    ) => {
+      if (!selectedNoteId) return;
+      try {
+        const result = (await api.createMeetingTranscriptLink(selectedNoteId, segment.id, {
+          link_type: kind,
+          quoted_text: quotedText,
+          timestamp_ms: segment.start_ms,
+          speaker_label: segment.speaker_label,
+          audio_source: segment.audio_source,
+        })) as { duplicate?: boolean };
+        const links = await api.getMeetingTranscriptLinks(selectedNoteId);
+        setTranscriptLinks(Array.isArray(links) ? (links as MeetingTranscriptLink[]) : []);
+        if (!result?.duplicate) {
+          const section =
+            kind === 'action_item'
+              ? 'Action Items'
+              : kind === 'decision'
+              ? 'Decisions'
+              : kind === 'key_point'
+              ? 'Key Points'
+              : 'Notes';
+          setDraftContent((current) =>
+            appendMeetingTranscriptReference(
+              current,
+              section,
+              quotedText,
+              segment.start_ms,
+              segment.id
+            )
+          );
+          setIsDirty(true);
+          isDirtyRef.current = true;
+        }
+        toast.show(
+          result?.duplicate
+            ? 'Already added to this meeting.'
+            : `Added to ${kind === 'meeting_note' ? 'meeting notes' : kind.replace('_', ' ')}.`,
+          { variant: 'success' }
+        );
+      } catch (error) {
+        toast.show(error instanceof Error ? error.message : 'Could not add transcript reference.', {
+          variant: 'error',
+        });
+      }
+    },
+    [api, selectedNoteId, toast]
+  );
 
   const openSmartPersonTaskComposer = useCallback(
     (action: 'task' | 'follow-up', person: { id: string; name: string; sourceText: string }) => {
@@ -2161,10 +3166,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   );
 
   const sendEditorSelectionToIntake = useCallback(
-    async (selectedText: string) => {
+    async ({ noteId, plainText: selectedText }: SelectedContentPayload) => {
       if (
         !activeWorkspaceId ||
         !selectedNoteId ||
+        noteId !== selectedNoteId ||
         !selectedText.trim() ||
         intakeSubmissionRef.current
       ) {
@@ -2186,9 +3192,13 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           title,
           body: selectedText,
           raw_content: selectedText,
-          reason: 'Selected from note editor',
+          reason: `Selected from note “${selectedNote?.title ?? noteId}”${
+            selectedNoteProjectLinks[0]?.project_name
+              ? ` · Project: ${selectedNoteProjectLinks[0].project_name}`
+              : ''
+          }`,
           source_object_type: 'note',
-          source_object_id: selectedNoteId,
+          source_object_id: noteId,
         });
         if (!data) throw new Error('intake_create_failed');
         window.ipcRenderer?.send('inbox:items-updated', { delta: 1 });
@@ -2200,12 +3210,12 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         intakeSubmissionRef.current = false;
       }
     },
-    [activeWorkspaceId, api, selectedNoteId, toast]
+    [activeWorkspaceId, api, selectedNote, selectedNoteId, selectedNoteProjectLinks, toast]
   );
 
   const linkEditorSelectionToPerson = useCallback(
-    async (selectedText: string, personId: string) => {
-      if (!selectedNoteId) return;
+    async ({ noteId, plainText: selectedText }: SelectedContentPayload, personId: string) => {
+      if (!selectedNoteId || noteId !== selectedNoteId) return;
       try {
         await api.upsertNotePersonLink(selectedNoteId, {
           person_user_id: personId,
@@ -2865,10 +3875,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     let cancelled = false;
 
     const loadNoteViewers = async () => {
-      if (
-        !selectedNoteId ||
-        noteViewerPollingDisabledForNoteRef.current === selectedNoteId
-      ) return;
+      if (!selectedNoteId || noteViewerPollingDisabledForNoteRef.current === selectedNoteId) return;
       try {
         const versions = (await api.getNoteVersions(selectedNoteId)) as NoteVersion[] | null;
         if (cancelled) return;
@@ -2987,9 +3994,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     const noteId = selectedNoteId;
     const shouldLoad = Boolean(activeWorkspaceId && noteId && isMeetingNote);
     setMeetingMetadata(null);
-    const pendingView = noteId && pendingMeetingViewRef.current?.noteId === noteId
-      ? pendingMeetingViewRef.current.view
-      : 'write';
+    const pendingView =
+      noteId && pendingMeetingViewRef.current?.noteId === noteId
+        ? pendingMeetingViewRef.current.view
+        : 'write';
     if (noteId && pendingMeetingViewRef.current?.noteId === noteId) {
       pendingMeetingViewRef.current = null;
     }
@@ -3045,7 +4053,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         setTranscriptSegments(safeSegments);
         try {
           const links = await api.getMeetingTranscriptLinks(noteId);
-          if (!cancelled && meetingRequestRef.current === requestId) setTranscriptLinks(Array.isArray(links) ? links as MeetingTranscriptLink[] : []);
+          if (!cancelled && meetingRequestRef.current === requestId)
+            setTranscriptLinks(Array.isArray(links) ? (links as MeetingTranscriptLink[]) : []);
         } catch (error) {
           console.warn('[meeting-notes] transcript links load failed', error);
         }
@@ -3053,14 +4062,18 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           Object.fromEntries(safeSegments.map((segment) => [segment.id, segment.transcript_text]))
         );
         setTranscriptSpeakerDrafts(
-          Object.fromEntries(safeSegments.map((segment) => [segment.id, segment.speaker_label ?? '']))
+          Object.fromEntries(
+            safeSegments.map((segment) => [segment.id, segment.speaker_label ?? ''])
+          )
         );
         const focusSegmentId = initialFocusContext.startsWith('transcript-segment:')
           ? initialFocusContext.slice('transcript-segment:'.length).trim()
           : '';
         if (focusSegmentId && safeSegments.some((segment) => segment.id === focusSegmentId)) {
           window.setTimeout(() => {
-            document.querySelector(`[data-transcript-segment="${focusSegmentId}"]`)?.scrollIntoView({ block: 'center' });
+            document
+              .querySelector(`[data-transcript-segment="${focusSegmentId}"]`)
+              ?.scrollIntoView({ block: 'center' });
           }, 50);
         }
       } catch (error) {
@@ -3082,19 +4095,39 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   useEffect(() => {
     const noteId = selectedNoteId;
     const requestId = meetingRequestRef.current;
-    if (!isMeetingNote || !noteId || (!meetingMetadata?.calendar_series_key && !meetingMetadata?.calendar_series_id)) {
+    if (
+      !isMeetingNote ||
+      !noteId ||
+      (!meetingMetadata?.calendar_series_key && !meetingMetadata?.calendar_series_id)
+    ) {
       setMeetingSeriesOccurrences([]);
       return;
     }
     let cancelled = false;
-    void api.getMeetingSeries(noteId).then((rows) => {
-      if (cancelled || meetingRequestRef.current !== requestId || selectedNoteIdRef.current !== noteId) return;
-      setMeetingSeriesOccurrences(Array.isArray(rows) ? rows as MeetingSeriesOccurrence[] : []);
-    }).catch(() => {
-      if (!cancelled && meetingRequestRef.current === requestId) setMeetingSeriesOccurrences([]);
-    });
-    return () => { cancelled = true; };
-  }, [api, isMeetingNote, meetingMetadata?.calendar_series_id, meetingMetadata?.calendar_series_key, selectedNoteId]);
+    void api
+      .getMeetingSeries(noteId)
+      .then((rows) => {
+        if (
+          cancelled ||
+          meetingRequestRef.current !== requestId ||
+          selectedNoteIdRef.current !== noteId
+        )
+          return;
+        setMeetingSeriesOccurrences(Array.isArray(rows) ? (rows as MeetingSeriesOccurrence[]) : []);
+      })
+      .catch(() => {
+        if (!cancelled && meetingRequestRef.current === requestId) setMeetingSeriesOccurrences([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    api,
+    isMeetingNote,
+    meetingMetadata?.calendar_series_id,
+    meetingMetadata?.calendar_series_key,
+    selectedNoteId,
+  ]);
 
   useEffect(() => {
     if (meetingMetadata?.transcription_status !== 'recording') return;
@@ -3158,7 +4191,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       setMeetingCenterView('transcript');
     } catch (error) {
       pendingMeetingViewRef.current = null;
-      setError(error instanceof Error ? error.message : 'Could not enable transcription for this note.');
+      setError(
+        error instanceof Error ? error.message : 'Could not enable transcription for this note.'
+      );
     } finally {
       setMeetingBusyAction(null);
     }
@@ -3171,7 +4206,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     try {
       setAudioPermissions(await window.meetingAudio.requestPermissions());
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not request audio permissions.');
+      setAudioError(
+        error instanceof Error ? error.message : 'Could not request audio permissions.'
+      );
     } finally {
       setIsAudioBusy(false);
     }
@@ -3182,24 +4219,32 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     try {
       await window.meetingAudio.openSystemSettings(area);
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not open macOS System Settings.');
+      setAudioError(
+        error instanceof Error ? error.message : 'Could not open macOS System Settings.'
+      );
     }
   }, []);
 
-  const testAudioSource = useCallback(async (source: 'user_microphone' | 'system_audio') => {
-    if (!window.meetingAudio) return;
-    setIsAudioBusy(true);
-    setAudioError(null);
-    try {
-      const status = (await window.meetingAudio.testSource(source, source === 'user_microphone' ? selectedMicrophoneId : null)) as MeetingAudioStatus;
-      setTestingAudioSource(source);
-      setAudioCaptureStatus(status);
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not start the audio test.');
-    } finally {
-      setIsAudioBusy(false);
-    }
-  }, [selectedMicrophoneId]);
+  const testAudioSource = useCallback(
+    async (source: 'user_microphone' | 'system_audio') => {
+      if (!window.meetingAudio) return;
+      setIsAudioBusy(true);
+      setAudioError(null);
+      try {
+        const status = (await window.meetingAudio.testSource(
+          source,
+          source === 'user_microphone' ? selectedMicrophoneId : null
+        )) as MeetingAudioStatus;
+        setTestingAudioSource(source);
+        setAudioCaptureStatus(status);
+      } catch (error) {
+        setAudioError(error instanceof Error ? error.message : 'Could not start the audio test.');
+      } finally {
+        setIsAudioBusy(false);
+      }
+    },
+    [selectedMicrophoneId]
+  );
 
   const stopAudioTest = useCallback(async () => {
     if (!window.meetingAudio) return;
@@ -3214,42 +4259,67 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
   }, []);
 
-  const recoverRecording = useCallback(async (session: RecordingRecovery) => {
-    if (!window.meetingAudio || !session.noteId || !session.workspaceId || session.workspaceId !== activeWorkspaceId) return;
-    setRecordingRecoveryBusy(`recover:${session.sessionId}`);
-    try {
-      const note = (await api.getNoteById(session.noteId)) as NoteRow;
-      if (!note || note.workspace_id !== session.workspaceId) throw new Error('The original meeting note is not available in this workspace.');
-      await window.meetingAudio.recover({ sessionId: session.sessionId, noteId: session.noteId, workspaceId: session.workspaceId });
-      await api.updateMeetingMetadata(session.noteId, {
-        transcription_status: 'processing',
-        duration_seconds: session.durationSeconds,
-        meeting_start_at: session.startedAt,
-        meeting_end_at: session.lastActivityAt,
-      });
-      setRecordingRecoveries((current) => current.filter((item) => item.sessionId !== session.sessionId));
-      setAudioError(null);
-      toast.show('Recording recovered and ready for processing.', { variant: 'success' });
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not recover the recording.');
-    } finally {
-      setRecordingRecoveryBusy(null);
-    }
-  }, [activeWorkspaceId, api, toast]);
+  const recoverRecording = useCallback(
+    async (session: RecordingRecovery) => {
+      if (
+        !window.meetingAudio ||
+        !session.noteId ||
+        !session.workspaceId ||
+        session.workspaceId !== activeWorkspaceId
+      )
+        return;
+      setRecordingRecoveryBusy(`recover:${session.sessionId}`);
+      try {
+        const note = (await api.getNoteById(session.noteId)) as NoteRow;
+        if (!note || note.workspace_id !== session.workspaceId)
+          throw new Error('The original meeting note is not available in this workspace.');
+        await window.meetingAudio.recover({
+          sessionId: session.sessionId,
+          noteId: session.noteId,
+          workspaceId: session.workspaceId,
+        });
+        await api.updateMeetingMetadata(session.noteId, {
+          transcription_status: 'processing',
+          duration_seconds: session.durationSeconds,
+          meeting_start_at: session.startedAt,
+          meeting_end_at: session.lastActivityAt,
+        });
+        setRecordingRecoveries((current) =>
+          current.filter((item) => item.sessionId !== session.sessionId)
+        );
+        setAudioError(null);
+        toast.show('Recording recovered and ready for processing.', { variant: 'success' });
+      } catch (error) {
+        setAudioError(error instanceof Error ? error.message : 'Could not recover the recording.');
+      } finally {
+        setRecordingRecoveryBusy(null);
+      }
+    },
+    [activeWorkspaceId, api, toast]
+  );
 
-  const discardRecording = useCallback(async (session: RecordingRecovery) => {
-    if (!window.meetingAudio || !window.confirm('Discard this interrupted recording? This removes its temporary audio.')) return;
-    setRecordingRecoveryBusy(`discard:${session.sessionId}`);
-    try {
-      await window.meetingAudio.discardRecovery(session.sessionId);
-      setRecordingRecoveries((current) => current.filter((item) => item.sessionId !== session.sessionId));
-      toast.show('Interrupted recording discarded.', { variant: 'success' });
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not discard the recording.');
-    } finally {
-      setRecordingRecoveryBusy(null);
-    }
-  }, [toast]);
+  const discardRecording = useCallback(
+    async (session: RecordingRecovery) => {
+      if (
+        !window.meetingAudio ||
+        !window.confirm('Discard this interrupted recording? This removes its temporary audio.')
+      )
+        return;
+      setRecordingRecoveryBusy(`discard:${session.sessionId}`);
+      try {
+        await window.meetingAudio.discardRecovery(session.sessionId);
+        setRecordingRecoveries((current) =>
+          current.filter((item) => item.sessionId !== session.sessionId)
+        );
+        toast.show('Interrupted recording discarded.', { variant: 'success' });
+      } catch (error) {
+        setAudioError(error instanceof Error ? error.message : 'Could not discard the recording.');
+      } finally {
+        setRecordingRecoveryBusy(null);
+      }
+    },
+    [toast]
+  );
 
   const startMeeting = useCallback(async () => {
     if (!meetingMetadata || meetingMetadata.transcription_status !== 'idle') return;
@@ -3262,7 +4332,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     const now = new Date().toISOString();
     try {
       if (window.meetingTranscription) {
-        const model = await window.meetingTranscription.modelStatus() as TranscriptionModelStatus;
+        const model = (await window.meetingTranscription.modelStatus()) as TranscriptionModelStatus;
         setTranscriptionModel(model);
         if (!model.installed) {
           setIsTranscriptionSetupOpen(true);
@@ -3281,20 +4351,23 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       // Settings. Let the native stream attempt start in that case; a real
       // capture failure is reported as a source warning instead of trapping
       // the user in the setup modal.
-      const systemAudio = meetingMetadata.system_audio_enabled
-        && permissions.systemAudio !== 'restricted'
-        && permissions.systemAudio !== 'unavailable';
+      const systemAudio =
+        meetingMetadata.system_audio_enabled &&
+        permissions.systemAudio !== 'restricted' &&
+        permissions.systemAudio !== 'unavailable';
       if (!microphone && !systemAudio) {
-        setAudioError('No permitted audio source is available. Enable the microphone or system-audio permission and try again.');
+        setAudioError(
+          'No permitted audio source is available. Enable the microphone or system-audio permission and try again.'
+        );
         setIsAudioSetupOpen(true);
         return;
       }
       const refreshedDevices = microphone ? await refreshAudioDevices() : null;
       const microphoneDeviceId = microphone
-        ? (refreshedDevices?.devices.find((device) => device.id === selectedMicrophoneId)?.id
-          ?? refreshedDevices?.devices.find((device) => device.isDefault)?.id
-          ?? refreshedDevices?.devices[0]?.id
-          ?? null)
+        ? refreshedDevices?.devices.find((device) => device.id === selectedMicrophoneId)?.id ??
+          refreshedDevices?.devices.find((device) => device.isDefault)?.id ??
+          refreshedDevices?.devices[0]?.id ??
+          null
         : null;
       const capture = (await window.meetingAudio.start({
         noteId: selectedNoteIdRef.current!,
@@ -3318,7 +4391,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         await window.meetingAudio.stop();
         setAudioCaptureStatus(null);
       }
-      if (capture.warnings.length) setAudioError(capture.warnings.map((warning) => warning.error).join(' '));
+      if (capture.warnings.length)
+        setAudioError(capture.warnings.map((warning) => warning.error).join(' '));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not start audio capture.';
       setAudioError(message);
@@ -3334,11 +4408,21 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     } finally {
       setMeetingBusyAction(null);
     }
-  }, [activeWorkspaceId, audioPermissions, meetingMetadata, refreshAudioDevices, selectedMicrophoneId, updateMeetingMetadata]);
+  }, [
+    activeWorkspaceId,
+    audioPermissions,
+    meetingMetadata,
+    refreshAudioDevices,
+    selectedMicrophoneId,
+    updateMeetingMetadata,
+  ]);
 
   const pauseMeeting = useCallback(async () => {
     if (!meetingMetadata || meetingMetadata.transcription_status !== 'recording') return;
-    if (!window.meetingAudio) { setIsAudioSetupOpen(true); return; }
+    if (!window.meetingAudio) {
+      setIsAudioSetupOpen(true);
+      return;
+    }
     setMeetingBusyAction('pause');
     try {
       setAudioCaptureStatus((await window.meetingAudio.pause()) as MeetingAudioStatus);
@@ -3355,7 +4439,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const resumeMeeting = useCallback(async () => {
     if (!meetingMetadata || meetingMetadata.transcription_status !== 'paused') return;
-    if (!window.meetingAudio) { setIsAudioSetupOpen(true); return; }
+    if (!window.meetingAudio) {
+      setIsAudioSetupOpen(true);
+      return;
+    }
     setMeetingBusyAction('resume');
     try {
       setAudioCaptureStatus((await window.meetingAudio.resume()) as MeetingAudioStatus);
@@ -3377,7 +4464,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     ) {
       return;
     }
-    if (!window.meetingAudio) { setIsAudioSetupOpen(true); return; }
+    if (!window.meetingAudio) {
+      setIsAudioSetupOpen(true);
+      return;
+    }
     if (meetingStopInFlightRef.current) return;
     meetingStopInFlightRef.current = true;
     setMeetingBusyAction('stop');
@@ -3389,19 +4479,23 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       const rawMeetingEndAt = capture?.endedAt || new Date().toISOString();
       const meetingStartMs = Date.parse(meetingMetadata.meeting_start_at || '');
       const meetingEndMs = Date.parse(rawMeetingEndAt);
-      const meetingEndAt = Number.isFinite(meetingStartMs) && Number.isFinite(meetingEndMs) && meetingEndMs < meetingStartMs
-        ? new Date(meetingStartMs).toISOString()
-        : rawMeetingEndAt;
+      const meetingEndAt =
+        Number.isFinite(meetingStartMs) &&
+        Number.isFinite(meetingEndMs) &&
+        meetingEndMs < meetingStartMs
+          ? new Date(meetingStartMs).toISOString()
+          : rawMeetingEndAt;
       if (window.meetingTranscription && sessionId) {
         try {
           const recordingNoteId = capture.noteId || selectedNoteIdRef.current;
           const recordingWorkspaceId = capture.workspaceId || activeWorkspaceId;
-          if (!recordingNoteId || !recordingWorkspaceId) throw new Error('The finalized recording is missing its note workspace identity.');
-          const job = await window.meetingTranscription.start({
+          if (!recordingNoteId || !recordingWorkspaceId)
+            throw new Error('The finalized recording is missing its note workspace identity.');
+          const job = (await window.meetingTranscription.start({
             sessionId,
             noteId: recordingNoteId,
             workspaceId: recordingWorkspaceId,
-          }) as TranscriptionJobStatus;
+          })) as TranscriptionJobStatus;
           setTranscriptionJob(job);
           await updateMeetingMetadata({
             transcription_status: 'processing',
@@ -3410,7 +4504,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             transcription_error: null,
           });
         } catch (transcriptionError) {
-          const message = transcriptionError instanceof Error ? transcriptionError.message : 'Local transcription could not start.';
+          const message =
+            transcriptionError instanceof Error
+              ? transcriptionError.message
+              : 'Local transcription could not start.';
           setAudioError(message);
           await updateMeetingMetadata({
             transcription_status: 'failed',
@@ -3422,7 +4519,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       } else {
         throw new Error('The finalized recording session could not be identified.');
       }
-      if (capture?.warnings.length) setAudioError(capture.warnings.map((warning) => warning.error).join(' '));
+      if (capture?.warnings.length)
+        setAudioError(capture.warnings.map((warning) => warning.error).join(' '));
     } catch (error) {
       setAudioError(error instanceof Error ? error.message : 'Could not stop audio capture.');
     } finally {
@@ -3435,81 +4533,170 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     if (!window.meetingTranscription) return;
     setTranscriptionBusy(true);
     try {
-      const model = await window.meetingTranscription.downloadModel() as TranscriptionModelStatus;
+      const model = (await window.meetingTranscription.downloadModel()) as TranscriptionModelStatus;
       setTranscriptionModel(model);
       if (model.installed) setIsTranscriptionSetupOpen(false);
       setAudioError(null);
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not install the local Whisper model.');
-    } finally { setTranscriptionBusy(false); }
+      setAudioError(
+        error instanceof Error ? error.message : 'Could not install the local Whisper model.'
+      );
+    } finally {
+      setTranscriptionBusy(false);
+    }
   }, []);
 
-  const startTranscription = useCallback(async (force = false) => {
-    const noteId = selectedNoteIdRef.current;
-    const sessionId = audioCaptureStatus?.sessionId || transcriptionJob?.sessionId;
-    if (!window.meetingTranscription || !noteId || !activeWorkspaceId || !sessionId) return;
-    setTranscriptionBusy(true);
-    try {
-      const job = await window.meetingTranscription.start({ sessionId, noteId, workspaceId: activeWorkspaceId, force }) as TranscriptionJobStatus;
-      setTranscriptionJob(job);
-      await updateMeetingMetadata({ transcription_status: 'processing', transcription_error: null });
-      setAudioError(null);
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not start local transcription.');
-    } finally { setTranscriptionBusy(false); }
-  }, [activeWorkspaceId, audioCaptureStatus?.sessionId, transcriptionJob?.sessionId, updateMeetingMetadata]);
+  const startTranscription = useCallback(
+    async (force = false) => {
+      const noteId = selectedNoteIdRef.current;
+      const sessionId = audioCaptureStatus?.sessionId || transcriptionJob?.sessionId;
+      if (!window.meetingTranscription || !noteId || !activeWorkspaceId || !sessionId) return;
+      setTranscriptionBusy(true);
+      try {
+        const job = (await window.meetingTranscription.start({
+          sessionId,
+          noteId,
+          workspaceId: activeWorkspaceId,
+          force,
+        })) as TranscriptionJobStatus;
+        setTranscriptionJob(job);
+        await updateMeetingMetadata({
+          transcription_status: 'processing',
+          transcription_error: null,
+        });
+        setAudioError(null);
+      } catch (error) {
+        setAudioError(
+          error instanceof Error ? error.message : 'Could not start local transcription.'
+        );
+      } finally {
+        setTranscriptionBusy(false);
+      }
+    },
+    [
+      activeWorkspaceId,
+      audioCaptureStatus?.sessionId,
+      transcriptionJob?.sessionId,
+      updateMeetingMetadata,
+    ]
+  );
 
   const cancelTranscription = useCallback(async () => {
     if (!window.meetingTranscription || !transcriptionJob) return;
     setTranscriptionBusy(true);
     try {
-      setTranscriptionJob(await window.meetingTranscription.cancel(transcriptionJob.jobId) as TranscriptionJobStatus);
-      await updateMeetingMetadata({ transcription_status: 'failed', transcription_error: 'Transcription cancelled. Finalized audio is available for retry.' });
-    } catch (error) { setAudioError(error instanceof Error ? error.message : 'Could not cancel transcription.'); }
-    finally { setTranscriptionBusy(false); }
+      setTranscriptionJob(
+        (await window.meetingTranscription.cancel(transcriptionJob.jobId)) as TranscriptionJobStatus
+      );
+      await updateMeetingMetadata({
+        transcription_status: 'failed',
+        transcription_error: 'Transcription cancelled. Finalized audio is available for retry.',
+      });
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : 'Could not cancel transcription.');
+    } finally {
+      setTranscriptionBusy(false);
+    }
   }, [transcriptionJob, updateMeetingMetadata]);
 
   useEffect(() => {
-    if (!isMeetingNote || meetingMetadata?.transcription_status !== 'processing' || !window.meetingTranscription) return;
-    const timer = window.setInterval(() => void refreshTranscriptionState(transcriptionJob?.jobId), 1500);
+    if (
+      !isMeetingNote ||
+      meetingMetadata?.transcription_status !== 'processing' ||
+      !window.meetingTranscription
+    )
+      return;
+    const timer = window.setInterval(
+      () => void refreshTranscriptionState(transcriptionJob?.jobId),
+      1500
+    );
     return () => window.clearInterval(timer);
-  }, [isMeetingNote, meetingMetadata?.transcription_status, refreshTranscriptionState, transcriptionJob?.jobId]);
+  }, [
+    isMeetingNote,
+    meetingMetadata?.transcription_status,
+    refreshTranscriptionState,
+    transcriptionJob?.jobId,
+  ]);
 
   useEffect(() => {
     const job = transcriptionJob;
-    if (!job || job.status !== 'merging' || !window.meetingTranscription || !meetingMetadata || selectedNoteIdRef.current !== job.noteId) return;
+    if (
+      !job ||
+      job.status !== 'merging' ||
+      !window.meetingTranscription ||
+      !meetingMetadata ||
+      selectedNoteIdRef.current !== job.noteId
+    )
+      return;
     if (transcriptionMergeInFlightRef.current.has(job.jobId)) return;
     transcriptionMergeInFlightRef.current.add(job.jobId);
     let cancelled = false;
     const finish = async () => {
       try {
-        const rows = await window.meetingTranscription!.results(job.jobId) as Array<{ id: string; audioSource: 'user_microphone' | 'system_audio'; speakerLabel: string; startMs: number; endMs: number; text: string; confidence: number | null; segmentOrder: number }>;
+        const rows = (await window.meetingTranscription!.results(job.jobId)) as Array<{
+          id: string;
+          audioSource: 'user_microphone' | 'system_audio';
+          speakerLabel: string;
+          startMs: number;
+          endMs: number;
+          text: string;
+          confidence: number | null;
+          segmentOrder: number;
+        }>;
         if (cancelled) return;
-        const segments = rows.map((row) => ({ id: row.id, audio_source: row.audioSource, speaker_label: row.speakerLabel, start_ms: row.startMs, end_ms: row.endMs, transcript_text: row.text, confidence: row.confidence, segment_order: row.segmentOrder }));
+        const segments = rows.map((row) => ({
+          id: row.id,
+          audio_source: row.audioSource,
+          speaker_label: row.speakerLabel,
+          start_ms: row.startMs,
+          end_ms: row.endMs,
+          transcript_text: row.text,
+          confidence: row.confidence,
+          segment_order: row.segmentOrder,
+        }));
         if (segments.length) await api.bulkCreateTranscriptSegments(job.noteId, segments);
-        const stored = await api.getTranscriptSegments(job.noteId) as TranscriptSegment[];
+        const stored = (await api.getTranscriptSegments(job.noteId)) as TranscriptSegment[];
         const safeStored = Array.isArray(stored) ? stored : [];
         if (segments.length && safeStored.length === 0) {
-          throw new Error('Transcript segments were not saved. The audio is preserved so you can retry.');
+          throw new Error(
+            'Transcript segments were not saved. The audio is preserved so you can retry.'
+          );
         }
         if (cancelled || selectedNoteIdRef.current !== job.noteId) return;
         setTranscriptSegments(safeStored);
-        setTranscriptDrafts(Object.fromEntries(safeStored.map((segment) => [segment.id, segment.transcript_text])));
-        const completedMetadata = await updateMeetingMetadata({ transcription_status: 'complete', transcription_error: null });
-        if (!completedMetadata) throw new Error('Meeting status could not be marked complete. The audio is preserved so you can retry.');
-        await window.meetingTranscription!.complete({ jobId: job.jobId, retention: meetingMetadata.audio_retention });
+        setTranscriptDrafts(
+          Object.fromEntries(safeStored.map((segment) => [segment.id, segment.transcript_text]))
+        );
+        const completedMetadata = await updateMeetingMetadata({
+          transcription_status: 'complete',
+          transcription_error: null,
+        });
+        if (!completedMetadata)
+          throw new Error(
+            'Meeting status could not be marked complete. The audio is preserved so you can retry.'
+          );
+        await window.meetingTranscription!.complete({
+          jobId: job.jobId,
+          retention: meetingMetadata.audio_retention,
+        });
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : 'Transcript storage failed.';
         setAudioError(message);
         await window.meetingTranscription!.fail({ jobId: job.jobId, error: message });
-        await updateMeetingMetadata({ transcription_status: 'failed', transcription_error: 'Transcript processing failed. The audio is preserved so you can retry.' });
+        await updateMeetingMetadata({
+          transcription_status: 'failed',
+          transcription_error:
+            'Transcript processing failed. The audio is preserved so you can retry.',
+        });
       } finally {
         transcriptionMergeInFlightRef.current.delete(job.jobId);
       }
     };
     void finish();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [api, meetingMetadata, transcriptionJob, updateMeetingMetadata]);
 
   const resetFailedMeeting = useCallback(async () => {
@@ -3520,12 +4707,19 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const commitTranscriptSegment = useCallback(
     async (segment: TranscriptSegment, speakerLabelOverride?: string) => {
       const nextText = transcriptDraftsRef.current[segment.id] ?? segment.transcript_text;
-      const nextSpeaker = speakerLabelOverride ?? transcriptSpeakerDraftsRef.current[segment.id] ?? segment.speaker_label ?? '';
-      if (nextText === segment.transcript_text && nextSpeaker === (segment.speaker_label ?? '')) return;
+      const nextSpeaker =
+        speakerLabelOverride ??
+        transcriptSpeakerDraftsRef.current[segment.id] ??
+        segment.speaker_label ??
+        '';
+      if (nextText === segment.transcript_text && nextSpeaker === (segment.speaker_label ?? ''))
+        return;
       if (!selectedNoteIdRef.current) return;
       if (!nextText.trim()) {
         setTranscriptDrafts((current) => ({ ...current, [segment.id]: segment.transcript_text }));
-        setTranscriptError('Transcript text cannot be empty. Delete the segment explicitly if you want to remove it.');
+        setTranscriptError(
+          'Transcript text cannot be empty. Delete the segment explicitly if you want to remove it.'
+        );
         return;
       }
       const noteId = selectedNoteIdRef.current;
@@ -3537,227 +4731,327 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           speaker_label: nextSpeaker.trim() || null,
         })) as TranscriptSegment;
         if (!isRenderableTranscriptSegment(updated)) {
-          throw new Error('The transcript update returned an invalid segment. The original text is still safe.');
+          throw new Error(
+            'The transcript update returned an invalid segment. The original text is still safe.'
+          );
         }
-        if (selectedNoteIdRef.current !== noteId || transcriptCommitVersionRef.current[segment.id] !== version) return;
+        if (
+          selectedNoteIdRef.current !== noteId ||
+          transcriptCommitVersionRef.current[segment.id] !== version
+        )
+          return;
         setTranscriptError(null);
         setTranscriptSegments((current) =>
           current.map((item) => (item.id === updated.id ? updated : item))
         );
         setTranscriptDrafts((current) => ({ ...current, [updated.id]: updated.transcript_text }));
       } catch (error) {
-        if (selectedNoteIdRef.current !== noteId || transcriptCommitVersionRef.current[segment.id] !== version) return;
+        if (
+          selectedNoteIdRef.current !== noteId ||
+          transcriptCommitVersionRef.current[segment.id] !== version
+        )
+          return;
         setTranscriptError(error instanceof Error ? error.message : 'Could not update transcript.');
       }
     },
     [api]
   );
 
-
-  const deleteTranscriptSegment = useCallback(async (segment: TranscriptSegment) => {
-    const noteId = selectedNoteIdRef.current;
-    if (!noteId) return;
-    try {
-      await api.deleteTranscriptSegment(noteId, segment.id);
-      if (selectedNoteIdRef.current !== noteId) return;
-      setTranscriptSegments((current) => current.filter((item) => item.id !== segment.id));
-      setDeletedTranscriptSegments((current) => [...current.filter((item) => item.id !== segment.id), segment].slice(-10));
-    } catch (error) {
-      setTranscriptError(error instanceof Error ? error.message : 'Could not delete transcript segment.');
-    }
-  }, [api]);
-
-  const restoreTranscriptSegment = useCallback(async (segment: TranscriptSegment) => {
-    const noteId = selectedNoteIdRef.current;
-    if (!noteId) return;
-    try {
-      const restored = await api.restoreTranscriptSegment(noteId, segment.id);
-      if (selectedNoteIdRef.current !== noteId) return;
-      setTranscriptSegments((current) => [...current, restored].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order));
-      setDeletedTranscriptSegments((current) => current.filter((item) => item.id !== segment.id));
-    } catch (error) {
-      setTranscriptError(error instanceof Error ? error.message : 'Could not restore transcript segment.');
-    }
-  }, [api]);
-
-  const splitTranscriptSegment = useCallback(async (segment: TranscriptSegment, position: number) => {
-    const noteId = selectedNoteIdRef.current;
-    if (!noteId || transcriptMutationRef.current) return;
-    const latest = transcriptSegments.find((item) => item.id === segment.id);
-    if (!latest) return;
-    const text = transcriptDrafts[latest.id] ?? latest.transcript_text;
-    const splitAt = Math.floor(position);
-    const firstText = text.slice(0, splitAt).trim();
-    const secondText = text.slice(splitAt).trim();
-    if (splitAt <= 0 || splitAt >= text.length || !firstText || !secondText) {
-      setTranscriptError('Place the cursor between two non-empty parts of the transcript.');
-      return;
-    }
-
-    transcriptMutationRef.current = true;
-    setTranscriptMutation('split');
-    setTranscriptError(null);
-    const original = { ...latest };
-    const duration = Math.max(0, latest.end_ms - latest.start_ms);
-    const ratio = text.length > 0 ? splitAt / text.length : 0.5;
-    const boundary = duration > 0
-      ? Math.min(latest.end_ms, Math.max(latest.start_ms, latest.start_ms + Math.round(duration * ratio)))
-      : latest.start_ms;
-    try {
-      const first = await api.updateTranscriptSegment(noteId, latest.id, {
-        transcript_text: firstText,
-        end_ms: boundary,
-        segment_order: latest.segment_order,
-      });
-      let second: TranscriptSegment;
+  const deleteTranscriptSegment = useCallback(
+    async (segment: TranscriptSegment) => {
+      const noteId = selectedNoteIdRef.current;
+      if (!noteId) return;
       try {
-        second = await api.createTranscriptSegment(noteId, {
-          audio_source: latest.audio_source,
-          speaker_label: latest.speaker_label,
-          start_ms: boundary,
-          end_ms: latest.end_ms,
-          transcript_text: secondText,
-          confidence: latest.confidence,
-          segment_order: latest.segment_order + 1,
+        await api.deleteTranscriptSegment(noteId, segment.id);
+        if (selectedNoteIdRef.current !== noteId) return;
+        setTranscriptSegments((current) => current.filter((item) => item.id !== segment.id));
+        setDeletedTranscriptSegments((current) =>
+          [...current.filter((item) => item.id !== segment.id), segment].slice(-10)
+        );
+      } catch (error) {
+        setTranscriptError(
+          error instanceof Error ? error.message : 'Could not delete transcript segment.'
+        );
+      }
+    },
+    [api]
+  );
+
+  const restoreTranscriptSegment = useCallback(
+    async (segment: TranscriptSegment) => {
+      const noteId = selectedNoteIdRef.current;
+      if (!noteId) return;
+      try {
+        const restored = await api.restoreTranscriptSegment(noteId, segment.id);
+        if (selectedNoteIdRef.current !== noteId) return;
+        setTranscriptSegments((current) =>
+          [...current, restored].sort(
+            (a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order
+          )
+        );
+        setDeletedTranscriptSegments((current) => current.filter((item) => item.id !== segment.id));
+      } catch (error) {
+        setTranscriptError(
+          error instanceof Error ? error.message : 'Could not restore transcript segment.'
+        );
+      }
+    },
+    [api]
+  );
+
+  const splitTranscriptSegment = useCallback(
+    async (segment: TranscriptSegment, position: number) => {
+      const noteId = selectedNoteIdRef.current;
+      if (!noteId || transcriptMutationRef.current) return;
+      const latest = transcriptSegments.find((item) => item.id === segment.id);
+      if (!latest) return;
+      const text = transcriptDrafts[latest.id] ?? latest.transcript_text;
+      const splitAt = Math.floor(position);
+      const firstText = text.slice(0, splitAt).trim();
+      const secondText = text.slice(splitAt).trim();
+      if (splitAt <= 0 || splitAt >= text.length || !firstText || !secondText) {
+        setTranscriptError('Place the cursor between two non-empty parts of the transcript.');
+        return;
+      }
+
+      transcriptMutationRef.current = true;
+      setTranscriptMutation('split');
+      setTranscriptError(null);
+      const original = { ...latest };
+      const duration = Math.max(0, latest.end_ms - latest.start_ms);
+      const ratio = text.length > 0 ? splitAt / text.length : 0.5;
+      const boundary =
+        duration > 0
+          ? Math.min(
+              latest.end_ms,
+              Math.max(latest.start_ms, latest.start_ms + Math.round(duration * ratio))
+            )
+          : latest.start_ms;
+      try {
+        const first = await api.updateTranscriptSegment(noteId, latest.id, {
+          transcript_text: firstText,
+          end_ms: boundary,
+          segment_order: latest.segment_order,
+        });
+        let second: TranscriptSegment;
+        try {
+          second = await api.createTranscriptSegment(noteId, {
+            audio_source: latest.audio_source,
+            speaker_label: latest.speaker_label,
+            start_ms: boundary,
+            end_ms: latest.end_ms,
+            transcript_text: secondText,
+            confidence: latest.confidence,
+            segment_order: latest.segment_order + 1,
+          });
+        } catch (error) {
+          await api
+            .updateTranscriptSegment(noteId, latest.id, {
+              transcript_text: original.transcript_text,
+              start_ms: original.start_ms,
+              end_ms: original.end_ms,
+              speaker_label: original.speaker_label,
+              segment_order: original.segment_order,
+            })
+            .catch(() => undefined);
+          throw error;
+        }
+        if (selectedNoteIdRef.current !== noteId) return;
+        setTranscriptSegments((current) =>
+          [...current.filter((item) => item.id !== latest.id), first, second].sort(
+            (a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order
+          )
+        );
+        setTranscriptDrafts((current) => ({
+          ...current,
+          [first.id]: first.transcript_text,
+          [second.id]: second.transcript_text,
+        }));
+        const undo = async () => {
+          if (transcriptMutationRef.current || selectedNoteIdRef.current !== noteId) return;
+          transcriptMutationRef.current = true;
+          setTranscriptMutation('split');
+          try {
+            const restored = await api.updateTranscriptSegment(noteId, original.id, {
+              transcript_text: original.transcript_text,
+              start_ms: original.start_ms,
+              end_ms: original.end_ms,
+              speaker_label: original.speaker_label,
+              segment_order: original.segment_order,
+            });
+            await api.deleteTranscriptSegment(noteId, second.id);
+            setTranscriptSegments((current) =>
+              [
+                ...current.filter((item) => item.id !== first.id && item.id !== second.id),
+                restored,
+              ].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order)
+            );
+            setTranscriptDrafts((current) => ({
+              ...current,
+              [restored.id]: restored.transcript_text,
+            }));
+            transcriptUndoRef.current = null;
+          } catch (error) {
+            setTranscriptError(
+              error instanceof Error ? error.message : 'Could not undo the split.'
+            );
+          } finally {
+            transcriptMutationRef.current = false;
+            setTranscriptMutation(null);
+          }
+        };
+        transcriptUndoRef.current = { noteId, undo };
+        toast.show('Segment split', {
+          variant: 'success',
+          duration: 8000,
+          actions: [{ label: 'Undo', onClick: undo }],
         });
       } catch (error) {
-        await api.updateTranscriptSegment(noteId, latest.id, {
-          transcript_text: original.transcript_text,
-          start_ms: original.start_ms,
-          end_ms: original.end_ms,
-          speaker_label: original.speaker_label,
-          segment_order: original.segment_order,
-        }).catch(() => undefined);
-        throw error;
+        setTranscriptError(
+          error instanceof Error ? error.message : 'Could not split transcript segment.'
+        );
+      } finally {
+        transcriptMutationRef.current = false;
+        setTranscriptMutation(null);
       }
-      if (selectedNoteIdRef.current !== noteId) return;
-      setTranscriptSegments((current) => [...current.filter((item) => item.id !== latest.id), first, second].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order));
-      setTranscriptDrafts((current) => ({ ...current, [first.id]: first.transcript_text, [second.id]: second.transcript_text }));
-      const undo = async () => {
-        if (transcriptMutationRef.current || selectedNoteIdRef.current !== noteId) return;
-        transcriptMutationRef.current = true;
-        setTranscriptMutation('split');
-        try {
-          const restored = await api.updateTranscriptSegment(noteId, original.id, {
-            transcript_text: original.transcript_text,
-            start_ms: original.start_ms,
-            end_ms: original.end_ms,
-            speaker_label: original.speaker_label,
-            segment_order: original.segment_order,
-          });
-          await api.deleteTranscriptSegment(noteId, second.id);
-          setTranscriptSegments((current) => [...current.filter((item) => item.id !== first.id && item.id !== second.id), restored].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order));
-          setTranscriptDrafts((current) => ({ ...current, [restored.id]: restored.transcript_text }));
-          transcriptUndoRef.current = null;
-        } catch (error) {
-          setTranscriptError(error instanceof Error ? error.message : 'Could not undo the split.');
-        } finally {
-          transcriptMutationRef.current = false;
-          setTranscriptMutation(null);
-        }
-      };
-      transcriptUndoRef.current = { noteId, undo };
-      toast.show('Segment split', { variant: 'success', duration: 8000, actions: [{ label: 'Undo', onClick: undo }] });
-    } catch (error) {
-      setTranscriptError(error instanceof Error ? error.message : 'Could not split transcript segment.');
-    } finally {
-      transcriptMutationRef.current = false;
-      setTranscriptMutation(null);
-    }
-  }, [api, toast, transcriptDrafts, transcriptSegments]);
+    },
+    [api, toast, transcriptDrafts, transcriptSegments]
+  );
 
-  const mergeTranscriptSegments = useCallback(async (segment: TranscriptSegment, next: TranscriptSegment, speakerLabelOverride?: string) => {
-    const noteId = selectedNoteIdRef.current;
-    if (!noteId || transcriptMutationRef.current) return;
-    const latest = transcriptSegments.find((item) => item.id === segment.id);
-    const latestNext = transcriptSegments.find((item) => item.id === next.id);
-    if (!latest || !latestNext) return;
-    const sameSource = latest.audio_source === latestNext.audio_source;
-    if (!sameSource) {
-      setTranscriptError('Segments from different audio sources must remain separate.');
-      return;
-    }
-    const sameSourceSegments = transcriptSegments
-      .filter((item) => item.audio_source === latest.audio_source)
-      .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order);
-    const currentIndex = sameSourceSegments.findIndex((item) => item.id === latest.id);
-    if (currentIndex < 0 || sameSourceSegments[currentIndex + 1]?.id !== latestNext.id || latestNext.end_ms < latest.start_ms) {
-      setTranscriptError('That segment is no longer the next chronological segment. Refresh the transcript and try again.');
-      return;
-    }
-    const firstSpeaker = transcriptSpeakerLabel(latest);
-    const nextSpeaker = transcriptSpeakerLabel(latestNext);
-    if (!speakerLabelOverride && firstSpeaker !== nextSpeaker) {
-      setTranscriptError('Choose which speaker label to keep before merging.');
-      return;
-    }
-    transcriptMutationRef.current = true;
-    setTranscriptMutation('merge');
-    setTranscriptError(null);
-    const original = { first: { ...latest }, next: { ...latestNext } };
-    const firstText = transcriptDrafts[latest.id] ?? latest.transcript_text;
-    const nextText = transcriptDrafts[latestNext.id] ?? latestNext.transcript_text;
-    const mergedText = mergeTranscriptText(firstText, nextText);
-    try {
-      const merged = await api.updateTranscriptSegment(noteId, latest.id, {
-        transcript_text: mergedText,
-        speaker_label: (speakerLabelOverride || firstSpeaker).trim() || null,
-        end_ms: latestNext.end_ms,
-        segment_order: latest.segment_order,
-      });
-      try {
-        await api.deleteTranscriptSegment(noteId, latestNext.id);
-      } catch (error) {
-        await api.updateTranscriptSegment(noteId, latest.id, {
-          transcript_text: original.first.transcript_text,
-          start_ms: original.first.start_ms,
-          end_ms: original.first.end_ms,
-          speaker_label: original.first.speaker_label,
-          segment_order: original.first.segment_order,
-        }).catch(() => undefined);
-        throw error;
+  const mergeTranscriptSegments = useCallback(
+    async (segment: TranscriptSegment, next: TranscriptSegment, speakerLabelOverride?: string) => {
+      const noteId = selectedNoteIdRef.current;
+      if (!noteId || transcriptMutationRef.current) return;
+      const latest = transcriptSegments.find((item) => item.id === segment.id);
+      const latestNext = transcriptSegments.find((item) => item.id === next.id);
+      if (!latest || !latestNext) return;
+      const sameSource = latest.audio_source === latestNext.audio_source;
+      if (!sameSource) {
+        setTranscriptError('Segments from different audio sources must remain separate.');
+        return;
       }
-      if (selectedNoteIdRef.current !== noteId) return;
-      setTranscriptSegments((current) => current.filter((item) => item.id !== latest.id && item.id !== latestNext.id).concat(merged).sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order));
-      setTranscriptDrafts((current) => ({ ...current, [merged.id]: merged.transcript_text }));
-      setDeletedTranscriptSegments((current) => [...current, latestNext].slice(-10));
-      const undo = async () => {
-        if (transcriptMutationRef.current || selectedNoteIdRef.current !== noteId) return;
-        transcriptMutationRef.current = true;
-        setTranscriptMutation('merge');
+      const sameSourceSegments = transcriptSegments
+        .filter((item) => item.audio_source === latest.audio_source)
+        .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order);
+      const currentIndex = sameSourceSegments.findIndex((item) => item.id === latest.id);
+      if (
+        currentIndex < 0 ||
+        sameSourceSegments[currentIndex + 1]?.id !== latestNext.id ||
+        latestNext.end_ms < latest.start_ms
+      ) {
+        setTranscriptError(
+          'That segment is no longer the next chronological segment. Refresh the transcript and try again.'
+        );
+        return;
+      }
+      const firstSpeaker = transcriptSpeakerLabel(latest);
+      const nextSpeaker = transcriptSpeakerLabel(latestNext);
+      if (!speakerLabelOverride && firstSpeaker !== nextSpeaker) {
+        setTranscriptError('Choose which speaker label to keep before merging.');
+        return;
+      }
+      transcriptMutationRef.current = true;
+      setTranscriptMutation('merge');
+      setTranscriptError(null);
+      const original = { first: { ...latest }, next: { ...latestNext } };
+      const firstText = transcriptDrafts[latest.id] ?? latest.transcript_text;
+      const nextText = transcriptDrafts[latestNext.id] ?? latestNext.transcript_text;
+      const mergedText = mergeTranscriptText(firstText, nextText);
+      try {
+        const merged = await api.updateTranscriptSegment(noteId, latest.id, {
+          transcript_text: mergedText,
+          speaker_label: (speakerLabelOverride || firstSpeaker).trim() || null,
+          end_ms: latestNext.end_ms,
+          segment_order: latest.segment_order,
+        });
         try {
-          const restoredFirst = await api.updateTranscriptSegment(noteId, original.first.id, {
-            transcript_text: original.first.transcript_text,
-            start_ms: original.first.start_ms,
-            end_ms: original.first.end_ms,
-            speaker_label: original.first.speaker_label,
-            segment_order: original.first.segment_order,
-          });
-          const restoredNext = await api.restoreTranscriptSegment(noteId, original.next.id);
-          setTranscriptSegments((current) => [...current.filter((item) => item.id !== original.first.id && item.id !== original.next.id), restoredFirst, restoredNext].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order));
-          setTranscriptDrafts((current) => ({ ...current, [restoredFirst.id]: restoredFirst.transcript_text, [restoredNext.id]: restoredNext.transcript_text }));
-          setDeletedTranscriptSegments((current) => current.filter((item) => item.id !== original.next.id));
-          transcriptUndoRef.current = null;
+          await api.deleteTranscriptSegment(noteId, latestNext.id);
         } catch (error) {
-          setTranscriptError(error instanceof Error ? error.message : 'Could not undo the merge.');
-        } finally {
-          transcriptMutationRef.current = false;
-          setTranscriptMutation(null);
+          await api
+            .updateTranscriptSegment(noteId, latest.id, {
+              transcript_text: original.first.transcript_text,
+              start_ms: original.first.start_ms,
+              end_ms: original.first.end_ms,
+              speaker_label: original.first.speaker_label,
+              segment_order: original.first.segment_order,
+            })
+            .catch(() => undefined);
+          throw error;
         }
-      };
-      transcriptUndoRef.current = { noteId, undo };
-      toast.show('Segments merged', { variant: 'success', duration: 8000, actions: [{ label: 'Undo', onClick: undo }] });
-    } catch (error) {
-      setTranscriptError(error instanceof Error ? error.message : 'Could not merge transcript segments.');
-    } finally {
-      transcriptMutationRef.current = false;
-      setTranscriptMutation(null);
-    }
-  }, [api, toast, transcriptDrafts, transcriptSegments]);
+        if (selectedNoteIdRef.current !== noteId) return;
+        setTranscriptSegments((current) =>
+          current
+            .filter((item) => item.id !== latest.id && item.id !== latestNext.id)
+            .concat(merged)
+            .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order)
+        );
+        setTranscriptDrafts((current) => ({ ...current, [merged.id]: merged.transcript_text }));
+        setDeletedTranscriptSegments((current) => [...current, latestNext].slice(-10));
+        const undo = async () => {
+          if (transcriptMutationRef.current || selectedNoteIdRef.current !== noteId) return;
+          transcriptMutationRef.current = true;
+          setTranscriptMutation('merge');
+          try {
+            const restoredFirst = await api.updateTranscriptSegment(noteId, original.first.id, {
+              transcript_text: original.first.transcript_text,
+              start_ms: original.first.start_ms,
+              end_ms: original.first.end_ms,
+              speaker_label: original.first.speaker_label,
+              segment_order: original.first.segment_order,
+            });
+            const restoredNext = await api.restoreTranscriptSegment(noteId, original.next.id);
+            setTranscriptSegments((current) =>
+              [
+                ...current.filter(
+                  (item) => item.id !== original.first.id && item.id !== original.next.id
+                ),
+                restoredFirst,
+                restoredNext,
+              ].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order)
+            );
+            setTranscriptDrafts((current) => ({
+              ...current,
+              [restoredFirst.id]: restoredFirst.transcript_text,
+              [restoredNext.id]: restoredNext.transcript_text,
+            }));
+            setDeletedTranscriptSegments((current) =>
+              current.filter((item) => item.id !== original.next.id)
+            );
+            transcriptUndoRef.current = null;
+          } catch (error) {
+            setTranscriptError(
+              error instanceof Error ? error.message : 'Could not undo the merge.'
+            );
+          } finally {
+            transcriptMutationRef.current = false;
+            setTranscriptMutation(null);
+          }
+        };
+        transcriptUndoRef.current = { noteId, undo };
+        toast.show('Segments merged', {
+          variant: 'success',
+          duration: 8000,
+          actions: [{ label: 'Undo', onClick: undo }],
+        });
+      } catch (error) {
+        setTranscriptError(
+          error instanceof Error ? error.message : 'Could not merge transcript segments.'
+        );
+      } finally {
+        transcriptMutationRef.current = false;
+        setTranscriptMutation(null);
+      }
+    },
+    [api, toast, transcriptDrafts, transcriptSegments]
+  );
 
   const clearMeetingTranscript = useCallback(async () => {
     const noteId = selectedNoteIdRef.current;
-    if (!noteId || !isMeetingNote || !window.confirm('Clear this transcript? This cannot be undone.')) {
+    if (
+      !noteId ||
+      !isMeetingNote ||
+      !window.confirm('Clear this transcript? This cannot be undone.')
+    ) {
       return;
     }
     setMeetingBusyAction('clear-transcript');
@@ -3774,69 +5068,167 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
   }, [api, isMeetingNote]);
 
-  const exportMeetingNote = useCallback((format: 'txt' | 'md' | 'json' | 'html', includeTranscript = true) => {
-    if (!selectedNote || !meetingMetadata) return;
-    const title = draftTitle.trim() || selectedNote.title || 'Meeting notes';
-    const transcript = includeTranscript ? transcriptSegments.map((segment) => ({
-      speaker: segment.speaker_label || (segment.audio_source === 'user_microphone' ? 'You' : 'Meeting'),
-      source: segment.audio_source,
-      timestamp: formatTranscriptTimestamp(segment.start_ms),
-      text: segment.transcript_text,
-    })) : [];
-    const payload = { title, scheduled_start: meetingMetadata.scheduled_start_at, scheduled_end: meetingMetadata.scheduled_end_at, actual_start: meetingMetadata.meeting_start_at, actual_end: meetingMetadata.meeting_end_at, duration_seconds: meetingMetadata.duration_seconds, attendees: meetingMetadata.attendees, notes_html: draftContent, transcript };
-    const text = format === 'json'
-      ? JSON.stringify(payload, null, 2)
-      : format === 'md'
-      ? [`# ${title}`, '', meetingMetadata.scheduled_start_at ? `Scheduled: ${formatCompactDateTime(meetingMetadata.scheduled_start_at)}` : '', meetingMetadata.attendees?.length ? `Attendees: ${meetingMetadata.attendees.join(', ')}` : '', '', '## Notes', htmlToPlainText(draftContent), ...(transcript.length ? ['', '## Transcript', ...transcript.map((row) => `**${row.speaker}** · ${row.timestamp}\n\n${row.text}`)] : [])].filter(Boolean).join('\n')
-      : [title, '', htmlToPlainText(draftContent), ...(transcript.length ? ['', 'Transcript', ...transcript.map((row) => `${row.timestamp} · ${row.speaker}: ${row.text}`)] : [])].filter(Boolean).join('\n');
-    const body = format === 'html' ? `<!doctype html><meta charset="utf-8"><title>${title}</title><article><h1>${title}</h1><p>${htmlToPlainText(draftContent).replace(/\n/g, '<br>')}</p>${transcript.length ? `<h2>Transcript</h2>${transcript.map((row) => `<p><strong>${row.speaker}</strong> · ${row.timestamp}<br>${row.text}</p>`).join('')}` : ''}</article>` : text;
-    const blob = new Blob([body], { type: format === 'json' ? 'application/json' : format === 'html' ? 'text/html' : 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${safeMeetingExportName(title)}.${format}`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }, [draftContent, draftTitle, meetingMetadata, selectedNote, transcriptSegments]);
+  const exportMeetingNote = useCallback(
+    (format: 'txt' | 'md' | 'json' | 'html', includeTranscript = true) => {
+      if (!selectedNote || !meetingMetadata) return;
+      const title = draftTitle.trim() || selectedNote.title || 'Meeting notes';
+      const transcript = includeTranscript
+        ? transcriptSegments.map((segment) => ({
+            speaker:
+              segment.speaker_label ||
+              (segment.audio_source === 'user_microphone' ? 'You' : 'Meeting'),
+            source: segment.audio_source,
+            timestamp: formatTranscriptTimestamp(segment.start_ms),
+            text: segment.transcript_text,
+          }))
+        : [];
+      const payload = {
+        title,
+        scheduled_start: meetingMetadata.scheduled_start_at,
+        scheduled_end: meetingMetadata.scheduled_end_at,
+        actual_start: meetingMetadata.meeting_start_at,
+        actual_end: meetingMetadata.meeting_end_at,
+        duration_seconds: meetingMetadata.duration_seconds,
+        attendees: meetingMetadata.attendees,
+        notes_html: draftContent,
+        transcript,
+      };
+      const text =
+        format === 'json'
+          ? JSON.stringify(payload, null, 2)
+          : format === 'md'
+          ? [
+              `# ${title}`,
+              '',
+              meetingMetadata.scheduled_start_at
+                ? `Scheduled: ${formatCompactDateTime(meetingMetadata.scheduled_start_at)}`
+                : '',
+              meetingMetadata.attendees?.length
+                ? `Attendees: ${meetingMetadata.attendees.join(', ')}`
+                : '',
+              '',
+              '## Notes',
+              htmlToPlainText(draftContent),
+              ...(transcript.length
+                ? [
+                    '',
+                    '## Transcript',
+                    ...transcript.map(
+                      (row) => `**${row.speaker}** · ${row.timestamp}\n\n${row.text}`
+                    ),
+                  ]
+                : []),
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : [
+              title,
+              '',
+              htmlToPlainText(draftContent),
+              ...(transcript.length
+                ? [
+                    '',
+                    'Transcript',
+                    ...transcript.map((row) => `${row.timestamp} · ${row.speaker}: ${row.text}`),
+                  ]
+                : []),
+            ]
+              .filter(Boolean)
+              .join('\n');
+      const body =
+        format === 'html'
+          ? `<!doctype html><meta charset="utf-8"><title>${title}</title><article><h1>${title}</h1><p>${htmlToPlainText(
+              draftContent
+            ).replace(/\n/g, '<br>')}</p>${
+              transcript.length
+                ? `<h2>Transcript</h2>${transcript
+                    .map(
+                      (row) =>
+                        `<p><strong>${row.speaker}</strong> · ${row.timestamp}<br>${row.text}</p>`
+                    )
+                    .join('')}`
+                : ''
+            }</article>`
+          : text;
+      const blob = new Blob([body], {
+        type:
+          format === 'json' ? 'application/json' : format === 'html' ? 'text/html' : 'text/plain',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${safeMeetingExportName(title)}.${format}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+    [draftContent, draftTitle, meetingMetadata, selectedNote, transcriptSegments]
+  );
 
-  const deleteRetainedAudio = useCallback(async (source?: 'user_microphone' | 'system_audio') => {
-    const sessionId = meetingAudioSessionId;
-    if (!sessionId || !window.meetingAudio?.deleteAudio) return;
-    const label = source === 'user_microphone' ? 'microphone audio' : source === 'system_audio' ? 'system audio' : 'all retained audio';
-    if (!window.confirm(`Delete ${label}? The transcript will be preserved.`)) return;
-    try {
-      await window.meetingAudio.deleteAudio({ sessionId, source });
-      setAudioCaptureStatus((current) => current ? { ...current, sources: source ? current.sources.filter((item) => item.source !== source) : [], chunkCount: source ? current.chunkCount : 0 } : current);
-      const inspection = await window.meetingAudio.inspect(sessionId) as RecordingRecovery;
-      if (inspection.noteId === selectedNoteIdRef.current && inspection.workspaceId === activeWorkspaceId) {
-        setAudioSessionInspection(inspection);
+  const deleteRetainedAudio = useCallback(
+    async (source?: 'user_microphone' | 'system_audio') => {
+      const sessionId = meetingAudioSessionId;
+      if (!sessionId || !window.meetingAudio?.deleteAudio) return;
+      const label =
+        source === 'user_microphone'
+          ? 'microphone audio'
+          : source === 'system_audio'
+          ? 'system audio'
+          : 'all retained audio';
+      if (!window.confirm(`Delete ${label}? The transcript will be preserved.`)) return;
+      try {
+        await window.meetingAudio.deleteAudio({ sessionId, source });
+        setAudioCaptureStatus((current) =>
+          current
+            ? {
+                ...current,
+                sources: source ? current.sources.filter((item) => item.source !== source) : [],
+                chunkCount: source ? current.chunkCount : 0,
+              }
+            : current
+        );
+        const inspection = (await window.meetingAudio.inspect(sessionId)) as RecordingRecovery;
+        if (
+          inspection.noteId === selectedNoteIdRef.current &&
+          inspection.workspaceId === activeWorkspaceId
+        ) {
+          setAudioSessionInspection(inspection);
+        }
+      } catch (error) {
+        setAudioError(error instanceof Error ? error.message : 'Could not delete retained audio.');
       }
-    } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not delete retained audio.');
-    }
-  }, [activeWorkspaceId, meetingAudioSessionId]);
+    },
+    [activeWorkspaceId, meetingAudioSessionId]
+  );
 
-  const playRetainedAudio = useCallback(async (source: 'user_microphone' | 'system_audio') => {
-    const sessionId = meetingAudioSessionId;
-    if (!sessionId || !window.meetingAudio?.play) return;
-    try { await window.meetingAudio.play({ sessionId, source }); }
-    catch (error) { setAudioError(error instanceof Error ? error.message : 'Could not open retained audio.'); }
-  }, [meetingAudioSessionId]);
+  const playRetainedAudio = useCallback(
+    async (source: 'user_microphone' | 'system_audio') => {
+      const sessionId = meetingAudioSessionId;
+      if (!sessionId || !window.meetingAudio?.play) return;
+      try {
+        await window.meetingAudio.play({ sessionId, source });
+      } catch (error) {
+        setAudioError(error instanceof Error ? error.message : 'Could not open retained audio.');
+      }
+    },
+    [meetingAudioSessionId]
+  );
 
   const revealRetainedAudio = useCallback(async () => {
     if (!meetingAudioSessionId || !window.meetingAudio?.reveal) return;
     try {
       await window.meetingAudio.reveal({ sessionId: meetingAudioSessionId });
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not reveal the recording folder.');
+      setAudioError(
+        error instanceof Error ? error.message : 'Could not reveal the recording folder.'
+      );
     }
   }, [meetingAudioSessionId]);
 
   const stopAndDiscardRecordingForNote = useCallback(async (noteId: string) => {
     if (!window.meetingAudio) return;
-    const status = await window.meetingAudio.status() as MeetingAudioStatus;
+    const status = (await window.meetingAudio.status()) as MeetingAudioStatus;
     if (status.noteId !== noteId || !['recording', 'paused'].includes(status.state)) return;
-    const stopped = await window.meetingAudio.stop() as MeetingAudioStatus;
+    const stopped = (await window.meetingAudio.stop()) as MeetingAudioStatus;
     if (stopped.sessionId) await window.meetingAudio.discardRecovery(stopped.sessionId);
   }, []);
 
@@ -3898,14 +5290,24 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       setIsDeleting(false);
       closeNoteContextMenu();
     }
-  }, [api, clearSidebarSelection, closeNoteContextMenu, notes, selectedNoteIds, stopAndDiscardRecordingForNote, syncDraftFromNote]);
+  }, [
+    api,
+    clearSidebarSelection,
+    closeNoteContextMenu,
+    notes,
+    selectedNoteIds,
+    stopAndDiscardRecordingForNote,
+    syncDraftFromNote,
+  ]);
 
   const refreshTemplates = useCallback(async () => {
     try {
       const data = await api.getTemplates();
       const templates = Array.isArray(data) ? (data as NotesHomeTemplate[]) : [];
       setWorkspaceTemplates(
-        activeWorkspace?.is_personal ? templates.filter((template) => !isTeamOrientedTemplate(template)) : templates
+        activeWorkspace?.is_personal
+          ? templates.filter((template) => !isTeamOrientedTemplate(template))
+          : templates
       );
     } catch (e) {
       console.error('Failed to load templates:', e);
@@ -4697,7 +6099,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               return {
                 microphone_enabled: true,
                 system_audio_enabled: true,
-                audio_retention: localStorage.getItem('ledger.meeting.default-retention') === 'retain' ? 'retain' as const : 'delete_after_transcription' as const,
+                audio_retention:
+                  localStorage.getItem('ledger.meeting.default-retention') === 'retain'
+                    ? ('retain' as const)
+                    : ('delete_after_transcription' as const),
               };
             } catch {
               return { microphone_enabled: true, system_audio_enabled: true };
@@ -4705,10 +6110,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           })(),
         })) as NoteRow;
         setNotes((prev) => [created, ...prev]);
-        setNoteTree((prev) => [
-          { ...created, depth: created.depth ?? 0, children: [] },
-          ...prev,
-        ]);
+        setNoteTree((prev) => [{ ...created, depth: created.depth ?? 0, children: [] }, ...prev]);
         setSelectedNoteId(created.id);
         setSelectedNoteIds([created.id]);
         selectionAnchorNoteIdRef.current = created.id;
@@ -5538,31 +6940,68 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   useEffect(() => {
     let cancelled = false;
-    if (!activeWorkspaceId) { setUpcomingMeetings([]); return () => { cancelled = true; }; }
-    void api.getUpcomingEvents({ scope: 'current_workspace' }).then((rows) => {
-      if (!cancelled) setUpcomingMeetings(Array.isArray(rows) ? rows.slice(0, 5) as NotesHomeUpcomingMeeting[] : []);
-    }).catch(() => { if (!cancelled) setUpcomingMeetings([]); });
-    return () => { cancelled = true; };
+    if (!activeWorkspaceId) {
+      setUpcomingMeetings([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void api
+      .getUpcomingEvents({ scope: 'current_workspace' })
+      .then((rows) => {
+        if (!cancelled)
+          setUpcomingMeetings(
+            Array.isArray(rows) ? (rows.slice(0, 5) as NotesHomeUpcomingMeeting[]) : []
+          );
+      })
+      .catch(() => {
+        if (!cancelled) setUpcomingMeetings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [activeWorkspaceId, api]);
 
-  const createMeetingNoteFromUpcoming = useCallback(async (event: NotesHomeUpcomingMeeting) => {
-    try {
-      let retention: 'delete_after_transcription' | 'retain' = 'delete_after_transcription';
-      try { if (localStorage.getItem('ledger.meeting.default-retention') === 'retain') retention = 'retain'; } catch {}
-      const result = (await api.createMeetingNoteFromCalendar({ event_id: event.id, audio_retention: retention })) as { note?: NoteRow; existing?: boolean };
-      if (result.note) {
-        if (result.existing) setError('This event already has Meeting Notes. Opening the existing note.');
-        await openNote(result.note);
-        setUpcomingMeetings((current) => current.map((item) => item.id === event.id ? { ...item, note_id: result.note!.id, note_title: result.note!.title } : item));
+  const createMeetingNoteFromUpcoming = useCallback(
+    async (event: NotesHomeUpcomingMeeting) => {
+      try {
+        let retention: 'delete_after_transcription' | 'retain' = 'delete_after_transcription';
+        try {
+          if (localStorage.getItem('ledger.meeting.default-retention') === 'retain')
+            retention = 'retain';
+        } catch {}
+        const result = (await api.createMeetingNoteFromCalendar({
+          event_id: event.id,
+          audio_retention: retention,
+        })) as { note?: NoteRow; existing?: boolean };
+        if (result.note) {
+          if (result.existing)
+            setError('This event already has Meeting Notes. Opening the existing note.');
+          await openNote(result.note);
+          setUpcomingMeetings((current) =>
+            current.map((item) =>
+              item.id === event.id
+                ? { ...item, note_id: result.note!.id, note_title: result.note!.title }
+                : item
+            )
+          );
+        }
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : 'Could not create meeting notes from this event.'
+        );
       }
-    } catch (error) { setError(error instanceof Error ? error.message : 'Could not create meeting notes from this event.'); }
-  }, [api, openNote]);
+    },
+    [api, openNote]
+  );
 
   const openUpcomingCalendarEvent = useCallback((event: NotesHomeUpcomingMeeting) => {
     if (event.note_id) {
       void window.desktopWindow?.toggleModule('notes', { focusNoteId: event.note_id });
     } else {
-      void window.desktopWindow?.toggleModule('calendar', { focusContext: `focus-event:${event.id}` });
+      void window.desktopWindow?.toggleModule('calendar', {
+        focusContext: `focus-event:${event.id}`,
+      });
     }
   }, []);
 
@@ -5788,7 +7227,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     ) => {
       if (payload?.kind !== 'notes' || !payload.focusNoteId) return;
       const localNavigation = localNoteNavigationRef.current;
-      if (localNavigation && Date.now() - localNavigation.at < 1500 && localNavigation.noteId !== payload.focusNoteId) {
+      if (
+        localNavigation &&
+        Date.now() - localNavigation.at < 1500 &&
+        localNavigation.noteId !== payload.focusNoteId
+      ) {
         // A late route broadcast for the previously open meeting must not
         // undo a user's click on another note.
         return;
@@ -5899,7 +7342,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   return (
     <div
-          className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
+      className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <CloseGuardModal
@@ -5962,7 +7405,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               icon={<Bell size={12} />}
               count={notificationCount}
               notificationTrayToggle
-              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))
+              }
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
@@ -6443,7 +7888,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                               className="shrink-0 text-[var(--ledger-text-muted)]"
                                             />
                                           ) : (
-                                            <NoteTypeIcon mode={note.mode} source={note.source} size={12} />
+                                            <NoteTypeIcon
+                                              mode={note.mode}
+                                              source={note.source}
+                                              size={12}
+                                            />
                                           )}
                                           <div className="min-w-0 flex-1">
                                             {renamingNoteId === note.id ? (
@@ -6549,7 +7998,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                                 } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                               >
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                  <NoteTypeIcon mode={note.mode} source={note.source} size={11} />
+                                                  <NoteTypeIcon
+                                                    mode={note.mode}
+                                                    source={note.source}
+                                                    size={11}
+                                                  />
                                                   <p className="font-medium truncate leading-5">
                                                     {child.title || 'Untitled'}
                                                   </p>
@@ -6583,7 +8036,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
                     {notes.length === 0 && (
                       <div className="flex items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2.5">
-                        <StickyNote size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                        <StickyNote
+                          size={15}
+                          className="shrink-0 text-[var(--ledger-text-muted)]"
+                        />
                         <div className="min-w-0">
                           <p className="text-xs font-medium text-[var(--ledger-text-primary)]">
                             No notes yet
@@ -6696,7 +8152,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                             className="shrink-0 text-[var(--ledger-text-muted)]"
                                           />
                                         ) : (
-                                          <NoteTypeIcon mode={note.mode} source={note.source} size={13} />
+                                          <NoteTypeIcon
+                                            mode={note.mode}
+                                            source={note.source}
+                                            size={13}
+                                          />
                                         )}
                                         <div className="min-w-0 flex-1">
                                           {renamingNoteId === note.id ? (
@@ -6795,7 +8255,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                                   : 'bg-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
                                               } ${getDropPreviewClasses(dropPreview, child.id)}`}
                                             >
-                                              <NoteTypeIcon mode={child.mode} source={child.source} size={12} />
+                                              <NoteTypeIcon
+                                                mode={child.mode}
+                                                source={child.source}
+                                                size={12}
+                                              />
                                               <div className="min-w-0 flex-1">
                                                 {renamingNoteId === child.id ? (
                                                   <input
@@ -7097,7 +8561,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       placeholder="Untitled note"
                       className="block w-full bg-transparent py-1.5 text-4xl font-semibold leading-tight tracking-tight text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] focus:outline-none"
                     />
-                    <div className="flex shrink-0 items-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5" aria-label="Note view">
+                    <div
+                      className="flex shrink-0 items-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5"
+                      aria-label="Note view"
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -7109,12 +8576,16 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           }
                         }}
                         className={`flex h-7 w-8 items-center justify-center rounded-md ${
-                          (!isMeetingNote || meetingCenterView === 'write') && draftMode !== 'mind_map'
+                          (!isMeetingNote || meetingCenterView === 'write') &&
+                          draftMode !== 'mind_map'
                             ? 'bg-[var(--ledger-accent)] text-white'
                             : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
                         }`}
                         aria-label="Write"
-                        aria-pressed={(!isMeetingNote || meetingCenterView === 'write') && draftMode !== 'mind_map'}
+                        aria-pressed={
+                          (!isMeetingNote || meetingCenterView === 'write') &&
+                          draftMode !== 'mind_map'
+                        }
                         title="Write"
                       >
                         <PenLine size={14} />
@@ -7168,7 +8639,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   </div>
                   {isMeetingNote && meetingCenterView === 'transcript' && (
                     <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5">
-                      <div className={`flex items-center gap-1.5 text-xs font-medium ${meetingStatusTone(meetingMetadata?.transcription_status)}`}>
+                      <div
+                        className={`flex items-center gap-1.5 text-xs font-medium ${meetingStatusTone(
+                          meetingMetadata?.transcription_status
+                        )}`}
+                      >
                         {meetingMetadata?.transcription_status === 'recording' ? (
                           <CircleDot size={13} />
                         ) : meetingMetadata?.transcription_status === 'processing' ? (
@@ -7189,7 +8664,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <button
                           type="button"
                           onClick={() => void startMeeting()}
-                          disabled={meetingMetadata?.transcription_status !== 'idle' || Boolean(meetingBusyAction)}
+                          disabled={
+                            meetingMetadata?.transcription_status !== 'idle' ||
+                            Boolean(meetingBusyAction)
+                          }
                           className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[var(--ledger-accent)] text-white disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Start audio capture"
                           title="Start audio capture"
@@ -7199,7 +8677,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <button
                           type="button"
                           onClick={() => void pauseMeeting()}
-                          disabled={meetingMetadata?.transcription_status !== 'recording' || Boolean(meetingBusyAction)}
+                          disabled={
+                            meetingMetadata?.transcription_status !== 'recording' ||
+                            Boolean(meetingBusyAction)
+                          }
                           className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Pause audio capture"
                           title="Pause audio capture"
@@ -7209,7 +8690,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <button
                           type="button"
                           onClick={() => void resumeMeeting()}
-                          disabled={meetingMetadata?.transcription_status !== 'paused' || Boolean(meetingBusyAction)}
+                          disabled={
+                            meetingMetadata?.transcription_status !== 'paused' ||
+                            Boolean(meetingBusyAction)
+                          }
                           className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Resume audio capture"
                           title="Resume audio capture"
@@ -7219,7 +8703,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <button
                           type="button"
                           onClick={() => void stopMeeting()}
-                          disabled={!['recording', 'paused'].includes(meetingMetadata?.transcription_status ?? '') || Boolean(meetingBusyAction)}
+                          disabled={
+                            !['recording', 'paused'].includes(
+                              meetingMetadata?.transcription_status ?? ''
+                            ) || Boolean(meetingBusyAction)
+                          }
                           className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Stop audio capture"
                           title="Stop audio capture and mark the meeting as processing"
@@ -7228,93 +8716,197 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         </button>
                       </div>
                       <div className="ml-auto flex items-center gap-3 text-[10px] text-[var(--ledger-text-muted)]">
-                        <span className="inline-flex items-center gap-1.5" title="Microphone status">
+                        <span
+                          className="inline-flex items-center gap-1.5"
+                          title="Microphone status"
+                        >
                           <button
                             type="button"
                             onClick={() => void toggleMeetingSource('microphone_enabled')}
-                            disabled={meetingMetadata?.transcription_status !== 'idle' || Boolean(meetingBusyAction)}
+                            disabled={
+                              meetingMetadata?.transcription_status !== 'idle' ||
+                              Boolean(meetingBusyAction)
+                            }
                             className="inline-flex items-center gap-1 rounded px-1 py-1 hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                             aria-pressed={meetingMetadata?.microphone_enabled === true}
-                            title={meetingMetadata?.microphone_enabled ? 'Turn microphone off' : 'Turn microphone on'}
+                            title={
+                              meetingMetadata?.microphone_enabled
+                                ? 'Turn microphone off'
+                                : 'Turn microphone on'
+                            }
                           >
-                            <Mic size={11} /> {meetingMetadata?.microphone_enabled ? 'Mic on' : 'Mic off'}
+                            <Mic size={11} />{' '}
+                            {meetingMetadata?.microphone_enabled ? 'Mic on' : 'Mic off'}
                           </button>
-                          {meetingMetadata?.microphone_enabled && meetingMetadata.transcription_status === 'idle' && audioDevices.devices.length > 0 && (
-                            <select
-                              value={selectedMicrophoneId ?? ''}
-                              onChange={(event) => {
-                                const value = event.target.value || null;
-                                setSelectedMicrophoneId(value);
-                                try {
-                                  if (value) window.localStorage.setItem('ledger.meeting.microphone-device', value);
-                                  else window.localStorage.removeItem('ledger.meeting.microphone-device');
-                                } catch {}
-                                const device = audioDevices.devices.find((item) => item.id === value);
-                                setAudioDeviceWarning(device?.isBluetooth && audioDevices.outputDevice?.isBluetooth
-                                  ? 'Headphone audio quality may decrease when using this Bluetooth microphone.'
-                                  : null);
+                          {meetingMetadata?.microphone_enabled &&
+                            meetingMetadata.transcription_status === 'idle' &&
+                            audioDevices.devices.length > 0 && (
+                              <select
+                                value={selectedMicrophoneId ?? ''}
+                                onChange={(event) => {
+                                  const value = event.target.value || null;
+                                  setSelectedMicrophoneId(value);
+                                  try {
+                                    if (value)
+                                      window.localStorage.setItem(
+                                        'ledger.meeting.microphone-device',
+                                        value
+                                      );
+                                    else
+                                      window.localStorage.removeItem(
+                                        'ledger.meeting.microphone-device'
+                                      );
+                                  } catch {}
+                                  const device = audioDevices.devices.find(
+                                    (item) => item.id === value
+                                  );
+                                  setAudioDeviceWarning(
+                                    device?.isBluetooth && audioDevices.outputDevice?.isBluetooth
+                                      ? 'Headphone audio quality may decrease when using this Bluetooth microphone.'
+                                      : null
+                                  );
+                                }}
+                                className="max-w-28 truncate rounded bg-transparent px-0.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] outline-none"
+                                aria-label="Select microphone"
+                                title={selectedMicrophone?.name || 'Select microphone'}
+                              >
+                                {audioDevices.devices.map((device) => (
+                                  <option key={device.id} value={device.id}>
+                                    {device.name}
+                                    {device.isBluetooth ? ' · Bluetooth' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          <span
+                            className="h-1.5 w-8 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]"
+                            aria-label="Microphone level"
+                          >
+                            <span
+                              className={`block h-full rounded-full transition-[width] ${
+                                audioCaptureStatus?.sources.some(
+                                  (item) => item.source === 'user_microphone' && item.active
+                                )
+                                  ? 'bg-emerald-500'
+                                  : 'bg-[var(--ledger-text-muted)]'
+                              }`}
+                              style={{
+                                width: `${Math.round((audioLevels.user_microphone || 0) * 100)}%`,
                               }}
-                              className="max-w-28 truncate rounded bg-transparent px-0.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] outline-none"
-                              aria-label="Select microphone"
-                              title={selectedMicrophone?.name || 'Select microphone'}
-                            >
-                              {audioDevices.devices.map((device) => <option key={device.id} value={device.id}>{device.name}{device.isBluetooth ? ' · Bluetooth' : ''}</option>)}
-                            </select>
-                          )}
-                          <span className="h-1.5 w-8 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]" aria-label="Microphone level">
-                            <span className={`block h-full rounded-full transition-[width] ${audioCaptureStatus?.sources.some((item) => item.source === 'user_microphone' && item.active) ? 'bg-emerald-500' : 'bg-[var(--ledger-text-muted)]'}`} style={{ width: `${Math.round((audioLevels.user_microphone || 0) * 100)}%` }} />
+                            />
                           </span>
                         </span>
-                        <span className="inline-flex items-center gap-1.5" title="System audio status">
+                        <span
+                          className="inline-flex items-center gap-1.5"
+                          title="System audio status"
+                        >
                           <button
                             type="button"
                             onClick={() => void toggleMeetingSource('system_audio_enabled')}
-                            disabled={meetingMetadata?.transcription_status !== 'idle' || Boolean(meetingBusyAction)}
+                            disabled={
+                              meetingMetadata?.transcription_status !== 'idle' ||
+                              Boolean(meetingBusyAction)
+                            }
                             className="inline-flex items-center gap-1 rounded px-1 py-1 hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                             aria-pressed={meetingMetadata?.system_audio_enabled === true}
-                            title={meetingMetadata?.system_audio_enabled ? 'Turn system audio off' : 'Turn system audio on'}
+                            title={
+                              meetingMetadata?.system_audio_enabled
+                                ? 'Turn system audio off'
+                                : 'Turn system audio on'
+                            }
                           >
-                            <Volume2 size={11} /> {meetingMetadata?.system_audio_enabled ? 'System audio on' : 'System audio off'}
+                            <Volume2 size={11} />{' '}
+                            {meetingMetadata?.system_audio_enabled
+                              ? 'System audio on'
+                              : 'System audio off'}
                           </button>
-                          <span className="h-1.5 w-8 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]" aria-label="System audio level">
-                            <span className={`block h-full rounded-full transition-[width] ${audioCaptureStatus?.sources.some((item) => item.source === 'system_audio' && item.active) ? 'bg-emerald-500' : 'bg-[var(--ledger-text-muted)]'}`} style={{ width: `${Math.round((audioLevels.system_audio || 0) * 100)}%` }} />
+                          <span
+                            className="h-1.5 w-8 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]"
+                            aria-label="System audio level"
+                          >
+                            <span
+                              className={`block h-full rounded-full transition-[width] ${
+                                audioCaptureStatus?.sources.some(
+                                  (item) => item.source === 'system_audio' && item.active
+                                )
+                                  ? 'bg-emerald-500'
+                                  : 'bg-[var(--ledger-text-muted)]'
+                              }`}
+                              style={{
+                                width: `${Math.round((audioLevels.system_audio || 0) * 100)}%`,
+                              }}
+                            />
                           </span>
                         </span>
                       </div>
-                      {meetingMetadata?.microphone_enabled && meetingMetadata.transcription_status === 'idle' && (bluetoothMicWarning || audioDeviceWarning) && (
-                        <div className="flex w-full items-center gap-2 rounded-md bg-amber-50 px-2 py-1.5 text-[10px] text-amber-800" role="status">
-                          <AlertCircle size={12} className="shrink-0" />
-                          <span className="min-w-0 flex-1">Headphone audio quality may decrease. Using this Bluetooth headset microphone can switch playback into a lower-quality call mode.</span>
-                          {audioDevices.devices.some((device) => !device.isBluetooth) && (
-                            <button type="button" onClick={() => {
-                              const safer = audioDevices.devices.find((device) => !device.isBluetooth);
-                              if (!safer) return;
-                              setSelectedMicrophoneId(safer.id);
-                              try { window.localStorage.setItem('ledger.meeting.microphone-device', safer.id); } catch {}
-                              setAudioDeviceWarning(null);
-                            }} className="shrink-0 font-medium underline underline-offset-2">Use Mac microphone</button>
-                          )}
-                        </div>
-                      )}
+                      {meetingMetadata?.microphone_enabled &&
+                        meetingMetadata.transcription_status === 'idle' &&
+                        (bluetoothMicWarning || audioDeviceWarning) && (
+                          <div
+                            className="flex w-full items-center gap-2 rounded-md bg-amber-50 px-2 py-1.5 text-[10px] text-amber-800"
+                            role="status"
+                          >
+                            <AlertCircle size={12} className="shrink-0" />
+                            <span className="min-w-0 flex-1">
+                              Headphone audio quality may decrease. Using this Bluetooth headset
+                              microphone can switch playback into a lower-quality call mode.
+                            </span>
+                            {audioDevices.devices.some((device) => !device.isBluetooth) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const safer = audioDevices.devices.find(
+                                    (device) => !device.isBluetooth
+                                  );
+                                  if (!safer) return;
+                                  setSelectedMicrophoneId(safer.id);
+                                  try {
+                                    window.localStorage.setItem(
+                                      'ledger.meeting.microphone-device',
+                                      safer.id
+                                    );
+                                  } catch {}
+                                  setAudioDeviceWarning(null);
+                                }}
+                                className="shrink-0 font-medium underline underline-offset-2"
+                              >
+                                Use Mac microphone
+                              </button>
+                            )}
+                          </div>
+                        )}
                       {audioError && (
-                        <div className="flex w-full items-start gap-1.5 text-[11px] text-amber-700" role="status">
+                        <div
+                          className="flex w-full items-start gap-1.5 text-[11px] text-amber-700"
+                          role="status"
+                        >
                           <AlertCircle size={12} className="mt-0.5 shrink-0" />
                           <span>{audioError}</span>
                         </div>
                       )}
-                      {['processing', 'failed'].includes(meetingMetadata?.transcription_status ?? '') && window.meetingTranscription && !transcriptionModel?.installed && (
-                        <div className="flex w-full items-center justify-between gap-3 rounded-md bg-[var(--ledger-surface-muted)] px-2.5 py-2 text-[11px] text-[var(--ledger-text-secondary)]" role="status">
-                          <span>Install the local Whisper model to transcribe this recording.</span>
-                          <button
-                            type="button"
-                            onClick={() => void installTranscriptionModel()}
-                            disabled={transcriptionBusy || transcriptionModel?.downloading}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 font-medium disabled:opacity-40"
+                      {['processing', 'failed'].includes(
+                        meetingMetadata?.transcription_status ?? ''
+                      ) &&
+                        window.meetingTranscription &&
+                        !transcriptionModel?.installed && (
+                          <div
+                            className="flex w-full items-center justify-between gap-3 rounded-md bg-[var(--ledger-surface-muted)] px-2.5 py-2 text-[11px] text-[var(--ledger-text-secondary)]"
+                            role="status"
                           >
-                            <Download size={11} /> {transcriptionModel?.downloading ? 'Downloading…' : 'Install model'}
-                          </button>
-                        </div>
-                      )}
+                            <span>
+                              Install the local Whisper model to transcribe this recording.
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void installTranscriptionModel()}
+                              disabled={transcriptionBusy || transcriptionModel?.downloading}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 font-medium disabled:opacity-40"
+                            >
+                              <Download size={11} />{' '}
+                              {transcriptionModel?.downloading ? 'Downloading…' : 'Install model'}
+                            </button>
+                          </div>
+                        )}
                     </div>
                   )}
                 </div>
@@ -7339,11 +8931,22 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                             setTranscriptDrafts((current) => ({ ...current, [segmentId]: value }));
                           }}
                           onCommit={(segment) => void commitTranscriptSegment(segment)}
-                          onSpeakerChange={(segment, speakerLabel) => setTranscriptSpeakerDrafts((current) => ({ ...current, [segment.id]: speakerLabel }))}
-                          onSpeakerSelect={(segment, speakerLabel) => void commitTranscriptSegment(segment, speakerLabel)}
+                          onSpeakerChange={(segment, speakerLabel) =>
+                            setTranscriptSpeakerDrafts((current) => ({
+                              ...current,
+                              [segment.id]: speakerLabel,
+                            }))
+                          }
+                          onSpeakerSelect={(segment, speakerLabel) =>
+                            void commitTranscriptSegment(segment, speakerLabel)
+                          }
                           onDelete={(segment) => void deleteTranscriptSegment(segment)}
-                          onMerge={(segment, next, speakerLabel) => void mergeTranscriptSegments(segment, next, speakerLabel)}
-                          onSplit={(segment, position) => void splitTranscriptSegment(segment, position)}
+                          onMerge={(segment, next, speakerLabel) =>
+                            void mergeTranscriptSegments(segment, next, speakerLabel)
+                          }
+                          onSplit={(segment, position) =>
+                            void splitTranscriptSegment(segment, position)
+                          }
                           isMutationBusy={Boolean(transcriptMutation || meetingBusyAction)}
                           deletedSegments={deletedTranscriptSegments}
                           onRestore={(segment) => void restoreTranscriptSegment(segment)}
@@ -7363,24 +8966,35 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         onAutoCorrect={() => {
                           void runAutoCorrectSpelling();
                         }}
-                        onCreateTask={(selectedText) =>
-                          openEditorOverviewComposer('task', selectedText)
+                        onCreateTask={({ plainText, smartDates }) =>
+                          openEditorOverviewComposer('task', plainText, {
+                            suggestedDate:
+                              smartDates?.find((item) => item.state !== 'dismissed')?.date ?? null,
+                          })
                         }
                         onPersonTaskAction={(action, person) =>
                           openSmartPersonTaskComposer(action, person)
                         }
-                        onCreateReminder={(selectedText) =>
-                          openEditorOverviewComposer('reminder', selectedText)
+                        onCreateReminder={({ plainText, smartDates }) =>
+                          openEditorOverviewComposer('reminder', plainText, {
+                            suggestedDate:
+                              smartDates?.find((item) => item.state !== 'dismissed')?.date ?? null,
+                          })
                         }
-                        onCreateEvent={(selectedText) =>
-                          openEditorOverviewComposer('event', selectedText)
+                        onCreateEvent={({ plainText, smartDates }) =>
+                          openEditorOverviewComposer('event', plainText, {
+                            suggestedDate:
+                              smartDates?.find((item) => item.state !== 'dismissed')?.date ?? null,
+                          })
                         }
                         onSendToIntake={sendEditorSelectionToIntake}
-                        onLinkProject={() => {
-                          void openLinkProjectModal(selectedNote.id);
+                        onLinkProject={({ noteId }) => {
+                          void openLinkProjectModal(noteId);
                         }}
                         onLinkPerson={linkEditorSelectionToPerson}
-                        onSearch={(selectedText) => openSearch(selectedText)}
+                        onSearch={({ plainText }) => openSearch(plainText)}
+                        onCreateExternalEmbed={createEditorExternalEmbed}
+                        onUploadAttachment={uploadEditorAttachment}
                         onChange={(nextHtml) => {
                           // The old Lexical editor can emit a final change while
                           // it is unmounting (image nodes are especially prone
@@ -7711,7 +9325,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   <LinkedDesignsSection
                     target={{
                       workspaceId: activeWorkspaceId,
-                      targetType: /meeting/i.test(selectedNote.source ?? '') ? 'meetingNote' : 'note',
+                      targetType: /meeting/i.test(selectedNote.source ?? '')
+                        ? 'meetingNote'
+                        : 'note',
                       targetId: selectedNote.id,
                     }}
                     canEdit={activeWorkspace?.role !== 'viewer'}
@@ -7730,8 +9346,14 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Meeting</p>
                       {meetingMetadata && (
-                        <span className={`inline-flex items-center gap-1 text-[11px] ${meetingStatusTone(meetingMetadata.transcription_status)}`}>
-                          {meetingMetadata.transcription_status === 'complete' && <CheckCircle2 size={11} />}
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] ${meetingStatusTone(
+                            meetingMetadata.transcription_status
+                          )}`}
+                        >
+                          {meetingMetadata.transcription_status === 'complete' && (
+                            <CheckCircle2 size={11} />
+                          )}
                           {meetingStatusLabel(meetingMetadata.transcription_status)}
                         </span>
                       )}
@@ -7748,12 +9370,19 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           onClick={() => {
                             const id = selectedNoteIdRef.current;
                             if (!id) return;
-                            void api.createMeetingMetadata(id).then((metadata) => {
-                              setMeetingMetadata(metadata as MeetingNoteMetadata);
-                              setMeetingMetadataError(null);
-                            }).catch((error) => {
-                              setMeetingMetadataError(error instanceof Error ? error.message : 'Could not initialize meeting details.');
-                            });
+                            void api
+                              .createMeetingMetadata(id)
+                              .then((metadata) => {
+                                setMeetingMetadata(metadata as MeetingNoteMetadata);
+                                setMeetingMetadataError(null);
+                              })
+                              .catch((error) => {
+                                setMeetingMetadataError(
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Could not initialize meeting details.'
+                                );
+                              });
                           }}
                           className="font-medium underline underline-offset-2"
                         >
@@ -7771,13 +9400,17 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Started</span>
                           <span className="text-right text-[var(--ledger-text-primary)]">
-                            {meetingMetadata.meeting_start_at ? formatCompactDateTime(meetingMetadata.meeting_start_at) : 'Not started'}
+                            {meetingMetadata.meeting_start_at
+                              ? formatCompactDateTime(meetingMetadata.meeting_start_at)
+                              : 'Not started'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Ended</span>
                           <span className="text-right text-[var(--ledger-text-primary)]">
-                            {meetingMetadata.meeting_end_at ? formatCompactDateTime(meetingMetadata.meeting_end_at) : 'In progress'}
+                            {meetingMetadata.meeting_end_at
+                              ? formatCompactDateTime(meetingMetadata.meeting_end_at)
+                              : 'In progress'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
@@ -7785,32 +9418,55 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           {meetingMetadata.calendar_event_id ? (
                             <button
                               type="button"
-                              onClick={() => void window.desktopWindow?.toggleModule('calendar', { focusContext: `focus-event:${meetingMetadata.calendar_event_id}` })}
+                              onClick={() =>
+                                void window.desktopWindow?.toggleModule('calendar', {
+                                  focusContext: `focus-event:${meetingMetadata.calendar_event_id}`,
+                                })
+                              }
                               className="max-w-44 truncate text-right text-[var(--ledger-accent)] hover:underline"
-                              title={meetingMetadata.calendar_event_title ?? meetingMetadata.calendar_event_id}
+                              title={
+                                meetingMetadata.calendar_event_title ??
+                                meetingMetadata.calendar_event_id
+                              }
                             >
-                              {meetingMetadata.calendar_event_title || `${meetingMetadata.calendar_event_id.slice(0, 8)}…`}
+                              {meetingMetadata.calendar_event_title ||
+                                `${meetingMetadata.calendar_event_id.slice(0, 8)}…`}
                             </button>
                           ) : (
-                            <span className="text-[var(--ledger-text-primary)]">{meetingMetadata.calendar_event_title || 'Not linked'}</span>
+                            <span className="text-[var(--ledger-text-primary)]">
+                              {meetingMetadata.calendar_event_title || 'Not linked'}
+                            </span>
                           )}
                         </div>
-                        {(meetingMetadata.scheduled_start_at || meetingMetadata.scheduled_end_at || meetingMetadata.calendar_provider) && (
+                        {(meetingMetadata.scheduled_start_at ||
+                          meetingMetadata.scheduled_end_at ||
+                          meetingMetadata.calendar_provider) && (
                           <>
                             <div className="flex items-center justify-between gap-3 text-sm">
                               <span className="text-[var(--ledger-text-muted)]">Scheduled</span>
                               <span className="text-right text-[var(--ledger-text-primary)]">
-                                {meetingMetadata.scheduled_start_at ? formatCompactDateTime(meetingMetadata.scheduled_start_at) : 'Time not set'}
-                                {meetingMetadata.scheduled_end_at ? ` – ${formatCompactDateTime(meetingMetadata.scheduled_end_at)}` : ''}
+                                {meetingMetadata.scheduled_start_at
+                                  ? formatCompactDateTime(meetingMetadata.scheduled_start_at)
+                                  : 'Time not set'}
+                                {meetingMetadata.scheduled_end_at
+                                  ? ` – ${formatCompactDateTime(meetingMetadata.scheduled_end_at)}`
+                                  : ''}
                               </span>
                             </div>
                             <div className="flex items-center justify-between gap-3 text-sm">
-                              <span className="text-[var(--ledger-text-muted)]">Calendar source</span>
-                              <span className="text-[var(--ledger-text-primary)]">{meetingMetadata.calendar_source_name || meetingMetadata.calendar_provider || 'Ledger'}</span>
+                              <span className="text-[var(--ledger-text-muted)]">
+                                Calendar source
+                              </span>
+                              <span className="text-[var(--ledger-text-primary)]">
+                                {meetingMetadata.calendar_source_name ||
+                                  meetingMetadata.calendar_provider ||
+                                  'Ledger'}
+                              </span>
                             </div>
                             {meetingMetadata.calendar_event_deleted && (
                               <div className="flex items-center gap-1.5 rounded-md bg-[color:rgba(217,45,32,0.06)] px-2 py-1.5 text-xs text-[var(--ledger-danger)]">
-                                <AlertCircle size={12} /> The original calendar event is no longer available. Meeting content is preserved.
+                                <AlertCircle size={12} /> The original calendar event is no longer
+                                available. Meeting content is preserved.
                               </div>
                             )}
                           </>
@@ -7822,19 +9478,30 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                             </div>
                             <div className="space-y-0.5">
                               {meetingSeriesOccurrences.map((occurrence) => {
-                                const occurrenceTitle = occurrence.note?.title || occurrence.calendar_event_title || 'Meeting occurrence';
+                                const occurrenceTitle =
+                                  occurrence.note?.title ||
+                                  occurrence.calendar_event_title ||
+                                  'Meeting occurrence';
                                 const isCurrent = occurrence.note_id === selectedNoteId;
                                 return (
                                   <button
                                     key={occurrence.note_id}
                                     type="button"
-                                    onClick={() => occurrence.note && void openNote(occurrence.note as NoteRow)}
+                                    onClick={() =>
+                                      occurrence.note && void openNote(occurrence.note as NoteRow)
+                                    }
                                     disabled={!occurrence.note || isCurrent}
-                                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${isCurrent ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-default`}
+                                    className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs ${
+                                      isCurrent
+                                        ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                                        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
+                                    } disabled:cursor-default`}
                                   >
                                     <span className="min-w-0 truncate">{occurrenceTitle}</span>
                                     <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
-                                      {occurrence.scheduled_start_at ? formatCompactDateTime(occurrence.scheduled_start_at) : 'Unscheduled'}
+                                      {occurrence.scheduled_start_at
+                                        ? formatCompactDateTime(occurrence.scheduled_start_at)
+                                        : 'Unscheduled'}
                                     </span>
                                   </button>
                                 );
@@ -7845,61 +9512,154 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Attendees</span>
                           <span className="text-[var(--ledger-text-primary)]">
-                            {meetingMetadata.attendees?.length ? meetingMetadata.attendees.length : 'None added'}
+                            {meetingMetadata.attendees?.length
+                              ? meetingMetadata.attendees.length
+                              : 'None added'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Microphone</span>
-                          <span className="text-[var(--ledger-text-primary)]">{meetingMetadata.microphone_enabled ? 'Enabled' : 'Disabled'}</span>
+                          <span className="text-[var(--ledger-text-primary)]">
+                            {meetingMetadata.microphone_enabled ? 'Enabled' : 'Disabled'}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">System audio</span>
-                          <span className="text-[var(--ledger-text-primary)]">{meetingMetadata.system_audio_enabled ? 'Enabled' : 'Disabled'}</span>
+                          <span className="text-[var(--ledger-text-primary)]">
+                            {meetingMetadata.system_audio_enabled ? 'Enabled' : 'Disabled'}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Segments</span>
-                          <span className="text-[var(--ledger-text-primary)]">{transcriptSegments.length}</span>
+                          <span className="text-[var(--ledger-text-primary)]">
+                            {transcriptSegments.length}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Audio chunks</span>
-                          <span className="text-[var(--ledger-text-primary)]">{audioCaptureStatus?.chunkCount ?? '—'}</span>
+                          <span className="text-[var(--ledger-text-primary)]">
+                            {audioCaptureStatus?.chunkCount ?? '—'}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Capture queue</span>
-                          <span className="text-[var(--ledger-text-primary)]">{audioCaptureStatus?.queueDepth ?? 0}</span>
+                          <span className="text-[var(--ledger-text-primary)]">
+                            {audioCaptureStatus?.queueDepth ?? 0}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-3 text-sm">
                           <span className="text-[var(--ledger-text-muted)]">Free storage</span>
                           <span className="text-[var(--ledger-text-primary)]">
-                            {Number.isFinite(audioCaptureStatus?.diskAvailableBytes) ? `${Math.round((audioCaptureStatus!.diskAvailableBytes / 1024 / 1024))} MB` : 'Unknown'}
+                            {Number.isFinite(audioCaptureStatus?.diskAvailableBytes)
+                              ? `${Math.round(
+                                  audioCaptureStatus!.diskAvailableBytes / 1024 / 1024
+                                )} MB`
+                              : 'Unknown'}
                           </span>
                         </div>
                         {meetingAudioSessionId && (
                           <div className="rounded-md bg-[var(--ledger-surface-muted)] px-2.5 py-2 text-[11px]">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium text-[var(--ledger-text-secondary)]">Audio</span>
-                              {audioSessionInspection?.status && <span className="text-[var(--ledger-text-muted)]">{audioSessionInspection.status === 'ready' ? 'Ready' : audioSessionInspection.status}</span>}
+                              <span className="font-medium text-[var(--ledger-text-secondary)]">
+                                Audio
+                              </span>
+                              {audioSessionInspection?.status && (
+                                <span className="text-[var(--ledger-text-muted)]">
+                                  {audioSessionInspection.status === 'ready'
+                                    ? 'Ready'
+                                    : audioSessionInspection.status}
+                                </span>
+                              )}
                             </div>
                             {audioSourceSummaries.some((summary) => summary.chunkCount > 0) ? (
                               <div className="mt-1.5 space-y-1.5">
                                 {audioSourceSummaries.map((summary) => (
-                                  <div key={summary.source} className="flex items-center justify-between gap-2">
-                                    <span className="min-w-0 truncate text-[var(--ledger-text-secondary)]">{summary.source === 'user_microphone' ? 'Microphone' : 'System audio'}</span>
-                                    <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{summary.chunkCount > 0 ? `${formatMeetingDuration(summary.durationSeconds)} · ${summary.sizeBytes >= 1024 * 1024 ? `${(summary.sizeBytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(summary.sizeBytes / 1024))} KB`}` : 'Not recorded'}</span>
+                                  <div
+                                    key={summary.source}
+                                    className="flex items-center justify-between gap-2"
+                                  >
+                                    <span className="min-w-0 truncate text-[var(--ledger-text-secondary)]">
+                                      {summary.source === 'user_microphone'
+                                        ? 'Microphone'
+                                        : 'System audio'}
+                                    </span>
+                                    <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                      {summary.chunkCount > 0
+                                        ? `${formatMeetingDuration(summary.durationSeconds)} · ${
+                                            summary.sizeBytes >= 1024 * 1024
+                                              ? `${(summary.sizeBytes / 1024 / 1024).toFixed(1)} MB`
+                                              : `${Math.max(
+                                                  1,
+                                                  Math.round(summary.sizeBytes / 1024)
+                                                )} KB`
+                                          }`
+                                        : 'Not recorded'}
+                                    </span>
                                   </div>
                                 ))}
                                 <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                  <button type="button" onClick={() => void revealRetainedAudio()} disabled={meetingBusyAction === 'stop' || audioCaptureStatus?.state === 'recording' || audioCaptureStatus?.state === 'paused'} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"><FolderOpen size={11} /> Reveal in Finder</button>
-                                  {meetingMetadata.audio_retention === 'retain' && <>
-                                    {audioSourceSummaries.filter((summary) => summary.chunkCount > 0).map((summary) => <span key={`actions-${summary.source}`} className="inline-flex gap-1"><button type="button" onClick={() => void playRetainedAudio(summary.source)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-text-secondary)]">Play {summary.source === 'user_microphone' ? 'mic' : 'system'}</button><button type="button" onClick={() => void deleteRetainedAudio(summary.source)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-danger)]">Delete</button></span>)}
-                                    <button type="button" onClick={() => void deleteRetainedAudio()} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-danger)]">Delete all audio</button>
-                                  </>}
+                                  <button
+                                    type="button"
+                                    onClick={() => void revealRetainedAudio()}
+                                    disabled={
+                                      meetingBusyAction === 'stop' ||
+                                      audioCaptureStatus?.state === 'recording' ||
+                                      audioCaptureStatus?.state === 'paused'
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    <FolderOpen size={11} /> Reveal in Finder
+                                  </button>
+                                  {meetingMetadata.audio_retention === 'retain' && (
+                                    <>
+                                      {audioSourceSummaries
+                                        .filter((summary) => summary.chunkCount > 0)
+                                        .map((summary) => (
+                                          <span
+                                            key={`actions-${summary.source}`}
+                                            className="inline-flex gap-1"
+                                          >
+                                            <button
+                                              type="button"
+                                              onClick={() => void playRetainedAudio(summary.source)}
+                                              className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-text-secondary)]"
+                                            >
+                                              Play{' '}
+                                              {summary.source === 'user_microphone'
+                                                ? 'mic'
+                                                : 'system'}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                void deleteRetainedAudio(summary.source)
+                                              }
+                                              className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-danger)]"
+                                            >
+                                              Delete
+                                            </button>
+                                          </span>
+                                        ))}
+                                      <button
+                                        type="button"
+                                        onClick={() => void deleteRetainedAudio()}
+                                        className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] text-[var(--ledger-danger)]"
+                                      >
+                                        Delete all audio
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </div>
-                            ) : meetingMetadata.transcription_status === 'complete' && meetingMetadata.audio_retention === 'delete_after_transcription' ? (
-                              <p className="mt-1.5 text-[10px] text-[var(--ledger-text-muted)]">Audio deleted after successful transcription.</p>
+                            ) : meetingMetadata.transcription_status === 'complete' &&
+                              meetingMetadata.audio_retention === 'delete_after_transcription' ? (
+                              <p className="mt-1.5 text-[10px] text-[var(--ledger-text-muted)]">
+                                Audio deleted after successful transcription.
+                              </p>
                             ) : (
-                              <p className="mt-1.5 text-[10px] text-[var(--ledger-text-muted)]">Audio is not currently available.</p>
+                              <p className="mt-1.5 text-[10px] text-[var(--ledger-text-muted)]">
+                                Audio is not currently available.
+                              </p>
                             )}
                           </div>
                         )}
@@ -7907,11 +9667,19 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           <span className="text-[var(--ledger-text-muted)]">Audio retention</span>
                           <select
                             value={meetingMetadata.audio_retention}
-                            onChange={(event) => void updateMeetingMetadata({ audio_retention: event.target.value as 'delete_after_transcription' | 'retain' })}
+                            onChange={(event) =>
+                              void updateMeetingMetadata({
+                                audio_retention: event.target.value as
+                                  | 'delete_after_transcription'
+                                  | 'retain',
+                              })
+                            }
                             disabled={Boolean(meetingBusyAction)}
                             className="max-w-44 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1 text-right text-xs text-[var(--ledger-text-primary)] outline-none"
                           >
-                            <option value="delete_after_transcription">Delete after transcription</option>
+                            <option value="delete_after_transcription">
+                              Delete after transcription
+                            </option>
                             <option value="retain">Retain</option>
                           </select>
                         </label>
@@ -7924,47 +9692,124 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           <div className="space-y-2">
                             {transcriptionJob && (
                               <div className="space-y-1 text-[11px] text-[var(--ledger-text-muted)]">
-                                <div className="flex items-center justify-between gap-2"><span>Local transcription</span><span>{Math.round(transcriptionJob.progress * 100)}% · {transcriptionJob.completedChunks}/{transcriptionJob.totalChunks} chunks</span></div>
-                                <div className="h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]"><div className="h-full rounded-full bg-[var(--ledger-accent)] transition-all" style={{ width: `${Math.max(0, Math.min(100, transcriptionJob.progress * 100))}%` }} /></div>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>Local transcription</span>
+                                  <span>
+                                    {Math.round(transcriptionJob.progress * 100)}% ·{' '}
+                                    {transcriptionJob.completedChunks}/
+                                    {transcriptionJob.totalChunks} chunks
+                                  </span>
+                                </div>
+                                <div className="h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]">
+                                  <div
+                                    className="h-full rounded-full bg-[var(--ledger-accent)] transition-all"
+                                    style={{
+                                      width: `${Math.max(
+                                        0,
+                                        Math.min(100, transcriptionJob.progress * 100)
+                                      )}%`,
+                                    }}
+                                  />
+                                </div>
                               </div>
                             )}
                             <div className="flex flex-wrap gap-1.5">
-                              {transcriptionJob?.status === 'transcribing' || transcriptionJob?.status === 'preparing' ? (
-                                <button type="button" onClick={() => void cancelTranscription()} disabled={transcriptionBusy} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-danger)] disabled:opacity-40">Cancel transcription</button>
+                              {transcriptionJob?.status === 'transcribing' ||
+                              transcriptionJob?.status === 'preparing' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void cancelTranscription()}
+                                  disabled={transcriptionBusy}
+                                  className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-danger)] disabled:opacity-40"
+                                >
+                                  Cancel transcription
+                                </button>
                               ) : null}
                               {transcriptionJob?.status === 'failed' ? (
-                                <button type="button" onClick={() => void startTranscription()} disabled={transcriptionBusy || !transcriptionModel?.installed} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] disabled:opacity-40">Retry transcription</button>
+                                <button
+                                  type="button"
+                                  onClick={() => void startTranscription()}
+                                  disabled={transcriptionBusy || !transcriptionModel?.installed}
+                                  className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] disabled:opacity-40"
+                                >
+                                  Retry transcription
+                                </button>
                               ) : null}
                               {!transcriptionModel?.installed && (
-                                <button type="button" onClick={() => void installTranscriptionModel()} disabled={transcriptionBusy || transcriptionModel?.downloading} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] disabled:opacity-40"><Download size={11} /> Install Whisper model</button>
+                                <button
+                                  type="button"
+                                  onClick={() => void installTranscriptionModel()}
+                                  disabled={transcriptionBusy || transcriptionModel?.downloading}
+                                  className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] disabled:opacity-40"
+                                >
+                                  <Download size={11} /> Install Whisper model
+                                </button>
                               )}
                             </div>
-                            {transcriptionModel && <p>{transcriptionModel.downloading ? `Downloading local model… ${Math.round((transcriptionModel.bytesDownloaded / Math.max(1, transcriptionModel.approximateBytes)) * 100)}%` : transcriptionModel.installed ? `${transcriptionModel.label} is installed and runs locally.` : 'Install the optional local Whisper model to process this recording. No API key is required.'}</p>}
+                            {transcriptionModel && (
+                              <p>
+                                {transcriptionModel.downloading
+                                  ? `Downloading local model… ${Math.round(
+                                      (transcriptionModel.bytesDownloaded /
+                                        Math.max(1, transcriptionModel.approximateBytes)) *
+                                        100
+                                    )}%`
+                                  : transcriptionModel.installed
+                                  ? `${transcriptionModel.label} is installed and runs locally.`
+                                  : 'Install the optional local Whisper model to process this recording. No API key is required.'}
+                              </p>
+                            )}
                           </div>
                         )}
                         {meetingMetadata.transcription_status === 'failed' && (
                           <div className="space-y-2">
                             {!transcriptionModel?.installed && (
                               <div className="rounded-md bg-[var(--ledger-surface-muted)] px-2.5 py-2 text-[11px] text-[var(--ledger-text-muted)]">
-                                <p>Install the local Whisper model before retrying. The finalized audio is preserved.</p>
+                                <p>
+                                  Install the local Whisper model before retrying. The finalized
+                                  audio is preserved.
+                                </p>
                                 <button
                                   type="button"
                                   onClick={() => void installTranscriptionModel()}
                                   disabled={transcriptionBusy || transcriptionModel?.downloading}
                                   className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] disabled:opacity-40"
                                 >
-                                  <Download size={11} /> {transcriptionModel?.downloading ? 'Downloading model…' : 'Install Whisper model'}
+                                  <Download size={11} />{' '}
+                                  {transcriptionModel?.downloading
+                                    ? 'Downloading model…'
+                                    : 'Install Whisper model'}
                                 </button>
                               </div>
                             )}
                             {transcriptionModel?.downloading && (
                               <p className="text-[11px] text-[var(--ledger-text-muted)]">
-                                Downloading local model… {Math.round((transcriptionModel.bytesDownloaded / Math.max(1, transcriptionModel.approximateBytes)) * 100)}%
+                                Downloading local model…{' '}
+                                {Math.round(
+                                  (transcriptionModel.bytesDownloaded /
+                                    Math.max(1, transcriptionModel.approximateBytes)) *
+                                    100
+                                )}
+                                %
                               </p>
                             )}
                             <div className="flex flex-wrap gap-1.5">
-                            <button type="button" onClick={() => void startTranscription()} disabled={transcriptionBusy || !transcriptionModel?.installed} className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] disabled:opacity-40"><RotateCcw size={11} /> Retry transcription</button>
-                            <button type="button" onClick={() => void resetFailedMeeting()} disabled={Boolean(meetingBusyAction)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-muted)] disabled:opacity-40">Reset to idle</button>
+                              <button
+                                type="button"
+                                onClick={() => void startTranscription()}
+                                disabled={transcriptionBusy || !transcriptionModel?.installed}
+                                className="inline-flex items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] disabled:opacity-40"
+                              >
+                                <RotateCcw size={11} /> Retry transcription
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void resetFailedMeeting()}
+                                disabled={Boolean(meetingBusyAction)}
+                                className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-muted)] disabled:opacity-40"
+                              >
+                                Reset to idle
+                              </button>
                             </div>
                           </div>
                         )}
@@ -7977,11 +9822,24 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           <Trash2 size={11} /> Clear transcript
                         </button>
                         <div className="border-t border-[color:var(--ledger-border-subtle)] pt-2">
-                          <p className="mb-1 text-[10px] font-medium text-[var(--ledger-text-muted)]">Export meeting note</p>
+                          <p className="mb-1 text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                            Export meeting note
+                          </p>
                           <div className="flex flex-wrap gap-1.5">
                             {(['txt', 'md', 'json', 'html'] as const).map((format) => (
-                              <button key={format} type="button" onClick={() => exportMeetingNote(format)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">
-                                {format === 'txt' ? 'Plain text' : format === 'md' ? 'Markdown' : format === 'json' ? 'JSON' : 'Printable HTML'}
+                              <button
+                                key={format}
+                                type="button"
+                                onClick={() => exportMeetingNote(format)}
+                                className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                              >
+                                {format === 'txt'
+                                  ? 'Plain text'
+                                  : format === 'md'
+                                  ? 'Markdown'
+                                  : format === 'json'
+                                  ? 'JSON'
+                                  : 'Printable HTML'}
                               </button>
                             ))}
                           </div>
@@ -8134,7 +9992,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       </div>
                       {!activeWorkspace?.is_personal && (
                         <>
-                          <InspectorInfoRow label="Created by" value={displayUserName(creatorMember)} />
+                          <InspectorInfoRow
+                            label="Created by"
+                            value={displayUserName(creatorMember)}
+                          />
                           <InspectorInfoRow
                             label="Last edited by"
                             value={`${displayUserName(editorMember)} · ${formatRelativeFromNow(
@@ -8794,9 +10655,15 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           outputDevice={audioDevices.outputDevice}
           onSelectMicrophone={(deviceId) => {
             setSelectedMicrophoneId(deviceId);
-            try { window.localStorage.setItem('ledger.meeting.microphone-device', deviceId); } catch {}
+            try {
+              window.localStorage.setItem('ledger.meeting.microphone-device', deviceId);
+            } catch {}
             const device = audioDevices.devices.find((item) => item.id === deviceId);
-            setAudioDeviceWarning(device?.isBluetooth && audioDevices.outputDevice?.isBluetooth ? 'Headphone audio quality may decrease.' : null);
+            setAudioDeviceWarning(
+              device?.isBluetooth && audioDevices.outputDevice?.isBluetooth
+                ? 'Headphone audio quality may decrease.'
+                : null
+            );
           }}
           isBusy={isAudioBusy}
           testingSource={testingAudioSource}

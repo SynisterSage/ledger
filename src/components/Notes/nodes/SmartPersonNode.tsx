@@ -33,6 +33,9 @@ const STATE_ARIA_PREFIX: Record<SmartPersonNodeState, string> = {
   dismissed: 'Dismissed person reference',
 };
 
+const isSmartPersonState = (value: string): value is SmartPersonNodeState =>
+  value === 'detected' || value === 'linked' || value === 'dismissed';
+
 type SmartPersonElement = HTMLElement & {
   dataset: DOMStringMap & {
     ledgerSmartPerson?: string;
@@ -46,12 +49,16 @@ const convertSmartPersonElement = (domNode: Node): DOMConversionOutput | null =>
   if (!(domNode instanceof HTMLElement)) return null;
   const element = domNode as SmartPersonElement;
   if (element.dataset.ledgerSmartPerson !== 'true') return null;
+  const rawState = element.dataset.ledgerSmartPersonState ?? '';
+  const state: SmartPersonNodeState = isSmartPersonState(rawState)
+    ? rawState
+    : 'detected';
   return {
     node: $createSmartPersonNode(
       element.textContent ?? '',
       element.dataset.ledgerSmartPersonUserId ?? '',
       element.dataset.ledgerSmartPersonKey ?? '',
-      (element.dataset.ledgerSmartPersonState as SmartPersonNodeState) ?? 'detected'
+      state
     ),
   };
 };
@@ -180,7 +187,6 @@ export class SmartPersonNode extends TextNode {
       element.setAttribute('role', 'button');
       element.setAttribute('tabindex', '0');
       this.applyDOMState(element);
-      element.removeAttribute('data-ledger-smart-person-user-id');
     }
     return { element };
   }

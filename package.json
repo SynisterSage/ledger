@@ -17,7 +17,8 @@
     "test:figma-plugin": "npm --prefix figma-plugin test",
     "preview": "vite preview",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:write-mode": "node --test scripts/tests/write-mode-regressions.mjs"
   },
   "dependencies": {
     "@lexical/code": "^0.44.0",
@@ -26,6 +27,7 @@
     "@lexical/list": "^0.44.0",
     "@lexical/react": "^0.44.0",
     "@lexical/rich-text": "^0.44.0",
+    "@lexical/table": "^0.44.0",
     "@supabase/supabase-js": "^2.105.1",
     "classnames": "^2.5.1",
     "date-fns": "^4.1.0",

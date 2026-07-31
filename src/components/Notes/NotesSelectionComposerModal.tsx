@@ -19,6 +19,7 @@ export type NotesSelectionComposerContext = {
   transcriptSpeakerLabel?: string | null;
   transcriptAudioSource?: 'user_microphone' | 'system_audio';
   sourceLabel?: string;
+  suggestedDate?: string | null;
 };
 
 type Props = {
@@ -61,9 +62,9 @@ export const NotesSelectionComposerModal = ({ context, members, onClose, onCreat
     if (!context) return;
     setTitle(firstLine(context.text));
     setTaskMode('focus');
-    setDueDate('');
+    setDueDate(context.suggestedDate ?? '');
     setAssignee(context.assigneeId ? `user:${context.assigneeId}` : '');
-    setDate('');
+    setDate(context.suggestedDate ?? '');
     setTime('09:00');
     setNotes(context.text);
     setCalendarId('');
@@ -113,7 +114,11 @@ export const NotesSelectionComposerModal = ({ context, members, onClose, onCreat
         const created = await api.createTask({
           title: title.trim(),
           description: context.text,
-          notes: `${context.sourceLabel ?? `Created from note ${context.noteId}`}${context.transcriptTimestampMs != null ? ` · Transcript ${Math.floor(context.transcriptTimestampMs / 1000)}s` : ''}`,
+          notes: `${context.sourceLabel ?? `Created from note ${context.noteId}`}${
+            context.transcriptTimestampMs != null
+              ? ` · Transcript ${Math.floor(context.transcriptTimestampMs / 1000)}s`
+              : ''
+          }`,
           project_id: context.projectId ?? null,
           due_date: isLongTerm ? dueDate || null : null,
           task_horizon: isLongTerm ? 'long_term' : 'today',
@@ -123,7 +128,8 @@ export const NotesSelectionComposerModal = ({ context, members, onClose, onCreat
           assigned_to_user_id: assignee.startsWith('user:') ? assignee.slice(5) : null,
           assigned_to_team_id: assignee.startsWith('team:') ? assignee.slice(5) : null,
         });
-        if (created && typeof (created as { id?: unknown }).id === 'string') onCreated?.({ type: 'task', id: (created as { id: string }).id });
+        if (created && typeof (created as { id?: unknown }).id === 'string')
+          onCreated?.({ type: 'task', id: (created as { id: string }).id });
         toast.show('Created task.', { variant: 'success' });
       } else {
         if (!date) throw new Error('Choose a date.');
@@ -146,7 +152,8 @@ export const NotesSelectionComposerModal = ({ context, members, onClose, onCreat
             color: selectedCalendar.color ?? undefined,
             is_done: false,
           });
-          if (created && typeof (created as { id?: unknown }).id === 'string') onCreated?.({ type: 'reminder', id: (created as { id: string }).id });
+          if (created && typeof (created as { id?: unknown }).id === 'string')
+            onCreated?.({ type: 'reminder', id: (created as { id: string }).id });
           toast.show('Saved reminder.', { variant: 'success' });
         } else {
           const created = await api.createEvent({
@@ -157,7 +164,8 @@ export const NotesSelectionComposerModal = ({ context, members, onClose, onCreat
             status: 'planned',
             visibility: 'workspace',
           });
-          if (created && typeof (created as { id?: unknown }).id === 'string') onCreated?.({ type: 'event', id: (created as { id: string }).id });
+          if (created && typeof (created as { id?: unknown }).id === 'string')
+            onCreated?.({ type: 'event', id: (created as { id: string }).id });
           toast.show('Saved event.', { variant: 'success' });
         }
         window.ipcRenderer?.send('calendar:items-updated');

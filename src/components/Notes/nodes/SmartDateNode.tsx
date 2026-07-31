@@ -5,6 +5,7 @@ import {
   $applyNodeReplacement,
   type EditorConfig,
   type LexicalEditor,
+  type LexicalNode,
   TextNode,
   type NodeKey,
   type SerializedTextNode,
@@ -44,13 +45,21 @@ const STATE_ARIA_PREFIX: Record<SmartDateNodeState, string> = {
   dismissed: 'Dismissed date phrase',
 };
 
+const isSmartDateState = (value: string): value is SmartDateNodeState =>
+  value === 'detected' ||
+  value === 'linked-event' ||
+  value === 'linked-reminder' ||
+  value === 'dismissed';
+
 function convertSmartDateElement(domNode: Node): DOMConversionOutput | null {
   if (!(domNode instanceof HTMLElement)) return null;
   const element = domNode as ConvertableSmartDateElement;
   if (element.dataset.ledgerSmartDate !== 'true') return null;
   const text = element.textContent ?? '';
   const smartDateKey = element.dataset.ledgerSmartDateKey ?? '';
-  const smartDateState = element.dataset.ledgerSmartDateState ?? 'detected';
+  const smartDateState = isSmartDateState(element.dataset.ledgerSmartDateState ?? '')
+    ? element.dataset.ledgerSmartDateState!
+    : 'detected';
   return {
     node: $createSmartDateNode(text, smartDateKey, smartDateState),
   };
@@ -201,5 +210,5 @@ export const $createSmartDateNode = (
   smartDateState: SmartDateNodeState = 'detected'
 ) => $applyNodeReplacement(new SmartDateNode(text, smartDateKey, smartDateState));
 
-export const $isSmartDateNode = (node: SmartDateNode | null | undefined): node is SmartDateNode =>
+export const $isSmartDateNode = (node: LexicalNode | null | undefined): node is SmartDateNode =>
   node instanceof SmartDateNode;
