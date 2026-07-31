@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 const editor = await readFile('src/components/Notes/RichTextEditor.tsx', 'utf8');
+const app = await readFile('src/App.tsx', 'utf8');
 const notesWindow = await readFile('src/components/Notes/NotesWindow.tsx', 'utf8');
 const selectedContent = await readFile(
   'src/components/Notes/editor/types/selectedContent.ts',
@@ -216,6 +217,13 @@ test('floating selection Ledger actions restore the Lexical selection before dis
   assert.match(selectionFormattingPlugin, /const activeSelection = \$getSelection\(\)/);
   assert.match(selectionFormattingPlugin, /activeSelection\.getTextContent\(\)/);
   assert.match(selectionFormattingPlugin, /source: 'selection'/);
+});
+
+test('transcription failures use the shared top toast instead of a sidebar status pill', () => {
+  assert.match(app, /function TranscriptionFailureToast\(\)/);
+  assert.match(app, /toast\.show\('Transcription failed'/);
+  assert.match(app, /if \(!status \|\| !isRecording\) return null/);
+  assert.doesNotMatch(app, /status\.transcriptionStatus === 'failed' \? 'Transcription failed'/);
 });
 
 test('tables have visible document styling instead of appearing as empty space', () => {

@@ -62,6 +62,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   const [activeCount, setActiveCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const notificationLoadInFlightRef = useRef(false);
+  const notificationLoadRequestRef = useRef(0);
   const notificationLoadAtRef = useRef(0);
   const notificationRetryAfterRef = useRef(0);
   const notificationLoadCooldownMs = 15_000;
@@ -84,6 +85,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       return;
     }
 
+    const requestId = ++notificationLoadRequestRef.current;
     const now = Date.now();
     if (!options?.force) {
       if (notificationLoadInFlightRef.current) return;
@@ -105,13 +107,17 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       const nextActive = Array.isArray(payload.active) ? payload.active : [];
       const nextEarlier = Array.isArray(payload.earlier) ? payload.earlier : [];
       const nextActiveCount = Number(payload.counts?.active ?? 0);
+      const nextUnreadCount = Number((payload.counts as { unread?: number } | undefined)?.unread ?? nextActive.filter((item) => item.unread).length);
+      // A forced refresh may overlap a background refresh. Only the latest
+      // response is allowed to replace the visible notification state.
+      if (requestId !== notificationLoadRequestRef.current) return;
       setActive(nextActive);
       setEarlier(nextEarlier);
       setActiveCount(nextActiveCount);
-      const nextUnreadCount = Number((payload.counts as { unread?: number } | undefined)?.unread ?? nextActive.filter((item) => item.unread).length);
       setUnreadCount(nextUnreadCount);
       window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { activeCount: nextUnreadCount } }));
     } catch (nextError) {
+      if (requestId !== notificationLoadRequestRef.current) return;
       setError(nextError instanceof Error ? nextError.message : 'Could not load notifications');
       if (isTooManyRequests(nextError)) notificationRetryAfterRef.current = Date.now() + retryAfterMs;
       setActive([]);
@@ -134,11 +140,12 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       setUnreadCount(0);
       window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { activeCount: 0 } }));
       window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
+      await loadNotifications({ force: true, background: true });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not mark notifications as read');
       toast.show('Could not mark notifications as read.', { variant: 'error' });
     }
-  }, [api, toast, unreadCount]);
+  }, [api, loadNotifications, toast, unreadCount]);
 
   const markAsRead = useCallback(async (item: NotificationCenterItem) => {
     if (item.unread !== true) return;

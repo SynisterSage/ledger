@@ -282,6 +282,7 @@ const LEFT_PANE_MIN_WIDTH = 260;
 const LEFT_PANE_MAX_WIDTH = 380;
 const RIGHT_PANE_MIN_WIDTH = 250;
 const RIGHT_PANE_MAX_WIDTH = 360;
+const NOTE_CONTEXT_MENU_HEIGHT = 352;
 type NoteContextMenuState = {
   x: number;
   y: number;
@@ -10209,7 +10210,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
       {sectionContextMenu && (
         <div
-          className="fixed z-210 min-w-40 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+          className="fixed z-210 min-w-40 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
           style={{
             left: Math.max(8, Math.min(sectionContextMenu.x, window.innerWidth - 180)),
             top: Math.max(8, Math.min(sectionContextMenu.y, window.innerHeight - 220)),
@@ -10384,7 +10385,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           if (isBulkSelection) {
             return (
               <div
-                className="fixed z-210 min-w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+                className="fixed z-210 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
                 style={{
                   left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
                   top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 180)),
@@ -10432,10 +10433,13 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
           return (
             <div
-              className="fixed z-210 min-w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+              className="fixed z-210 max-h-[calc(100vh-16px)] min-w-44 overflow-y-auto rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-0 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
               style={{
                 left: Math.max(8, Math.min(noteContextMenu.x, window.innerWidth - 180)),
-                top: Math.max(8, Math.min(noteContextMenu.y, window.innerHeight - 280)),
+                top: Math.max(
+                  8,
+                  Math.min(noteContextMenu.y, window.innerHeight - NOTE_CONTEXT_MENU_HEIGHT)
+                ),
               }}
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}

@@ -9446,6 +9446,7 @@ function App() {
         <NotificationCenterProvider>
           {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
           {user && !isModuleWindow ? <MeetingRecordingIndicator /> : null}
+          {user && !isModuleWindow ? <TranscriptionFailureToast /> : null}
           <AuthSessionToastReset />
           {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? <McpScopeUpgradeAuthorizationPage sessionId={mcpScopeUpgradeSession} code={mcpScopeUpgradeCode} /> : mcpAuthSession && mcpAuthCode && user ? <McpAuthorizationPage sessionId={mcpAuthSession} code={mcpAuthCode} /> : figmaPluginAuthSession && figmaPluginAuthCode && user ? <FigmaPluginAuthorizationPage sessionId={figmaPluginAuthSession} code={figmaPluginAuthCode} /> : <AppShell />}
           {user && isModuleWindow ? (
@@ -9489,8 +9490,9 @@ function MeetingRecordingIndicator() {
   }, []);
 
   const isRecording = status?.state === 'recording' || status?.state === 'paused';
-  const isProcessing = !isRecording && Boolean(status?.transcriptionStatus);
-  if (!status || (!isRecording && !isProcessing)) return null;
+  // Transcription processing/failure is reported through the shared top-center
+  // toast. The sidebar indicator is reserved for an active recording only.
+  if (!status || !isRecording) return null;
   return (
     <button
       type="button"
@@ -9501,9 +9503,33 @@ function MeetingRecordingIndicator() {
       title="Return to the active meeting note"
     >
       <span className={`h-2 w-2 rounded-full ${status.state === 'recording' ? 'bg-[var(--ledger-accent)]' : status.transcriptionStatus === 'failed' ? 'bg-[var(--ledger-danger)]' : 'bg-amber-500'}`} />
-      {status.state === 'recording' ? 'Meeting recording' : status.state === 'paused' ? 'Meeting paused' : status.transcriptionStatus === 'failed' ? 'Transcription failed' : 'Transcription processing'}
+      {status.state === 'recording' ? 'Meeting recording' : 'Meeting paused'}
     </button>
   );
+}
+
+function TranscriptionFailureToast() {
+  const toast = useToast();
+  const shownJobIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    const transcription = window.meetingTranscription;
+    if (!transcription) return;
+    const unsubscribe = transcription.onProgress((value) => {
+      const event = value as { jobId?: unknown; status?: unknown; error?: unknown } | null;
+      const jobId = String(event?.jobId ?? '').trim();
+      if (event?.status !== 'failed' || !jobId || shownJobIdsRef.current.has(jobId)) return;
+      shownJobIdsRef.current.add(jobId);
+      toast.show('Transcription failed', {
+        detail: String(event?.error ?? '').trim() || 'Open the meeting note to retry transcription.',
+        variant: 'error',
+        duration: 7000,
+      });
+    });
+    return unsubscribe;
+  }, [toast]);
+
+  return null;
 }
 
 export default App;

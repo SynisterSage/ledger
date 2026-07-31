@@ -12434,6 +12434,9 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
       .from('notification_events')
       .upsert(payload, {
         onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for',
+        // Existing rows own their delivery/read/dismissal state. The scheduler
+        // should only create a missing event, never reset an existing one.
+        ignoreDuplicates: true,
       })
       .select(
         'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
