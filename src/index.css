@@ -37,6 +37,7 @@ body {
   --ledger-accent: #ff5f40;
   --ledger-accent-hover: #e85430;
   --ledger-accent-soft: #ffe8dc;
+  --ledger-new-tab-atmosphere: rgba(255, 95, 64, 0.08);
   --ledger-link: #2563eb;
   --ledger-link-hover: #1d4ed8;
   --ledger-danger: #d92d20;
@@ -101,6 +102,7 @@ body {
     --ledger-accent: #ff8c5f;
     --ledger-accent-hover: #ff7a4d;
     --ledger-accent-soft: #ffab8f;
+    --ledger-new-tab-atmosphere: rgba(255, 140, 95, 0.05);
     --ledger-link: #60a5fa;
     --ledger-link-hover: #93c5fd;
     --ledger-danger: #f97066;

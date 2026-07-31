@@ -982,7 +982,7 @@ const MeetingTranscriptSection = ({
       : 'No transcript yet.';
 
   return (
-    <section className="overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+    <section className="overflow-visible rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
       <button
         type="button"
         onClick={() => {
@@ -7414,11 +7414,12 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       />
                     ) : (
                       <div
-                        className="w-full min-h-[calc(100vh-330px)] mt-4"
+                        className="mt-4 h-[calc(100vh-330px)] min-h-[420px] w-full"
                         data-mindmap-id={selectedNote?.id}
                       >
                         <MindMapEditor
                           structure={draftMindMapStructure}
+                          onToast={(message) => toast.show(message, { variant: 'success' })}
                           onChange={(structure) => {
                             setDraftMindMapStructure(structure);
                             isDirtyRef.current = true;
@@ -8232,6 +8233,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             <div className="flex-1 min-h-0 p-4" data-mindmap-id={selectedNote?.id}>
               <MindMapEditor
                 structure={draftMindMapStructure}
+                onToast={(message) => toast.show(message, { variant: 'success' })}
                 onChange={(structure) => {
                   setDraftMindMapStructure(structure);
                   isDirtyRef.current = true;

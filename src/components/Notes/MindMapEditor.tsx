@@ -1,4 +1,16 @@
-import { Plus, Trash2, Copy, Maximize2, Minimize2 } from 'lucide-react';
+import {
+  Plus,
+  Copy,
+  Maximize2,
+  Minimize2,
+  Redo2,
+  Undo2,
+  Search,
+  LocateFixed,
+  ChevronsUpDown,
+  ListTree,
+  Focus,
+} from 'lucide-react';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
 type MindMapNode = {
@@ -10,6 +22,8 @@ type MindMapNode = {
   collapsed?: boolean;
   color?: string;
   group?: string;
+  detail?: string;
+  completed?: boolean;
 };
 
 type MindMapStructure = {
@@ -38,6 +52,7 @@ interface MindMapEditorProps {
   onChange: (structure: MindMapStructure) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onToast?: (message: string) => void;
 }
 
 const defaultStructure: MindMapStructure = {
@@ -58,6 +73,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   onChange,
   isFullscreen,
   onToggleFullscreen,
+  onToast,
 }) => {
   const initialStructure = useMemo(() => {
     if (structure && typeof structure === 'object' && 'nodes' in structure) {
@@ -68,7 +84,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
 
   const [nodes, setNodes] = useState<Record<string, MindMapNode>>(initialStructure.nodes);
   const [rootId] = useState(initialStructure.rootId);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialStructure.rootId);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [zoom, setZoom] = useState(1);
@@ -95,6 +111,17 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'map' | 'outline'>('map');
+  const [layoutDirection, setLayoutDirection] = useState<'balanced' | 'left' | 'right'>('balanced');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [focusedBranchId, setFocusedBranchId] = useState<string | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const historyRef = useRef<MindMapStructure[]>([]);
+  const historyIndexRef = useRef(-1);
+  const lastHistorySnapshotRef = useRef('');
   const toastTimerRef = useRef<number | null>(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const sceneWidth = viewportSize.width > 0 ? viewportSize.width : 800;
@@ -103,6 +130,14 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   const isCompact = sceneWidth > 0 && sceneWidth < 760;
   const centerX = sceneWidth / 2;
   const centerY = sceneHeight / 2;
+
+  useEffect(() => {
+    if (historyRef.current.length > 0) return;
+    const snapshot = { nodes, rootId };
+    historyRef.current = [snapshot];
+    historyIndexRef.current = 0;
+    lastHistorySnapshotRef.current = JSON.stringify(snapshot);
+  }, [nodes, rootId]);
 
   useEffect(() => {
     const element = mapViewportRef.current;
@@ -123,12 +158,47 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   }, []);
 
   const updateStructure = useCallback(
-    (newNodes: typeof nodes) => {
+    (newNodes: typeof nodes, recordHistory = true) => {
       setNodes(newNodes);
       onChange({ nodes: newNodes, rootId });
+      if (recordHistory) {
+        const snapshot = JSON.stringify({ nodes: newNodes, rootId });
+        if (snapshot !== lastHistorySnapshotRef.current) {
+          const nextHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
+          nextHistory.push({ nodes: newNodes, rootId });
+          historyRef.current = nextHistory.slice(-100);
+          historyIndexRef.current = historyRef.current.length - 1;
+          lastHistorySnapshotRef.current = snapshot;
+          setHistoryVersion((version) => version + 1);
+        }
+      }
     },
     [rootId, onChange]
   );
+
+  const undo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current -= 1;
+    const snapshot = historyRef.current[historyIndexRef.current];
+    if (!snapshot) return;
+    setNodes(snapshot.nodes);
+    onChange(snapshot);
+    lastHistorySnapshotRef.current = JSON.stringify(snapshot);
+    setHistoryVersion((version) => version + 1);
+    showToast('Undid change');
+  }, [onChange]);
+
+  const redo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current += 1;
+    const snapshot = historyRef.current[historyIndexRef.current];
+    if (!snapshot) return;
+    setNodes(snapshot.nodes);
+    onChange(snapshot);
+    lastHistorySnapshotRef.current = JSON.stringify(snapshot);
+    setHistoryVersion((version) => version + 1);
+    showToast('Redid change');
+  }, [onChange]);
 
   const layoutMindMap = (sourceNodes: Record<string, MindMapNode>) => {
     const nextNodes: Record<string, MindMapNode> = { ...sourceNodes };
@@ -178,8 +248,11 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
         (sum, childId) => sum + (subtreeSizes.get(childId) ?? 1),
         0
       );
-      const childSpan = Math.max(Math.PI / 10, span * 0.82);
-      const start = angle - childSpan / 2;
+      const childSpan = depth === 0 && layoutDirection !== 'balanced'
+        ? Math.PI * 0.82
+        : Math.max(Math.PI / 10, span * 0.82);
+      const branchAngle = depth === 0 && layoutDirection === 'left' ? Math.PI : depth === 0 && layoutDirection === 'right' ? 0 : angle;
+      const start = branchAngle - childSpan / 2;
       const branchSeed = nodeId.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
       const chainDirection = branchSeed % 2 === 0 ? 1 : -1;
       const chainBend = Math.min(Math.PI * 0.82, 0.5 + depth * 0.16);
@@ -191,7 +264,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
         const rawAngle = cursor + share / 2;
         const childAngle =
           children.length === 1
-            ? angle + chainDirection * chainBend
+            ? branchAngle + chainDirection * chainBend
             : rawAngle + (childWeight === 1 ? chainDirection * 0.08 : chainDirection * 0.03);
         setPosition(childId, depth + 1, childAngle, share);
         cursor += share;
@@ -224,6 +297,12 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   const reflowLayout = useCallback(() => {
     updateStructure(layoutMindMap(nodes));
   }, [layoutMindMap, nodes, updateStructure]);
+
+  useEffect(() => {
+    if (historyRef.current.length > 0) reflowLayout();
+    // Direction changes are intentional layout operations, so they belong in undo history.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutDirection]);
 
   const handleAddChild = useCallback(
     (nodeId?: string) => {
@@ -259,10 +338,12 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
       };
 
       const updatedParent = { ...parent, children: [...parent.children, newNodeId] };
-      // Preserve any manual positions the user has set; do not reflow automatically.
+      // Structural edits use the automatic tree layout; manual dragging remains available afterward.
       const nextNodes = { ...nodes, [newNodeId]: newNode, [parentId]: updatedParent };
-      updateStructure(nextNodes);
+      updateStructure(layoutMindMap(nextNodes));
       setSelectedNodeId(newNodeId);
+      setEditingNodeId(newNodeId);
+      setEditingLabel(newNode.label);
     },
     [selectedNodeId, nodes, rootId, updateStructure, sceneWidth, sceneHeight]
   );
@@ -298,8 +379,10 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
         [newNodeId]: newNode,
         [parentId]: { ...parent, children: nextChildren },
       };
-      updateStructure(nextNodes);
+      updateStructure(layoutMindMap(nextNodes));
       setSelectedNodeId(newNodeId);
+      setEditingNodeId(newNodeId);
+      setEditingLabel(newNode.label);
       setContextMenu(null);
       showToast('Sibling added');
     },
@@ -430,7 +513,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
         updatedNodes[nodeId] = { ...node, children };
       });
 
-      updateStructure(updatedNodes);
+      updateStructure(layoutMindMap(updatedNodes));
       setSelectedNodeId(null);
       setContextMenu(null);
       showToast('Node deleted');
@@ -453,16 +536,29 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
     (nodeId: string) => {
       const node = nodes[nodeId];
       if (!node) return;
-      updateStructure({ ...nodes, [nodeId]: { ...node, collapsed: !node.collapsed } });
+      updateStructure(layoutMindMap({ ...nodes, [nodeId]: { ...node, collapsed: !node.collapsed } }));
     },
     [nodes, updateStructure]
   );
 
   const handleNodeDrag = useCallback(
     (nodeId: string, dx: number, dy: number) => {
-      const node = nodes[nodeId];
-      if (!node) return;
-      updateStructure({ ...nodes, [nodeId]: { ...node, x: node.x + dx, y: node.y + dy } });
+      if (!nodes[nodeId]) return;
+      const ids = new Set<string>();
+      const collect = (id: string) => {
+        if (ids.has(id)) return;
+        ids.add(id);
+        nodes[id]?.children.forEach(collect);
+      };
+      collect(nodeId);
+      const nextNodes = { ...nodes };
+      ids.forEach((id) => {
+        const node = nodes[id];
+        if (node) nextNodes[id] = { ...node, x: node.x + dx, y: node.y + dy };
+      });
+      // Pointer moves are intentionally not separate undo entries. The final
+      // position is still persisted through the normal structure callback.
+      updateStructure(nextNodes, false);
     },
     [nodes, updateStructure]
   );
@@ -517,6 +613,8 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable) return;
       if (!selectedNodeId) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
@@ -545,7 +643,32 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
       handleNodeDrag(draggingNodeId, dx, dy);
     };
 
-    const handleUp = () => {
+    const handleUp = (event: PointerEvent) => {
+      if (draggingNodeId) {
+        const dragged = nodes[draggingNodeId];
+        const parentId = getParentId(draggingNodeId);
+        const subtree = new Set(collectBranchIds(draggingNodeId));
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (dragged && dragged.id !== rootId && rect && parentId) {
+          const worldX = (event.clientX - rect.left - centerX - offsetX) / zoom;
+          const worldY = (event.clientY - rect.top - centerY - offsetY) / zoom;
+          const target = Object.values(nodes)
+            .filter((node) => !subtree.has(node.id) && node.id !== parentId)
+            .sort((a, b) => Math.hypot(a.x - worldX, a.y - worldY) - Math.hypot(b.x - worldX, b.y - worldY))[0];
+          if (target && Math.hypot(target.x - worldX, target.y - worldY) < 72 && !target.children.includes(draggingNodeId)) {
+            const parent = nodes[parentId];
+            const nextNodes = { ...nodes,
+              [parentId]: { ...parent, children: parent.children.filter((id) => id !== draggingNodeId) },
+              [target.id]: { ...target, children: [...target.children, draggingNodeId] },
+            };
+            updateStructure(layoutMindMap(nextNodes));
+            setSelectedNodeId(draggingNodeId);
+            setDraggingNodeId(null);
+            return;
+          }
+        }
+        updateStructure(nodes);
+      }
       setDraggingNodeId(null);
     };
 
@@ -565,6 +688,10 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   const availableGroups = ['Ungrouped', 'Work', 'Personal', 'Ideas', 'Planning'];
 
   function showToast(message: string) {
+    if (onToast) {
+      onToast(message);
+      return;
+    }
     setToastMessage(message);
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToastMessage(null), 2000);
@@ -576,6 +703,132 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
     }
     return null;
   }
+
+  const beginEditing = useCallback((nodeId: string, initialText?: string) => {
+    const node = nodes[nodeId];
+    if (!node) return;
+    setSelectedNodeId(nodeId);
+    setEditingNodeId(nodeId);
+    setEditingLabel(initialText ?? node.label);
+  }, [nodes]);
+
+  const moveNodeUp = useCallback((nodeId: string) => {
+    const parentId = getParentId(nodeId);
+    if (!parentId) return;
+    const grandparentId = getParentId(parentId);
+    if (!grandparentId) return;
+    const parent = nodes[parentId];
+    const grandparent = nodes[grandparentId];
+    if (!parent || !grandparent) return;
+    const nextNodes = { ...nodes };
+    nextNodes[parentId] = { ...parent, children: parent.children.filter((id) => id !== nodeId) };
+    const parentIndex = grandparent.children.indexOf(parentId);
+    const nextChildren = [...grandparent.children];
+    nextChildren.splice(parentIndex + 1, 0, nodeId);
+    nextNodes[grandparentId] = { ...grandparent, children: nextChildren };
+    updateStructure(nextNodes);
+    setSelectedNodeId(nodeId);
+    showToast('Moved up one level');
+  }, [nodes, updateStructure, showToast]);
+
+  const navigateToNearbyNode = useCallback((direction: 'up' | 'down' | 'left' | 'right') => {
+    const selected = selectedNodeId ? nodes[selectedNodeId] : nodes[rootId];
+    if (!selected) return;
+    const candidates = Object.values(nodes).filter((node) => node.id !== selected.id);
+    const directional = candidates.filter((node) => {
+      const dx = node.x - selected.x;
+      const dy = node.y - selected.y;
+      if (direction === 'up') return dy < -12;
+      if (direction === 'down') return dy > 12;
+      if (direction === 'left') return dx < -12;
+      return dx > 12;
+    });
+    const pool = directional.length ? directional : candidates;
+    const next = pool.sort((a, b) => {
+      const aDistance = Math.hypot(a.x - selected.x, a.y - selected.y);
+      const bDistance = Math.hypot(b.x - selected.x, b.y - selected.y);
+      return aDistance - bDistance;
+    })[0];
+    if (next) setSelectedNodeId(next.id);
+  }, [nodes, rootId, selectedNodeId]);
+
+  const fitNodes = useCallback((ids: string[]) => {
+    const visible = ids.map((id) => nodes[id]).filter(Boolean);
+    if (!visible.length) return;
+    const minX = Math.min(...visible.map((node) => node.x));
+    const maxX = Math.max(...visible.map((node) => node.x));
+    const minY = Math.min(...visible.map((node) => node.y));
+    const maxY = Math.max(...visible.map((node) => node.y));
+    const width = Math.max(220, maxX - minX + 180);
+    const height = Math.max(160, maxY - minY + 130);
+    setZoom(clampZoom(Math.min(sceneWidth / width, sceneHeight / height)));
+    setOffsetX(-((minX + maxX) / 2) * zoom);
+    setOffsetY(-((minY + maxY) / 2) * zoom);
+  }, [nodes, sceneWidth, sceneHeight, clampZoom, zoom]);
+
+  const collectBranchIds = useCallback((nodeId: string): string[] => {
+    const ids: string[] = [];
+    const visit = (id: string) => {
+      ids.push(id);
+      nodes[id]?.children.forEach(visit);
+    };
+    visit(nodeId);
+    return ids;
+  }, [nodes]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) return;
+    const match = Object.values(nodes).find((node) => `${node.label} ${node.detail ?? ''}`.toLowerCase().includes(searchQuery.trim().toLowerCase()));
+    if (!match) return;
+    setSelectedNodeId(match.id);
+    setOffsetX(-match.x * zoom);
+    setOffsetY(-match.y * zoom);
+  }, [nodes, searchQuery, zoom]);
+
+  const handleCanvasKeyDown = useCallback((event: React.KeyboardEvent<SVGSVGElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+    const selected = selectedNodeId ?? rootId;
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      undo();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      redo();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleAddSibling(selected);
+      return;
+    }
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      if (event.shiftKey) moveNodeUp(selected);
+      else handleAddChild(selected);
+      return;
+    }
+    if (event.key === 'Escape') {
+      setEditingNodeId(null);
+      setFocusedBranchId(null);
+      return;
+    }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      handleDeleteNode(selected);
+      return;
+    }
+    if (event.key.startsWith('Arrow')) {
+      event.preventDefault();
+      navigateToNearbyNode(event.key.slice(5).toLowerCase() as 'up' | 'down' | 'left' | 'right');
+      return;
+    }
+    if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      beginEditing(selected, event.key);
+    }
+  }, [selectedNodeId, rootId, undo, redo, handleAddSibling, handleAddChild, moveNodeUp, handleDeleteNode, navigateToNearbyNode, beginEditing]);
 
   const exportAsJSON = () => {
     const json = JSON.stringify({ nodes, rootId }, null, 2);
@@ -661,6 +914,35 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   }, [rootId, updateStructure, showToast]);
 
   const canToggleFullscreen = typeof onToggleFullscreen === 'function';
+  const canUndo = historyVersion >= 0 && historyIndexRef.current > 0;
+  const canRedo = historyVersion >= 0 && historyIndexRef.current < historyRef.current.length - 1;
+
+  const renderOutlineNode = (nodeId: string, depth = 0): React.ReactNode => {
+    const node = nodes[nodeId];
+    if (!node) return null;
+    const isFocused = !focusedBranchId || collectBranchIds(focusedBranchId).includes(nodeId);
+    const matchesSearch = !searchQuery.trim() || `${node.label} ${node.detail ?? ''}`.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    return (
+      <div key={nodeId} className="select-none" style={{ opacity: isFocused ? (matchesSearch ? 1 : 0.45) : 0.22 }}>
+        <div
+          className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--ledger-surface-hover)]"
+          style={{ marginLeft: depth * 22 }}
+          onClick={() => setSelectedNodeId(nodeId)}
+          onDoubleClick={() => beginEditing(nodeId)}
+        >
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: node.color || 'var(--ledger-accent)' }} />
+          {editingNodeId === nodeId ? (
+            <input autoFocus value={editingLabel} onChange={(event) => setEditingLabel(event.target.value)} onBlur={() => handleRenameNode(nodeId, editingLabel)} onKeyDown={(event) => { if (event.key === 'Enter') handleRenameNode(nodeId, editingLabel); if (event.key === 'Escape') setEditingNodeId(null); }} className="min-w-0 flex-1 rounded border bg-transparent px-1 text-sm outline-none" />
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-sm" style={{ color: mindMapTheme.textPrimary }}>{node.label}</span>
+          )}
+          {node.detail && <span className="text-[10px]" style={{ color: mindMapTheme.textMuted }}>details</span>}
+          {node.children.length > 0 && <button className="text-xs" onClick={(event) => { event.stopPropagation(); handleToggleCollapse(nodeId); }} style={{ color: mindMapTheme.textMuted }}>{node.collapsed ? `+${collectBranchIds(nodeId).length - 1}` : '−'}</button>}
+        </div>
+        {!node.collapsed && node.children.map((childId) => renderOutlineNode(childId, depth + 1))}
+      </div>
+    );
+  };
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -684,13 +966,20 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
     const isSelected = selectedNodeId === nodeId;
     const isEditing = editingNodeId === nodeId;
     const isRoot = nodeId === rootId;
+    const isFocused = !focusedBranchId || collectBranchIds(focusedBranchId).includes(nodeId);
+    const matchesSearch = !searchQuery.trim() || `${node.label} ${node.detail ?? ''}`.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    const labelLines = node.label.length <= 23
+      ? [node.label]
+      : [node.label.slice(0, 23), `${node.label.slice(23, 46)}${node.label.length > 46 ? '…' : ''}`];
+    const longestLabelLine = Math.max(...labelLines.map((line) => line.length));
     const nodeWidth = Math.max(
-      isRoot ? 120 : isTiny ? 96 : 104,
-      Math.min(isTiny ? 144 : 162, 42 + node.label.length * (isTiny ? 5 : 6))
+      isRoot ? 124 : isTiny ? 108 : 116,
+      Math.min(isTiny ? 210 : 268, 62 + longestLabelLine * (isTiny ? 6 : 7))
     );
-    const nodeHeight = isRoot ? 54 : isTiny ? 42 : 46;
-    const fill = isSelected ? mindMapTheme.accent : node.color || (isRoot ? 'var(--ledger-surface-muted)' : mindMapTheme.surface);
-    const stroke = isSelected ? mindMapTheme.accentHover : isRoot ? 'var(--ledger-border-strong)' : mindMapTheme.borderSubtle;
+    const nodeHeight = labelLines.length > 1 ? 58 : isRoot ? 48 : isTiny ? 42 : 44;
+    const branchAccent = node.color || (isRoot ? mindMapTheme.accent : 'var(--ledger-warning)');
+    const fill = isRoot ? 'var(--ledger-surface-muted)' : mindMapTheme.surface;
+    const stroke = isSelected ? mindMapTheme.accent : isRoot ? 'var(--ledger-border-strong)' : mindMapTheme.borderSubtle;
 
     return (
       <g key={nodeId}>
@@ -711,6 +1000,9 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
 
         <g
           transform={`translate(${displayX}, ${displayY})`}
+          opacity={isFocused ? (matchesSearch ? 1 : 0.42) : 0.18}
+          onMouseEnter={() => setHoveredNodeId(nodeId)}
+          onMouseLeave={() => setHoveredNodeId(null)}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -727,6 +1019,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             e.stopPropagation();
             if (e.button !== 0) return;
             setSelectedNodeId(nodeId);
+            svgRef.current?.focus();
             setDraggingNodeId(nodeId);
           }}
           onDoubleClick={(e) => {
@@ -741,35 +1034,48 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             y={-nodeHeight / 2}
             width={nodeWidth}
             height={nodeHeight}
-            rx="18"
+            rx="10"
             fill={fill}
             stroke={stroke}
             strokeWidth="2"
+            style={{ filter: isSelected ? 'drop-shadow(0 0 0.5px var(--ledger-accent))' : 'drop-shadow(0 1px 2px rgba(0,0,0,.16))' }}
           />
           <circle
             cx={-nodeWidth / 2 + 12}
             cy={0}
             r="4"
-            fill={isSelected ? 'white' : isRoot ? mindMapTheme.accent : 'var(--ledger-warning)'}
+            fill={branchAccent}
             opacity={isSelected ? 0.95 : 1}
           />
           <text
             x={isRoot ? 0 : -nodeWidth / 2 + 32}
-            y={4}
+            y={isRoot ? 4 : labelLines.length > 1 ? -6 : 4}
             fontSize={isRoot ? '13' : '12'}
             fontWeight="600"
             textAnchor={isRoot ? 'middle' : 'start'}
-            fill={isSelected ? 'white' : mindMapTheme.textPrimary}
+            fill={mindMapTheme.textPrimary}
             style={{ userSelect: 'none', pointerEvents: 'none' }}
           >
-            {isRoot
-              ? node.label.length > 18
-                ? `${node.label.slice(0, 18)}…`
-                : node.label
-              : node.label.length > 28
-              ? `${node.label.slice(0, 28)}…`
-              : node.label}
+            {labelLines.map((line, index) => (
+              <tspan key={`${nodeId}-label-${index}`} x={isRoot ? 0 : -nodeWidth / 2 + 32} dy={index === 0 ? 0 : 14}>{line}</tspan>
+            ))}
           </text>
+        </g>
+
+        <g
+          onMouseEnter={() => setHoveredNodeId(nodeId)}
+          onMouseLeave={() => setHoveredNodeId(null)}
+          onClick={(event) => { event.stopPropagation(); handleAddChild(nodeId); }}
+          style={{ cursor: 'pointer' }}
+        >
+          {/* The transparent bridge keeps the quick-add target alive while the pointer travels from the node. */}
+          <rect x={displayX + nodeWidth / 2 - 4} y={displayY - 14} width="30" height="28" fill="transparent" />
+          {hoveredNodeId === nodeId && (
+            <>
+              <circle cx={displayX + nodeWidth / 2 + 10} cy={displayY} r="9" fill={mindMapTheme.accent} />
+              <text x={displayX + nodeWidth / 2 + 10} y={displayY + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="white">+</text>
+            </>
+          )}
         </g>
 
         {node.children.length > 0 && (
@@ -792,13 +1098,13 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               textAnchor="middle"
               fill={mindMapTheme.textSecondary}
             >
-              {node.collapsed ? '+' : '−'}
+              {node.collapsed ? `+${collectBranchIds(nodeId).length - 1}` : '−'}
             </text>
           </g>
         )}
 
         {isEditing && (
-          <foreignObject x={displayX - 40} y={displayY - 12} width="80" height="24">
+          <foreignObject x={displayX - nodeWidth / 2 + 8} y={displayY - 14} width={nodeWidth - 16} height={nodeHeight - 4}>
             <input
               autoFocus
               type="text"
@@ -826,7 +1132,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border"
+      className="relative flex h-full min-h-[420px] w-full flex-col overflow-hidden rounded-lg border"
       style={{
         borderColor: mindMapTheme.borderSubtle,
         backgroundColor: mindMapTheme.surfaceMuted,
@@ -851,18 +1157,6 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                 <span>Add</span>
               </button>
               <button
-                onClick={() => handleDeleteNode()}
-                disabled={!selectedNodeId || selectedNodeId === rootId}
-                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
-                style={{
-                  backgroundColor: 'color-mix(in srgb, var(--ledger-danger) 8%, transparent)',
-                  color: mindMapTheme.danger,
-                }}
-                title="Delete"
-              >
-                <Trash2 size={14} />
-              </button>
-              <button
                 onClick={reflowLayout}
                 className="rounded-lg px-2.5 py-1.5 text-xs font-medium transition"
                 style={{
@@ -873,9 +1167,16 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
               >
                 Arrange
               </button>
+              <button onClick={undo} disabled={!canUndo} className="rounded-lg p-1.5 text-xs disabled:opacity-35" title="Undo (Cmd/Ctrl+Z)"><Undo2 size={14} /></button>
+              <button onClick={redo} disabled={!canRedo} className="rounded-lg p-1.5 text-xs disabled:opacity-35" title="Redo (Cmd/Ctrl+Shift+Z)"><Redo2 size={14} /></button>
             </div>
 
             <div className="ml-auto flex items-center gap-1 shrink-0">
+              <button onClick={() => setIsSearchOpen((open) => !open)} className="h-8 w-8 rounded text-xs" title="Search nodes"><Search size={14} className="mx-auto" /></button>
+              <button onClick={() => fitNodes(collectBranchIds(selectedNodeId ?? rootId))} className="h-8 w-8 rounded text-xs" title="Fit selection"><Focus size={14} className="mx-auto" /></button>
+              <button onClick={() => fitNodes(Object.keys(nodes))} className="h-8 w-8 rounded text-xs" title="Fit map"><LocateFixed size={14} className="mx-auto opacity-60" /></button>
+              <button onClick={() => setLayoutDirection((direction) => direction === 'balanced' ? 'right' : direction === 'right' ? 'left' : 'balanced')} className="h-8 rounded px-2 text-xs" title="Layout direction"><ChevronsUpDown size={14} /></button>
+              <button onClick={() => setViewMode((mode) => mode === 'map' ? 'outline' : 'map')} className="h-8 rounded px-2 text-xs" title="Switch Map / Outline"><ListTree size={14} /></button>
               <button
                 onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
                 className="h-8 w-8 rounded text-xs font-medium transition"
@@ -967,7 +1268,7 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             </div>
           </div>
 
-          {selectedNodeId && (
+          {selectedNodeId && detailsOpen && (
             <div className="mt-2 flex items-center gap-2">
               <div className="flex flex-wrap gap-1">
                 {nodeColors.map((color, idx) => (
@@ -1018,18 +1319,6 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             <Plus size={14} />
             <span>Add</span>
           </button>
-          <button
-            onClick={() => handleDeleteNode()}
-            disabled={!selectedNodeId || selectedNodeId === rootId}
-            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
-            style={{
-              backgroundColor: 'rgba(217, 45, 32, 0.08)',
-              color: mindMapTheme.danger,
-            }}
-            title="Delete"
-          >
-            <Trash2 size={14} />
-          </button>
 
           <button
             onClick={reflowLayout}
@@ -1039,8 +1328,10 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
           >
             Arrange
           </button>
+          <button onClick={undo} disabled={!canUndo} className="rounded-lg p-1.5 text-xs disabled:opacity-35" title="Undo (Cmd/Ctrl+Z)"><Undo2 size={14} /></button>
+          <button onClick={redo} disabled={!canRedo} className="rounded-lg p-1.5 text-xs disabled:opacity-35" title="Redo (Cmd/Ctrl+Shift+Z)"><Redo2 size={14} /></button>
 
-          {selectedNodeId && (
+          {selectedNodeId && detailsOpen && (
             <div className="flex items-center gap-1">
               <div className="flex flex-wrap gap-1">
                 {nodeColors.map((color, idx) => (
@@ -1077,6 +1368,11 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
           )}
 
           <div className="ml-auto flex items-center gap-1.5">
+            <button onClick={() => setIsSearchOpen((open) => !open)} className="rounded px-2 py-1 text-xs" title="Search nodes"><Search size={14} /></button>
+            <button onClick={() => fitNodes(collectBranchIds(selectedNodeId ?? rootId))} className="rounded px-2 py-1 text-xs" title="Fit selection"><Focus size={14} /></button>
+            <button onClick={() => fitNodes(Object.keys(nodes))} className="rounded px-2 py-1 text-xs" title="Fit map"><LocateFixed size={14} className="opacity-60" /></button>
+            <button onClick={() => setLayoutDirection((direction) => direction === 'balanced' ? 'right' : direction === 'right' ? 'left' : 'balanced')} className="rounded px-2 py-1 text-xs" title="Layout direction"><ChevronsUpDown size={14} /></button>
+            <button onClick={() => setViewMode((mode) => mode === 'map' ? 'outline' : 'map')} className="rounded px-2 py-1 text-xs" title="Switch Map / Outline"><ListTree size={14} /></button>
             <button
               onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
             className="rounded px-2 py-1 text-xs font-medium transition"
@@ -1226,17 +1522,32 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
                   ? 'Expand branch'
                   : 'Collapse branch'}
               </button>
+              <button
+                onClick={() => {
+                  const nodeId = contextMenu.nodeId as string;
+                  setFocusedBranchId((current) => current === nodeId ? null : nodeId);
+                  setContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
+              >
+                <span className="inline-flex items-center gap-2"><Focus size={12} /> {focusedBranchId === contextMenu.nodeId ? 'Exit focus' : 'Focus branch'}</span>
+              </button>
+              <button
+                onClick={() => { setSelectedNodeId(contextMenu.nodeId as string); setDetailsOpen(true); setContextMenu(null); }}
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
+              >
+                Open node details
+              </button>
               <div className="my-1 border-t" style={{ borderColor: mindMapTheme.borderSubtle }} />
-              {availableGroups.map((group) => (
-                <button
-                  key={group}
-                  onClick={() => handleAssignGroup(group, contextMenu.nodeId as string)}
-                  className="w-full text-left px-3 py-2 text-xs"
-                  style={{ color: mindMapTheme.textSecondary }}
-                >
-                  Move to {group}
-                </button>
-              ))}
+              <button
+                onClick={() => moveNodeUp(contextMenu.nodeId as string)}
+                className="w-full text-left px-3 py-2 text-xs"
+                style={{ color: mindMapTheme.textSecondary }}
+              >
+                Move branch up one level
+              </button>
               {(contextMenu.nodeId as string) !== rootId && (
                 <>
                   <div className="my-1 border-t" style={{ borderColor: mindMapTheme.borderSubtle }} />
@@ -1297,14 +1608,34 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
         style={{ backgroundColor: mindMapTheme.surfaceMuted }}
         onWheelCapture={handleViewportWheelCapture}
       >
-        <svg
+        {isSearchOpen && (
+          <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-lg border px-2 py-1.5 shadow-sm" style={{ backgroundColor: mindMapTheme.surface, borderColor: mindMapTheme.borderSubtle }}>
+            <Search size={13} style={{ color: mindMapTheme.textMuted }} />
+            <input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search nodes" className="w-44 bg-transparent text-xs outline-none" style={{ color: mindMapTheme.textPrimary }} />
+            <button onClick={() => { setSearchQuery(''); setIsSearchOpen(false); }} className="text-xs" style={{ color: mindMapTheme.textMuted }}>Esc</button>
+          </div>
+        )}
+        {viewMode === 'outline' ? (
+          <div className="h-full overflow-auto p-4" onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === 'Tab') {
+              event.preventDefault();
+              const selected = selectedNodeId ?? rootId;
+              if (event.shiftKey) moveNodeUp(selected); else if (event.key === 'Tab') handleAddChild(selected); else handleAddSibling(selected);
+            }
+          }} tabIndex={0}>
+            <div className="mb-3 flex items-center gap-2 text-xs" style={{ color: mindMapTheme.textMuted }}><ListTree size={14} /> Outline · same mind map structure</div>
+            {renderOutlineNode(rootId)}
+          </div>
+        ) : <svg
           ref={svgRef}
           width="100%"
           height="100%"
           viewBox={`0 0 ${sceneWidth} ${sceneHeight}`}
           preserveAspectRatio="xMidYMid meet"
-          className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
-          style={{ backgroundColor: mindMapTheme.surfaceMuted }}
+          tabIndex={0}
+          onKeyDown={handleCanvasKeyDown}
+          className={`w-full h-full outline-none ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+          style={{ backgroundColor: mindMapTheme.surfaceMuted, outline: 'none' }}
           onWheel={handleWheel}
           onMouseDown={(e) => {
             if (e.button !== 0) return;
@@ -1391,34 +1722,36 @@ export const MindMapEditor: React.FC<MindMapEditorProps> = ({
             fill="url(#mindmap-grid)"
           />
           {renderNode(rootId)}
-        </svg>
+        </svg>}
       </div>
 
-      <div
-        className={`border-t text-xs ${
-          isCompact ? 'px-3 py-2' : 'px-4 py-2'
-        }`}
-        style={{ borderColor: mindMapTheme.borderSubtle, backgroundColor: mindMapTheme.surface }}
-      >
-        <div className={`flex gap-1 ${isCompact ? 'flex-col' : 'items-center justify-between'}`}>
-          <p className="min-w-0 truncate" style={{ color: mindMapTheme.textSecondary }}>
-            {selectedNodeId
-              ? `Selected: "${nodes[selectedNodeId]?.label}"`
-              : 'Click a node to select'}{' '}
-            • {Object.keys(nodes).length} nodes
-          </p>
-          <p className="shrink-0" style={{ color: mindMapTheme.textSecondary }}>
-            <kbd className="rounded px-1" style={{ backgroundColor: mindMapTheme.surfaceMuted }}>
-              Ctrl+N
-            </kbd>{' '}
-            add ·{' '}
-            <kbd className="rounded px-1" style={{ backgroundColor: mindMapTheme.surfaceMuted }}>
-              Delete
-            </kbd>{' '}
-            remove
-          </p>
-        </div>
-      </div>
+      {focusedBranchId && (
+        <button onClick={() => setFocusedBranchId(null)} className="absolute bottom-12 left-1/2 z-20 -translate-x-1/2 rounded-full border px-3 py-1.5 text-xs shadow-sm" style={{ backgroundColor: mindMapTheme.surface, borderColor: mindMapTheme.borderSubtle, color: mindMapTheme.textSecondary }}>
+          Exit focus
+        </button>
+      )}
+
+      {detailsOpen && selectedNodeId && nodes[selectedNodeId] && (
+        <aside className="absolute right-3 top-16 z-20 w-64 rounded-xl border p-3 shadow-lg" style={{ backgroundColor: mindMapTheme.surface, borderColor: mindMapTheme.borderSubtle, boxShadow: mindMapTheme.shadow }}>
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-xs font-semibold" style={{ color: mindMapTheme.textPrimary }}>Node details</span>
+            <button onClick={() => setDetailsOpen(false)} className="text-xs" style={{ color: mindMapTheme.textMuted }}>Close</button>
+          </div>
+          <label className="mb-3 block text-[11px]" style={{ color: mindMapTheme.textMuted }}>
+            Title
+            <input value={nodes[selectedNodeId].label} onChange={(event) => updateStructure({ ...nodes, [selectedNodeId]: { ...nodes[selectedNodeId], label: event.target.value } })} className="mt-1 w-full rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none" style={{ borderColor: mindMapTheme.borderSubtle, color: mindMapTheme.textPrimary }} />
+          </label>
+          <label className="mb-3 block text-[11px]" style={{ color: mindMapTheme.textMuted }}>
+            Supporting notes
+            <textarea value={nodes[selectedNodeId].detail ?? ''} onChange={(event) => updateStructure({ ...nodes, [selectedNodeId]: { ...nodes[selectedNodeId], detail: event.target.value } })} rows={4} className="mt-1 w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-xs outline-none" style={{ borderColor: mindMapTheme.borderSubtle, color: mindMapTheme.textPrimary }} />
+          </label>
+          <label className="flex items-center gap-2 text-xs" style={{ color: mindMapTheme.textSecondary }}>
+            <input type="checkbox" checked={Boolean(nodes[selectedNodeId].completed)} onChange={(event) => updateStructure({ ...nodes, [selectedNodeId]: { ...nodes[selectedNodeId], completed: event.target.checked } })} />
+            Completed
+          </label>
+        </aside>
+      )}
+
     </div>
   );
 };

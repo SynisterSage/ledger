@@ -1656,12 +1656,26 @@ export const CalendarWindow = () => {
 
   const openDueDateItem = useCallback((item: DueDateItem) => {
     if (item.kind === 'project') {
-      void window.desktopWindow?.toggleModule('projects', { focusProjectId: item.sourceId });
+      void window.desktopWindow?.openModule('projects', {
+        kind: 'projects',
+        focusProjectId: item.sourceId,
+      });
       return;
     }
-    void window.desktopWindow?.toggleModule('projects', {
-      focusProjectId: item.projectId ?? undefined,
-      focusTaskId: item.kind === 'task' ? item.sourceId : undefined,
+    if (item.kind === 'milestone') {
+      void window.desktopWindow?.openModule('projects', {
+        kind: 'projects',
+        focusSection: 'timeline:all',
+      });
+      return;
+    }
+    if (item.kind === 'task') {
+      void window.desktopWindow?.openModule('dashboard', { kind: 'dashboard' });
+      return;
+    }
+    void window.desktopWindow?.openModule('inbox', {
+      kind: 'inbox',
+      focusSection: 'unprocessed',
     });
   }, []);
 
@@ -1952,26 +1966,10 @@ export const CalendarWindow = () => {
       .sort((a, b) => a - b)
       .map((h) => `${h}:00`);
   }, [hours, visibleEvents, reminders, viewConfig.dates]);
-  const selectedEventProject = useMemo(
-    () =>
-      selectedEventPreview?.project_id
-        ? projectById.get(selectedEventPreview.project_id) ?? null
-        : null,
-    [projectById, selectedEventPreview]
-  );
   const selectedEventNote = useMemo(
     () =>
       selectedEventPreview?.note_id ? noteById.get(selectedEventPreview.note_id) ?? null : null,
     [noteById, selectedEventPreview]
-  );
-  const selectedReminderProject = useMemo(
-    () =>
-      selectedReminder?.project_id ? projectById.get(selectedReminder.project_id) ?? null : null,
-    [projectById, selectedReminder]
-  );
-  const selectedReminderNote = useMemo(
-    () => (selectedReminder?.note_id ? noteById.get(selectedReminder.note_id) ?? null : null),
-    [noteById, selectedReminder]
   );
   const isAllDayEvent = (event: EventRow) => {
     if (event.all_day) return true;
@@ -5593,11 +5591,23 @@ export const CalendarWindow = () => {
                                 {canEditEvent(selectedEventPreview) && (
                                   <button
                                     onClick={() => openEventEditor(selectedEventPreview)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent)]"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                                     aria-label="Edit event"
                                     title="Edit event"
                                   >
                                     <PencilLine size={14} />
+                                  </button>
+                                )}
+                                {!selectedEventNote && canEditEvent(selectedEventPreview) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void createMeetingNoteFromEvent(selectedEventPreview)}
+                                    disabled={isCreatingMeetingNote}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
+                                    aria-label="Start meeting notes"
+                                    title="Start meeting notes"
+                                  >
+                                    <Mic size={14} />
                                   </button>
                                 )}
                                 <PinActionButton
@@ -5627,73 +5637,6 @@ export const CalendarWindow = () => {
                                   Workspace · {selectedEventPreview.workspace_name}
                                 </p>
                               )}
-                              <div className="mt-3 space-y-2 text-[13px]">
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="text-[var(--ledger-text-muted)]">Project</span>
-                                  {selectedEventProject ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void window.desktopWindow?.toggleModule('projects', {
-                                          focusProjectId: selectedEventProject.id,
-                                        })
-                                      }
-                                      className="truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                                    >
-                                      {selectedEventProject.name} →
-                                    </button>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        void (selectedEventPreview ? openLinkProjectModal() : null)
-                                      }
-                                      className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
-                                    >
-                                      + Link project
-                                    </button>
-                                  )}
-                                </div>
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="text-[var(--ledger-text-muted)]">
-                                    Linked note
-                                  </span>
-                                  {selectedEventNote ? (
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void window.desktopWindow?.toggleModule('notes', {
-                                            focusNoteId: selectedEventNote.id,
-                                          })
-                                        }
-                                        className="max-w-36 truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                                      >
-                                        {selectedEventNote.title} →
-                                      </button>
-                                      {selectedEventNote.mode === 'meeting_note' && <span className="shrink-0 text-[10px] text-[var(--ledger-accent)]">Meeting</span>}
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => void createMeetingNoteFromEvent(selectedEventPreview)}
-                                        disabled={isCreatingMeetingNote}
-                                        className="inline-flex items-center gap-1 font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
-                                      >
-                                        <Mic size={12} /> {isCreatingMeetingNote ? 'Creating…' : 'Start meeting notes'}
-                                      </button>
-                                      <button type="button" onClick={() => void openLinkNoteModal()} className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]">+ Link note</button>
-                                    </div>
-                                  )}
-                                </div>
-                                {selectedEventPreview.meeting_transcription_status && (
-                                  <div className="flex items-center justify-between gap-3">
-                                    <span className="text-[var(--ledger-text-muted)]">Meeting status</span>
-                                    <span className="text-[11px] font-medium text-[var(--ledger-text-secondary)]">{selectedEventPreview.meeting_transcription_status}</span>
-                                  </div>
-                                )}
-                              </div>
                             </div>
                           </div>
                         </div>
@@ -5724,56 +5667,6 @@ export const CalendarWindow = () => {
                               Workspace · {selectedReminder.workspace_name}
                             </p>
                           )}
-                          <div className="mt-3 space-y-2 text-[13px]">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-[var(--ledger-text-muted)]">Project</span>
-                              {selectedReminderProject ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void window.desktopWindow?.toggleModule('projects', {
-                                      focusProjectId: selectedReminderProject.id,
-                                    })
-                                  }
-                                  className="truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                                >
-                                  {selectedReminderProject.name} →
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => void openLinkProjectModal()}
-                                  className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
-                                >
-                                  + Link project
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-[var(--ledger-text-muted)]">Linked note</span>
-                              {selectedReminderNote ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void window.desktopWindow?.toggleModule('notes', {
-                                      focusNoteId: selectedReminderNote.id,
-                                    })
-                                  }
-                                  className="truncate font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                                >
-                                  {selectedReminderNote.title} →
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => void openLinkNoteModal()}
-                                  className="font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-accent)]"
-                                >
-                                  + Link note
-                                </button>
-                              )}
-                            </div>
-                          </div>
                         </div>
                       </div>
                       <div className="mt-1">
@@ -7090,7 +6983,7 @@ export const CalendarWindow = () => {
 
       {calendarRowContextMenu && (
         <div
-          className="fixed z-50 min-w-48 overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] py-1 shadow-xl"
+          className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
           style={{
             left: Math.max(8, Math.min(calendarRowContextMenu.x, window.innerWidth - 192)),
             top: Math.max(8, Math.min(calendarRowContextMenu.y, window.innerHeight - 176)),
@@ -7109,9 +7002,9 @@ export const CalendarWindow = () => {
               }
               setCalendarRowContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
-            <PencilLine size={14} className="shrink-0 text-gray-500" />
+            <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="text-[14px] font-medium tracking-tight">Rename</span>
           </button>
           <button
@@ -7124,13 +7017,13 @@ export const CalendarWindow = () => {
               }
               setCalendarRowContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
             {calendars.find((item) => item.id === calendarRowContextMenu.calendarId)?.is_visible ===
             false ? (
-              <Eye size={14} className="shrink-0 text-gray-500" />
+              <Eye size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             ) : (
-              <EyeOff size={14} className="shrink-0 text-gray-500" />
+              <EyeOff size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             )}
             <span className="text-[14px] font-medium tracking-tight">
               {calendars.find((item) => item.id === calendarRowContextMenu.calendarId)
@@ -7153,9 +7046,9 @@ export const CalendarWindow = () => {
               }
               setCalendarRowContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-[#FFF1E3]"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
           >
-            <Palette size={14} className="shrink-0 text-gray-500" />
+            <Palette size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
             <span className="text-[14px] font-medium tracking-tight">Change color</span>
           </button>
           <button
@@ -7171,9 +7064,9 @@ export const CalendarWindow = () => {
               }
               setCalendarRowContextMenu(null);
             }}
-            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
           >
-            <Trash2 size={14} className="shrink-0 text-red-500" />
+            <Trash2 size={14} className="shrink-0 text-[var(--ledger-danger)]" />
             <span className="text-[14px] font-medium tracking-tight">Delete</span>
           </button>
         </div>
@@ -7181,7 +7074,7 @@ export const CalendarWindow = () => {
 
       {calendarColorMenu && (
         <div
-          className="fixed z-50 w-64 overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] p-3 shadow-xl"
+          className="fixed z-50 w-64 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
           style={{
             left: Math.max(8, Math.min(calendarColorMenu.x, window.innerWidth - 264)),
             top: Math.max(8, Math.min(calendarColorMenu.y, window.innerHeight - 180)),
@@ -7190,7 +7083,7 @@ export const CalendarWindow = () => {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs font-medium text-gray-500">Calendar Color</p>
+            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Calendar color</p>
           </div>
           <div className="grid grid-cols-6 gap-2">
             {[
@@ -7221,7 +7114,7 @@ export const CalendarWindow = () => {
                     setCalendarColorMenu(null);
                   }}
                   className={`h-6 w-6 rounded-full border-2 transition ${
-                    isActive ? 'border-gray-900' : 'border-transparent'
+                    isActive ? 'border-[var(--ledger-text-primary)]' : 'border-transparent'
                   }`}
                   style={{ backgroundColor: color }}
                   title={color}
@@ -7265,7 +7158,7 @@ export const CalendarWindow = () => {
               onMouseDown={(e) => e.stopPropagation()}
             >
               <div className="border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--ledger-text-muted)]">
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                   {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
                 </p>
                 <div className="mt-1 min-w-0">
@@ -7297,9 +7190,9 @@ export const CalendarWindow = () => {
                         <button
                           onClick={() => { if (event) void createMeetingNoteFromEvent(event); setListContextMenu(null); }}
                           disabled={!event || isCreatingMeetingNote}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <Mic size={14} className="shrink-0" />
+                          <Mic size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
                           <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">Start meeting notes</span>
                         </button>
                         <button
@@ -7309,11 +7202,11 @@ export const CalendarWindow = () => {
                             setListContextMenu(null);
                           }}
                           disabled={!canEditMenuEvent}
-                          className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm ${canEditMenuEvent ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]' : 'cursor-not-allowed text-[var(--ledger-text-muted)]/60'}`}
+                          className={`flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm ${canEditMenuEvent ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]' : 'cursor-not-allowed text-[var(--ledger-text-muted)]/60'}`}
                           title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
                         >
                           <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                          <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">Edit Event</span>
+                          <span className="min-w-0 truncate text-[14px] font-medium">Edit event</span>
                         </button>
                       </>
                     );
@@ -7325,32 +7218,32 @@ export const CalendarWindow = () => {
                       if (reminder) openReminderEditor(reminder);
                       setListContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
                     <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                    <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                      Edit Reminder
+                    <span className="min-w-0 truncate text-[14px] font-medium">
+                      Edit reminder
                     </span>
                   </button>
                 )}
 
                 <button
                   onClick={() => openNewItemFromListContextMenu('event')}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
                   <CalendarPlus size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                  <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                    New Event Here
+                  <span className="min-w-0 truncate text-[14px] font-medium">
+                    New event here
                   </span>
                 </button>
 
                 <button
                   onClick={() => openNewItemFromListContextMenu('reminder')}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
                   <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                  <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                    New Reminder Here
+                  <span className="min-w-0 truncate text-[14px] font-medium">
+                    New reminder here
                   </span>
                 </button>
 
@@ -7376,15 +7269,15 @@ export const CalendarWindow = () => {
                       }
                       setListContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
                     <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                    <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                    <span className="min-w-0 truncate text-[14px] font-medium">
                       Mark{' '}
                       {events.find((item) => item.id === baseEventId(listContextMenu.id))
                         ?.status === 'done'
-                        ? 'Planned'
-                        : 'Done'}
+                        ? 'planned'
+                        : 'done'}
                     </span>
                   </button>
                 ) : (
@@ -7394,11 +7287,11 @@ export const CalendarWindow = () => {
                       if (reminder) void toggleReminderDone(reminder);
                       setListContextMenu(null);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
                     <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                    <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                      Toggle Done
+                    <span className="min-w-0 truncate text-[14px] font-medium">
+                      Toggle done
                     </span>
                   </button>
                 )}
@@ -7414,11 +7307,11 @@ export const CalendarWindow = () => {
                     }
                     setListContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-[#D33C2D] hover:bg-[rgba(255,95,64,0.12)]"
+                  className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)]"
                 >
-                  <Trash2 size={14} className="shrink-0 text-[#E0523E]" />
-                  <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
-                    Delete {listContextMenu.kind === 'event' ? 'Event' : 'Reminder'}
+                  <Trash2 size={14} className="shrink-0 text-[var(--ledger-danger)]" />
+                  <span className="min-w-0 truncate text-[14px] font-medium">
+                    Delete {listContextMenu.kind === 'event' ? 'event' : 'reminder'}
                   </span>
                 </button>
               </div>

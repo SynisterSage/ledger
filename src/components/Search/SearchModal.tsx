@@ -835,10 +835,11 @@ export const SearchModal = () => {
   const shellClassName = isFullscreen
     ? 'fixed inset-0 z-[220] bg-transparent p-4 sm:p-8'
     : 'fixed inset-0 z-[220] flex items-start justify-center bg-transparent px-4 pt-16';
+  const isSearchIdle = !trimmedQuery;
 
   const panelClassName = isFullscreen
     ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]'
-    : `flex h-[400px] w-full ${
+    : `flex ${isSearchIdle ? 'h-auto' : 'h-[400px]'} w-full ${
         isModuleWindow ? 'max-w-[680px]' : 'max-w-[500px]'
       } flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]`;
 
@@ -874,12 +875,8 @@ export const SearchModal = () => {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
-        {!trimmedQuery ? (
-          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-            Start typing to search...
-          </div>
-        ) : trimmedQuery.length < 2 && commandResults.length === 0 ? (
+      {!isSearchIdle && <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
+        {trimmedQuery.length < 2 && commandResults.length === 0 ? (
           <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
             Type at least 2 characters to search.
           </div>
@@ -960,16 +957,16 @@ export const SearchModal = () => {
             })}
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="flex items-center gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-[11px] text-[var(--ledger-text-muted)]">
+      {!isSearchIdle && <div className="flex items-center gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-[11px] text-[var(--ledger-text-muted)]">
         <span className="min-w-0 flex-1 truncate">
           ↑↓ to navigate • Enter to jump • ESC to close
         </span>
         <span className="hidden max-w-[42%] shrink-0 truncate text-right min-[460px]:inline">
           {activeResult ? `${activeResult.type} selected` : ' '}
         </span>
-      </div>
+      </div>}
     </div>
   );
 

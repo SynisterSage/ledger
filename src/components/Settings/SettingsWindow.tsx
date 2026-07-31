@@ -65,6 +65,7 @@ import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegr
 import { SlackIntegrationPage } from './SlackIntegrationPage';
 import { GoogleDriveIntegrationPage } from './GoogleDriveIntegrationPage';
 import { GithubIntegrationCard } from './GithubIntegrationCard';
+import { GithubIntegrationPage } from './GithubIntegrationPage';
 import { AppleCalendarConnection } from '../Calendar/AppleCalendarConnection';
 
 type UserPreferences = {
@@ -843,6 +844,8 @@ export const SettingsWindow = () => {
   const [meetingConsentReminder, setMeetingConsentReminder] = useState(true);
   const [meetingDefaultTimestamps, setMeetingDefaultTimestamps] = useState(true);
   const [meetingModelStatus, setMeetingModelStatus] = useState<{ installed?: boolean; downloading?: boolean; label?: string; approximateBytes?: number } | null>(null);
+  const [isMeetingModelDeleteModalOpen, setIsMeetingModelDeleteModalOpen] = useState(false);
+  const [isDeletingMeetingModel, setIsDeletingMeetingModel] = useState(false);
   useEffect(() => {
     try { localStorage.setItem('ledger.meeting.default-retention', meetingDefaultRetention); } catch {}
   }, [meetingDefaultRetention]);
@@ -850,6 +853,20 @@ export const SettingsWindow = () => {
     if (activeSection !== 'meeting_notes' || !window.meetingTranscription) return;
     void window.meetingTranscription.modelStatus().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus)).catch(() => setMeetingModelStatus(null));
   }, [activeSection]);
+  const closeMeetingModelDeleteModal = () => {
+    if (!isDeletingMeetingModel) setIsMeetingModelDeleteModalOpen(false);
+  };
+  const handleDeleteMeetingModel = async () => {
+    if (!window.meetingTranscription) return;
+    setIsDeletingMeetingModel(true);
+    try {
+      const status = await window.meetingTranscription.deleteModel();
+      setMeetingModelStatus(status as typeof meetingModelStatus);
+      setIsMeetingModelDeleteModalOpen(false);
+    } finally {
+      setIsDeletingMeetingModel(false);
+    }
+  };
   const [googleDriveStatus, setGoogleDriveStatus] = useState<{ status?: string; provider_account_email?: string | null }>({ status: 'disconnected' });
   useEffect(() => {
     if (activeSection !== 'integrations') return;
@@ -950,6 +967,7 @@ export const SettingsWindow = () => {
   const [slackRefreshToken, setSlackRefreshToken] = useState(0);
   const [figmaStatus, setFigmaStatus] = useState<FigmaIntegrationStatus>({ status: 'disconnected' });
   const [figmaDetailOpen, setFigmaDetailOpen] = useState(false);
+  const [githubDetailOpen, setGithubDetailOpen] = useState(false);
   const [slackDetailOpen, setSlackDetailOpen] = useState(false);
   const [googleDriveDetailOpen, setGoogleDriveDetailOpen] = useState(() => window.location.pathname === '/settings/integrations/google-drive');
   const [extensionTokenStatus, setExtensionTokenStatus] = useState<ExtensionTokenStatus | null>(
@@ -4552,7 +4570,13 @@ export const SettingsWindow = () => {
                 </section>
               )}
 
-              {activeSection === 'integrations' && figmaDetailOpen ? (
+              {activeSection === 'integrations' && githubDetailOpen ? (
+                <GithubIntegrationPage
+                  workspaceId={activeWorkspaceId}
+                  canManage={canManageWorkspace}
+                  onBack={() => setGithubDetailOpen(false)}
+                />
+              ) : activeSection === 'integrations' && figmaDetailOpen ? (
                 <FigmaIntegrationPage
                   workspaceId={activeWorkspaceId}
                   canManage={canManageWorkspace}
@@ -4593,7 +4617,7 @@ export const SettingsWindow = () => {
                         Connected
                       </h3>
                       <div className={settingsTheme.sectionRows}>
-                        <div className="px-4 py-2.5">
+                        <div className="!p-0">
                           <AppleCalendarConnection userId={user?.id} />
                         </div>
                         <div className="flex items-center gap-3 px-4 py-2.5">
@@ -4601,7 +4625,7 @@ export const SettingsWindow = () => {
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Figma <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{figmaStatus.status === 'connected' ? 'Connected' : figmaStatus.status === 'connecting' ? 'Connecting' : figmaStatus.status === 'expired' || figmaStatus.status === 'revoked' || figmaStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Attach designs to Ledger work and preview them without leaving your workspace.</p></div>
                           <button type="button" onClick={() => setFigmaDetailOpen(true)} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{figmaStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
                         </div>
-                        <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-4 py-2.5">
+                        <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><GoogleDriveIcon size={18} /></span>
                           <div className="min-w-0 flex-1"><p className={settingsTheme.label}>Google Drive <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">{googleDriveStatus.status === 'connected' ? `Connected as ${googleDriveStatus.provider_account_email || 'your Google account'}` : googleDriveStatus.status === 'connecting' ? 'Connecting' : googleDriveStatus.status === 'revoked' || googleDriveStatus.status === 'error' ? 'Needs attention' : 'Not connected'}</span></p><p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Browse and link Google Drive files to your Ledger projects and work.</p></div>
                           <button type="button" onClick={() => googleDriveStatus.status === 'connected' ? openGoogleDriveManagement() : void connectGoogleDrive()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{googleDriveStatus.status === 'connected' ? 'Manage' : 'Connect'}</button>
@@ -4654,7 +4678,7 @@ export const SettingsWindow = () => {
                             </button>
                           </div>
                         </div>
-                        <GithubIntegrationCard workspaceId={activeWorkspaceId} canManage={canManageWorkspace} />
+                        <GithubIntegrationCard workspaceId={activeWorkspaceId} canManage={canManageWorkspace} onManage={() => setGithubDetailOpen(true)} />
 
                         <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
@@ -5019,9 +5043,28 @@ export const SettingsWindow = () => {
                   </section>
                   <section className={settingsTheme.sectionShell + ' mt-5'} aria-labelledby="meeting-model">
                     <h3 id="meeting-model" className={settingsTheme.sectionTitle}>Local transcription model</h3>
-                    <div className="px-4 py-3 text-sm"><p className={settingsTheme.label}>{meetingModelStatus?.installed ? meetingModelStatus.label || 'Whisper model installed' : 'Model not installed'}</p><p className={settingsTheme.help}>The optional model is stored in Ledger application data and remains available when the app bundle moves or updates.</p><div className="mt-3 flex gap-2">{window.meetingTranscription && !meetingModelStatus?.installed && <button type="button" onClick={() => void window.meetingTranscription!.downloadModel().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus))} className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white">Install model</button>}{window.meetingTranscription && meetingModelStatus?.installed && <button type="button" onClick={() => void window.meetingTranscription!.deleteModel().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus))} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-xs text-[var(--ledger-danger)]">Delete model</button>}</div></div>
+                    <div className={settingsTheme.sectionRows}>
+                      <div className="flex items-center justify-between gap-4 px-4 py-4">
+                        <div className="min-w-0">
+                          <p className={settingsTheme.label}>{meetingModelStatus?.installed ? meetingModelStatus.label || 'Whisper model installed' : 'Model not installed'}</p>
+                          <p className={settingsTheme.help}>Stored locally in Ledger application data and preserved across app updates.</p>
+                        </div>
+                        {window.meetingTranscription && !meetingModelStatus?.installed && (
+                          <button type="button" onClick={() => void window.meetingTranscription!.downloadModel().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus))} className="shrink-0 rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]">Install model</button>
+                        )}
+                        {window.meetingTranscription && meetingModelStatus?.installed && (
+                          <button type="button" onClick={() => setIsMeetingModelDeleteModalOpen(true)} className="shrink-0 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-danger)] transition hover:border-[color:var(--ledger-danger)]/35 hover:bg-[color:var(--ledger-danger)]/5">Delete model</button>
+                        )}
+                      </div>
+                    </div>
                   </section>
-                  <p className="mt-4 text-xs leading-5 text-[var(--ledger-text-muted)]">Audio may remain temporarily on this computer until transcription succeeds. Meeting content is not sent to an LLM. You are responsible for any consent required by your meeting.</p>
+                  <div className={settingsTheme.sectionRows + ' mt-4'}>
+                    <div className="text-xs leading-5">
+                      <p className={settingsTheme.label}>Privacy and consent</p>
+                      <p className="mt-1 text-[var(--ledger-text-muted)]">Audio may remain temporarily on this computer until transcription succeeds. Meeting content is not sent to an LLM.</p>
+                      <p className="mt-1 text-[var(--ledger-text-muted)]">You are responsible for any consent required by your meeting.</p>
+                    </div>
+                  </div>
                 </section>
               )}
 
@@ -5161,6 +5204,35 @@ export const SettingsWindow = () => {
               )}
 
               </SettingsPage>
+              <ModalOverlay
+                isOpen={isMeetingModelDeleteModalOpen}
+                onClose={closeMeetingModelDeleteModal}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-md ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <p className={settingsTheme.rowMuted + ' font-medium'}>Local storage</p>
+                    <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
+                      Delete the transcription model?
+                    </h3>
+                  </div>
+                  <ModalCloseButton onClick={closeMeetingModelDeleteModal} ariaLabel="Close delete model modal" />
+                </div>
+                <div className="border-t border-[color:var(--ledger-border-subtle)] px-5 py-4 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                  <p>This removes the local Whisper model from Ledger application data. You can download it again later if you need local transcription.</p>
+                </div>
+                <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <button type="button" onClick={closeMeetingModelDeleteModal} disabled={isDeletingMeetingModel} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={() => void handleDeleteMeetingModel()} disabled={isDeletingMeetingModel} className={settingsTheme.dangerButton}>
+                    {isDeletingMeetingModel ? 'Deleting…' : 'Delete model'}
+                  </button>
+                </div>
+              </ModalOverlay>
               <ModalOverlay
                 isOpen={isAccountDeleteModalOpen}
                 onClose={closeAccountDeleteModal}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, CalendarDays, FileText, FolderKanban, Funnel, Inbox, LayoutList, Pin, Search } from 'lucide-react';
+import { Bell, CalendarDays, CircleUserRound, FileText, FolderKanban, Funnel, Inbox, LayoutList, Pin, Search, Users } from 'lucide-react';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from './ModuleWindowHeader';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -20,18 +20,21 @@ const destinations: Array<{
   kind: ModuleWindowKind;
   icon: typeof LayoutList;
   provider?: 'slack';
+  teamOnly?: boolean;
 }> = [
   { label: 'Overview', kind: 'dashboard', icon: LayoutList },
   { label: 'Projects', kind: 'projects', icon: FolderKanban },
   { label: 'Notes', kind: 'notes', icon: FileText },
   { label: 'Calendar', kind: 'calendar', icon: CalendarDays },
+  { label: 'Circle', kind: 'circle', icon: CircleUserRound, teamOnly: true },
+  { label: 'Teams', kind: 'teams', icon: Users, teamOnly: true },
   { label: 'Intake', kind: 'inbox', icon: Inbox },
   { label: 'Notifications', kind: 'notifications', icon: Bell },
 ];
 
 export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const { user } = useAuthContext();
-  const { activeWorkspaceId } = useWorkspaceContext();
+  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
   const { pins } = usePins();
@@ -43,6 +46,45 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const [isSlackEnabled, setIsSlackEnabled] = useState(false);
   const [pinnedPersonNames, setPinnedPersonNames] = useState<Record<string, string>>({});
   const { results, isLoading, trimmedQuery } = useWorkspaceSearch(query);
+
+  const displayName = user?.user_metadata?.full_name?.trim() || user?.email?.split('@')[0] || '';
+  const firstName = displayName.split(/\s+/)[0] || '';
+  const genericExpressions = [
+    'Open something',
+    'What’s on your mind?',
+    'What’s up today?',
+    'Where should we start?',
+    'What are you working on?',
+    'What’s next?',
+    'Let’s get into it',
+    'Pick up where you left off',
+    'Find your next move',
+    'Start somewhere',
+    'Make something happen',
+    'Back to work',
+    'Ready when you are',
+    'What needs your attention?',
+    'Where were we?',
+    'Let’s begin',
+    'Open the next thing',
+    'Find what you need',
+    'Jump back in',
+    'See what’s happening',
+  ];
+  const personalizedExpressions = firstName
+    ? [
+        `${firstName} returns`,
+        `Welcome back, ${firstName}`,
+        `What’s next, ${firstName}?`,
+        `Where to, ${firstName}?`,
+        `Your move, ${firstName}`,
+        `Let’s go, ${firstName}`,
+      ]
+    : ['Welcome back!'];
+  const openSomethingExpressions = [...genericExpressions, ...personalizedExpressions];
+  const [openSomethingExpression] = useState(
+    () => openSomethingExpressions[Math.floor(Math.random() * openSomethingExpressions.length)]
+  );
 
   useEffect(() => {
     const personPins = pins.filter((pin) => pin.object_type === 'person');
@@ -111,13 +153,16 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
     };
   }, [activeWorkspaceId, api, user]);
 
-  const quickNavDestinations = isSlackEnabled
-    ? [
-        ...destinations.slice(0, 5),
-        { label: 'Slack', kind: 'slack' as ModuleWindowKind, icon: LayoutList, provider: 'slack' },
-        destinations[5],
-      ]
-    : destinations;
+  const isTeamWorkspace = activeWorkspace?.is_personal === false;
+  const workspaceDestinations = destinations.filter(({ teamOnly }) => !teamOnly || isTeamWorkspace);
+  const quickNavDestinations = workspaceDestinations.flatMap((destination) =>
+    destination.label === 'Intake' && isSlackEnabled
+      ? [
+          destination,
+          { label: 'Slack', kind: 'slack' as ModuleWindowKind, icon: LayoutList, provider: 'slack' as const },
+        ]
+      : [destination]
+  );
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -228,11 +273,18 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
         showBodyHeader={false}
         showWorkspaceNavigation
       />
-      <main className="min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
-        <div className="mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
+      <main className="relative min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: 'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 46%)',
+          }}
+        />
+        <div className="relative z-10 mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
           <img src="./logo-color.svg" alt="Ledger" className="mb-8 h-8 w-8" />
           <h1 className="text-[28px] font-regular tracking-[-0.03em] text-[var(--ledger-text-primary)]">
-            Open something
+            {openSomethingExpression}
           </h1>
 
           <button
