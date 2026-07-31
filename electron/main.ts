@@ -5568,6 +5568,17 @@ function attachNativeContextMenu(win: BrowserWindow) {
       : [];
     const hasSuggestions = suggestions.length > 0;
 
+    // Renderer-owned editor menus replace Electron's native menu, so forward
+    // the native spellcheck result to the renderer as well.
+    if (params.misspelledWord || hasSuggestions) {
+      win.webContents.send('spellcheck:context-menu', {
+        x: params.x,
+        y: params.y,
+        misspelledWord: params.misspelledWord ?? '',
+        dictionarySuggestions: suggestions.slice(0, 6),
+      });
+    }
+
     if (hasSuggestions) {
       for (const suggestion of suggestions.slice(0, 6)) {
         template.push({
@@ -5607,6 +5618,28 @@ function attachNativeContextMenu(win: BrowserWindow) {
     Menu.buildFromTemplate(template).popup({ window: win });
   });
 }
+
+ipcMain.on('spellcheck:replace', (event, suggestion: unknown) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const value = String(suggestion ?? '').trim();
+  if (win && value) win.webContents.replaceMisspelling(value);
+});
+
+ipcMain.on('spellcheck:add-word', (event, word: unknown) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const value = String(word ?? '').trim();
+  if (win && value) win.webContents.session.addWordToSpellCheckerDictionary(value);
+});
+
+ipcMain.handle('spellcheck:suggestions', async (_event, payload: unknown) => {
+  const word = String((payload as { word?: unknown } | null)?.word ?? '').trim();
+  if (!word || !/\p{L}/u.test(word)) return { word, suggestions: [] };
+  const spellchecker = await getSpellchecker();
+  return {
+    word,
+    suggestions: spellchecker.correct(word) ? [] : spellchecker.suggest(word).slice(0, 6),
+  };
+});
 
 function createSidebarWindow() {
   sidebarWin = new BrowserWindow({

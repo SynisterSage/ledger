@@ -70,7 +70,11 @@ import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
 import { MindMapEditor } from './MindMapEditor';
 import { RichTextEditor } from './RichTextEditor';
 import type { SelectedContentPayload } from './editor/types/selectedContent';
-import type { AttachmentUploadRequest, AttachmentUploadResult } from './editor/types/blocks';
+import type {
+  AttachmentRemoveRequest,
+  AttachmentUploadRequest,
+  AttachmentUploadResult,
+} from './editor/types/blocks';
 import type {
   EditorExternalEmbedRequest,
   EditorExternalEmbedResult,
@@ -106,6 +110,7 @@ type NoteRow = {
   updated_by?: string | null;
   title: string;
   content: string;
+  content_html?: string | null;
   date: string;
   mood: string | null;
   source: string;
@@ -2280,6 +2285,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const selectionAnchorNoteIdRef = useRef<string | null>(null);
   const bulkSidebarSelectionRef = useRef(false);
   const selectedNoteIdRef = useRef<string | null>(null);
+  const draftContentRef = useRef('');
+  const attachmentCleanupTimersRef = useRef<Map<string, number>>(new Map());
   const selectedNoteIdsRef = useRef<string[]>([]);
   const selectedNoteServerUpdatedAtRef = useRef<string | null>(null);
   const selectedNoteServerUpdatedByRef = useRef<string | null>(null);
@@ -2991,6 +2998,37 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     [activeWorkspaceId]
   );
 
+  const removeEditorAttachment = useCallback(
+    ({ noteId, storagePath, immediate = false }: AttachmentRemoveRequest) => {
+      const safePath = String(storagePath ?? '').trim();
+      if (!noteId || !safePath || !safePath.startsWith('workspaces/')) return;
+
+      const timerKey = `${noteId}:${safePath}`;
+      const existingTimer = attachmentCleanupTimersRef.current.get(timerKey);
+      if (existingTimer) window.clearTimeout(existingTimer);
+
+      const removeFromStorage = async () => {
+        // A Backspace removal gets a grace period so undo can restore the
+        // node. Never remove a path that is still present in the live draft.
+        if (!immediate && selectedNoteIdRef.current === noteId) {
+          const escapedPath = safePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          if (new RegExp(escapedPath).test(draftContentRef.current)) return;
+        }
+        const { error } = await supabase.storage.from('note-files').remove([safePath]);
+        if (error) console.error('[notes] failed to remove attachment from storage', error);
+        attachmentCleanupTimersRef.current.delete(timerKey);
+      };
+
+      if (immediate) {
+        void removeFromStorage();
+      } else {
+        const timer = window.setTimeout(() => void removeFromStorage(), 30_000);
+        attachmentCleanupTimersRef.current.set(timerKey, timer);
+      }
+    },
+    []
+  );
+
   const linkTranscriptToLedgerItem = useCallback(
     async (
       segment: TranscriptSegment,
@@ -3320,6 +3358,17 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   useEffect(() => {
     selectedNoteIdRef.current = selectedNoteId;
   }, [selectedNoteId]);
+
+  useEffect(() => {
+    draftContentRef.current = draftContent;
+  }, [draftContent]);
+
+  useEffect(() => {
+    return () => {
+      attachmentCleanupTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      attachmentCleanupTimersRef.current.clear();
+    };
+  }, []);
 
   useWorkspaceRouteHistory(
     {
@@ -3957,7 +4006,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     hydrationNoteIdRef.current = note.id;
     setIsHydratingNote(true);
     setDraftTitle(note.title);
-    setDraftContent(normalizeEditorHtml(note.content ?? ''));
+    // Rich editor state must hydrate from the canonical HTML column. The
+    // legacy `content` field is plain-text compatibility data and can strip
+    // custom node attributes such as a callout's persisted style.
+    setDraftContent(normalizeEditorHtml(note.content_html ?? note.content ?? ''));
     setDraftDate(note.date || todayKey());
     setDraftMood(note.mood ?? '');
     setDraftMode(note.mode || 'text');
@@ -6299,7 +6351,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       }
       if (navigationRequest !== noteNavigationRequestRef.current) return;
       let noteToOpen = note;
-      if (typeof note.content !== 'string') {
+      // The notes list is intentionally summary-only and some callers can
+      // provide a legacy row with plain-text `content`. Custom Lexical nodes
+      // (including callouts) only survive in `content_html`, so opening a row
+      // without that canonical field must always hydrate by id first.
+      if (typeof note.content_html !== 'string') {
         setIsHydratingNote(true);
         setHasHydratedNote(false);
         try {
@@ -8995,6 +9051,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         onSearch={({ plainText }) => openSearch(plainText)}
                         onCreateExternalEmbed={createEditorExternalEmbed}
                         onUploadAttachment={uploadEditorAttachment}
+                        onRemoveAttachment={removeEditorAttachment}
                         onChange={(nextHtml) => {
                           // The old Lexical editor can emit a final change while
                           // it is unmounting (image nodes are especially prone

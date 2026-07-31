@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ChevronDown,
   File,
@@ -25,7 +25,11 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getSelection,
+  $getPreviousSelection,
+  $getRoot,
+  $setSelection,
   $isRangeSelection,
+  $isElementNode,
   COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
   KEY_ENTER_COMMAND,
@@ -57,7 +61,12 @@ import {
   TABLE_REMOVE_ROW_COMMAND,
   TOGGLE_TOGGLE_COMMAND,
 } from '../commands/blocks';
-import type { AttachmentUploadRequest, AttachmentUploadResult, CalloutType } from '../types/blocks';
+import type {
+  AttachmentRemoveRequest,
+  AttachmentUploadRequest,
+  AttachmentUploadResult,
+  CalloutType,
+} from '../types/blocks';
 
 const findAncestor = <T extends LexicalNode>(
   selection: ReturnType<typeof $getSelection>,
@@ -70,6 +79,16 @@ const findAncestor = <T extends LexicalNode>(
     node = node.getParent();
   }
   return null;
+};
+
+const getUsableSelection = () => $getSelection() || $getPreviousSelection();
+
+const restoreEditorSelection = (editor: LexicalEditor) => {
+  editor.focus();
+  editor.update(() => {
+    const selection = getUsableSelection();
+    if ($isRangeSelection(selection)) $setSelection(selection);
+  });
 };
 
 const insertToggle = (editor: LexicalEditor) => {
@@ -97,13 +116,25 @@ const insertCallout = (editor: LexicalEditor, type: CalloutType) => {
 };
 
 const createTable = (editor: LexicalEditor) => {
+  editor.focus();
+  editor.update(() => {
+    const selection = $getSelection() || $getPreviousSelection();
+    if ($isRangeSelection(selection)) $setSelection(selection);
+  });
   editor.dispatchCommand(INSERT_TABLE_COMMAND, { rows: '2', columns: '2', includeHeaders: false });
 };
 
-const InsertMenu = ({ onInsertFile }: { onInsertFile?: () => void }) => {
+const InsertMenu = ({
+  onInsertFile,
+  onMenuOpen,
+}: {
+  onInsertFile?: () => void;
+  onMenuOpen?: () => void;
+}) => {
   const [editor] = useLexicalComposerContext();
   const [open, setOpen] = useState(false);
   const [calloutOpen, setCalloutOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const itemClass =
     'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]';
   const run = (callback: () => void) => {
@@ -112,12 +143,26 @@ const InsertMenu = ({ onInsertFile }: { onInsertFile?: () => void }) => {
     setCalloutOpen(false);
   };
 
+  useEffect(() => {
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+      setCalloutOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, []);
+
   return (
-    <div className="relative">
+    <div ref={menuRef} className="relative">
       <button
         type="button"
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          onMenuOpen?.();
+          setOpen((current) => !current);
+          setCalloutOpen(false);
+        }}
         title="Insert block"
         className="inline-flex h-7 items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
       >
@@ -151,14 +196,19 @@ const InsertMenu = ({ onInsertFile }: { onInsertFile?: () => void }) => {
               <Info size={13} /> Callout <ChevronDown className="ml-auto" size={11} />
             </button>
             {calloutOpen && (
-              <div className="absolute right-full top-0 mr-1 w-28 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
+              <div className="absolute left-full top-0 ml-1 w-28 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
                 {(['info', 'note', 'warning', 'success'] as CalloutType[]).map((type) => (
                   <button
                     key={type}
                     type="button"
                     className={itemClass}
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => run(() => editor.dispatchCommand(INSERT_CALLOUT_COMMAND, type))}
+                    onClick={() =>
+                      run(() => {
+                        restoreEditorSelection(editor);
+                        editor.dispatchCommand(INSERT_CALLOUT_COMMAND, type);
+                      })
+                    }
                   >
                     {type[0].toUpperCase() + type.slice(1)}
                   </button>
@@ -263,15 +313,49 @@ const InsertMenu = ({ onInsertFile }: { onInsertFile?: () => void }) => {
 
 export const BlockInsertionPlugin = ({
   onUploadAttachment,
+  onRemoveAttachment,
   noteId,
+  onMenuOpen,
 }: {
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
+  onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
   noteId?: string | null;
+  onMenuOpen?: () => void;
 }) => {
   const [editor] = useLexicalComposerContext();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
+  const immediateAttachmentRemovalsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!noteId || !onRemoveAttachment) return;
+
+    const collectPaths = (state: Parameters<Parameters<typeof editor.registerUpdateListener>[0]>[0]['editorState']) => {
+      const paths = new Set<string>();
+      state.read(() => {
+        const visit = (node: LexicalNode) => {
+          if ($isFileAttachmentNode(node)) {
+            const path = node.getStoragePath();
+            if (path) paths.add(path);
+          }
+          if ($isElementNode(node)) node.getChildren().forEach(visit);
+        };
+        $getRoot().getChildren().forEach(visit);
+      });
+      return paths;
+    };
+
+    return editor.registerUpdateListener(({ editorState, prevEditorState }) => {
+      const previous = collectPaths(prevEditorState);
+      const current = collectPaths(editorState);
+      previous.forEach((storagePath) => {
+        if (current.has(storagePath)) return;
+        const immediate = immediateAttachmentRemovalsRef.current.delete(storagePath);
+        void onRemoveAttachment({ noteId, storagePath, immediate });
+      });
+    });
+  }, [editor, noteId, onRemoveAttachment]);
 
   const uploadAttachment = async (file: File) => {
     if (!noteId || !onUploadAttachment) return;
@@ -327,7 +411,7 @@ export const BlockInsertionPlugin = ({
       (type) => {
         let changed = false;
         editor.update(() => {
-          const existing = findAncestor($getSelection(), $isCalloutNode);
+          const existing = findAncestor(getUsableSelection(), $isCalloutNode);
           if (existing) {
             existing.setCalloutType(type);
             changed = true;
@@ -369,7 +453,7 @@ export const BlockInsertionPlugin = ({
       SET_CALLOUT_TYPE_COMMAND,
       (type) => {
         editor.update(() => {
-          const node = findAncestor($getSelection(), $isCalloutNode);
+          const node = findAncestor(getUsableSelection(), $isCalloutNode);
           node?.setCalloutType(type);
         });
         return true;
@@ -466,37 +550,67 @@ export const BlockInsertionPlugin = ({
       editor.registerCommand(
         KEY_ENTER_COMMAND,
         (event) => {
-          let action: 'toggle-title' | 'toggle-exit' | 'callout-exit' | null = null;
+          let action:
+            | 'toggle-title'
+            | 'toggle-title-exit'
+            | 'toggle-exit'
+            | 'callout-exit'
+            | 'callout-shift-exit'
+            | null = null;
           editor.getEditorState().read(() => {
             const selection = $getSelection();
             if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
-            const topLevel = selection.anchor.getNode().getTopLevelElementOrThrow();
             const toggle = findAncestor(selection, $isToggleNode);
-            if (toggle?.getFirstChild() === topLevel) action = 'toggle-title';
-            else if (toggle?.getLastChild() === topLevel && !topLevel.getTextContent().trim())
-              action = 'toggle-exit';
+            if (toggle) {
+              let toggleChild: LexicalNode = selection.anchor.getNode();
+              while (toggleChild.getParent() && !toggleChild.getParent()!.is(toggle)) {
+                toggleChild = toggleChild.getParent()!;
+              }
+              if (toggleChild === toggle.getFirstChild()) {
+                action = event?.shiftKey ? 'toggle-title-exit' : 'toggle-title';
+              } else if (
+                toggleChild === toggle.getLastChild() &&
+                !toggleChild.getTextContent().trim()
+              ) {
+                action = 'toggle-exit';
+              }
+            }
+            const topLevel = selection.anchor.getNode().getTopLevelElementOrThrow();
             const callout = findAncestor(selection, $isCalloutNode);
-            if (callout?.getLastChild() === topLevel && !topLevel.getTextContent().trim())
-              action = 'callout-exit';
+            if (callout) {
+              if (event?.shiftKey) action = 'callout-shift-exit';
+              else if (callout.getLastChild() === topLevel && !topLevel.getTextContent().trim())
+                action = 'callout-exit';
+            }
           });
           if (!action) return false;
           event?.preventDefault();
           editor.update(() => {
             const selection = $getSelection();
-            if (action === 'toggle-title') {
+            if (action === 'toggle-title' || action === 'toggle-title-exit') {
               const toggle = findAncestor(selection, $isToggleNode);
               const title = toggle?.getFirstChild();
               if (!toggle || !title) return;
-              const body = $createParagraphNode();
-              title.insertAfter(body);
-              body.selectStart();
+              if (action === 'toggle-title-exit') {
+                const paragraph = $createParagraphNode();
+                toggle.insertAfter(paragraph);
+                paragraph.selectStart();
+              } else {
+                const existingBody = title.getNextSibling();
+                if ($isElementNode(existingBody)) existingBody.selectStart();
+                else {
+                  const body = $createParagraphNode();
+                  title.insertAfter(body);
+                  body.selectStart();
+                }
+              }
             } else if (action === 'toggle-exit') {
               const toggle = findAncestor(selection, $isToggleNode);
               if (!toggle) return;
               const paragraph = $createParagraphNode();
               toggle.insertAfter(paragraph);
               paragraph.selectStart();
-            } else {
+            } else if (action === 'callout-exit' || action === 'callout-shift-exit') {
               const callout = findAncestor(selection, $isCalloutNode);
               if (!callout) return;
               const paragraph = $createParagraphNode();
@@ -536,13 +650,32 @@ export const BlockInsertionPlugin = ({
     if (!root) return;
     const onClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
+      const removeButton = target?.closest('[data-ledger-file-attachment-remove]');
+      if (removeButton && root.contains(removeButton)) {
+        const attachment = removeButton.closest('[data-ledger-file-attachment]') as HTMLElement | null;
+        const nodeKey = attachment?.getAttribute('data-lexical-file-attachment-key');
+        const storagePath = attachment?.getAttribute('data-storage-path') || '';
+        if (nodeKey && storagePath) immediateAttachmentRemovalsRef.current.add(storagePath);
+        if (nodeKey) {
+          editor.update(() => {
+            const node = $getNodeByKey(nodeKey);
+            if ($isFileAttachmentNode(node)) node.remove();
+          });
+        }
+        return;
+      }
       const toggleHeader = target?.closest('[data-ledger-toggle-header]');
       if (toggleHeader && root.contains(toggleHeader)) {
         const nodeKey = toggleHeader.getAttribute('data-toggle-node-key');
         if (nodeKey)
           editor.update(() => {
             const node = $getNodeByKey(nodeKey);
-            if ($isToggleNode(node)) node.toggleOpen();
+            if ($isToggleNode(node)) {
+              node.toggleOpen();
+              editor
+                .getElementByKey(nodeKey)
+                ?.firstElementChild?.setAttribute('aria-expanded', String(node.isOpen()));
+            }
           });
         return;
       }
@@ -589,7 +722,12 @@ export const BlockInsertionPlugin = ({
       event.preventDefault();
       editor.update(() => {
         const node = $getNodeByKey(nodeKey);
-        if ($isToggleNode(node)) node.toggleOpen();
+        if ($isToggleNode(node)) {
+          node.toggleOpen();
+          editor
+            .getElementByKey(nodeKey)
+            ?.firstElementChild?.setAttribute('aria-expanded', String(node.isOpen()));
+        }
       });
     };
     root.addEventListener('keydown', onKeyDown);
@@ -626,7 +764,7 @@ export const BlockInsertionPlugin = ({
         };
         sync();
         const observer = new MutationObserver(sync);
-        observer.observe(root, { childList: true, subtree: true, attributes: true });
+        observer.observe(root, { childList: true, subtree: true });
         return () => observer.disconnect();
       }),
     [editor]
@@ -667,7 +805,7 @@ export const BlockInsertionPlugin = ({
 
   return (
     <>
-      <InsertMenu onInsertFile={chooseFile} />
+      <InsertMenu onInsertFile={chooseFile} onMenuOpen={onMenuOpen} />
       {(uploading || uploadError) && (
         <div className="mt-1 text-center text-[10px] text-[var(--ledger-text-muted)]">
           {uploading ? (

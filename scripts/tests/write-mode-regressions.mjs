@@ -26,8 +26,10 @@ const selectionFormattingPlugin = await readFile(
 );
 const writeActionTypes = await readFile('src/components/Notes/editor/types/writeAction.ts', 'utf8');
 const htmlUtils = await readFile('src/components/Notes/editor/utils/html.ts', 'utf8');
+const indexCss = await readFile('src/index.css', 'utf8');
 const smartDateNode = await readFile('src/components/Notes/nodes/SmartDateNode.tsx', 'utf8');
 const smartPersonNode = await readFile('src/components/Notes/nodes/SmartPersonNode.tsx', 'utf8');
+const calloutNode = await readFile('src/components/Notes/editor/nodes/CalloutNode.ts', 'utf8');
 const richText = editor;
 
 test('editor loading is keyed and clears queued changes when switching notes', () => {
@@ -169,4 +171,89 @@ test('Phase 8 menus and special blocks expose keyboard semantics', () => {
   assert.match(blockPlugin, /aria-expanded/);
   assert.match(blockPlugin, /tabindex/);
   assert.match(htmlUtils, /sanitizeEditorHtml/);
+});
+
+test('selection colors and highlights mutate selected text nodes, not only future typing state', () => {
+  assert.match(selectionFormattingPlugin, /selection\.extract\(\)\.forEach/);
+  assert.match(selectionFormattingPlugin, /node\.setStyle/);
+  assert.match(selectionFormattingPlugin, /RangeSelection\.setStyle\(\) controls the style/);
+});
+
+test('checklists have explicit Ledger marker styling and semantic state classes', () => {
+  assert.match(editor, /checklist: 'ledger-checklist'/);
+  assert.match(editor, /listitemChecked: 'ledger-listitem-checked'/);
+  assert.match(editor, /<CheckListPlugin \/>/);
+  assert.match(indexCss, /ledger-checklist li::before/);
+  assert.match(indexCss, /aria-checked='true'/);
+});
+
+test('toggle keyboard handling recognizes nested title blocks and supports exiting below', () => {
+  assert.match(blockPlugin, /toggle-title-exit/);
+  assert.match(blockPlugin, /event\?\.shiftKey/);
+  assert.match(blockPlugin, /existingBody = title\.getNextSibling/);
+  assert.match(blockPlugin, /toggle\.insertAfter\(paragraph\)/);
+});
+
+test('shift-enter exits a callout while enter still supports internal lines', () => {
+  assert.match(blockPlugin, /'callout-shift-exit'/);
+  assert.match(blockPlugin, /if \(event\?\.shiftKey\) action = 'callout-shift-exit'/);
+  assert.match(blockPlugin, /action === 'callout-exit' \|\| action === 'callout-shift-exit'/);
+});
+
+test('editor toolbar menus are independent and dismiss on outside pointer input', () => {
+  assert.match(editor, /isBlockTypeDropdownOpen/);
+  assert.match(editor, /isMoreDropdownOpen/);
+  assert.match(editor, /closeMenusOnOutsidePointer/);
+  assert.match(editor, /setIsMoreDropdownOpen\(false\)/);
+  assert.match(blockPlugin, /closeOnOutsidePointer/);
+  assert.match(blockPlugin, /onMenuOpen/);
+});
+
+test('floating selection Ledger actions restore the Lexical selection before dispatch', () => {
+  assert.match(selectionFormattingPlugin, /savedSelection\.current\?\.clone\(\)/);
+  assert.match(selectionFormattingPlugin, /editor\.focus\(\)/);
+  assert.match(selectionFormattingPlugin, /\$setSelection\(selection\.clone\(\)\)/);
+  assert.match(selectionFormattingPlugin, /const activeSelection = \$getSelection\(\)/);
+  assert.match(selectionFormattingPlugin, /activeSelection\.getTextContent\(\)/);
+  assert.match(selectionFormattingPlugin, /source: 'selection'/);
+});
+
+test('tables have visible document styling instead of appearing as empty space', () => {
+  assert.match(indexCss, /\.notes-rich-text-editor table/);
+  assert.match(indexCss, /border-collapse: collapse/);
+  assert.match(indexCss, /\.notes-rich-text-editor td,/);
+});
+
+test('callout type survives HTML round trips with a stable fallback marker', () => {
+  assert.match(calloutNode, /data-ledger-callout-type/);
+  assert.match(calloutNode, /ledger-callout--\$\{this\.getCalloutType\(\)\}/);
+  assert.match(calloutNode, /classType/);
+  assert.match(calloutNode, /data-callout-type/);
+  assert.match(calloutNode, /data-callout-style/);
+  assert.match(calloutNode, /calloutInlineStyle/);
+  assert.match(calloutNode, /document\.createElement\('aside'\)/);
+  assert.match(calloutNode, /aside: \(domNode\)/);
+  assert.match(calloutNode, /setAttribute\('style', calloutInlineStyle/);
+  assert.match(calloutNode, /domNode\.nodeType !== 1/);
+  assert.doesNotMatch(calloutNode, /instanceof HTMLElement/);
+  assert.match(notesWindow, /note\.content_html \?\? note\.content \?\? ''/);
+  assert.match(notesWindow, /typeof note\.content_html !== 'string'/);
+  assert.match(blockPlugin, /getUsableSelection\(\), \$isCalloutNode/);
+  assert.match(blockPlugin, /restoreEditorSelection\(editor\)/);
+});
+
+test('code blocks have readable contrast and explicit token classes', () => {
+  assert.match(editor, /code: 'ledger-code-block'/);
+  assert.match(editor, /ledger-code-token-comment/);
+  assert.match(indexCss, /pre\.ledger-code-block/);
+  assert.match(indexCss, /font-family: ui-monospace/);
+});
+
+test('attachments expose removal and delayed orphan cleanup through NotesWindow', () => {
+  assert.match(blockPlugin, /data-ledger-file-attachment-remove/);
+  assert.match(blockPlugin, /immediateAttachmentRemovalsRef/);
+  assert.match(blockPlugin, /onRemoveAttachment/);
+  assert.match(notesWindow, /supabase\.storage\.from\('note-files'\)\.remove/);
+  assert.match(notesWindow, /30_000/);
+  assert.match(notesWindow, /draftContentRef\.current/);
 });

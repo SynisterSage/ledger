@@ -175,6 +175,113 @@ img[src="/github-mark.svg"] {
   text-underline-offset: 2px !important;
 }
 
+.notes-rich-text-editor .ledger-checklist {
+  list-style: none;
+  margin: 0.35rem 0;
+  padding-left: 0;
+}
+
+.notes-rich-text-editor .ledger-checklist li {
+  position: relative;
+  min-height: 1.75rem;
+  padding-left: 1.65rem;
+  outline: none;
+}
+
+.notes-rich-text-editor .ledger-checklist li:focus,
+.notes-rich-text-editor .ledger-checklist li:focus-visible {
+  outline: 1px solid var(--ledger-border-strong);
+  outline-offset: 1px;
+  border-radius: 0.25rem;
+}
+
+.notes-rich-text-editor .ledger-checklist li::before {
+  position: absolute;
+  top: 0.42rem;
+  left: 0.15rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1px solid var(--ledger-border-strong);
+  border-radius: 0.25rem;
+  background: var(--ledger-surface-card);
+  content: '';
+  cursor: pointer;
+}
+
+.notes-rich-text-editor .ledger-checklist li[aria-checked='true']::before {
+  border-color: var(--ledger-accent);
+  background: var(--ledger-accent);
+  color: #fff;
+  content: '✓';
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 0.9rem;
+  text-align: center;
+}
+
+.notes-rich-text-editor .ledger-listitem-checked {
+  color: var(--ledger-text-muted);
+  text-decoration: line-through;
+}
+
+.notes-rich-text-editor .ledger-listitem-unchecked {
+  color: var(--ledger-text-primary);
+}
+
+.notes-rich-text-editor table {
+  width: 100%;
+  margin: 0.85rem 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.notes-rich-text-editor td,
+.notes-rich-text-editor th {
+  min-width: 7rem;
+  min-height: 2rem;
+  border: 1px solid var(--ledger-border-subtle);
+  padding: 0.45rem 0.6rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.notes-rich-text-editor td:focus,
+.notes-rich-text-editor th:focus {
+  outline: 1px solid var(--ledger-border-strong);
+  outline-offset: -1px;
+}
+
+.notes-rich-text-editor pre.ledger-code-block,
+.notes-rich-text-editor pre code.ledger-code-block {
+  display: block;
+  overflow-x: auto;
+  margin: 0.9rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--ledger-border-subtle);
+  border-radius: 0.55rem;
+  background: var(--ledger-surface-muted);
+  color: var(--ledger-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.notes-rich-text-editor .ledger-code-token-aml,
+.notes-rich-text-editor .ledger-code-token-tag,
+.notes-rich-text-editor .ledger-code-token-self {
+  color: var(--ledger-accent);
+}
+
+.notes-rich-text-editor .ledger-code-token-property {
+  color: var(--ledger-accent-hover);
+}
+
+.notes-rich-text-editor .ledger-code-token-comment {
+  color: var(--ledger-text-muted);
+  font-style: italic;
+}
+
 /* When a modal is open, hide the app shell border/shadow and match body background
    to the modal backdrop color so transparent window edges don't reveal a mismatched
    background or border. This helps avoid corner artifacts in rounded Electron windows. */
@@ -652,6 +759,22 @@ button:focus {
   animation: ledger-prelogin-mark 1.8s ease-in-out infinite;
 }
 
+@keyframes ledger-new-tab-atmosphere-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-0.25%, 0.2%, 0) scale(1.008);
+  }
+}
+
+.ledger-new-tab-atmosphere {
+  animation: ledger-new-tab-atmosphere-drift 18s ease-in-out infinite;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ledger-auth-left-enter,
   .ledger-auth-pane-enter,
@@ -666,6 +789,12 @@ button:focus {
   .ledger-prelogin-ring,
   .ledger-prelogin-mark {
     animation: none;
+  }
+
+  .ledger-new-tab-atmosphere {
+    animation: none;
+    transform: none;
+    will-change: auto;
   }
 }
 
@@ -713,7 +842,7 @@ button:focus {
   padding: 0.35rem 0.75rem;
 }
 
-.ledger-callout--info { background: color-mix(in srgb, var(--ledger-link) 8%, transparent); border-left-color: var(--ledger-link); }
+.ledger-callout--info { background: color-mix(in srgb, var(--ledger-accent) 8%, transparent); border-left-color: var(--ledger-accent); }
 .ledger-callout--note { background: color-mix(in srgb, var(--ledger-accent) 8%, transparent); border-left-color: var(--ledger-accent); }
 .ledger-callout--warning { background: color-mix(in srgb, var(--ledger-warning) 10%, transparent); border-left-color: var(--ledger-warning); }
 .ledger-callout--success { background: color-mix(in srgb, var(--ledger-success) 9%, transparent); border-left-color: var(--ledger-success); }
@@ -725,16 +854,19 @@ button:focus {
   border-radius: 0.55rem;
   display: flex;
   gap: 0.55rem;
-  margin: 0.45rem 0;
+  width: fit-content;
   max-width: 100%;
-  padding: 0.45rem 0.65rem;
+  margin: 0.35rem 0;
+  padding: 0.28rem 0.5rem;
 }
 
-.ledger-file-attachment__icon { color: var(--ledger-accent); flex: 0 0 auto; }
-.ledger-file-attachment__body { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
-.ledger-file-attachment__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ledger-file-attachment__meta { color: var(--ledger-text-muted); font-size: 0.68rem; }
-.ledger-file-attachment__open { color: var(--ledger-text-secondary); flex: 0 0 auto; font-size: 0.7rem; }
+.ledger-file-attachment__icon { color: var(--ledger-accent); flex: 0 0 auto; font-size: 0.9rem; }
+.ledger-file-attachment__body { align-items: baseline; display: flex; flex: 0 1 auto; gap: 0.4rem; min-width: 0; }
+.ledger-file-attachment__label { max-width: min(20rem, 42vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; }
+.ledger-file-attachment__meta { color: var(--ledger-text-muted); flex: 0 0 auto; font-size: 0.64rem; white-space: nowrap; }
+.ledger-file-attachment__open { color: var(--ledger-text-secondary); flex: 0 0 auto; font-size: 0.68rem; }
+.ledger-file-attachment__remove { color: var(--ledger-text-muted); flex: 0 0 auto; border: 0; background: transparent; font-size: 0.64rem; }
+.ledger-file-attachment__remove:hover { color: var(--ledger-danger); }
 
 .ledger-block-handle {
   position: fixed;

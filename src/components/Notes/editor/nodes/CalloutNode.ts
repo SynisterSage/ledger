@@ -21,13 +21,30 @@ export type SerializedCalloutNode = SerializedElementNode & {
 const isCalloutType = (value: string | null): value is CalloutType =>
   value === 'info' || value === 'note' || value === 'warning' || value === 'success';
 
+const calloutInlineStyle = (type: CalloutType) => {
+  const color = type === 'warning' ? 'var(--ledger-warning)' : type === 'success' ? 'var(--ledger-success)' : 'var(--ledger-accent)';
+  const tint = type === 'warning' ? '10%' : type === 'success' ? '9%' : '8%';
+  return `border-left: 3px solid ${color}; background: color-mix(in srgb, ${color} ${tint}, transparent);`;
+};
+
 const convertCalloutElement = (domNode: Node): DOMConversionOutput | null => {
-  if (!(domNode instanceof HTMLElement)) return null;
-  const calloutType = domNode.dataset.calloutType ?? null;
+  // The DOM parser used during hydration can belong to a different window
+  // realm in Electron. Avoid an instanceof check or the wrapper can import
+  // as plain text while its children still load correctly.
+  if (domNode.nodeType !== 1) return null;
+  const element = domNode as HTMLElement;
+  const classType = Array.from(element.classList)
+    .find((name) => name.startsWith('ledger-callout--'))
+    ?.replace('ledger-callout--', '') ?? null;
+  const calloutType =
+    element.getAttribute('data-callout-type') ??
+    element.getAttribute('data-ledger-callout-type') ??
+    element.getAttribute('data-callout-style') ??
+    classType;
   return {
     node: $createCalloutNode({
       calloutType: isCalloutType(calloutType) ? calloutType : 'info',
-      icon: domNode.dataset.calloutIcon || null,
+      icon: element.dataset.calloutIcon || null,
     }),
   };
 };
@@ -53,8 +70,13 @@ export class CalloutNode extends ElementNode {
 
   static importDOM(): DOMConversionMap | null {
     return {
+      aside: (domNode) =>
+        domNode.hasAttribute('data-ledger-callout') || domNode.classList.contains('ledger-callout')
+          ? { conversion: convertCalloutElement, priority: 4 }
+          : null,
       div: (domNode) =>
-        domNode.hasAttribute('data-ledger-callout')
+        domNode.hasAttribute('data-ledger-callout') ||
+        domNode.classList.contains('ledger-callout')
           ? { conversion: convertCalloutElement, priority: 4 }
           : null,
     };
@@ -98,10 +120,14 @@ export class CalloutNode extends ElementNode {
 
   createDOM(_config: EditorConfig): HTMLElement {
     const element = document.createElement('div');
+    const calloutType = this.getCalloutType();
     element.dataset.ledgerCallout = 'true';
-    element.dataset.calloutType = this.__calloutType;
+    element.dataset.calloutType = calloutType;
+    element.dataset.ledgerCalloutType = calloutType;
+    element.dataset.calloutStyle = calloutType;
+    element.setAttribute('style', calloutInlineStyle(calloutType));
     if (this.__icon) element.dataset.calloutIcon = this.__icon;
-    element.className = 'ledger-callout ledger-callout--' + this.__calloutType;
+    element.className = 'ledger-callout ledger-callout--' + calloutType;
     element.setAttribute('role', 'note');
     return element;
   }
@@ -109,6 +135,9 @@ export class CalloutNode extends ElementNode {
   updateDOM(prevNode: CalloutNode, dom: HTMLElement): boolean {
     if (prevNode.__calloutType !== this.__calloutType) {
       dom.dataset.calloutType = this.__calloutType;
+      dom.dataset.ledgerCalloutType = this.__calloutType;
+      dom.dataset.calloutStyle = this.__calloutType;
+      dom.setAttribute('style', calloutInlineStyle(this.__calloutType));
       dom.className = 'ledger-callout ledger-callout--' + this.__calloutType;
     }
     if (prevNode.__icon !== this.__icon) {
@@ -119,9 +148,15 @@ export class CalloutNode extends ElementNode {
   }
 
   exportDOM(): DOMExportOutput {
-    const element = document.createElement('div');
+    // Use a dedicated block element so Lexical's generic div importer cannot
+    // reinterpret a persisted callout as an ordinary paragraph on hydration.
+    const element = document.createElement('aside');
     element.setAttribute('data-ledger-callout', 'true');
     element.setAttribute('data-callout-type', this.getCalloutType());
+    element.setAttribute('data-ledger-callout-type', this.getCalloutType());
+    element.setAttribute('data-callout-style', this.getCalloutType());
+    element.className = `ledger-callout ledger-callout--${this.getCalloutType()}`;
+    element.setAttribute('style', calloutInlineStyle(this.getCalloutType()));
     if (this.getIcon()) element.setAttribute('data-callout-icon', this.getIcon()!);
     return { element };
   }

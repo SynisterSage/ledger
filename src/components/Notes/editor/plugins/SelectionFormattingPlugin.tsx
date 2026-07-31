@@ -32,7 +32,7 @@ import {
   type LexicalEditor,
   type RangeSelection,
 } from 'lexical';
-import type { SelectedContentAction } from '../types/selectedContent';
+import type { SelectedContentAction, SelectedContentPayload } from '../types/selectedContent';
 import { $isSmartDateNode } from '../../nodes/SmartDateNode';
 
 type Props = {
@@ -222,14 +222,26 @@ export const SelectionFormattingPlugin = ({
 
   const applyStyle = (property: 'color' | 'background-color', value: string) => {
     editor.update(() => {
-      const selection = $getSelection();
+      const selection = savedSelection.current?.clone() ?? $getSelection();
       if ($isRangeSelection(selection)) {
-        const current = getSelectionStyle(selection);
-        const next = current.replace(new RegExp(`${property}\\s*:\\s*[^;]+;?`, 'gi'), '').trim();
-        selection.setStyle(`${next}${next ? '; ' : ''}${value ? `${property}: ${value};` : ''}`);
+        $setSelection(selection);
+        // RangeSelection.setStyle() controls the style used for future
+        // typing; it does not reliably mutate an already-selected range.
+        // Extracting first gives us exact text-node boundaries, so a partial
+        // selection does not recolor the whole surrounding text node.
+        selection.extract().forEach((node) => {
+          if (!$isTextNode(node)) return;
+          const next = node
+            .getStyle()
+            .replace(new RegExp(`${property}\\s*:\\s*[^;]+;?`, 'gi'), '')
+            .trim();
+          node.setStyle(`${next}${next ? '; ' : ''}${value ? `${property}: ${value};` : ''}`);
+        });
+        selection.setStyle(value ? `${property}: ${value};` : '');
       }
     });
     setPalette(null);
+    refresh();
   };
 
   const saveLink = () => {
@@ -247,14 +259,28 @@ export const SelectionFormattingPlugin = ({
 
   const runLedgerAction = (action?: SelectedContentAction) => {
     if (!action || !noteId || !state) return;
-    const blockKey = state.selection.anchor.getNode().getTopLevelElementOrThrow().getKey();
-    void action({
-      noteId,
-      plainText: state.selection.getTextContent().trim(),
-      blockKey,
-      source: 'selection',
-      smartDates: state.smartDates,
+    const selection = savedSelection.current?.clone() ?? state.selection.clone();
+    let payload: SelectedContentPayload | null = null;
+
+    // The floating toolbar steals focus when its menu is clicked. Restore the
+    // Lexical selection before opening the Ledger modal, matching the native
+    // editor context-menu action path.
+    editor.focus();
+    editor.update(() => {
+      $setSelection(selection.clone());
+      const activeSelection = $getSelection();
+      if (!$isRangeSelection(activeSelection)) return;
+      const plainText = activeSelection.getTextContent().trim();
+      if (!plainText) return;
+      payload = {
+        noteId,
+        plainText,
+        blockKey: activeSelection.anchor.getNode().getTopLevelElementOrThrow().getKey(),
+        source: 'selection',
+        smartDates: state.smartDates,
+      };
     });
+    if (payload) void action(payload);
     setMore(false);
   };
 
@@ -326,6 +352,7 @@ export const SelectionFormattingPlugin = ({
         type="button"
         aria-label="Text color"
         className={`ledger-selection-button${color ? ' is-active' : ''}`}
+        onMouseDown={(event) => event.preventDefault()}
         onClick={() => setPalette(palette === 'color' ? null : 'color')}
       >
         <span className="ledger-format-dot" style={{ background: color || 'currentColor' }} />
@@ -334,6 +361,7 @@ export const SelectionFormattingPlugin = ({
         type="button"
         aria-label="Highlight"
         className={`ledger-selection-button${highlight ? ' is-active' : ''}`}
+        onMouseDown={(event) => event.preventDefault()}
         onClick={() => setPalette(palette === 'highlight' ? null : 'highlight')}
       >
         <Highlighter size={14} />
@@ -352,6 +380,7 @@ export const SelectionFormattingPlugin = ({
             <button
               key={item.label}
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() =>
                 applyStyle(palette === 'color' ? 'color' : 'background-color', item.value)
               }

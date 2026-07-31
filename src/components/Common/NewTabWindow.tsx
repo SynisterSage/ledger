@@ -274,13 +274,14 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
         showWorkspaceNavigation
       />
       <main className="relative min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background: 'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 46%)',
-          }}
-        />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div
+            className="ledger-new-tab-atmosphere absolute inset-0"
+            style={{
+              background: 'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 46%)',
+            }}
+          />
+        </div>
         <div className="relative z-10 mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
           <img src="./logo-color.svg" alt="Ledger" className="mb-8 h-8 w-8" />
           <h1 className="text-[28px] font-regular tracking-[-0.03em] text-[var(--ledger-text-primary)]">

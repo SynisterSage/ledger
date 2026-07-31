@@ -104,6 +104,9 @@ export class FileAttachmentNode extends DecoratorNode<null> {
   getUrl(): string {
     return this.getLatest().__url;
   }
+  getStoragePath(): string {
+    return this.getLatest().__storagePath;
+  }
 
   exportJSON(): SerializedFileAttachmentNode {
     return {
@@ -154,7 +157,13 @@ export class FileAttachmentNode extends DecoratorNode<null> {
     link.rel = 'noreferrer';
     link.className = 'ledger-file-attachment__open';
     link.textContent = 'Open';
-    element.append(icon, body, link);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ledger-file-attachment__remove';
+    remove.dataset.ledgerFileAttachmentRemove = 'true';
+    remove.setAttribute('aria-label', `Remove attachment ${node.__label}`);
+    remove.textContent = 'Remove';
+    element.append(icon, body, link, remove);
     return element;
   }
 

@@ -39,12 +39,15 @@ import { $generateNodesFromDOM } from '@lexical/html';
 import {
   $getRoot,
   $getNodeByKey,
+  $getNearestNodeFromDOMNode,
   $insertNodes,
   EditorState,
   FORMAT_TEXT_COMMAND,
   $getPreviousSelection,
   $getSelection,
   $isRangeSelection,
+  $isTextNode,
+  $createRangeSelection,
   $isElementNode,
   $setSelection,
   $createParagraphNode,
@@ -96,7 +99,11 @@ import { INSERT_IMAGE_COMMAND } from './editor/commands/blocks';
 import { CalloutNode } from './editor/nodes/CalloutNode';
 import { ToggleNode } from './editor/nodes/ToggleNode';
 import { FileAttachmentNode } from './editor/nodes/FileAttachmentNode';
-import type { AttachmentUploadRequest, AttachmentUploadResult } from './editor/types/blocks';
+import type {
+  AttachmentRemoveRequest,
+  AttachmentUploadRequest,
+  AttachmentUploadResult,
+} from './editor/types/blocks';
 import { sanitizeEditorHtml } from './editor/utils/html';
 
 type Props = {
@@ -125,6 +132,7 @@ type Props = {
     request: EditorExternalEmbedRequest
   ) => Promise<EditorExternalEmbedResult>;
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
+  onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
 };
 
 const getSelectedContentPayload = (
@@ -196,17 +204,17 @@ const editorConfig = {
       ol: 'list-decimal list-inside',
       ul: 'list-disc list-inside',
       listitem: 'mb-1',
-      checklist: 'list-none pl-0',
-      listitemChecked: 'text-[var(--ledger-text-muted)] line-through',
-      listitemUnchecked: 'text-[var(--ledger-text-primary)]',
+      checklist: 'ledger-checklist',
+      listitemChecked: 'ledger-listitem-checked',
+      listitemUnchecked: 'ledger-listitem-unchecked',
     },
-    code: 'rounded bg-[var(--ledger-surface-hover)] px-2 py-1 font-mono text-sm text-[var(--ledger-text-primary)]',
+    code: 'ledger-code-block',
     codeHighlight: {
-      aml: 'text-[var(--ledger-danger)]',
-      tag: 'text-[var(--ledger-accent)]',
-      self: 'text-[var(--ledger-accent)]',
-      property: 'text-[color:var(--ledger-accent-hover)]',
-      comment: 'text-[var(--ledger-text-muted)]',
+      aml: 'ledger-code-token-aml',
+      tag: 'ledger-code-token-tag',
+      self: 'ledger-code-token-self',
+      property: 'ledger-code-token-property',
+      comment: 'ledger-code-token-comment',
     },
   },
   onError: (error: Error) => console.error(error),
@@ -360,16 +368,20 @@ const ToolbarPlugin = ({
   onAutoCorrect,
   noteId,
   onUploadAttachment,
+  onRemoveAttachment,
 }: {
   onAutoCorrect?: () => void | Promise<void>;
   noteId?: string | null;
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
+  onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
 }) => {
   const [editor] = useLexicalComposerContext();
   const [blockType, setBlockType] = useState<BlockType>('paragraph');
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isBlockTypeDropdownOpen, setIsBlockTypeDropdownOpen] = useState(false);
+  const [isMoreDropdownOpen, setIsMoreDropdownOpen] = useState(false);
   const [isSticky, setIsSticky] = useState(false);
   const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const sentinel = toolbarSentinelRef.current;
     if (!sentinel) return;
@@ -445,7 +457,7 @@ const ToolbarPlugin = ({
         }
       });
       setBlockType(type);
-      setIsDropdownOpen(false);
+      setIsBlockTypeDropdownOpen(false);
     },
     [editor]
   );
@@ -459,11 +471,30 @@ const ToolbarPlugin = ({
     code: 'Code block',
   };
 
+  const insertChecklist = () => {
+    editor.focus();
+    editor.update(() => {
+      const selection = $getSelection() || $getPreviousSelection();
+      if ($isRangeSelection(selection)) $setSelection(selection);
+    });
+    editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined);
+  };
+
   useEffect(() => {
     return editor.registerUpdateListener(() => {
       updateToolbar();
     });
   }, [editor, updateToolbar]);
+
+  useEffect(() => {
+    const closeMenusOnOutsidePointer = (event: PointerEvent) => {
+      if (toolbarRef.current?.contains(event.target as Node)) return;
+      setIsBlockTypeDropdownOpen(false);
+      setIsMoreDropdownOpen(false);
+    };
+    document.addEventListener('pointerdown', closeMenusOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeMenusOnOutsidePointer);
+  }, []);
 
   return (
     <>
@@ -473,6 +504,7 @@ const ToolbarPlugin = ({
         className="pointer-events-none h-px w-full"
       />
       <div
+        ref={toolbarRef}
         style={{ top: 'var(--notes-toolbar-sticky-top, 0px)' }}
         className={`sticky z-20 mb-2 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
           isSticky
@@ -485,14 +517,17 @@ const ToolbarPlugin = ({
           <button
             type="button"
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            onBlur={() => setTimeout(() => setIsDropdownOpen(false), 150)}
+            onClick={() => {
+              setIsBlockTypeDropdownOpen((value) => !value);
+              setIsMoreDropdownOpen(false);
+            }}
+            onBlur={() => setTimeout(() => setIsBlockTypeDropdownOpen(false), 150)}
             className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0"
           >
             {blockTypeLabels[blockType]}
             <ChevronDown size={13} />
           </button>
-          {isDropdownOpen && (
+          {isBlockTypeDropdownOpen && (
             <div className="absolute left-0 top-full z-50 mt-1 min-w-40 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]">
               {(['paragraph', 'h1', 'h2', 'h3', 'quote', 'code'] as BlockType[]).map((type) => (
                 <button
@@ -513,7 +548,15 @@ const ToolbarPlugin = ({
           )}
         </div>
 
-        <BlockInsertionPlugin noteId={noteId} onUploadAttachment={onUploadAttachment} />
+        <BlockInsertionPlugin
+          noteId={noteId}
+          onUploadAttachment={onUploadAttachment}
+          onRemoveAttachment={onRemoveAttachment}
+          onMenuOpen={() => {
+            setIsBlockTypeDropdownOpen(false);
+            setIsMoreDropdownOpen(false);
+          }}
+        />
 
         <ToolbarButton
           title="Undo (Ctrl+Z)"
@@ -542,15 +585,21 @@ const ToolbarPlugin = ({
         </ToolbarButton>
         <ToolbarButton
           title="Checklist"
-          onClick={() => editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined)}
+          onClick={insertChecklist}
         >
           <CheckSquare size={14} />
         </ToolbarButton>
         <div className="relative">
-          <ToolbarButton title="More" onClick={() => setIsDropdownOpen((value) => !value)}>
+          <ToolbarButton
+            title="More"
+            onClick={() => {
+              setIsMoreDropdownOpen((value) => !value);
+              setIsBlockTypeDropdownOpen(false);
+            }}
+          >
             <MoreHorizontal size={14} />
           </ToolbarButton>
-          {isDropdownOpen && (
+          {isMoreDropdownOpen && (
             <div className="absolute right-0 top-full z-50 mt-1 min-w-40 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
               <button
                 type="button"
@@ -558,7 +607,7 @@ const ToolbarPlugin = ({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'code');
-                  setIsDropdownOpen(false);
+                  setIsMoreDropdownOpen(false);
                 }}
               >
                 Inline code
@@ -570,7 +619,7 @@ const ToolbarPlugin = ({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     void onAutoCorrect();
-                    setIsDropdownOpen(false);
+                    setIsMoreDropdownOpen(false);
                   }}
                 >
                   <SpellCheck size={13} /> Auto-correct
@@ -1102,11 +1151,53 @@ const EditorContextMenuPlugin = ({
   const [hasSmartDate, setHasSmartDate] = useState(false);
   const [personId, setPersonId] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
+  const [spellcheck, setSpellcheck] = useState<{
+    x: number;
+    y: number;
+    misspelledWord: string;
+    dictionarySuggestions: string[];
+  } | null>(null);
+  const pendingSpellcheckRef = useRef<{
+    x: number;
+    y: number;
+    misspelledWord: string;
+    dictionarySuggestions: string[];
+  } | null>(null);
+  const spellcheckRangeRef = useRef<{
+    textNode: Text;
+    startOffset: number;
+    endOffset: number;
+  } | null>(null);
+  const contextPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const savedSelectionRef = useRef<any>(null);
 
   const close = useCallback(() => setPosition(null), []);
+
+  useEffect(() => {
+    const onSpellcheckContext = (_event: unknown, payload: unknown) => {
+      const value = payload as Partial<NonNullable<typeof spellcheck>> | null;
+      if (!value?.misspelledWord) return;
+      const next = {
+        x: Number(value.x ?? 0),
+        y: Number(value.y ?? 0),
+        misspelledWord: String(value.misspelledWord),
+        dictionarySuggestions: Array.isArray(value.dictionarySuggestions)
+          ? value.dictionarySuggestions.map(String).slice(0, 6)
+          : [],
+      };
+      pendingSpellcheckRef.current = next;
+      const position = contextPositionRef.current;
+      if (position && Math.abs(position.x - next.x) <= 8 && Math.abs(position.y - next.y) <= 8) {
+        setSpellcheck(next);
+      }
+    };
+    window.ipcRenderer?.on?.('spellcheck:context-menu', onSpellcheckContext as any);
+    return () => {
+      window.ipcRenderer?.off?.('spellcheck:context-menu', onSpellcheckContext as any);
+    };
+  }, []);
 
   useEffect(() => {
     const unregisterUndo = editor.registerCommand(
@@ -1195,6 +1286,51 @@ const EditorContextMenuPlugin = ({
         anchor?.href && /^(?:https?:\/\/|mailto:|tel:)/i.test(anchor.href) ? anchor.href : null
       );
       setPosition({ x: event.clientX, y: event.clientY });
+      contextPositionRef.current = { x: event.clientX, y: event.clientY };
+      const pending = pendingSpellcheckRef.current;
+      setSpellcheck(
+        pending &&
+          Math.abs(pending.x - event.clientX) <= 8 &&
+          Math.abs(pending.y - event.clientY) <= 8
+          ? pending
+          : null
+      );
+
+      const wordRange = wordAtEditorPoint(root, event.clientX, event.clientY);
+      spellcheckRangeRef.current = wordRange
+        ? {
+            textNode: wordRange.textNode,
+            startOffset: wordRange.startOffset,
+            endOffset: wordRange.endOffset,
+          }
+        : null;
+      if (wordRange?.word && window.ipcRenderer?.invoke) {
+        const requestedPosition = { x: event.clientX, y: event.clientY };
+        void window.ipcRenderer
+          .invoke('spellcheck:suggestions', { word: wordRange.word })
+          .then((result: unknown) => {
+            const value = result as { word?: unknown; suggestions?: unknown } | null;
+            const currentPosition = contextPositionRef.current;
+            if (
+              !currentPosition ||
+              currentPosition.x !== requestedPosition.x ||
+              currentPosition.y !== requestedPosition.y
+            )
+              return;
+            const suggestions = Array.isArray(value?.suggestions)
+              ? value.suggestions.map(String).slice(0, 6)
+              : [];
+            setSpellcheck({
+              x: requestedPosition.x,
+              y: requestedPosition.y,
+              misspelledWord: String(value?.word ?? wordRange.word),
+              dictionarySuggestions: suggestions,
+            });
+          })
+          .catch(() => {
+            // Browser/web mode may not expose the Electron spellchecker.
+          });
+      }
     };
 
     root.addEventListener('contextmenu', onContextMenu);
@@ -1298,6 +1434,29 @@ const EditorContextMenuPlugin = ({
       onSearch={() => {
         if (selectedContent) void onSearch?.(selectedContent);
       }}
+      spellcheck={spellcheck}
+      onReplaceMisspelling={(suggestion) => {
+        const range = spellcheckRangeRef.current;
+        let replaced = false;
+        if (range) {
+          editor.update(() => {
+            const node = $getNearestNodeFromDOMNode(range.textNode);
+            if (!$isTextNode(node)) return;
+            const selection = $createRangeSelection();
+            selection.setTextNodeRange(node, range.startOffset, node, range.endOffset);
+            $setSelection(selection);
+            selection.insertText(suggestion);
+            replaced = true;
+          });
+        }
+        if (!replaced) window.ipcRenderer?.send('spellcheck:replace', suggestion);
+        spellcheckRangeRef.current = null;
+      }}
+      onAddMisspelledWord={() => {
+        if (spellcheck?.misspelledWord) {
+          window.ipcRenderer?.send('spellcheck:add-word', spellcheck.misspelledWord);
+        }
+      }}
       linkUrl={linkUrl}
       onOpenLink={() => {
         if (linkUrl) openExternalLink(linkUrl);
@@ -1310,6 +1469,24 @@ const EditorContextMenuPlugin = ({
 const menuContains = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(target.closest('[role="menu"][aria-label="Editor actions"]'));
+
+const wordAtEditorPoint = (root: HTMLElement, x: number, y: number) => {
+  const range = document.caretRangeFromPoint?.(x, y);
+  if (!range || !root.contains(range.startContainer) || range.startContainer.nodeType !== 3) {
+    return null;
+  }
+  const text = range.startContainer.textContent ?? '';
+  const offset = Math.min(range.startOffset, text.length);
+  const isWordCharacter = (value: string) => /[\p{L}\p{N}'’-]/u.test(value);
+  let start = offset;
+  let end = offset;
+  while (start > 0 && isWordCharacter(text[start - 1])) start -= 1;
+  while (end < text.length && isWordCharacter(text[end])) end += 1;
+  const word = text.slice(start, end).trim();
+  return word
+    ? { word, textNode: range.startContainer as Text, startOffset: start, endOffset: end }
+    : null;
+};
 
 export function RichTextEditor({
   initialValue,
@@ -1332,6 +1509,7 @@ export function RichTextEditor({
   onSearch,
   onCreateExternalEmbed,
   onUploadAttachment,
+  onRemoveAttachment,
 }: Props) {
   const lastChangeTimeRef = React.useRef(0);
   const pendingHtmlRef = React.useRef<string | null>(null);
@@ -1414,6 +1592,7 @@ export function RichTextEditor({
             onAutoCorrect={onAutoCorrect}
             noteId={noteId}
             onUploadAttachment={onUploadAttachment}
+            onRemoveAttachment={onRemoveAttachment}
           />
           <div className="relative mt-2">
             <RichTextBehaviorPlugin />

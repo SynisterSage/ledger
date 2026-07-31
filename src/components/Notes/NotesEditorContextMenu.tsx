@@ -13,6 +13,8 @@ import {
   CalendarDays,
   Bell,
   ExternalLink,
+  SpellCheck,
+  BookPlus,
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -53,6 +55,12 @@ export type NotesEditorContextMenuProps = {
   linkUrl?: string | null;
   onOpenLink: () => void;
   onClose: () => void;
+  spellcheck?: {
+    misspelledWord: string;
+    dictionarySuggestions: string[];
+  } | null;
+  onReplaceMisspelling: (suggestion: string) => void;
+  onAddMisspelledWord: () => void;
 };
 
 const shortcut = (key: string) => `${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+${key}`;
@@ -83,6 +91,9 @@ export const NotesEditorContextMenu = ({
   linkUrl,
   onOpenLink,
   onClose,
+  spellcheck,
+  onReplaceMisspelling,
+  onAddMisspelledWord,
 }: NotesEditorContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -207,6 +218,43 @@ export const NotesEditorContextMenu = ({
         buttons[nextIndex]?.focus();
       }}
     >
+      {spellcheck?.misspelledWord && (
+        <>
+          {spellcheck.dictionarySuggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onReplaceMisspelling(suggestion);
+                onClose();
+              }}
+              className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-primary)] transition hover:bg-[var(--ledger-surface-hover)] focus-visible:bg-[var(--ledger-surface-hover)] focus-visible:outline-none"
+            >
+              <SpellCheck size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span className="min-w-0 flex-1 truncate">{suggestion}</span>
+            </button>
+          ))}
+          {spellcheck.dictionarySuggestions.length === 0 && (
+            <div className="px-2 py-2 text-[12px] text-[var(--ledger-text-muted)]">
+              No suggestions
+            </div>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onAddMisspelledWord();
+              onClose();
+            }}
+            className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] focus-visible:bg-[var(--ledger-surface-hover)] focus-visible:outline-none"
+          >
+            <BookPlus size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+            <span className="min-w-0 flex-1 truncate">Add to Dictionary</span>
+          </button>
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+        </>
+      )}
       {editingActions.map(renderAction)}
       {(hasSelection || linkUrl) && (
         <>

@@ -12,3 +12,9 @@ export type AttachmentUploadRequest = {
   noteId: string;
   file: File;
 };
+
+export type AttachmentRemoveRequest = {
+  noteId: string;
+  storagePath: string;
+  immediate?: boolean;
+};
