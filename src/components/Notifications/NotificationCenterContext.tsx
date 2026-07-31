@@ -77,6 +77,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
 
   const loadNotifications = useCallback(async (options?: { force?: boolean; background?: boolean }) => {
     if (!user || !activeWorkspaceId) {
+      notificationLoadRequestRef.current += 1;
       setActive([]);
       setEarlier([]);
       setActiveCount(0);
@@ -85,7 +86,6 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       return;
     }
 
-    const requestId = ++notificationLoadRequestRef.current;
     const now = Date.now();
     if (!options?.force) {
       if (notificationLoadInFlightRef.current) return;
@@ -93,6 +93,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       if (now - notificationLoadAtRef.current < notificationLoadCooldownMs) return;
     }
 
+    const requestId = ++notificationLoadRequestRef.current;
     notificationLoadInFlightRef.current = true;
     notificationLoadAtRef.current = now;
     if (!options?.background) setLoading(true);

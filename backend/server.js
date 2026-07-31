@@ -12695,7 +12695,10 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
 
 app.get('/api/notifications/summary', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const data = await getNotificationCenterItems(req.authUser.id);
+    const workspaceId = normalizeNullableText(
+      req.query?.workspace_id ?? req.headers['x-workspace-id']
+    );
+    const data = await getNotificationCenterItems(req.authUser.id, workspaceId);
     res.json({ counts: data.counts });
   } catch (error) {
     return respondWithError(res, error);
@@ -12704,7 +12707,9 @@ app.get('/api/notifications/summary', authMiddleware, rateLimit('read'), async (
 
 app.get('/api/notifications', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
-    const workspaceId = normalizeNullableText(req.query?.workspace_id);
+    const workspaceId = normalizeNullableText(
+      req.query?.workspace_id ?? req.headers['x-workspace-id']
+    );
     const data = await getNotificationCenterItems(req.authUser.id, workspaceId);
     res.json(data);
   } catch (error) {
