@@ -12,14 +12,13 @@ import {
   getCalendarWeekdayLabels,
   type CalendarMonth,
 } from './calendarMonthGenerator';
-import { useMobileCalendarItems } from './useMobileCalendarItems';
+import { useMobileMonthCalendarItems } from './useMobileMonthCalendarItems';
 import type { MobileCalendarItem, MobileCalendarItemType } from './calendarItemNormalizer';
 import type { CalendarFilters } from './calendarFilters';
 import { SelectedDayAgenda } from './SelectedDayAgenda';
 
 const INITIAL_MONTHS_BEFORE = 12;
 const INITIAL_MONTHS_AFTER = 18;
-const WEEK_HEIGHT = 88;
 const MONTH_LABEL_HEIGHT = 52;
 const EXTENSION_MONTHS = 12;
 const TOP_EXTENSION_THRESHOLD = 420;
@@ -91,7 +90,7 @@ function MonthCalendarItem({ item, onPress, onLongPress }: { item: MobileCalenda
       accessibilityHint="Opens calendar item details. Long press for actions."
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [styles.itemRow, { opacity: pressed ? 0.62 : item.completed || item.overdue ? 0.58 : 1 }]}
+      style={({ pressed }) => [styles.itemRow, { backgroundColor: theme.colors.surfaceMuted, opacity: pressed ? 0.62 : item.completed || item.overdue ? 0.58 : 1 }]}
     >
       <View style={[styles.itemSourceLine, { backgroundColor: sourceColor }]} />
       <SymbolView name={symbolByItemType[item.type]} size={10} tintColor={item.overdue ? theme.colors.warning : sourceColor} />
@@ -153,12 +152,25 @@ function MonthBlock({ month, selectedDate, itemsByDate, onSelectDate, onOpenItem
 export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, ContinuousMonthViewProps>(function ContinuousMonthView({ selectedDate, visiblePeriod, workspaceId, filters, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem = () => undefined, onLongPressItem = onOpenItem, onCreateForDate = () => undefined }, ref) {
   const theme = useLedgerTheme();
   const { width } = useWindowDimensions();
-  const { itemsByDate, isLoading, error, retry } = useMobileCalendarItems(workspaceId, visiblePeriod, filters);
+  const { itemsByDate, isLoading, error, retry } = useMobileMonthCalendarItems(workspaceId, visiblePeriod, filters);
+  // FlatList is a PureComponent. The month cells must be invalidated when the
+  // async calendar range resolves, otherwise they can remain the initial empty
+  // render even though Day and Agenda have received the same items.
+  const itemsVersion = useMemo(
+    () => Object.entries(itemsByDate)
+      .flatMap(([dateKey, items]) => items.map((item) => `${dateKey}:${item.id}`))
+      .join('|'),
+    [itemsByDate],
+  );
   const listRef = useRef<FlatList<Date>>(null);
   const today = useMemo(() => new Date(), []);
   const initialMonth = useMemo(() => addCalendarMonths(today, -INITIAL_MONTHS_BEFORE), [today]);
   const [months, setMonths] = useState(() => generateCalendarMonths(initialMonth, INITIAL_MONTHS_BEFORE + INITIAL_MONTHS_AFTER + 1));
   const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
+  const hasRestoredPositionRef = useRef(false);
+  const onChangeVisiblePeriodRef = useRef(onChangeVisiblePeriod);
+  const onScrollStateChangeRef = useRef(onScrollStateChange);
+  const scrollOffsetRef = useRef(scrollState?.offset ?? 0);
   const isExtendingTopRef = useRef(false);
   const previousWorkspaceIdRef = useRef(workspaceId);
   const previousSelectedDateKeyRef = useRef(formatCalendarDateKey(selectedDate));
@@ -169,6 +181,13 @@ export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Continu
   const monthItems = useMemo(() => months.map((date) => date), [months]);
   const monthByKey = useMemo(() => new Map(monthItems.map((date) => [formatCalendarMonthKey(date), date])), [monthItems]);
   const todayIndex = useMemo(() => monthItems.findIndex((date) => formatCalendarMonthKey(date) === formatCalendarMonthKey(today)), [monthItems, today]);
+
+  useEffect(() => {
+    hasRestoredPositionRef.current = hasRestoredPosition;
+    onChangeVisiblePeriodRef.current = onChangeVisiblePeriod;
+    onScrollStateChangeRef.current = onScrollStateChange;
+    scrollOffsetRef.current = scrollState?.offset ?? 0;
+  }, [hasRestoredPosition, onChangeVisiblePeriod, onScrollStateChange, scrollState?.offset]);
 
   const renderMonth = useCallback(({ item }: { item: Date }) => (
     <MonthBlock month={generateCalendarMonth(item, selectedDate, today)} selectedDate={selectedDate} itemsByDate={itemsByDate} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} onCreateForDate={onCreateForDate} />
@@ -187,12 +206,13 @@ export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Continu
     }
   }, [months]);
 
-  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: Array<{ item?: Date; isViewable?: boolean }> }) => {
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item?: Date; isViewable?: boolean }> }) => {
+    if (!hasRestoredPositionRef.current) return;
     const firstVisible = viewableItems.find((token) => token.isViewable !== false)?.item;
     if (!firstVisible) return;
-    onChangeVisiblePeriod(firstVisible);
-    onScrollStateChange?.({ offset: scrollState?.offset ?? 0, visibleMonthKey: formatCalendarMonthKey(firstVisible) });
-  }, [onChangeVisiblePeriod, onScrollStateChange, scrollState?.offset]);
+    onChangeVisiblePeriodRef.current(firstVisible);
+    onScrollStateChangeRef.current?.({ offset: scrollOffsetRef.current, visibleMonthKey: formatCalendarMonthKey(firstVisible) });
+  }).current;
 
   const scrollToMonth = useCallback((date: Date) => {
     const index = months.findIndex((month) => formatCalendarMonthKey(month) === formatCalendarMonthKey(date));
@@ -227,6 +247,7 @@ export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Continu
     if (!target) return;
     const index = months.findIndex((month) => formatCalendarMonthKey(month) === formatCalendarMonthKey(target));
     if (index >= 0) {
+      onChangeVisiblePeriodRef.current(target);
       requestAnimationFrame(() => {
         listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.18 });
         setHasRestoredPosition(true);
@@ -237,11 +258,23 @@ export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Continu
   useEffect(() => {
     if (scrollState || hasRestoredPosition) return;
     if (todayIndex < 0) return;
-    requestAnimationFrame(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const restoreToday = () => {
+      onChangeVisiblePeriodRef.current(today);
       listRef.current?.scrollToIndex({ index: todayIndex, animated: false, viewPosition: 0.3 });
       setHasRestoredPosition(true);
-    });
+    };
+    requestAnimationFrame(() => { timer = setTimeout(restoreToday, 120); });
+    return () => { if (timer) clearTimeout(timer); };
   }, [hasRestoredPosition, scrollState, todayIndex]);
+
+  useEffect(() => {
+    if (scrollState || hasRestoredPosition) return;
+    // Keep the range loader anchored to the selected date while the virtualized
+    // list is still measuring its initial months. The first viewability callback
+    // may otherwise report the pre-anchor month and fetch the wrong year.
+    onChangeVisiblePeriod(selectedDate);
+  }, [hasRestoredPosition, onChangeVisiblePeriod, scrollState, selectedDate]);
 
   useEffect(() => {
     if (formatCalendarMonthKey(visiblePeriod) === formatCalendarMonthKey(today)) return;
@@ -283,7 +316,7 @@ export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Continu
         maxToRenderPerBatch={5}
         windowSize={7}
         removeClippedSubviews
-        extraData={`${selectedDate.getTime()}-${workspaceId}-${width}`}
+        extraData={`${selectedDate.getTime()}-${workspaceId}-${width}-${itemsVersion}`}
       />
     </View>
   );
@@ -298,11 +331,11 @@ const styles = StyleSheet.create({
   dayCell: { flex: 1, minHeight: 44, alignItems: 'center', paddingTop: 7 },
   dayNumber: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
   itemList: { width: '100%', paddingHorizontal: 2, paddingTop: 2, gap: 1 },
-  itemRow: { height: 17, width: '100%', flexDirection: 'row', alignItems: 'center', gap: 2, overflow: 'hidden' },
-  itemSourceLine: { width: 2, height: 12, borderRadius: 1 },
-  itemTime: { fontSize: 8, lineHeight: 10, maxWidth: 25 },
-  itemTitle: { flex: 1, fontSize: 9, lineHeight: 11 },
-  overflowButton: { height: 13, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 4 },
+  itemRow: { height: 19, width: '100%', flexDirection: 'row', alignItems: 'center', gap: 3, overflow: 'hidden', borderRadius: 4, paddingHorizontal: 2 },
+  itemSourceLine: { width: 2, height: 14, borderRadius: 1 },
+  itemTime: { fontSize: 8.5, lineHeight: 11, maxWidth: 28 },
+  itemTitle: { flex: 1, fontSize: 10, lineHeight: 12 },
+  overflowButton: { height: 16, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 4 },
   inlineError: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 4 },
   loadingLine: { height: 2, width: '35%', opacity: 0.45 },
 });

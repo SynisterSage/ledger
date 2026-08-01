@@ -13187,6 +13187,129 @@ app.get('/api/mobile/calendar', async (req, res) => {
   }
 });
 
+app.get('/api/mobile/calendar/month', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const requestedWorkspaceId = normalizeNullableText(req.query?.workspace_id) || 'all';
+    const scope = await resolveMobileWorkspaceScope(user.id, requestedWorkspaceId);
+    const startDate = normalizeNullableText(req.query?.start_date);
+    const endDate = normalizeNullableText(req.query?.end_date);
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      return res.status(400).json({ error: 'Valid start_date and end_date are required.' });
+    }
+    if (startDate > endDate) return res.status(400).json({ error: 'start_date must be before end_date.' });
+
+    const startIso = `${startDate}T00:00:00.000Z`;
+    const endIso = `${endDate}T23:59:59.999Z`;
+    const [eventsResult, remindersResult, tasksResult, projectsResult, milestonesResult, calendarsResult] = await Promise.all([
+      supabase.from('events').select(eventSelectColumns).in('workspace_id', scope.workspaceIds).lt('start_at', endIso).or(`end_at.gte.${startIso},end_at.is.null`).order('start_at', { ascending: true }).limit(1000),
+      supabase.from('reminders').select(reminderSelectColumns).in('workspace_id', scope.workspaceIds).gte('remind_at', startIso).lte('remind_at', endIso).order('remind_at', { ascending: true }).limit(1000),
+      supabase.from('tasks').select(taskSelectColumns).in('workspace_id', scope.workspaceIds).gte('due_date', startDate).lte('due_date', endDate).order('due_date', { ascending: true }).limit(1000),
+      supabase.from('projects').select(projectSelectColumns).in('workspace_id', scope.workspaceIds).gte('end_date', startDate).lte('end_date', endDate).order('end_date', { ascending: true }).limit(500),
+      supabase.from('project_milestones').select(projectMilestoneSelectColumns).in('workspace_id', scope.workspaceIds).gte('milestone_date', startDate).lte('milestone_date', endDate).order('milestone_date', { ascending: true }).limit(1000),
+      supabase.from('calendars').select('id, workspace_id, name, color, is_visible, is_personal, is_default').in('workspace_id', scope.workspaceIds).order('created_at', { ascending: true }),
+    ]);
+    for (const result of [eventsResult, remindersResult, tasksResult, projectsResult, milestonesResult, calendarsResult]) {
+      if (result.error) throw result.error;
+    }
+
+    const calendars = new Map((calendarsResult.data ?? []).map((calendar) => [String(calendar.id), calendar]));
+    const projects = new Map((projectsResult.data ?? []).map((project) => [String(project.id), project]));
+    const items = [];
+    const dateKeyFromIso = (value) => value ? String(value).slice(0, 10) : null;
+    const addDays = (dateKey, amount) => {
+      const date = new Date(`${dateKey}T12:00:00`);
+      date.setDate(date.getDate() + amount);
+      return date.toISOString().slice(0, 10);
+    };
+    const completed = (status, done) => Boolean(done || ['done', 'completed', 'cancelled', 'dismissed'].includes(String(status ?? '').toLowerCase()));
+    const projectContext = (projectId) => {
+      const project = projectId ? projects.get(String(projectId)) : null;
+      return { projectId: projectId ? String(projectId) : null, projectName: project?.name ? String(project.name) : null };
+    };
+
+    for (const event of eventsResult.data ?? []) {
+      const firstDate = dateKeyFromIso(event.start_at);
+      if (!firstDate || !event.id || !event.title) continue;
+      const rawEndDate = dateKeyFromIso(event.end_at) ?? firstDate;
+      const lastDate = event.all_day && rawEndDate > firstDate ? addDays(rawEndDate, -1) : rawEndDate;
+      const sourcePlatform = event.source_platform ?? event.source ?? null;
+      const calendar = calendars.get(String(event.calendar_id ?? ''));
+      let current = firstDate;
+      let occurrence = 0;
+      while (current <= lastDate && occurrence < 32) {
+        const multiDay = current !== firstDate || lastDate !== firstDate;
+        items.push({
+          id: `event:${event.id}:${current}`,
+          type: sourcePlatform && !['workspace', 'mobile'].includes(String(sourcePlatform)) ? 'external_event' : 'event',
+          title: String(event.title),
+          dateKey: current,
+          startAt: multiDay ? null : event.start_at ?? null,
+          endAt: multiDay ? null : event.end_at ?? null,
+          allDay: Boolean(event.all_day) || multiDay,
+          completed: completed(event.status),
+          sourceId: String(event.id),
+          sourceName: calendar?.name ?? event.calendar_name ?? sourcePlatform,
+          sourceColor: calendar?.color ?? event.color ?? null,
+          sourceKey: event.calendar_id ? `calendar:${event.calendar_id}` : null,
+          sourceKind: 'calendar',
+          calendarId: event.calendar_id ?? null,
+          workspaceId: String(event.workspace_id ?? scope.workspaceId),
+          ...projectContext(event.project_id),
+          readOnly: ['apple', 'google'].includes(String(sourcePlatform)),
+          noteId: event.note_id ?? null,
+          notes: event.notes ?? null,
+          location: event.location ?? null,
+          recurrenceRule: event.recurrence_rule ?? null,
+          status: event.status ?? null,
+        });
+        current = addDays(current, 1);
+        occurrence += 1;
+      }
+    }
+    for (const reminder of remindersResult.data ?? []) {
+      const dateKey = dateKeyFromIso(reminder.remind_at);
+      if (!dateKey || !reminder.id || !reminder.title) continue;
+      items.push({
+        id: `reminder:${reminder.id}:${dateKey}`,
+        type: 'reminder', title: String(reminder.title), dateKey,
+        startAt: reminder.remind_at ?? null, allDay: !reminder.remind_at || String(reminder.remind_at).endsWith('T00:00:00.000Z'),
+        completed: completed(reminder.status, reminder.is_done), sourceId: String(reminder.id),
+        sourceName: reminder.list_name ?? 'Reminders', sourceColor: reminder.color ?? null,
+        sourceKey: reminder.calendar_id ? `calendar:${reminder.calendar_id}` : null, sourceKind: 'reminder',
+        calendarId: reminder.calendar_id ?? null, workspaceId: String(reminder.workspace_id ?? scope.workspaceId),
+        ...projectContext(reminder.project_id), readOnly: reminder.source_platform === 'apple', noteId: reminder.note_id ?? null,
+        notes: reminder.notes ?? reminder.body ?? null, recurrenceRule: reminder.recurrence_rule ?? null, status: reminder.status ?? null,
+      });
+    }
+    for (const task of tasksResult.data ?? []) {
+      const dateKey = dateKeyFromIso(task.due_date);
+      if (!dateKey || !task.id || !task.title) continue;
+      const projectId = task.project_id ?? null;
+      items.push({
+        id: `task:${task.id}`, type: projectId ? 'project_action' : 'task', title: String(task.title), dateKey,
+        startAt: task.due_time ? `${dateKey}T${task.due_time}` : null, allDay: !task.due_time,
+        completed: completed(task.status, task.completed_at), sourceId: String(task.id), sourceName: projectId ? 'Project action' : 'Tasks',
+        workspaceId: String(task.workspace_id ?? scope.workspaceId), ...projectContext(projectId), notes: task.notes ?? task.description ?? null, status: task.status ?? null,
+      });
+    }
+    for (const project of projectsResult.data ?? []) {
+      const dateKey = dateKeyFromIso(project.end_date);
+      if (!dateKey || !project.id || !project.name) continue;
+      items.push({ id: `project-deadline:${project.id}`, type: 'project_deadline', title: `${String(project.name)} due`, dateKey, allDay: true, completed: completed(project.status), sourceName: 'Project deadline', sourceColor: project.color ?? null, workspaceId: String(project.workspace_id ?? scope.workspaceId), ...projectContext(project.id), status: project.status ?? null });
+    }
+    for (const milestone of milestonesResult.data ?? []) {
+      const dateKey = dateKeyFromIso(milestone.milestone_date);
+      if (!dateKey || !milestone.id || !milestone.title) continue;
+      items.push({ id: `milestone:${milestone.id}`, type: 'milestone', title: String(milestone.title), dateKey, allDay: true, completed: Boolean(milestone.completed), sourceName: 'Milestone', workspaceId: String(milestone.workspace_id ?? scope.workspaceId), ...projectContext(milestone.project_id), status: milestone.status ?? null });
+    }
+
+    res.json({ workspace_id: scope.workspaceId, start_date: startDate, end_date: endDate, items });
+  } catch (error) {
+    return respondWithMobileError(res, error);
+  }
+});
+
 app.patch(
   '/api/workspaces/:workspaceId([0-9a-fA-F-]{36})',
   authMiddleware,

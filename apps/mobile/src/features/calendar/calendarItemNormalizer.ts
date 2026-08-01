@@ -70,11 +70,11 @@ function isCompleted(status: unknown, completed?: unknown, done?: unknown) {
 }
 
 export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCalendarItem[] {
-  const calendars = new Map(payload.calendars.map((calendar) => [String(calendar.id), calendar]));
-  const projects = new Map(payload.projects.map((project) => [String(project.id), project]));
+  const calendars = new Map((Array.isArray(payload.calendars) ? payload.calendars : []).map((calendar) => [String(calendar.id), calendar]));
+  const projects = new Map((Array.isArray(payload.projects) ? payload.projects : []).map((project) => [String(project.id), project]));
   const items: MobileCalendarItem[] = [];
 
-  for (const event of payload.events) {
+  for (const event of Array.isArray(payload.events) ? payload.events : []) {
     const startAt = stringValue(event.start_at);
     const dateKey = dateKeyFromValue(event.all_day ? event.start_at : startAt);
     if (!dateKey || !event.id || !event.title) continue;
@@ -121,7 +121,7 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
     }
   }
 
-  for (const reminder of payload.reminders) {
+  for (const reminder of Array.isArray(payload.reminders) ? payload.reminders : []) {
     const remindAt = stringValue(reminder.remind_at);
     const dateKey = dateKeyFromValue(remindAt);
     if (!dateKey || !reminder.id || !reminder.title) continue;
@@ -151,7 +151,7 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
     });
   }
 
-  for (const task of payload.tasks) {
+  for (const task of Array.isArray(payload.tasks) ? payload.tasks : []) {
     const dateKey = dateKeyFromValue(task.due_date);
     if (!dateKey || !task.id || !task.title) continue;
     const projectId = stringValue(task.project_id);
@@ -174,7 +174,7 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
     });
   }
 
-  for (const project of payload.projects) {
+  for (const project of Array.isArray(payload.projects) ? payload.projects : []) {
     const dateKey = dateKeyFromValue(project.end_date);
     if (!dateKey || !project.id || !project.name) continue;
     items.push({
@@ -194,7 +194,7 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
     });
   }
 
-  for (const milestone of payload.milestones) {
+  for (const milestone of Array.isArray(payload.milestones) ? payload.milestones : []) {
     const dateKey = dateKeyFromValue(milestone.milestone_date);
     if (!dateKey || !milestone.id || !milestone.title) continue;
     const projectId = stringValue(milestone.project_id);
