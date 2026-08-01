@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { defaultCalendarFilters, type CalendarFilters } from './calendarFilters';
+import * as SecureStore from 'expo-secure-store';
 
 export type MobileCalendarView = 'month' | 'agenda' | 'day' | 'week';
-
-export type CalendarFilters = {
-  visibleSources: string[];
-};
 
 export type CalendarViewContext = {
   workspaceId: string;
@@ -16,6 +14,20 @@ export type CalendarViewContext = {
 };
 
 const CALENDAR_VIEW_STORAGE_KEY = 'ledger-mobile-calendar-view';
+const CALENDAR_FILTER_STORAGE_KEY = 'ledger-mobile-calendar-filters';
+
+function readFilters(workspaceId: string): CalendarFilters {
+  try {
+    const value = globalThis.localStorage?.getItem(`${CALENDAR_FILTER_STORAGE_KEY}:${workspaceId}`);
+    if (!value) return defaultCalendarFilters;
+    return { ...defaultCalendarFilters, ...JSON.parse(value) };
+  } catch { return defaultCalendarFilters; }
+}
+
+function persistFilters(workspaceId: string, filters: CalendarFilters) {
+  try { globalThis.localStorage?.setItem(`${CALENDAR_FILTER_STORAGE_KEY}:${workspaceId}`, JSON.stringify(filters)); } catch { /* best effort */ }
+  void SecureStore.setItemAsync(`${CALENDAR_FILTER_STORAGE_KEY}:${workspaceId}`, JSON.stringify(filters)).catch(() => undefined);
+}
 
 function readInitialView(): MobileCalendarView {
   try {
@@ -63,7 +75,7 @@ export function useMobileCalendarState(workspaceId = 'default') {
   const [visiblePeriod, setVisiblePeriod] = useState(today);
   const workspaceDatesRef = useRef<Record<string, { selectedDate: Date; visiblePeriod: Date }>>({});
   const activeWorkspaceRef = useRef(workspaceId);
-  const [filters] = useState<CalendarFilters>({ visibleSources: [] });
+  const [filters, setFiltersState] = useState<CalendarFilters>(() => readFilters(workspaceId));
   const [viewSheetOpen, setViewSheetOpen] = useState(false);
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
   const [creationSheetOpen, setCreationSheetOpen] = useState(false);
@@ -74,8 +86,31 @@ export function useMobileCalendarState(workspaceId = 'default') {
     const saved = workspaceDatesRef.current[workspaceId];
     setSelectedDate(saved?.selectedDate ?? today);
     setVisiblePeriod(saved?.visiblePeriod ?? today);
+    setFiltersState(readFilters(workspaceId));
     activeWorkspaceRef.current = workspaceId;
   }, [selectedDate, today, visiblePeriod, workspaceId]);
+
+  useEffect(() => {
+    let active = true;
+    void SecureStore.getItemAsync(`${CALENDAR_FILTER_STORAGE_KEY}:${workspaceId}`).then((value) => {
+      if (!active || !value) return;
+      try { setFiltersState({ ...defaultCalendarFilters, ...JSON.parse(value) }); } catch { /* ignore malformed preference */ }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [workspaceId]);
+
+  const setFilters = useCallback((next: Partial<CalendarFilters> | CalendarFilters) => {
+    setFiltersState((current) => {
+      const resolved = { ...current, ...next };
+      persistFilters(activeWorkspaceRef.current, resolved);
+      return resolved;
+    });
+  }, []);
+
+  const resetFilters = useCallback(() => {
+    persistFilters(activeWorkspaceRef.current, defaultCalendarFilters);
+    setFiltersState(defaultCalendarFilters);
+  }, []);
 
   const setView = useCallback((nextView: MobileCalendarView) => {
     setViewState(nextView);
@@ -109,6 +144,8 @@ export function useMobileCalendarState(workspaceId = 'default') {
     selectedDate,
     visiblePeriod,
     filters,
+    setFilters,
+    resetFilters,
     viewSheetOpen,
     sourceSheetOpen,
     creationSheetOpen,

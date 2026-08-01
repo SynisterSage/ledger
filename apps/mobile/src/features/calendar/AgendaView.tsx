@@ -7,6 +7,7 @@ import { buildAgendaListEntries, dateLabel, type AgendaListEntry } from './agend
 import { useMobileAgendaItems } from './useMobileAgendaItems';
 import { DayAgendaItemRow } from './SelectedDayAgenda';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
+import type { CalendarFilters } from './calendarFilters';
 
 export type AgendaViewHandle = {
   scrollToDate: (date: Date) => void;
@@ -20,6 +21,7 @@ export type AgendaScrollState = {
 type AgendaViewProps = {
   selectedDate: Date;
   workspaceId: string;
+  filters?: CalendarFilters;
   scrollState?: AgendaScrollState;
   onSelectDate: (date: Date) => void;
   onChangeVisiblePeriod: (date: Date) => void;
@@ -35,13 +37,13 @@ function dateFromKey(dateKey: string) {
 
 const isToday = (dateKey: string) => dateKey === formatCalendarDateKey(new Date());
 
-export const AgendaView = forwardRef<AgendaViewHandle, AgendaViewProps>(function AgendaView({ selectedDate, workspaceId, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem, onLongPressItem, onCreateForDate }, ref) {
+export const AgendaView = forwardRef<AgendaViewHandle, AgendaViewProps>(function AgendaView({ selectedDate, workspaceId, filters, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem, onLongPressItem, onCreateForDate }, ref) {
   const theme = useLedgerTheme();
   const listRef = useRef<FlatList<AgendaListEntry>>(null);
   const [hasRestored, setHasRestored] = useState(false);
   const [, setClock] = useState(() => Date.now());
   const extendingPastRef = useRef(false);
-  const { items, isLoading, error, extendPast, extendFuture, retry } = useMobileAgendaItems(workspaceId, selectedDate);
+  const { items, isLoading, error, extendPast, extendFuture, retry } = useMobileAgendaItems(workspaceId, selectedDate, filters);
   const { entries } = useMemo(() => buildAgendaListEntries(items, selectedDate), [items, selectedDate]);
   const stickyHeaderIndices = useMemo(() => entries.flatMap((entry, index) => entry.type === 'date_header' ? [index] : []), [entries]);
   const dateIndex = useMemo(() => new Map(entries.flatMap((entry, index) => entry.type === 'date_header' ? [[entry.dateKey, index] as const] : [])), [entries]);

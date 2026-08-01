@@ -45,7 +45,7 @@ export const addCalendarMonths = (date: Date, amount: number) => {
   return next;
 };
 
-const getFirstWeekday = () => {
+export const getCalendarFirstWeekday = () => {
   try {
     const locale = new Intl.Locale(Intl.DateTimeFormat().resolvedOptions().locale) as Intl.Locale & {
       weekInfo?: { firstDay?: number };
@@ -74,7 +74,7 @@ export function generateCalendarMonth(
   monthDate: Date,
   selectedDate: Date,
   today = new Date(),
-  firstWeekday = getFirstWeekday(),
+  firstWeekday = getCalendarFirstWeekday(),
 ): CalendarMonth {
   const month = new Date(monthDate);
   month.setDate(1);
@@ -114,7 +114,7 @@ export function generateCalendarMonths(startMonth: Date, count: number) {
   return Array.from({ length: count }, (_, index) => addCalendarMonths(startMonth, index));
 }
 
-export function getCalendarWeekdayLabels(firstWeekday = getFirstWeekday()) {
+export function getCalendarWeekdayLabels(firstWeekday = getCalendarFirstWeekday()) {
   const anchor = new Date(2024, 0, 7 + firstWeekday);
   return Array.from({ length: 7 }, (_, index) =>
     addDays(anchor, index).toLocaleDateString([], { weekday: 'short' }).slice(0, 1),

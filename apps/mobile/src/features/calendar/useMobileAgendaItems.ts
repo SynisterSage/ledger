@@ -3,6 +3,7 @@ import { useFocusEffect } from 'expo-router';
 import { getMobileCalendarRange, type MobileCalendarRangeResponse } from '@/api/calendar';
 import { formatCalendarDateKey } from './calendarMonthGenerator';
 import { normalizeCalendarRange, sortCalendarItems, type MobileCalendarItem } from './calendarItemNormalizer';
+import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
 
 const addDays = (date: Date, amount: number) => {
   const next = new Date(date);
@@ -16,7 +17,7 @@ function startOfDay(date: Date) {
   return next;
 }
 
-export function useMobileAgendaItems(workspaceId: string, anchorDate: Date) {
+export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filters?: CalendarFilters) {
   const initialStart = useMemo(() => formatCalendarDateKey(addDays(startOfDay(anchorDate), -7)), [anchorDate]);
   const initialEnd = useMemo(() => formatCalendarDateKey(addDays(startOfDay(anchorDate), 30)), [anchorDate]);
   const [startDate, setStartDate] = useState(initialStart);
@@ -62,7 +63,11 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date) {
         setItems(nextItems);
       })
       .catch((nextError: unknown) => {
-        if (!cancelled && requestId === requestIdRef.current) setError(nextError instanceof Error ? nextError.message : 'Agenda could not be loaded.');
+        if (!cancelled && requestId === requestIdRef.current) {
+          const stale = [...cacheRef.current.values()].flat();
+          if (stale.length) setItems(stale);
+          setError(stale.length ? 'Agenda could not refresh. Showing cached items.' : nextError instanceof Error ? nextError.message : 'Agenda could not be loaded.');
+        }
       })
       .finally(() => {
         if (!cancelled && requestId === requestIdRef.current) setIsLoading(false);
@@ -86,5 +91,5 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date) {
     setRefreshToken((current) => current + 1);
   }, [endDate, startDate, workspaceId]);
 
-  return { items, startDate, endDate, isLoading, error, extendPast, extendFuture, retry };
+  return { items: filters ? filterCalendarItems(items, filters) : items, startDate, endDate, isLoading, error, extendPast, extendFuture, retry };
 }

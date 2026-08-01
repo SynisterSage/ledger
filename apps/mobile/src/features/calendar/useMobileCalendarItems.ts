@@ -4,18 +4,21 @@ import { useCallback } from 'react';
 import { getMobileCalendarRange, type MobileCalendarRangeResponse } from '@/api/calendar';
 import { addCalendarMonths, formatCalendarDateKey, generateCalendarMonth } from './calendarMonthGenerator';
 import { groupCalendarItems, normalizeCalendarRange, sortCalendarItems, type CalendarItemsByDate, type MobileCalendarItem } from './calendarItemNormalizer';
+import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
 
 type RangeCacheEntry = {
   key: string;
   items: MobileCalendarItem[];
 };
 
+const sharedCalendarRangeCache = new Map<string, RangeCacheEntry>();
+
 function formatRangeDate(date: Date) {
   return formatCalendarDateKey(date);
 }
 
-export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date) {
-  const cacheRef = useRef(new Map<string, RangeCacheEntry>());
+export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date, filters?: CalendarFilters) {
+  const cacheRef = useRef(sharedCalendarRangeCache);
   const requestIdRef = useRef(0);
   const [items, setItems] = useState<MobileCalendarItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -64,7 +67,9 @@ export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date)
       })
       .catch((nextError: unknown) => {
         if (cancelled || requestId !== requestIdRef.current) return;
-        setError(nextError instanceof Error ? nextError.message : 'Calendar items could not be loaded.');
+        const stale = [...cacheRef.current.values()].find((entry) => entry.key.startsWith(`${workspaceId}:`));
+        if (stale) setItems(stale.items);
+        setError(stale ? 'Calendar could not refresh. Showing cached items.' : nextError instanceof Error ? nextError.message : 'Calendar items could not be loaded.');
       })
       .finally(() => {
         if (!cancelled && requestId === requestIdRef.current) setIsLoading(false);
@@ -73,9 +78,10 @@ export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date)
     return () => { cancelled = true; };
   }, [range.endDate, range.startDate, refreshToken, workspaceId]);
 
-  const itemsByDate = useMemo<CalendarItemsByDate>(() => groupCalendarItems(items), [items]);
+  const visibleItems = useMemo(() => filters ? filterCalendarItems(items, filters) : items, [filters, items]);
+  const itemsByDate = useMemo<CalendarItemsByDate>(() => groupCalendarItems(visibleItems), [visibleItems]);
 
-  return { items, itemsByDate, isLoading, error, retry: () => {
+  return { items: visibleItems, allItems: items, itemsByDate, isLoading, error, retry: () => {
     cacheRef.current.delete(`${workspaceId}:${range.startDate}:${range.endDate}`);
     setItems([]);
     setError(null);

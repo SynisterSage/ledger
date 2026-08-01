@@ -205,6 +205,18 @@ export async function updateMobileEvent(workspaceId: string, eventId: string, pa
   });
 }
 
+export async function deleteMobileEvent(workspaceId: string, eventId: string) {
+  return mobileRequest(`/api/events/${encodeURIComponent(eventId)}`, { method: 'DELETE', headers: { 'x-workspace-id': workspaceId } });
+}
+
+export async function deleteMobileReminder(workspaceId: string, reminderId: string) {
+  return mobileRequest(`/api/reminders/${encodeURIComponent(reminderId)}`, { method: 'DELETE', headers: { 'x-workspace-id': workspaceId } });
+}
+
+export async function deleteMobileTask(workspaceId: string, taskId: string) {
+  return mobileRequest(`/api/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE', headers: { 'x-workspace-id': workspaceId } });
+}
+
 export async function createMobileNote(workspaceId: string, payload: CreateMobileNoteInput) {
   return mobileRequest('/api/notes', {
     method: 'POST',

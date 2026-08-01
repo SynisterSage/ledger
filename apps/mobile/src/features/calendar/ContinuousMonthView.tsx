@@ -14,6 +14,7 @@ import {
 } from './calendarMonthGenerator';
 import { useMobileCalendarItems } from './useMobileCalendarItems';
 import type { MobileCalendarItem, MobileCalendarItemType } from './calendarItemNormalizer';
+import type { CalendarFilters } from './calendarFilters';
 import { SelectedDayAgenda } from './SelectedDayAgenda';
 
 const INITIAL_MONTHS_BEFORE = 12;
@@ -38,6 +39,7 @@ type ContinuousMonthViewProps = {
   selectedDate: Date;
   visiblePeriod: Date;
   workspaceId: string;
+  filters?: CalendarFilters;
   scrollState?: MonthScrollState;
   onSelectDate: (date: Date) => void;
   onChangeVisiblePeriod: (date: Date) => void;
@@ -148,10 +150,10 @@ function MonthBlock({ month, selectedDate, itemsByDate, onSelectDate, onOpenItem
   );
 }
 
-export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, ContinuousMonthViewProps>(function ContinuousMonthView({ selectedDate, visiblePeriod, workspaceId, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem = () => undefined, onLongPressItem = onOpenItem, onCreateForDate = () => undefined }, ref) {
+export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, ContinuousMonthViewProps>(function ContinuousMonthView({ selectedDate, visiblePeriod, workspaceId, filters, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem = () => undefined, onLongPressItem = onOpenItem, onCreateForDate = () => undefined }, ref) {
   const theme = useLedgerTheme();
   const { width } = useWindowDimensions();
-  const { itemsByDate, isLoading, error, retry } = useMobileCalendarItems(workspaceId, visiblePeriod);
+  const { itemsByDate, isLoading, error, retry } = useMobileCalendarItems(workspaceId, visiblePeriod, filters);
   const listRef = useRef<FlatList<Date>>(null);
   const today = useMemo(() => new Date(), []);
   const initialMonth = useMemo(() => addCalendarMonths(today, -INITIAL_MONTHS_BEFORE), [today]);

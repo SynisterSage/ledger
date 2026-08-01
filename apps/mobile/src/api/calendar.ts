@@ -20,3 +20,24 @@ export async function getMobileCalendarRange(workspaceId: string, startDate: str
   });
   return mobileRequest<MobileCalendarRangeResponse>(`/api/mobile/calendar?${params.toString()}`);
 }
+
+export async function createMobileCalendar(workspaceId: string, payload: { name: string; color?: string }) {
+  return mobileRequest<Record<string, unknown>>('/api/calendars', {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId },
+    body: JSON.stringify({ ...payload, is_visible: true }),
+  });
+}
+
+export async function createMeetingNoteFromCalendar(workspaceId: string, payload: { eventId?: string; provider?: string; eventKey?: string; projectId?: string | null }) {
+  return mobileRequest<{ note?: { id: string }; existing?: boolean }>('/api/meeting-notes/from-calendar', {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId },
+    body: JSON.stringify({
+      event_id: payload.eventId ?? null,
+      calendar_provider: payload.provider ?? 'ledger',
+      calendar_event_key: payload.eventKey ?? payload.eventId ?? null,
+      project_id: payload.projectId ?? null,
+    }),
+  });
+}

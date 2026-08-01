@@ -3930,7 +3930,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .limit(500),
       supabase
         .from('notes')
-        .select('id, workspace_id, title, preview, updated_at, created_at, created_by, updated_by')
+        .select('id, workspace_id, user_id, title, preview, updated_at, created_at, updated_by')
         .in('workspace_id', workspaceIds)
         .order('updated_at', { ascending: false })
         .limit(10),
@@ -3990,7 +3990,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     ...projectRows.map((row) => row.lead_id ?? row.created_by ?? null),
     ...(captureItemsResult.data ?? []).map((row) => row.suggested_assignee_id ?? null),
     ...(captureItemsResult.data ?? []).map((row) => row.user_id ?? null),
-    ...noteRows.map((row) => row.created_by ?? null),
+    ...noteRows.map((row) => row.user_id ?? null),
     ...noteRows.map((row) => row.updated_by ?? null),
   ].filter(Boolean);
   const assignmentUsersResult = assignmentUserIds.length
@@ -4563,7 +4563,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         body: body || null,
         updatedAt: row.updated_at ?? row.created_at ?? null,
         createdAt: row.created_at ?? null,
-        authorName: teamWorkspace ? assignmentUserById.get(String(row.created_by ?? '')) ?? null : null,
+        authorName: teamWorkspace ? assignmentUserById.get(String(row.user_id ?? '')) ?? null : null,
         lastEditorName: teamWorkspace ? assignmentUserById.get(String(row.updated_by ?? '')) ?? null : null,
         shared: teamWorkspace,
       };

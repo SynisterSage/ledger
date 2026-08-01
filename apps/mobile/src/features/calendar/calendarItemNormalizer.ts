@@ -22,10 +22,18 @@ export type MobileCalendarItem = {
   sourceId?: string | null;
   sourceName?: string | null;
   sourceColor?: string | null;
+  sourceKey?: string | null;
+  sourceKind?: 'calendar' | 'reminder' | null;
+  calendarId?: string | null;
   workspaceId: string;
   projectId?: string | null;
   projectName?: string | null;
   readOnly?: boolean;
+  noteId?: string | null;
+  notes?: string | null;
+  location?: string | null;
+  recurrenceRule?: string | null;
+  status?: string | null;
 };
 
 export type CalendarItemsByDate = Record<string, MobileCalendarItem[]>;
@@ -43,6 +51,12 @@ type CalendarRangePayload = {
 const stringValue = (value: unknown) => (typeof value === 'string' && value ? value : null);
 const boolValue = (value: unknown) => Boolean(value);
 const todayKey = formatCalendarDateKey(new Date());
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
 
 function dateKeyFromValue(value: unknown, fallback?: string | null) {
   const raw = stringValue(value) ?? fallback ?? '';
@@ -64,26 +78,47 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
     const startAt = stringValue(event.start_at);
     const dateKey = dateKeyFromValue(event.all_day ? event.start_at : startAt);
     if (!dateKey || !event.id || !event.title) continue;
+    const endAt = stringValue(event.end_at);
+    let lastDateKey = dateKeyFromValue(endAt) ?? dateKey;
+    if (boolValue(event.all_day) && endAt && lastDateKey > dateKey) {
+      lastDateKey = formatCalendarDateKey(addDays(new Date(`${lastDateKey}T12:00:00`), -1));
+    }
     const calendar = calendars.get(String(event.calendar_id ?? ''));
     const sourcePlatform = stringValue(event.source_platform) ?? stringValue(event.source);
-    items.push({
-      id: `event:${event.id}:${dateKey}`,
-      type: sourcePlatform && sourcePlatform !== 'workspace' && sourcePlatform !== 'mobile' ? 'external_event' : 'event',
-      title: String(event.title),
-      dateKey,
-      startAt,
-      endAt: stringValue(event.end_at),
-      allDay: boolValue(event.all_day),
-      completed: isCompleted(event.status),
-      overdue: !isCompleted(event.status) && Boolean(stringValue(event.end_at) && new Date(String(event.end_at)).getTime() < Date.now()),
-      sourceId: stringValue(event.calendar_id),
-      sourceName: stringValue(calendar?.name) ?? sourcePlatform,
-      sourceColor: stringValue(calendar?.color) ?? stringValue(event.color),
-      workspaceId: String(event.workspace_id ?? payload.workspace_id),
-      projectId: stringValue(event.project_id),
-      projectName: stringValue(projects.get(String(event.project_id ?? ''))?.name),
-      readOnly: sourcePlatform === 'apple' || sourcePlatform === 'google',
-    });
+    const multiDay = lastDateKey > dateKey;
+    let cursor = new Date(`${dateKey}T12:00:00`);
+    let occurrence = 0;
+    while (formatCalendarDateKey(cursor) <= lastDateKey && occurrence < 32) {
+      const occurrenceDateKey = formatCalendarDateKey(cursor);
+      items.push({
+        id: `event:${event.id}:${occurrenceDateKey}`,
+        type: sourcePlatform && sourcePlatform !== 'workspace' && sourcePlatform !== 'mobile' ? 'external_event' : 'event',
+        title: String(event.title),
+        dateKey: occurrenceDateKey,
+        startAt: multiDay ? null : startAt,
+        endAt: multiDay ? null : endAt,
+        allDay: boolValue(event.all_day) || multiDay,
+        completed: isCompleted(event.status),
+        overdue: !isCompleted(event.status) && Boolean(endAt && new Date(endAt).getTime() < Date.now()),
+      sourceId: String(event.id),
+        calendarId: stringValue(event.calendar_id),
+        sourceKey: event.calendar_id ? `calendar:${String(event.calendar_id)}` : (sourcePlatform ? `external-calendar:${sourcePlatform}:${stringValue(calendar?.name) ?? 'default'}` : null),
+        sourceKind: 'calendar',
+        sourceName: stringValue(calendar?.name) ?? stringValue(event.calendar_name) ?? sourcePlatform,
+        sourceColor: stringValue(calendar?.color) ?? stringValue(event.color),
+        workspaceId: String(event.workspace_id ?? payload.workspace_id),
+        projectId: stringValue(event.project_id),
+        projectName: stringValue(projects.get(String(event.project_id ?? ''))?.name),
+        readOnly: sourcePlatform === 'apple' || sourcePlatform === 'google',
+        noteId: stringValue(event.note_id),
+        notes: stringValue(event.notes),
+        location: stringValue(event.location),
+        recurrenceRule: stringValue(event.recurrence_rule),
+        status: stringValue(event.status),
+      });
+      cursor = addDays(cursor, 1);
+      occurrence += 1;
+    }
   }
 
   for (const reminder of payload.reminders) {
@@ -99,13 +134,20 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
       allDay: !remindAt || remindAt.endsWith('T00:00:00.000Z'),
       completed: isCompleted(reminder.status, reminder.is_done),
       overdue: !isCompleted(reminder.status, reminder.is_done) && dateKey < todayKey,
-      sourceId: stringValue(reminder.calendar_id),
-      sourceName: 'Reminders',
+      sourceId: String(reminder.id),
+      calendarId: stringValue(reminder.calendar_id),
+      sourceKey: reminder.calendar_id ? `calendar:${String(reminder.calendar_id)}` : `reminder:${stringValue(reminder.source_platform) ?? 'ledger'}:${stringValue(reminder.list_name) ?? 'default'}`,
+      sourceKind: 'reminder',
+      sourceName: stringValue(reminder.list_name) ?? 'Reminders',
       sourceColor: stringValue(reminder.color),
       workspaceId: String(reminder.workspace_id ?? payload.workspace_id),
       projectId: stringValue(reminder.project_id),
       projectName: stringValue(projects.get(String(reminder.project_id ?? ''))?.name),
       readOnly: stringValue(reminder.source_platform) === 'apple',
+      noteId: stringValue(reminder.note_id),
+      notes: stringValue(reminder.notes) ?? stringValue(reminder.body),
+      recurrenceRule: stringValue(reminder.recurrence_rule),
+      status: stringValue(reminder.status),
     });
   }
 
@@ -127,6 +169,8 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
       workspaceId: String(task.workspace_id ?? payload.workspace_id),
       projectId,
       projectName: stringValue(projects.get(String(projectId ?? ''))?.name),
+      notes: stringValue(task.notes) ?? stringValue(task.description),
+      status: stringValue(task.status),
     });
   }
 
@@ -146,6 +190,7 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
       workspaceId: String(project.workspace_id ?? payload.workspace_id),
       projectId: String(project.id),
       projectName: String(project.name),
+      status: stringValue(project.status),
     });
   }
 
@@ -165,6 +210,7 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
       workspaceId: String(milestone.workspace_id ?? payload.workspace_id),
       projectId,
       projectName: stringValue(projects.get(String(projectId ?? ''))?.name),
+      status: stringValue(milestone.status),
     });
   }
 

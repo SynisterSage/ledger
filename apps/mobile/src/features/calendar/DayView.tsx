@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
-import { formatCalendarDateKey } from './calendarMonthGenerator';
+import { formatCalendarDateKey, getCalendarFirstWeekday } from './calendarMonthGenerator';
 import { useMobileCalendarItems } from './useMobileCalendarItems';
 import { DayAgendaItemRow } from './SelectedDayAgenda';
 import { getDayMinutes, positionDayItems, type PositionedDayItem } from './dayTimelineLayout';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
+import type { CalendarFilters } from './calendarFilters';
 
 const CELL_WIDTH = 48;
 const HOUR_HEIGHT = 64;
@@ -17,10 +18,20 @@ const TIMELINE_END_HOUR = 24;
 type DayViewProps = {
   selectedDate: Date;
   workspaceId: string;
+  filters?: CalendarFilters;
+  scrollOffset?: number;
+  onScrollOffsetChange?: (offset: number) => void;
   onSelectDate: (date: Date) => void;
   onOpenItem: (item: MobileCalendarItem) => void;
   onLongPressItem: (item: MobileCalendarItem) => void;
   onCreateAtTime: (date: Date, minutes: number) => void;
+  showDateStrip?: boolean;
+  beforeContent?: ReactNode;
+  afterContent?: ReactNode;
+};
+
+export type DayViewHandle = {
+  scrollToUsefulPosition: () => void;
 };
 
 function addDays(date: Date, amount: number) {
@@ -30,7 +41,7 @@ function addDays(date: Date, amount: number) {
 }
 
 function getWeekDates(date: Date) {
-  const start = addDays(date, -(date.getDay() === 0 ? 6 : date.getDay() - 1));
+  const start = addDays(date, -((date.getDay() - getCalendarFirstWeekday() + 7) % 7));
   return Array.from({ length: 7 }, (_, index) => addDays(start, index));
 }
 
@@ -84,26 +95,28 @@ function DayEventBlock({ positioned, onPress, onLongPress }: { positioned: Posit
   const theme = useLedgerTheme();
   const { item, column, columnCount, top, height } = positioned;
   const color = item.sourceColor ?? theme.colors.accent;
+  const marker = item.type === 'reminder' ? '○ ' : item.type === 'task' ? '□ ' : item.type === 'project_action' ? '↳ ' : '';
   const start = item.startAt ? new Date(item.startAt) : null;
   const end = item.endAt ? new Date(item.endAt) : null;
   const timeLabel = start && end ? `${start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–${end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : start?.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return <Pressable accessibilityRole="button" accessibilityLabel={`${item.type.replace('_', ' ')}, ${item.title}, ${timeLabel ?? 'timed'}${item.projectName ? `, ${item.projectName}` : ''}${item.completed ? ', completed' : item.overdue ? ', overdue' : ''}`} onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.eventBlock, { top, height, left: `${(column * 100) / columnCount}%`, width: `${100 / columnCount}%`, opacity: pressed ? 0.65 : item.completed || item.overdue ? 0.55 : 1, backgroundColor: `${color}14`, borderLeftColor: color }]}>
-    <AppText variant="caption" numberOfLines={height > 52 ? 2 : 1} style={{ color: theme.colors.textPrimary, fontWeight: '600' }}>{item.title}</AppText>
+    <AppText variant="caption" numberOfLines={height > 52 ? 2 : 1} style={{ color: theme.colors.textPrimary, fontWeight: '600' }}>{marker}{item.title}</AppText>
     {height > 48 ? <AppText variant="caption" numberOfLines={1}>{[timeLabel, item.projectName ?? item.sourceName].filter(Boolean).join(' · ')}</AppText> : null}
   </Pressable>;
 }
 
-export function DayView({ selectedDate, workspaceId, onSelectDate, onOpenItem, onLongPressItem, onCreateAtTime }: DayViewProps) {
+export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView({ selectedDate, workspaceId, filters, scrollOffset, onScrollOffsetChange, onSelectDate, onOpenItem, onLongPressItem, onCreateAtTime, showDateStrip = true, beforeContent, afterContent }, ref) {
   const theme = useLedgerTheme();
-  const { itemsByDate, isLoading, error, retry } = useMobileCalendarItems(workspaceId, selectedDate);
+  const { itemsByDate, isLoading, error, retry } = useMobileCalendarItems(workspaceId, selectedDate, filters);
   const scrollRef = useRef<ScrollView>(null);
+  const restoredKeyRef = useRef<string | null>(null);
   const [timelineTop, setTimelineTop] = useState(0);
   const [, setClock] = useState(() => Date.now());
   const dayKey = formatCalendarDateKey(selectedDate);
-  const dayItems = itemsByDate[dayKey] ?? [];
-  const allDayItems = dayItems.filter((item) => (item.type === 'event' || item.type === 'external_event') && item.allDay);
-  const dueItems = dayItems.filter((item) => !(item.type === 'event' || item.type === 'external_event') || !item.allDay).filter((item) => item.allDay || !item.startAt);
-  const timedItems = dayItems.filter((item) => Boolean(item.startAt) && !item.allDay);
+  const dayItems = useMemo(() => itemsByDate[dayKey] ?? [], [dayKey, itemsByDate]);
+  const allDayItems = useMemo(() => dayItems.filter((item) => (item.type === 'event' || item.type === 'external_event') && item.allDay), [dayItems]);
+  const dueItems = useMemo(() => dayItems.filter((item) => !(item.type === 'event' || item.type === 'external_event') || !item.allDay).filter((item) => item.allDay || !item.startAt), [dayItems]);
+  const timedItems = useMemo(() => dayItems.filter((item) => Boolean(item.startAt) && !item.allDay), [dayItems]);
   const positionedItems = useMemo(() => positionDayItems(timedItems, HOUR_HEIGHT), [timedItems]);
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
 
@@ -114,19 +127,35 @@ export function DayView({ selectedDate, workspaceId, onSelectDate, onOpenItem, o
 
   useEffect(() => {
     if (!timelineTop) return;
+    const restoreKey = `${workspaceId}:${dayKey}`;
+    if (restoredKeyRef.current === restoreKey) return;
+    restoredKeyRef.current = restoreKey;
+    if (typeof scrollOffset === 'number') {
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: scrollOffset, animated: false }));
+      return;
+    }
     const firstFuture = positionedItems.find((item) => item.top + item.height > (isToday(selectedDate) ? new Date().getHours() * HOUR_HEIGHT : 8 * HOUR_HEIGHT));
     const hour = firstFuture ? Math.max(0, Math.floor(firstFuture.top / HOUR_HEIGHT) - 1) : isToday(selectedDate) ? Math.max(0, new Date().getHours() - 1) : 8;
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: Math.max(0, timelineTop + hour * HOUR_HEIGHT), animated: false }));
-  }, [selectedDate, timelineTop]);
+  }, [dayKey, scrollOffset, timelineTop, workspaceId]);
+
+  useImperativeHandle(ref, () => ({
+    scrollToUsefulPosition: () => {
+      const firstFuture = positionedItems.find((item) => item.top + item.height > (isToday(selectedDate) ? new Date().getHours() * HOUR_HEIGHT : 8 * HOUR_HEIGHT));
+      const hour = firstFuture ? Math.max(0, Math.floor(firstFuture.top / HOUR_HEIGHT) - 1) : isToday(selectedDate) ? Math.max(0, new Date().getHours() - 1) : 8;
+      scrollRef.current?.scrollTo({ y: Math.max(0, timelineTop + hour * HOUR_HEIGHT), animated: false });
+    },
+  }), [positionedItems, selectedDate, timelineTop]);
 
   const renderHour = (hour: number) => <View key={hour} style={[styles.hourRow, { borderTopColor: theme.colors.borderSubtle }]}><View style={styles.timeGutter}><AppText variant="caption">{formatTime(hour * 60)}</AppText></View><Pressable accessibilityRole="button" accessibilityLabel={`Create item at ${formatTime(hour * 60)} on ${selectedDate.toLocaleDateString([], { month: 'long', day: 'numeric' })}`} onPress={(event) => { const quarter = Math.max(0, Math.min(3, Math.round((event.nativeEvent.locationY / HOUR_HEIGHT) * 4))); onCreateAtTime(selectedDate, hour * 60 + quarter * 15); }} style={styles.hourContent} /></View>;
 
   const currentIndicator = isToday(selectedDate) ? getDayMinutes(new Date().toISOString()) : null;
 
   return <View style={styles.container}>
-    <DayDateStrip date={selectedDate} onSelectDate={onSelectDate} />
+    {showDateStrip ? <DayDateStrip date={selectedDate} onSelectDate={onSelectDate} /> : null}
     {error ? <View style={[styles.errorRow, { borderBottomColor: theme.colors.borderSubtle }]}><AppText variant="caption" numberOfLines={1}>{error}</AppText><Pressable onPress={retry}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : null}
-    <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+    <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} onScroll={(event) => onScrollOffsetChange?.(event.nativeEvent.contentOffset.y)} scrollEventThrottle={100} contentContainerStyle={styles.scrollContent}>
+      {beforeContent}
       {allDayItems.length ? <View style={styles.section}><AppText variant="caption" style={styles.sectionLabel}>All day{allDayItems.length > 1 ? ` ${allDayItems.length}` : ''}</AppText>{allDayItems.slice(0, 3).map((item) => <DayAgendaItemRow key={item.id} item={item} onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} />)}{allDayItems.length > 3 ? <AppText variant="caption" style={styles.moreLabel}>+{allDayItems.length - 3} more</AppText> : null}</View> : null}
       {dueItems.length ? <View style={styles.section}><AppText variant="caption" style={styles.sectionLabel}>Due today {dueItems.length}</AppText>{dueItems.map((item) => <DayAgendaItemRow key={item.id} item={item} onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} />)}</View> : null}
       <View onLayout={(event) => setTimelineTop(event.nativeEvent.layout.y)} style={styles.timelineSection}>
@@ -137,9 +166,10 @@ export function DayView({ selectedDate, workspaceId, onSelectDate, onOpenItem, o
           {positionedItems.map((positioned) => <DayEventBlock key={positioned.item.id} positioned={positioned} onPress={() => onOpenItem(positioned.item)} onLongPress={() => onLongPressItem(positioned.item)} />)}
         </View>
       </View>
+      {afterContent}
     </ScrollView>
   </View>;
-}
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
