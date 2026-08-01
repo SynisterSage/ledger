@@ -147,6 +147,13 @@ export async function performMobileTodayAction({
           }),
         });
         return { ok: true, refresh: true };
+      case 'remove_focus':
+        await mobileRequest(`/api/tasks/${item.sourceId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ show_in_today: true, is_today_focus: false }),
+        });
+        return { ok: true, refresh: true };
       case 'remove_today':
         await mobileRequest(`/api/tasks/${item.sourceId}`, {
           method: 'PATCH',
@@ -191,7 +198,8 @@ export async function performMobileTodayAction({
         });
         return { ok: true, refresh: true };
       case 'snooze_tomorrow': {
-        const next = getTomorrowDateTime(item.startsAt ?? null) ?? new Date(Date.now() + 24 * 60 * 60 * 1000);
+        const next =
+          getTomorrowDateTime(item.startsAt ?? null) ?? new Date(Date.now() + 24 * 60 * 60 * 1000);
         await mobileRequest(`/api/reminders/${item.sourceId}/snooze`, {
           method: 'POST',
           headers,
@@ -222,7 +230,9 @@ export async function performMobileTodayAction({
           headers,
           body: JSON.stringify({
             title: `Follow up: ${item.title}`,
-            description: item.body ? `Follow up from note: ${item.title}` : `Follow up from note: ${item.title}`,
+            description: item.body
+              ? `Follow up from note: ${item.title}`
+              : `Follow up from note: ${item.title}`,
             notes: item.body ?? null,
             status: 'todo',
             priority: 'medium',
@@ -264,7 +274,9 @@ export async function performMobileTodayAction({
         const start = item.startsAt ? new Date(item.startsAt) : new Date();
         const end = item.endsAt ? new Date(item.endsAt) : null;
         const nextStart = shiftDateLike(start.toISOString(), 1) ?? start;
-        const nextEnd = ? shiftDateLike(end.toISOString(), 1) ?? : new Date(nextStart.getTime() + 60 * 60 * 1000);
+        const nextEnd = end
+          ? shiftDateLike(end.toISOString(), 1) ?? new Date(nextStart.getTime() + 60 * 60 * 1000)
+          : new Date(nextStart.getTime() + 60 * 60 * 1000);
         await mobileRequest(`/api/events/${item.sourceId}`, {
           method: 'PATCH',
           headers,
@@ -325,6 +337,22 @@ export async function performMobileTodayAction({
           body: JSON.stringify({ end_date: getTomorrowDateKey() }),
         });
         return { ok: true, refresh: true };
+      case 'delete':
+        await mobileRequest(`/api/projects/${item.sourceId}`, {
+          method: 'DELETE',
+          headers,
+        });
+        return { ok: true, refresh: true };
+      case 'open_project':
+      case 'edit':
+        return { ok: true, refresh: false };
+      default:
+        return { ok: true, refresh: false };
+    }
+  }
+
+  if (item.type === 'project') {
+    switch (actionId) {
       case 'delete':
         await mobileRequest(`/api/projects/${item.sourceId}`, {
           method: 'DELETE',

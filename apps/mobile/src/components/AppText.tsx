@@ -3,7 +3,16 @@ import { Text, type TextProps, StyleSheet } from 'react-native';
 
 import { useLedgerTheme } from '@/theme';
 
-type Variant = 'screenTitle' | 'title' | 'sectionTitle' | 'body' | 'bodyStrong' | 'meta' | 'caption' | 'button';
+type Variant =
+  | 'screenTitle'
+  | 'title'
+  | 'sectionTitle'
+  | 'body'
+  | 'bodyStrong'
+  | 'meta'
+  | 'caption'
+  | 'button'
+  | 'label';
 
 type AppTextProps = TextProps & {
   variant?: Variant;
@@ -19,6 +28,7 @@ const toneByVariant: Record<Variant, 'textPrimary' | 'textSecondary' | 'textMute
   meta: 'textSecondary',
   caption: 'textMuted',
   button: 'textPrimary',
+  label: 'textSecondary',
 };
 
 export function AppText({ variant = 'body', style, children, ...props }: AppTextProps) {
@@ -32,7 +42,8 @@ export function AppText({ variant = 'body', style, children, ...props }: AppText
         theme.typography[variant],
         { color: theme.colors[toneByVariant[variant]] },
         style,
-      ]}>
+      ]}
+    >
       {children}
     </Text>
   );

@@ -24,9 +24,10 @@ export function CaptureHeader({ title }: CaptureHeaderProps) {
         style={({ pressed }) => [
           styles.backButton,
           {
-            backgroundColor: pressed ? theme.colors.selectedSurface : 'transparent',
+            backgroundColor: pressed ? theme.colors.surfaceSelected : 'transparent',
           },
-        ]}>
+        ]}
+      >
         <SymbolView
           name="chevron.left"
           size={18}

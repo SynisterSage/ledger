@@ -3,6 +3,7 @@ export const radius = {
   surface: 16,
   sheet: 24,
   pill: 999,
+  window: 18,
 };
 
 export type LedgerRadius = typeof radius;

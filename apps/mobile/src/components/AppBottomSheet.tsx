@@ -81,7 +81,7 @@ export function AppBottomSheet({
   dragCloseVelocityThreshold = DEFAULT_DRAG_CLOSE_VELOCITY_THRESHOLD,
   dragCloseSnapMargin = DEFAULT_DRAG_CLOSE_SNAP_MARGIN,
   maxHeight,
-  cornerRadius = 28,
+  cornerRadius,
   openDuration: openDurationProp,
   closeDuration: closeDurationProp,
   backdropOpenDuration: backdropOpenDurationProp,
@@ -101,25 +101,30 @@ export function AppBottomSheet({
   const closingRef = useRef(false);
 
   const sheetMaxHeight = maxHeight ?? Math.min(windowHeight * 0.9, 720);
+  const resolvedCornerRadius = cornerRadius ?? theme.radius.sheet;
   const resolvedSnapPoints = useMemo(
     () =>
-      [...snapPoints]
-        .map((point) => resolveSnapPoint(point, sheetMaxHeight))
-        .sort((a, b) => a - b),
+      [...snapPoints].map((point) => resolveSnapPoint(point, sheetMaxHeight)).sort((a, b) => a - b),
     [sheetMaxHeight, snapPoints],
   );
 
-  const initialSnapPoint = resolvedSnapPoints[Math.min(initialSnapPointIndex, resolvedSnapPoints.length - 1)];
+  const initialSnapPoint =
+    resolvedSnapPoints[Math.min(initialSnapPointIndex, resolvedSnapPoints.length - 1)];
   const minTranslateY = sheetMaxHeight - resolvedSnapPoints[resolvedSnapPoints.length - 1];
   const maxTranslateY = sheetMaxHeight - resolvedSnapPoints[0];
   const closedTranslateY = sheetMaxHeight + insets.bottom + 24;
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
-  const openDuration = reduceMotionEnabled ? 1 : (openDurationProp ?? OPEN_DURATION);
-  const closeDuration = reduceMotionEnabled ? 1 : (closeDurationProp ?? CLOSE_DURATION);
-  const backdropOpenDuration = reduceMotionEnabled ? 1 : (backdropOpenDurationProp ?? BACKDROP_OPEN_DURATION);
-  const backdropCloseDuration = reduceMotionEnabled ? 1 : (backdropCloseDurationProp ?? BACKDROP_CLOSE_DURATION);
+  const openDuration = reduceMotionEnabled ? 1 : openDurationProp ?? OPEN_DURATION;
+  const closeDuration = reduceMotionEnabled ? 1 : closeDurationProp ?? CLOSE_DURATION;
+  const backdropOpenDuration = reduceMotionEnabled
+    ? 1
+    : backdropOpenDurationProp ?? BACKDROP_OPEN_DURATION;
+  const backdropCloseDuration = reduceMotionEnabled
+    ? 1
+    : backdropCloseDurationProp ?? BACKDROP_CLOSE_DURATION;
 
-  const clampTranslate = (value: number) => Math.min(closedTranslateY, Math.max(minTranslateY, value));
+  const clampTranslate = (value: number) =>
+    Math.min(closedTranslateY, Math.max(minTranslateY, value));
 
   useEffect(() => {
     if (visible) {
@@ -257,20 +262,22 @@ export function AppBottomSheet({
 
     const targetTranslate = sheetMaxHeight - target;
     currentTranslate.current = targetTranslate;
-      Animated.spring(translateY, {
-        toValue: targetTranslate,
-        useNativeDriver: true,
-        bounciness: 0,
-        speed: reduceMotionEnabled ? 24 : 16,
-      }).start();
-    };
+    Animated.spring(translateY, {
+      toValue: targetTranslate,
+      useNativeDriver: true,
+      bounciness: 0,
+      speed: reduceMotionEnabled ? 24 : 16,
+    }).start();
+  };
 
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_: GestureResponderEvent, gestureState: PanResponderGestureState) =>
-          Math.abs(gestureState.dy) > 2,
+        onMoveShouldSetPanResponder: (
+          _: GestureResponderEvent,
+          gestureState: PanResponderGestureState,
+        ) => Math.abs(gestureState.dy) > 2,
         onPanResponderGrant: () => {
           dragStartTranslate.current = currentTranslate.current;
         },
@@ -279,7 +286,10 @@ export function AppBottomSheet({
           currentTranslate.current = nextValue;
           translateY.setValue(nextValue);
         },
-        onPanResponderRelease: (_: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+        onPanResponderRelease: (
+          _: GestureResponderEvent,
+          gestureState: PanResponderGestureState,
+        ) => {
           const shouldClose =
             gestureState.vy > dragCloseVelocityThreshold ||
             gestureState.dy > dragCloseThreshold ||
@@ -324,9 +334,19 @@ export function AppBottomSheet({
   };
 
   return (
-    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
+    <Modal
+      visible
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={closeSheet}
+    >
       <View style={styles.portal}>
-        <Pressable accessibilityRole="button" onPress={handleBackdropPress} style={styles.backdropPressable}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleBackdropPress}
+          style={styles.backdropPressable}
+        >
           <Animated.View
             style={[
               styles.backdrop,
@@ -344,20 +364,30 @@ export function AppBottomSheet({
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
+              shadowColor: theme.shadows.modal.color,
+              shadowOpacity: theme.shadows.modal.opacity,
+              shadowRadius: theme.shadows.modal.radius,
+              shadowOffset: { width: 0, height: -theme.shadows.modal.offsetY },
+              elevation: theme.shadows.modal.elevation,
               height: sheetMaxHeight,
-              borderTopLeftRadius: cornerRadius,
-              borderTopRightRadius: cornerRadius,
+              borderTopLeftRadius: resolvedCornerRadius,
+              borderTopRightRadius: resolvedCornerRadius,
               transform: [{ translateY }],
             },
-          ]}>
+          ]}
+        >
           <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-            <View {...panResponder.panHandlers} style={styles.handleRegion} accessibilityRole="adjustable">
+            <View
+              {...panResponder.panHandlers}
+              style={styles.handleRegion}
+              accessibilityRole="adjustable"
+            >
               <View style={[styles.handle, { backgroundColor: theme.colors.borderSubtle }]} />
             </View>
 
             {title || headerAccessory ? (
-            <View style={styles.header}>
-              <View style={styles.headerTitle}>
+              <View style={styles.header}>
+                <View style={styles.headerTitle}>
                   {typeof title === 'string' ? (
                     <AppText variant="sectionTitle" style={styles.title}>
                       {title}
@@ -380,7 +410,8 @@ export function AppBottomSheet({
                   paddingBottom: insets.bottom + theme.spacing.lg,
                 },
                 contentStyle,
-              ]}>
+              ]}
+            >
               {children}
             </ScrollView>
           </SafeAreaView>
@@ -404,14 +435,6 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 28,
-    shadowOffset: {
-      width: 0,
-      height: -6,
-    },
-    elevation: 14,
   },
   safeArea: {
     flex: 1,

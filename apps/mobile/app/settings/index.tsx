@@ -23,10 +23,11 @@ import { AppText } from '@/components/AppText';
 import { Section } from '@/components/Section';
 import { SettingsRow } from '@/components/SettingsRow';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
+import { MOBILE_PAGE_HEADER_SCROLL_SPACE } from '@/components/MobilePageHeader';
 import {
-  MOBILE_PAGE_HEADER_SCROLL_SPACE,
-} from '@/components/MobilePageHeader';
-import { SettingsEditSheet, type SettingsEditSheetMode } from '@/features/settings/SettingsEditSheet';
+  SettingsEditSheet,
+  type SettingsEditSheetMode,
+} from '@/features/settings/SettingsEditSheet';
 import { SettingsChoiceSheet } from '@/features/settings/SettingsChoiceSheet';
 import { SiriShortcutsSheet } from '@/features/settings/SiriShortcutsSheet';
 import {
@@ -70,8 +71,12 @@ export default function SettingsScreen() {
   const [capturePrefs, setCapturePrefs] = useState(defaultMobileCapturePreferences);
   const [capturePrefsLoading, setCapturePrefsLoading] = useState(true);
   const [sheetMode, setSheetMode] = useState<SettingsEditSheetMode | null>(null);
-  const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<'default_capture' | 'today_scope' | 'default_siri' | null>(null);
-  const [captureSheetTarget, setCaptureSheetTarget] = useState<'shared_items' | 'default_type' | null>(null);
+  const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<
+    'default_capture' | 'today_scope' | 'default_siri' | null
+  >(null);
+  const [captureSheetTarget, setCaptureSheetTarget] = useState<
+    'shared_items' | 'default_type' | null
+  >(null);
   const [themeSheetVisible, setThemeSheetVisible] = useState(false);
   const [siriShortcutsVisible, setSiriShortcutsVisible] = useState(false);
 
@@ -194,10 +199,7 @@ export default function SettingsScreen() {
         },
       });
     } catch {
-      Alert.alert(
-        'Could not save notifications',
-        'You can change this later in Settings.',
-      );
+      Alert.alert('Could not save notifications', 'You can change this later in Settings.');
     }
   };
 
@@ -222,10 +224,7 @@ export default function SettingsScreen() {
 
         if (permission.status !== 'granted') {
           setNotificationPrefs(previousPreferences);
-          Alert.alert(
-            'Notifications are off',
-            'You can enable them later in Settings.',
-          );
+          Alert.alert('Notifications are off', 'You can enable them later in Settings.');
           return;
         }
       }
@@ -267,14 +266,13 @@ export default function SettingsScreen() {
       }
 
       setNotificationPrefs(previousPreferences);
-      Alert.alert(
-        'Could not save notifications',
-        'You can change this later in Settings.',
-      );
+      Alert.alert('Could not save notifications', 'You can change this later in Settings.');
     }
   };
 
-  const patchCapturePreferences = async (nextPreferences: typeof defaultMobileCapturePreferences) => {
+  const patchCapturePreferences = async (
+    nextPreferences: typeof defaultMobileCapturePreferences,
+  ) => {
     const previousPreferences = capturePrefs;
     setCapturePrefs(nextPreferences);
 
@@ -322,8 +320,12 @@ export default function SettingsScreen() {
             opacity: headerOpacity,
             transform: [{ translateY: headerTranslateY }],
           },
-        ]}>
-        <HeaderInsetFade backgroundColor={theme.colors.background} height={Math.max(insets.top + 72, 112)} />
+        ]}
+      >
+        <HeaderInsetFade
+          backgroundColor={theme.colors.background}
+          height={Math.max(insets.top + 72, 112)}
+        />
         <View style={styles.headerRow}>
           <Pressable
             accessibilityRole="button"
@@ -333,9 +335,10 @@ export default function SettingsScreen() {
             style={({ pressed }) => [
               styles.backButton,
               {
-                backgroundColor: pressed ? theme.colors.selectedSurface : 'transparent',
+                backgroundColor: pressed ? theme.colors.surfaceSelected : 'transparent',
               },
-            ]}>
+            ]}
+          >
             <SymbolView
               name="chevron.left"
               size={18}
@@ -350,7 +353,6 @@ export default function SettingsScreen() {
 
           <View style={styles.headerSpacer} />
         </View>
-
       </Animated.View>
 
       <Animated.ScrollView
@@ -370,7 +372,8 @@ export default function SettingsScreen() {
           useNativeDriver: true,
         })}
         scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.sections}>
           <Section title="Account">
             <View style={[styles.identityBlock, { borderBottomColor: theme.colors.borderSubtle }]}>
@@ -398,7 +401,9 @@ export default function SettingsScreen() {
           <Section title="Workspace">
             <SettingsRow
               title="Default capture workspace"
-              value={workspaceState.isLoading ? 'Loading workspaces…' : defaultCaptureWorkspaceLabel}
+              value={
+                workspaceState.isLoading ? 'Loading workspaces…' : defaultCaptureWorkspaceLabel
+              }
               chevron
               onPress={() => openWorkspaceSheet('default_capture')}
             />
@@ -535,7 +540,7 @@ export default function SettingsScreen() {
                 setWorkspaceSheetTarget('default_siri');
               }}
             />
-            
+
             <SettingsRow
               title="Siri Shortcuts"
               subtitle="Preview the phrases Ledger can use with Siri."
@@ -579,16 +584,25 @@ export default function SettingsScreen() {
 
           <Section title="About">
             <SettingsRow title="Help" chevron onPress={() => void openLegalLink('docs')} />
-            <SettingsRow title="Privacy Policy" chevron onPress={() => void openLegalLink('privacy')} />
+            <SettingsRow
+              title="Privacy Policy"
+              chevron
+              onPress={() => void openLegalLink('privacy')}
+            />
             <SettingsRow title="Terms" chevron onPress={() => void openLegalLink('terms')} />
-            <SettingsRow title="Version" value={mockProfile.version} chevron onPress={() => void openLegalLink('whats-new')} />
+            <SettingsRow
+              title="Version"
+              value={mockProfile.version}
+              chevron
+              onPress={() => void openLegalLink('whats-new')}
+            />
           </Section>
 
           <Section>
             <SettingsRow title="Sign out" destructive onPress={handleSignOut} />
           </Section>
-          </View>
-        </Animated.ScrollView>
+        </View>
+      </Animated.ScrollView>
 
       <SettingsEditSheet
         visible={sheetMode !== null}
@@ -605,7 +619,7 @@ export default function SettingsScreen() {
           workspaceSheetTarget === 'default_capture'
             ? workspaceState.defaultCaptureWorkspaceId
             : workspaceSheetTarget === 'default_siri'
-              ? workspaceState.defaultSiriWorkspaceId
+            ? workspaceState.defaultSiriWorkspaceId
             : workspaceState.todayScopeWorkspaceId
         }
         workspaces={
@@ -633,7 +647,11 @@ export default function SettingsScreen() {
         selectedValue={capturePrefs.sharedItemsDestination}
         options={[
           { value: 'inbox', title: 'Save to Inbox', subtitle: 'Recommended for quick triage.' },
-          { value: 'notes', title: 'Save to Notes', subtitle: 'For things you want to keep as reference.' },
+          {
+            value: 'notes',
+            title: 'Save to Notes',
+            subtitle: 'For things you want to keep as reference.',
+          },
         ]}
         onSelect={(value) =>
           void patchCapturePreferences({

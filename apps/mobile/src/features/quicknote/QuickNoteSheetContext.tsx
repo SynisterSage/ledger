@@ -2,10 +2,18 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 import { QuickNoteSheet } from './QuickNoteSheet';
 
+export type QuickNoteSavedNote = {
+  id: string | null;
+  title: string;
+  content: string;
+  workspaceId: string;
+  createdAt: string;
+};
+
 export type QuickNoteSheetDraft = {
   sourceLabel?: string | null;
   workspaceId?: string | null;
-  onSaved?: () => void;
+  onSaved?: (note: QuickNoteSavedNote) => void;
 };
 
 type QuickNoteSheetContextValue = {

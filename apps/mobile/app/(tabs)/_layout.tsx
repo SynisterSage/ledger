@@ -29,6 +29,12 @@ export default function TabLayout() {
               }}
             />
             <Tabs.Screen
+              name="calendar"
+              options={{
+                title: 'Calendar',
+              }}
+            />
+            <Tabs.Screen
               name="capture"
               options={{
                 title: 'Capture',

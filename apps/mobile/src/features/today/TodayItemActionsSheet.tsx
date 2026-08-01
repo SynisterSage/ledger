@@ -5,6 +5,7 @@ import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
 import type { MobileTodayInteractionItem } from '@/types/ledger';
+import { getTodayItemActions } from './todayActions';
 
 export type TodayActionSheetItem = MobileTodayInteractionItem;
 
@@ -13,13 +14,7 @@ type TodayItemActionsSheetProps = {
   item: TodayActionSheetItem | null;
   onClose: () => void;
   onAction: (actionId: string, item: TodayActionSheetItem) => void;
-};
-
-type SheetAction = {
-  id: string;
-  label: string;
-  danger?: boolean;
-  primary?: boolean;
+  onOpen?: (item: TodayActionSheetItem) => void;
 };
 
 function getItemTypeLabel(item: TodayActionSheetItem) {
@@ -74,74 +69,20 @@ function formatDateTimeLabel(dateLike: string | null | undefined) {
   }).format(date);
 }
 
-function getActionsForItem(item: TodayActionSheetItem): SheetAction[] {
-  if ('source' in item) {
-    return [
-      { id: 'convert_task', label: 'Convert to task', primary: true },
-      { id: 'convert_reminder', label: 'Convert to reminder' },
-      { id: 'convert_note', label: 'Convert to note' },
-      { id: 'archive', label: 'Archive' },
-      { id: 'delete', label: 'Delete', danger: true },
-    ];
-  }
-
-  switch (item.type) {
-    case 'focus':
-      return [
-        { id: 'mark_done', label: 'Mark as done', primary: true },
-        { id: 'move_tomorrow', label: 'Move to tomorrow' },
-        { id: 'remove_today', label: 'Remove from Today' },
-        { id: 'edit', label: 'Edit' },
-        { id: 'delete', label: 'Delete', danger: true },
-      ];
-    case 'note':
-      return [
-        { id: 'add_follow_up', label: 'Add follow-up', primary: true },
-        { id: 'edit', label: 'Edit' },
-        { id: 'delete', label: 'Delete', danger: true },
-      ];
-    case 'event':
-      return [
-        { id: 'complete', label: 'Mark as done', primary: true },
-        { id: 'add_note', label: 'Add note' },
-        { id: 'create_follow_up', label: 'Create follow-up' },
-        { id: 'reschedule', label: 'Reschedule' },
-        { id: 'dismiss_today', label: 'Dismiss from Today', danger: true },
-        { id: 'delete', label: 'Delete', danger: true },
-      ];
-    case 'reminder':
-      return [
-        { id: 'complete', label: 'Mark as done', primary: true },
-        { id: 'snooze_hour', label: 'Snooze 1 hour' },
-        { id: 'snooze_tomorrow', label: 'Snooze tomorrow' },
-        { id: 'edit', label: 'Edit' },
-        { id: 'delete', label: 'Delete', danger: true },
-      ];
-    case 'task':
-      return [
-        { id: 'complete', label: 'Mark as done', primary: true },
-        { id: 'move_tomorrow', label: 'Move to tomorrow' },
-        { id: 'add_focus', label: 'Add to focus' },
-        { id: 'edit', label: 'Edit' },
-        { id: 'delete', label: 'Delete', danger: true },
-      ];
-    case 'project_action':
-      return [
-        { id: 'complete', label: 'Mark as done', primary: true },
-        { id: 'move_tomorrow', label: 'Move to tomorrow' },
-        { id: 'open_project', label: 'Open project' },
-        { id: 'edit', label: 'Edit' },
-        { id: 'delete', label: 'Delete', danger: true },
-      ];
-    default:
-      return [];
-  }
-}
-
-export function TodayItemActionsSheet({ visible, item, onClose, onAction }: TodayItemActionsSheetProps) {
+export function TodayItemActionsSheet({ visible, item, onClose, onAction, onOpen }: TodayItemActionsSheetProps) {
   const theme = useLedgerTheme();
 
-  const actions = useMemo(() => (item ? getActionsForItem(item) : []), [item]);
+  const actions = useMemo(
+    () =>
+      item
+        ? getTodayItemActions(item, {
+            onAction: (actionId, actionItem) => onAction(actionId, actionItem),
+            onOpen,
+            includeDestructive: true,
+          })
+        : [],
+    [item, onAction],
+  );
 
   if (!item) {
     return null;
@@ -177,7 +118,7 @@ export function TodayItemActionsSheet({ visible, item, onClose, onAction }: Toda
               key={action.id}
               accessibilityRole="button"
               onPress={() => {
-                onAction(action.id, item);
+                void action.perform();
               }}
               style={({ pressed }) => [
                 styles.actionRow,
@@ -189,8 +130,8 @@ export function TodayItemActionsSheet({ visible, item, onClose, onAction }: Toda
               <AppText
                 variant="body"
                 style={{
-                  color: action.danger ? theme.colors.danger : theme.colors.textPrimary,
-                  fontWeight: action.primary ? '500' : '400',
+                  color:
+                    action.role === 'destructive' ? theme.colors.danger : theme.colors.textPrimary,
                 }}>
                 {action.label}
               </AppText>

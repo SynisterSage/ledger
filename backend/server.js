@@ -3705,9 +3705,9 @@ const resolveMobileWorkspaceScope = async (userId, workspaceId = 'all') => {
 };
 
 const MOBILE_TODAY_TASK_SELECT_COLUMNS =
-  'id, workspace_id, project_id, title, due_date, due_time, status, priority, show_in_today, is_today_focus, completed_at, created_at, updated_at';
+  'id, workspace_id, project_id, title, due_date, due_time, status, priority, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, show_in_today, is_today_focus, completed_at, created_by, created_at, updated_at';
 const MOBILE_TODAY_PROJECT_SELECT_COLUMNS =
-  'id, workspace_id, name, status, completeness, color, start_date, end_date, created_at, updated_at';
+  'id, workspace_id, name, status, completeness, color, start_date, end_date, lead_id, owner_team_id, created_by, created_at, updated_at';
 
 // Temporary fallback until mobile user timezone preferences are wired through the backend.
 const getLocalDateKey = (dateLike = new Date()) => {
@@ -3829,6 +3829,9 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         items: [],
       },
       notes: [],
+      projects: [],
+      mentions: [],
+      teamActivity: [],
     };
   }
 
@@ -3911,7 +3914,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       supabase
         .from('events')
         .select(
-          'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, project_id, note_id, series_id, series_type, created_at'
+          'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, recurrence_rule, project_id, note_id, series_id, series_type, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, created_at'
         )
         .in('workspace_id', workspaceIds)
         .gte('start_at', startIso)
@@ -3927,7 +3930,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .limit(500),
       supabase
         .from('notes')
-        .select('id, workspace_id, title, preview, updated_at, created_at')
+        .select('id, workspace_id, title, preview, updated_at, created_at, created_by, updated_by')
         .in('workspace_id', workspaceIds)
         .order('updated_at', { ascending: false })
         .limit(10),
@@ -3966,6 +3969,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
   const reminderRows = Array.isArray(reminderResult.data) ? reminderResult.data : [];
   const eventRows = Array.isArray(eventResult.data) ? eventResult.data : [];
   const projectRows = Array.isArray(projectResult.data) ? projectResult.data : [];
+  const projectById = new Map(projectRows.map((project) => [String(project.id), project]));
   const noteRows = Array.isArray(noteResult.data) ? noteResult.data : [];
   const combinedTaskRows = [...taskRows, ...explicitTaskRows, ...upcomingTaskRows];
   const uniqueTaskRows = [];
@@ -3976,6 +3980,92 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     if (seenTaskIds.has(taskId)) continue;
     seenTaskIds.add(taskId);
     uniqueTaskRows.push(row);
+  }
+
+  const teamWorkspace = Boolean(scope.workspace && scope.workspace.is_personal === false);
+  const assignmentUserIds = [
+    ...uniqueTaskRows.map((row) => row.assigned_to_user_id ?? row.assigned_to ?? null),
+    ...reminderRows.map((row) => row.assigned_to_user_id ?? null),
+    ...eventRows.map((row) => row.assigned_to_user_id ?? null),
+    ...projectRows.map((row) => row.lead_id ?? row.created_by ?? null),
+    ...(captureItemsResult.data ?? []).map((row) => row.suggested_assignee_id ?? null),
+    ...(captureItemsResult.data ?? []).map((row) => row.user_id ?? null),
+    ...noteRows.map((row) => row.created_by ?? null),
+    ...noteRows.map((row) => row.updated_by ?? null),
+  ].filter(Boolean);
+  const assignmentUsersResult = assignmentUserIds.length
+    ? await supabase.from('users').select('id, full_name, email').in('id', [...new Set(assignmentUserIds)])
+    : { data: [], error: null };
+  if (assignmentUsersResult.error) throw assignmentUsersResult.error;
+  const assignmentUserById = new Map(
+    (assignmentUsersResult.data ?? []).map((user) => [
+      String(user.id),
+      user.full_name?.trim() || user.email?.split('@')[0] || 'Team member',
+    ])
+  );
+
+  let mentions = [];
+  let teamActivity = [];
+  if (teamWorkspace && scope.workspaceId !== 'all' && workspaceIds.length === 1) {
+    try {
+      const visibleSlack = await loadVisibleSlackActivities({
+        workspaceId: workspaceIds[0],
+        userId,
+        filter: 'mentions',
+        unreadOnly: true,
+        limit: 12,
+      });
+      mentions = visibleSlack.rows.slice(0, 5).map((activity) => ({
+        id: `mention:${activity.id}`,
+        title: `${activity.author_slack_user_id || 'Someone'} mentioned you`,
+        metadata: [
+          activity.message_text ? `“${String(activity.message_text).slice(0, 72)}”` : null,
+          activity.context?.latest_reply_at ? 'Thread' : null,
+        ].filter(Boolean),
+        sourceId: activity.id,
+        sourceType: 'mention',
+        workspaceId: workspaceIds[0],
+        createdAt: activity.source_created_at ?? activity.created_at ?? null,
+        unread: true,
+      }));
+    } catch (error) {
+      if (!isMissingTableError(error)) console.warn('[mobile today] team mentions unavailable:', error?.message ?? error);
+    }
+
+    try {
+      const auditResult = await supabase
+        .from('workspace_audit_logs')
+        .select('id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at')
+        .eq('workspace_id', workspaceIds[0])
+        .order('created_at', { ascending: false })
+        .limit(12);
+      if (auditResult.error) throw auditResult.error;
+      const actorIds = [...new Set((auditResult.data ?? []).map((row) => row.actor_user_id).filter(Boolean))];
+      const actorResult = actorIds.length
+        ? await supabase.from('users').select('id, full_name, email').in('id', actorIds)
+        : { data: [], error: null };
+      if (actorResult.error) throw actorResult.error;
+      const actorNames = new Map(
+        (actorResult.data ?? []).map((actor) => [
+          String(actor.id),
+          actor.full_name?.trim() || actor.email?.split('@')[0] || 'A teammate',
+        ])
+      );
+      teamActivity = (auditResult.data ?? [])
+        .filter((row) => !['read', 'viewed', 'updated_at'].includes(String(row.action ?? '').toLowerCase()))
+        .slice(0, 3)
+        .map((row) => ({
+          id: `team_activity:${row.id}`,
+          title: `${actorNames.get(String(row.actor_user_id)) ?? 'A teammate'} ${String(row.action ?? 'updated work').replace(/[._-]/g, ' ')}`,
+          metadata: [row.target_type ? String(row.target_type).replace(/[._-]/g, ' ') : null].filter(Boolean),
+          sourceId: row.target_id ?? null,
+          sourceType: 'team_activity',
+          workspaceId: workspaceIds[0],
+          createdAt: row.created_at ?? null,
+        }));
+    } catch (error) {
+      if (!isMissingTableError(error)) console.warn('[mobile today] team activity unavailable:', error?.message ?? error);
+    }
   }
 
   const seenKeys = new Set();
@@ -4066,6 +4156,9 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       dateLabel,
       sortAt: dueAt?.toISOString() ?? `${task.due_date ?? selectedDateKey}T00:00:00.000Z`,
       priorityRank: getTaskPriorityRank(task.priority),
+      assignedToUserId: task.assigned_to_user_id ?? task.assigned_to ?? null,
+      assignedToUserName: assignmentUserById.get(String(task.assigned_to_user_id ?? task.assigned_to ?? '')) ?? null,
+      assignedToCurrentUser: Boolean((task.assigned_to_user_id ?? task.assigned_to) === userId),
     };
   };
 
@@ -4139,6 +4232,9 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         sourceId: task.id,
         sortAt: dueAt?.toISOString() ?? null,
         priorityRank: getTaskPriorityRank(task.priority),
+        assignedToUserId: task.assigned_to_user_id ?? task.assigned_to ?? null,
+        assignedToUserName: assignmentUserById.get(String(task.assigned_to_user_id ?? task.assigned_to ?? '')) ?? null,
+        assignedToCurrentUser: Boolean((task.assigned_to_user_id ?? task.assigned_to) === userId),
       };
       addUpcomingItem(upcomingItem, taskKey);
       continue;
@@ -4237,6 +4333,9 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           startsAt: remindAt.toISOString(),
           dateLabel: formatNotificationDateTime(remindAt),
           priorityRank: 0,
+          assignedToUserId: reminder.assigned_to_user_id ?? null,
+          assignedToUserName: assignmentUserById.get(String(reminder.assigned_to_user_id ?? '')) ?? null,
+          assignedToCurrentUser: Boolean(reminder.assigned_to_user_id === userId),
         },
         reminderKey
       );
@@ -4273,7 +4372,10 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       status: 'upcoming',
       sourceType: 'calendar_event',
       sourceId: event.id,
-      sortAt: startAt.toISOString(),
+          sortAt: startAt.toISOString(),
+          assignedToUserId: event.assigned_to_user_id ?? null,
+          assignedToUserName: assignmentUserById.get(String(event.assigned_to_user_id ?? '')) ?? null,
+          assignedToCurrentUser: Boolean(event.assigned_to_user_id === userId),
     };
 
     if (eventDateKey === selectedDateKey) {
@@ -4439,6 +4541,12 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     workspaceName: workspaceById.get(item.workspace_id)?.name ?? null,
     createdAt: item.created_at ?? null,
     dateLabel: item.created_at ? formatNotificationDateTime(item.created_at) : null,
+    suggestedProjectId: item.suggested_project_id ?? null,
+    suggestedProjectName: item.suggested_project_id ? projectById.get(String(item.suggested_project_id))?.name ?? null : null,
+    suggestedType: item.suggested_type ?? null,
+    suggestedAssigneeId: item.suggested_assignee_id ?? null,
+    suggestedAssigneeName: teamWorkspace ? assignmentUserById.get(String(item.suggested_assignee_id ?? '')) ?? null : null,
+    submittedByName: teamWorkspace ? assignmentUserById.get(String(item.user_id ?? '')) ?? null : null,
   }));
   const notes = noteRows
     .filter((row) => Boolean(row?.id) && Boolean(row?.workspace_id))
@@ -4455,8 +4563,71 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         body: body || null,
         updatedAt: row.updated_at ?? row.created_at ?? null,
         createdAt: row.created_at ?? null,
+        authorName: teamWorkspace ? assignmentUserById.get(String(row.created_by ?? '')) ?? null : null,
+        lastEditorName: teamWorkspace ? assignmentUserById.get(String(row.updated_by ?? '')) ?? null : null,
+        shared: teamWorkspace,
       };
     });
+
+  const projects = projectRows
+    .map((project) => {
+      const projectTasks = uniqueTaskRows
+        .filter((task) => String(task.project_id ?? '') === String(project.id))
+        .filter((task) => !['completed', 'done'].includes(String(task.status ?? '').toLowerCase()));
+      const dueTodayTasks = projectTasks.filter((task) => task.due_date && String(task.due_date) <= selectedDateKey);
+      const focused = projectTasks.some((task) => focusTaskIds.has(String(task.id)));
+      const projectDate = project.end_date ? String(project.end_date).slice(0, 10) : null;
+      const normalizedStatus = String(project.status ?? '').toLowerCase();
+      const overdueCount = dueTodayTasks.filter((task) => isTaskOverdueForSelectedDate(task)).length;
+      const statusNeedsAttention = normalizedStatus.includes('attention') || normalizedStatus.includes('blocked') || normalizedStatus.includes('paused');
+      const hasAttention = overdueCount > 0 || statusNeedsAttention || (projectDate && projectDate <= selectedDateKey && projectTasks.length === 0);
+      const nextAction = [...projectTasks]
+        .sort((left, right) => String(left.due_date ?? '9999-12-31').localeCompare(String(right.due_date ?? '9999-12-31')))
+        .at(0)?.title ?? null;
+      const dueLabel = projectDate
+        ? projectDate < selectedDateKey
+          ? 'Overdue'
+          : projectDate === selectedDateKey
+            ? 'Due today'
+            : `Due ${formatNotificationDate(`${projectDate}T00:00:00`)}`
+        : 'No due date';
+      const recentlyUpdated = project.updated_at && new Date(project.updated_at).getTime() >= new Date(startIso).getTime() ? true : false;
+      const relevant = Boolean(hasAttention || dueTodayTasks.length || focused || recentlyUpdated || (projectDate && projectDate <= upcomingEndDateKey));
+      if (!relevant) return null;
+      const attentionReason = overdueCount > 0
+        ? `Overdue${overdueCount > 1 ? ` · ${overdueCount} items` : ''}`
+        : statusNeedsAttention
+          ? 'Needs attention'
+          : projectDate && projectDate <= selectedDateKey && !nextAction
+            ? 'No next action'
+            : null;
+      return {
+        id: `project:${project.id}`,
+        type: 'project',
+        title: project.name ?? 'Untitled project',
+        workspaceId: project.workspace_id,
+        workspaceName: workspaceById.get(project.workspace_id)?.name ?? null,
+        sourceType: 'project',
+        sourceId: project.id,
+        meta: attentionReason ?? (nextAction ? `Next: ${nextAction}` : String(project.status ?? 'Active')),
+        dueLabel,
+        status: hasAttention ? 'overdue' : 'active',
+        projectStatus: project.status ?? null,
+        progress: Math.max(0, Math.min(100, Number(project.completeness ?? 0))),
+        dueDate: projectDate,
+        nextAction,
+        itemsDueToday: dueTodayTasks.length,
+        attentionReason,
+        ownerId: teamWorkspace ? project.lead_id ?? project.created_by ?? null : null,
+        ownerName: teamWorkspace ? assignmentUserById.get(String(project.lead_id ?? project.created_by ?? '')) ?? null : null,
+        nextActionAssigneeName: teamWorkspace && nextAction
+          ? assignmentUserById.get(String(projectTasks.find((task) => task.title === nextAction)?.assigned_to_user_id ?? '')) ?? null
+          : null,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => Number(Boolean(right.attentionReason)) - Number(Boolean(left.attentionReason)) || String(left.dueDate ?? '9999-12-31').localeCompare(String(right.dueDate ?? '9999-12-31')))
+    .slice(0, 12);
 
   return {
     date: selectedDateKey,
@@ -4471,6 +4642,9 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       items: captures,
     },
     notes,
+    projects,
+    mentions,
+    teamActivity,
   };
 };
 
@@ -12940,7 +13114,7 @@ app.get('/api/mobile/workspaces', async (req, res) => {
         ...workspaces.map((workspace) => ({
           id: workspace.id,
           name: workspace.name,
-          type: workspace.is_personal || workspace.role === 'owner' ? 'personal' : 'workspace',
+          type: workspace.is_personal ? 'personal' : 'workspace',
           role: workspace.role,
           isDefault: workspace.id === defaultWorkspaceId,
         })),
@@ -12963,6 +13137,51 @@ app.get('/api/mobile/today', async (req, res) => {
     });
 
     res.json(payload);
+  } catch (error) {
+    return respondWithMobileError(res, error);
+  }
+});
+
+app.get('/api/mobile/calendar', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const requestedWorkspaceId = normalizeNullableText(req.query?.workspace_id) || 'all';
+    const scope = await resolveMobileWorkspaceScope(user.id, requestedWorkspaceId);
+    const startDate = normalizeNullableText(req.query?.start_date);
+    const endDate = normalizeNullableText(req.query?.end_date);
+    if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      return res.status(400).json({ error: 'Valid start_date and end_date are required.' });
+    }
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be before end_date.' });
+    }
+
+    const startIso = `${startDate}T00:00:00.000Z`;
+    const endExclusiveIso = `${endDate}T23:59:59.999Z`;
+    const [eventsResult, remindersResult, tasksResult, projectsResult, milestonesResult, calendarsResult] = await Promise.all([
+      supabase.from('events').select(eventSelectColumns).in('workspace_id', scope.workspaceIds).lt('start_at', endExclusiveIso).or(`end_at.gte.${startIso},end_at.is.null`).order('start_at', { ascending: true }).limit(1000),
+      supabase.from('reminders').select(reminderSelectColumns).in('workspace_id', scope.workspaceIds).gte('remind_at', startIso).lte('remind_at', endExclusiveIso).order('remind_at', { ascending: true }).limit(1000),
+      supabase.from('tasks').select(taskSelectColumns).in('workspace_id', scope.workspaceIds).gte('due_date', startDate).lte('due_date', endDate).order('due_date', { ascending: true }).limit(1000),
+      supabase.from('projects').select(projectSelectColumns).in('workspace_id', scope.workspaceIds).gte('end_date', startDate).lte('end_date', endDate).order('end_date', { ascending: true }).limit(500),
+      supabase.from('project_milestones').select(projectMilestoneSelectColumns).in('workspace_id', scope.workspaceIds).gte('milestone_date', startDate).lte('milestone_date', endDate).order('milestone_date', { ascending: true }).limit(1000),
+      supabase.from('calendars').select('id, workspace_id, name, color, is_visible, is_personal, is_default').in('workspace_id', scope.workspaceIds).order('created_at', { ascending: true }),
+    ]);
+    for (const result of [eventsResult, remindersResult, tasksResult, projectsResult, milestonesResult, calendarsResult]) {
+      if (result.error) throw result.error;
+    }
+
+    const events = (eventsResult.data ?? []).filter((event) => !event.end_at || String(event.end_at) >= startIso);
+    res.json({
+      workspace_id: scope.workspaceId,
+      start_date: startDate,
+      end_date: endDate,
+      events,
+      reminders: remindersResult.data ?? [],
+      tasks: tasksResult.data ?? [],
+      projects: projectsResult.data ?? [],
+      milestones: milestonesResult.data ?? [],
+      calendars: calendarsResult.data ?? [],
+    });
   } catch (error) {
     return respondWithMobileError(res, error);
   }

@@ -23,6 +23,7 @@ export function useLedgerTheme() {
     spacing: ledgerTokens.spacing,
     typography: ledgerTokens.typography,
     radius: ledgerTokens.radius,
+    shadows: ledgerTokens.shadows,
   };
 }
 

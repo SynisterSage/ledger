@@ -1,63 +1,74 @@
-// Temporary mobile theme tokens.
-// These mirror the Ledger desktop token structure until shared tokens are wired in.
-// Palette direction: Option B / Graphite Workspace.
-// Light mode uses warm stone/paper neutrals.
-// Dark mode uses warm graphite/charcoal, not navy.
-
+/**
+ * Mobile deliberately consumes the same semantic palette as Electron.
+ * Keep these values in lockstep with src/theme/desktopTokens.ts. The shape is
+ * React-Native friendly, while the names stay shared across Ledger surfaces.
+ */
 export const lightColors = {
-  background: '#F7F4EF',
-  backgroundMuted: '#EFEAE3',
-  surface: '#FFFCF7',
-  surfaceMuted: '#F1ECE4',
-  selectedSurface: '#F4E7DE',
+  background: '#FFFFFF',
+  backgroundMuted: '#F9F9F9',
+  surface: '#FFFFFF',
+  surfaceCard: '#FAFAFA',
+  surfaceMuted: '#F5F5F5',
+  menuBackground: '#FFFFFF',
+  surfaceSelected: '#F0F0F0',
+  surfaceHover: '#F8F8F8',
 
-  textPrimary: '#171512',
-  textSecondary: '#4F4A43',
-  textMuted: '#766F65',
+  textPrimary: '#0A0A0A',
+  textSecondary: '#666666',
+  textMuted: '#999999',
 
-  borderSubtle: '#DED6CB',
-  borderStrong: '#C8BDAF',
+  borderSubtle: '#E5E5E5',
+  borderStrong: '#D0D0D0',
 
   accent: '#FF5F40',
-  accentSoft: '#FFE1D7',
+  accentHover: '#E85430',
+  accentSoft: '#FFE8DC',
 
-  danger: '#C24135',
-  success: '#168A5B',
-  warning: '#B86B16',
+  danger: '#D92D20',
+  success: '#12B76A',
+  warning: '#DC6803',
 
-  inputBackground: '#FFFCF8',
-  placeholder: '#9A9288',
+  inputBackground: '#FAFAFA',
+  placeholder: '#A0A0A0',
 
-  tabBar: '#F4EFE7',
-  tabBarBorder: '#DED6CB',
+  tabBar: '#F5F5F5',
+  tabBarBorder: '#E0E0E0',
+  backdrop: 'rgba(10, 10, 10, 0.4)',
+  shadow: 'rgba(0, 0, 0, 0.06)',
 };
 
 export const darkColors = {
-  background: '#11100E',
-  backgroundMuted: '#171512',
-  surface: '#1A1815',
-  surfaceMuted: '#28251F',
-  selectedSurface: '#332820',
+  background: '#0F0F0F',
+  backgroundMuted: '#161616',
+  surface: '#1A1A1A',
+  surfaceCard: '#1F1F1F',
+  surfaceMuted: '#262626',
+  menuBackground: '#242424',
+  surfaceSelected: '#2A2A2A',
+  surfaceHover: '#202020',
 
-  textPrimary: '#F7F2EA',
-  textSecondary: '#D4CCC0',
-  textMuted: '#A79D90',
+  textPrimary: '#F5F5F5',
+  textSecondary: '#B0B0B0',
+  textMuted: '#808080',
 
-  borderSubtle: '#38332B',
-  borderStrong: '#51493D',
+  borderSubtle: '#333333',
+  borderStrong: '#404040',
 
-  accent: '#FF7A59',
-  accentSoft: '#4B2B22',
+  accent: '#FF8C5F',
+  accentHover: '#FF7A4D',
+  accentSoft: '#FFAB8F',
 
   danger: '#F97066',
   success: '#32D583',
   warning: '#FDB022',
 
-  inputBackground: '#181612',
-  placeholder: '#81786C',
+  inputBackground: '#161616',
+  placeholder: '#666666',
 
-  tabBar: '#15130F',
-  tabBarBorder: '#332E27',
+  tabBar: '#0F0F0F',
+  tabBarBorder: '#2A2A2A',
+  backdrop: 'rgba(15, 15, 15, 0.6)',
+  shadow: 'rgba(0, 0, 0, 0.3)',
 };
 
 export type LedgerColorScheme = 'light' | 'dark';

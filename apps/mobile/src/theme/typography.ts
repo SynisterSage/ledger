@@ -39,6 +39,11 @@ export const typography = {
     lineHeight: 20,
     fontWeight: '600' as const,
   },
+  label: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600' as const,
+  },
 };
 
 export type LedgerTypography = typeof typography;

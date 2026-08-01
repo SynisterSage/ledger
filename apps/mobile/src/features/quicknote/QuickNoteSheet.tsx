@@ -198,13 +198,19 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
     setError(null);
 
     try {
-      await createMobileNote(workspaceId, {
+      const created = (await createMobileNote(workspaceId, {
         title,
         content: noteContent,
         source: 'mobile',
         sourcePlatform: 'ios',
+      })) as { id?: unknown };
+      draft?.onSaved?.({
+        id: typeof created?.id === 'string' ? created.id : null,
+        title,
+        content: noteContent,
+        workspaceId,
+        createdAt: new Date().toISOString(),
       });
-      draft?.onSaved?.();
       closeSheet();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save note.');
@@ -289,6 +295,7 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
                 labelVariant="body"
                 placeholder="Type a note"
                 multiline
+                autoFocus
                 value={noteText}
                 onChangeText={setNoteText}
               />

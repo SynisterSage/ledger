@@ -34,6 +34,9 @@ export type MobileUpcomingItem = {
   status: 'upcoming';
   sourceType: 'calendar_event' | 'reminder' | 'task' | 'project';
   sourceId: string;
+  assignedToUserId?: string | null;
+  assignedToUserName?: string | null;
+  assignedToCurrentUser?: boolean;
 };
 
 export type MobileTodayItem = {
@@ -52,6 +55,9 @@ export type MobileTodayItem = {
   timeLabel?: string | null;
   dateLabel?: string | null;
   urgency?: string | null;
+  assignedToUserId?: string | null;
+  assignedToUserName?: string | null;
+  assignedToCurrentUser?: boolean;
 };
 
 export type MobileCaptureItem = {
@@ -62,6 +68,12 @@ export type MobileCaptureItem = {
   workspaceName: string | null;
   createdAt: string | null;
   dateLabel?: string | null;
+  suggestedProjectId?: string | null;
+  suggestedProjectName?: string | null;
+  suggestedType?: string | null;
+  suggestedAssigneeId?: string | null;
+  suggestedAssigneeName?: string | null;
+  submittedByName?: string | null;
 };
 
 export type MobileCaptureSummary = {
@@ -80,6 +92,52 @@ export type MobileTodayNoteItem = {
   body: string | null;
   updatedAt: string | null;
   createdAt: string | null;
+  authorName?: string | null;
+  lastEditorName?: string | null;
+  shared?: boolean;
+};
+
+export type MobileTodayProject = {
+  id: string;
+  type: 'project';
+  title: string;
+  workspaceId: string;
+  workspaceName: string | null;
+  sourceType: 'project';
+  sourceId: string;
+  meta: string;
+  dueLabel: string;
+  status: 'active' | 'overdue';
+  projectStatus: string | null;
+  progress: number;
+  dueDate: string | null;
+  nextAction: string | null;
+  itemsDueToday: number;
+  attentionReason: string | null;
+  ownerName?: string | null;
+  ownerId?: string | null;
+  nextActionAssigneeName?: string | null;
+};
+
+export type MobileTodayMention = {
+  id: string;
+  title: string;
+  metadata: string[];
+  sourceId: string;
+  sourceType: 'mention';
+  workspaceId: string;
+  createdAt: string | null;
+  unread: boolean;
+};
+
+export type MobileTodayTeamActivity = {
+  id: string;
+  title: string;
+  metadata: string[];
+  sourceId: string | null;
+  sourceType: 'team_activity';
+  workspaceId: string;
+  createdAt: string | null;
 };
 
 export type MobileProjectOption = {
@@ -93,7 +151,7 @@ export type MobileProjectOption = {
   endDate?: string | null;
 };
 
-export type MobileTodayInteractionItem = MobileUpcomingItem | MobileTodayItem | MobileCaptureItem | MobileTodayNoteItem;
+export type MobileTodayInteractionItem = MobileUpcomingItem | MobileTodayItem | MobileCaptureItem | MobileTodayNoteItem | MobileTodayProject;
 
 export type MobileTodayResponse = {
   date: string;
@@ -102,6 +160,9 @@ export type MobileTodayResponse = {
   today: MobileTodayItem[];
   captures: MobileCaptureSummary;
   notes: MobileTodayNoteItem[];
+  projects: MobileTodayProject[];
+  mentions?: MobileTodayMention[];
+  teamActivity?: MobileTodayTeamActivity[];
 };
 
 export type MobileWorkspaceScopeOption = {

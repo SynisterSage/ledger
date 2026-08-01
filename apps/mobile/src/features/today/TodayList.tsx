@@ -1,80 +1,64 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { AppText } from '@/components/AppText';
-import { Section } from '@/components/Section';
 import { useLedgerTheme } from '@/theme';
-
 import type {
   MobileCaptureSummary,
   MobileTodayInteractionItem,
   MobileTodayItem,
   MobileTodayNoteItem,
+  MobileTodayProject,
+  MobileTodayMention,
+  MobileTodayTeamActivity,
   MobileUpcomingItem,
 } from '@/types/ledger';
 
-import { TodayItem } from './TodayItem';
+import { TodayItemRow, type TodayItemStatus, type TodayItemType } from './TodayItemRow';
+import { TodaySection } from './TodaySection';
+import { getTodayItemActions, getTodayItemSwipeActions } from './todayActions';
+
+type TodaySectionKey =
+  | 'focus'
+  | 'next-up'
+  | 'attention'
+  | 'today'
+  | 'projects'
+  | 'intake'
+  | 'notes'
+  | 'team-activity';
 
 type TodayListProps = {
   upcoming: MobileUpcomingItem[];
   today: MobileTodayItem[];
   captures: MobileCaptureSummary;
+  projects?: MobileTodayProject[];
   notes?: MobileTodayNoteItem[];
+  mentions?: MobileTodayMention[];
+  teamActivity?: MobileTodayTeamActivity[];
+  isTeamWorkspace?: boolean;
   showWorkspaceNames?: boolean;
+  collapsedSections?: Partial<Record<TodaySectionKey, boolean>>;
+  onToggleSection?: (section: TodaySectionKey) => void;
+  onSectionLayout?: (section: TodaySectionKey, y: number) => void;
   onItemPress?: (item: MobileTodayInteractionItem) => void;
   onItemLongPress?: (item: MobileTodayInteractionItem) => void;
+  onItemAction?: (actionId: string, item: MobileTodayInteractionItem) => void;
+  onItemComplete?: (item: MobileTodayInteractionItem) => void;
+  focusOrder?: string[];
+  onViewDay?: () => void;
+  onAddFocus?: () => void;
+  onQuickNote?: () => void;
+  onTeamItemPress?: (sourceType: 'mention' | 'team_activity', sourceId: string | null) => void;
+  surfaceSection?: 'today' | 'attention' | 'next-up' | null;
 };
-
-function formatUpcomingLabel(item: MobileUpcomingItem) {
-  if (!item.startsAt) {
-    return item.timeLabel ?? 'Scheduled';
-  }
-
-  const startDate = new Date(item.startsAt);
-  if (Number.isNaN(startDate.getTime())) {
-    return item.timeLabel ?? 'Scheduled';
-  }
-
-  const diffMs = startDate.getTime() - Date.now();
-  const absMs = Math.abs(diffMs);
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  const week = 7 * day;
-
-  if (absMs < hour) {
-    const minutes = Math.max(1, Math.round(absMs / minute));
-    return `${minutes}m`;
-  }
-
-  if (absMs < day) {
-    const hours = Math.max(1, Math.round(absMs / hour));
-    return `${hours}h`;
-  }
-
-  if (absMs < week) {
-    const days = Math.max(1, Math.round(absMs / day));
-    return days === 1 ? '1 day' : `${days} days`;
-  }
-
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-  }).format(startDate);
-}
-
-function formatUpcomingTime(item: MobileUpcomingItem) {
-  return formatTimeFromDate(item.startsAt, item.timeLabel);
-}
 
 function formatDateTimeLabel(dateLike: string | null | undefined) {
   if (!dateLike) return null;
-
   const date = new Date(dateLike);
   if (Number.isNaN(date.getTime())) return null;
 
   return new Intl.DateTimeFormat('en-US', {
-    weekday: 'short',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -82,213 +66,501 @@ function formatDateTimeLabel(dateLike: string | null | undefined) {
   }).format(date);
 }
 
-function formatTimeFromDate(dateLike: string | null | undefined, fallback: string | null = null) {
+function formatTime(dateLike: string | null | undefined, fallback: string | null = null) {
   if (!dateLike) return fallback;
-
   const date = new Date(dateLike);
   if (Number.isNaN(date.getTime())) return fallback;
-
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
+  return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date);
 }
 
-function buildTodaySubtitle(item: MobileTodayItem, showWorkspaceNames: boolean) {
-  if (item.type === 'focus') {
-    const parts = [] as string[];
-    if (showWorkspaceNames && item.workspaceName) {
-      parts.push(item.workspaceName);
-    }
-    parts.push('Focus');
-    parts.push(item.urgency ?? 'Low');
-    return parts.join(' · ');
+function formatShortDate(dateLike: string | null | undefined) {
+  if (!dateLike) return null;
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(date);
+}
+
+function compactMetadata(values: Array<string | null | undefined>) {
+  return values.filter(Boolean).slice(0, 3) as string[];
+}
+
+function isSameLocalDay(left: Date, right: Date) {
+  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
+}
+
+function isTomorrowLocalDay(date: Date, now: Date) {
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return isSameLocalDay(date, tomorrow);
+}
+
+function isCurrentEvent(item: MobileTodayInteractionItem, now = new Date()) {
+  if ('source' in item || item.type !== 'event' || !item.startsAt) return false;
+  const start = new Date(item.startsAt);
+  const end = item.endsAt ? new Date(item.endsAt) : new Date(start.getTime() + 60 * 60 * 1000);
+  return start.getTime() <= now.getTime() && end.getTime() > now.getTime();
+}
+
+function durationLabel(item: MobileUpcomingItem | MobileTodayItem) {
+  if (!item.startsAt || !item.endsAt) return null;
+  const minutes = Math.max(0, Math.round((new Date(item.endsAt).getTime() - new Date(item.startsAt).getTime()) / 60000));
+  if (!minutes) return null;
+  return minutes >= 60 ? `${Math.round(minutes / 60)} hr` : `${minutes} min`;
+}
+
+function startsInLabel(item: MobileUpcomingItem | MobileTodayItem, now = new Date()) {
+  if (!item.startsAt) return null;
+  const minutes = Math.round((new Date(item.startsAt).getTime() - now.getTime()) / 60000);
+  if (minutes > 0 && minutes <= 60) return `In ${minutes} min`;
+  if (minutes <= 0 && isCurrentEvent(item, now)) return `NOW · Ends ${formatTime(item.endsAt) ?? 'soon'}`;
+  return formatTime(item.startsAt, item.timeLabel);
+}
+
+function itemType(item: MobileTodayInteractionItem): TodayItemType {
+  if ('source' in item) return 'intake';
+  if (item.type === 'note') return 'note';
+  if (item.type === 'deadline') return 'project';
+  if (item.type === 'focus') return 'task';
+  return item.type;
+}
+
+function rowStatus(item: MobileTodayInteractionItem): TodayItemStatus {
+  if ('source' in item || item.type === 'note' || item.type === 'deadline') return 'default';
+  if (item.type === 'focus') return 'focused';
+  if (item.status === 'overdue') return 'overdue';
+  if (item.type === 'event' && (item.status === 'active' || isCurrentEvent(item))) return 'active';
+  return 'default';
+}
+
+function rowMetadata(
+  item: MobileTodayInteractionItem,
+  showWorkspaceNames: boolean,
+  fallback?: string | null,
+) {
+  const workspace = showWorkspaceNames && item.workspaceName ? item.workspaceName : null;
+  const usefulFallback = 'status' in item && item.status === 'overdue' ? null : fallback;
+  if ('source' in item) {
+    return compactMetadata([
+      item.source,
+      item.suggestedProjectName ? `Suggested: ${item.suggestedProjectName}` : null,
+      item.submittedByName ? `Submitted by ${item.submittedByName}` : null,
+      item.suggestedAssigneeName ? `Reviewer: ${item.suggestedAssigneeName}` : null,
+      workspace,
+    ]);
   }
-
-  const parts: string[] = [];
-
-  if (showWorkspaceNames && item.workspaceName) {
-    parts.push(item.workspaceName);
+  if (item.type === 'note') {
+    return compactMetadata([
+      'Note',
+      item.authorName ? `By ${item.authorName}` : null,
+      item.lastEditorName ? `Edited by ${item.lastEditorName}` : null,
+      workspace,
+      formatDateTimeLabel(item.updatedAt ?? item.createdAt),
+    ]);
   }
-
+  if (item.type === 'project') {
+    return compactMetadata([
+      workspace,
+      item.attentionReason ?? item.nextAction ?? item.projectStatus,
+      item.itemsDueToday ? `${item.itemsDueToday} due today` : null,
+      item.ownerName ? `Owner: ${item.ownerName}` : null,
+    ]);
+  }
+  if (item.type === 'deadline') return compactMetadata([workspace, item.dateLabel]);
+  if (item.type === 'focus') return compactMetadata([workspace, item.urgency, item.dueLabel]);
   if (item.type === 'project_action') {
-    parts.push('Project');
-    if (item.status === 'overdue') {
-      parts.push('Overdue');
-    } else if (item.dueLabel && item.dueLabel !== 'Today' && item.dateLabel) {
-      parts.push(item.dateLabel);
-    } else if (item.startsAt) {
-      const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
-      if (timeLabel) parts.push(timeLabel);
-    } else {
-      parts.push(item.dueLabel);
-    }
-  } else if (item.type === 'event') {
-    parts.push('Event');
-    if (item.startsAt) {
-      const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
-      if (timeLabel) parts.push(timeLabel);
-    }
-  } else if (item.meta && item.meta !== item.dueLabel) {
-    parts.push(item.meta);
-  } else if (item.meta) {
-    parts.push(item.meta);
+    return compactMetadata([workspace, item.status === 'overdue' ? 'Overdue' : item.meta || 'Project action']);
   }
-
-  if (item.type !== 'project_action' && item.type !== 'event' && item.startsAt) {
-    const timeLabel = formatTimeFromDate(item.startsAt, item.timeLabel ?? item.dueLabel);
-    if (timeLabel) parts.push(timeLabel);
-  } else if (item.type !== 'project_action' && item.dueLabel && !item.timeLabel) {
-    const shouldAddDueLabel =
-      item.meta !== item.dueLabel ||
-      !item.meta;
-    if (shouldAddDueLabel) {
-      parts.push(item.dueLabel);
-    }
-  }
-
-  const uniqueParts: string[] = [];
-  for (const part of parts) {
-    if (!part) continue;
-    if (uniqueParts[uniqueParts.length - 1] === part) continue;
-    uniqueParts.push(part);
-  }
-
-  return uniqueParts.length ? uniqueParts.join(' · ') : null;
+  return compactMetadata([
+    workspace,
+    usefulFallback,
+    'status' in item && String(item.status) === 'overdue'
+      ? 'Overdue'
+      : 'dueLabel' in item && item.dueLabel === 'Today'
+        ? 'Today'
+        : null,
+    'assignedToCurrentUser' in item && item.assignedToCurrentUser
+      ? 'Assigned to you'
+      : 'assignedToUserName' in item && item.assignedToUserName
+        ? item.assignedToUserName
+        : null,
+  ]);
 }
 
-function buildNoteSubtitle(item: MobileTodayNoteItem, showWorkspaceNames: boolean) {
-  const parts: string[] = [];
-
-  if (showWorkspaceNames && item.workspaceName) {
-    parts.push(item.workspaceName);
-  }
-
-  parts.push('Note');
-
-  const updatedLabel = formatDateTimeLabel(item.updatedAt ?? item.createdAt);
-  if (updatedLabel) {
-    parts.push(updatedLabel);
-  }
-
-  return parts.join(' · ');
+function rowTrailingLabel(item: MobileTodayInteractionItem) {
+  if ('source' in item || item.type === 'note') return null;
+  if (item.type === 'focus' || item.status === 'overdue') return null;
+  if (item.type === 'deadline') return item.timeLabel;
+  if (item.type === 'project') return item.dueLabel;
+  return 'timeLabel' in item
+    ? item.timeLabel ?? ('dueLabel' in item ? item.dueLabel : null) ?? item.dateLabel ?? startsInLabel(item)
+    : 'dueLabel' in item
+      ? item.dueLabel
+      : null;
 }
 
-function isCurrentTimedItem(item: MobileTodayItem | MobileUpcomingItem, nowMs: number) {
-  if (!item.startsAt || !item.endsAt) return false;
+function rowLeadingLabel(item: MobileTodayInteractionItem) {
+  return null;
+}
 
-  const startMs = new Date(item.startsAt).getTime();
-  const endMs = new Date(item.endsAt).getTime();
+function nextUpMetadata(item: MobileUpcomingItem | MobileTodayItem, showWorkspaceNames: boolean) {
+  const now = new Date();
+  const date = item.startsAt ? new Date(item.startsAt) : null;
+  const dateLabel = date && !isSameLocalDay(date, now) ? formatShortDate(item.startsAt) : null;
+  return compactMetadata([
+    showWorkspaceNames ? item.workspaceName : null,
+    dateLabel,
+    durationLabel(item),
+  ]);
+}
 
-  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return false;
-  if (endMs <= startMs) return false;
+function itemRow(
+  item: MobileTodayInteractionItem,
+  metadata: string[],
+  onItemPress?: (item: MobileTodayInteractionItem) => void,
+  onItemLongPress?: (item: MobileTodayInteractionItem) => void,
+  onItemComplete?: (item: MobileTodayInteractionItem) => void,
+  onItemAction?: (actionId: string, item: MobileTodayInteractionItem) => void,
+) {
+  const swipeActions = getTodayItemSwipeActions(item);
+  const availableActions = getTodayItemActions(item, { onAction: () => undefined });
+  const swipeAction = (id: string | null) => {
+    if (!id) return undefined;
+    const definition = availableActions.find((candidate) => candidate.id === id);
+    return definition
+      ? { label: definition.label, onPress: () => onItemAction?.(id, item) }
+      : undefined;
+  };
 
-  return nowMs >= startMs && nowMs < endMs;
+  return (
+    <TodayItemRow
+      key={item.id}
+      type={itemType(item)}
+      title={item.title}
+      metadata={metadata}
+      progress={'type' in item && item.type === 'project' ? item.progress : undefined}
+      leadingLabel={rowLeadingLabel(item)}
+      trailingLabel={rowTrailingLabel(item)}
+      status={rowStatus(item)}
+      onPress={() => onItemPress?.(item)}
+      onLongPress={() => onItemLongPress?.(item)}
+      onOverflow={() => onItemLongPress?.(item)}
+      swipeRight={swipeAction(swipeActions.right)}
+      swipeLeft={swipeAction(swipeActions.left)}
+    />
+  );
 }
 
 export function TodayList({
   upcoming,
   today,
   captures,
+  projects = [],
   notes = [],
+  mentions = [],
+  teamActivity = [],
+  isTeamWorkspace = false,
   showWorkspaceNames = true,
+  collapsedSections = {},
+  onToggleSection,
+  onSectionLayout,
   onItemPress,
   onItemLongPress,
+  onItemComplete,
+  onItemAction,
+  focusOrder = [],
+  onViewDay,
+  onAddFocus,
+  onQuickNote,
+  onTeamItemPress,
+  surfaceSection = null,
 }: TodayListProps) {
   const theme = useLedgerTheme();
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const hasUpcoming = upcoming.length > 0;
-  const hasToday = today.length > 0;
-  const hasCaptures = captures.count > 0;
-  const hasNotes = notes.length > 0;
-
+  const [now, setNow] = useState(() => new Date());
+  const [attentionExpanded, setAttentionExpanded] = useState(false);
+  const [intakeExpanded, setIntakeExpanded] = useState(false);
   useEffect(() => {
-    const timer = setInterval(() => setNowMs(Date.now()), 60 * 1000);
+    const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
+  const focusItems = today
+    .filter((item) => item.type === 'focus')
+    .sort((left, right) => {
+      const leftIndex = focusOrder.indexOf(left.id);
+      const rightIndex = focusOrder.indexOf(right.id);
+      return (
+        (leftIndex < 0 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+        (rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex)
+      );
+    })
+    .slice(0, 5);
+  const timedTodayItems = today.filter((item) => item.type !== 'focus' && Boolean(item.startsAt));
+  const timedItems = [...upcoming, ...timedTodayItems].filter((item) => {
+    if (!item.startsAt) return false;
+    const date = new Date(item.startsAt);
+    return isSameLocalDay(date, now) || isTomorrowLocalDay(date, now);
+  });
+  const remainingTodayItems = timedItems.filter((item) => {
+    const date = new Date(item.startsAt ?? 0);
+    return isSameLocalDay(date, now) && (date.getTime() >= now.getTime() || isCurrentEvent(item, now));
+  });
+  const nextUpItems = (remainingTodayItems.length ? remainingTodayItems : timedItems.filter((item) => isTomorrowLocalDay(new Date(item.startsAt ?? 0), now)).slice(0, 1))
+    .sort((left, right) => {
+      const leftTime = new Date(left.startsAt ?? 0).getTime();
+      const rightTime = new Date(right.startsAt ?? 0).getTime();
+      return leftTime - rightTime;
+    })
+    .slice(0, 3);
+  const eventSurfaceItems = [...today.filter((item) => item.type === 'event'), ...upcoming.filter((item) => item.type === 'event')]
+    .filter((item) => item.startsAt && new Date(item.startsAt).getTime() >= now.getTime())
+    .sort((left, right) => new Date(left.startsAt ?? 0).getTime() - new Date(right.startsAt ?? 0).getTime())
+    .slice(0, 3);
+  const displayedNextUpItems = surfaceSection === 'next-up' ? eventSurfaceItems : nextUpItems;
+  const nextUpIds = new Set(nextUpItems.map((item) => item.id));
+  const allAttentionItems: MobileTodayInteractionItem[] = [
+    ...today
+      .filter((item) => item.status === 'overdue' && item.type !== 'focus')
+      .slice(0, 5),
+    ...projects.filter((project) => Boolean(project.attentionReason)),
+  ];
+  const attentionItems = attentionExpanded ? allAttentionItems : allAttentionItems.slice(0, 5);
+  const attentionIds = new Set(attentionItems.map((item) => item.id));
+  const todayItems = today.filter(
+    (item) =>
+      item.type !== 'focus' &&
+      item.type !== 'project_action' &&
+      !attentionIds.has(item.id) &&
+      !nextUpIds.has(item.id),
+  );
+  const projectItems = projects.slice(0, 5);
+  const intakeItems = captures.items.slice(0, intakeExpanded ? captures.items.length : 3);
+  const noteItems = notes.slice(0, 3);
+
+  const collapsed = (section: TodaySectionKey) => Boolean(collapsedSections[section]);
+  const toggle = (section: TodaySectionKey) => onToggleSection?.(section);
+  const layout = (section: TodaySectionKey) => (y: number) => onSectionLayout?.(section, y);
+  const show = (section: TodaySectionKey) => !surfaceSection || surfaceSection === section;
 
   return (
-    <View style={{ gap: theme.spacing['3xl'] }}>
-      <Section title="Today">
-        {hasToday ? (
-          today.map((item) => (
-            <TodayItem
-              key={item.id}
-              title={item.title}
-              subtitle={buildTodaySubtitle(item, showWorkspaceNames)}
-              active={isCurrentTimedItem(item, nowMs)}
-              onPress={() => onItemPress?.(item)}
-              onLongPress={() => onItemLongPress?.(item)}
+    <View style={{ gap: theme.spacing.lg }}>
+      {show('focus') ? <TodaySection
+        title="Focus"
+        count={focusItems.length}
+        collapsed={collapsed('focus')}
+        onToggle={() => toggle('focus')}
+        actionLabel="Add"
+        onAction={onAddFocus}
+        onLayout={layout('focus')}
+      >
+        {focusItems.length ? (
+          focusItems.map((item) =>
+            itemRow(
+              item,
+              rowMetadata(item, showWorkspaceNames),
+              onItemPress,
+              onItemLongPress,
+              onItemComplete,
+              onItemAction,
+            ),
+          )
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Choose what matters today. Add to Focus"
+            onPress={onAddFocus}
+            style={({ pressed }) => [
+              { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.6 : 1 },
+            ]}
+          >
+            <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
+              Choose what matters today
+            </AppText>
+            <AppText variant="body" style={{ color: theme.colors.accent }}>
+              +
+            </AppText>
+          </Pressable>
+        )}
+      </TodaySection> : null}
+
+      {show('next-up') && displayedNextUpItems.length ? (
+        <TodaySection
+          title="Next up"
+          count={displayedNextUpItems.length}
+          collapsed={collapsed('next-up')}
+          onToggle={() => toggle('next-up')}
+          actionLabel="View day"
+          onAction={onViewDay}
+          onLayout={layout('next-up')}
+        >
+          {displayedNextUpItems.map((item) =>
+            itemRow(
+              item,
+              nextUpMetadata(item, showWorkspaceNames),
+              onItemPress,
+              onItemLongPress,
+              onItemComplete,
+              onItemAction,
+            ),
+          )}
+        </TodaySection>
+      ) : null}
+
+      {show('attention') && (attentionItems.length || (isTeamWorkspace && mentions.length)) ? (
+        <TodaySection
+          title="Needs attention"
+          count={attentionItems.length + (isTeamWorkspace ? mentions.length : 0)}
+          collapsed={collapsed('attention')}
+          onToggle={() => toggle('attention')}
+          onLayout={layout('attention')}
+        >
+          {isTeamWorkspace
+            ? mentions.map((mention) => (
+                <TodayItemRow
+                  key={mention.id}
+                  type="note"
+                  title={mention.title}
+                  metadata={mention.metadata}
+                  status={mention.unread ? 'focused' : 'default'}
+                  onPress={() => onTeamItemPress?.('mention', mention.sourceId)}
+                  accessibilityLabel={`${mention.title}. ${mention.metadata.join('. ')}`}
+                />
+              ))
+            : null}
+          {attentionItems.map((item) =>
+            itemRow(
+              item,
+              rowMetadata(item, showWorkspaceNames, 'type' in item && item.type === 'project' ? item.meta : null),
+              onItemPress,
+              onItemLongPress,
+              onItemComplete,
+              onItemAction,
+            ),
+          )}
+          {allAttentionItems.length > 5 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={attentionExpanded ? 'Show fewer attention items' : `Show ${allAttentionItems.length - 5} more attention items`}
+              onPress={() => setAttentionExpanded((current) => !current)}
+              style={({ pressed }) => ({ minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}
+            >
+              <AppText variant="meta" style={{ color: theme.colors.accent }}>
+                {attentionExpanded ? 'Show less' : `Show ${allAttentionItems.length - 5} more`}
+              </AppText>
+            </Pressable>
+          ) : null}
+        </TodaySection>
+      ) : null}
+
+      {show('today') && todayItems.length ? (
+        <TodaySection
+          title="Today"
+          count={todayItems.length}
+          collapsed={collapsed('today')}
+          onToggle={() => toggle('today')}
+          onLayout={layout('today')}
+        >
+          {todayItems.map((item) =>
+            itemRow(
+              item,
+              rowMetadata(item, showWorkspaceNames, item.type === 'project_action' ? item.meta : null),
+              onItemPress,
+              onItemLongPress,
+              onItemComplete,
+              onItemAction,
+            ),
+          )}
+        </TodaySection>
+      ) : null}
+
+      {show('projects') && projectItems.length ? (
+        <TodaySection
+          title="Projects"
+          count={projectItems.length}
+          collapsed={collapsed('projects')}
+          onToggle={() => toggle('projects')}
+          onLayout={layout('projects')}
+        >
+          {projectItems.map((item) =>
+            itemRow(
+              item,
+              rowMetadata(item, showWorkspaceNames, item.meta),
+              onItemPress,
+              onItemLongPress,
+              onItemComplete,
+              onItemAction,
+            ),
+          )}
+        </TodaySection>
+      ) : null}
+
+      {show('intake') && intakeItems.length ? (
+        <TodaySection
+          title="Intake"
+          count={captures.count}
+          collapsed={collapsed('intake')}
+          onToggle={() => toggle('intake')}
+          actionLabel={captures.items.length > 3 ? (intakeExpanded ? 'Show less' : 'View all') : undefined}
+          onAction={() => setIntakeExpanded((current) => !current)}
+          onLayout={layout('intake')}
+        >
+          {intakeItems.map((item) =>
+            itemRow(
+              item,
+              rowMetadata(item, showWorkspaceNames),
+              onItemPress,
+              onItemLongPress,
+              onItemComplete,
+              onItemAction,
+            ),
+          )}
+        </TodaySection>
+      ) : null}
+
+      {show('notes') && noteItems.length ? (
+        <TodaySection
+          title="Recent notes"
+          count={noteItems.length}
+          collapsed={collapsed('notes')}
+          onToggle={() => toggle('notes')}
+          actionLabel="Quick note"
+          onAction={onQuickNote}
+          onLayout={layout('notes')}
+        >
+          {noteItems.map((item) =>
+            itemRow(
+              item,
+              rowMetadata(item, showWorkspaceNames),
+              onItemPress,
+              onItemLongPress,
+              onItemComplete,
+              onItemAction,
+            ),
+          )}
+        </TodaySection>
+      ) : null}
+
+      {show('team-activity') && isTeamWorkspace && teamActivity.length ? (
+        <TodaySection
+          title="Team activity"
+          count={teamActivity.length}
+          collapsed={collapsed('team-activity')}
+          onToggle={() => toggle('team-activity')}
+          actionLabel="View all"
+          onAction={() => onTeamItemPress?.('team_activity', null)}
+          onLayout={layout('team-activity')}
+        >
+          {teamActivity.map((activity) => (
+            <TodayItemRow
+              key={activity.id}
+              type="note"
+              title={activity.title}
+              metadata={activity.metadata}
+              trailingLabel={formatDateTimeLabel(activity.createdAt)}
+              onPress={() => onTeamItemPress?.('team_activity', activity.sourceId)}
+              accessibilityLabel={`${activity.title}. ${activity.metadata.join('. ')}`}
             />
-          ))
-        ) : (
-          <AppText variant="meta">Nothing due today.</AppText>
-        )}
-      </Section>
-
-      <Section title="Upcoming">
-        {hasUpcoming ? (
-          upcoming.map((item) => (
-            <TodayItem
-              key={item.id}
-              title={item.title}
-              subtitle={
-                [
-                  showWorkspaceNames ? item.workspaceName : null,
-                  `${formatUpcomingLabel(item)}${formatTimeFromDate(item.startsAt ?? null, item.timeLabel) ? ` · ${formatTimeFromDate(item.startsAt ?? null, item.timeLabel)}` : ''}`,
-                ]
-                  .filter(Boolean)
-                .join(' · ')
-              }
-              active={isCurrentTimedItem(item, nowMs)}
-              onPress={() => onItemPress?.(item)}
-              onLongPress={() => onItemLongPress?.(item)}
-            />
-          ))
-        ) : (
-          <AppText variant="meta">Nothing upcoming.</AppText>
-        )}
-      </Section>
-
-      <Section title="Captures">
-        {hasCaptures ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            {captures.items.map((item) => (
-              <TodayItem
-                key={item.id}
-                title={item.title}
-                subtitle={
-                  showWorkspaceNames && item.workspaceName
-                    ? [item.workspaceName, formatDateTimeLabel(item.createdAt) ?? null, item.source].filter(Boolean).join(' · ')
-                    : [formatDateTimeLabel(item.createdAt), item.source].filter(Boolean).join(' · ') || item.source
-                }
-                onPress={() => onItemPress?.(item)}
-                onLongPress={() => onItemLongPress?.(item)}
-              />
-            ))}
-          </View>
-        ) : (
-          <AppText variant="meta">No captures waiting.</AppText>
-        )}
-      </Section>
-
-      <Section title="Notes">
-        {hasNotes ? (
-          <View style={{ gap: theme.spacing.xs }}>
-            {notes.map((item) => (
-              <TodayItem
-                key={item.id}
-                title={item.title}
-                subtitle={buildNoteSubtitle(item, showWorkspaceNames)}
-                onPress={() => onItemPress?.(item)}
-                onLongPress={() => onItemLongPress?.(item)}
-              />
-            ))}
-          </View>
-        ) : (
-          <AppText variant="meta">No notes yet.</AppText>
-        )}
-      </Section>
+          ))}
+        </TodaySection>
+      ) : null}
     </View>
   );
 }

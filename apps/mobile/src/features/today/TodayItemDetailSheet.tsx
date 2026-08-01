@@ -1,5 +1,6 @@
 import { AppDetailSheet, type AppDetailSheetAction, type AppDetailSheetMetaRow } from '@/components/AppDetailSheet';
 import type { MobileTodayInteractionItem } from '@/types/ledger';
+import { getTodayItemActions } from './todayActions';
 
 export type TodayDetailSheetMode = 'detail' | 'actions' | 'edit' | 'reschedule';
 
@@ -163,104 +164,13 @@ function getItemBody(item: TodayDetailSheetItem, mode: TodayDetailSheetMode) {
 }
 
 function getActionsForItem(item: TodayDetailSheetItem, mode: TodayDetailSheetMode): AppDetailSheetAction[] {
-  if ('source' in item) {
-    return [
-      { id: 'convert_task', label: 'Convert to task', variant: 'primary' },
-      { id: 'convert_reminder', label: 'Convert to reminder' },
-      { id: 'convert_note', label: 'Convert to note' },
-      { id: 'convert_event', label: 'Convert to event' },
-      { id: 'archive', label: 'Archive' },
-      { id: 'delete', label: 'Delete', variant: 'danger' },
-    ];
-  }
-
-  switch (item.type) {
-    case 'focus':
-      return mode === 'actions'
-        ? [
-            { id: 'mark_done', label: 'Mark as done', variant: 'primary' },
-            { id: 'move_tomorrow', label: 'Move to tomorrow' },
-            { id: 'remove_today', label: 'Remove from Today' },
-            { id: 'edit', label: 'Edit' },
-            { id: 'delete', label: 'Delete', variant: 'danger' },
-          ]
-        : [
-            { id: 'mark_done', label: 'Mark as done', variant: 'primary' },
-            { id: 'move_tomorrow', label: 'Move to tomorrow' },
-            { id: 'remove_today', label: 'Remove from Today' },
-          ];
-    case 'note':
-      return mode === 'actions'
-        ? [
-            { id: 'add_follow_up', label: 'Add follow-up', variant: 'primary' },
-            { id: 'edit', label: 'Edit' },
-            { id: 'delete', label: 'Delete', variant: 'danger' },
-          ]
-        : [
-            { id: 'add_follow_up', label: 'Add follow-up', variant: 'primary' },
-            { id: 'edit', label: 'Edit' },
-          ];
-    case 'event':
-      return mode === 'actions'
-        ? [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'add_note', label: 'Add note' },
-            { id: 'create_follow_up', label: 'Create follow-up' },
-            { id: 'reschedule', label: 'Reschedule' },
-            { id: 'dismiss_today', label: 'Dismiss from Today', variant: 'danger' },
-            { id: 'delete', label: 'Delete', variant: 'danger' },
-          ]
-        : [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'add_note', label: 'Add note' },
-            { id: 'create_follow_up', label: 'Create follow-up' },
-            { id: 'reschedule', label: 'Reschedule' },
-          ];
-    case 'reminder':
-      return mode === 'actions'
-        ? [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'snooze_hour', label: 'Snooze 1 hour' },
-            { id: 'snooze_tomorrow', label: 'Snooze tomorrow' },
-            { id: 'edit', label: 'Edit' },
-            { id: 'delete', label: 'Delete', variant: 'danger' },
-          ]
-        : [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'snooze_hour', label: 'Snooze 1 hour' },
-            { id: 'edit', label: 'Edit' },
-          ];
-    case 'task':
-      return mode === 'actions'
-        ? [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'move_tomorrow', label: 'Move to tomorrow' },
-            { id: 'add_focus', label: 'Add to focus' },
-            { id: 'edit', label: 'Edit' },
-            { id: 'delete', label: 'Delete', variant: 'danger' },
-          ]
-        : [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'move_tomorrow', label: 'Move to tomorrow' },
-            { id: 'edit', label: 'Edit' },
-          ];
-    case 'project_action':
-      return mode === 'actions'
-        ? [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'move_tomorrow', label: 'Move to tomorrow' },
-            { id: 'open_project', label: 'Open project' },
-            { id: 'edit', label: 'Edit' },
-            { id: 'delete', label: 'Delete', variant: 'danger' },
-          ]
-        : [
-            { id: 'complete', label: 'Mark as done', variant: 'primary' },
-            { id: 'open_project', label: 'Open project' },
-            { id: 'edit', label: 'Edit' },
-          ];
-    default:
-      return [];
-  }
+  return getTodayItemActions(item, { onAction: () => undefined, includeDestructive: mode === 'actions' })
+    .filter((action) => mode === 'actions' || !['delete', 'dismiss_today', 'edit'].includes(action.id))
+    .map((action) => ({
+      id: action.id,
+      label: action.label,
+      variant: action.role === 'destructive' ? 'danger' : action.id === 'complete' || action.id === 'mark_done' || action.id === 'add_follow_up' ? 'primary' : undefined,
+    }));
 }
 
 export function TodayItemDetailSheet({ visible, item, mode, onClose, onAction }: TodayItemDetailSheetProps) {
