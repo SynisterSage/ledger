@@ -31,10 +31,22 @@ export function useMobileMonthCalendarItems(workspaceId: string, monthDate: Date
     void getMobileCalendarMonth(workspaceId, monthRange.startDate, monthRange.endDate)
       .then((payload) => {
         if (cancelled) return;
-        setItems(payload.items.map(toCalendarItem).filter((item): item is MobileCalendarItem => Boolean(item)));
+        const nextItems = payload.items.map(toCalendarItem).filter((item): item is MobileCalendarItem => Boolean(item));
+        console.log('[mobile-calendar-month-client]', {
+          workspaceId,
+          startDate: monthRange.startDate,
+          endDate: monthRange.endDate,
+          received: payload.items.length,
+          normalized: nextItems.length,
+          dates: nextItems.map((item) => item.dateKey),
+        });
+        setItems(nextItems);
       })
       .catch((nextError: unknown) => {
-        if (!cancelled) setError(nextError instanceof Error ? nextError.message : 'Month items could not be loaded.');
+        if (!cancelled) {
+          console.error('[mobile-calendar-month-client]', nextError);
+          setError(nextError instanceof Error ? nextError.message : 'Month items could not be loaded.');
+        }
       })
       .finally(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };

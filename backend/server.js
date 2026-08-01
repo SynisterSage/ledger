@@ -13304,6 +13304,17 @@ app.get('/api/mobile/calendar/month', async (req, res) => {
       items.push({ id: `milestone:${milestone.id}`, type: 'milestone', title: String(milestone.title), dateKey, allDay: true, completed: Boolean(milestone.completed), sourceName: 'Milestone', workspaceId: String(milestone.workspace_id ?? scope.workspaceId), ...projectContext(milestone.project_id), status: milestone.status ?? null });
     }
 
+    console.log('[mobile-calendar-month]', {
+      workspaceId: scope.workspaceId,
+      startDate,
+      endDate,
+      events: eventsResult.data?.length ?? 0,
+      reminders: remindersResult.data?.length ?? 0,
+      tasks: tasksResult.data?.length ?? 0,
+      projects: projectsResult.data?.length ?? 0,
+      milestones: milestonesResult.data?.length ?? 0,
+      items: items.length,
+    });
     res.json({ workspace_id: scope.workspaceId, start_date: startDate, end_date: endDate, items });
   } catch (error) {
     return respondWithMobileError(res, error);
