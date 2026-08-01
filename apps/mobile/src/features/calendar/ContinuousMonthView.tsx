@@ -1,40 +1,23 @@
-import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { Fragment, forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { FlatList, Pressable, StyleSheet, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
-import {
-  addCalendarMonths,
-  formatCalendarDateKey,
-  formatCalendarMonthKey,
-  generateCalendarMonth,
-  generateCalendarMonths,
-  getCalendarWeekdayLabels,
-  type CalendarMonth,
-} from './calendarMonthGenerator';
+import { addCalendarMonths, formatCalendarDateKey, formatCalendarMonthKey, generateCalendarMonth, generateCalendarMonths, getCalendarWeekdayLabels, type CalendarMonth } from './calendarMonthGenerator';
 import { useMobileMonthCalendarItems } from './useMobileMonthCalendarItems';
 import type { MobileCalendarItem, MobileCalendarItemType } from './calendarItemNormalizer';
 import type { CalendarFilters } from './calendarFilters';
 import { SelectedDayAgenda } from './SelectedDayAgenda';
 
-const INITIAL_MONTHS_BEFORE = 12;
-const INITIAL_MONTHS_AFTER = 18;
-const MONTH_LABEL_HEIGHT = 52;
+const MONTHS_BEFORE = 12;
+const MONTHS_AFTER = 18;
 const EXTENSION_MONTHS = 12;
-const TOP_EXTENSION_THRESHOLD = 420;
-const MAX_VISIBLE_ITEMS = 2;
+const MAX_VISIBLE_ITEMS = 3;
 
-export type ContinuousMonthViewHandle = {
-  scrollToToday: () => void;
-  scrollToMonth: (date: Date) => void;
-};
+export type ContinuousMonthViewHandle = { scrollToToday: () => void; scrollToMonth: (date: Date) => void };
+export type MonthScrollState = { offset: number; visibleMonthKey: string };
 
-export type MonthScrollState = {
-  offset: number;
-  visibleMonthKey: string;
-};
-
-type ContinuousMonthViewProps = {
+type Props = {
   selectedDate: Date;
   visiblePeriod: Date;
   workspaceId: string;
@@ -48,9 +31,8 @@ type ContinuousMonthViewProps = {
   onCreateForDate?: (date: Date) => void;
 };
 
-type CalendarSymbolName = ComponentProps<typeof SymbolView>['name'];
-
-const symbolByItemType: Record<MobileCalendarItemType, CalendarSymbolName> = {
+type SymbolName = ComponentProps<typeof SymbolView>['name'];
+const iconByType: Record<MobileCalendarItemType, SymbolName> = {
   event: { ios: 'calendar', android: 'event', web: 'event' },
   external_event: { ios: 'calendar', android: 'event', web: 'event' },
   reminder: { ios: 'bell', android: 'notifications_none', web: 'notifications_none' },
@@ -60,282 +42,92 @@ const symbolByItemType: Record<MobileCalendarItemType, CalendarSymbolName> = {
   project_deadline: { ios: 'target', android: 'gps_fixed', web: 'gps_fixed' },
 };
 
-const labelByItemType: Record<MobileCalendarItemType, string> = {
-  event: 'Event',
-  external_event: 'Imported event',
-  reminder: 'Reminder',
-  task: 'Task',
-  project_action: 'Project action',
-  milestone: 'Milestone',
-  project_deadline: 'Project deadline',
-};
-
-function formatItemTime(item: MobileCalendarItem) {
+function itemTime(item: MobileCalendarItem) {
   if (!item.startAt || item.allDay) return null;
-  const date = new Date(item.startAt);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const value = new Date(item.startAt);
+  return Number.isNaN(value.getTime()) ? null : value.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function MonthCalendarItem({ item, onPress, onLongPress }: { item: MobileCalendarItem; onPress: () => void; onLongPress: () => void }) {
+const MonthItem = memo(function MonthItem({ item, onPress, onLongPress }: { item: MobileCalendarItem; onPress: () => void; onLongPress: () => void }) {
   const theme = useLedgerTheme();
-  const sourceColor = item.sourceColor ?? theme.colors.accent;
-  const timeLabel = formatItemTime(item);
-  const statusLabel = item.completed ? ', completed' : item.overdue ? ', overdue' : item.readOnly ? ', read only' : '';
+  const color = item.sourceColor ?? theme.colors.accent;
+  const time = itemTime(item);
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${item.title}${time ? `, ${time}` : ''}`} onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.item, { backgroundColor: `${color}22`, opacity: pressed ? 0.55 : item.completed ? 0.5 : 1 }]}>
+    <View style={[styles.itemBar, { backgroundColor: color }]} />
+    <SymbolView name={iconByType[item.type]} size={9} tintColor={color} />
+    {time ? <AppText variant="caption" numberOfLines={1} style={styles.itemTime}>{time}</AppText> : null}
+    <AppText variant="caption" numberOfLines={1} style={[styles.itemTitle, { color: theme.colors.textPrimary, textDecorationLine: item.completed ? 'line-through' : 'none' }]}>{item.title}</AppText>
+  </Pressable>;
+});
 
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${labelByItemType[item.type]}, ${item.title}${timeLabel ? `, ${timeLabel}` : item.allDay ? ', all day' : ''}${item.projectName ? `, ${item.projectName}` : ''}${statusLabel}`}
-      accessibilityHint="Opens calendar item details. Long press for actions."
-      onPress={onPress}
-      onLongPress={onLongPress}
-      style={({ pressed }) => [styles.itemRow, { backgroundColor: theme.colors.surfaceMuted, opacity: pressed ? 0.62 : item.completed || item.overdue ? 0.58 : 1 }]}
-    >
-      <View style={[styles.itemSourceLine, { backgroundColor: sourceColor }]} />
-      <SymbolView name={symbolByItemType[item.type]} size={10} tintColor={item.overdue ? theme.colors.warning : sourceColor} />
-      {timeLabel ? <AppText variant="caption" style={styles.itemTime}>{timeLabel}</AppText> : null}
-      <AppText variant="caption" numberOfLines={1} style={[styles.itemTitle, { color: theme.colors.textPrimary, textDecorationLine: item.completed ? 'line-through' : 'none' }]}>{item.title}</AppText>
-    </Pressable>
-  );
-}
-
-function MonthBlock({ month, selectedDate, itemsByDate, onSelectDate, onOpenItem, onLongPressItem, onCreateForDate }: { month: CalendarMonth; selectedDate: Date; itemsByDate: Record<string, MobileCalendarItem[]>; onSelectDate: (date: Date) => void; onOpenItem: (item: MobileCalendarItem) => void; onLongPressItem: (item: MobileCalendarItem) => void; onCreateForDate: (date: Date) => void }) {
+const MonthBlock = memo(function MonthBlock({ month, selectedDate, itemsByDate, onSelectDate, onOpenItem, onLongPressItem, onCreateForDate }: { month: CalendarMonth; selectedDate: Date; itemsByDate: Record<string, MobileCalendarItem[]>; onSelectDate: (date: Date) => void; onOpenItem: (item: MobileCalendarItem) => void; onLongPressItem: (item: MobileCalendarItem) => void; onCreateForDate: (date: Date) => void }) {
   const theme = useLedgerTheme();
   const selectedKey = formatCalendarDateKey(selectedDate);
-  const selectedMonthKey = formatCalendarMonthKey(selectedDate);
-
-  return (
-    <View>
-      <View style={styles.monthLabel}>
-        <AppText variant="bodyStrong" style={{ color: theme.colors.textPrimary }}>{month.label}</AppText>
+  return <View>
+    <View style={styles.monthLabel}><AppText variant="bodyStrong">{month.label}</AppText></View>
+    {month.weeks.map((week) => <Fragment key={week[0].dateKey}>
+      <View style={[styles.week, { borderBottomColor: theme.colors.borderSubtle }]}>
+        {week.map((day) => {
+          const items = itemsByDate[day.dateKey] ?? [];
+          const visible = items.slice(0, MAX_VISIBLE_ITEMS);
+          const more = items.length - visible.length;
+          const selected = day.dateKey === selectedKey;
+          return <View key={day.dateKey} style={styles.cell}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`${day.date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${items.length ? `, ${items.length} items` : ''}`} onPress={() => onSelectDate(day.date)} style={styles.dateTarget}>
+              <View style={[styles.number, day.isToday && { backgroundColor: theme.colors.accent }, selected && !day.isToday && { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent }]}><AppText variant="body" style={{ color: day.isToday ? '#FFFFFF' : day.isCurrentMonth ? theme.colors.textPrimary : theme.colors.textMuted, fontWeight: day.isToday || selected ? '700' : '400' }}>{day.dayNumber}</AppText></View>
+            </Pressable>
+            <View style={styles.items}>
+              {visible.map((item) => <MonthItem key={item.id} item={item} onPress={() => { onSelectDate(day.date); onOpenItem(item); }} onLongPress={() => { onSelectDate(day.date); onLongPressItem(item); }} />)}
+              {more > 0 ? <Pressable accessibilityRole="button" onPress={() => onSelectDate(day.date)}><AppText variant="caption" style={styles.more}>+{more} more</AppText></Pressable> : null}
+            </View>
+          </View>;
+        })}
       </View>
-      {month.weeks.map((week, weekIndex) => <Fragment key={week[0].dateKey}>
-        <View style={[styles.weekRow, { borderBottomColor: theme.colors.borderSubtle }]}>
-          {week.map((day) => {
-            const isSelected = month.monthKey === selectedMonthKey && day.dateKey === selectedKey;
-            const dayItems = itemsByDate[day.dateKey] ?? [];
-            const visibleItems = dayItems.slice(0, MAX_VISIBLE_ITEMS);
-            const hiddenCount = Math.max(0, dayItems.length - visibleItems.length);
-            return (
-              <Pressable
-                key={day.dateKey}
-                accessibilityRole="button"
-                accessibilityLabel={`${day.date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${day.isToday ? ', today' : ''}${isSelected ? ', selected' : ''}${dayItems.length ? `, ${dayItems.length} calendar item${dayItems.length === 1 ? '' : 's'}` : ''}`}
-                onPress={() => onSelectDate(day.date)}
-                style={styles.dayCell}
-              >
-                <View style={[
-                  styles.dayNumber,
-                  day.isToday && { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
-                  isSelected && !day.isToday && { backgroundColor: theme.colors.accentSoft, borderColor: theme.colors.accent },
-                ]}>
-                  <AppText variant="body" style={{
-                    color: day.isToday ? '#FFFFFF' : day.isCurrentMonth ? theme.colors.textPrimary : theme.colors.textMuted,
-                    fontWeight: isSelected || day.isToday ? '600' : '400',
-                  }}>{day.dayNumber}</AppText>
-                </View>
-                <View style={styles.itemList}>
-                  {visibleItems.map((item) => <MonthCalendarItem key={item.id} item={item} onPress={() => { onSelectDate(day.date); onOpenItem(item); }} onLongPress={() => { onSelectDate(day.date); onLongPressItem(item); }} />)}
-                  {hiddenCount > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={`${hiddenCount} more calendar item${hiddenCount === 1 ? '' : 's'} on ${day.date.toLocaleDateString([], { month: 'long', day: 'numeric' })}`} onPress={() => onSelectDate(day.date)} style={styles.overflowButton}><AppText variant="caption" numberOfLines={1} style={{ color: theme.colors.textMuted }}>+{hiddenCount}</AppText></Pressable> : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-        {month.monthKey === selectedMonthKey && week.some((day) => day.dateKey === selectedKey) ? <SelectedDayAgenda date={selectedDate} items={itemsByDate[selectedKey] ?? []} onCreate={onCreateForDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} /> : null}
-      </Fragment>)}
-    </View>
-  );
-}
+      {month.monthKey === formatCalendarMonthKey(selectedDate) && week.some((day) => day.dateKey === selectedKey) ? <SelectedDayAgenda date={selectedDate} items={itemsByDate[selectedKey] ?? []} onCreate={onCreateForDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} /> : null}
+    </Fragment>)}
+  </View>;
+});
 
-export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, ContinuousMonthViewProps>(function ContinuousMonthView({ selectedDate, visiblePeriod, workspaceId, filters, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem = () => undefined, onLongPressItem = onOpenItem, onCreateForDate = () => undefined }, ref) {
+export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Props>(function ContinuousMonthView({ selectedDate, visiblePeriod, workspaceId, filters, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem = () => undefined, onLongPressItem = onOpenItem, onCreateForDate = () => undefined }, ref) {
   const theme = useLedgerTheme();
   const { width } = useWindowDimensions();
   const { itemsByDate, isLoading, error, retry } = useMobileMonthCalendarItems(workspaceId, visiblePeriod, filters);
-  // FlatList is a PureComponent. The month cells must be invalidated when the
-  // async calendar range resolves, otherwise they can remain the initial empty
-  // render even though Day and Agenda have received the same items.
-  const itemsVersion = useMemo(
-    () => Object.entries(itemsByDate)
-      .flatMap(([dateKey, items]) => items.map((item) => `${dateKey}:${item.id}`))
-      .join('|'),
-    [itemsByDate],
-  );
   const listRef = useRef<FlatList<Date>>(null);
   const today = useMemo(() => new Date(), []);
-  const initialMonth = useMemo(() => addCalendarMonths(today, -INITIAL_MONTHS_BEFORE), [today]);
-  const [months, setMonths] = useState(() => generateCalendarMonths(initialMonth, INITIAL_MONTHS_BEFORE + INITIAL_MONTHS_AFTER + 1));
-  const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
-  const hasRestoredPositionRef = useRef(false);
-  const onChangeVisiblePeriodRef = useRef(onChangeVisiblePeriod);
-  const onScrollStateChangeRef = useRef(onScrollStateChange);
-  const scrollOffsetRef = useRef(scrollState?.offset ?? 0);
-  const isExtendingTopRef = useRef(false);
-  const previousWorkspaceIdRef = useRef(workspaceId);
-  const previousSelectedDateKeyRef = useRef(formatCalendarDateKey(selectedDate));
-  const firstWeekday = useMemo(() => {
-    const labels = getCalendarWeekdayLabels();
-    return labels;
-  }, []);
-  const monthItems = useMemo(() => months.map((date) => date), [months]);
-  const monthByKey = useMemo(() => new Map(monthItems.map((date) => [formatCalendarMonthKey(date), date])), [monthItems]);
-  const todayIndex = useMemo(() => monthItems.findIndex((date) => formatCalendarMonthKey(date) === formatCalendarMonthKey(today)), [monthItems, today]);
+  const [months, setMonths] = useState(() => generateCalendarMonths(addCalendarMonths(today, -MONTHS_BEFORE), MONTHS_BEFORE + MONTHS_AFTER + 1));
+  const monthItems = useMemo(() => months, [months]);
+  const viewableConfig = useRef({ itemVisiblePercentThreshold: 35 }).current;
+  const monthIndex = useCallback((date: Date) => months.findIndex((item) => formatCalendarMonthKey(item) === formatCalendarMonthKey(date)), [months]);
+  const scrollToMonth = useCallback((date: Date) => { const index = monthIndex(date); if (index >= 0) { listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.12 }); onChangeVisiblePeriod(date); } }, [monthIndex, onChangeVisiblePeriod]);
+  useImperativeHandle(ref, () => ({ scrollToToday: () => scrollToMonth(today), scrollToMonth }), [scrollToMonth, today]);
 
-  useEffect(() => {
-    hasRestoredPositionRef.current = hasRestoredPosition;
-    onChangeVisiblePeriodRef.current = onChangeVisiblePeriod;
-    onScrollStateChangeRef.current = onScrollStateChange;
-    scrollOffsetRef.current = scrollState?.offset ?? 0;
-  }, [hasRestoredPosition, onChangeVisiblePeriod, onScrollStateChange, scrollState?.offset]);
+  const renderMonth = useCallback(({ item }: { item: Date }) => <MonthBlock month={generateCalendarMonth(item, selectedDate, today)} selectedDate={selectedDate} itemsByDate={itemsByDate} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} onCreateForDate={onCreateForDate} />, [itemsByDate, onCreateForDate, onLongPressItem, onOpenItem, onSelectDate, selectedDate, today]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item?: Date; isViewable?: boolean }> }) => { const first = viewableItems.find((entry) => entry.isViewable !== false)?.item; if (first) onChangeVisiblePeriod(first); }).current;
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => { const offset = event.nativeEvent.contentOffset.y; const first = months[0]; if (offset < 350 && first) setMonths((current) => [...generateCalendarMonths(addCalendarMonths(first, -EXTENSION_MONTHS), EXTENSION_MONTHS), ...current]); onScrollStateChange?.({ offset, visibleMonthKey: formatCalendarMonthKey(visiblePeriod) }); }, [months, onScrollStateChange, visiblePeriod]);
 
-  const renderMonth = useCallback(({ item }: { item: Date }) => (
-    <MonthBlock month={generateCalendarMonth(item, selectedDate, today)} selectedDate={selectedDate} itemsByDate={itemsByDate} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} onCreateForDate={onCreateForDate} />
-  ), [itemsByDate, onCreateForDate, onLongPressItem, onOpenItem, onSelectDate, selectedDate, today]);
-
-  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offset = event.nativeEvent.contentOffset.y;
-    if (offset >= TOP_EXTENSION_THRESHOLD) isExtendingTopRef.current = false;
-    if (offset < TOP_EXTENSION_THRESHOLD && months[0] && !isExtendingTopRef.current) {
-      isExtendingTopRef.current = true;
-      const first = months[0];
-      setMonths((current) => [
-        ...generateCalendarMonths(addCalendarMonths(first, -EXTENSION_MONTHS), EXTENSION_MONTHS),
-        ...current,
-      ]);
-    }
-  }, [months]);
-
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item?: Date; isViewable?: boolean }> }) => {
-    if (!hasRestoredPositionRef.current) return;
-    const firstVisible = viewableItems.find((token) => token.isViewable !== false)?.item;
-    if (!firstVisible) return;
-    onChangeVisiblePeriodRef.current(firstVisible);
-    onScrollStateChangeRef.current?.({ offset: scrollOffsetRef.current, visibleMonthKey: formatCalendarMonthKey(firstVisible) });
-  }).current;
-
-  const scrollToMonth = useCallback((date: Date) => {
-    const index = months.findIndex((month) => formatCalendarMonthKey(month) === formatCalendarMonthKey(date));
-    if (index >= 0) {
-      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.18 });
-      onChangeVisiblePeriod(date);
-    }
-  }, [months, onChangeVisiblePeriod]);
-
-  useImperativeHandle(ref, () => ({
-    scrollToToday: () => scrollToMonth(today),
-    scrollToMonth,
-  }), [scrollToMonth, today]);
-
-  useEffect(() => {
-    const selectedKey = formatCalendarDateKey(selectedDate);
-    if (previousSelectedDateKeyRef.current === selectedKey || !hasRestoredPosition) return;
-    previousSelectedDateKeyRef.current = selectedKey;
-    requestAnimationFrame(() => scrollToMonth(selectedDate));
-  }, [hasRestoredPosition, scrollToMonth, selectedDate]);
-
-  useEffect(() => {
-    if (previousWorkspaceIdRef.current !== workspaceId) {
-      previousWorkspaceIdRef.current = workspaceId;
-      setHasRestoredPosition(false);
-    }
-  }, [workspaceId]);
-
-  useEffect(() => {
-    if (hasRestoredPosition || !scrollState) return;
-    const target = monthByKey.get(scrollState.visibleMonthKey);
-    if (!target) return;
-    const index = months.findIndex((month) => formatCalendarMonthKey(month) === formatCalendarMonthKey(target));
-    if (index >= 0) {
-      onChangeVisiblePeriodRef.current(target);
-      requestAnimationFrame(() => {
-        listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.18 });
-        setHasRestoredPosition(true);
-      });
-    }
-  }, [hasRestoredPosition, monthByKey, months, scrollState]);
-
-  useEffect(() => {
-    if (scrollState || hasRestoredPosition) return;
-    if (todayIndex < 0) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const restoreToday = () => {
-      onChangeVisiblePeriodRef.current(today);
-      listRef.current?.scrollToIndex({ index: todayIndex, animated: false, viewPosition: 0.3 });
-      setHasRestoredPosition(true);
-    };
-    requestAnimationFrame(() => { timer = setTimeout(restoreToday, 120); });
-    return () => { if (timer) clearTimeout(timer); };
-  }, [hasRestoredPosition, scrollState, todayIndex]);
-
-  useEffect(() => {
-    if (scrollState || hasRestoredPosition) return;
-    // Keep the range loader anchored to the selected date while the virtualized
-    // list is still measuring its initial months. The first viewability callback
-    // may otherwise report the pre-anchor month and fetch the wrong year.
-    onChangeVisiblePeriod(selectedDate);
-  }, [hasRestoredPosition, onChangeVisiblePeriod, scrollState, selectedDate]);
-
-  useEffect(() => {
-    if (formatCalendarMonthKey(visiblePeriod) === formatCalendarMonthKey(today)) return;
-    const month = monthByKey.get(formatCalendarMonthKey(visiblePeriod));
-    if (month && formatCalendarMonthKey(visiblePeriod) !== scrollState?.visibleMonthKey) {
-      const index = months.findIndex((item) => formatCalendarMonthKey(item) === formatCalendarMonthKey(month));
-      if (index >= 0) listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.18 });
-    }
-  }, [monthByKey, months, scrollState?.visibleMonthKey, today, visiblePeriod]);
-
-  return (
-    <View style={styles.container}>
-      <View style={[styles.weekdayHeader, { backgroundColor: theme.colors.background, borderBottomColor: theme.colors.borderSubtle }]}>
-        {firstWeekday.map((label, index) => <AppText key={`${label}-${index}`} variant="caption" style={styles.weekday}>{label}</AppText>)}
-      </View>
-      {error ? <View style={[styles.inlineError, { borderBottomColor: theme.colors.borderSubtle }]}><AppText variant="caption" numberOfLines={1}>{error}</AppText><Pressable onPress={retry}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : isLoading ? <View style={[styles.loadingLine, { backgroundColor: theme.colors.surfaceMuted }]} /> : null}
-      <FlatList
-        ref={listRef}
-        data={monthItems}
-        renderItem={renderMonth}
-        keyExtractor={(item) => formatCalendarMonthKey(item)}
-        onScroll={onScroll}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 35 }}
-        scrollEventThrottle={100}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 24 }}
-        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-        onEndReachedThreshold={0.35}
-        onEndReached={() => {
-          const last = months[months.length - 1];
-          if (!last) return;
-          setMonths((current) => [...current, ...generateCalendarMonths(addCalendarMonths(last, 1), EXTENSION_MONTHS)]);
-        }}
-        onScrollToIndexFailed={({ index }) => {
-          setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.18 }), 80);
-        }}
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        windowSize={7}
-        removeClippedSubviews
-        extraData={`${selectedDate.getTime()}-${workspaceId}-${width}-${itemsVersion}`}
-      />
-    </View>
-  );
+  return <View style={styles.container}>
+    <View style={[styles.weekdays, { backgroundColor: theme.colors.background, borderBottomColor: theme.colors.borderSubtle }]}>{getCalendarWeekdayLabels().map((label, index) => <AppText key={`${label}-${index}`} variant="caption" style={styles.weekday}>{label}</AppText>)}</View>
+    {error ? <View style={styles.status}><AppText variant="caption">{error}</AppText><Pressable onPress={retry}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : isLoading ? <View style={[styles.loading, { backgroundColor: theme.colors.surfaceMuted }]} /> : null}
+    <FlatList ref={listRef} data={monthItems} renderItem={renderMonth} keyExtractor={(item) => formatCalendarMonthKey(item)} extraData={{ itemsByDate, selectedDate, width }} onViewableItemsChanged={onViewableItemsChanged} viewabilityConfig={viewableConfig} onScroll={onScroll} scrollEventThrottle={100} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} initialNumToRender={3} maxToRenderPerBatch={3} windowSize={5} onEndReached={() => { const last = months[months.length - 1]; if (last) setMonths((current) => [...current, ...generateCalendarMonths(addCalendarMonths(last, 1), EXTENSION_MONTHS)]); }} onScrollToIndexFailed={({ index }) => setTimeout(() => listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.12 }), 100)} />
+  </View>;
 });
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  weekdayHeader: { minHeight: 32, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
+  content: { paddingBottom: 24 },
+  weekdays: { minHeight: 32, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
   weekday: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '600' },
-  monthLabel: { height: MONTH_LABEL_HEIGHT, justifyContent: 'flex-end', paddingBottom: 9 },
-  weekRow: { height: 96, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
-  dayCell: { flex: 1, minHeight: 44, alignItems: 'center', paddingTop: 7 },
-  dayNumber: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
-  itemList: { width: '100%', paddingHorizontal: 2, paddingTop: 2, gap: 1 },
-  itemRow: { height: 19, width: '100%', flexDirection: 'row', alignItems: 'center', gap: 3, overflow: 'hidden', borderRadius: 4, paddingHorizontal: 2 },
-  itemSourceLine: { width: 2, height: 14, borderRadius: 1 },
-  itemTime: { fontSize: 8.5, lineHeight: 11, maxWidth: 28 },
-  itemTitle: { flex: 1, fontSize: 10, lineHeight: 12 },
-  overflowButton: { height: 16, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 4 },
-  inlineError: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 4 },
-  loadingLine: { height: 2, width: '35%', opacity: 0.45 },
+  monthLabel: { height: 48, justifyContent: 'flex-end', paddingBottom: 8, paddingHorizontal: 2 },
+  week: { minHeight: 104, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
+  cell: { flex: 1, minWidth: 0, alignItems: 'stretch', paddingTop: 6, paddingHorizontal: 2 },
+  dateTarget: { alignItems: 'center', minHeight: 28 },
+  number: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
+  items: { gap: 2, paddingTop: 2 },
+  item: { height: 19, minWidth: 0, borderRadius: 4, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 2, overflow: 'hidden' },
+  itemBar: { width: 2, height: 13, borderRadius: 1 },
+  itemTime: { fontSize: 8, maxWidth: 25 },
+  itemTitle: { flex: 1, minWidth: 0, fontSize: 9, lineHeight: 11 },
+  more: { fontSize: 9, paddingLeft: 3 },
+  status: { minHeight: 28, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4 },
+  loading: { height: 2, width: '35%', opacity: 0.5 },
 });

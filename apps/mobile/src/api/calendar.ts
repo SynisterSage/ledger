@@ -12,44 +12,6 @@ export type MobileCalendarRangeResponse = {
   calendars: Array<Record<string, unknown>>;
 };
 
-export type MobileCalendarMonthItem = {
-  id: string;
-  type: string;
-  title: string;
-  dateKey: string;
-  startAt?: string | null;
-  endAt?: string | null;
-  allDay?: boolean;
-  completed?: boolean;
-  sourceId?: string | null;
-  sourceName?: string | null;
-  sourceColor?: string | null;
-  sourceKey?: string | null;
-  sourceKind?: 'calendar' | 'reminder' | null;
-  calendarId?: string | null;
-  workspaceId: string;
-  projectId?: string | null;
-  projectName?: string | null;
-  readOnly?: boolean;
-  noteId?: string | null;
-  notes?: string | null;
-  location?: string | null;
-  recurrenceRule?: string | null;
-  status?: string | null;
-};
-
-export type MobileCalendarMonthResponse = {
-  workspace_id: string;
-  start_date: string;
-  end_date: string;
-  items: MobileCalendarMonthItem[];
-};
-
-export async function getMobileCalendarMonth(workspaceId: string, startDate: string, endDate: string) {
-  const params = new URLSearchParams({ workspace_id: workspaceId, start_date: startDate, end_date: endDate });
-  return mobileRequest<MobileCalendarMonthResponse>(`/api/mobile/calendar/month?${params.toString()}`);
-}
-
 export async function getMobileCalendarRange(workspaceId: string, startDate: string, endDate: string) {
   const params = new URLSearchParams({
     workspace_id: workspaceId,
