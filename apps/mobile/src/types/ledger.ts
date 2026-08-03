@@ -34,6 +34,8 @@ export type MobileUpcomingItem = {
   status: 'upcoming';
   sourceType: 'calendar_event' | 'reminder' | 'task' | 'project';
   sourceId: string;
+  projectType?: string | null;
+  projectColor?: string | null;
   assignedToUserId?: string | null;
   assignedToUserName?: string | null;
   assignedToCurrentUser?: boolean;
@@ -50,6 +52,8 @@ export type MobileTodayItem = {
   status: 'active' | 'overdue';
   sourceType: 'task' | 'reminder' | 'project_action' | 'calendar_event';
   sourceId: string;
+  projectType?: string | null;
+  projectColor?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
   timeLabel?: string | null;
@@ -105,6 +109,8 @@ export type MobileTodayProject = {
   workspaceName: string | null;
   sourceType: 'project';
   sourceId: string;
+  projectType?: string | null;
+  projectColor?: string | null;
   meta: string;
   dueLabel: string;
   status: 'active' | 'overdue';
@@ -237,6 +243,9 @@ export type MobileNotificationCenterItem = {
   moduleKind: string | null;
   actions: MobileNotificationAction[];
   scheduledFor: string | null;
+  createdAt?: string | null;
+  unread?: boolean;
+  readAt?: string | null;
   deliveredInAppAt: string | null;
   deliveredDesktopAt: string | null;
   dismissedAt: string | null;
@@ -249,6 +258,7 @@ export type MobileNotificationCenterResponse = {
   earlier: MobileNotificationCenterItem[];
   counts: {
     active: number;
+    unread?: number;
     earlier: number;
     total: number;
   };

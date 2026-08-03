@@ -17,6 +17,7 @@ const TOOLBAR_HEIGHT = 42;
 const DAY_HEADER_HEIGHT = 46;
 const ALL_DAY_HEIGHT = 54;
 const HOUR_HEIGHT = 58;
+const TIMELINE_TOP = DAY_HEADER_HEIGHT + ALL_DAY_HEIGHT;
 const DAY_COLUMN_MIN_WIDTH = 94;
 const DAY_COUNT = 7;
 const DAY_LABEL_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric' });
@@ -145,6 +146,9 @@ export function LandscapeWeekView({
     () => itemsByDay.map((dayItems) => dayItems.filter((item) => !item.startAt || item.allDay)),
     [itemsByDay],
   );
+  const todayIndex = days.findIndex((day) => isSameDate(day, now));
+  const currentHour = now.getHours();
+  const currentY = (now.getHours() * 60 + now.getMinutes()) / 60 * HOUR_HEIGHT;
 
   useEffect(() => {
     if (isLoading || didInitialScrollRef.current) return;
@@ -194,10 +198,14 @@ export function LandscapeWeekView({
       <View style={styles.gridRow}>
         <ScrollView ref={gutterRef} scrollEnabled={false} showsVerticalScrollIndicator={false} style={[styles.gutter, { width: TIME_GUTTER_WIDTH }]} contentContainerStyle={{ paddingTop: DAY_HEADER_HEIGHT + ALL_DAY_HEIGHT }}>
           {Array.from({ length: 24 }, (_, hour) => (
-            <View key={hour} style={[styles.hourRow, { height: HOUR_HEIGHT }]}>
-              <AppText variant="caption" style={[styles.hourLabel, { color: theme.colors.textMuted }]}>{new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).format(new Date(2020, 0, 1, hour))}</AppText>
+            <View
+              key={hour}
+              style={[styles.hourRow, { height: HOUR_HEIGHT }]}
+            >
+              {!(todayIndex >= 0 && currentHour === hour) ? <AppText variant="caption" style={[styles.hourLabel, { color: theme.colors.textMuted }]}>{new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).format(new Date(2020, 0, 1, hour))}</AppText> : null}
             </View>
           ))}
+          {todayIndex >= 0 ? <View pointerEvents="none" style={[styles.gutterNowBadge, { top: TIMELINE_TOP + currentY - 9, backgroundColor: theme.colors.accent }]}><AppText variant="caption" style={styles.nowText}>{compactTime(now)}</AppText></View> : null}
         </ScrollView>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ width: canvasWidth }}>
@@ -282,11 +290,7 @@ export function LandscapeWeekView({
                     </Pressable>
                   );
                 }))}
-                {days.map((day, index) => isSameDate(day, now) ? (
-                  <View key={`now-${formatCalendarDateKey(day)}`} pointerEvents="none" style={[styles.nowLine, { left: index * dayColumnWidth + 2, top: (now.getHours() * 60 + now.getMinutes()) / 60 * HOUR_HEIGHT, width: dayColumnWidth - 4, backgroundColor: theme.colors.accent }]}>
-                    <View style={[styles.nowBadge, { backgroundColor: theme.colors.accent }]}><AppText variant="caption" style={styles.nowText}>{compactTime(now)}</AppText></View>
-                  </View>
-                ) : null)}
+                {todayIndex >= 0 ? <View pointerEvents="none" style={[styles.nowLine, { top: currentY, width: canvasWidth, backgroundColor: theme.colors.accent }]} /> : null}
               </View>
             </ScrollView>
           </View>
@@ -323,7 +327,7 @@ const styles = StyleSheet.create({
   eventBlock: { position: 'absolute', borderLeftWidth: 3, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 3, overflow: 'hidden' },
   eventTitle: { color: '#FFFFFF', fontSize: 11, lineHeight: 14 },
   eventTime: { color: 'rgba(255,255,255,0.7)', fontSize: 9, lineHeight: 12 },
-  nowLine: { position: 'absolute', height: 2, borderRadius: 1 },
-  nowBadge: { position: 'absolute', left: -2, top: -8, minWidth: 38, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  gutterNowBadge: { position: 'absolute', right: 2, minWidth: 43, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, zIndex: 2 },
+  nowLine: { position: 'absolute', left: 0, height: 2, borderRadius: 1, zIndex: 3 },
   nowText: { color: '#FFFFFF', fontSize: 9, lineHeight: 12 },
 });

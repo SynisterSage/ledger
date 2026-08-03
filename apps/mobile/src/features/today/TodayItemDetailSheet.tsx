@@ -184,8 +184,10 @@ export function TodayItemDetailSheet({ visible, item, mode, onClose, onAction }:
       title={item.title}
       subtitle={getItemSubtitle(item)}
       meta={getItemMeta(item)}
+      metaInCard
       body={getItemBody(item, mode) || undefined}
       actions={getActionsForItem(item, mode)}
+      actionsInCard
       onClose={onClose}
       onAction={(actionId) => onAction(actionId, item)}
     />

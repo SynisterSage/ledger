@@ -23,6 +23,8 @@ type MobilePageHeaderProps = {
   workspaceExpanded?: boolean;
   onSettingsPress?: () => void;
   showSettings?: boolean;
+  onBackPress?: () => void;
+  showBack?: boolean;
   workspaceLoading?: boolean;
   scrollY: Animated.Value;
   rightAccessory?: ReactNode;
@@ -35,6 +37,8 @@ export function MobilePageHeader({
   workspaceExpanded = false,
   onSettingsPress,
   showSettings = true,
+  onBackPress,
+  showBack = false,
   workspaceLoading = false,
   scrollY,
   rightAccessory,
@@ -73,6 +77,22 @@ export function MobilePageHeader({
       <HeaderInsetFade backgroundColor={theme.colors.background} height={Math.max(insets.top + 72, 112)} />
       <View style={styles.content}>
         <View style={styles.titleRow}>
+          {showBack ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              hitSlop={8}
+              onPress={onBackPress}
+              style={({ pressed }) => [styles.backButton, { opacity: pressed ? 0.72 : 1 }]}
+            >
+              <SymbolView
+                name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
+                size={22}
+                weight="regular"
+                tintColor={theme.colors.textSecondary}
+              />
+            </Pressable>
+          ) : null}
           <View style={styles.titleCluster}>
             <AppText variant="screenTitle">{title}</AppText>
             {showSettings ? (
@@ -149,18 +169,27 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   content: {
-    alignItems: 'center',
-    gap: 8,
+    alignItems: 'stretch',
+    gap: 4,
   },
   titleRow: {
     width: '100%',
-    alignItems: 'center',
-  },
-  titleCluster: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    width: 28,
+    height: 32,
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    gap: 5,
+    marginRight: 4,
+  },
+  titleCluster: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   iconButton: {
     alignItems: 'center',
@@ -168,12 +197,13 @@ const styles = StyleSheet.create({
     transform: [{ translateY: 1 }],
   },
   workspaceButton: {
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 2,
+    paddingVertical: 3,
+    paddingHorizontal: 0,
   },
   workspaceLoadingWrap: {
     alignItems: 'center',

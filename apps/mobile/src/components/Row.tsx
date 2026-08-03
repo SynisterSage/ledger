@@ -12,6 +12,7 @@ type RowProps = {
   onPress?: () => void;
   chevron?: boolean;
   titleVariant?: 'body' | 'bodyStrong' | 'sectionTitle';
+  bordered?: boolean;
 };
 
 export function Row({
@@ -21,6 +22,7 @@ export function Row({
   onPress,
   chevron = false,
   titleVariant = 'bodyStrong',
+  bordered = true,
 }: RowProps) {
   const theme = useLedgerTheme();
 
@@ -32,6 +34,7 @@ export function Row({
           styles.row,
           {
             borderBottomColor: theme.colors.borderSubtle,
+            borderBottomWidth: bordered ? StyleSheet.hairlineWidth : 0,
             opacity: pressed ? 0.72 : 1,
           },
         ]}>
@@ -50,7 +53,15 @@ export function Row({
   }
 
   return (
-    <View style={[styles.row, { borderBottomColor: theme.colors.borderSubtle }]}>
+    <View
+      style={[
+        styles.row,
+        {
+          borderBottomColor: theme.colors.borderSubtle,
+          borderBottomWidth: bordered ? StyleSheet.hairlineWidth : 0,
+        },
+      ]}
+    >
       <View style={[styles.content, { paddingVertical: theme.spacing.md, gap: theme.spacing.lg }]}>
         <View style={[styles.textBlock, { gap: theme.spacing.xs }]}>
           <AppText variant={titleVariant}>{title}</AppText>

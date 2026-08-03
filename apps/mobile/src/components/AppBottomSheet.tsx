@@ -45,6 +45,8 @@ type AppBottomSheetProps = {
   backdropCloseDuration?: number;
   dismissKeyboardOnBackdropPress?: boolean;
   dismissKeyboardOnContentPress?: boolean;
+  avoidKeyboard?: boolean;
+  dragFromContent?: boolean;
 };
 
 const DEFAULT_SNAP_POINTS: AppBottomSheetSnapPoint[] = ['35%', '55%', '85%'];
@@ -89,6 +91,8 @@ export function AppBottomSheet({
   backdropCloseDuration: backdropCloseDurationProp,
   dismissKeyboardOnBackdropPress = false,
   dismissKeyboardOnContentPress = false,
+  avoidKeyboard = true,
+  dragFromContent = false,
 }: AppBottomSheetProps) {
   const theme = useLedgerTheme();
   const appPreferences = useAppPreferencesState();
@@ -275,11 +279,18 @@ export function AppBottomSheet({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (
-          _: GestureResponderEvent,
-          gestureState: PanResponderGestureState,
-        ) => Math.abs(gestureState.dy) > 2,
+        onStartShouldSetPanResponder: () => !dragFromContent,
+        onMoveShouldSetPanResponder: (_event, gestureState) =>
+          dragFromContent
+            ? gestureState.dy > 3 && gestureState.dy > Math.abs(gestureState.dx)
+            : true,
+        onStartShouldSetPanResponderCapture: () => !dragFromContent,
+        onMoveShouldSetPanResponderCapture: (_event, gestureState) =>
+          dragFromContent
+            ? gestureState.dy > 3 && gestureState.dy > Math.abs(gestureState.dx)
+            : true,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: () => {
           dragStartTranslate.current = currentTranslate.current;
         },
@@ -293,11 +304,18 @@ export function AppBottomSheet({
           gestureState: PanResponderGestureState,
         ) => {
           const shouldClose =
-            gestureState.vy > dragCloseVelocityThreshold ||
             gestureState.dy > dragCloseThreshold ||
-            currentTranslate.current > maxTranslateY + dragCloseSnapMargin;
+            gestureState.vy > dragCloseVelocityThreshold;
 
           if (shouldClose) {
+            closeSheet();
+            return;
+          }
+
+          snapToNearestPoint(currentTranslate.current);
+        },
+        onPanResponderTerminate: (_: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+          if (gestureState.dy > dragCloseThreshold || gestureState.vy > dragCloseVelocityThreshold) {
             closeSheet();
             return;
           }
@@ -310,6 +328,7 @@ export function AppBottomSheet({
       dragCloseThreshold,
       dragCloseVelocityThreshold,
       dragCloseSnapMargin,
+      dragFromContent,
       reduceMotionEnabled,
       translateY,
       maxTranslateY,
@@ -403,7 +422,9 @@ export function AppBottomSheet({
             ) : null}
 
             <ScrollView
+              {...(dragFromContent ? panResponder.panHandlers : {})}
               keyboardShouldPersistTaps="handled"
+              automaticallyAdjustKeyboardInsets={avoidKeyboard}
               onTouchStart={dismissKeyboardOnContentPress ? () => Keyboard.dismiss() : undefined}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={[
@@ -444,9 +465,9 @@ const styles = StyleSheet.create({
   },
   handleRegion: {
     alignItems: 'center',
-    paddingTop: 16,
-    paddingBottom: 16,
-    minHeight: 56,
+    paddingTop: 12,
+    paddingBottom: 20,
+    minHeight: 68,
   },
   handle: {
     width: 42,

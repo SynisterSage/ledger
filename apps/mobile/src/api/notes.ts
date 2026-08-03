@@ -19,6 +19,7 @@ export type MobileNoteSection = {
   color?: string | null;
   parent_id?: string | null;
   sort_order?: number | null;
+  note_count?: number | null;
 };
 
 export type MobilePin = {
@@ -112,8 +113,9 @@ export async function getMobileNote(noteId: string) {
   return mobileRequest<MobileNoteDetail>(`/api/notes/${encodeURIComponent(noteId)}`);
 }
 
-export async function getMobileNoteSummaries(workspaceId: string) {
-  return mobileRequest<{ notes?: MobileNoteSummary[] } | MobileNoteSummary[]>('/api/notes', {
+export async function getMobileNoteSummaries(workspaceId: string, sectionId?: string) {
+  const query = sectionId ? `?section_id=${encodeURIComponent(sectionId)}` : '';
+  return mobileRequest<{ notes?: MobileNoteSummary[] } | MobileNoteSummary[]>(`/api/notes${query}`, {
     headers: { 'x-workspace-id': workspaceId },
   });
 }

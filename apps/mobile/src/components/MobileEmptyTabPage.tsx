@@ -35,7 +35,7 @@ export function MobileEmptyTabPage() {
           workspaceExpanded={workspacePickerOpen}
           onWorkspacePress={() => setWorkspacePickerOpen(true)}
           onSearchPress={openSearch}
-          onNotificationsPress={() => router.push('/(tabs)/notifications')}
+          onNotificationsPress={() => router.push('/notifications')}
           scrollY={scrollY}
         />
         <WorkspaceSelectorSheet

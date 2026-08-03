@@ -238,6 +238,8 @@ function itemRow(
       title={item.title}
       metadata={metadata}
       progress={'type' in item && item.type === 'project' ? item.progress : undefined}
+      projectType={'projectType' in item ? item.projectType : undefined}
+      projectColor={'projectColor' in item ? item.projectColor : undefined}
       leadingLabel={rowLeadingLabel(item)}
       trailingLabel={rowTrailingLabel(item)}
       status={rowStatus(item)}

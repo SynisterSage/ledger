@@ -53,7 +53,8 @@ export default function CaptureScreen() {
           workspaceExpanded={workspacePickerOpen}
           onWorkspacePress={() => setWorkspacePickerOpen(true)}
           onSearchPress={openSearch}
-          onNotificationsPress={() => router.push('/(tabs)/notifications')}
+          onNotificationsPress={() => router.push({ pathname: '/notifications', params: { returnTo: '/(tabs)/capture' } })}
+          onSettingsPress={() => router.push('/settings')}
           scrollY={scrollY}
         />
         <WorkspaceSelectorSheet

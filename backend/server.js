@@ -4212,6 +4212,8 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
       assignedToUserId: task.assigned_to_user_id ?? task.assigned_to ?? null,
       assignedToUserName: assignmentUserById.get(String(task.assigned_to_user_id ?? task.assigned_to ?? '')) ?? null,
       assignedToCurrentUser: Boolean((task.assigned_to_user_id ?? task.assigned_to) === userId),
+      projectType: hasProject ? projectById.get(String(task.project_id))?.project_type ?? null : null,
+      projectColor: hasProject ? projectById.get(String(task.project_id))?.color ?? null : null,
     };
   };
 
@@ -4500,6 +4502,8 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           status: 'upcoming',
           sourceType: 'project',
           sourceId: project.id,
+          projectType: project.project_type ?? null,
+          projectColor: project.color ?? null,
           sortAt: projectEndAt.toISOString(),
         },
         projectKey
@@ -4520,6 +4524,8 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           status: isProjectOverdue ? 'overdue' : 'active',
           sourceType: 'project_action',
           sourceId: project.id,
+          projectType: project.project_type ?? null,
+          projectColor: project.color ?? null,
           timeLabel: formatNotificationTime(projectEndAt) ?? null,
           dateLabel: formatNotificationDateTime(projectEndAt),
           startsAt: projectEndAt.toISOString(),
@@ -4543,6 +4549,8 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
           status: isProjectOverdue ? 'overdue' : 'active',
           sourceType: 'project_action',
           sourceId: project.id,
+          projectType: project.project_type ?? null,
+          projectColor: project.color ?? null,
           sortAt: projectEndAt.toISOString(),
           dateLabel: formatNotificationDateTime(projectEndAt),
           startsAt: projectEndAt.toISOString(),
@@ -4662,6 +4670,8 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         workspaceName: workspaceById.get(project.workspace_id)?.name ?? null,
         sourceType: 'project',
         sourceId: project.id,
+        projectType: project.project_type ?? null,
+        projectColor: project.color ?? null,
         meta: attentionReason ?? (nextAction ? `Next: ${nextAction}` : String(project.status ?? 'Active')),
         dueLabel,
         status: hasAttention ? 'overdue' : 'active',
@@ -21771,11 +21781,15 @@ app.delete('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req,
 app.get('/api/notes', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
-    const { data, error } = await supabase
+    const sectionId = String(req.query.section_id ?? '').trim();
+    let notesQuery = supabase
       .from('notes')
       .select(noteSummarySelectColumns)
-      .eq('workspace_id', workspaceId)
-      .limit(500);
+      .eq('workspace_id', workspaceId);
+
+    if (sectionId) notesQuery = notesQuery.eq('section_id', sectionId);
+
+    const { data, error } = await notesQuery.limit(500);
 
     if (error) throw error;
     const mapped = data ?? [];
@@ -23618,7 +23632,17 @@ app.get(
         .order('sort_order', { ascending: true });
 
       if (error) throw error;
-      res.json(data || []);
+      const sections = Array.isArray(data) ? data : [];
+      const withCounts = await Promise.all(sections.map(async (section) => {
+        const { count, error: countError } = await supabase
+          .from('notes')
+          .select('id', { count: 'exact', head: true })
+          .eq('workspace_id', workspaceId)
+          .eq('section_id', section.id);
+        if (countError) throw countError;
+        return { ...section, note_count: count ?? 0 };
+      }));
+      res.json(withCounts);
     } catch (error) {
       return respondWithError(res, error);
     }

@@ -24,6 +24,7 @@ import { NoteCreationSheet } from '@/features/notes/NoteCreationSheet';
 import { NoteActionSheet, NoteMoveSheet, NoteProjectSheet, SectionActionSheet } from '@/features/notes/NoteOrganizationSheets';
 import { getMobileNotePermissions } from '@/features/notes/notePermissions';
 import { openMobileNote } from '@/features/notes/openMobileNote';
+import { useMobileUnreadNotificationCount } from '@/features/notifications/useMobileUnreadNotificationCount';
 
 type ViewMode = 'home' | 'browse';
 
@@ -50,7 +51,7 @@ function isMeetingLike(item: MobileCalendarItem) {
 
 function SectionLabel({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   const theme = useLedgerTheme();
-  return <View style={styles.sectionHeader}><AppText variant="label" style={{ letterSpacing: 0.7 }}>{title}</AppText>{action ? <Pressable onPress={onAction} hitSlop={8}><AppText variant="caption" style={{ color: theme.colors.accent }}>{action}</AppText></Pressable> : null}</View>;
+  return <View style={styles.sectionHeader}><AppText variant="label" style={{ letterSpacing: 0.5 }}>{title}</AppText>{action ? <Pressable onPress={onAction} hitSlop={8}><AppText variant="caption" style={{ color: theme.colors.accent }}>{action}</AppText></Pressable> : null}</View>;
 }
 
 export default function NotesScreen() {
@@ -58,6 +59,7 @@ export default function NotesScreen() {
   const router = useRouter();
   const scrollY = useRef(new Animated.Value(0)).current;
   const workspaceState = useWorkspaceState();
+  const unreadNotificationCount = useMobileUnreadNotificationCount(workspaceState.selectedWorkspaceId);
   const { openSearch } = useSearchSheet();
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [browseFilters, setBrowseFilters] = useState<NoteBrowseFilters>(DEFAULT_NOTE_BROWSE_FILTERS);
@@ -89,6 +91,8 @@ export default function NotesScreen() {
   const [actionSection, setActionSection] = useState<MobileNoteSection | null>(null);
   const loadedRef = useRef(false);
   const loadTokenRef = useRef(0);
+  const sectionLoadTokenRef = useRef(0);
+  const activeWorkspaceRef = useRef(workspaceState.selectedWorkspaceId);
 
   const workspaceId = workspaceState.selectedWorkspaceId;
   const workspaceLabel = useMemo(() => getWorkspaceLabel(workspaceId, workspaceState.options), [workspaceId, workspaceState.options]);
@@ -106,7 +110,7 @@ export default function NotesScreen() {
   const sectionRows = useMemo(() => {
     const counts = new Map<string, number>();
     notes.forEach((note) => counts.set(note.section_id ?? '__unsorted__', (counts.get(note.section_id ?? '__unsorted__') ?? 0) + 1));
-    const rows = sections.filter((section) => (counts.get(section.id) ?? 0) > 0).sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)).slice(0, 5).map((section) => ({ ...section, count: counts.get(section.id) ?? 0 }));
+    const rows = sections.filter((section) => (section.note_count ?? counts.get(section.id) ?? 0) > 0).sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)).slice(0, 5).map((section) => ({ ...section, count: section.note_count ?? counts.get(section.id) ?? 0 }));
     const unsortedCount = counts.get('__unsorted__') ?? 0;
     if (unsortedCount && rows.length < 5) rows.push({ id: '__unsorted__', name: 'Unsorted', count: unsortedCount, color: null, parent_id: null, sort_order: 999 });
     return rows;
@@ -120,6 +124,23 @@ export default function NotesScreen() {
     openMobileNote(router, note.id, { workspaceId: note.workspace_id });
   };
   const openNoteActions = (note: MobileNoteSummary) => setActionNote(note);
+
+  const loadSectionNotes = useCallback(async (sectionId: string) => {
+    if (!workspaceId || workspaceId === 'all' || sectionId === '__unsorted__') return;
+    const token = ++sectionLoadTokenRef.current;
+    try {
+      const payload = await getMobileNoteSummaries(workspaceId, sectionId);
+      if (token !== sectionLoadTokenRef.current || activeWorkspaceRef.current !== workspaceId) return;
+      const sectionNotes = Array.isArray(payload) ? payload : payload.notes ?? [];
+      setNotes((current) => {
+        const byId = new Map(current.map((note) => [note.id, note]));
+        sectionNotes.forEach((note) => byId.set(note.id, note));
+        return Array.from(byId.values());
+      });
+    } catch {
+      // Keep the existing summary list usable if the section refresh fails.
+    }
+  }, [workspaceId]);
 
   const openCreate = (sectionId: string | null = null, parentId: string | null = null) => {
     if (!permissions.canCreate) { Alert.alert('Read-only workspace', 'You do not have permission to create notes here.'); return; }
@@ -235,6 +256,8 @@ export default function NotesScreen() {
   useEffect(() => { if (workspaceState.isHydrated) void load(); }, [load, workspaceState.isHydrated]);
 
   useEffect(() => {
+    activeWorkspaceRef.current = workspaceId;
+    sectionLoadTokenRef.current += 1;
     setBrowseSectionId((current) => current && (current === '__unsorted__' || sectionById.has(current)) ? current : null);
     setSectionPath((current) => current.filter((id) => id === '__unsorted__' || sectionById.has(id)));
     setChildNoteParentId(null);
@@ -274,8 +297,9 @@ export default function NotesScreen() {
     setChildNoteParentId(null);
     setBrowseSectionId(sectionId);
     setSectionPath((current) => current.includes(sectionId) ? current.slice(0, current.indexOf(sectionId) + 1) : [...current, sectionId]);
+    void loadSectionNotes(sectionId);
   };
-  const openSectionBrowser = () => { setViewMode('browse'); setShowAllSections(true); setBrowseSectionId(null); setChildNoteParentId(null); };
+  const openSectionBrowser = () => { setViewMode('browse'); setShowAllSections((current) => !current); setBrowseSectionId(null); setChildNoteParentId(null); };
   const openSectionActions = (section: MobileNoteSection) => setActionSection(section);
   const goBackSection = () => {
     if (childNoteParentId) { setChildNoteParentId(null); return; }
@@ -304,17 +328,16 @@ export default function NotesScreen() {
 
   return <Screen contentStyle={{ paddingTop: 0 }}>
     <View style={styles.container}>
-      <TodayHeader workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel} workspaceLoading={workspaceState.isLoading} workspaceExpanded={workspacePickerOpen} onWorkspacePress={() => setWorkspacePickerOpen(true)} onSearchPress={openSearch} onNotificationsPress={() => router.push('/(tabs)/notifications')} scrollY={scrollY} />
+      <TodayHeader workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel} workspaceLoading={workspaceState.isLoading} workspaceExpanded={workspacePickerOpen} unreadCount={unreadNotificationCount} onWorkspacePress={() => setWorkspacePickerOpen(true)} onSearchPress={openSearch} onNotificationsPress={() => router.push({ pathname: '/notifications', params: { returnTo: '/(tabs)/notes' } })} onSettingsPress={() => router.push('/settings')} scrollY={scrollY} />
       <WorkspaceSelectorSheet visible={workspacePickerOpen} selectedWorkspaceId={workspaceId} workspaces={workspaceState.options} onSelect={(id) => selectWorkspace(id)} onClose={() => setWorkspacePickerOpen(false)} />
       <Animated.ScrollView refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={theme.colors.accent} />} contentContainerStyle={[styles.content, { paddingTop: TODAY_HEADER_SCROLL_SPACE, paddingBottom: theme.spacing['3xl'] + 132 }]} onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
-        <View style={[styles.switcher, { backgroundColor: theme.colors.surfaceMuted }]}>{(['home', 'browse'] as const).map((mode) => <Pressable key={mode} accessibilityRole="tab" accessibilityState={{ selected: viewMode === mode }} onPress={() => setViewMode(mode)} style={[styles.switcherItem, viewMode === mode && { backgroundColor: theme.colors.surface }]}><AppText variant="caption" style={{ color: viewMode === mode ? theme.colors.textPrimary : theme.colors.textMuted, fontWeight: viewMode === mode ? '600' : '400' }}>{mode === 'home' ? 'Home' : 'Browse'}</AppText></Pressable>)}</View>
-        {isLoading ? <NotesSkeleton /> : error ? <View style={styles.inlineState}><AppText variant="bodyStrong">Notes unavailable</AppText><AppText variant="caption">{error}</AppText><AppButton title="Retry" variant="ghost" fullWidth={false} onPress={() => void load()} /></View> : viewMode === 'browse' ? <BrowseView notes={notes} sections={sections} rootSections={rootSections} sectionRows={sectionRows} sectionById={sectionById} childCounts={childCounts} pins={pinByNoteId} projectByNoteId={projectByNoteId} filters={browseFilters} query={notesQuery} searchResults={searchResults} isSearching={isSearching} searchError={searchError} currentSection={currentSection} currentSectionChildren={currentSectionChildren} browseSectionId={browseSectionId} sectionPath={sectionPath} childNoteParentId={childNoteParentId} showAllSections={showAllSections} activeFilterCount={countActiveNoteFilters(browseFilters)} onQueryChange={setNotesQuery} onOpenNote={openNote} onOpenNoteActions={openNoteActions} onOpenChildren={setChildNoteParentId} onNewNote={openNewNote} onOpenSection={openSection} onOpenSectionBrowser={openSectionBrowser} onSectionActions={openSectionActions} onBack={goBackSection} onSetQuickFilter={(quick) => setBrowseFilters((current) => quick === 'all' ? { ...DEFAULT_NOTE_BROWSE_FILTERS } : { ...current, quick, types: [] })} onOpenFilterSheet={() => setFilterSheetOpen(true)} /> : <>
-          {pinnedNotes.length ? <View style={styles.section}><SectionLabel title="PINNED" action="View all" onAction={openBrowse} />{pinnedNotes.map((note) => <NoteRow key={note.id} note={noteRowDataFromSummary(note, { sectionName: sectionById.get(note.section_id ?? '')?.name, projectTitle: projectByNoteId.get(note.id), pinned: true })} variant="compact" showPreview={false} onPress={() => openNote(note)} onLongPress={() => openNoteActions(note)} />)}</View> : null}
-          {recentNotes.length ? <View style={styles.section}><SectionLabel title="RECENT" />{recentNotes.map((note) => <NoteRow key={note.id} note={noteRowDataFromSummary(note, { sectionName: sectionById.get(note.section_id ?? '')?.name, projectTitle: projectByNoteId.get(note.id) })} onPress={() => openNote(note)} onLongPress={() => openNoteActions(note)} />)}</View> : null}
-          {meetings.length ? <View style={styles.section}><SectionLabel title="UPCOMING" />{meetings.map((meeting) => { const linkedNote = meeting.noteId ? noteById.get(meeting.noteId) : null; return linkedNote ? <NoteRow key={meeting.id} note={noteRowDataFromSummary(linkedNote, { meetingContext: meetingTime(meeting) })} variant="meeting" showPreview={false} onPress={() => openNote(linkedNote)} onLongPress={() => openNoteActions(linkedNote)} /> : <Pressable key={meeting.id} onPress={() => void startMeetingNote(meeting)} style={({ pressed }) => [styles.meetingRow, { opacity: pressed ? 0.68 : 1 }]}><View style={styles.meetingDate}><AppText variant="caption">{meetingTime(meeting)}</AppText></View><View style={styles.rowCopy}><AppText variant="bodyStrong" numberOfLines={1}>{meeting.title}</AppText><AppText variant="caption">Start meeting note</AppText></View><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={16} tintColor={theme.colors.textMuted} /></Pressable>; })}</View> : null}
-          {sectionRows.length || sectionError ? <View style={styles.section}><SectionLabel title="SECTIONS" action="View all" onAction={openSectionBrowser} />{sectionError ? <View style={styles.inlineState}><AppText variant="caption" numberOfLines={1}>{sectionError}</AppText><Pressable accessibilityRole="button" accessibilityLabel="Retry loading note sections" disabled={sectionRetrying} onPress={() => void retrySections()}><AppText variant="caption" style={{ color: theme.colors.accent, opacity: sectionRetrying ? 0.55 : 1 }}>{sectionRetrying ? 'Retrying…' : 'Retry'}</AppText></Pressable></View> : sectionRows.map((section) => <Pressable key={section.id} onPress={() => openSection(section.id)} onLongPress={() => openSectionActions(section)} style={({ pressed }) => [styles.sectionRow, { opacity: pressed ? 0.68 : 1 }]}><View style={[styles.sectionDot, { backgroundColor: section.color ? theme.colors.accent : theme.colors.borderSubtle }]} /><AppText variant="body" numberOfLines={1} style={styles.flex}>{section.name}</AppText><AppText variant="caption">{section.count}</AppText><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={15} tintColor={theme.colors.textMuted} /></Pressable>)}</View> : null}
-          {!notes.length ? <View style={styles.empty}><AppText variant="bodyStrong">No notes yet</AppText><AppText variant="caption">Create a note to start capturing ideas and context.</AppText><AppButton title="New note" fullWidth={false} size="md" onPress={openNewNote} /></View> : null}
-          <Pressable onPress={openNewNote} style={({ pressed }) => [styles.newNoteAction, { borderColor: theme.colors.borderSubtle, opacity: pressed ? 0.68 : 1 }]}><SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={16} tintColor={theme.colors.accent} /><AppText variant="body" style={{ color: theme.colors.accent }}>New note</AppText></Pressable>
+        <View style={styles.switcherRow}><View style={[styles.switcher, { backgroundColor: theme.colors.surfaceMuted }]}>{(['home', 'browse'] as const).map((mode) => <Pressable key={mode} accessibilityRole="tab" accessibilityState={{ selected: viewMode === mode }} onPress={() => setViewMode(mode)} style={[styles.switcherItem, viewMode === mode && { backgroundColor: theme.colors.surface }]}><AppText variant="caption" style={{ color: viewMode === mode ? theme.colors.textPrimary : theme.colors.textMuted, fontWeight: viewMode === mode ? '600' : '400' }}>{mode === 'home' ? 'Home' : 'Browse'}</AppText></Pressable>)}</View><Pressable accessibilityRole="button" accessibilityLabel="Create note" onPress={openNewNote} hitSlop={8} style={({ pressed }) => [styles.createNoteButton, { backgroundColor: theme.colors.surfaceMuted, opacity: pressed ? 0.62 : 1 }]}><SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={18} tintColor={theme.colors.accent} /></Pressable></View>
+        {isLoading ? <NotesSkeleton /> : error ? <View style={styles.inlineState}><AppText variant="bodyStrong">Notes unavailable</AppText><AppText variant="caption">{error}</AppText><AppButton title="Retry" variant="ghost" fullWidth={false} onPress={() => void load()} /></View> : viewMode === 'browse' ? <BrowseView notes={notes} sections={sections} rootSections={rootSections} sectionRows={sectionRows} sectionById={sectionById} childCounts={childCounts} pins={pinByNoteId} projectByNoteId={projectByNoteId} filters={browseFilters} query={notesQuery} searchResults={searchResults} isSearching={isSearching} searchError={searchError} currentSection={currentSection} currentSectionChildren={currentSectionChildren} browseSectionId={browseSectionId} sectionPath={sectionPath} childNoteParentId={childNoteParentId} showAllSections={showAllSections} activeFilterCount={countActiveNoteFilters(browseFilters)} onQueryChange={setNotesQuery} onOpenNote={openNote} onOpenNoteActions={openNoteActions} onOpenChildren={setChildNoteParentId} onOpenSection={openSection} onOpenSectionBrowser={openSectionBrowser} onSectionActions={openSectionActions} onBack={goBackSection} onSetQuickFilter={(quick) => setBrowseFilters((current) => quick === 'all' ? { ...DEFAULT_NOTE_BROWSE_FILTERS } : { ...current, quick, types: [] })} onOpenFilterSheet={() => setFilterSheetOpen(true)} /> : <>
+          {pinnedNotes.length ? <View style={styles.section}><SectionLabel title="Pinned" action="View all" onAction={openBrowse} />{pinnedNotes.map((note) => <NoteRow key={note.id} note={noteRowDataFromSummary(note, { sectionName: sectionById.get(note.section_id ?? '')?.name, projectTitle: projectByNoteId.get(note.id), pinned: true })} variant="compact" showPreview={false} onPress={() => openNote(note)} onLongPress={() => openNoteActions(note)} />)}</View> : null}
+          {recentNotes.length ? <View style={styles.section}><SectionLabel title="Recent" />{recentNotes.map((note) => <NoteRow key={note.id} note={noteRowDataFromSummary(note, { sectionName: sectionById.get(note.section_id ?? '')?.name, projectTitle: projectByNoteId.get(note.id) })} onPress={() => openNote(note)} onLongPress={() => openNoteActions(note)} />)}</View> : null}
+          {meetings.length ? <View style={styles.section}><SectionLabel title="Upcoming" />{meetings.map((meeting) => { const linkedNote = meeting.noteId ? noteById.get(meeting.noteId) : null; return linkedNote ? <NoteRow key={meeting.id} note={noteRowDataFromSummary(linkedNote, { meetingContext: meetingTime(meeting) })} variant="meeting" showPreview={false} onPress={() => openNote(linkedNote)} onLongPress={() => openNoteActions(linkedNote)} /> : <Pressable key={meeting.id} onPress={() => void startMeetingNote(meeting)} style={({ pressed }) => [styles.meetingRow, { opacity: pressed ? 0.68 : 1 }]}><View style={styles.meetingDate}><AppText variant="caption">{meetingTime(meeting)}</AppText></View><View style={styles.rowCopy}><AppText variant="bodyStrong" numberOfLines={1}>{meeting.title}</AppText><AppText variant="caption">Start meeting note</AppText></View><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={16} tintColor={theme.colors.textMuted} /></Pressable>; })}</View> : null}
+          {sectionRows.length || sectionError ? <View style={styles.section}><SectionLabel title="Sections" action="View all" onAction={openSectionBrowser} />{sectionError ? <View style={styles.inlineState}><AppText variant="caption" numberOfLines={1}>{sectionError}</AppText><Pressable accessibilityRole="button" accessibilityLabel="Retry loading note sections" disabled={sectionRetrying} onPress={() => void retrySections()}><AppText variant="caption" style={{ color: theme.colors.accent, opacity: sectionRetrying ? 0.55 : 1 }}>{sectionRetrying ? 'Retrying…' : 'Retry'}</AppText></Pressable></View> : sectionRows.map((section) => <Pressable key={section.id} onPress={() => openSection(section.id)} onLongPress={() => openSectionActions(section)} style={({ pressed }) => [styles.sectionRow, { opacity: pressed ? 0.68 : 1 }]}><View style={[styles.sectionDot, { backgroundColor: section.color ? theme.colors.accent : theme.colors.borderSubtle }]} /><AppText variant="body" numberOfLines={1} style={styles.flex}>{section.name}</AppText><AppText variant="caption">{section.count}</AppText><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={15} tintColor={theme.colors.textMuted} /></Pressable>)}</View> : null}
+          {!notes.length ? <View style={styles.empty}><AppText variant="bodyStrong">No notes yet</AppText><AppText variant="caption">Create a note to start capturing ideas and context.</AppText></View> : null}
         </>}
       </Animated.ScrollView>
       <NoteFilterSheet visible={filterSheetOpen} filters={browseFilters} sections={sections} hasUnsorted={notes.some((note) => !note.section_id)} onChange={setBrowseFilters} onReset={() => setBrowseFilters(DEFAULT_NOTE_BROWSE_FILTERS)} onClose={() => setFilterSheetOpen(false)} />
@@ -352,7 +375,6 @@ type BrowseViewProps = {
   onOpenNote: (note: MobileNoteSummary) => void;
   onOpenNoteActions: (note: MobileNoteSummary) => void;
   onOpenChildren: (noteId: string) => void;
-  onNewNote: () => void;
   onOpenSection: (sectionId: string) => void;
   onOpenSectionBrowser: () => void;
   onSectionActions: (section: MobileNoteSection) => void;
@@ -363,17 +385,21 @@ type BrowseViewProps = {
 
 function BrowseView(props: BrowseViewProps) {
   const theme = useLedgerTheme();
+  const [showAllNotes, setShowAllNotes] = useState(false);
   const {
-    notes, rootSections, sectionRows, sectionById, childCounts, pins, projectByNoteId, filters, query, searchResults,
+    notes, sections, rootSections, sectionRows, sectionById, childCounts, pins, projectByNoteId, filters, query, searchResults,
     isSearching, searchError, currentSection, currentSectionChildren, browseSectionId, childNoteParentId,
     showAllSections, activeFilterCount, onQueryChange, onOpenNote, onOpenNoteActions, onOpenChildren,
-    onNewNote, onOpenSection, onOpenSectionBrowser, onSectionActions, onBack, onSetQuickFilter, onOpenFilterSheet,
+    onOpenSection, onOpenSectionBrowser, onSectionActions, onBack, onSetQuickFilter, onOpenFilterSheet,
   } = props;
   const counts = useMemo(() => {
     const values = new Map<string, number>();
     notes.forEach((note) => values.set(note.section_id ?? '__unsorted__', (values.get(note.section_id ?? '__unsorted__') ?? 0) + 1));
+    sections.forEach((section) => {
+      if (typeof section.note_count === 'number') values.set(section.id, section.note_count);
+    });
     return values;
-  }, [notes]);
+  }, [notes, sections]);
     const sourceNotes = query.trim().length >= 2 ? searchResults ?? [] : notes;
   const scopedNotes = useMemo(() => {
     let result = sourceNotes;
@@ -401,31 +427,31 @@ function BrowseView(props: BrowseViewProps) {
       return new Date(b.updated_at ?? 0).getTime() - new Date(a.updated_at ?? 0).getTime();
     });
   }, [browseSectionId, childNoteParentId, filters, pins, sourceNotes]);
+  useEffect(() => {
+    setShowAllNotes(false);
+  }, [browseSectionId, childNoteParentId, filters, query]);
+  const notesAreSearchResults = query.trim().length >= 2;
+  const displayedNotes = notesAreSearchResults || showAllNotes ? scopedNotes : scopedNotes.slice(0, 7);
+  const notesViewAction = !notesAreSearchResults && scopedNotes.length > 7 ? (showAllNotes ? 'Show less' : 'View all') : undefined;
+  const toggleNotesView = () => setShowAllNotes((current) => !current);
   const sectionName = (note: MobileNoteSummary) => sectionById.get(note.section_id ?? '')?.name ?? null;
   const renderNote = (note: MobileNoteSummary, variant: 'default' | 'section' = 'default') => <NoteRow key={note.id} note={noteRowDataFromSummary(note, { sectionName: sectionName(note), projectTitle: projectByNoteId.get(note.id), pinned: pins.has(note.id) })} variant={variant} childCount={childCounts.get(note.id) ?? 0} onOpenChildren={() => onOpenChildren(note.id)} onPress={() => onOpenNote(note)} onLongPress={() => onOpenNoteActions(note)} />;
   const quickFilters: Array<[NoteQuickFilter, string]> = [['all', 'All'], ['pinned', 'Pinned'], ['meetings', 'Meetings'], ['maps', 'Maps']];
-  const activeFilterSummary = [
-    filters.quick !== 'all' ? quickFilters.find(([value]) => value === filters.quick)?.[1] : null,
-    filters.types.length ? filters.types.map((type) => type === 'meeting_note' ? 'Meetings' : type === 'mind_map' ? 'Maps' : 'Text').join(' · ') : null,
-    filters.sectionId ? sectionById.get(filters.sectionId)?.name : filters.organization === 'unsorted' ? 'Unsorted' : filters.organization === 'root' ? 'Root notes' : null,
-    filters.updated === 'today' ? 'Today' : filters.updated === 'this_week' ? 'This week' : filters.updated === 'this_month' ? 'This month' : null,
-  ].filter(Boolean).join(' · ');
   const hasActiveResultFilter = filters.quick !== 'all' || Boolean(countActiveNoteFilters(filters));
   const currentTitle = childNoteParentId ? notes.find((note) => note.id === childNoteParentId)?.title ?? 'Child notes' : currentSection?.name ?? (browseSectionId === '__unsorted__' ? 'Unsorted' : 'Browse');
 
   return <View style={styles.browseContent}>
-    {(browseSectionId || showAllSections || childNoteParentId) ? <Pressable onPress={onBack} hitSlop={8} style={styles.backRow}><AppText variant="caption" style={{ color: theme.colors.accent }}>‹ Sections</AppText><AppText variant="caption" numberOfLines={1} style={styles.backTitle}>{currentTitle}</AppText></Pressable> : null}
+    {(browseSectionId || childNoteParentId) ? <Pressable onPress={onBack} hitSlop={8} style={styles.backRow}><AppText variant="caption" style={{ color: theme.colors.accent }}>‹ Sections</AppText><AppText variant="caption" numberOfLines={1} style={styles.backTitle}>{currentTitle}</AppText></Pressable> : null}
     <View style={[styles.searchBox, { borderColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surfaceMuted }]}><SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={15} tintColor={theme.colors.textMuted} /><TextInput accessibilityLabel="Search notes" placeholder="Search notes…" placeholderTextColor={theme.colors.textMuted} value={query} onChangeText={onQueryChange} returnKeyType="search" style={[styles.searchInput, { color: theme.colors.textPrimary }]} /></View>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickFilters}>{quickFilters.map(([value, label]) => <Pressable key={value} onPress={() => onSetQuickFilter(value)} style={[styles.quickFilter, filters.quick === value && { backgroundColor: theme.colors.surfaceSelected }]}><AppText variant="caption" style={{ color: filters.quick === value ? theme.colors.accent : theme.colors.textSecondary, fontWeight: filters.quick === value ? '600' : '400' }}>{label}</AppText></Pressable>)}<Pressable onPress={onOpenFilterSheet} style={[styles.quickFilter, activeFilterCount ? { backgroundColor: theme.colors.surfaceSelected } : null]}><AppText variant="caption" style={{ color: activeFilterCount ? theme.colors.accent : theme.colors.textSecondary }}>Filter{activeFilterCount ? ` · ${activeFilterCount}` : ''}</AppText></Pressable></ScrollView>
-    {activeFilterSummary ? <View style={styles.activeFilterRow}><AppText variant="caption" numberOfLines={1} style={styles.flex}>{activeFilterSummary}</AppText><Pressable onPress={() => onSetQuickFilter('all')} hitSlop={8}><AppText variant="caption" style={{ color: theme.colors.accent }}>Clear</AppText></Pressable></View> : null}
     {searchError ? <View style={styles.inlineState}><AppText variant="caption">Could not search notes.</AppText><Pressable onPress={() => onQueryChange(`${query} `)}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : null}
     {isSearching ? <View style={styles.inlineState}><AppText variant="caption">Searching notes…</AppText></View> : null}
-    {query.trim().length >= 2 ? <View style={styles.section}><SectionLabel title="NOTES" />{!isSearching && !scopedNotes.length ? <View style={styles.empty}><AppText variant="bodyStrong">No notes match “{query.trim()}”</AppText><Pressable onPress={() => onQueryChange('')}><AppText variant="caption" style={{ color: theme.colors.accent }}>Clear search</AppText></Pressable></View> : scopedNotes.map((note) => renderNote(note))}</View> : browseSectionId || childNoteParentId ? <>
-      {currentSectionChildren.length && !childNoteParentId ? <View style={styles.section}><SectionLabel title="SUBSECTIONS" />{currentSectionChildren.map((section) => <SectionBrowseRow key={section.id} section={section} count={counts.get(section.id) ?? 0} onPress={() => onOpenSection(section.id)} onLongPress={() => onSectionActions(section)} />)}</View> : null}
-      <View style={styles.section}><SectionLabel title={childNoteParentId ? 'CHILD NOTES' : 'NOTES'} />{!scopedNotes.length ? <View style={styles.empty}><AppText variant="bodyStrong">No notes in this section</AppText><AppText variant="caption">Notes added here will appear in this section.</AppText></View> : scopedNotes.map((note) => renderNote(note, 'section'))}</View>
+    {query.trim().length >= 2 ? <View style={styles.section}><SectionLabel title="Notes" />{!isSearching && !scopedNotes.length ? <View style={styles.empty}><AppText variant="bodyStrong">No notes match “{query.trim()}”</AppText><Pressable onPress={() => onQueryChange('')}><AppText variant="caption" style={{ color: theme.colors.accent }}>Clear search</AppText></Pressable></View> : displayedNotes.map((note) => renderNote(note))}</View> : browseSectionId || childNoteParentId ? <>
+      {currentSectionChildren.length && !childNoteParentId ? <View style={styles.section}><SectionLabel title="Subsections" />{currentSectionChildren.map((section) => <SectionBrowseRow key={section.id} section={section} count={counts.get(section.id) ?? 0} onPress={() => onOpenSection(section.id)} onLongPress={() => onSectionActions(section)} />)}</View> : null}
+      <View style={styles.section}><SectionLabel title={childNoteParentId ? 'Child notes' : 'Notes'} action={notesViewAction} onAction={toggleNotesView} />{!scopedNotes.length ? <View style={styles.empty}><AppText variant="bodyStrong">No notes in this section</AppText><AppText variant="caption">Notes added here will appear in this section.</AppText></View> : displayedNotes.map((note) => renderNote(note, 'section'))}</View>
     </> : <>
-      <View style={styles.section}><SectionLabel title="SECTIONS" action={showAllSections ? undefined : 'View all'} onAction={onOpenSectionBrowser} />{(showAllSections ? rootSections : rootSections.slice(0, 5)).map((section) => <SectionBrowseRow key={section.id} section={section} count={counts.get(section.id) ?? 0} onPress={() => onOpenSection(section.id)} onLongPress={() => onSectionActions(section)} />)}{notes.some((note) => !note.section_id) ? <SectionBrowseRow section={{ id: '__unsorted__', name: 'Unsorted', parent_id: null }} count={counts.get('__unsorted__') ?? 0} onPress={() => onOpenSection('__unsorted__')} /> : null}</View>
-      <View style={styles.section}><SectionLabel title="NOTES" action="New note" onAction={onNewNote} />{!scopedNotes.length ? <View style={styles.empty}><AppText variant="bodyStrong">{hasActiveResultFilter ? 'No notes match these filters' : 'No notes yet'}</AppText><AppText variant="caption">{hasActiveResultFilter ? 'Clear filters to see the full library.' : 'Create a note to start building your workspace.'}</AppText>{hasActiveResultFilter ? <Pressable onPress={() => onSetQuickFilter('all')}><AppText variant="caption" style={{ color: theme.colors.accent }}>Clear filters</AppText></Pressable> : null}</View> : scopedNotes.map((note) => renderNote(note))}</View>
+      <View style={styles.section}><SectionLabel title="Sections" action={showAllSections ? 'Show less' : 'View all'} onAction={onOpenSectionBrowser} />{(showAllSections ? sections : rootSections.slice(0, 5)).map((section) => <SectionBrowseRow key={section.id} section={section} count={counts.get(section.id) ?? 0} onPress={() => onOpenSection(section.id)} onLongPress={() => onSectionActions(section)} />)}{notes.some((note) => !note.section_id) ? <SectionBrowseRow section={{ id: '__unsorted__', name: 'Unsorted', parent_id: null }} count={counts.get('__unsorted__') ?? 0} onPress={() => onOpenSection('__unsorted__')} /> : null}</View>
+      <View style={styles.section}><SectionLabel title="Notes" action={notesViewAction} onAction={toggleNotesView} />{!scopedNotes.length ? <View style={styles.empty}><AppText variant="bodyStrong">{hasActiveResultFilter ? 'No notes match these filters' : 'No notes yet'}</AppText><AppText variant="caption">{hasActiveResultFilter ? 'Clear filters to see the full library.' : 'Create a note to start building your workspace.'}</AppText>{hasActiveResultFilter ? <Pressable onPress={() => onSetQuickFilter('all')}><AppText variant="caption" style={{ color: theme.colors.accent }}>Clear filters</AppText></Pressable> : null}</View> : displayedNotes.map((note) => renderNote(note))}</View>
     </>}
   </View>;
 }
@@ -442,15 +468,17 @@ function NotesSkeleton() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { gap: 25 },
+  switcherRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   switcher: { alignSelf: 'flex-start', flexDirection: 'row', padding: 3, borderRadius: 9, gap: 2 },
   switcherItem: { minWidth: 58, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 7 },
+  createNoteButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
   section: { gap: 9 },
   browseContent: { gap: 20 },
   sectionHeader: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backRow: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 9 },
   backTitle: { flex: 1, color: '#666666' },
   searchBox: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 10, paddingHorizontal: 11 },
-  searchInput: { flex: 1, minHeight: 40, paddingVertical: 0, fontSize: 15 },
+  searchInput: { flex: 1, height: 40, paddingVertical: 0, fontSize: 15, lineHeight: 20, textAlignVertical: 'center' },
   quickFilters: { gap: 7, paddingRight: 8 },
   quickFilter: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8 },
   rowCopy: { minWidth: 0, flex: 1, gap: 3 },
@@ -461,6 +489,4 @@ const styles = StyleSheet.create({
   sectionDot: { width: 7, height: 7, borderRadius: 2 },
   empty: { gap: 7, paddingVertical: 8 },
   inlineState: { gap: 7, paddingVertical: 8 },
-  activeFilterRow: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  newNoteAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderRadius: 10 },
 });

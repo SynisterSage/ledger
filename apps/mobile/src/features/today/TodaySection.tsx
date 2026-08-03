@@ -53,7 +53,9 @@ export function TodaySection({
               tintColor={theme.colors.textMuted}
             />
           ) : null}
-          <AppText variant="sectionTitle">{title}</AppText>
+          <AppText variant="label" style={{ letterSpacing: 0.5 }}>
+            {title}
+          </AppText>
           {typeof count === 'number' ? (
             <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
               {count}

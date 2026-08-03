@@ -11,6 +11,7 @@ import { SymbolView } from 'expo-symbols';
 
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
+import { projectTypeIcon } from '@/features/projects/projectTypeIcon';
 
 export type TodayItemType =
   | 'task'
@@ -39,6 +40,8 @@ export type TodayItemRowProps = {
   leadingLabel?: string | null;
   trailingLabel?: string | null;
   progress?: number;
+  projectType?: string | null;
+  projectColor?: string | null;
   status?: TodayItemStatus;
   completed?: boolean;
   disabled?: boolean;
@@ -84,6 +87,8 @@ function TodayItemRowBase({
   leadingLabel,
   trailingLabel,
   progress,
+  projectType,
+  projectColor,
   status = 'default',
   completed = status === 'completed',
   disabled = status === 'disabled',
@@ -105,6 +110,9 @@ function TodayItemRowBase({
   const [isSwiping, setIsSwiping] = useState(false);
   const interactive = !disabled && !updating;
   const attention = status === 'overdue' || status === 'failed';
+  const isProjectSurface = type === 'project' || type === 'project_action';
+  const projectMarker = isProjectSurface && projectType ? projectTypeIcon(projectType) : null;
+  const markerColor = projectColor || theme.colors.accent;
   const titleColor = completed ? theme.colors.textMuted : theme.colors.textPrimary;
   const iconColor = theme.colors.textMuted;
   const description = [
@@ -198,17 +206,21 @@ function TodayItemRowBase({
           ]}
         >
           <View style={styles.content}>
-        {leadingLabel ? (
-          <AppText variant="meta" numberOfLines={1} style={[styles.leadingLabel, { color: iconColor }]}>
-            {leadingLabel}
-          </AppText>
-        ) : null}
+            {leadingLabel ? (
+              <AppText
+                variant="meta"
+                numberOfLines={1}
+                style={[styles.leadingLabel, { color: iconColor }]}
+              >
+                {leadingLabel}
+              </AppText>
+            ) : null}
 
-        <View style={styles.leading}>
-          <View style={styles.iconTarget}>
-            <SymbolView name={iconByType[type]} size={16} weight="regular" tintColor={iconColor} />
-          </View>
-        </View>
+            <View style={styles.leading}>
+              <View style={styles.iconTarget}>
+                <SymbolView name={projectMarker ?? iconByType[type]} size={projectMarker ? 16 : 16} weight="regular" tintColor={projectMarker ? markerColor : iconColor} />
+              </View>
+            </View>
 
         <View style={styles.main}>
           <AppText
@@ -228,7 +240,7 @@ function TodayItemRowBase({
               <View
                 style={[
                   styles.progressFill,
-                  { width: `${Math.max(0, Math.min(100, progress))}%`, backgroundColor: theme.colors.accent },
+                  { width: `${Math.max(0, Math.min(100, progress))}%`, backgroundColor: markerColor },
                 ]}
               />
             </View>

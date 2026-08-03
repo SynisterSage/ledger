@@ -15,6 +15,7 @@ type TodayHeaderProps = {
   onWorkspacePress: () => void;
   onSearchPress: () => void;
   onNotificationsPress: () => void;
+  onSettingsPress?: () => void;
   scrollY: Animated.Value;
 };
 
@@ -46,6 +47,7 @@ export function TodayHeader({
   onWorkspacePress,
   onSearchPress,
   onNotificationsPress,
+  onSettingsPress,
   scrollY,
 }: TodayHeaderProps) {
   const theme = useLedgerTheme();
@@ -113,6 +115,22 @@ export function TodayHeader({
         </Pressable>
 
         <View style={styles.actions}>
+          {onSettingsPress ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
+              hitSlop={10}
+              onPress={onSettingsPress}
+              style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.55 : 1 }]}
+            >
+              <SymbolView
+                name={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
+                size={19}
+                weight="regular"
+                tintColor={theme.colors.textSecondary}
+              />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Search Ledger"

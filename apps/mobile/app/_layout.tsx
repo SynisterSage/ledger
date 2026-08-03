@@ -185,7 +185,7 @@ export default function RootLayout() {
     (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data as Record<string, unknown> | undefined;
       const notificationId = typeof data?.notificationId === 'string' ? data.notificationId : null;
-      const route = typeof data?.route === 'string' ? data.route : '/(tabs)/notifications';
+      const route = typeof data?.route === 'string' ? data.route : '/notifications';
       const routeParams = (data?.routeParams && typeof data.routeParams === 'object' ? data.routeParams : null) as
         | Record<string, unknown>
         | null;
@@ -204,9 +204,9 @@ export default function RootLayout() {
         sourceId: typeof routeParams?.sourceId === 'string' ? routeParams.sourceId : null,
       };
 
-      if (route === '/(tabs)/notifications') {
+      if (route === '/(tabs)/notifications' || route === '/notifications') {
         router.replace({
-          pathname: '/(tabs)/notifications',
+          pathname: '/notifications',
           params: notificationRouteParams,
         });
         return;

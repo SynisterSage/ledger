@@ -606,7 +606,7 @@ function ToolbarButton({ label, active, onPress }: { label: string; active?: boo
 function EditorSkeleton() {
   const theme = useLedgerTheme();
   const insets = useSafeAreaInsets();
-  return <View style={[styles.container, { backgroundColor: theme.colors.background }]}><View style={[styles.header, { minHeight: 54 + insets.top, paddingTop: insets.top, borderBottomColor: theme.colors.borderSubtle }]}><View style={[styles.skeleton, { width: 30 }]} /><View style={[styles.skeleton, { width: 48 }]} /><View style={[styles.skeleton, { width: 30 }]} /></View><MobileTopFade topOffset={54 + insets.top} /><View style={styles.editorContent}><View style={[styles.skeleton, { height: 28, width: '70%' }]} />{[1, 2, 3, 4, 5].map((row) => <View key={row} style={[styles.skeleton, { height: 16, width: row === 5 ? '56%' : '94%' }]} />)}</View></View>;
+  return <View style={[styles.container, { backgroundColor: theme.colors.background }]}><View style={[styles.header, { minHeight: 54 + insets.top, paddingTop: insets.top, borderBottomColor: theme.colors.borderSubtle }]}><View style={[styles.skeleton, { backgroundColor: theme.colors.surfaceMuted, width: 30 }]} /><View style={[styles.skeleton, { backgroundColor: theme.colors.surfaceMuted, width: 48 }]} /><View style={[styles.skeleton, { backgroundColor: theme.colors.surfaceMuted, width: 30 }]} /></View><MobileTopFade topOffset={54 + insets.top} /><View style={styles.editorContent}><View style={[styles.skeleton, { backgroundColor: theme.colors.surfaceMuted, height: 28, width: '70%' }]} />{[1, 2, 3, 4, 5].map((row) => <View key={row} style={[styles.skeleton, { backgroundColor: theme.colors.surfaceMuted, height: 16, width: row === 5 ? '56%' : '94%' }]} />)}</View></View>;
 }
 
 function EditorState({ title, message, onRetry, onBack }: { title: string; message: string; onRetry: () => void; onBack: () => void }) {
@@ -648,5 +648,5 @@ const styles = StyleSheet.create({
   actionRow: { minHeight: 48, justifyContent: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
   state: { flex: 1, padding: 24, justifyContent: 'center', gap: 10 },
   stateActions: { flexDirection: 'row', gap: 20, marginTop: 8 },
-  skeleton: { height: 14, borderRadius: 8, backgroundColor: '#E5E5E5', marginBottom: 18 },
+  skeleton: { height: 14, borderRadius: 8, marginBottom: 18 },
 });

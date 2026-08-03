@@ -58,9 +58,11 @@ export function MonthCalendarItemSheet({ visible, item, actionMode = false, onCl
       title={item.title}
       subtitle={item.projectName ?? typeLabel}
       meta={meta}
+      metaInCard
       body={item.overdue && !item.completed ? 'This item is past due.' : undefined}
       footer={item.notes ? <AppText variant="caption" style={{ color: '#4B5563' }}>{item.notes}</AppText> : undefined}
       actions={actions}
+      actionsInCard
       onClose={onClose}
       onAction={(actionId) => onAction?.(actionId, item)}
     />

@@ -52,12 +52,6 @@ export default function TabLayout() {
                 title: 'Notes',
               }}
             />
-            <Tabs.Screen
-              name="notifications"
-              options={{
-                title: 'Notifications',
-              }}
-            />
           </Tabs>
           <MobileSearchSheet />
           <MobileSearchResultDetailSheet />

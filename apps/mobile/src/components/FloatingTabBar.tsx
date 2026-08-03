@@ -76,6 +76,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const dockHeight = bottomOffset + BAR_HEIGHT + FADE_HEIGHT + BLOCK_HEIGHT;
   const activeRouteKey = state.routes[state.index]?.key;
   const isCalendarRoute = state.routes[state.index]?.name === 'calendar';
+  const isNotificationsRoute = state.routes[state.index]?.name === 'notifications';
   const visibleRoutes = state.routes.filter((route: any) => route.name !== 'notifications');
   const activeLayout = activeRouteKey ? tabLayouts[activeRouteKey] : undefined;
 
@@ -108,7 +109,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
 
   // Keep hooks above this branch so the tab bar remains valid when the
   // Calendar switches between portrait and landscape presentations.
-  if (width > height) {
+  if (width > height || isNotificationsRoute) {
     return null;
   }
 

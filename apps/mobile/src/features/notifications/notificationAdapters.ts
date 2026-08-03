@@ -1,5 +1,35 @@
+import type { ComponentProps } from 'react';
+import { SymbolView } from 'expo-symbols';
 import type { AppDetailSheetAction, AppDetailSheetMetaRow } from '@/components/AppDetailSheet';
 import type { MobileNotificationAction, MobileNotificationCenterItem } from '@/types/ledger';
+
+export type NotificationIconName = ComponentProps<typeof SymbolView>['name'];
+export type NotificationColorTone = 'accent' | 'accentHover' | 'warning' | 'success' | 'danger' | 'textSecondary';
+
+export type NotificationPresentation = {
+  title: string;
+  summary?: string;
+  icon: NotificationIconName;
+  sourceColor: string;
+  colorTone: NotificationColorTone;
+  relativeTime: string;
+  accessibilityTime: string;
+};
+
+export type NotificationDisplayState = 'unread' | 'read' | 'resolved';
+
+export type PresentedNotification = {
+  notification: MobileNotificationCenterItem;
+  presentation: NotificationPresentation;
+  displayState: NotificationDisplayState;
+};
+
+export type NotificationSection = {
+  key: 'new' | 'earlier';
+  title: string;
+  count?: number;
+  data: PresentedNotification[];
+};
 
 function formatDateTimeLabel(value: string | null | undefined) {
   if (!value) return null;
@@ -14,6 +44,148 @@ function formatDateTimeLabel(value: string | null | undefined) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(date);
+}
+
+function notificationTimestamp(item: MobileNotificationCenterItem) {
+  return item.deliveredInAppAt ?? item.deliveredDesktopAt ?? item.scheduledFor;
+}
+
+function notificationCreatedAt(item: MobileNotificationCenterItem) {
+  return item.createdAt ?? notificationTimestamp(item);
+}
+
+export function getNotificationDisplayState(item: MobileNotificationCenterItem): NotificationDisplayState {
+  const action = String(item.actionTaken ?? '').trim().toLowerCase();
+  const resolvedByAction = Boolean(item.dismissedAt) || ['complete', 'completed', 'dismiss', 'archive', 'archived'].includes(action);
+  const resolvedEvent = item.sourceType === 'event' && item.status === 'earlier' && item.unread !== true && item.readAt != null;
+  if (resolvedByAction || resolvedEvent) return 'resolved';
+  if (item.unread === true || item.readAt == null) return 'unread';
+  return 'read';
+}
+
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }).format(date);
+}
+
+function formatRelativeTime(value: string | null | undefined, now = new Date()) {
+  if (!value) return { relative: '', absolute: '' };
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { relative: '', absolute: value };
+  const diffMinutes = Math.floor((now.getTime() - date.getTime()) / 60000);
+  const absolute = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  if (diffMinutes < 1) return { relative: 'now', absolute };
+  if (diffMinutes < 60) return { relative: `${diffMinutes}m`, absolute };
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return { relative: `${diffHours}h`, absolute };
+  if (diffHours < 48) return { relative: 'Yesterday', absolute };
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return { relative: `${diffDays}d`, absolute };
+  return { relative: formatShortDate(value) ?? '', absolute };
+}
+
+function cleanTitle(value: string, typeLabel: string) {
+  const title = value.trim() || typeLabel;
+  const prefixes = [
+    'capture waiting',
+    'event starting',
+    'task overdue',
+    'task due',
+    'reminder overdue',
+    'reminder due',
+    'project deadline',
+    'notification',
+  ];
+  const prefixPattern = new RegExp(`^(?:${prefixes.join('|')})\\s*[·:–-]\\s*`, 'i');
+  return title.replace(prefixPattern, '').trim() || title;
+}
+
+function cleanSummary(value: string | null | undefined, title: string) {
+  const summary = value?.trim();
+  if (!summary || summary.toLowerCase() === title.trim().toLowerCase()) return null;
+  return summary.replace(/^\s*[·:–-]\s*/, '').trim() || null;
+}
+
+function notificationIcon(item: MobileNotificationCenterItem): NotificationIconName {
+  if (item.sourceType === 'event' || item.notificationType === 'event_starting') return { ios: 'calendar', android: 'event', web: 'event' };
+  if (item.sourceType === 'reminder' || item.notificationType === 'reminder_due') return { ios: 'bell', android: 'notifications_none', web: 'notifications_none' };
+  if (item.sourceType === 'task' || item.notificationType === 'task_due') return { ios: 'checkmark.circle', android: 'check_circle_outline', web: 'check_circle_outline' };
+  if (item.sourceType === 'inbox' || item.notificationType === 'inbox_capture') return { ios: 'tray.and.arrow.down', android: 'inbox', web: 'inbox' };
+  if (item.sourceType === 'project' || item.notificationType === 'project_deadline') return { ios: 'folder', android: 'folder_open', web: 'folder_open' };
+  if (item.sourceType === 'workspace_invite' || item.notificationType === 'invite.accepted') return { ios: 'person.badge.plus', android: 'person_add', web: 'person_add' };
+  return { ios: 'bell', android: 'notifications_none', web: 'notifications_none' };
+}
+
+function notificationColorTone(item: MobileNotificationCenterItem): NotificationColorTone {
+  if (item.sourceType === 'event' || item.notificationType === 'event_starting') return 'accent';
+  if (item.sourceType === 'reminder') return item.notificationType === 'overdue_item' ? 'danger' : 'warning';
+  if (item.sourceType === 'task') return item.notificationType === 'overdue_item' ? 'danger' : 'success';
+  if (item.sourceType === 'inbox') return 'accentHover';
+  if (item.sourceType === 'project') return 'warning';
+  return 'textSecondary';
+}
+
+export function getNotificationPresentation(item: MobileNotificationCenterItem, showWorkspaceName = false, displayState: NotificationDisplayState = getNotificationDisplayState(item)): NotificationPresentation {
+  const typeLabel = getNotificationTypeLabel(item);
+  const title = cleanTitle(item.title, typeLabel);
+  const timestamp = formatRelativeTime(notificationTimestamp(item));
+  const workspace = showWorkspaceName ? item.workspaceName : null;
+  let summary = cleanSummary(item.body || item.context, title);
+
+  if (item.notificationType === 'event_starting' && item.scheduledFor) {
+    const start = new Date(item.scheduledFor);
+    summary = Number.isNaN(start.getTime()) ? summary : `Starts at ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(start)}${workspace ? ` · ${workspace}` : ''}`;
+  } else if (item.notificationType === 'overdue_item' && item.scheduledFor) {
+    summary = `Due ${formatShortDate(item.scheduledFor) ?? 'earlier'}${workspace ? ` · ${workspace}` : ''}`;
+  } else if (workspace && summary && !summary.includes(workspace)) {
+    summary = `${summary} · ${workspace}`;
+  } else if (workspace && !summary) {
+    summary = workspace;
+  }
+
+  if (displayState === 'resolved') {
+    summary = summary && !/\bresolved\b/i.test(summary) ? `${summary} · Resolved` : summary || 'Resolved';
+  }
+
+  return {
+    title,
+    summary: summary || undefined,
+    icon: notificationIcon(item),
+    sourceColor: item.workspaceColor || '',
+    colorTone: notificationColorTone(item),
+    relativeTime: timestamp.relative,
+    accessibilityTime: timestamp.absolute,
+  };
+}
+
+export function sortNotificationsNewestFirst(left: MobileNotificationCenterItem, right: MobileNotificationCenterItem) {
+  const leftTime = new Date(notificationCreatedAt(left) ?? 0).getTime();
+  const rightTime = new Date(notificationCreatedAt(right) ?? 0).getTime();
+  return rightTime - leftTime || String(right.id).localeCompare(String(left.id));
+}
+
+export function buildPresentedNotifications(items: MobileNotificationCenterItem[], showWorkspaceName = false): PresentedNotification[] {
+  return items
+    .map((notification) => {
+      const displayState = getNotificationDisplayState(notification);
+      return {
+        notification,
+        displayState,
+        presentation: getNotificationPresentation(notification, showWorkspaceName, displayState),
+      };
+    })
+    .sort((left, right) => sortNotificationsNewestFirst(left.notification, right.notification));
+}
+
+export function buildNotificationSections(items: PresentedNotification[]): NotificationSection[] {
+  const unread = items.filter((item) => item.displayState === 'unread');
+  const earlier = items.filter((item) => item.displayState !== 'unread');
+  return [
+    unread.length ? { key: 'new' as const, title: 'New', count: unread.length, data: unread } : null,
+    earlier.length ? { key: 'earlier' as const, title: 'Earlier', data: earlier } : null,
+  ].filter(Boolean) as NotificationSection[];
 }
 
 export function getNotificationTypeLabel(item: MobileNotificationCenterItem) {

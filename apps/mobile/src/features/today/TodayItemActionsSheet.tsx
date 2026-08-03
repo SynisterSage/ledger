@@ -17,6 +17,23 @@ type TodayItemActionsSheetProps = {
   onOpen?: (item: TodayActionSheetItem) => void;
 };
 
+export type MobileActionSheetAction = {
+  id: string;
+  label: string;
+  role?: 'default' | 'destructive';
+  disabled?: boolean;
+  perform: () => void | Promise<void>;
+};
+
+type MobileActionsSheetProps = {
+  visible: boolean;
+  title: string;
+  typeLabel?: string;
+  meta?: string | null;
+  actions: MobileActionSheetAction[];
+  onClose: () => void;
+};
+
 function getItemTypeLabel(item: TodayActionSheetItem) {
   if ('source' in item) {
     return 'Capture';
@@ -70,8 +87,6 @@ function formatDateTimeLabel(dateLike: string | null | undefined) {
 }
 
 export function TodayItemActionsSheet({ visible, item, onClose, onAction, onOpen }: TodayItemActionsSheetProps) {
-  const theme = useLedgerTheme();
-
   const actions = useMemo(
     () =>
       item
@@ -84,9 +99,20 @@ export function TodayItemActionsSheet({ visible, item, onClose, onAction, onOpen
     [item, onAction],
   );
 
-  if (!item) {
-    return null;
-  }
+  if (!item) return null;
+
+  return <MobileActionsSheet
+    visible={visible}
+    title={item.title}
+    typeLabel={getItemTypeLabel(item)}
+    meta={getItemMeta(item)}
+    actions={actions}
+    onClose={onClose}
+  />;
+}
+
+export function MobileActionsSheet({ visible, title, typeLabel, meta, actions, onClose }: MobileActionsSheetProps) {
+  const theme = useLedgerTheme();
 
   return (
     <AppBottomSheet
@@ -96,35 +122,27 @@ export function TodayItemActionsSheet({ visible, item, onClose, onAction, onOpen
       snapPoints={['35%', '55%', '85%']}
       initialSnapPointIndex={2}>
       <View style={{ gap: theme.spacing.md }}>
-        <View style={{ gap: theme.spacing.xs }}>
-          <AppText variant="screenTitle" style={styles.title}>
-            {item.title}
-          </AppText>
-          <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
-            {getItemTypeLabel(item)}
-          </AppText>
-          {getItemMeta(item) ? (
+        <View style={styles.itemHeader}>
+          <AppText variant="screenTitle" style={styles.title}>{title}</AppText>
+          {typeLabel ? <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>{typeLabel}</AppText> : null}
+          {meta ? (
             <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
-              {getItemMeta(item)}
+              {meta}
             </AppText>
           ) : null}
         </View>
 
-        <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
-
-        <View>
+        <View style={[styles.actionGroup, { backgroundColor: theme.colors.surfaceMuted }]}>
           {actions.map((action) => (
             <Pressable
               key={action.id}
               accessibilityRole="button"
-              onPress={() => {
-                void action.perform();
-              }}
+              disabled={action.disabled}
+              onPress={() => void action.perform()}
               style={({ pressed }) => [
                 styles.actionRow,
-                {
-                  borderBottomColor: theme.colors.borderSubtle,
-                  opacity: pressed ? 0.72 : 1,
+                  {
+                    opacity: action.disabled ? 0.4 : pressed ? 0.72 : 1,
                 },
               ]}>
               <AppText
@@ -144,19 +162,25 @@ export function TodayItemActionsSheet({ visible, item, onClose, onAction, onOpen
 }
 
 const styles = StyleSheet.create({
+  itemHeader: {
+    gap: 4,
+    paddingHorizontal: 2,
+  },
+  actionGroup: {
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    gap: 2,
+  },
   title: {
     fontSize: 28,
     lineHeight: 32,
     fontWeight: '400',
     letterSpacing: -0.4,
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-  },
   actionRow: {
-    minHeight: 48,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 14,
+    minHeight: 44,
+    paddingVertical: 10,
     justifyContent: 'center',
   },
 });

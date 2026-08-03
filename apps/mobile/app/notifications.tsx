@@ -1,30 +1,46 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, RefreshControl, View } from 'react-native';
+import { Animated, PanResponder, Pressable, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/EmptyState';
 import {
   MobilePageHeader,
-  MOBILE_PAGE_HEADER_SCROLL_SPACE,
   MOBILE_PULL_TO_REFRESH_OFFSET,
 } from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { Screen } from '@/components/Screen';
 import { NotificationActionsSheet } from '@/features/notifications/NotificationActionsSheet';
 import { NotificationDetailSheet } from '@/features/notifications/NotificationDetailSheet';
+import { NotificationFilterSheet } from '@/features/notifications/NotificationFilterSheet';
 import { NotificationList } from '@/features/notifications/NotificationList';
 import { NotificationSkeleton } from '@/features/notifications/NotificationSkeleton';
-import { getMobileNotifications, performMobileNotificationAction } from '@/api/notifications';
+import { getMobileNotifications, markAllMobileNotificationsRead, performMobileNotificationAction } from '@/api/notifications';
 import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
 import { useQuickNoteSheet } from '@/features/quicknote/QuickNoteSheetContext';
 import { mobileRequest } from '@/api/client';
 import { triggerLightHaptic } from '@/lib/haptics';
 import { useLedgerTheme } from '@/theme';
+import { FollowUpSheetProvider } from '@/features/followup/FollowUpSheetContext';
+import { QuickNoteSheetProvider } from '@/features/quicknote/QuickNoteSheetContext';
 import { bootstrapWorkspaceState, getWorkspaceLabel, selectWorkspace, useWorkspaceState } from '@/store/workspaceStore';
 import type { MobileNotificationCenterItem, MobileNotificationCenterResponse } from '@/types/ledger';
-import { getNotificationSourceLabel, mapNotificationSourceTypeToFollowUpSourceType } from '@/features/notifications/notificationAdapters';
+import {
+  buildNotificationSections,
+  buildPresentedNotifications,
+  getNotificationDisplayState,
+  getNotificationSourceLabel,
+  mapNotificationSourceTypeToFollowUpSourceType,
+} from '@/features/notifications/notificationAdapters';
+import {
+  DEFAULT_NOTIFICATION_FILTERS,
+  countActiveNotificationFilters,
+  filterNotifications,
+  type NotificationFilterState,
+} from '@/features/notifications/notificationFilters';
 
 const EMPTY_NOTIFICATIONS: MobileNotificationCenterResponse = {
   active: [],
@@ -35,6 +51,8 @@ const EMPTY_NOTIFICATIONS: MobileNotificationCenterResponse = {
     total: 0,
   },
 };
+
+const NOTIFICATIONS_HEADER_SCROLL_SPACE = 104;
 
 function toLocalDateKey(date: Date) {
   const year = date.getFullYear();
@@ -49,10 +67,12 @@ function toLocalTimeValue(date: Date) {
   return `${hours}:${minutes}`;
 }
 
-export default function NotificationsScreen() {
+function NotificationsScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
-  const params = useLocalSearchParams<{ notificationId?: string | string[] }>();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const params = useLocalSearchParams<{ notificationId?: string | string[]; returnTo?: string | string[] }>();
   const scrollY = useRef(new Animated.Value(0)).current;
   const workspaceState = useWorkspaceState();
   const { openFollowUpSheet } = useFollowUpSheet();
@@ -61,14 +81,61 @@ export default function NotificationsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [notificationFilters, setNotificationFilters] = useState<NotificationFilterState>(DEFAULT_NOTIFICATION_FILTERS);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<MobileNotificationCenterItem | null>(null);
   const [sheetMode, setSheetMode] = useState<'detail' | 'actions'>('detail');
+  const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [undoDismissal, setUndoDismissal] = useState<MobileNotificationCenterItem | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const hasLoadedOnceRef = useRef(false);
   const followUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openedNotificationIdRef = useRef<string | null>(null);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mutationIdsRef = useRef(new Set<string>());
+  const pageTranslateX = useRef(new Animated.Value(0)).current;
+
+  const navigateBack = useCallback(() => {
+    const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
+    const destination = returnTo === '/(tabs)/calendar' || returnTo === '/(tabs)/capture' || returnTo === '/(tabs)/projects' || returnTo === '/(tabs)/notes' || returnTo === '/(tabs)/today'
+      ? returnTo
+      : '/(tabs)/today';
+    router.replace(destination as never);
+  }, [params.returnTo, router]);
+
+  const completeSwipeBack = useCallback((direction: 'left' | 'right') => {
+    Animated.timing(pageTranslateX, {
+      toValue: direction === 'left' ? -windowWidth : windowWidth,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) navigateBack();
+    });
+  }, [navigateBack, pageTranslateX, windowWidth]);
+
+  const resetSwipeBack = useCallback(() => {
+    Animated.spring(pageTranslateX, { toValue: 0, useNativeDriver: true, bounciness: 0, speed: 18 }).start();
+  }, [pageTranslateX]);
+
+  const leftEdgePanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 8 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+    onPanResponderMove: (_, gestureState) => pageTranslateX.setValue(Math.max(0, gestureState.dx)),
+    onPanResponderRelease: (_, gestureState) => gestureState.dx > 72 || gestureState.vx > 0.65 ? completeSwipeBack('right') : resetSwipeBack(),
+    onPanResponderTerminate: resetSwipeBack,
+  }), [completeSwipeBack, pageTranslateX, resetSwipeBack]);
+
+  const rightEdgePanResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dx) > 8 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+    onPanResponderMove: (_, gestureState) => pageTranslateX.setValue(Math.min(0, gestureState.dx)),
+    onPanResponderRelease: (_, gestureState) => gestureState.dx < -72 || gestureState.vx < -0.65 ? completeSwipeBack('left') : resetSwipeBack(),
+    onPanResponderTerminate: resetSwipeBack,
+  }), [completeSwipeBack, pageTranslateX, resetSwipeBack]);
 
   const selectedScopeLabel = useMemo(() => {
     return getWorkspaceLabel(workspaceState.selectedWorkspaceId, workspaceState.options);
@@ -88,6 +155,8 @@ export default function NotificationsScreen() {
         clearTimeout(noteTimerRef.current);
         noteTimerRef.current = null;
       }
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+      if (actionMessageTimerRef.current) clearTimeout(actionMessageTimerRef.current);
     };
   }, []);
 
@@ -148,6 +217,94 @@ export default function NotificationsScreen() {
     setSelectedNotification(null);
     setSheetMode('detail');
   }, []);
+
+  const showActionMessage = useCallback((message: string) => {
+    setActionMessage(message);
+    if (actionMessageTimerRef.current) clearTimeout(actionMessageTimerRef.current);
+    actionMessageTimerRef.current = setTimeout(() => setActionMessage(null), 2800);
+  }, []);
+
+  const updateNotification = useCallback((current: MobileNotificationCenterResponse, itemId: string, update: (item: MobileNotificationCenterItem) => MobileNotificationCenterItem) => ({
+    ...current,
+    active: current.active.map((item) => item.id === itemId ? update(item) : item),
+    earlier: current.earlier.map((item) => item.id === itemId ? update(item) : item),
+  }), []);
+
+  const markNotificationRead = useCallback(async (item: MobileNotificationCenterItem) => {
+    if (mutationIdsRef.current.has(item.id) || getNotificationDisplayState(item) !== 'unread') return;
+    mutationIdsRef.current.add(item.id);
+    const previous = notifications;
+    const readAt = new Date().toISOString();
+    setNotifications((current) => updateNotification(current, item.id, (candidate) => ({ ...candidate, unread: false, readAt, actionTaken: 'open' })));
+    try {
+      await performMobileNotificationAction(item.id, 'open');
+    } catch {
+      setNotifications(previous);
+      showActionMessage('Couldn’t mark notification as read');
+    } finally {
+      mutationIdsRef.current.delete(item.id);
+    }
+  }, [notifications, showActionMessage, updateNotification]);
+
+  const commitDismissal = useCallback(async (item: MobileNotificationCenterItem) => {
+    mutationIdsRef.current.add(item.id);
+    try {
+      await performMobileNotificationAction(item.id, 'dismiss');
+    } catch {
+      setNotifications((current) => ({ ...current, active: [...current.active, item], earlier: current.earlier.filter((candidate) => candidate.id !== item.id) }));
+      showActionMessage('Couldn’t dismiss notification');
+    } finally {
+      mutationIdsRef.current.delete(item.id);
+    }
+  }, [showActionMessage]);
+
+  const dismissNotification = useCallback((item: MobileNotificationCenterItem) => {
+    if (mutationIdsRef.current.has(item.id)) return;
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    setUndoDismissal(item);
+    setOpenRowId(null);
+    setNotifications((current) => ({ ...current, active: current.active.filter((candidate) => candidate.id !== item.id), earlier: current.earlier.filter((candidate) => candidate.id !== item.id) }));
+    dismissTimerRef.current = setTimeout(() => {
+      dismissTimerRef.current = null;
+      setUndoDismissal(null);
+      void commitDismissal(item);
+    }, 3200);
+  }, [commitDismissal]);
+
+  const undoDismissalAction = useCallback(() => {
+    if (!undoDismissal) return;
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = null;
+    setNotifications((current) => {
+      const exists = [...current.active, ...current.earlier].some((candidate) => candidate.id === undoDismissal.id);
+      if (exists) return current;
+      return undoDismissal.status === 'active'
+        ? { ...current, active: [...current.active, undoDismissal] }
+        : { ...current, earlier: [...current.earlier, undoDismissal] };
+    });
+    setUndoDismissal(null);
+  }, [undoDismissal]);
+
+  const markAllRead = useCallback(async () => {
+    const unreadItems = [...notifications.active, ...notifications.earlier].filter((item) => getNotificationDisplayState(item) === 'unread');
+    if (!unreadItems.length) return;
+    const previous = notifications;
+    const readAt = new Date().toISOString();
+    setNotifications((current) => ({
+      ...current,
+      active: current.active.map((item) => unreadItems.some((candidate) => candidate.id === item.id) ? { ...item, unread: false, readAt, actionTaken: 'open' } : item),
+      earlier: current.earlier.map((item) => unreadItems.some((candidate) => candidate.id === item.id) ? { ...item, unread: false, readAt, actionTaken: 'open' } : item),
+    }));
+    try {
+      await markAllMobileNotificationsRead(workspaceState.selectedWorkspaceId);
+    } catch {
+      setNotifications(previous);
+      showActionMessage('Couldn’t mark notifications as read');
+    }
+  }, [notifications, showActionMessage, workspaceState.selectedWorkspaceId]);
 
   const openNotificationSheet = useCallback((item: MobileNotificationCenterItem, mode: 'detail' | 'actions') => {
     setSelectedNotification(item);
@@ -317,6 +474,30 @@ export default function NotificationsScreen() {
 
   const handleNotificationAction = useCallback(
     async (actionId: string, item: MobileNotificationCenterItem) => {
+      if (actionId === 'open') {
+        if (getNotificationDisplayState(item) === 'unread') void markNotificationRead(item);
+        setSheetMode('detail');
+        return;
+      }
+
+      if (actionId === 'notification_settings') {
+        closeNotificationSheet();
+        router.push('/settings');
+        return;
+      }
+
+      if (actionId === 'mark_read') {
+        await markNotificationRead(item);
+        closeNotificationSheet();
+        return;
+      }
+
+      if (actionId === 'dismiss') {
+        dismissNotification(item);
+        closeNotificationSheet();
+        return;
+      }
+
       if (actionId === 'add_note' && (item.sourceType === 'event' || item.sourceType === 'project')) {
         scheduleQuickNoteSheet(item);
         return;
@@ -497,29 +678,82 @@ export default function NotificationsScreen() {
     [
       applyOptimisticNotificationAction,
       closeNotificationSheet,
+      dismissNotification,
       handleInboxArchive,
       handleInboxConvert,
       handleTaskFocus,
       handleTaskMoveTomorrow,
       notifications,
+      markNotificationRead,
       refreshNotifications,
+      router,
       scheduleFollowUpSheet,
       scheduleQuickNoteSheet,
     ],
   );
 
-  const hasContent = notifications.active.length > 0 || notifications.earlier.length > 0;
+  const showWorkspaceNames = workspaceState.selectedWorkspaceId === 'all';
+  const activeFilterCount = countActiveNotificationFilters(notificationFilters);
+  const filteredNotificationItems = useMemo(
+    () => filterNotifications([...notifications.active, ...notifications.earlier], notificationFilters),
+    [notificationFilters, notifications.active, notifications.earlier],
+  );
+  const presentedNotifications = useMemo(
+    () => buildPresentedNotifications(filteredNotificationItems, showWorkspaceNames),
+    [filteredNotificationItems, showWorkspaceNames],
+  );
+  const notificationSections = useMemo(
+    () => buildNotificationSections(presentedNotifications),
+    [presentedNotifications],
+  );
+  const hasContent = notificationSections.length > 0;
+  const getSwipeActions = useCallback((item: MobileNotificationCenterItem) => [
+    ...(getNotificationDisplayState(item) === 'unread' ? [{ id: 'mark_read', label: 'Read', onPress: () => { void markNotificationRead(item); } }] : []),
+    { id: 'dismiss', label: 'Dismiss', destructive: true, onPress: () => dismissNotification(item) },
+  ], [dismissNotification, markNotificationRead]);
 
   return (
     <Screen contentStyle={{ paddingTop: 0 }}>
       <View style={{ flex: 1 }}>
+        <Animated.View style={[styles.pageSurface, { transform: [{ translateX: pageTranslateX }] }]}>
         <MobilePageHeader
           title="Notifications"
+          showBack
+          onBackPress={navigateBack}
           workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : selectedScopeLabel}
           workspaceLoading={workspaceState.isLoading}
           workspaceExpanded={workspacePickerOpen}
           onWorkspacePress={openWorkspaceSwitcher}
-          onSettingsPress={() => router.push('/settings')}
+          showSettings={false}
+          rightAccessory={(
+            <View style={styles.headerActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Filter notifications"
+                accessibilityHint={activeFilterCount ? `${activeFilterCount} filters active` : undefined}
+                hitSlop={8}
+                onPress={() => setFilterSheetOpen(true)}
+                style={({ pressed }) => [styles.headerIconButton, { opacity: pressed ? 0.72 : 1 }]}
+              >
+                <SymbolView
+                  name={{ ios: 'line.3.horizontal.decrease', android: 'filter_list', web: 'filter_list' }}
+                  size={20}
+                  weight="regular"
+                  tintColor={activeFilterCount ? theme.colors.accent : theme.colors.textSecondary}
+                />
+                {activeFilterCount ? <View style={[styles.filterBadge, { backgroundColor: theme.colors.accent }]} /> : null}
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open settings"
+                hitSlop={8}
+                onPress={() => router.push('/settings')}
+                style={({ pressed }) => [styles.headerIconButton, { opacity: pressed ? 0.72 : 1 }]}
+              >
+                <SymbolView name={{ ios: 'gearshape', android: 'settings', web: 'settings' }} size={20} weight="regular" tintColor={theme.colors.textSecondary} />
+              </Pressable>
+            </View>
+          )}
           scrollY={scrollY}
         />
 
@@ -533,11 +767,19 @@ export default function NotificationsScreen() {
           onClose={() => setWorkspacePickerOpen(false)}
         />
 
+        <NotificationFilterSheet
+          visible={filterSheetOpen}
+          filters={notificationFilters}
+          onChange={setNotificationFilters}
+          onReset={() => setNotificationFilters(DEFAULT_NOTIFICATION_FILTERS)}
+          onClose={() => setFilterSheetOpen(false)}
+        />
+
         <Animated.ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
-            paddingBottom: theme.spacing['3xl'] + 132,
+            paddingTop: NOTIFICATIONS_HEADER_SCROLL_SPACE,
+            paddingBottom: theme.spacing['3xl'] + insets.bottom + 24,
             flexGrow: 1,
           }}
           contentInsetAdjustmentBehavior="always"
@@ -574,24 +816,36 @@ export default function NotificationsScreen() {
             ) : hasContent ? (
               <View style={{ gap: theme.spacing.xl }}>
                 <NotificationList
-                  active={notifications.active}
-                  earlier={notifications.earlier}
-                  showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
+                  sections={notificationSections}
                   onPress={(item) => {
+                    if (getNotificationDisplayState(item) === 'unread') void markNotificationRead(item);
+                    setOpenRowId(null);
                     openNotificationSheet(item, 'detail');
                   }}
                   onLongPress={async (item) => {
                     await triggerLightHaptic();
+                    setOpenRowId(null);
                     openNotificationSheet(item, 'actions');
                   }}
+                  openRowId={openRowId}
+                  onOpenRow={setOpenRowId}
+                  onCloseRow={() => setOpenRowId(null)}
+                  getSwipeActions={getSwipeActions}
+                  onMarkAllRead={() => void markAllRead()}
                   busyItemId={actionBusyId}
                 />
+              </View>
+            ) : activeFilterCount ? (
+              <View style={styles.filteredEmptyState}>
+                <AppText variant="body" style={styles.filteredEmptyTitle}>No matching notifications</AppText>
+                <AppText variant="caption" style={styles.filteredEmptyDescription}>Try another type or clear the filters.</AppText>
+                <AppButton title="Clear filters" variant="secondary" fullWidth={false} onPress={() => setNotificationFilters(DEFAULT_NOTIFICATION_FILTERS)} />
               </View>
             ) : (
               <EmptyState
                 iconName="bell"
-                title="Nothing needs attention."
-                description="Notifications will show up here when Ledger needs your attention."
+                title="You’re all caught up"
+                description="New reminders, assignments, project updates, and integration activity will appear here."
               />
             )}
           </View>
@@ -600,7 +854,7 @@ export default function NotificationsScreen() {
         <NotificationDetailSheet
           visible={sheetMode === 'detail' && Boolean(selectedNotification)}
           item={sheetMode === 'detail' ? selectedNotification : null}
-          showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
+          showWorkspaceNames={showWorkspaceNames}
           onClose={closeNotificationSheet}
           onAction={handleNotificationAction}
         />
@@ -608,11 +862,45 @@ export default function NotificationsScreen() {
         <NotificationActionsSheet
           visible={sheetMode === 'actions' && Boolean(selectedNotification)}
           item={sheetMode === 'actions' ? selectedNotification : null}
-          showWorkspaceNames={workspaceState.selectedWorkspaceId === 'all'}
+          showWorkspaceNames={showWorkspaceNames}
           onClose={closeNotificationSheet}
           onAction={handleNotificationAction}
         />
+
+        {undoDismissal || actionMessage ? (
+          <View style={[styles.feedback, { bottom: insets.bottom + 16, backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}>
+            <AppText variant="caption" numberOfLines={1} style={styles.feedbackText}>{undoDismissal ? 'Notification dismissed' : actionMessage}</AppText>
+            {undoDismissal ? <Pressable accessibilityRole="button" accessibilityLabel="Undo notification dismissal" hitSlop={8} onPress={undoDismissalAction}><AppText variant="caption" style={{ color: theme.colors.accent, fontWeight: '600' }}>Undo</AppText></Pressable> : null}
+          </View>
+        ) : null}
+        </Animated.View>
+        <View style={styles.leftEdgeGesture} {...leftEdgePanResponder.panHandlers} />
+        <View style={styles.rightEdgeGesture} {...rightEdgePanResponder.panHandlers} />
       </View>
     </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  pageSurface: { flex: 1 },
+  leftEdgeGesture: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 28, zIndex: 20 },
+  rightEdgeGesture: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 28, zIndex: 20 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  headerIconButton: { width: 24, height: 28, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  filterBadge: { position: 'absolute', right: -1, top: 2, width: 5, height: 5, borderRadius: 3 },
+  filteredEmptyState: { alignItems: 'center', gap: 8, paddingTop: 28 },
+  filteredEmptyTitle: { fontWeight: '600' },
+  filteredEmptyDescription: { color: '#6B7280', textAlign: 'center' },
+  feedback: { position: 'absolute', left: 12, right: 12, minHeight: 42, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 14, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  feedbackText: { flex: 1 },
+});
+
+export default function NotificationsRoute() {
+  return (
+    <FollowUpSheetProvider>
+      <QuickNoteSheetProvider>
+        <NotificationsScreen />
+      </QuickNoteSheetProvider>
+    </FollowUpSheetProvider>
   );
 }

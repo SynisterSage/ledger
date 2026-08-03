@@ -33,8 +33,10 @@ export function NotificationDetailSheet({
       title={item.title}
       subtitle={getNotificationSubtitle(item, showWorkspaceNames)}
       meta={getNotificationDetailMetaRows(item)}
+      metaInCard
       body={getNotificationDetailBody(item)}
       actions={getNotificationActions(item)}
+      actionsInCard
       onAction={(actionId) => onAction(actionId, item)}
       onClose={onClose}
     />

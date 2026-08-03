@@ -32,3 +32,10 @@ export async function performMobileNotificationAction(
     },
   );
 }
+
+export async function markAllMobileNotificationsRead(workspaceId?: string) {
+  return mobileRequest<{ ok: boolean; count: number }>('/api/notifications/read-all', {
+    method: 'POST',
+    headers: workspaceId && workspaceId !== 'all' ? { 'x-workspace-id': workspaceId } : undefined,
+  });
+}

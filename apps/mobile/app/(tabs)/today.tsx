@@ -25,8 +25,8 @@ import type { QuickNoteSavedNote } from '@/features/quicknote/QuickNoteSheetCont
 import { useSearchSheet } from '@/features/search/SearchSheetContext';
 import { triggerLightHaptic } from '@/lib/haptics';
 import { getMobileToday } from '@/api/today';
-import { getMobileNotifications } from '@/api/notifications';
 import { performMobileTodayAction } from '@/api/todayActions';
+import { useMobileUnreadNotificationCount } from '@/features/notifications/useMobileUnreadNotificationCount';
 import { useLedgerTheme } from '@/theme';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
 import type {
@@ -73,7 +73,7 @@ export default function TodayScreen() {
   const [selectedItem, setSelectedItem] = useState<MobileTodayInteractionItem | null>(null);
   const [sheetMode, setSheetMode] = useState<TodayDetailSheetMode>('detail');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const unreadNotificationCount = useMobileUnreadNotificationCount(workspaceState.selectedWorkspaceId);
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
   const [surfaceSection, setSurfaceSection] = useState<'today' | 'attention' | 'next-up' | null>(null);
@@ -102,15 +102,6 @@ export default function TodayScreen() {
     }, 2500);
   }, []);
 
-  const loadNotificationCount = useCallback(async () => {
-    try {
-      const response = await getMobileNotifications(workspaceState.selectedWorkspaceId);
-      setUnreadNotificationCount(response.counts.active);
-    } catch {
-      // Today should remain useful if notification hydration is unavailable.
-    }
-  }, [workspaceState.selectedWorkspaceId]);
-
   const loadToday = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
       const loadToken = ++loadTokenRef.current;
@@ -138,7 +129,6 @@ export default function TodayScreen() {
         });
         hasLoadedRef.current = true;
         setActionError(null);
-        void loadNotificationCount();
       } catch (err) {
         if (loadToken !== loadTokenRef.current) return;
 
@@ -155,7 +145,7 @@ export default function TodayScreen() {
         }
       }
     },
-    [loadNotificationCount, showActionError, workspaceState.selectedWorkspaceId],
+    [showActionError, workspaceState.selectedWorkspaceId],
   );
 
   const refreshToday = useCallback(async () => {
@@ -170,8 +160,7 @@ export default function TodayScreen() {
   useFocusEffect(
     useCallback(() => {
       void loadToday({ silent: hasLoadedRef.current });
-      void loadNotificationCount();
-    }, [loadNotificationCount, loadToday]),
+    }, [loadToday]),
   );
 
   useEffect(() => {
@@ -529,7 +518,8 @@ export default function TodayScreen() {
           unreadCount={unreadNotificationCount}
           onWorkspacePress={openWorkspaceSwitcher}
           onSearchPress={openSearch}
-          onNotificationsPress={() => router.push('/(tabs)/notifications')}
+          onNotificationsPress={() => router.push({ pathname: '/notifications', params: { returnTo: '/(tabs)/today' } })}
+          onSettingsPress={() => router.push('/settings')}
           scrollY={scrollY}
         />
         <WorkspaceSelectorSheet
@@ -655,9 +645,9 @@ export default function TodayScreen() {
                   }
                   onTeamItemPress={(sourceType, sourceId) => {
                     if (sourceType === 'mention') {
-                      router.push('/(tabs)/notifications');
+                      router.push({ pathname: '/notifications', params: { returnTo: '/(tabs)/today' } });
                     } else if (sourceId) {
-                      router.push('/(tabs)/notifications');
+                      router.push({ pathname: '/notifications', params: { returnTo: '/(tabs)/today' } });
                     }
                   }}
                   onItemPress={(item) => {

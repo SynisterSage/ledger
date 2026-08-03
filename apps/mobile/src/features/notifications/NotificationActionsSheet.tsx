@@ -6,7 +6,7 @@ import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
 import type { MobileNotificationCenterItem } from '@/types/ledger';
 
-import { getNotificationActions, getNotificationSubtitle } from './notificationAdapters';
+import { getNotificationActions, getNotificationDisplayState, getNotificationSubtitle } from './notificationAdapters';
 
 type NotificationActionsSheetProps = {
   visible: boolean;
@@ -25,14 +25,23 @@ export function NotificationActionsSheet({
 }: NotificationActionsSheetProps) {
   const theme = useLedgerTheme();
 
-  const actions = useMemo(() => (item ? getNotificationActions(item) : []), [item]);
+  const actions = useMemo(() => {
+    if (!item) return [];
+    const state = getNotificationDisplayState(item);
+    return [
+      { id: 'open', label: 'Open' },
+      ...(state === 'unread' ? [{ id: 'mark_read', label: 'Mark as read' }] : []),
+      ...getNotificationActions(item),
+      { id: 'notification_settings', label: 'Notification settings' },
+    ];
+  }, [item]);
 
   if (!item) {
     return null;
   }
 
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title={undefined} snapPoints={['34%', '52%', '80%']} initialSnapPointIndex={1}>
+    <AppBottomSheet visible={visible} onClose={onClose} title={undefined} snapPoints={['34%', '52%', '92%']} initialSnapPointIndex={2} dragCloseThreshold={24} dragCloseVelocityThreshold={0.35} dragCloseSnapMargin={4}>
       <View style={{ gap: theme.spacing.md }}>
         <View style={{ gap: theme.spacing.xs }}>
           <AppText variant="screenTitle" style={styles.title}>
@@ -43,9 +52,7 @@ export function NotificationActionsSheet({
           </AppText>
         </View>
 
-        <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} />
-
-        <View>
+        <View style={[styles.actionGroup, { backgroundColor: theme.colors.surfaceMuted }]}>
           {actions.map((action) => (
             <Pressable
               key={action.id}
@@ -54,7 +61,6 @@ export function NotificationActionsSheet({
               style={({ pressed }) => [
                 styles.actionRow,
                 {
-                  borderBottomColor: theme.colors.borderSubtle,
                   opacity: pressed ? 0.72 : 1,
                 },
               ]}>
@@ -81,12 +87,14 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     letterSpacing: -0.4,
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
+  actionGroup: {
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    gap: 2,
   },
   actionRow: {
     minHeight: 48,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     paddingVertical: 14,
     justifyContent: 'center',
   },

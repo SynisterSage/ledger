@@ -1,28 +1,21 @@
 import { View } from 'react-native';
 
-import { Section } from '@/components/Section';
 import { Skeleton } from '@/components/Skeleton';
 import { useLedgerTheme } from '@/theme';
 
 function SkeletonRow() {
   const theme = useLedgerTheme();
-
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: theme.spacing.md,
-        paddingVertical: theme.spacing.md,
-      }}>
-      <View style={{ flex: 1, gap: theme.spacing.xs }}>
-        <Skeleton width="60%" height={18} radius={8} />
-        <Skeleton width="84%" height={14} radius={8} />
+    <View style={styles.row}>
+      <View style={styles.iconColumn}>
+        <Skeleton width={22} height={22} radius={7} />
       </View>
-      <View style={{ alignItems: 'flex-end', gap: theme.spacing.xs, paddingTop: 2 }}>
-        <Skeleton width={68} height={20} radius={999} />
-        <Skeleton width={48} height={12} radius={8} />
+      <View style={[styles.content, { borderBottomColor: theme.colors.borderSubtle }]}>
+        <View style={styles.titleLine}>
+          <Skeleton height={16} radius={5} style={styles.titleSkeleton} />
+          <Skeleton width={24} height={12} radius={5} />
+        </View>
+        <Skeleton width="72%" height={12} radius={5} />
       </View>
     </View>
   );
@@ -30,19 +23,21 @@ function SkeletonRow() {
 
 export function NotificationSkeleton() {
   const theme = useLedgerTheme();
-
   return (
-    <View style={{ gap: theme.spacing['3xl'] }}>
-      <Section title="Active">
-        <SkeletonRow />
-      </Section>
-
-      <Section title="Earlier">
-        <View style={{ gap: theme.spacing.sm }}>
-          <SkeletonRow />
-          <SkeletonRow />
-        </View>
-      </Section>
+    <View style={[styles.container, { paddingTop: theme.spacing.md }]}>
+      <SkeletonRow />
+      <SkeletonRow />
+      <SkeletonRow />
+      <SkeletonRow />
     </View>
   );
 }
+
+const styles = {
+  container: { gap: 0 },
+  row: { minHeight: 68, flexDirection: 'row' as const, alignItems: 'flex-start' as const, gap: 10, paddingVertical: 8 },
+  iconColumn: { width: 24, alignItems: 'center' as const, paddingTop: 2 },
+  content: { minWidth: 0, flex: 1, gap: 3, paddingBottom: 9, borderBottomWidth: 0.5 },
+  titleLine: { minWidth: 0, flexDirection: 'row' as const, alignItems: 'flex-start' as const, gap: 8 },
+  titleSkeleton: { flex: 1 },
+};

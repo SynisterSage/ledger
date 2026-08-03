@@ -42,6 +42,8 @@ type AppDetailSheetProps = {
   onClose: () => void;
   footer?: ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
+  actionsInCard?: boolean;
+  metaInCard?: boolean;
 };
 
 const OPEN_DURATION = 220;
@@ -61,6 +63,8 @@ export function AppDetailSheet({
   onClose,
   footer,
   contentStyle,
+  actionsInCard = false,
+  metaInCard = false,
 }: AppDetailSheetProps) {
   const theme = useLedgerTheme();
   const insets = useSafeAreaInsets();
@@ -254,9 +258,9 @@ export function AppDetailSheet({
                 <View
                   style={[
                     styles.metaGroup,
+                    metaInCard ? styles.cardMetaGroup : null,
                     {
-                      borderTopColor: theme.colors.borderSubtle,
-                      borderBottomColor: theme.colors.borderSubtle,
+                      backgroundColor: metaInCard ? theme.colors.surfaceMuted : undefined,
                     },
                   ]}>
                   {meta.map((item, index) => (
@@ -264,8 +268,12 @@ export function AppDetailSheet({
                       key={`${item.label ?? 'meta'}-${index}`}
                       style={[
                         styles.metaRow,
+                        metaInCard ? styles.cardMetaRow : null,
                         index === meta.length - 1 ? styles.metaRowLast : null,
-                        { borderBottomColor: theme.colors.borderSubtle },
+                        {
+                          borderBottomColor: theme.colors.borderSubtle,
+                          borderBottomWidth: metaInCard ? 0 : StyleSheet.hairlineWidth,
+                        },
                       ]}>
                       {item.label ? (
                         <AppText variant="caption" style={{ color: theme.colors.textMuted }}>
@@ -283,7 +291,7 @@ export function AppDetailSheet({
               {bodyContent ? <View style={styles.bodyWrap}>{bodyContent}</View> : null}
 
               {safeActions.length ? (
-                <View style={styles.actionsGroup}>
+                <View style={[styles.actionsGroup, actionsInCard ? styles.cardActionsGroup : null, actionsInCard ? { backgroundColor: theme.colors.surfaceMuted } : null]}>
                   {safeActions.map((action) => (
                     <Pressable
                       key={action.id}
@@ -294,6 +302,7 @@ export function AppDetailSheet({
                         styles.actionRow,
                         {
                           borderBottomColor: theme.colors.borderSubtle,
+                          borderBottomWidth: actionsInCard ? 0 : StyleSheet.hairlineWidth,
                           opacity: action.disabled ? 0.4 : pressed ? 0.72 : 1,
                         },
                       ]}>
@@ -312,7 +321,7 @@ export function AppDetailSheet({
               ) : null}
 
               {dangerActions.length ? (
-                <View style={styles.dangerActionsGroup}>
+                <View style={[styles.dangerActionsGroup, actionsInCard ? styles.cardActionsGroup : null, actionsInCard ? { backgroundColor: theme.colors.surfaceMuted } : null]}>
                   {dangerActions.map((action) => (
                     <Pressable
                       key={action.id}
@@ -323,6 +332,7 @@ export function AppDetailSheet({
                         styles.actionRow,
                         {
                           borderBottomColor: theme.colors.borderSubtle,
+                          borderBottomWidth: actionsInCard ? 0 : StyleSheet.hairlineWidth,
                           opacity: action.disabled ? 0.4 : pressed ? 0.72 : 1,
                         },
                       ]}>
@@ -434,10 +444,20 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  cardMetaGroup: {
+    borderRadius: 18,
+    borderTopWidth: 0,
+    borderBottomWidth: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
   metaRow: {
     gap: 2,
     borderBottomWidth: StyleSheet.hairlineWidth,
     paddingVertical: 10,
+  },
+  cardMetaRow: {
+    paddingVertical: 8,
   },
   metaRowLast: {
     borderBottomWidth: 0,
@@ -447,6 +467,13 @@ const styles = StyleSheet.create({
   },
   dangerActionsGroup: {
     marginTop: -8,
+  },
+  cardActionsGroup: {
+    marginTop: 4,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    gap: 2,
   },
   actionRow: {
     minHeight: 48,
