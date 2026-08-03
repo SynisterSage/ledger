@@ -5,7 +5,6 @@ import { SymbolView } from 'expo-symbols';
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
-import type { MobileCalendarView } from './useMobileCalendarState';
 import { useLedgerTheme } from '@/theme';
 import { getMobileCalendarRange, createMobileCalendar } from '@/api/calendar';
 import { createMobileEvent, createMobileNote, createMobileProjectAction, createMobileReminder, createMobileTask } from '@/api/captures';
@@ -25,27 +24,6 @@ import { useRouter } from 'expo-router';
 import { openMobileNote } from '@/features/notes/openMobileNote';
 
 type CalendarSymbolName = ComponentProps<typeof SymbolView>['name'];
-
-const viewOptions: Array<{ id: MobileCalendarView; label: string }> = [
-  { id: 'month', label: 'Month' }, { id: 'agenda', label: 'Agenda' }, { id: 'day', label: 'Day' },
-];
-
-export function CalendarViewSheet({ visible, value, onChange, onClose }: { visible: boolean; value: MobileCalendarView; onChange: (view: MobileCalendarView) => void; onClose: () => void }) {
-  const theme = useLedgerTheme();
-  return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="View calendar" snapPoints={['58%', '72%']} initialSnapPointIndex={0} dragCloseThreshold={36} dragCloseSnapMargin={6}>
-      <View>
-        {viewOptions.map((option) => {
-          const selected = option.id === value;
-          return <Pressable key={option.id} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${option.label} calendar view`} onPress={() => { onChange(option.id); onClose(); }} style={({ pressed }) => [styles.option, { borderBottomColor: theme.colors.borderSubtle, opacity: pressed ? 0.68 : 1 }]}>
-            <AppText variant="bodyStrong">{option.label}</AppText>
-            {selected ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={18} tintColor={theme.colors.accent} /> : null}
-          </Pressable>;
-        })}
-      </View>
-    </AppBottomSheet>
-  );
-}
 
 type CreateHref = '/capture/event' | '/capture/reminder' | '/capture/task' | '/capture/note' | '/capture/project-action';
 

@@ -2,7 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defaultCalendarFilters, type CalendarFilters } from './calendarFilters';
 import * as SecureStore from 'expo-secure-store';
 
-export type MobileCalendarView = 'year' | 'month' | 'agenda' | 'day';
+export type CalendarRangeView = 'month' | 'agenda' | 'day';
+export type MonthDisplayMode = 'compact' | 'stacked' | 'details';
+export type MobileCalendarView = 'year' | CalendarRangeView;
+
+export type MobileCalendarViewState = {
+  rangeView: CalendarRangeView;
+  monthDisplayMode: MonthDisplayMode;
+  selectedDate: Date;
+  visibleMonth: Date;
+};
 
 export type CalendarViewContext = {
   workspaceId: string;
@@ -14,6 +23,7 @@ export type CalendarViewContext = {
 };
 
 const CALENDAR_VIEW_STORAGE_KEY = 'ledger-mobile-calendar-view';
+const CALENDAR_MONTH_DISPLAY_MODE_STORAGE_KEY = 'calendar.monthDisplayMode';
 const CALENDAR_FILTER_STORAGE_KEY = 'ledger-mobile-calendar-filters';
 
 function readFilters(workspaceId: string): CalendarFilters {
@@ -49,6 +59,25 @@ function persistView(view: MobileCalendarView) {
   }
 }
 
+function isMonthDisplayMode(value: string | null | undefined): value is MonthDisplayMode {
+  return value === 'compact' || value === 'stacked' || value === 'details';
+}
+
+function readInitialMonthDisplayMode(): MonthDisplayMode {
+  try {
+    const value = globalThis.localStorage?.getItem(CALENDAR_MONTH_DISPLAY_MODE_STORAGE_KEY);
+    if (isMonthDisplayMode(value)) return value;
+  } catch {
+    // Local preferences are best effort on native platforms.
+  }
+  return 'details';
+}
+
+function persistMonthDisplayMode(mode: MonthDisplayMode) {
+  try { globalThis.localStorage?.setItem(CALENDAR_MONTH_DISPLAY_MODE_STORAGE_KEY, mode); } catch { /* best effort */ }
+  void SecureStore.setItemAsync(CALENDAR_MONTH_DISPLAY_MODE_STORAGE_KEY, mode).catch(() => undefined);
+}
+
 function startOfDay(date: Date) {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
@@ -71,6 +100,7 @@ function addMonths(date: Date, amount: number) {
 export function useMobileCalendarState(workspaceId = 'default') {
   const today = useMemo(() => startOfDay(new Date()), []);
   const [view, setViewState] = useState<MobileCalendarView>(readInitialView);
+  const [monthDisplayMode, setMonthDisplayModeState] = useState<MonthDisplayMode>(readInitialMonthDisplayMode);
   const [selectedDate, setSelectedDate] = useState(today);
   const [visiblePeriod, setVisiblePeriod] = useState(today);
   const workspaceDatesRef = useRef<Record<string, { selectedDate: Date; visiblePeriod: Date }>>({});
@@ -79,6 +109,14 @@ export function useMobileCalendarState(workspaceId = 'default') {
   const [viewSheetOpen, setViewSheetOpen] = useState(false);
   const [sourceSheetOpen, setSourceSheetOpen] = useState(false);
   const [creationSheetOpen, setCreationSheetOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void SecureStore.getItemAsync(CALENDAR_MONTH_DISPLAY_MODE_STORAGE_KEY).then((value) => {
+      if (active && isMonthDisplayMode(value)) setMonthDisplayModeState(value);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (activeWorkspaceRef.current === workspaceId) return;
@@ -117,6 +155,11 @@ export function useMobileCalendarState(workspaceId = 'default') {
     persistView(nextView);
   }, []);
 
+  const setMonthDisplayMode = useCallback((nextMode: MonthDisplayMode) => {
+    setMonthDisplayModeState(nextMode);
+    persistMonthDisplayMode(nextMode);
+  }, []);
+
   const selectDate = useCallback((date: Date) => {
     const next = startOfDay(date);
     setSelectedDate(next);
@@ -141,6 +184,9 @@ export function useMobileCalendarState(workspaceId = 'default') {
 
   return {
     view,
+    rangeView: view === 'year' ? 'month' as CalendarRangeView : view,
+    monthDisplayMode,
+    lastMonthDisplayMode: monthDisplayMode,
     selectedDate,
     visiblePeriod,
     filters,
@@ -150,6 +196,7 @@ export function useMobileCalendarState(workspaceId = 'default') {
     sourceSheetOpen,
     creationSheetOpen,
     setView,
+    setMonthDisplayMode,
     selectDate,
     changeVisiblePeriod,
     goToToday,

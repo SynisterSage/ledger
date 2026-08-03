@@ -7,18 +7,28 @@ import { addCalendarMonths, formatCalendarDateKey, formatCalendarMonthKey, gener
 import { useMobileMonthCalendarItems } from './useMobileMonthCalendarItems';
 import type { MobileCalendarItem, MobileCalendarItemType } from './calendarItemNormalizer';
 import type { CalendarFilters } from './calendarFilters';
+import type { MonthDisplayMode } from './useMobileCalendarState';
+import { CompactMonthView } from './CompactMonthView';
+import { getCompactDayPresentation, type CompactDayPresentation } from './compactDayPresentation';
+import { StackedMonthView } from './StackedMonthView';
+import { getStackedDayPresentation, type StackedDayPresentation } from './stackedDayPresentation';
 
 const MONTHS_BEFORE = 12;
 const MONTHS_AFTER = 18;
 const EXTENSION_MONTHS = 12;
 const MAX_VISIBLE_ITEMS = 3;
-const WEEK_HEIGHT = 112;
-const MONTH_HEADER_HEIGHT = 48;
+const DETAILS_WEEK_HEIGHT = 112;
+const DETAILS_MONTH_HEADER_HEIGHT = 48;
+const COMPACT_WEEK_HEIGHT = 58;
+const COMPACT_MONTH_HEADER_HEIGHT = 38;
+const STACKED_WEEK_HEIGHT = 78;
+const STACKED_MONTH_HEADER_HEIGHT = 38;
 
-export type ContinuousMonthViewHandle = { scrollToToday: () => void; scrollToMonth: (date: Date) => void };
+export type ContinuousMonthViewHandle = { scrollToToday: () => void; scrollToMonth: (date: Date, animated?: boolean) => void };
 export type MonthScrollState = { offset: number; visibleMonthKey: string };
 
 type Props = {
+  mode?: MonthDisplayMode;
   selectedDate: Date;
   visiblePeriod: Date;
   workspaceId: string;
@@ -26,6 +36,7 @@ type Props = {
   filters?: CalendarFilters;
   scrollState?: MonthScrollState;
   onSelectDate: (date: Date) => void;
+  onOpenDate?: (date: Date) => void;
   onChangeVisiblePeriod: (date: Date) => void;
   onScrollStateChange?: (state: MonthScrollState) => void;
   onOpenItem?: (item: MobileCalendarItem) => void;
@@ -106,7 +117,7 @@ const MonthBlock = memo(function MonthBlock({ month, selectedDate, itemsByDate, 
   </View>;
 });
 
-export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Props>(function ContinuousMonthView({ selectedDate, visiblePeriod, workspaceId, workspaceReady = true, filters, scrollState, onSelectDate, onChangeVisiblePeriod, onScrollStateChange, onOpenItem = () => undefined, onLongPressItem = onOpenItem }, ref) {
+export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Props>(function ContinuousMonthView({ mode = 'details', selectedDate, visiblePeriod, workspaceId, workspaceReady = true, filters, scrollState, onSelectDate, onOpenDate = () => undefined, onChangeVisiblePeriod, onScrollStateChange, onOpenItem = () => undefined, onLongPressItem = onOpenItem }, ref) {
   const theme = useLedgerTheme();
   const { width } = useWindowDimensions();
   const today = useMemo(() => new Date(), []);
@@ -119,24 +130,46 @@ export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Props>(
   const lastWeek = lastGridMonth?.weeks[lastGridMonth.weeks.length - 1];
   const lastGrid = lastWeek?.[lastWeek.length - 1]?.dateKey ?? firstGrid;
   const { itemsByDate, isLoading, error, retry } = useMobileMonthCalendarItems(workspaceId, firstGrid, lastGrid, filters, workspaceReady);
+  const compactPresentations = useMemo<Record<string, CompactDayPresentation>>(() => {
+    if (mode !== 'compact') return {};
+    return Object.fromEntries(Object.entries(itemsByDate).map(([dateKey, items]) => [dateKey, getCompactDayPresentation(items, theme.colors.accent)]));
+  }, [itemsByDate, mode, theme.colors.accent]);
+  const stackedPresentations = useMemo<Record<string, StackedDayPresentation>>(() => {
+    if (mode !== 'stacked') return {};
+    return Object.fromEntries(Object.entries(itemsByDate).map(([dateKey, items]) => [dateKey, getStackedDayPresentation(items, theme.colors.accent)]));
+  }, [itemsByDate, mode, theme.colors.accent]);
   const initialIndex = Math.max(0, monthIndex(visiblePeriod));
   const monthHeight = useCallback((month: Date) => {
-    const datesInMonth = generateCalendarMonth(month, selectedDate, today).weeks.flat().filter((day) => day.isCurrentMonth).length;
-    return MONTH_HEADER_HEIGHT + Math.ceil(datesInMonth / 7) * WEEK_HEIGHT;
-  }, [selectedDate, today]);
+    const headerHeight = mode === 'compact' ? COMPACT_MONTH_HEADER_HEIGHT : mode === 'stacked' ? STACKED_MONTH_HEADER_HEIGHT : DETAILS_MONTH_HEADER_HEIGHT;
+    const weekHeight = mode === 'compact' ? COMPACT_WEEK_HEIGHT : mode === 'stacked' ? STACKED_WEEK_HEIGHT : DETAILS_WEEK_HEIGHT;
+    const monthGrid = generateCalendarMonth(month, selectedDate, today);
+    const weekCount = mode === 'compact' || mode === 'stacked'
+      ? monthGrid.weeks.length
+      : Math.ceil(monthGrid.weeks.flat().filter((day) => day.isCurrentMonth).length / 7);
+    return headerHeight + weekCount * weekHeight;
+  }, [mode, selectedDate, today]);
   const monthOffset = useCallback((index: number) => {
     return months.slice(0, index).reduce((offset, month) => offset + monthHeight(month), 0);
   }, [monthHeight, months]);
-  const scrollToMonth = useCallback((date: Date) => {
+  const scrollToMonth = useCallback((date: Date, animated = true) => {
     const index = monthIndex(date);
     if (index >= 0) {
-      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.08 });
+      listRef.current?.scrollToIndex({ index, animated, viewPosition: 0.08 });
       onChangeVisiblePeriod(date);
     }
   }, [monthIndex, onChangeVisiblePeriod]);
   useImperativeHandle(ref, () => ({ scrollToToday: () => scrollToMonth(today), scrollToMonth }), [scrollToMonth, today]);
   const cellWidth = width / 7;
-  const renderMonth = useCallback(({ item }: { item: Date }) => <MonthBlock month={generateCalendarMonth(item, selectedDate, today)} selectedDate={selectedDate} itemsByDate={itemsByDate} cellWidth={cellWidth} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} />, [cellWidth, itemsByDate, onLongPressItem, onOpenItem, onSelectDate, selectedDate, today]);
+  const renderMonth = useCallback(({ item }: { item: Date }) => {
+    const month = generateCalendarMonth(item, selectedDate, today);
+    if (mode === 'compact') {
+      return <CompactMonthView month={month} selectedDate={selectedDate} presentations={compactPresentations} onSelectDate={onSelectDate} onOpenDate={onOpenDate} />;
+    }
+    if (mode === 'stacked') {
+      return <StackedMonthView month={month} selectedDate={selectedDate} presentations={stackedPresentations} onSelectDate={onSelectDate} onOpenDate={onOpenDate} />;
+    }
+    return <MonthBlock month={month} selectedDate={selectedDate} itemsByDate={itemsByDate} cellWidth={cellWidth} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} />;
+  }, [cellWidth, compactPresentations, itemsByDate, mode, onLongPressItem, onOpenDate, onOpenItem, onSelectDate, selectedDate, stackedPresentations, today]);
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item?: Date; isViewable?: boolean }> }) => {
     const first = viewableItems.find((entry) => entry.isViewable !== false)?.item;
     if (first) onChangeVisiblePeriod(first);
@@ -147,13 +180,13 @@ export const ContinuousMonthView = forwardRef<ContinuousMonthViewHandle, Props>(
   }, [onScrollStateChange, visiblePeriod]);
   const getItemLayout = useCallback((_: ArrayLike<Date> | null | undefined, index: number) => {
     const month = months[index];
-    return { length: month ? monthHeight(month) : MONTH_HEADER_HEIGHT, offset: monthOffset(index), index };
+    return { length: month ? monthHeight(month) : DETAILS_MONTH_HEADER_HEIGHT, offset: monthOffset(index), index };
   }, [monthHeight, monthOffset, months]);
 
   return <View style={styles.container}>
     <View style={[styles.weekdays, { backgroundColor: theme.colors.background, borderBottomColor: theme.colors.borderSubtle }]}>{getCalendarWeekdayLabels().map((label, index) => <AppText key={`${label}-${index}`} variant="caption" style={styles.weekday}>{label}</AppText>)}</View>
     {error ? <View style={styles.status}><AppText variant="caption">{error}</AppText><Pressable onPress={retry}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : isLoading ? <View style={[styles.loading, { backgroundColor: theme.colors.surfaceMuted }]} /> : null}
-    <FlatList ref={listRef} data={months} renderItem={renderMonth} keyExtractor={(item) => formatCalendarMonthKey(item)} extraData={{ itemsByDate, selectedDate, width }} onViewableItemsChanged={onViewableItemsChanged} viewabilityConfig={{ itemVisiblePercentThreshold: 35 }} onScroll={onScroll} scrollEventThrottle={100} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} initialScrollIndex={initialIndex} getItemLayout={getItemLayout} initialNumToRender={3} maxToRenderPerBatch={3} windowSize={5} onEndReached={() => { const last = months[months.length - 1]; if (last) setMonths((current) => [...current, ...generateCalendarMonths(addCalendarMonths(last, 1), EXTENSION_MONTHS)]); }} onScrollToIndexFailed={({ index }) => listRef.current?.scrollToOffset({ offset: monthOffset(index), animated: false })} />
+    <FlatList ref={listRef} data={months} renderItem={renderMonth} keyExtractor={(item) => formatCalendarMonthKey(item)} extraData={{ itemsByDate, selectedDate, width, mode }} onViewableItemsChanged={onViewableItemsChanged} viewabilityConfig={{ itemVisiblePercentThreshold: 35 }} onScroll={onScroll} scrollEventThrottle={100} showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} initialScrollIndex={initialIndex} getItemLayout={getItemLayout} initialNumToRender={3} maxToRenderPerBatch={3} windowSize={5} onEndReached={() => { const last = months[months.length - 1]; if (last) setMonths((current) => [...current, ...generateCalendarMonths(addCalendarMonths(last, 1), EXTENSION_MONTHS)]); }} onScrollToIndexFailed={({ index }) => listRef.current?.scrollToOffset({ offset: monthOffset(index), animated: false })} />
   </View>;
 });
 
@@ -162,8 +195,8 @@ const styles = StyleSheet.create({
   content: { paddingBottom: 0 },
   weekdays: { minHeight: 32, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
   weekday: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '600' },
-  monthLabel: { height: MONTH_HEADER_HEIGHT, justifyContent: 'flex-end', paddingBottom: 8, paddingHorizontal: 2 },
-  week: { height: WEEK_HEIGHT, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  monthLabel: { height: DETAILS_MONTH_HEADER_HEIGHT, justifyContent: 'flex-end', paddingBottom: 8, paddingHorizontal: 2 },
+  week: { height: DETAILS_WEEK_HEIGHT, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   cell: { flex: 1, minWidth: 0, alignItems: 'stretch', paddingTop: 5, paddingHorizontal: 2 },
   cellTarget: { ...StyleSheet.absoluteFill, zIndex: 0 },
   dateTarget: { alignItems: 'flex-end', minHeight: 24, paddingRight: 1 },
