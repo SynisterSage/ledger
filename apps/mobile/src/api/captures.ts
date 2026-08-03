@@ -89,11 +89,17 @@ export type CreateMobileNoteInput = {
   sourcePlatform?: string | null;
   section_id?: string | null;
   parent_id?: string | null;
+  mode?: 'text' | 'meeting_note' | 'mind_map';
+  mind_map_structure?: unknown;
 };
 
 export type UpdateMobileNoteInput = Partial<
   Pick<CreateMobileNoteInput, 'title' | 'content' | 'content_html' | 'date' | 'section_id' | 'parent_id'>
->;
+> & {
+  mood?: string | null;
+  mode?: 'text' | 'mind_map' | 'meeting_note';
+  mind_map_structure?: unknown;
+};
 
 export type MobileProjectListResponse = MobileProjectOption[];
 
@@ -232,8 +238,14 @@ export async function createMobileNote(workspaceId: string, payload: CreateMobil
       source_platform: payload.sourcePlatform ?? null,
       section_id: payload.section_id ?? null,
       parent_id: payload.parent_id ?? null,
+      mode: payload.mode ?? 'text',
+      mind_map_structure: payload.mind_map_structure ?? null,
     }),
   });
+}
+
+export async function createMobileIntake(workspaceId: string, payload: { title: string; body?: string | null; sourceObjectId?: string | null; sourceObjectType?: string | null; source?: string; sourceProvider?: string; suggestedType?: string }) {
+  return mobileRequest<{ id: string }>('/api/intake', { method: 'POST', headers: { 'x-workspace-id': workspaceId }, body: JSON.stringify({ workspace_id: workspaceId, title: payload.title, body: payload.body ?? null, raw_content: payload.body ?? null, source: payload.source ?? 'manual', source_provider: payload.sourceProvider ?? 'notes', source_object_id: payload.sourceObjectId ?? null, source_object_type: payload.sourceObjectType ?? null, suggested_type: payload.suggestedType ?? 'capture' }) });
 }
 
 export async function linkMobileNoteToProject(workspaceId: string, projectId: string, noteId: string) {

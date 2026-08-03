@@ -272,4 +272,5 @@ export type MobileSearchResult = {
   updated_at?: string | null;
   icon?: string | null;
   score?: number;
+  mode?: 'text' | 'mind_map' | 'meeting_note' | null;
 };

@@ -503,6 +503,7 @@ export function MobileSearchResultDetailSheet() {
 }
 
 export function MobileSearchSheet() {
+  const router = useRouter();
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const { isSearchOpen, closeSearch, openSearchResult } = useSearchSheet();
@@ -639,7 +640,12 @@ export function MobileSearchSheet() {
                   key={`${result.type}-${result.id}`}
                   result={result}
                   onPress={() => {
-                    openSearchResult(result);
+                    if (result.type === 'note') {
+                      closeSearch();
+                      router.push({ pathname: '/note/[id]', params: { id: result.id, workspaceId: result.workspace_id } });
+                    } else {
+                      openSearchResult(result);
+                    }
                   }}
                 />
               ))}

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
 import type { MobileSearchResult } from '@/types/ledger';
+import { NoteRow, noteRowDataFromSummary } from '@/features/notes/NoteRow';
 
 import { getSearchResultSubtitle } from './searchAdapters';
 
@@ -14,6 +15,25 @@ type SearchResultRowProps = {
 export function SearchResultRow({ result, onPress }: SearchResultRowProps) {
   const theme = useLedgerTheme();
   const subtitle = getSearchResultSubtitle(result);
+
+  if (result.type === 'note') {
+    return (
+      <NoteRow
+        note={noteRowDataFromSummary({
+          id: result.id,
+          workspace_id: result.workspace_id,
+          title: result.title,
+          preview: result.preview || result.snippet,
+          mode: 'text',
+          updated_at: result.updated_at ?? null,
+          created_at: null,
+          section_id: null,
+          parent_id: null,
+        }, { projectTitle: result.project_id ? 'Linked project' : null })}
+        onPress={onPress}
+      />
+    );
+  }
 
   return (
     <Pressable

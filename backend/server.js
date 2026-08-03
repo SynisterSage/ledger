@@ -23807,6 +23807,7 @@ app.delete(
       const { error: updateError } = await supabase
         .from('notes')
         .update({ section_id: null })
+        .eq('workspace_id', workspaceId)
         .eq('section_id', id);
 
       if (updateError) throw updateError;

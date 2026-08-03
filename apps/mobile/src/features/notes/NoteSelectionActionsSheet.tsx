@@ -1,0 +1,27 @@
+import { useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
+
+import { AppBottomSheet } from '@/components/AppBottomSheet';
+import { AppText } from '@/components/AppText';
+import { createMobileIntake } from '@/api/captures';
+import { getMobilePeople, linkMobileNoteToPerson } from '@/api/notes';
+import { useLedgerTheme } from '@/theme';
+
+export function NoteSelectionActionsSheet({ visible, workspaceId, noteId, noteTitle, selectedText, onClose, onProject }: { visible: boolean; workspaceId: string; noteId: string; noteTitle: string; selectedText: string; onClose: () => void; onProject: () => void }) {
+  const theme = useLedgerTheme();
+  const router = useRouter();
+  const [personMode, setPersonMode] = useState(false);
+  const [personQuery, setPersonQuery] = useState('');
+  const [people, setPeople] = useState<Array<{ id: string; name?: string; email?: string; role?: string }>>([]);
+  const [intakeMode, setIntakeMode] = useState(false);
+  const [intakeTitle, setIntakeTitle] = useState(selectedText.split('\n').find((line) => line.trim())?.trim().slice(0, 120) ?? 'Selected note text');
+  const sourceNotes = `Source note: ${noteTitle} (${noteId})\n\n${selectedText}`;
+  useEffect(() => { if (!personMode) return; void getMobilePeople(workspaceId, personQuery).then((result) => setPeople(result.people ?? [])).catch(() => setPeople([])); }, [personMode, personQuery, workspaceId]);
+  useEffect(() => { if (visible) { setPersonMode(false); setIntakeMode(false); setIntakeTitle(selectedText.split('\n').find((line) => line.trim())?.trim().slice(0, 120) ?? 'Selected note text'); } }, [selectedText, visible]);
+  const openCapture = (path: '/capture/task' | '/capture/reminder' | '/capture/event') => { onClose(); router.push({ pathname: path, params: { title: selectedText.slice(0, 160), notes: sourceNotes, source: 'notes', noteId } }); };
+  const sendIntake = async () => { try { await createMobileIntake(workspaceId, { title: intakeTitle.trim() || 'Selected note text', body: selectedText, sourceObjectId: noteId, sourceObjectType: 'note', source: 'manual', sourceProvider: 'notes', suggestedType: 'capture' }); onClose(); } catch (error) { Alert.alert('Could not send to Intake', error instanceof Error ? error.message : 'Please try again.'); } };
+  return <AppBottomSheet visible={visible} onClose={onClose} title={<AppText variant="sectionTitle">Ledger</AppText>} snapPoints={personMode || intakeMode ? ['62%', '82%'] : ['54%', '72%']} initialSnapPointIndex={0}>{intakeMode ? <><AppText variant="caption">Selected text will remain unchanged in the note.</AppText><TextInput value={intakeTitle} onChangeText={setIntakeTitle} placeholder="Intake title" placeholderTextColor={theme.colors.placeholder} style={[styles.input, { color: theme.colors.textPrimary, borderBottomColor: theme.colors.borderSubtle }]} /><Pressable onPress={() => void sendIntake()} style={styles.primary}><AppText variant="button" style={{ color: '#fff' }}>Send to Intake</AppText></Pressable></> : personMode ? <><View style={[styles.search, { borderColor: theme.colors.borderSubtle }]}><TextInput value={personQuery} onChangeText={setPersonQuery} placeholder="Search people…" placeholderTextColor={theme.colors.placeholder} style={{ color: theme.colors.textPrimary, flex: 1 }} /></View><ScrollView>{people.map((person) => <Pressable key={person.id} onPress={async () => { try { await linkMobileNoteToPerson(workspaceId, noteId, person.id, selectedText); onClose(); } catch (error) { Alert.alert('Could not link person', error instanceof Error ? error.message : 'Please try again.'); } }} style={styles.row}><View><AppText variant="body">{person.name ?? 'Unnamed person'}</AppText><AppText variant="caption">{person.email ?? person.role ?? ''}</AppText></View><AppText variant="caption">Link</AppText></Pressable>)}</ScrollView></> : <View>{[['task', 'Create task'], ['reminder', 'Create reminder'], ['event', 'Create event']].map(([value, label]) => <Pressable key={value} onPress={() => openCapture(`/capture/${value}` as '/capture/task' | '/capture/reminder' | '/capture/event')} style={styles.row}><AppText variant="body">{label}</AppText><AppText variant="caption">›</AppText></Pressable>)}<Pressable onPress={() => setIntakeMode(true)} style={styles.row}><AppText variant="body">Send to Intake</AppText><AppText variant="caption">›</AppText></Pressable><Pressable onPress={onProject} style={styles.row}><AppText variant="body">Link to project</AppText><AppText variant="caption">›</AppText></Pressable><Pressable onPress={() => setPersonMode(true)} style={styles.row}><AppText variant="body">Link to person</AppText><AppText variant="caption">›</AppText></Pressable><Pressable onPress={() => Alert.alert('Selected text', selectedText)} style={styles.row}><AppText variant="body">Copy</AppText><AppText variant="caption">›</AppText></Pressable></View>}</AppBottomSheet>;
+}
+
+const styles = StyleSheet.create({ row: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, search: { minHeight: 42, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, marginBottom: 10 }, input: { minHeight: 46, borderBottomWidth: 1, fontSize: 16, marginVertical: 12 }, primary: { backgroundColor: '#FF5F40', borderRadius: 10, paddingVertical: 13, alignItems: 'center', marginTop: 12 } });
