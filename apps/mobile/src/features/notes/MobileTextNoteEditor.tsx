@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
   BackHandler,
   Keyboard,
   KeyboardAvoidingView,
@@ -27,6 +28,8 @@ import { MobileMindMapView } from './MobileMindMapView';
 import { NoteSelectionActionsSheet } from './NoteSelectionActionsSheet';
 import { getMobileNoteDraft, saveMobileNoteDraft, clearMobileNoteDraft } from './mobileNoteDrafts';
 import { getMobileNotePermissions } from './notePermissions';
+import { MobileLexicalEditor, type MobileLexicalEditorHandle } from '../dev/MobileLexicalEditor';
+import type { EditorNativeEvent } from '@/bridge/messages';
 
 type Props = { noteId?: string; workspaceId?: string };
 type SaveState = 'saved' | 'saving' | 'offline' | 'error' | 'remote';
@@ -110,9 +113,12 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
   const [projectOpen, setProjectOpen] = useState(false);
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [selectionActionsOpen, setSelectionActionsOpen] = useState(false);
+  const [lexicalSelectedText, setLexicalSelectedText] = useState('');
   const [versionOpen, setVersionOpen] = useState(false);
   const titleRef = useRef<TextInput>(null);
   const bodyRef = useRef<TextInput>(null);
+  const lexicalRef = useRef<MobileLexicalEditorHandle>(null);
+  const lexicalLoadedRef = useRef(false);
   const mountedRef = useRef(true);
   const dirtyRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,6 +147,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     try {
       const note = await getMobileNote(noteId);
       if (!mountedRef.current || loadedIdRef.current !== noteId) return;
+      if (note.content_html == null && note.content == null && note.mode !== 'mind_map') throw new Error('The full note content is unavailable.');
       const html = note.content_html ?? note.content ?? EMPTY_HTML;
       const plain = htmlToPlainText(html);
       setTitle(note.title ?? '');
@@ -167,10 +174,18 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       setSaveState('saved');
       setRemoteVersion(false);
       const localDraft = permissions.canEdit ? await getMobileNoteDraft(workspaceId, noteId) : null;
-      if (localDraft && (localDraft.title !== (note.title ?? '') || localDraft.body !== plain)) {
-        Alert.alert('Unsaved changes found', 'A local draft was recovered for this note.', [
+      if (localDraft && (localDraft.title !== (note.title ?? '') || localDraft.body !== plain || Boolean(localDraft.contentHtml && localDraft.contentHtml !== html))) {
+        const restoreDraft = () => {
+          const restoredHtml = localDraft.contentHtml ?? html;
+          const restoredPlain = localDraft.contentHtml ? htmlToPlainText(restoredHtml) : localDraft.body;
+          setTitle(localDraft.title); setBody(restoredPlain); setInitialHtml(restoredHtml); setInitialPlain(restoredPlain);
+          draftRef.current = { ...draftRef.current, title: localDraft.title, body: restoredPlain, initialHtml: restoredHtml, initialPlain: restoredPlain };
+          setDraftDirty(true); setSaveState('offline');
+        };
+        Alert.alert('Unsaved changes found', note.updated_at === localDraft.baseServerUpdatedAt ? 'Unsaved changes restored.' : 'The note changed on the server while this draft was pending.', [
           { text: 'Discard local changes', style: 'destructive', onPress: () => void clearMobileNoteDraft(workspaceId, noteId) },
-          { text: 'Continue editing', onPress: () => { setTitle(localDraft.title); setBody(localDraft.body); draftRef.current = { ...draftRef.current, title: localDraft.title, body: localDraft.body }; setDraftDirty(true); setSaveState('offline'); } },
+          { text: 'Continue with local changes', onPress: restoreDraft },
+          ...(note.updated_at !== localDraft.baseServerUpdatedAt ? [{ text: 'Load server version', onPress: () => void clearMobileNoteDraft(workspaceId, noteId) }] : []),
         ]);
       }
     } catch (error) {
@@ -179,6 +194,12 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       if (mountedRef.current) setHydrating(false);
     }
   }, [noteId, permissions.canEdit, setDraftDirty, workspaceId]);
+
+  useEffect(() => {
+    if (hydrating || !noteId || mode === 'mind_map' || (mode === 'meeting_note' && meetingView === 'transcript') || !initialHtml) return;
+    lexicalLoadedRef.current = false;
+    lexicalRef.current?.loadDocument({ noteId, html: initialHtml, readOnly: !permissions.canEdit });
+  }, [hydrating, initialHtml, meetingView, mode, noteId, permissions.canEdit]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -196,15 +217,19 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     return () => { show.remove(); hide.remove(); };
   }, []);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (contentHtmlOverride?: string) => {
     if (!noteId || !workspaceId || hydrating || !dirtyRef.current || loadedIdRef.current !== noteId || savingRef.current) return false;
+    if (contentHtmlOverride === undefined && lexicalLoadedRef.current && (mode === 'text' || mode === 'meeting_note')) {
+      lexicalRef.current?.requestExport(noteId);
+      return false;
+    }
     savingRef.current = true;
     if (mountedRef.current) setSaveState('saving');
     const snapshot = draftRef.current;
     try {
       const saved = await updateMobileNote(workspaceId, noteId, {
         title: snapshot.title,
-        content_html: serializeBody(snapshot.body, snapshot.initialHtml, snapshot.initialPlain, blockRef.current, inlineFormatRef.current),
+        content_html: contentHtmlOverride ?? serializeBody(snapshot.body, snapshot.initialHtml, snapshot.initialPlain, blockRef.current, inlineFormatRef.current),
         mode,
         date: snapshot.date,
         mood,
@@ -214,7 +239,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       const response = saved as { updated_at?: string | null; content_html?: string | null; title?: string };
       setLoadedAt(response.updated_at ?? new Date().toISOString());
       if (response.title !== undefined) setTitle(response.title);
-      const savedHtml = response.content_html ?? serializeBody(snapshot.body, snapshot.initialHtml, snapshot.initialPlain, blockRef.current, inlineFormatRef.current);
+      const savedHtml = response.content_html ?? contentHtmlOverride ?? serializeBody(snapshot.body, snapshot.initialHtml, snapshot.initialPlain, blockRef.current, inlineFormatRef.current);
       const savedPlain = htmlToPlainText(savedHtml);
       setInitialHtml(savedHtml);
       setInitialPlain(savedPlain);
@@ -225,6 +250,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
+      if (contentHtmlOverride !== undefined) void saveMobileNoteDraft({ workspaceId, noteId, title: snapshot.title, body: htmlToPlainText(contentHtmlOverride), contentHtml: contentHtmlOverride, baseServerUpdatedAt: loadedAt, savedLocallyAt: new Date().toISOString(), editorGeneration: 0, savedAt: new Date().toISOString() });
       if (mountedRef.current) setSaveState(/network|offline|timeout|fetch failed|request failed/i.test(message) ? 'offline' : 'error');
       return false;
     } finally {
@@ -236,6 +262,27 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => { void save(); }, 1200);
   }, [save]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        if (dirtyRef.current && lexicalLoadedRef.current) lexicalRef.current?.requestExport(noteId);
+      } else if (nextState === 'active' && dirtyRef.current && permissions.canEdit) scheduleSave();
+    });
+    return () => subscription.remove();
+  }, [noteId, permissions.canEdit, scheduleSave]);
+
+  const handleLexicalEvent = useCallback((event: EditorNativeEvent) => {
+    if (event.type === 'DOCUMENT_LOADED' && event.noteId === noteId) { lexicalLoadedRef.current = true; setSaveState('saved'); return; }
+    if (event.type === 'DIRTY_STATE_CHANGED' && event.noteId === noteId && event.dirty && permissions.canEdit) { setDraftDirty(true); scheduleSave(); return; }
+    if (event.type === 'SELECTION_RESULT' && event.noteId === noteId) { setLexicalSelectedText(event.plainText.trim()); setSelectionActionsOpen(Boolean(event.plainText.trim())); return; }
+    if (event.type === 'ERROR' && (!event.noteId || event.noteId === noteId)) setSaveState('error');
+    if (event.type === 'DOCUMENT_EXPORTED' && event.noteId === noteId) {
+      if (dirtyRef.current) void saveMobileNoteDraft({ workspaceId, noteId, title: draftRef.current.title, body: event.plainText, contentHtml: event.html, baseServerUpdatedAt: loadedAt, savedLocallyAt: new Date().toISOString(), editorGeneration: 0, savedAt: new Date().toISOString() });
+      if (dirtyRef.current) void save(event.html);
+    }
+  }, [loadedAt, noteId, permissions.canEdit, save, scheduleSave, setDraftDirty, workspaceId]);
 
   const saveMap = useCallback(async (next: unknown) => {
     if (!noteId || !workspaceId || hydrating || loadedIdRef.current !== noteId) return;
@@ -345,29 +392,14 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       {mode === 'meeting_note' ? <><View style={[styles.meetingMeta, { borderBottomColor: theme.colors.borderSubtle }]}><AppText variant="caption" numberOfLines={1}>{meetingMetadata?.scheduled_start_at ? new Date(meetingMetadata.scheduled_start_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Meeting note'}{meetingMetadata?.calendar_event_title ? ` · ${meetingMetadata.calendar_event_title}` : ''}</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }}>{meetingStatusLabel(meetingMetadata?.transcription_status)}</AppText></View><View style={[styles.modeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}><Pressable onPress={() => setMeetingView('write')} style={[styles.modeItem, meetingView === 'write' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Write</AppText></Pressable><Pressable onPress={() => setMeetingView('transcript')} style={[styles.modeItem, meetingView === 'transcript' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Transcript</AppText></Pressable></View></> : mode === 'mind_map' ? <View style={[styles.modeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}><Pressable onPress={() => setMapView('map')} style={[styles.modeItem, mapView === 'map' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Map</AppText></Pressable><Pressable onPress={() => setMapView('outline')} style={[styles.modeItem, mapView === 'outline' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Outline</AppText></Pressable></View> : null}
       {remoteVersion ? <View style={[styles.remoteBanner, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption" style={styles.remoteText}>New version available</AppText><Pressable onPress={() => Alert.alert('Replace local draft?', 'Your unsaved changes will be discarded.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reload', style: 'destructive', onPress: () => void load() }])}><AppText variant="caption" style={{ color: theme.colors.accent }}>Reload</AppText></Pressable><Pressable onPress={() => setRemoteVersion(false)}><AppText variant="caption">Dismiss</AppText></Pressable></View> : null}
       {!permissions.canEdit ? <View style={[styles.readOnlyBanner, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption">Read-only note</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }}>You can view this note, but editing is unavailable in this workspace.</AppText></View> : null}
-      {mode === 'mind_map' ? <View style={styles.mapEditor}><TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Mind map title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} style={[styles.title, { color: theme.colors.textPrimary }]} /><MobileMindMapView structure={mapStructure} view={mapView} onChange={permissions.canEdit ? handleMapChange : () => undefined} /></View> : mode === 'meeting_note' && meetingView === 'transcript' && noteId ? <MobileTranscriptView noteId={noteId} workspaceId={workspaceId} attendees={meetingMetadata?.attendees ?? []} transcriptionStatus={meetingMetadata?.transcription_status} editable={permissions.canEdit} onAddToSection={permissions.canEdit ? addTranscriptToSection : undefined} /> : <ScrollView style={styles.editorScroll} contentContainerStyle={styles.editorContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => bodyRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }]} />
-        <TextInput editable={permissions.canEdit} ref={bodyRef} accessibilityLabel="Note content" placeholder="Start writing…" placeholderTextColor={theme.colors.placeholder} multiline value={body} onChangeText={editBody} onSelectionChange={({ nativeEvent }) => setSelectionRange(nativeEvent.selection)} textAlignVertical="top" style={[styles.body, { color: theme.colors.textPrimary }]} />
-        {selectedText ? <Pressable accessibilityRole="button" accessibilityLabel="Ledger actions for selected text" onPress={() => setSelectionActionsOpen(true)} style={[styles.selectionBar, { backgroundColor: theme.colors.surfaceSelected }]}><AppText variant="caption" style={{ color: theme.colors.accent }}>Ledger</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }} numberOfLines={1}>{selectedText}</AppText><AppText variant="caption">›</AppText></Pressable> : null}
-        {initialHtml !== EMPTY_HTML && body === initialPlain && /<(?:img|hr|figure|table|aside|div)\b/i.test(initialHtml) ? <AppText variant="caption" style={{ color: theme.colors.textMuted }}>Some advanced blocks are view-only on mobile and will be preserved.</AppText> : null}
-      </ScrollView>}
-      {permissions.canEdit && (!mode || mode === 'text' || meetingView === 'write') && keyboardVisible ? <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={[styles.toolbar, { borderTopColor: theme.colors.borderSubtle, backgroundColor: theme.colors.background }]} contentContainerStyle={styles.toolbarContent}>
-        <ToolbarButton label="Undo" onPress={() => undefined} />
-        <ToolbarButton label="Redo" onPress={() => undefined} />
-        <ToolbarButton label="B" active={inlineFormat === 'bold'} onPress={() => selectInlineFormat(inlineFormat === 'bold' ? 'none' : 'bold')} />
-        <ToolbarButton label="I" active={inlineFormat === 'italic'} onPress={() => selectInlineFormat(inlineFormat === 'italic' ? 'none' : 'italic')} />
-        <ToolbarButton label="U" active={inlineFormat === 'underline'} onPress={() => selectInlineFormat(inlineFormat === 'underline' ? 'none' : 'underline')} />
-        <ToolbarButton label="Heading" active={block === 'heading'} onPress={() => selectBlock(block === 'heading' ? 'paragraph' : 'heading')} />
-        <ToolbarButton label="List" active={block === 'bullet'} onPress={() => selectBlock(block === 'bullet' ? 'paragraph' : 'bullet')} />
-        <ToolbarButton label="Check" active={block === 'check'} onPress={() => selectBlock(block === 'check' ? 'paragraph' : 'check')} />
-        <ToolbarButton label="Link" onPress={() => Alert.alert('Link', 'Link insertion will be available from the next editor iteration.')} />
-        <ToolbarButton label="+" onPress={() => setInsertOpen(true)} />
-      </ScrollView> : null}
-      <Modal visible={insertOpen} transparent animationType="slide" onRequestClose={() => setInsertOpen(false)}><Pressable style={styles.modalBackdrop} onPress={() => setInsertOpen(false)}><View style={[styles.actionSheet, { backgroundColor: theme.colors.surface }]}><AppText variant="sectionTitle">Note actions</AppText>{['Callout', 'Image', 'Attachment', 'Divider', 'Note info', 'Pin or unpin'].map((label) => <Pressable key={label} style={[styles.actionRow, { borderBottomColor: theme.colors.borderSubtle }]} onPress={() => { setInsertOpen(false); Alert.alert(label, 'This action will be connected to the existing Notes flow in a later phase.'); }}><AppText variant="body">{label}</AppText></Pressable>)}</View></Pressable></Modal>
+      {mode === 'mind_map' ? <View style={styles.mapEditor}><TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Mind map title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} style={[styles.title, { color: theme.colors.textPrimary }]} /><MobileMindMapView structure={mapStructure} view={mapView} onChange={permissions.canEdit ? handleMapChange : () => undefined} /></View> : mode === 'meeting_note' && meetingView === 'transcript' && noteId ? <MobileTranscriptView noteId={noteId} workspaceId={workspaceId} attendees={meetingMetadata?.attendees ?? []} transcriptionStatus={meetingMetadata?.transcription_status} editable={permissions.canEdit} onAddToSection={permissions.canEdit ? addTranscriptToSection : undefined} /> : <View style={styles.editorSurface}>
+        <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }]} />
+        <MobileLexicalEditor ref={lexicalRef} showToolbar={permissions.canEdit} showStatus={false} workspaceId={workspaceId} noteId={noteId} onEvent={handleLexicalEvent} />
+      </View>}
       <NoteActionSheet visible={actionOpen} note={editorSummary} permissions={permissions} pinned={pinned} onClose={() => setActionOpen(false)} onOpen={() => setActionOpen(false)} onVersionHistory={permissions.canEdit ? () => { setActionOpen(false); setVersionOpen(true); } : undefined} onTogglePin={() => void toggleEditorPin()} onMove={() => { setActionOpen(false); setMoveOpen(true); }} onDuplicate={() => void duplicateEditorNote()} onChild={() => void childEditorNote()} onProjects={() => { setActionOpen(false); setProjectOpen(true); }} onDelete={deleteEditorNote} />
       <NoteMoveSheet visible={moveOpen} note={editorSummary} sections={sections} onClose={() => setMoveOpen(false)} onMove={(nextSectionId) => void moveEditorNote(nextSectionId)} onParentMove={async (nextParentId) => { if (!noteId) return; try { await moveMobileNote(workspaceId, noteId, { parent_id: nextParentId }); setParentId(nextParentId); setMoveOpen(false); } catch (error) { Alert.alert('Could not change parent note', error instanceof Error ? error.message : 'Please try again.'); } }} />
       <NoteProjectSheet visible={projectOpen} workspaceId={workspaceId} note={editorSummary} onClose={() => setProjectOpen(false)} onChanged={() => undefined} />
-      <NoteSelectionActionsSheet visible={selectionActionsOpen} workspaceId={workspaceId} noteId={noteId ?? ''} noteTitle={title || 'Untitled'} selectedText={selectedText} onClose={() => setSelectionActionsOpen(false)} onProject={() => { setSelectionActionsOpen(false); setProjectOpen(true); }} />
+      <NoteSelectionActionsSheet visible={selectionActionsOpen} workspaceId={workspaceId} noteId={noteId ?? ''} noteTitle={title || 'Untitled'} selectedText={lexicalSelectedText || selectedText} onClose={() => setSelectionActionsOpen(false)} onProject={() => { setSelectionActionsOpen(false); setProjectOpen(true); }} />
       {noteId ? <NoteVersionSheet visible={versionOpen} workspaceId={workspaceId} noteId={noteId} onClose={() => setVersionOpen(false)} onRestored={applyRestoredNote} /> : null}
     </KeyboardAvoidingView>
   );
@@ -416,6 +448,7 @@ const styles = StyleSheet.create({
   mapEditor: { flex: 1, paddingHorizontal: 18, paddingTop: 16 },
   readOnlyBanner: { marginHorizontal: 18, marginTop: 10, padding: 10, borderRadius: 8, gap: 2 },
   editorScroll: { flex: 1 },
+  editorSurface: { flex: 1, paddingHorizontal: 2 },
   editorContent: { paddingHorizontal: 22, paddingTop: 22, paddingBottom: 120, gap: 14 },
   title: { fontSize: 24, lineHeight: 30, fontWeight: '700', paddingVertical: 0 },
   body: { minHeight: 420, fontSize: 17, lineHeight: 27, paddingVertical: 0 },

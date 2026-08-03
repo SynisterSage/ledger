@@ -23,6 +23,7 @@ export const lightColors = {
   accent: '#FF5F40',
   accentHover: '#E85430',
   accentSoft: '#FFE8DC',
+  onAccent: '#FFFFFF',
 
   danger: '#D92D20',
   success: '#12B76A',
@@ -57,6 +58,7 @@ export const darkColors = {
   accent: '#FF8C5F',
   accentHover: '#FF7A4D',
   accentSoft: '#FFAB8F',
+  onAccent: '#0F0F0F',
 
   danger: '#F97066',
   success: '#32D583',

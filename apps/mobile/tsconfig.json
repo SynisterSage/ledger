@@ -7,6 +7,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@ledger/mobile-editor-bridge/*": [
+        "../../packages/mobile-editor-bridge/*"
       ]
     }
   },

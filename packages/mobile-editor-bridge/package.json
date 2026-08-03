@@ -1,0 +1,5 @@
+{
+  "name": "@ledger/mobile-editor-bridge",
+  "private": true,
+  "main": "index.ts"
+}

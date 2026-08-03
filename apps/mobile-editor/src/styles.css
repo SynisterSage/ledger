@@ -1,0 +1,30 @@
+:root { color-scheme: light; --background: #fffbf7; --text: #111827; --muted: #9ca3af; }
+:root[data-theme='dark'] { color-scheme: dark; --background: #111827; --text: #f9fafb; --muted: #9ca3af; }
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; min-height: 100%; margin: 0; }
+html, body { background: var(--background); color: var(--text); overscroll-behavior: none; overflow-x: hidden; -webkit-text-size-adjust: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+.editor-shell { min-height: 100vh; padding: 20px 22px 96px; }
+.editor-content { min-height: calc(100vh - 40px); outline: none; font-size: 17px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; caret-color: #ff5f40; -webkit-user-select: text; user-select: text; }
+.editor-paragraph { margin: 0 0 14px; }
+.editor-heading { margin: 0 0 14px; line-height: 1.2; }
+.editor-heading--h1 { font-size: 28px; }
+.editor-heading--h2 { font-size: 22px; }
+.editor-heading--h3 { font-size: 19px; }
+.editor-content a { color: #e45137; text-decoration: underline; text-decoration-thickness: 1px; }
+.editor-content ul, .editor-content ol { margin: 0 0 14px; padding-left: 24px; }
+.editor-content li { margin: 3px 0; }
+.editor-content li[role='checkbox'] { list-style: none; margin-left: -24px; }
+.editor-content li[role='checkbox']::before { content: '□'; display: inline-block; width: 22px; color: var(--muted); }
+.editor-content li[aria-checked='true']::before { content: '☑'; color: #ff5f40; }
+.editor-content hr { border: 0; border-top: 1px solid color-mix(in srgb, var(--text) 18%, transparent); margin: 20px 0; }
+.editor-callout { margin: 12px 0 16px; padding: 12px 14px; border-left: 3px solid; border-radius: 8px; }
+.editor-callout--info { background: color-mix(in srgb, #60a5fa 13%, var(--background)); border-color: #60a5fa; }
+.editor-callout--note { background: color-mix(in srgb, #a78bfa 13%, var(--background)); border-color: #a78bfa; }
+.editor-callout--warning { background: color-mix(in srgb, #f59e0b 15%, var(--background)); border-color: #f59e0b; }
+.editor-callout--success { background: color-mix(in srgb, #34d399 13%, var(--background)); border-color: #34d399; }
+.editor-content figure[data-ledger-attachment-id], .editor-content div[data-ledger-attachment-id] { padding: 10px; border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 8px; margin: 12px 0; }
+.editor-content img { max-width: 100%; height: auto; border-radius: 6px; }
+.editor-content [data-ledger-attachment-id]::after { content: 'Ledger attachment'; display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
+.editor-placeholder { position: absolute; color: var(--muted); pointer-events: none; font-size: 17px; }
+::selection { background: rgba(255, 95, 64, .28); }
