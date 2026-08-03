@@ -34,7 +34,7 @@ import { openMobileNote } from './openMobileNote';
 import { MobileLexicalEditor, type MobileEditorStage, type MobileLexicalEditorHandle } from '../dev/MobileLexicalEditor';
 import type { EditorNativeEvent } from '@/bridge/messages';
 
-type Props = { noteId?: string; workspaceId?: string; initialView?: 'write' | 'transcript' | 'map'; returnTo?: string; focusSegmentId?: string; focusNodeId?: string; focus?: 'title' | 'editor' };
+type Props = { noteId?: string; workspaceId?: string; initialView?: 'write' | 'transcript' | 'map' | 'outline'; returnTo?: string; focusSegmentId?: string; focusNodeId?: string; focus?: 'title' | 'editor' };
 type SaveState = 'saved' | 'saving' | 'offline' | 'error' | 'remote';
 export type MobileNoteSaveState = {
   noteId: string;
@@ -124,7 +124,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
   const [mode, setMode] = useState<'text' | 'mind_map' | 'meeting_note'>('text');
   const [meetingMetadata, setMeetingMetadata] = useState<MobileMeetingMetadata | null>(null);
   const [meetingView, setMeetingView] = useState<'write' | 'transcript'>(initialView === 'transcript' ? 'transcript' : 'write');
-  const [mapView, setMapView] = useState<'map' | 'outline'>('map');
+  const [mapView, setMapView] = useState<'map' | 'outline'>(initialView === 'outline' ? 'outline' : 'map');
   const [mapStructure, setMapStructure] = useState<unknown>(EMPTY_MAP);
   const [sectionId, setSectionId] = useState<string | null>(null);
   const [parentId, setParentId] = useState<string | null>(null);
@@ -444,13 +444,13 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     }
   }, [focus, loadedAt, noteId, permissions.canEdit, persistDraft, persistExportedDocument, scheduleSave, setDraftDirty, updateSaveLifecycle, workspaceId]);
 
-  const saveMap = useCallback(async (next: unknown) => {
+  const saveMap = useCallback(async (next: unknown, nextTitle = title) => {
     if (!noteId || !workspaceId || hydrating || loadedIdRef.current !== noteId) return;
     try {
-      await updateMobileNote(workspaceId, noteId, { mode: 'mind_map', mind_map_structure: next });
+      await updateMobileNote(workspaceId, noteId, { title: nextTitle, mode: 'mind_map', mind_map_structure: next });
       if (mountedRef.current && loadedIdRef.current === noteId) setSaveState('saved');
     } catch { if (mountedRef.current) setSaveState('error'); }
-  }, [hydrating, noteId, workspaceId]);
+  }, [hydrating, noteId, title, workspaceId]);
 
   const handleMapChange = (next: unknown) => {
     setMapStructure(next);
@@ -472,6 +472,10 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     setTitle(value);
     draftRef.current.title = value;
     markUserEdit();
+    if (mode === 'mind_map') {
+      if (mapSaveTimerRef.current) clearTimeout(mapSaveTimerRef.current);
+      mapSaveTimerRef.current = setTimeout(() => void saveMap(mapStructureRef.current, value), 1000);
+    }
   };
 
   const editBody = (value: string) => {
@@ -569,7 +573,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       {mode === 'meeting_note' ? <><View style={[styles.meetingMeta, { borderBottomColor: theme.colors.borderSubtle }]}><AppText variant="caption" numberOfLines={1}>{meetingMetadata?.scheduled_start_at ? new Date(meetingMetadata.scheduled_start_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Meeting note'}{meetingMetadata?.calendar_event_title ? ` · ${meetingMetadata.calendar_event_title}` : ''}</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }}>{meetingStatusLabel(meetingMetadata?.transcription_status)}</AppText></View><View style={[styles.modeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}><Pressable onPress={() => setMeetingView('write')} style={[styles.modeItem, meetingView === 'write' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Write</AppText></Pressable><Pressable onPress={() => setMeetingView('transcript')} style={[styles.modeItem, meetingView === 'transcript' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Transcript</AppText></Pressable></View></> : mode === 'mind_map' ? <View style={[styles.modeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}><Pressable onPress={() => setMapView('map')} style={[styles.modeItem, mapView === 'map' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Map</AppText></Pressable><Pressable onPress={() => setMapView('outline')} style={[styles.modeItem, mapView === 'outline' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Outline</AppText></Pressable></View> : null}
       {remoteVersion ? <View style={[styles.remoteBanner, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption" style={styles.remoteText}>New version available</AppText><Pressable onPress={() => Alert.alert('Replace local draft?', 'Your unsaved changes will be discarded.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reload', style: 'destructive', onPress: () => void load() }])}><AppText variant="caption" style={{ color: theme.colors.accent }}>Reload</AppText></Pressable><Pressable onPress={() => setRemoteVersion(false)}><AppText variant="caption">Dismiss</AppText></Pressable></View> : null}
       {!permissions.canEdit ? <View accessibilityRole="text" style={[styles.readOnlyBanner, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption">Read-only note</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }}>You can view this note, but editing is unavailable in this workspace.</AppText></View> : null}
-      {mode === 'mind_map' ? <View style={styles.mapEditor}><TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Mind map title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} style={[styles.title, { color: theme.colors.textPrimary }]} /><MobileMindMapView structure={mapStructure} view={mapView} onChange={permissions.canEdit ? handleMapChange : () => undefined} /></View> : mode === 'meeting_note' && meetingView === 'transcript' && noteId ? <MobileTranscriptView noteId={noteId} workspaceId={workspaceId} attendees={meetingMetadata?.attendees ?? []} transcriptionStatus={meetingMetadata?.transcription_status} editable={permissions.canEdit} onAddToSection={permissions.canEdit ? addTranscriptToSection : undefined} /> : <View style={styles.editorSurface}>
+      {mode === 'mind_map' ? <View style={styles.mapEditor}><TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Mind map title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} style={[styles.title, { color: theme.colors.textPrimary }]} /><MobileMindMapView structure={mapStructure} title={title} view={mapView} hideControls={keyboardVisible} onChange={permissions.canEdit ? handleMapChange : () => undefined} /></View> : mode === 'meeting_note' && meetingView === 'transcript' && noteId ? <MobileTranscriptView noteId={noteId} workspaceId={workspaceId} attendees={meetingMetadata?.attendees ?? []} transcriptionStatus={meetingMetadata?.transcription_status} editable={permissions.canEdit} onAddToSection={permissions.canEdit ? addTranscriptToSection : undefined} /> : <View style={styles.editorSurface}>
         <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }]} />
         {readOnlyFallback ? <View style={styles.readOnlyContent}><AppText variant="body">{body || 'This note has no text content.'}</AppText><Pressable accessibilityRole="button" onPress={() => { setReadOnlyFallback(false); setEditorFailure(null); setEditorMountKey((current) => current + 1); }}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry editor</AppText></Pressable></View> : editorFailure ? <EditorFailure message={`${editorStage}: ${editorFailure}${editorStageDetail ? ` · ${editorStageDetail}` : ''}`} onRetry={() => { setEditorFailure(null); setEditorMountKey((current) => current + 1); }} onReadOnly={() => { setReadOnlyFallback(true); setEditorFailure(null); }} onBack={() => void leave()} /> : <View style={styles.embeddedEditor}><MobileLexicalEditor key={editorMountKey} ref={lexicalRef} showToolbar={permissions.canEdit} showStatus={false} workspaceId={workspaceId} noteId={noteId} onEvent={handleLexicalEvent} onEmbeddedError={setEditorFailure} onStage={handleEditorStage} onLedgerLink={(url) => { const target = resolveLedgerLink(url); if (!target) { Alert.alert('Ledger link unavailable', 'This link does not contain a valid Ledger destination.'); return; } if (target.kind === 'note' || target.kind === 'notes') { openMobileNote(router, target.id, { workspaceId, returnTo: `/note/${noteId}` }); return; } if (target.kind === 'project' || target.kind === 'projects') { router.push({ pathname: '/project/[id]', params: { id: target.id, workspaceId } }); return; } Alert.alert('Ledger link unavailable', 'This Ledger destination is not available on mobile yet.'); }} />{!editorReady ? <View pointerEvents="none" style={styles.editorLoading}><AppText variant="caption">Loading editor…</AppText></View> : null}</View>}
       </View>}

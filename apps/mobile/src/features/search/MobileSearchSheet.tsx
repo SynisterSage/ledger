@@ -18,7 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 
-import { AppButton } from '@/components/AppButton';
 import { AppDetailSheet } from '@/components/AppDetailSheet';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
@@ -47,10 +46,12 @@ function SearchHeaderInput({
   value,
   onChangeText,
   onClear,
+  scopeLabel,
 }: {
   value: string;
   onChangeText: (value: string) => void;
   onClear: () => void;
+  scopeLabel: string;
 }) {
   const theme = useLedgerTheme();
   const inputRef = useRef<TextInput | null>(null);
@@ -61,24 +62,29 @@ function SearchHeaderInput({
   }, []);
 
   return (
-    <View style={[styles.searchField, { borderColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surface }]}>
-      <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={16} weight="regular" tintColor={theme.colors.textMuted} />
-      <TextInput
-        ref={inputRef}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder="Search Ledger"
-        placeholderTextColor={theme.colors.placeholder}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-        style={[styles.searchInput, { color: theme.colors.textPrimary }]}
-      />
-      {value ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={8} onPress={onClear}>
-          <SymbolView name={{ ios: 'xmark.circle.fill', android: 'close', web: 'close' }} size={16} weight="regular" tintColor={theme.colors.textMuted} />
-        </Pressable>
-      ) : null}
+    <View style={styles.headerInfo}>
+      <View style={[styles.searchField, { borderColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surface }]}>
+        <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={16} weight="regular" tintColor={theme.colors.textMuted} />
+        <TextInput
+          ref={inputRef}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder="Search Ledger"
+          placeholderTextColor={theme.colors.placeholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          style={[styles.searchInput, { color: theme.colors.textPrimary }]}
+        />
+        {value ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={8} onPress={onClear}>
+            <SymbolView name={{ ios: 'xmark.circle.fill', android: 'close', web: 'close' }} size={16} weight="regular" tintColor={theme.colors.textMuted} />
+          </Pressable>
+        ) : null}
+      </View>
+      <AppText variant="caption" numberOfLines={1} style={{ color: theme.colors.textMuted }}>
+        {scopeLabel}
+      </AppText>
     </View>
   );
 }
@@ -587,23 +593,20 @@ export function MobileSearchSheet() {
       <SearchSheetShell
         visible={isSearchOpen}
         onClose={closeSearch}
-        title={<SearchHeaderInput value={query} onChangeText={setQuery} onClear={() => setQuery('')} />}
+        title={<SearchHeaderInput value={query} onChangeText={setQuery} onClear={() => setQuery('')} scopeLabel={scopeLabel} />}
         headerAccessory={
-          <AppButton
-            title="Close"
-            variant="ghost"
-            size="md"
-            fullWidth={false}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close search"
+            hitSlop={10}
             onPress={closeSearch}
-            containerStyle={styles.closeButton}
-          />
+            style={({ pressed }) => [styles.closeButton, { opacity: pressed ? 0.6 : 1 }]}
+          >
+            <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} size={18} weight="medium" tintColor={theme.colors.textSecondary} />
+          </Pressable>
         }
         >
         <View style={{ gap: theme.spacing.sm }}>
-          <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
-            {scopeLabel}
-          </AppText>
-
           {!query.trim() ? (
             <View style={styles.stateWrap}>
               <AppText variant="body" style={[styles.stateText, { color: theme.colors.textSecondary }]}>
@@ -635,7 +638,15 @@ export function MobileSearchSheet() {
               </AppText>
             </View>
           ) : (
-            <View style={{ gap: theme.spacing.xs }}>
+            <View
+              style={[
+                styles.resultCard,
+                  {
+                    backgroundColor: theme.colors.surfaceMuted,
+                    borderColor: theme.colors.borderSubtle,
+                    borderRadius: theme.radius.surface,
+                  },
+              ]}>
               {results.map((result) => (
                 <SearchResultRow
                   key={`${result.type}-${result.id}`}
@@ -684,14 +695,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  headerInfo: {
+    flex: 1,
+    gap: 6,
+  },
   searchInput: {
     flex: 1,
+    height: 44,
     fontSize: 16,
     lineHeight: 22,
     paddingVertical: 0,
+    textAlignVertical: 'center',
   },
   closeButton: {
-    minWidth: 0,
+    width: 32,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   handleHitArea: {
     alignItems: 'center',
@@ -717,6 +737,11 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 12,
+  },
+  resultCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   stateWrap: {
     minHeight: 170,

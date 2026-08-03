@@ -20,7 +20,7 @@ const SHEET_OFFSET = 24;
 const SHEET_VERTICAL_PADDING = 16;
 const SHEET_MAX_HEIGHT = 460;
 const SHEET_DRAG_CLOSE_THRESHOLD = 72;
-const SHEET_BOTTOM_BUFFER = 24;
+const SHEET_BOTTOM_BUFFER = 12;
 type WorkspaceSelectorSheetProps = {
   visible: boolean;
   selectedWorkspaceId: string;
@@ -190,13 +190,21 @@ export function WorkspaceSelectorSheet({
             <View style={[styles.handle, { backgroundColor: theme.colors.borderSubtle }]} />
           </View>
           <View style={styles.header}>
-            <AppText variant="body" style={styles.headerTitle}>
+            <AppText variant="screenTitle" style={styles.headerTitle}>
               Workspace
             </AppText>
           </View>
 
-          <View style={styles.list}>
-            {workspaces.map((option, index) => {
+          <View
+            style={[
+              styles.list,
+              {
+                backgroundColor: theme.colors.surfaceMuted,
+                borderColor: theme.colors.borderSubtle,
+                borderRadius: theme.radius.surface,
+              },
+            ]}>
+            {workspaces.map((option) => {
               const selected = option.id === selectedWorkspaceId;
               return (
                 <Pressable
@@ -207,9 +215,8 @@ export function WorkspaceSelectorSheet({
                   onPress={() => handleSelect(option.id)}
                   style={({ pressed }) => [
                     styles.row,
-                    index === workspaces.length - 1 ? styles.rowLast : styles.rowBorder,
+                    selected ? { backgroundColor: theme.colors.surfaceSelected } : null,
                     {
-                      borderBottomColor: theme.colors.borderSubtle,
                       opacity: pressed ? 0.72 : 1,
                     },
                   ]}>
@@ -282,30 +289,26 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   headerTitle: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '500',
-    letterSpacing: -0.2,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '400',
+    letterSpacing: -0.4,
   },
   list: {
-    paddingHorizontal: 12,
-    paddingBottom: 28,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    marginHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   row: {
-    minHeight: 56,
+    minHeight: 44,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-  },
-  rowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  rowLast: {
-    borderBottomWidth: 0,
   },
   rowText: {
     flex: 1,

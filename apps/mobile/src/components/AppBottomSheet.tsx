@@ -3,13 +3,17 @@ import {
   Animated,
   BackHandler,
   Easing,
+  findNodeHandle,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
+  UIManager,
   View,
+  Platform,
   useWindowDimensions,
   type GestureResponderEvent,
   type PanResponderGestureState,
@@ -100,6 +104,10 @@ export function AppBottomSheet({
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const keyboardTopRef = useRef<number | null>(null);
+  const focusedInputRef = useRef<number | null>(null);
+  const scrollOffsetRef = useRef(0);
+  const scrollViewRef = useRef<ScrollView>(null);
   const translateY = useRef(new Animated.Value(windowHeight)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const dragStartTranslate = useRef(0);
@@ -180,34 +188,52 @@ export function AppBottomSheet({
         setMounted(false);
       }
     });
-  }, [
-    backdropOpacity,
-    closedTranslateY,
-    initialSnapPoint,
-    mounted,
-    sheetMaxHeight,
-    translateY,
-    visible,
-  ]);
+  }, [visible]);
 
   useEffect(() => {
-    if (!visible || !dismissKeyboardOnBackdropPress) {
+    if (!visible || (!avoidKeyboard && !dismissKeyboardOnBackdropPress)) {
       return;
     }
 
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
       setIsKeyboardVisible(true);
+      keyboardTopRef.current = typeof event.endCoordinates?.screenY === 'number'
+        ? event.endCoordinates.screenY
+        : windowHeight - (event.endCoordinates?.height ?? 0);
+      if (focusedInputRef.current) {
+        setTimeout(() => scrollFocusedInputIntoView(focusedInputRef.current), 40);
+      }
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setIsKeyboardVisible(false);
+      keyboardTopRef.current = null;
     });
 
     return () => {
       showSub.remove();
       hideSub.remove();
+      keyboardTopRef.current = null;
+      focusedInputRef.current = null;
       setIsKeyboardVisible(false);
     };
-  }, [dismissKeyboardOnBackdropPress, visible]);
+  }, [avoidKeyboard, dismissKeyboardOnBackdropPress, visible]);
+
+  const scrollFocusedInputIntoView = (target: number | null) => {
+    if (!target || !keyboardTopRef.current) return;
+    UIManager.measureInWindow(target, (_x, y, _width, height) => {
+      const safeBottom = keyboardTopRef.current! - 20;
+      const overlap = y + height - safeBottom;
+      if (overlap > 0) {
+        scrollViewRef.current?.scrollTo({ y: Math.max(0, scrollOffsetRef.current + overlap), animated: true });
+      }
+    });
+  };
+
+  const handleContentFocus = (event: { target: unknown }) => {
+    const target = findNodeHandle(event.target as never);
+    focusedInputRef.current = target;
+    if (keyboardTopRef.current) setTimeout(() => scrollFocusedInputIntoView(target), 40);
+  };
 
   useEffect(() => {
     if (!visible) {
@@ -398,6 +424,12 @@ export function AppBottomSheet({
           ]}
         >
           <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+            <KeyboardAvoidingView
+              enabled={avoidKeyboard}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={0}
+              style={styles.keyboardAvoiding}
+            >
             <View
               {...panResponder.panHandlers}
               style={styles.handleRegion}
@@ -421,23 +453,29 @@ export function AppBottomSheet({
               </View>
             ) : null}
 
-            <ScrollView
-              {...(dragFromContent ? panResponder.panHandlers : {})}
-              keyboardShouldPersistTaps="handled"
-              automaticallyAdjustKeyboardInsets={avoidKeyboard}
-              onTouchStart={dismissKeyboardOnContentPress ? () => Keyboard.dismiss() : undefined}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={[
-                styles.content,
-                {
-                  paddingHorizontal: theme.spacing.lg,
-                  paddingBottom: insets.bottom + theme.spacing.lg,
-                },
-                contentStyle,
-              ]}
-            >
-              {children}
-            </ScrollView>
+            <View onFocus={handleContentFocus} style={styles.scrollRegion}>
+              <ScrollView
+                ref={scrollViewRef}
+                {...(dragFromContent ? panResponder.panHandlers : {})}
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets={false}
+                onScroll={(event) => { scrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
+                scrollEventThrottle={16}
+                onTouchStart={dismissKeyboardOnContentPress ? () => Keyboard.dismiss() : undefined}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={[
+                  styles.content,
+                  {
+                    paddingHorizontal: theme.spacing.lg,
+                    paddingBottom: insets.bottom + theme.spacing.lg,
+                  },
+                  contentStyle,
+                ]}
+              >
+                {children}
+              </ScrollView>
+            </View>
+            </KeyboardAvoidingView>
           </SafeAreaView>
         </Animated.View>
       </View>
@@ -461,6 +499,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   safeArea: {
+    flex: 1,
+  },
+  keyboardAvoiding: {
+    flex: 1,
+  },
+  scrollRegion: {
     flex: 1,
   },
   handleRegion: {
