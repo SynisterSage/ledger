@@ -12,7 +12,7 @@
     "build": "npm run build:apple-calendar && tsc -p tsconfig.json && vite build && electron-builder",
     "build:apple-calendar": "node scripts/build-apple-calendar-bridge.mjs",
     "build:extension": "npm --prefix apps/browser-extension run build",
-    "build:mobile-editor": "npm --prefix apps/mobile-editor run build",
+    "build:mobile-editor": "node scripts/build-mobile-editor.mjs",
     "build:figma-plugin": "npm --prefix figma-plugin run build",
     "typecheck:figma-plugin": "npm --prefix figma-plugin run typecheck",
     "test:figma-plugin": "npm --prefix figma-plugin test",

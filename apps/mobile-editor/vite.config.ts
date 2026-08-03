@@ -12,6 +12,8 @@ function inlineEditorAssets(): Plugin {
     if (script) { const scriptPath = resolve(outDir, script[1].replace(/^\//, '')); html = html.replace(script[0], () => `<script>${readFileSync(scriptPath, 'utf8')}</script>`); if (existsSync(scriptPath)) unlinkSync(scriptPath); }
     const styles = html.match(/<link rel="stylesheet" crossorigin href="([^"]+)">/);
     if (styles) { const stylePath = resolve(outDir, styles[1].replace(/^\//, '')); html = html.replace(styles[0], () => `<style>${readFileSync(stylePath, 'utf8')}</style>`); if (existsSync(stylePath)) unlinkSync(stylePath); }
+    const inlineScript = html.match(/<script>([\s\S]*?)<\/script>/);
+    if (inlineScript) html = html.replace(inlineScript[0], '').replace(/\n[ \t]*\n[ \t]*(?=<style>)/, '\n').replace('</body>', `${inlineScript[0]}\n  </body>`);
     writeFileSync(htmlPath, html);
   } };
 }

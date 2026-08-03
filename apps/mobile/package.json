@@ -43,6 +43,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "test:note-routing": "node scripts/test-note-routing.mjs",
+    "test:editor-bridge": "node scripts/test-editor-bridge.mjs",
+    "test:note-save-lifecycle": "node scripts/test-note-save-lifecycle.mjs",
     "build:ios": "npx eas-cli build -p ios --profile production",
     "build:ios:internal": "npx eas-cli build -p ios --profile preview",
     "submit:ios": "npx eas-cli submit -p ios --profile production"

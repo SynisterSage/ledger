@@ -15,6 +15,7 @@ import {
   type TodayDetailSheetMode,
 } from '@/features/today/TodayItemDetailSheet';
 import { TodayItemActionsSheet } from '@/features/today/TodayItemActionsSheet';
+import { openMobileNote } from '@/features/notes/openMobileNote';
 import { TodayItemEditSheet } from '@/features/today/TodayItemEditSheet';
 import { TodaySkeleton } from '@/features/today/TodaySkeleton';
 import { TODAY_HEADER_SCROLL_SPACE, TodayHeader } from '@/features/today/TodayHeader';
@@ -662,6 +663,8 @@ export default function TodayScreen() {
                   onItemPress={(item) => {
                     if ('type' in item && item.type === 'project') {
                       router.push(`/project/${encodeURIComponent(item.sourceId)}`);
+                    } else if ('type' in item && item.type === 'note') {
+                      openMobileNote(router, item.sourceId, { workspaceId: item.workspaceId, returnTo: '/(tabs)/today' });
                     } else {
                       openItemSheet(item, 'detail');
                     }
@@ -716,6 +719,9 @@ export default function TodayScreen() {
                   if ('type' in item && item.type === 'project') {
                     closeItemSheet();
                     router.push(`/project/${encodeURIComponent(item.sourceId)}`);
+                  } else if ('type' in item && item.type === 'note') {
+                    closeItemSheet();
+                    openMobileNote(router, item.sourceId, { workspaceId: item.workspaceId, returnTo: '/(tabs)/today' });
                   } else {
                     openItemSheet(item, 'detail');
                   }

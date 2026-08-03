@@ -21,6 +21,8 @@ import { getWorkspaceLabel, useWorkspaceState } from '@/store/workspaceStore';
 import { emitCalendarDataChanged } from './calendarDataEvents';
 import { normalizeCalendarRange, type MobileCalendarItem } from './calendarItemNormalizer';
 import { defaultCalendarFilters, type CalendarFilters } from './calendarFilters';
+import { useRouter } from 'expo-router';
+import { openMobileNote } from '@/features/notes/openMobileNote';
 
 type CalendarSymbolName = ComponentProps<typeof SymbolView>['name'];
 
@@ -61,6 +63,7 @@ type CalendarCreateSheetProps = {
 };
 
 export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, initialDateKey, initialType = 'event', initialStartAt, initialEndAt, onClose, onCreated }: CalendarCreateSheetProps) {
+  const router = useRouter();
   const theme = useLedgerTheme();
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -148,7 +151,12 @@ export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, 
     setIsSaving(true);
     setError(null);
     try {
-      if (type === 'note') await createMobileNote(workspaceId, { title: title.trim(), content: notes.trim() || null, date: formatDateToLocalIsoDate(date), source: 'mobile' });
+      let createdNoteId: string | null = null;
+      if (type === 'note') {
+        const created = await createMobileNote(workspaceId, { title: title.trim(), content: notes.trim() || null, date: formatDateToLocalIsoDate(date), source: 'mobile' });
+        createdNoteId = typeof created === 'object' && created && 'id' in created && typeof created.id === 'string' ? created.id : null;
+        if (!createdNoteId) throw new Error('The new note did not return an id.');
+      }
       else if (type === 'event') await createMobileEvent(workspaceId, { title: title.trim(), start_at: startAt!, end_at: endAt, all_day: allDay, notes: notes.trim() || null, location: location.trim() || null, project_id: projectId, calendar_id: calendarId, recurrence_rule: recurrenceRule || null });
       else if (type === 'reminder') await createMobileReminder(workspaceId, { title: title.trim(), remind_at: startAt ?? `${formatDateToLocalIsoDate(date)}T00:00:00.000Z`, body: notes.trim() || null, project_id: projectId, calendar_id: calendarId });
       else {
@@ -159,6 +167,7 @@ export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, 
       emitCalendarDataChanged(workspaceId);
       onCreated?.();
       onClose();
+      if (createdNoteId) openMobileNote(router, createdNoteId, { workspaceId, focus: 'title', returnTo: '/(tabs)/calendar' });
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save calendar item.');
     } finally {

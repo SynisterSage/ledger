@@ -17,7 +17,7 @@ import {
 } from '@/store/workspaceStore';
 
 type NoteFormProps = {
-  onSave?: () => void;
+  onSave?: (noteId: string) => void;
   initialTitle?: string;
   initialBody?: string;
   autoSubmit?: boolean;
@@ -64,7 +64,9 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
       if (projectId && typeof created === 'object' && created && 'id' in created && typeof created.id === 'string') {
         await linkMobileNoteToProject(captureWorkspaceId, projectId, created.id);
       }
-      onSave?.();
+      const noteId = typeof created === 'object' && created && 'id' in created && typeof created.id === 'string' ? created.id : null;
+      if (!noteId) throw new Error('The new note did not return an id.');
+      onSave?.(noteId);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save note.');
     } finally {

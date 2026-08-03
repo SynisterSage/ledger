@@ -6,6 +6,7 @@ import { Screen } from '@/components/Screen';
 import { NoteForm } from '@/features/capture/NoteForm';
 import { bootstrapWorkspaceState } from '@/store/workspaceStore';
 import { useLedgerTheme } from '@/theme';
+import { openMobileNote } from '@/features/notes/openMobileNote';
 
 export default function NoteCaptureScreen() {
   const theme = useLedgerTheme();
@@ -24,7 +25,6 @@ export default function NoteCaptureScreen() {
   const projectId = Array.isArray(params.projectId) ? params.projectId[0] : params.projectId;
   const workspaceId = Array.isArray(params.workspaceId) ? params.workspaceId[0] : params.workspaceId;
   const isSiri = source === 'siri';
-  const saveDestination = isSiri ? '/(tabs)/today' : '/(tabs)/capture';
   const formKey = isSiri ? ['siri-note', title ?? '', body ?? ''].join(':') : 'manual-note';
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export default function NoteCaptureScreen() {
         initialBody={body}
         projectId={projectId}
         initialWorkspaceId={workspaceId}
-        onSave={() => router.replace(saveDestination)}
+        onSave={(noteId) => openMobileNote(router, noteId, { workspaceId: workspaceId ?? undefined, returnTo: isSiri ? '/(tabs)/today' : '/(tabs)/capture', focus: 'title' })}
       />
     </Screen>
   );

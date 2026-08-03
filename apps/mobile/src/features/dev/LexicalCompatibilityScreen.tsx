@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import type { EditorNativeEvent } from '../../../../../packages/mobile-editor-bridge/messages';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
-import { MobileLexicalEditor, type MobileLexicalEditorHandle } from './MobileLexicalEditor';
+import { MobileLexicalEditor, type MobileEditorStage, type MobileLexicalEditorHandle } from './MobileLexicalEditor';
 
 const fixtures = [
   { id: 'basic-formatting', title: 'Basic formatting', html: '<h1>Catalog review</h1><p><strong>Important</strong> printer feedback with <em>italic context</em> and <u>underline</u>.</p><hr><p>Keep this paragraph intact.</p>' },
@@ -14,6 +14,7 @@ const fixtures = [
   { id: 'links', title: 'Links', html: '<p>Read the <a href="https://ledger.local/notes/catalog" data-ledger-reference="catalog-note">catalog note</a> before the review.</p>' },
   { id: 'images-and-attachments', title: 'Images and attachments', html: '<figure data-ledger-attachment-id="attachment-1" data-ledger-kind="image"><img src="https://example.invalid/catalog.png" alt="Catalog proof"><figcaption>Catalog proof</figcaption></figure><div data-ledger-attachment-id="file-1" data-ledger-kind="file">Printer proof.pdf</div>' },
   { id: 'mixed-ledger-note', title: 'Mixed Ledger note', html: '<h1>Mixed Ledger note</h1><p>Normal text.</p><aside data-ledger-callout="info"><p>Preserve this callout.</p></aside><ul><li>List item</li></ul><ul data-type="check-list"><li data-checked="false">Checklist item</li></ul><p><a href="https://ledger.local">Ledger link</a></p><hr><figure data-ledger-attachment-id="image-1"><img src="https://example.invalid/image.png" alt="Reference"></figure>' },
+  { id: 'long-document', title: 'Long document', html: `<h1>Long document</h1>${Array.from({ length: 40 }, (_, index) => `<p>Paragraph ${index + 1}: This fixture exercises local editor hydration, scrolling, selection, and bridge stability.</p>`).join('')}` },
 ];
 
 export function LexicalCompatibilityScreen() {
@@ -26,18 +27,31 @@ export function LexicalCompatibilityScreen() {
   const [exportedHtml, setExportedHtml] = useState('');
   const [plainText, setPlainText] = useState('');
   const [events, setEvents] = useState<string[]>([]);
+  const [stage, setStage] = useState<MobileEditorStage>('native-mounted');
+  const [stageDetail, setStageDetail] = useState('');
+  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('light');
+  const [lastEvent, setLastEvent] = useState('none');
+  const [hydrationState, setHydrationState] = useState('waiting');
+  const [editorError, setEditorError] = useState('none');
+  const [generation, setGeneration] = useState<number | null>(null);
+  const [lastLoadRequestId, setLastLoadRequestId] = useState('none');
+  const [lastExportRequestId, setLastExportRequestId] = useState('none');
   const selected = fixtures.find((fixture) => fixture.id === selectedId) ?? fixtures[0];
   const load = (nextNoteId = noteId, html = selected.html) => { const nextRequest = editorRef.current?.loadDocument({ noteId: nextNoteId, html }); setNoteId(nextNoteId); setRequest(nextRequest ?? ''); setExportedHtml(''); setPlainText(''); };
   useEffect(() => { load('fixture-a'); }, []);
   const onEvent = (event: EditorNativeEvent) => {
+    setLastEvent(event.type);
+    if ('generation' in event && typeof event.generation === 'number') setGeneration(event.generation);
     setEvents((current) => [`${event.type}${'requestId' in event ? ` · ${event.requestId}` : ''}`, ...current].slice(0, 8));
     if (event.type === 'DIRTY_STATE_CHANGED') setDirty(event.dirty);
-    if (event.type === 'DOCUMENT_LOADED') { setDirty(false); setRequest(event.requestId); }
-    if (event.type === 'DOCUMENT_EXPORTED') { setExportedHtml(event.html); setPlainText(event.plainText); }
+    if (event.type === 'READY') setHydrationState('ready');
+    if (event.type === 'DOCUMENT_LOADED') { setDirty(false); setHydrationState('loaded'); setRequest(event.requestId); setLastLoadRequestId(event.requestId); }
+    if (event.type === 'DOCUMENT_EXPORTED') { setExportedHtml(event.html); setPlainText(event.plainText); setLastExportRequestId(event.requestId); }
+    if (event.type === 'EDITOR_ERROR') { setHydrationState('failed'); setEditorError(`${event.code}: ${event.message}`); }
   };
   const exportDocument = () => { const next = editorRef.current?.requestExport(noteId); if (next) setRequest(next); };
   const rapidSwitch = () => { const first = fixtures[0]; const second = fixtures[5]; load('rapid-a', first.html); setTimeout(() => { load('rapid-b', second.html); setTimeout(() => { const next = editorRef.current?.requestExport('rapid-b'); if (next) setRequest(next); }, 80); }, 40); };
-  return <View style={[styles.container, { backgroundColor: theme.colors.background }]}><View style={styles.controls}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.controlRow}>{fixtures.map((fixture) => <Pressable key={fixture.id} onPress={() => { setSelectedId(fixture.id); load(noteId, fixture.html); }} style={[styles.choice, { borderColor: theme.colors.borderSubtle, backgroundColor: fixture.id === selectedId ? theme.colors.surfaceSelected : theme.colors.surface }]}><AppText variant="caption">{fixture.title}</AppText></Pressable>)}<Pressable onPress={() => load()} style={styles.action}><AppText variant="caption">Load HTML</AppText></Pressable><Pressable onPress={exportDocument} style={styles.action}><AppText variant="caption">Export HTML</AppText></Pressable><Pressable onPress={rapidSwitch} style={styles.action}><AppText variant="caption">Rapid switch</AppText></Pressable></ScrollView><AppText variant="caption">Note: {noteId} · Request: {request || 'none'} · Dirty: {dirty ? 'yes' : 'no'}</AppText></View><View style={styles.editor}><MobileLexicalEditor ref={editorRef} showToolbar onEvent={onEvent} /></View><ScrollView style={styles.output} contentContainerStyle={styles.outputContent}><AppText variant="label">Exported HTML</AppText><AppText variant="caption" selectable>{exportedHtml || 'Export a document to inspect it.'}</AppText><AppText variant="label">Plain text</AppText><AppText variant="caption" selectable>{plainText || 'No export yet.'}</AppText><AppText variant="label">Bridge events</AppText><AppText variant="caption">{events.join('\n') || 'Waiting…'}</AppText></ScrollView></View>;
+  return <View style={[styles.container, { backgroundColor: theme.colors.background }]}><View style={styles.controls}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.controlRow}>{fixtures.map((fixture) => <Pressable key={fixture.id} onPress={() => { setSelectedId(fixture.id); load(noteId, fixture.html); }} style={[styles.choice, { borderColor: theme.colors.borderSubtle, backgroundColor: fixture.id === selectedId ? theme.colors.surfaceSelected : theme.colors.surface }]}><AppText variant="caption">{fixture.title}</AppText></Pressable>)}<Pressable onPress={() => load()} style={styles.action}><AppText variant="caption">Load HTML</AppText></Pressable><Pressable onPress={() => load('failure', '<div data-ledger-test-import-failure="true"></div>')} style={styles.action}><AppText variant="caption">Trigger import failure</AppText></Pressable><Pressable onPress={() => editorRef.current?.sendMalformedMessage()} style={styles.action}><AppText variant="caption">Malformed message</AppText></Pressable><Pressable onPress={() => editorRef.current?.reload()} style={styles.action}><AppText variant="caption">Reload editor</AppText></Pressable><Pressable onPress={() => editorRef.current?.focus()} style={styles.action}><AppText variant="caption">Focus editor</AppText></Pressable><Pressable onPress={() => { const next = previewTheme === 'light' ? 'dark' : 'light'; setPreviewTheme(next); editorRef.current?.setTheme(next); }} style={styles.action}><AppText variant="caption">{previewTheme === 'light' ? 'Dark mode' : 'Light mode'}</AppText></Pressable><Pressable onPress={exportDocument} style={styles.action}><AppText variant="caption">Export HTML</AppText></Pressable><Pressable onPress={rapidSwitch} style={styles.action}><AppText variant="caption">Rapid switch</AppText></Pressable></ScrollView><AppText variant="caption">Stage: {stage}{stageDetail ? ` · ${stageDetail}` : ''}</AppText><AppText variant="caption">Generation: {generation ?? 'none'} · Hydration: {hydrationState} · Last event: {lastEvent}</AppText><AppText variant="caption">Note: {noteId} · Load: {lastLoadRequestId} · Export: {lastExportRequestId} · Dirty: {dirty ? 'yes' : 'no'}</AppText><AppText variant="caption">Error: {editorError}</AppText></View><View style={styles.editor}><MobileLexicalEditor ref={editorRef} showToolbar onEvent={onEvent} onStage={(nextStage, detail) => { setStage(nextStage); setStageDetail(detail ?? ''); }} /></View><ScrollView style={styles.output} contentContainerStyle={styles.outputContent}><AppText variant="label">Exported HTML</AppText><AppText variant="caption" selectable>{exportedHtml || 'Export a document to inspect it.'}</AppText><AppText variant="label">Plain text</AppText><AppText variant="caption" selectable>{plainText || 'No export yet.'}</AppText><AppText variant="label">Last bridge events</AppText><AppText variant="caption">{events.join('\n') || 'Waiting…'}</AppText></ScrollView></View>;
 }
 
 const styles = StyleSheet.create({ container: { flex: 1 }, controls: { paddingHorizontal: 12, paddingVertical: 8, gap: 8 }, controlRow: { gap: 6, alignItems: 'center' }, choice: { minHeight: 38, paddingHorizontal: 9, justifyContent: 'center', borderWidth: 1, borderRadius: 8 }, action: { minHeight: 38, paddingHorizontal: 10, justifyContent: 'center', borderRadius: 8, backgroundColor: '#FF5F40' }, editor: { flex: 1, minHeight: 300 }, output: { maxHeight: 190, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB' }, outputContent: { padding: 12, gap: 6 } });

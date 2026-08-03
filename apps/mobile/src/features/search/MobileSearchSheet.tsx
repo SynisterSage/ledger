@@ -28,6 +28,7 @@ import { searchMobileLedger } from '@/api/search';
 import { getMobileNote } from '@/api/notes';
 import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
 import { useQuickNoteSheet } from '@/features/quicknote/QuickNoteSheetContext';
+import { openMobileNote } from '@/features/notes/openMobileNote';
 
 import { SearchResultRow } from './SearchResultRow';
 import {
@@ -642,7 +643,7 @@ export function MobileSearchSheet() {
                   onPress={() => {
                     if (result.type === 'note') {
                       closeSearch();
-                      router.push({ pathname: '/note/[id]', params: { id: result.id, workspaceId: result.workspace_id } });
+                      openMobileNote(router, result.id, { workspaceId: result.workspace_id, returnTo: '/search' });
                     } else {
                       openSearchResult(result);
                     }

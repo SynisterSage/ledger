@@ -19,6 +19,8 @@ import { AppTextInput } from '@/components/AppTextInput';
 import { Section } from '@/components/Section';
 import { createMobileNote } from '@/api/captures';
 import { useLedgerTheme } from '@/theme';
+import { useRouter } from 'expo-router';
+import { openMobileNote } from '@/features/notes/openMobileNote';
 import {
   resolveCaptureWorkspaceId,
   useWorkspaceState,
@@ -48,6 +50,7 @@ function deriveNoteTitle(value: string) {
 }
 
 export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps) {
+  const router = useRouter();
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const defaultWorkspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
@@ -204,14 +207,17 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
         source: 'mobile',
         sourcePlatform: 'ios',
       })) as { id?: unknown };
+      const noteId = typeof created.id === 'string' ? created.id : null;
+      if (!noteId) throw new Error('The new note did not return an id.');
       draft?.onSaved?.({
-        id: typeof created?.id === 'string' ? created.id : null,
+        id: noteId,
         title,
         content: noteContent,
         workspaceId,
         createdAt: new Date().toISOString(),
       });
       closeSheet();
+      openMobileNote(router, noteId, { workspaceId, focus: 'editor' });
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save note.');
     } finally {

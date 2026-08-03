@@ -23,6 +23,7 @@ import { useLedgerTheme } from '@/theme';
 import { NoteCreationSheet } from '@/features/notes/NoteCreationSheet';
 import { NoteActionSheet, NoteMoveSheet, NoteProjectSheet, SectionActionSheet } from '@/features/notes/NoteOrganizationSheets';
 import { getMobileNotePermissions } from '@/features/notes/notePermissions';
+import { openMobileNote } from '@/features/notes/openMobileNote';
 
 type ViewMode = 'home' | 'browse';
 
@@ -78,6 +79,7 @@ export default function NotesScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sectionError, setSectionError] = useState<string | null>(null);
+  const [sectionRetrying, setSectionRetrying] = useState(false);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [creationOpen, setCreationOpen] = useState(false);
   const [creationContext, setCreationContext] = useState<{ sectionId?: string | null; parentId?: string | null }>({});
@@ -115,7 +117,7 @@ export default function NotesScreen() {
   const currentSectionChildren = useMemo(() => browseSectionId && browseSectionId !== '__unsorted__' ? sections.filter((section) => section.parent_id === browseSectionId).sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)) : [], [browseSectionId, sections]);
 
   const openNote = (note: MobileNoteSummary) => {
-    router.push({ pathname: '/note/[id]', params: { id: note.id, workspaceId: note.workspace_id } });
+    openMobileNote(router, note.id, { workspaceId: note.workspace_id });
   };
   const openNoteActions = (note: MobileNoteSummary) => setActionNote(note);
 
@@ -128,7 +130,7 @@ export default function NotesScreen() {
 
   const handleCreated = (id: string) => {
     void load({ silent: true });
-    router.push({ pathname: '/note/[id]', params: { id, workspaceId } });
+    openMobileNote(router, id, { workspaceId });
   };
 
   const togglePin = async (note: MobileNoteSummary) => {
@@ -181,6 +183,24 @@ export default function NotesScreen() {
     sort_order: loadedNote?.sort_order ?? null,
   }; }, [noteById]);
 
+  const retrySections = useCallback(async () => {
+    if (!workspaceId || workspaceId === 'all') {
+      setSections([]);
+      setSectionError(null);
+      return;
+    }
+    setSectionRetrying(true);
+    try {
+      const result = await getMobileNoteSections(workspaceId);
+      setSections(Array.isArray(result) ? result : []);
+      setSectionError(null);
+    } catch (cause) {
+      setSectionError(cause instanceof Error ? cause.message : 'Could not load sections.');
+    } finally {
+      setSectionRetrying(false);
+    }
+  }, [workspaceId]);
+
   const load = useCallback(async ({ silent = false } = {}) => {
     const token = ++loadTokenRef.current;
     if (!workspaceId) return;
@@ -192,7 +212,7 @@ export default function NotesScreen() {
     const end = dateKey(endDate);
     const [notesResult, sectionsResult, pinsResult, calendarResult, linksResult] = await Promise.allSettled([
       getMobileNoteSummaries(workspaceId),
-      getMobileNoteSections(workspaceId),
+      workspaceId === 'all' ? Promise.resolve<MobileNoteSection[]>([]) : getMobileNoteSections(workspaceId),
       getMobilePins(workspaceId),
       getMobileCalendarRange(workspaceId, start, end),
       getMobileWorkspaceNoteLinks(workspaceId),
@@ -202,7 +222,7 @@ export default function NotesScreen() {
       const payload = notesResult.value;
       setNotes(Array.isArray(payload) ? payload : payload.notes ?? []);
     } else if (!loadedRef.current) setError(notesResult.reason instanceof Error ? notesResult.reason.message : 'Could not load Notes.');
-    if (sectionsResult.status === 'fulfilled') { setSections(Array.isArray(sectionsResult.value) ? sectionsResult.value : []); setSectionError(null); } else setSectionError('Could not load sections.');
+    if (sectionsResult.status === 'fulfilled') { setSections(Array.isArray(sectionsResult.value) ? sectionsResult.value : []); setSectionError(null); } else setSectionError(sectionsResult.reason instanceof Error ? sectionsResult.reason.message : 'Could not load sections.');
     if (pinsResult.status === 'fulfilled') setPins(pinsResult.value.pins ?? []);
     if (calendarResult.status === 'fulfilled') setMeetings(normalizeCalendarRange(calendarResult.value).filter((item) => item.type === 'event' || item.type === 'external_event').filter((item) => !item.completed && isMeetingLike(item)).filter((item) => new Date(`${item.dateKey}T23:59:59`).getTime() >= Date.now()).slice(0, 5));
     if (linksResult.status === 'fulfilled') { const next = new Map<string, string>(); linksResult.value.forEach((link) => { if (!next.has(link.note_id)) next.set(link.note_id, link.project_name); }); setProjectByNoteId(next); }
@@ -276,7 +296,7 @@ export default function NotesScreen() {
       const created = await createMeetingNoteFromCalendar(workspaceId, { eventId: meeting.sourceId ?? undefined, provider: meeting.readOnly ? 'google' : 'ledger', eventKey: meeting.sourceId ?? undefined, projectId: meeting.projectId ?? null });
       await load({ silent: true });
       const id = created.note?.id;
-      if (id) router.push({ pathname: '/note/[id]', params: { id, workspaceId } });
+      openMobileNote(router, id, { workspaceId });
     } catch (err) {
       Alert.alert('Could not start meeting note', err instanceof Error ? err.message : 'Please try again.');
     }
@@ -292,7 +312,7 @@ export default function NotesScreen() {
           {pinnedNotes.length ? <View style={styles.section}><SectionLabel title="PINNED" action="View all" onAction={openBrowse} />{pinnedNotes.map((note) => <NoteRow key={note.id} note={noteRowDataFromSummary(note, { sectionName: sectionById.get(note.section_id ?? '')?.name, projectTitle: projectByNoteId.get(note.id), pinned: true })} variant="compact" showPreview={false} onPress={() => openNote(note)} onLongPress={() => openNoteActions(note)} />)}</View> : null}
           {recentNotes.length ? <View style={styles.section}><SectionLabel title="RECENT" />{recentNotes.map((note) => <NoteRow key={note.id} note={noteRowDataFromSummary(note, { sectionName: sectionById.get(note.section_id ?? '')?.name, projectTitle: projectByNoteId.get(note.id) })} onPress={() => openNote(note)} onLongPress={() => openNoteActions(note)} />)}</View> : null}
           {meetings.length ? <View style={styles.section}><SectionLabel title="UPCOMING" />{meetings.map((meeting) => { const linkedNote = meeting.noteId ? noteById.get(meeting.noteId) : null; return linkedNote ? <NoteRow key={meeting.id} note={noteRowDataFromSummary(linkedNote, { meetingContext: meetingTime(meeting) })} variant="meeting" showPreview={false} onPress={() => openNote(linkedNote)} onLongPress={() => openNoteActions(linkedNote)} /> : <Pressable key={meeting.id} onPress={() => void startMeetingNote(meeting)} style={({ pressed }) => [styles.meetingRow, { opacity: pressed ? 0.68 : 1 }]}><View style={styles.meetingDate}><AppText variant="caption">{meetingTime(meeting)}</AppText></View><View style={styles.rowCopy}><AppText variant="bodyStrong" numberOfLines={1}>{meeting.title}</AppText><AppText variant="caption">Start meeting note</AppText></View><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={16} tintColor={theme.colors.textMuted} /></Pressable>; })}</View> : null}
-          {sectionRows.length || sectionError ? <View style={styles.section}><SectionLabel title="SECTIONS" action="View all" onAction={openSectionBrowser} />{sectionError ? <View style={styles.inlineState}><AppText variant="caption">{sectionError}</AppText><Pressable onPress={() => void load()}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : sectionRows.map((section) => <Pressable key={section.id} onPress={() => openSection(section.id)} onLongPress={() => openSectionActions(section)} style={({ pressed }) => [styles.sectionRow, { opacity: pressed ? 0.68 : 1 }]}><View style={[styles.sectionDot, { backgroundColor: section.color ? theme.colors.accent : theme.colors.borderSubtle }]} /><AppText variant="body" numberOfLines={1} style={styles.flex}>{section.name}</AppText><AppText variant="caption">{section.count}</AppText><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={15} tintColor={theme.colors.textMuted} /></Pressable>)}</View> : null}
+          {sectionRows.length || sectionError ? <View style={styles.section}><SectionLabel title="SECTIONS" action="View all" onAction={openSectionBrowser} />{sectionError ? <View style={styles.inlineState}><AppText variant="caption" numberOfLines={1}>{sectionError}</AppText><Pressable accessibilityRole="button" accessibilityLabel="Retry loading note sections" disabled={sectionRetrying} onPress={() => void retrySections()}><AppText variant="caption" style={{ color: theme.colors.accent, opacity: sectionRetrying ? 0.55 : 1 }}>{sectionRetrying ? 'Retrying…' : 'Retry'}</AppText></Pressable></View> : sectionRows.map((section) => <Pressable key={section.id} onPress={() => openSection(section.id)} onLongPress={() => openSectionActions(section)} style={({ pressed }) => [styles.sectionRow, { opacity: pressed ? 0.68 : 1 }]}><View style={[styles.sectionDot, { backgroundColor: section.color ? theme.colors.accent : theme.colors.borderSubtle }]} /><AppText variant="body" numberOfLines={1} style={styles.flex}>{section.name}</AppText><AppText variant="caption">{section.count}</AppText><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={15} tintColor={theme.colors.textMuted} /></Pressable>)}</View> : null}
           {!notes.length ? <View style={styles.empty}><AppText variant="bodyStrong">No notes yet</AppText><AppText variant="caption">Create a note to start capturing ideas and context.</AppText><AppButton title="New note" fullWidth={false} size="md" onPress={openNewNote} /></View> : null}
           <Pressable onPress={openNewNote} style={({ pressed }) => [styles.newNoteAction, { borderColor: theme.colors.borderSubtle, opacity: pressed ? 0.68 : 1 }]}><SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={16} tintColor={theme.colors.accent} /><AppText variant="body" style={{ color: theme.colors.accent }}>New note</AppText></Pressable>
         </>}

@@ -21,15 +21,22 @@ import { $createLedgerDividerNode, LedgerDividerNode } from './LedgerDividerNode
 import { $createLedgerPreservationNode } from './LedgerPreservationNode';
 import './styles.css';
 
+const editorWindow = window as Window & { __ledgerEditorGeneration?: number; __ledgerActiveGeneration?: number; __ledgerNoteId?: string; __ledgerDirtyReported?: boolean };
+function currentGeneration() { return editorWindow.__ledgerActiveGeneration ?? editorWindow.__ledgerEditorGeneration ?? 0; }
+function post(type: string, payload: Record<string, unknown> = {}) { window.ReactNativeWebView?.postMessage(JSON.stringify({ type, ...payload, generation: payload.generation ?? currentGeneration() })); }
+function editorError(code: string, message: string, payload: Record<string, unknown> = {}) { post('EDITOR_ERROR', { ...payload, code, message }); }
+
+post('EDITOR_STAGE', { stage: 'javascript-started' });
+window.addEventListener('error', (event) => editorError('JAVASCRIPT_ERROR', event.message || 'Editor JavaScript error.'));
+window.addEventListener('unhandledrejection', (event) => editorError('UNHANDLED_REJECTION', event.reason instanceof Error ? event.reason.message : 'Editor promise rejected.'));
+
 const FORMAT_COMMAND = createCommand<'bold' | 'italic'>('LEDGER_FORMAT');
 const initialConfig = {
   namespace: 'LedgerMobileEditor',
   theme: { heading: { h1: 'editor-heading editor-heading--h1', h2: 'editor-heading editor-heading--h2', h3: 'editor-heading editor-heading--h3' }, paragraph: 'editor-paragraph', list: { nested: { listitem: 'editor-list-nested' } }, callout: { info: 'editor-callout editor-callout--info', note: 'editor-callout editor-callout--note', warning: 'editor-callout editor-callout--warning', success: 'editor-callout editor-callout--success' } },
   nodes: [HeadingNode, ListNode, ListItemNode, LinkNode, LedgerPreservationNode, LedgerCalloutNode, LedgerDividerNode],
-  onError(error: Error) { post('ERROR', { message: error.message }); console.error(error); },
+  onError(error: Error) { editorError('LEXICAL_ERROR', error.message); console.error(error); },
 };
-
-function post(type: string, payload: Record<string, unknown> = {}) { window.ReactNativeWebView?.postMessage(JSON.stringify({ type, ...payload })); }
 
 function selectionState(editor: LexicalEditor, canUndo: boolean, canRedo: boolean) {
   let result = { bold: false, italic: false, underline: false, blockType: 'paragraph' as 'paragraph' | 'h1' | 'h2' | 'h3', listType: undefined as 'bullet' | 'number' | 'check' | undefined, linkUrl: undefined as string | undefined, canUndo, canRedo };
@@ -50,6 +57,7 @@ function selectionState(editor: LexicalEditor, canUndo: boolean, canRedo: boolea
 
 function InitialContentPlugin() {
   const [editor] = useLexicalComposerContext();
+  const readySentRef = useRef(false);
   useEffect(() => {
     editor.update(() => {
       const root = $getRoot();
@@ -60,7 +68,12 @@ function InitialContentPlugin() {
         root.append(heading, first, second);
       }
     });
-    post('READY');
+    if (!readySentRef.current) {
+      readySentRef.current = true;
+      post('EDITOR_STAGE', { stage: 'lexical-mounted' });
+      post('EDITOR_STAGE', { stage: 'ready' });
+      post('READY', { generation: currentGeneration() });
+    }
   }, [editor]);
   return null;
 }
@@ -68,6 +81,7 @@ function InitialContentPlugin() {
 function BridgePlugin() {
   const [editor] = useLexicalComposerContext();
   const activeNoteIdRef = useRef<string | null>(null);
+  const activeGenerationRef = useRef(currentGeneration());
   const hydratedRef = useRef(false);
   const readOnlyRef = useRef(false);
   const canUndoRef = useRef(false);
@@ -75,15 +89,22 @@ function BridgePlugin() {
   const lastSelectionRef = useRef('');
   const hydrate = (command: Extract<NativeEditorCommand, { type: 'LOAD_DOCUMENT' }>) => {
     activeNoteIdRef.current = command.noteId;
-    (window as Window & { __ledgerNoteId?: string }).__ledgerNoteId = command.noteId;
+    editorWindow.__ledgerNoteId = command.noteId;
+    editorWindow.__ledgerActiveGeneration = command.generation;
+    editorWindow.__ledgerDirtyReported = false;
+    activeGenerationRef.current = command.generation;
     hydratedRef.current = false;
     lastSelectionRef.current = '';
     readOnlyRef.current = Boolean(command.readOnly);
     editor.setEditable(false);
     try {
+      if (command.html.includes('data-ledger-test-import-failure')) throw new Error('Test import failure requested.');
       const document = new DOMParser().parseFromString(command.html, 'text/html');
-      const nodes = $generateNodesFromDOM(editor, document);
       editor.update(() => {
+        // DOM conversion creates Lexical nodes and must run inside the active
+        // editor update. Running it before update triggers Lexical #337 on
+        // mobile WebViews because there is no active editor state yet.
+        const nodes = $generateNodesFromDOM(editor, document);
         const root = $getRoot(); root.clear();
         if (nodes.length) root.append(...nodes);
         else root.append($createParagraphNode());
@@ -92,10 +113,10 @@ function BridgePlugin() {
       editor.setEditable(!command.readOnly);
       const nextSelection = selectionState(editor, canUndoRef.current, canRedoRef.current);
       lastSelectionRef.current = JSON.stringify(nextSelection);
-      post('SELECTION_STATE_CHANGED', { noteId: command.noteId, selection: nextSelection });
-      post('DOCUMENT_LOADED', { noteId: command.noteId, requestId: command.requestId });
+      post('SELECTION_STATE_CHANGED', { noteId: command.noteId, generation: command.generation, selection: nextSelection });
+      post('DOCUMENT_LOADED', { noteId: command.noteId, requestId: command.requestId, generation: command.generation });
     } catch (error) {
-      post('ERROR', { noteId: command.noteId, requestId: command.requestId, message: error instanceof Error ? error.message : 'Could not load document.' });
+      editorError('HYDRATION_FAILED', error instanceof Error ? error.message : 'Could not load document.', { noteId: command.noteId, requestId: command.requestId, generation: command.generation });
     }
   };
   useEffect(() => {
@@ -103,19 +124,23 @@ function BridgePlugin() {
       try {
         const parsed = JSON.parse(event.data) as unknown;
         const command = parseNativeEditorCommand(parsed);
-        if (!command) { post('ERROR', { message: 'Invalid editor command.' }); return; }
+        if (!command) { editorError('INVALID_COMMAND', 'Invalid editor command.'); return; }
+        if ((command.type === 'LOAD_DOCUMENT' || command.type === 'REQUEST_EXPORT' || command.type === 'REQUEST_SELECTION') && command.generation !== currentGeneration()) {
+          editorError('STALE_COMMAND', 'Command belongs to an inactive editor generation.', { noteId: command.noteId, requestId: command.requestId, generation: command.generation });
+          return;
+        }
         if (command.type === 'LOAD_DOCUMENT') { hydrate(command); return; }
         if (command.type === 'REQUEST_EXPORT') {
-          if (!hydratedRef.current || activeNoteIdRef.current !== command.noteId) { post('ERROR', { noteId: command.noteId, requestId: command.requestId, message: 'Export requested for an inactive document.' }); return; }
+          if (!hydratedRef.current || activeNoteIdRef.current !== command.noteId || activeGenerationRef.current !== command.generation) { editorError('STALE_EXPORT_REQUEST', 'Export requested for an inactive document.', { noteId: command.noteId, requestId: command.requestId, generation: command.generation }); return; }
           try {
             let html = ''; let plainText = '';
             editor.getEditorState().read(() => { html = $generateHtmlFromNodes(editor); plainText = $getRoot().getTextContent(); });
-            post('DOCUMENT_EXPORTED', { noteId: command.noteId, requestId: command.requestId, html, plainText });
-          } catch (error) { post('ERROR', { noteId: command.noteId, requestId: command.requestId, message: error instanceof Error ? error.message : 'Could not export document.' }); }
+            post('DOCUMENT_EXPORTED', { noteId: command.noteId, requestId: command.requestId, generation: command.generation, html, plainText });
+          } catch (error) { editorError('EXPORT_FAILED', error instanceof Error ? error.message : 'Could not export document.', { noteId: command.noteId, requestId: command.requestId, generation: command.generation }); }
           return;
         }
         if (command.type === 'REQUEST_SELECTION') {
-          if (!hydratedRef.current || activeNoteIdRef.current !== command.noteId) { post('ERROR', { noteId: command.noteId, requestId: command.requestId, message: 'Selection requested for an inactive document.' }); return; }
+          if (!hydratedRef.current || activeNoteIdRef.current !== command.noteId || activeGenerationRef.current !== command.generation) { editorError('STALE_SELECTION_REQUEST', 'Selection requested for an inactive document.', { noteId: command.noteId, requestId: command.requestId, generation: command.generation }); return; }
           try {
             let plainText = ''; let html: string | undefined;
             editor.getEditorState().read(() => {
@@ -124,12 +149,13 @@ function BridgePlugin() {
               plainText = selection.getTextContent();
               html = $generateHtmlFromNodes(editor, selection);
             });
-            if (!plainText.trim()) { post('ERROR', { noteId: command.noteId, requestId: command.requestId, message: 'Select some note text first.' }); return; }
-            post('SELECTION_RESULT', { noteId: command.noteId, requestId: command.requestId, plainText, html });
-          } catch (error) { post('ERROR', { noteId: command.noteId, requestId: command.requestId, message: error instanceof Error ? error.message : 'Could not read selection.' }); }
+            if (!plainText.trim()) { editorError('EMPTY_SELECTION', 'Select some note text first.', { noteId: command.noteId, requestId: command.requestId, generation: command.generation }); return; }
+            post('SELECTION_RESULT', { noteId: command.noteId, requestId: command.requestId, generation: command.generation, plainText, html });
+          } catch (error) { editorError('SELECTION_FAILED', error instanceof Error ? error.message : 'Could not read selection.', { noteId: command.noteId, requestId: command.requestId, generation: command.generation }); }
           return;
         }
         if (command.type === 'SET_READ_ONLY') { readOnlyRef.current = command.value; editor.setEditable(!command.value); return; }
+        if (command.type === 'RESET_DIRTY') { editorWindow.__ledgerDirtyReported = false; return; }
         if (command.type === 'SET_THEME') { document.documentElement.dataset.theme = command.theme; return; }
         if (command.type === 'FOCUS_EDITOR') { editor.focus(); return; }
         if (command.type === 'TOGGLE_FORMAT') { editor.dispatchCommand(FORMAT_COMMAND, command.format); return; }
@@ -143,14 +169,14 @@ function BridgePlugin() {
         if (command.type === 'INSERT_ATTACHMENT') { editor.update(() => $insertNodes([$createLedgerPreservationNode(`<div data-ledger-file-attachment="true"${command.attachmentId ? ` data-ledger-file-attachment-id="${command.attachmentId}"` : ''}${command.mimeType ? ` data-mime-type="${command.mimeType.replace(/"/g, '&quot;')}"` : ''}${command.sizeBytes ? ` data-size-bytes="${command.sizeBytes}"` : ''}${command.url ? ` data-url="${command.url.replace(/"/g, '&quot;')}"` : ''}><a href="${(command.url ?? '').replace(/"/g, '&quot;')}">${command.name.replace(/</g, '&lt;')}</a></div>`, 'div')])); return; }
         if (command.type === 'UNDO') { editor.dispatchCommand(UNDO_COMMAND, undefined); return; }
         if (command.type === 'REDO') { editor.dispatchCommand(REDO_COMMAND, undefined); return; }
-      } catch { post('ERROR', { message: 'Invalid editor command.' }); }
+      } catch { editorError('INVALID_COMMAND', 'Invalid editor command.'); }
     };
     window.addEventListener('message', onMessage);
     document.addEventListener('message', onMessage as EventListener);
     return () => { window.removeEventListener('message', onMessage); document.removeEventListener('message', onMessage as EventListener); };
   }, [editor]);
   useEffect(() => {
-    const emitSelection = () => { if (!hydratedRef.current || !activeNoteIdRef.current) return; const next = selectionState(editor, canUndoRef.current, canRedoRef.current); const serialized = JSON.stringify(next); if (serialized === lastSelectionRef.current) return; lastSelectionRef.current = serialized; post('SELECTION_STATE_CHANGED', { noteId: activeNoteIdRef.current, selection: next }); };
+    const emitSelection = () => { if (!hydratedRef.current || !activeNoteIdRef.current) return; const next = selectionState(editor, canUndoRef.current, canRedoRef.current); const serialized = JSON.stringify(next); if (serialized === lastSelectionRef.current) return; lastSelectionRef.current = serialized; post('SELECTION_STATE_CHANGED', { noteId: activeNoteIdRef.current, generation: activeGenerationRef.current, selection: next }); };
     const unregisterUpdate = editor.registerUpdateListener(emitSelection);
     const unregisterUndo = editor.registerCommand(CAN_UNDO_COMMAND, (value) => { canUndoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
     const unregisterRedo = editor.registerCommand(CAN_REDO_COMMAND, (value) => { canRedoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
@@ -170,8 +196,8 @@ function FocusPlugin() {
 function Editor() {
   const onChange = (_editorState: EditorState, editor: LexicalEditor, tags: Set<string>) => {
     if (tags.has(HYDRATION_TAG)) return;
-    const noteId = (window as Window & { __ledgerNoteId?: string }).__ledgerNoteId;
-    if (noteId) post('DIRTY_STATE_CHANGED', { noteId, dirty: true });
+    const noteId = editorWindow.__ledgerNoteId;
+    if (noteId && !editorWindow.__ledgerDirtyReported) { editorWindow.__ledgerDirtyReported = true; post('DIRTY_STATE_CHANGED', { noteId, generation: currentGeneration(), dirty: true }); }
     void editor;
   };
   return <LexicalComposer initialConfig={initialConfig}><div className="editor-shell"><RichTextPlugin contentEditable={<FocusPlugin />} placeholder={<div className="editor-placeholder">Start writing…</div>} ErrorBoundary={({ children }) => <>{children}</>} /><HistoryPlugin /><OnChangePlugin onChange={onChange} ignoreSelectionChange /><InitialContentPlugin /><BridgePlugin /></div></LexicalComposer>;

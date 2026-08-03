@@ -1,6 +1,18 @@
 import * as SecureStore from 'expo-secure-store';
 
-export type PendingNoteDraft = { noteId: string; workspaceId: string; title: string; body: string; contentHtml?: string; baseServerUpdatedAt?: string | null; savedLocallyAt?: string; editorGeneration?: number; savedAt: string };
+export type MobileNoteDraft = {
+  noteId: string;
+  workspaceId: string;
+  title: string;
+  contentHtml: string;
+  body?: string;
+  baseServerUpdatedAt: string | null;
+  localRevision: number;
+  savedLocallyAt: string;
+  editorGeneration: number;
+  savedAt?: string;
+};
+export type PendingNoteDraft = MobileNoteDraft;
 const key = (workspaceId: string, noteId: string) => `ledger-mobile-note-draft:${workspaceId}:${noteId}`;
 
 export async function getMobileNoteDraft(workspaceId: string, noteId: string) {
