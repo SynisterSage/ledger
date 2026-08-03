@@ -177,10 +177,10 @@ export const NotificationMonitor: React.FC = () => {
       });
     };
 
-    const handleSummary = (_event: unknown, payload?: { activeCount?: number }) => {
+    const handleSummary = (_event: unknown, payload?: { unreadCount?: number; activeCount?: number }) => {
       window.dispatchEvent(
         new CustomEvent('ledger:notifications-summary', {
-          detail: { activeCount: Number(payload?.activeCount ?? 0) },
+          detail: { unreadCount: Number(payload?.unreadCount ?? payload?.activeCount ?? 0) },
         })
       );
     };

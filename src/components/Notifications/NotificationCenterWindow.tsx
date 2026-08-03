@@ -301,7 +301,7 @@ const CompactNotificationList = ({
   markAsRead,
 }: {
   items: NotificationCenterItem[];
-  sectionLabel: 'Active' | 'Earlier';
+  sectionLabel: 'Open' | 'Earlier';
   applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>;
   markAsRead: (item: NotificationCenterItem) => Promise<void>;
 }) => {
@@ -325,11 +325,11 @@ const CompactNotificationList = ({
         {items.map((item) => {
           const Icon = iconForItem(item);
           const display = getDisplayData(item);
-          const inlineAction = sectionLabel === 'Active' && item.actions.includes('complete')
+          const inlineAction = sectionLabel === 'Open' && item.actions.includes('complete')
             ? 'complete'
-            : sectionLabel === 'Active' && item.actions.includes('snooze')
+            : sectionLabel === 'Open' && item.actions.includes('snooze')
             ? 'snooze'
-            : sectionLabel === 'Active' && item.actions.includes('open')
+            : sectionLabel === 'Open' && item.actions.includes('open')
             ? 'open'
             : null;
           const isUnread = item.unread === true;
@@ -360,7 +360,7 @@ const CompactNotificationList = ({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className={`min-w-0 max-w-[42ch] truncate text-[13px] ${isUnread ? 'font-semibold' : 'font-medium'} text-[var(--ledger-text-primary)]`}>
+                  <span className={`min-w-0 max-w-[42ch] truncate text-[13px] ${isUnread ? 'font-semibold text-[var(--ledger-text-primary)]' : 'font-normal text-[var(--ledger-text-primary)]'}`}>
                     {display.title}
                   </span>
                   <span className="hidden min-w-0 truncate text-[11px] text-[var(--ledger-text-muted)] sm:inline">
@@ -404,7 +404,7 @@ const CompactNotificationList = ({
                     const rect = event.currentTarget.getBoundingClientRect();
                     openContextMenu(item, rect.right, rect.bottom);
                   }}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-70 transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)] hover:opacity-100"
                 >
                   <MoreHorizontal size={14} />
                 </button>
@@ -459,7 +459,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
   };
 
   const headerSubtitle = useMemo(
-    () => (unreadCount === 1 ? '1 unread' : `${unreadCount} unread`),
+    () => (unreadCount === 0 ? 'Nothing unread' : unreadCount === 1 ? '1 unread' : `${unreadCount} unread`),
     [unreadCount]
   );
 
@@ -495,10 +495,10 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
                   key={option}
                   compact
                   active={filter === option}
-                  title={`Show ${option} notifications`}
+                  title={`Show ${option === 'active' ? 'open' : 'earlier'} notifications`}
                   onClick={() => selectFilter(option)}
                 >
-                  {option === 'active' ? 'Active' : 'Earlier'}
+                  {option === 'active' ? 'Open' : 'Earlier'}
                   <span className="ml-1 text-[10px] text-[var(--ledger-text-muted)]">
                     {option === 'active' ? active.length : earlier.length}
                   </span>
@@ -605,7 +605,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
                   : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
               }`}
             >
-              {option === 'active' ? 'Active' : 'Earlier'}
+              {option === 'active' ? 'Open' : 'Earlier'}
               <span className="ml-1 text-[10px] text-[var(--ledger-text-muted)]">
                 {option === 'active' ? active.length : earlier.length}
               </span>
@@ -644,12 +644,12 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
           <div className="flex min-h-[280px] items-center justify-center">
             <div className="max-w-sm text-center">
               <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                {filter === 'earlier' ? 'No earlier notifications' : 'You’re all caught up'}
+                {filter === 'earlier' ? 'No earlier notifications' : 'Nothing open'}
               </p>
               <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
                 {filter === 'earlier'
-                  ? 'Completed and dismissed alerts will appear here.'
-                  : 'No active notifications in this workspace.'}
+                  ? 'Completed, dismissed, and expired notifications stay here for reference.'
+                  : 'Open notifications stay here until you complete, snooze, or dismiss them.'}
               </p>
             </div>
           </div>
@@ -664,7 +664,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
           <div className="space-y-5">
             <CompactNotificationList
               items={filter === 'earlier' ? displayEarlier : displayActive}
-              sectionLabel={filter === 'earlier' ? 'Earlier' : 'Active'}
+              sectionLabel={filter === 'earlier' ? 'Earlier' : 'Open'}
               applyAction={applyAction}
               markAsRead={markAsRead}
             />

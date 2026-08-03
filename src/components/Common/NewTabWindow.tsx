@@ -129,12 +129,12 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
       try {
         const [inbox, notifications, slack] = await Promise.all([
           api.getInboxCount() as Promise<{ count?: number }>,
-          api.getNotificationCenterSummary() as Promise<{ counts?: { active?: number } }>,
+          api.getNotificationCenterSummary() as Promise<{ counts?: { unread?: number } }>,
           api.getSlackIntegrationStatus(activeWorkspaceId) as Promise<{ connected?: boolean }>,
         ]);
         if (cancelled) return;
         setInboxCount(Math.max(0, Number(inbox?.count ?? 0)));
-        setNotificationCount(Math.max(0, Number(notifications?.counts?.active ?? 0)));
+          setNotificationCount(Math.max(0, Number(notifications?.counts?.unread ?? 0)));
         setIsSlackEnabled(slack?.connected === true);
       } catch {
         if (!cancelled) {

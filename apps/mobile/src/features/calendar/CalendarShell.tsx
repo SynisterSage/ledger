@@ -1,13 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, Easing, InteractionManager, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { requireOptionalNativeModule } from 'expo-modules-core';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { CalendarCreateSheet, CalendarSourcesSheet, CalendarViewSheet } from './CalendarSheets';
-import { useSearchSheet } from '@/features/search/SearchSheetContext';
 import { getWorkspaceLabel, selectWorkspace, useWorkspaceState } from '@/store/workspaceStore';
+import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 import { mobileRequest } from '@/api/client';
 import { createMeetingNoteFromCalendar } from '@/api/calendar';
@@ -16,25 +17,24 @@ import { useMobileCalendarState, type CalendarViewContext, type MobileCalendarVi
 import { ContinuousMonthView, type ContinuousMonthViewHandle, type MonthScrollState } from './ContinuousMonthView';
 import { AgendaView, type AgendaScrollState, type AgendaViewHandle } from './AgendaView';
 import { DayView, type DayViewHandle } from './DayView';
-import { WeekView, type WeekViewHandle } from './WeekView';
+import { LandscapeWeekView } from './LandscapeWeekView';
+import { YearOverview } from './YearOverview';
 import { MonthCalendarItemSheet } from './MonthCalendarItemSheet';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
 import { calendarEditorParams } from './CalendarItemEditor';
-import { formatCalendarDateKey, getCalendarFirstWeekday } from './calendarMonthGenerator';
+import { formatCalendarDateKey } from './calendarMonthGenerator';
+import { useFocusEffect } from 'expo-router';
 
 const CALENDAR_PAGE_PADDING = 16;
+const GLOBAL_TAB_BAR_HEIGHT = 52;
+const GLOBAL_TAB_BAR_GAP = 10;
+const CONTEXT_TOOLBAR_HEIGHT = 48;
+const CONTEXT_TOOLBAR_GAP = 10;
 
 function formatPeriodTitle(view: MobileCalendarView, date: Date) {
-  if (view === 'day') return new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(date);
+  if (view === 'year') return String(date.getFullYear());
+  if (view === 'day') return new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric' }).format(date);
   if (view === 'agenda') return new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' }).format(date);
-  if (view === 'week') {
-    const start = new Date(date);
-    start.setDate(date.getDate() - ((date.getDay() - getCalendarFirstWeekday() + 7) % 7));
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    const format = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
-    return `${format.format(start)} – ${format.format(end)}`;
-  }
   return new Intl.DateTimeFormat(undefined, { month: 'long' }).format(date);
 }
 
@@ -46,28 +46,135 @@ function formatParentPeriod(view: MobileCalendarView, date: Date) {
 function PlaceholderView({ view, context }: { view: MobileCalendarView; context: CalendarViewContext }) {
   const theme = useLedgerTheme();
   const labels: Record<MobileCalendarView, string> = {
-    month: 'Month view is ready for calendar content.', agenda: 'Agenda view is ready for calendar content.', day: 'Day view is ready for calendar content.', week: 'Week view is ready for calendar content.',
+    year: 'Year overview is ready for calendar content.', month: 'Month view is ready for calendar content.', agenda: 'Agenda view is ready for calendar content.', day: 'Day view is ready for calendar content.',
   };
   return <View style={[styles.placeholder, { borderColor: theme.colors.borderSubtle }]}><SymbolView name={{ ios: 'calendar', android: 'calendar_month', web: 'calendar_month' }} size={24} tintColor={theme.colors.textMuted} /><AppText variant="meta" style={styles.placeholderText}>{labels[view]}</AppText><AppText variant="caption">{context.workspaceId === 'all' ? 'All workspaces' : 'Workspace calendar'}</AppText></View>;
 }
 
+function AnimatedPeriodTitle({ title, reduceMotion, style }: { title: string; reduceMotion: boolean; style?: object }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+  const previousTitle = useRef(title);
+
+  useEffect(() => {
+    const changed = previousTitle.current !== title;
+    previousTitle.current = title;
+
+    if (!changed || reduceMotion) {
+      opacity.stopAnimation();
+      translateY.stopAnimation();
+      opacity.setValue(1);
+      translateY.setValue(0);
+      return;
+    }
+
+    opacity.stopAnimation();
+    translateY.stopAnimation();
+    opacity.setValue(0);
+    translateY.setValue(4);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 150, useNativeDriver: true }),
+    ]).start();
+  }, [opacity, reduceMotion, title, translateY]);
+
+  return <Animated.View style={[styles.periodTitleAnimation, { opacity, transform: [{ translateY }] }]}><AppText variant="title" style={style}>{title}</AppText></Animated.View>;
+}
+
 export function CalendarShell() {
   const theme = useLedgerTheme();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isLandscape = windowWidth > windowHeight;
+  const insets = useSafeAreaInsets();
+  const { reduceMotionEnabled } = useAppPreferencesState();
   const router = useRouter();
-  const { openSearch } = useSearchSheet();
   const workspaceState = useWorkspaceState();
   const calendar = useMobileCalendarState(workspaceState.selectedWorkspaceId);
+  // Landscape is an adaptive presentation of Day view. Keep the explicit
+  // portrait Month/Week/Agenda/Year views intact when the device is rotated.
+  const showLandscapeWeek = isLandscape && calendar.view === 'day';
+
+  useEffect(() => {
+    const screenOrientation = requireOptionalNativeModule<{
+      lockAsync: (orientationLock: number) => Promise<void>;
+    }>('ExpoScreenOrientation');
+    if (!screenOrientation) return;
+
+    // Only Day view is allowed to become the landscape weekly timeline.
+    void screenOrientation.lockAsync(calendar.view === 'day' ? 0 : 3).catch(() => {
+      // Ignore unsupported orientation policies on older/limited runtimes.
+    });
+  }, [calendar.view]);
+  const [contentReady, setContentReady] = useState(false);
+  const viewTransitionScale = useRef(new Animated.Value(1)).current;
+  const viewTransitionOpacity = useRef(new Animated.Value(1)).current;
+  const previousViewRef = useRef<MobileCalendarView>(calendar.view);
+  useEffect(() => {
+    let active = true;
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (active) setContentReady(true);
+    });
+    return () => {
+      active = false;
+      task.cancel();
+    };
+  }, []);
+  useEffect(() => {
+    const previousView = previousViewRef.current;
+    previousViewRef.current = calendar.view;
+    const isYearMonthTransition = (previousView === 'year' && calendar.view === 'month') || (previousView === 'month' && calendar.view === 'year');
+    if (!isYearMonthTransition || reduceMotionEnabled) {
+      viewTransitionScale.stopAnimation();
+      viewTransitionOpacity.stopAnimation();
+      viewTransitionScale.setValue(1);
+      viewTransitionOpacity.setValue(1);
+      return;
+    }
+
+    const zoomIn = previousView === 'year' && calendar.view === 'month';
+    viewTransitionScale.stopAnimation();
+    viewTransitionOpacity.stopAnimation();
+    viewTransitionScale.setValue(zoomIn ? 1.06 : 0.94);
+    viewTransitionOpacity.setValue(0.94);
+    Animated.parallel([
+      Animated.timing(viewTransitionScale, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(viewTransitionOpacity, { toValue: 1, duration: 170, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]).start();
+  }, [calendar.view, reduceMotionEnabled, viewTransitionOpacity, viewTransitionScale]);
+  useFocusEffect(useCallback(() => {
+    calendar.goToToday();
+  }, [calendar.goToToday]));
   const monthViewRef = useRef<ContinuousMonthViewHandle>(null);
   const agendaViewRef = useRef<AgendaViewHandle>(null);
   const dayViewRef = useRef<DayViewHandle>(null);
-  const weekViewRef = useRef<WeekViewHandle>(null);
   const [monthScrollStates, setMonthScrollStates] = useState<Record<string, MonthScrollState>>({});
   const [agendaScrollStates, setAgendaScrollStates] = useState<Record<string, AgendaScrollState>>({});
   const [dayScrollStates, setDayScrollStates] = useState<Record<string, Record<string, number>>>({});
-  const [weekScrollStates, setWeekScrollStates] = useState<Record<string, Record<string, number>>>({});
   const [selectedCalendarItem, setSelectedCalendarItem] = useState<MobileCalendarItem | null>(null);
   const [calendarItemActionMode, setCalendarItemActionMode] = useState(false);
   const [dayCreateTimeMinutes, setDayCreateTimeMinutes] = useState<number | null>(null);
+  const todayKey = formatCalendarDateKey(new Date());
+  const isTodayRelevant = calendar.view === 'year'
+    ? calendar.visiblePeriod.getFullYear() !== new Date().getFullYear()
+    : calendar.view === 'month'
+      ? formatCalendarDateKey(calendar.visiblePeriod).slice(0, 7) !== todayKey.slice(0, 7)
+      : formatCalendarDateKey(calendar.selectedDate) !== todayKey;
+
+  const handleToday = () => {
+    const today = new Date();
+    const currentView = calendar.view;
+    calendar.goToToday();
+    if (currentView === 'year') {
+      calendar.setView('month');
+      requestAnimationFrame(() => monthViewRef.current?.scrollToMonth(today));
+    } else if (currentView === 'month') {
+      monthViewRef.current?.scrollToToday();
+    } else if (currentView === 'agenda') {
+      agendaViewRef.current?.scrollToDate(today);
+    } else if (currentView === 'day') {
+      dayViewRef.current?.scrollToUsefulPosition();
+    }
+  };
 
   const changeCalendarView = (nextView: MobileCalendarView) => {
     calendar.setView(nextView);
@@ -150,44 +257,69 @@ export function CalendarShell() {
     onChangeVisiblePeriod: calendar.changeVisiblePeriod,
   };
 
-  const openCreateFlow = (href: '/capture/event' | '/capture/reminder' | '/capture/task' | '/capture/project-action') => {
-    const type = href === '/capture/event' ? 'event' : href === '/capture/reminder' ? 'reminder' : href === '/capture/task' ? 'task' : 'project_action';
-    const selected = new Date(calendar.selectedDate);
-    const selectedMinutes = dayCreateTimeMinutes;
-    const params = { mode: 'create', type, workspaceId: workspaceState.selectedWorkspaceId, dateKey: formatCalendarDateKey(calendar.selectedDate), ...(selectedMinutes !== null ? (() => { selected.setHours(Math.floor(selectedMinutes / 60), selectedMinutes % 60, 0, 0); return { startAt: selected.toISOString(), endAt: type === 'event' ? new Date(selected.getTime() + 60 * 60 * 1000).toISOString() : '' }; })() : {}) };
-    setDayCreateTimeMinutes(null);
-    calendar.setCreationSheetOpen(false);
-    router.push({ pathname: '/calendar/editor', params });
-  };
-
-  return <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={[styles.screen, { backgroundColor: theme.colors.background }]}>
-    <View style={styles.content}>
-      <View style={styles.toolbar}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`Return to ${formatParentPeriod(calendar.view, calendar.visiblePeriod)}`} onPress={() => Alert.alert('Year overview', 'The year overview will be available in a later calendar phase.')} style={styles.parentButton}>
-          <SymbolView name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }} size={19} tintColor={theme.colors.textPrimary} /><AppText variant="bodyStrong">{formatParentPeriod(calendar.view, calendar.visiblePeriod)}</AppText>
+  return (
+    <SafeAreaView
+      edges={['top', 'left', 'right', 'bottom']}
+      style={[styles.screen, { backgroundColor: theme.colors.background }]}
+    >
+    <View
+      style={[styles.content, {
+        paddingTop: showLandscapeWeek ? 0 : 12,
+        paddingBottom: showLandscapeWeek ? 0 : GLOBAL_TAB_BAR_HEIGHT + GLOBAL_TAB_BAR_GAP + CONTEXT_TOOLBAR_HEIGHT + CONTEXT_TOOLBAR_GAP,
+      }]}
+    >
+      <View style={[styles.toolbar, showLandscapeWeek && styles.landscapeHidden]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Open year overview for ${calendar.visiblePeriod.getFullYear()}`} onPress={() => calendar.view === 'month' ? calendar.setView('year') : calendar.setView('month')} style={styles.parentButton}>
+          <SymbolView name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }} size={19} tintColor={theme.colors.textPrimary} /><AppText variant="bodyStrong">{calendar.view === 'year' ? formatPeriodTitle('year', calendar.visiblePeriod) : formatParentPeriod(calendar.view, calendar.visiblePeriod)}</AppText>
         </Pressable>
         <View style={styles.toolbarActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Switch calendar view, current view ${calendar.view}`} onPress={() => calendar.setViewSheetOpen(true)} style={styles.iconTarget}><SymbolView name={{ ios: 'rectangle.3.group', android: 'view_module', web: 'view_module' }} size={21} tintColor={theme.colors.textPrimary} /></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Search calendar" onPress={openSearch} style={styles.iconTarget}><SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={21} tintColor={theme.colors.textPrimary} /></Pressable>
+          {calendar.view !== 'year' ? <Pressable accessibilityRole="button" accessibilityLabel={`Switch calendar view, current view ${calendar.view}`} onPress={() => calendar.setViewSheetOpen(true)} style={styles.iconTarget}><SymbolView name={{ ios: 'rectangle.3.group', android: 'view_module', web: 'view_module' }} size={21} tintColor={theme.colors.textPrimary} /></Pressable> : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Create calendar item" onPress={() => { setDayCreateTimeMinutes(null); calendar.setCreationSheetOpen(true); }} style={styles.iconTarget}><SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={23} tintColor={theme.colors.textPrimary} /></Pressable>
         </View>
       </View>
 
-      <View style={styles.periodHeader}>
-        <AppText variant="title">{title}</AppText>
+      <View style={[styles.periodHeader, showLandscapeWeek && styles.landscapeHidden]}>
+        <AnimatedPeriodTitle title={title} reduceMotion={reduceMotionEnabled} style={calendar.view === 'year' ? styles.yearShellTitle : undefined} />
         <Pressable accessibilityRole="button" accessibilityLabel="Change workspace" onPress={() => setWorkspacePickerOpen(true)} style={styles.workspaceButton}><AppText variant="meta">{workspaceState.isLoading ? 'Loading workspace…' : workspaceLabel}</AppText><SymbolView name={{ ios: 'chevron.down', android: 'keyboard_arrow_down', web: 'keyboard_arrow_down' }} size={12} tintColor={theme.colors.textSecondary} /></Pressable>
       </View>
 
-      <View style={styles.viewArea}>
-        {calendar.view === 'month' ? (
+      <Animated.View style={[styles.viewArea, { opacity: viewTransitionOpacity, transform: [{ scale: viewTransitionScale }] }]}>
+        {showLandscapeWeek ? (
+          <LandscapeWeekView
+            selectedDate={calendar.selectedDate}
+            workspaceId={workspaceState.selectedWorkspaceId}
+            filters={calendar.filters}
+            scrollOffset={dayScrollStates[workspaceState.selectedWorkspaceId]?.[formatCalendarDateKey(calendar.selectedDate)]}
+            onScrollOffsetChange={(offset) => setDayScrollStates((current) => ({ ...current, [workspaceState.selectedWorkspaceId]: { ...(current[workspaceState.selectedWorkspaceId] ?? {}), [formatCalendarDateKey(calendar.selectedDate)]: offset } }))}
+            onSelectDate={(date) => { calendar.selectDate(date); calendar.changeVisiblePeriod(date); }}
+            onOpenItem={(item) => { setCalendarItemActionMode(false); setSelectedCalendarItem(item); }}
+            onLongPressItem={(item) => { setCalendarItemActionMode(true); setSelectedCalendarItem(item); }}
+            onCreateAtTime={(date, minutes) => { calendar.selectDate(date); calendar.changeVisiblePeriod(date); setDayCreateTimeMinutes(minutes); calendar.setCreationSheetOpen(true); }}
+            onBackToMonth={() => calendar.setView('month')}
+            onChangeWeek={(amount) => { const next = new Date(calendar.selectedDate); next.setDate(next.getDate() + amount * 7); calendar.selectDate(next); calendar.changeVisiblePeriod(next); }}
+            onOpenViewSheet={() => calendar.setViewSheetOpen(true)}
+            onCreate={() => { setDayCreateTimeMinutes(null); calendar.setCreationSheetOpen(true); }}
+          />
+        ) : !contentReady ? <View style={[styles.contentLoading, { backgroundColor: theme.colors.surfaceMuted }]} /> : calendar.view === 'year' ? (
+          <YearOverview
+            visibleYear={calendar.visiblePeriod.getFullYear()}
+            selectedDate={calendar.selectedDate}
+            workspaceId={workspaceState.selectedWorkspaceId}
+            filters={calendar.filters}
+            onSelectMonth={(date) => { calendar.changeVisiblePeriod(date); calendar.setView('month'); requestAnimationFrame(() => monthViewRef.current?.scrollToMonth(date)); }}
+            onSelectDate={(date) => { calendar.selectDate(date); calendar.changeVisiblePeriod(date); calendar.setView('month'); requestAnimationFrame(() => monthViewRef.current?.scrollToMonth(date)); }}
+            onVisibleYearChange={(year) => calendar.changeVisiblePeriod(new Date(year, calendar.visiblePeriod.getMonth(), 1))}
+          />
+        ) : calendar.view === 'month' ? (
           <ContinuousMonthView
             ref={monthViewRef}
             selectedDate={calendar.selectedDate}
             visiblePeriod={calendar.visiblePeriod}
             workspaceId={workspaceState.selectedWorkspaceId}
+            workspaceReady={workspaceState.isHydrated && !workspaceState.isLoading}
             filters={calendar.filters}
             scrollState={monthScrollStates[workspaceState.selectedWorkspaceId]}
-            onSelectDate={calendar.selectDate}
+            onSelectDate={(date) => { calendar.selectDate(date); calendar.changeVisiblePeriod(date); changeCalendarView('day'); }}
             onChangeVisiblePeriod={calendar.changeVisiblePeriod}
             onScrollStateChange={(state) => setMonthScrollStates((current) => ({ ...current, [workspaceState.selectedWorkspaceId]: state }))}
             onOpenItem={(item) => { setCalendarItemActionMode(false); setSelectedCalendarItem(item); }}
@@ -208,19 +340,6 @@ export function CalendarShell() {
             onLongPressItem={(item) => { setCalendarItemActionMode(true); setSelectedCalendarItem(item); }}
             onCreateForDate={(date) => { calendar.selectDate(date); calendar.setCreationSheetOpen(true); }}
           />
-        ) : calendar.view === 'week' ? (
-          <WeekView
-            ref={weekViewRef}
-            selectedDate={calendar.selectedDate}
-            workspaceId={workspaceState.selectedWorkspaceId}
-            filters={calendar.filters}
-            scrollOffset={weekScrollStates[workspaceState.selectedWorkspaceId]?.[formatCalendarDateKey(calendar.selectedDate)]}
-            onScrollOffsetChange={(offset) => setWeekScrollStates((current) => ({ ...current, [workspaceState.selectedWorkspaceId]: { ...(current[workspaceState.selectedWorkspaceId] ?? {}), [formatCalendarDateKey(calendar.selectedDate)]: offset } }))}
-            onSelectDate={(date) => { calendar.selectDate(date); calendar.changeVisiblePeriod(date); }}
-            onOpenItem={(item) => { setCalendarItemActionMode(false); setSelectedCalendarItem(item); }}
-            onLongPressItem={(item) => { setCalendarItemActionMode(true); setSelectedCalendarItem(item); }}
-            onCreateAtTime={(date, minutes) => { calendar.selectDate(date); calendar.changeVisiblePeriod(date); setDayCreateTimeMinutes(minutes); calendar.setCreationSheetOpen(true); }}
-          />
         ) : calendar.view === 'day' ? (
           <DayView
             ref={dayViewRef}
@@ -235,14 +354,27 @@ export function CalendarShell() {
             onCreateAtTime={(date, minutes) => { calendar.selectDate(date); calendar.changeVisiblePeriod(date); setDayCreateTimeMinutes(minutes); calendar.setCreationSheetOpen(true); }}
           />
         ) : <PlaceholderView view={calendar.view} context={viewContext} />}
-      </View>
+      </Animated.View>
 
-      <View style={[styles.contextToolbar, { borderTopColor: theme.colors.borderSubtle, borderBottomColor: theme.colors.borderSubtle }]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Return to today" onPress={() => { calendar.goToToday(); monthViewRef.current?.scrollToToday(); agendaViewRef.current?.scrollToDate(new Date()); dayViewRef.current?.scrollToUsefulPosition(); weekViewRef.current?.scrollToToday(); }} style={styles.contextAction}><AppText variant="button" style={{ color: theme.colors.accent }}>Today</AppText></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Choose visible calendars" onPress={() => calendar.setSourceSheetOpen(true)} style={styles.contextAction}><SymbolView name={{ ios: 'calendar', android: 'calendar_month', web: 'calendar_month' }} size={17} tintColor={theme.colors.textSecondary} /><AppText variant="button">Calendars</AppText></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Open calendar inbox" onPress={() => router.push('/notifications')} style={styles.contextAction}><SymbolView name={{ ios: 'tray', android: 'inbox', web: 'inbox' }} size={17} tintColor={theme.colors.textSecondary} /><AppText variant="button">Inbox</AppText></Pressable>
-      </View>
     </View>
+
+    {!isLandscape ? (
+      <View
+        style={[styles.contextToolbar, { bottom: insets.bottom + GLOBAL_TAB_BAR_HEIGHT + GLOBAL_TAB_BAR_GAP, backgroundColor: theme.colors.background, borderTopColor: theme.colors.borderSubtle }]}
+      >
+      <Pressable accessibilityRole="button" accessibilityLabel="Return to today" onPress={handleToday} style={({ pressed }) => [styles.contextAction, { opacity: pressed ? 0.65 : 1 }]}>
+        <AppText variant="meta" style={{ color: isTodayRelevant ? theme.colors.accent : theme.colors.textSecondary }}>Today</AppText>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Choose visible calendars" onPress={() => calendar.setSourceSheetOpen(true)} style={({ pressed }) => [styles.contextAction, { opacity: pressed ? 0.65 : 1 }]}>
+        <SymbolView name={{ ios: 'calendar', android: 'calendar_month', web: 'calendar_month' }} size={16} tintColor={theme.colors.textSecondary} />
+        <AppText variant="meta">Calendars</AppText>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open calendar inbox" onPress={() => router.push('/notifications')} style={({ pressed }) => [styles.contextAction, { opacity: pressed ? 0.65 : 1 }]}>
+        <SymbolView name={{ ios: 'tray', android: 'inbox', web: 'inbox' }} size={16} tintColor={theme.colors.textSecondary} />
+        <AppText variant="meta">Inbox</AppText>
+      </Pressable>
+      </View>
+    ) : null}
 
     <MonthCalendarItemSheet
       visible={Boolean(selectedCalendarItem)}
@@ -253,25 +385,38 @@ export function CalendarShell() {
       onAction={(actionId, item) => { void handleCalendarItemAction(actionId, item); }}
     />
 
-    <WorkspaceSelectorSheet visible={workspacePickerOpen} selectedWorkspaceId={workspaceState.selectedWorkspaceId} workspaces={workspaceState.options} onSelect={selectWorkspace} onClose={() => setWorkspacePickerOpen(false)} />
     <CalendarViewSheet visible={calendar.viewSheetOpen} value={calendar.view} onChange={changeCalendarView} onClose={() => calendar.setViewSheetOpen(false)} />
-    <CalendarCreateSheet visible={calendar.creationSheetOpen} onClose={() => calendar.setCreationSheetOpen(false)} onSelect={openCreateFlow} />
-    <CalendarSourcesSheet visible={calendar.sourceSheetOpen} workspaceId={workspaceState.selectedWorkspaceId} workspaceLabel={workspaceLabel} filters={calendar.filters} onChangeFilters={calendar.setFilters} onResetFilters={calendar.resetFilters} onOpenWorkspacePicker={() => setWorkspacePickerOpen(true)} onManageConnection={() => { calendar.setSourceSheetOpen(false); router.push('/settings'); }} onClose={() => calendar.setSourceSheetOpen(false)} />
-  </SafeAreaView>;
+    <CalendarCreateSheet
+      visible={calendar.creationSheetOpen}
+      workspaceId={workspaceState.selectedWorkspaceId}
+      initialDateKey={formatCalendarDateKey(calendar.selectedDate)}
+      initialStartAt={dayCreateTimeMinutes !== null ? (() => { const date = new Date(calendar.selectedDate); date.setHours(Math.floor(dayCreateTimeMinutes / 60), dayCreateTimeMinutes % 60, 0, 0); return date.toISOString(); })() : undefined}
+      initialEndAt={dayCreateTimeMinutes !== null ? (() => { const date = new Date(calendar.selectedDate); date.setHours(Math.floor(dayCreateTimeMinutes / 60) + 1, dayCreateTimeMinutes % 60, 0, 0); return date.toISOString(); })() : undefined}
+      onClose={() => { setDayCreateTimeMinutes(null); calendar.setCreationSheetOpen(false); }}
+      onCreated={() => setDayCreateTimeMinutes(null)}
+    />
+    <CalendarSourcesSheet visible={calendar.sourceSheetOpen} workspaceId={workspaceState.selectedWorkspaceId} workspaceLabel={workspaceLabel} filters={calendar.filters} onChangeFilters={calendar.setFilters} onResetFilters={calendar.resetFilters} onOpenWorkspacePicker={() => { calendar.setSourceSheetOpen(false); setWorkspacePickerOpen(true); }} onManageConnection={() => { calendar.setSourceSheetOpen(false); router.push('/settings'); }} onClose={() => calendar.setSourceSheetOpen(false)} />
+    <WorkspaceSelectorSheet visible={workspacePickerOpen} selectedWorkspaceId={workspaceState.selectedWorkspaceId} workspaces={workspaceState.options} onSelect={selectWorkspace} onClose={() => setWorkspacePickerOpen(false)} />
+  </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { flex: 1, paddingHorizontal: CALENDAR_PAGE_PADDING, paddingTop: 12, paddingBottom: 106 },
+  content: { flex: 1, paddingHorizontal: CALENDAR_PAGE_PADDING, paddingTop: 12 },
   toolbar: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   toolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   parentButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 2 },
   iconTarget: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   periodHeader: { paddingTop: 14, paddingBottom: 18, gap: 5 },
+  periodTitleAnimation: { alignSelf: 'flex-start' },
   workspaceButton: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
   viewArea: { flex: 1 },
+  contentLoading: { flex: 1, minHeight: 260, borderRadius: 8, opacity: 0.45 },
   placeholder: { flex: 1, minHeight: 260, borderWidth: StyleSheet.hairlineWidth, borderRadius: 8, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 24 },
   placeholderText: { textAlign: 'center' },
-  contextToolbar: { minHeight: 52, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
-  contextAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2 },
+  contextToolbar: { position: 'absolute', left: CALENDAR_PAGE_PADDING, right: CALENDAR_PAGE_PADDING, height: CONTEXT_TOOLBAR_HEIGHT, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  contextAction: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 2 },
+  yearShellTitle: { fontSize: 30, lineHeight: 38 },
+  landscapeHidden: { display: 'none' },
 });

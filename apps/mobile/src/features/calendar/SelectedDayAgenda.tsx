@@ -47,6 +47,24 @@ function getEndOrDuration(item: MobileCalendarItem) {
   return remainder ? `${hours} hr ${remainder} min` : `${hours} hr`;
 }
 
+function getAgendaMetadata(item: MobileCalendarItem) {
+  const parts = [item.location, item.projectName];
+  if (!item.location && !item.projectName && item.sourceName && !['Reminders', 'Tasks'].includes(item.sourceName)) {
+    parts.push(item.sourceName);
+  }
+  return parts.filter(Boolean).join(' · ');
+}
+
+function getAgendaTrailing(item: MobileCalendarItem) {
+  if (!item.startAt || item.allDay) return item.type === 'task' || item.type === 'project_action' || item.type === 'milestone' || item.type === 'project_deadline' ? 'Due' : 'All day';
+  const start = new Date(item.startAt);
+  const end = item.endAt ? new Date(item.endAt) : null;
+  return {
+    start: start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+    end: end && !Number.isNaN(end.getTime()) ? end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null,
+  };
+}
+
 function isCurrent(item: MobileCalendarItem) {
   if (!item.startAt || !item.endAt || item.allDay) return false;
   const now = Date.now();
@@ -76,14 +94,45 @@ function buildAgendaGroups(items: MobileCalendarItem[]): AgendaGroup[] {
   return groups.filter((group) => group.items.length > 0);
 }
 
-export function DayAgendaItemRow({ item, onPress, onLongPress }: { item: MobileCalendarItem; onPress: () => void; onLongPress: () => void }) {
+export function getAgendaRowHeight(item: MobileCalendarItem) {
+  return getAgendaMetadata(item) ? 72 : 58;
+}
+
+export function DayAgendaItemRow({ item, compact = false, agenda = false, onPress, onLongPress }: { item: MobileCalendarItem; compact?: boolean; agenda?: boolean; onPress: () => void; onLongPress: () => void }) {
   const theme = useLedgerTheme();
   const current = isCurrent(item);
   const past = isPast(item);
   const time = getTime(item);
   const duration = getEndOrDuration(item);
   const detail = item.projectName ?? item.sourceName ?? (item.overdue ? 'Overdue' : item.allDay ? 'All day' : null);
+  const agendaMetadata = getAgendaMetadata(item);
+  const agendaTrailing = getAgendaTrailing(item);
   const stateLabel = item.completed ? ', completed' : item.overdue ? ', overdue' : current ? ', now' : item.readOnly ? ', read only' : '';
+
+  if (agenda) {
+    const showGlyph = item.type !== 'event' && item.type !== 'external_event';
+    const trailingLabel = typeof agendaTrailing === 'string' ? agendaTrailing : agendaTrailing.start;
+    return <Pressable accessibilityRole="button" accessibilityLabel={`${item.type.replace('_', ' ')}, ${item.title}, ${trailingLabel}${typeof agendaTrailing !== 'string' && agendaTrailing.end ? `, ends ${agendaTrailing.end}` : ''}${agendaMetadata ? `, ${agendaMetadata}` : ''}${stateLabel}`} accessibilityHint="Opens item details. Long press for actions." onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.agendaRow, { minHeight: getAgendaRowHeight(item), opacity: pressed ? 0.62 : past ? 0.66 : 1 }]}>
+      <View style={[styles.agendaAccent, { backgroundColor: item.sourceColor ?? theme.colors.accent }]} />
+      {showGlyph ? <SymbolView name={iconByType[item.type] as never} size={11} tintColor={item.overdue ? theme.colors.warning : item.sourceColor ?? theme.colors.textMuted} /> : null}
+      <View style={styles.agendaBody}>
+        <AppText variant="body" numberOfLines={1} style={[styles.agendaTitle, { color: theme.colors.textPrimary, fontWeight: current ? '600' : '500', textDecorationLine: item.completed ? 'line-through' : 'none' }]}>{item.title}</AppText>
+        {agendaMetadata ? <AppText variant="caption" numberOfLines={1} style={styles.agendaDetail}>{agendaMetadata}</AppText> : null}
+      </View>
+      <View style={styles.agendaTimes}>
+        <AppText variant="caption" numberOfLines={1} style={[styles.agendaStart, { color: current ? theme.colors.accent : theme.colors.textPrimary }]}>{trailingLabel}</AppText>
+        {typeof agendaTrailing !== 'string' && agendaTrailing.end ? <AppText variant="caption" numberOfLines={1} style={styles.agendaEnd}>{agendaTrailing.end}</AppText> : null}
+      </View>
+    </Pressable>;
+  }
+
+  if (compact) {
+    return <Pressable accessibilityRole="button" accessibilityLabel={`${item.type.replace('_', ' ')}, ${item.title}${detail ? `, ${detail}` : ''}${stateLabel}`} accessibilityHint="Opens item details. Long press for actions." onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.compactRow, { opacity: pressed ? 0.62 : past ? 0.52 : 1 }]}>
+      <SymbolView name={iconByType[item.type] as never} size={12} tintColor={item.overdue ? theme.colors.warning : item.sourceColor ?? theme.colors.textMuted} />
+      <AppText variant="meta" numberOfLines={1} style={[styles.compactTitle, { color: theme.colors.textPrimary, fontWeight: current ? '600' : '500', textDecorationLine: item.completed ? 'line-through' : 'none' }]}>{item.title}</AppText>
+      {detail ? <AppText variant="caption" numberOfLines={1} style={styles.compactDetail}>{detail}</AppText> : null}
+    </Pressable>;
+  }
 
   return (
     <Pressable
@@ -148,6 +197,17 @@ const styles = StyleSheet.create({
   group: { marginTop: 7 },
   groupLabel: { paddingHorizontal: 8, paddingBottom: 2, fontWeight: '600' },
   row: { minHeight: 49, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8 },
+  agendaRow: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 8, paddingVertical: 7 },
+  agendaAccent: { width: 3, height: 32, borderRadius: 2 },
+  agendaBody: { flex: 1, minWidth: 0, gap: 2 },
+  agendaTitle: { minWidth: 0, fontSize: 15, lineHeight: 19 },
+  agendaDetail: { minWidth: 0, color: '#A5A5AA' },
+  agendaTimes: { width: 70, alignItems: 'flex-end', justifyContent: 'center', gap: 1 },
+  agendaStart: { width: '100%', textAlign: 'right', fontSize: 14, lineHeight: 18 },
+  agendaEnd: { width: '100%', textAlign: 'right', color: '#929299', fontSize: 14, lineHeight: 18 },
+  compactRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 8 },
+  compactTitle: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 18 },
+  compactDetail: { maxWidth: 130 },
   timeColumn: { width: 54, alignItems: 'flex-end' },
   accentLine: { width: 2, height: 28, borderRadius: 1 },
   rowBody: { flex: 1, minWidth: 0, gap: 2 },

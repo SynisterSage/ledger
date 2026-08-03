@@ -26,6 +26,8 @@ type DayViewProps = {
   onLongPressItem: (item: MobileCalendarItem) => void;
   onCreateAtTime: (date: Date, minutes: number) => void;
   showDateStrip?: boolean;
+  showTimeline?: boolean;
+  emptyTimelineContent?: ReactNode;
   beforeContent?: ReactNode;
   afterContent?: ReactNode;
 };
@@ -48,6 +50,11 @@ function getWeekDates(date: Date) {
 function formatTime(minutes: number) {
   const date = new Date(2024, 0, 1, Math.floor(minutes / 60), minutes % 60);
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatCurrentTime(date: Date) {
+  const hours = date.getHours();
+  return `${hours % 12 || 12}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 function isToday(date: Date) {
@@ -80,6 +87,7 @@ function DayDateStrip({ date, onSelectDate }: { date: Date; onSelectDate: (date:
     contentContainerStyle={{ paddingHorizontal: Math.max(0, (width - CELL_WIDTH * 7) / 2) }}
     onMomentumScrollEnd={(event) => selectFromOffset(event.nativeEvent.contentOffset.x)}
     getItemLayout={(_, index) => ({ length: CELL_WIDTH, offset: CELL_WIDTH * index, index })}
+    style={styles.dateStrip}
     renderItem={({ item }) => {
       const selected = formatCalendarDateKey(item) === formatCalendarDateKey(date);
       const today = isToday(item);
@@ -105,13 +113,13 @@ function DayEventBlock({ positioned, onPress, onLongPress }: { positioned: Posit
   </Pressable>;
 }
 
-export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView({ selectedDate, workspaceId, filters, scrollOffset, onScrollOffsetChange, onSelectDate, onOpenItem, onLongPressItem, onCreateAtTime, showDateStrip = true, beforeContent, afterContent }, ref) {
+export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView({ selectedDate, workspaceId, filters, scrollOffset, onScrollOffsetChange, onSelectDate, onOpenItem, onLongPressItem, onCreateAtTime, showDateStrip = true, showTimeline = true, emptyTimelineContent, beforeContent, afterContent }, ref) {
   const theme = useLedgerTheme();
   const { itemsByDate, isLoading, error, retry } = useMobileCalendarItems(workspaceId, selectedDate, filters);
   const scrollRef = useRef<ScrollView>(null);
   const restoredKeyRef = useRef<string | null>(null);
   const [timelineTop, setTimelineTop] = useState(0);
-  const [, setClock] = useState(() => Date.now());
+  const [now, setNow] = useState(() => new Date());
   const dayKey = formatCalendarDateKey(selectedDate);
   const dayItems = useMemo(() => itemsByDate[dayKey] ?? [], [dayKey, itemsByDate]);
   const allDayItems = useMemo(() => dayItems.filter((item) => (item.type === 'event' || item.type === 'external_event') && item.allDay), [dayItems]);
@@ -121,7 +129,7 @@ export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView(
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
 
   useEffect(() => {
-    const interval = setInterval(() => setClock(Date.now()), 60_000);
+    const interval = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -147,25 +155,25 @@ export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView(
     },
   }), [positionedItems, selectedDate, timelineTop]);
 
-  const renderHour = (hour: number) => <View key={hour} style={[styles.hourRow, { borderTopColor: theme.colors.borderSubtle }]}><View style={styles.timeGutter}><AppText variant="caption">{formatTime(hour * 60)}</AppText></View><Pressable accessibilityRole="button" accessibilityLabel={`Create item at ${formatTime(hour * 60)} on ${selectedDate.toLocaleDateString([], { month: 'long', day: 'numeric' })}`} onPress={(event) => { const quarter = Math.max(0, Math.min(3, Math.round((event.nativeEvent.locationY / HOUR_HEIGHT) * 4))); onCreateAtTime(selectedDate, hour * 60 + quarter * 15); }} style={styles.hourContent} /></View>;
-
-  const currentIndicator = isToday(selectedDate) ? getDayMinutes(new Date().toISOString()) : null;
+  const currentIndicator = isToday(selectedDate) ? getDayMinutes(now.toISOString()) : null;
+  const currentHour = currentIndicator === null ? null : Math.floor(currentIndicator / 60);
+  const renderHour = (hour: number) => <View key={hour} style={[styles.hourRow, { borderTopColor: theme.colors.borderSubtle }]}><View style={styles.timeGutter}>{currentHour !== hour ? <AppText variant="caption" numberOfLines={1} style={styles.timeLabel}>{formatTime(hour * 60)}</AppText> : null}</View><Pressable accessibilityRole="button" accessibilityLabel={`Create item at ${formatTime(hour * 60)} on ${selectedDate.toLocaleDateString([], { month: 'long', day: 'numeric' })}`} onPress={(event) => { const quarter = Math.max(0, Math.min(3, Math.round((event.nativeEvent.locationY / HOUR_HEIGHT) * 4))); onCreateAtTime(selectedDate, hour * 60 + quarter * 15); }} style={styles.hourContent} /></View>;
 
   return <View style={styles.container}>
-    {showDateStrip ? <DayDateStrip date={selectedDate} onSelectDate={onSelectDate} /> : null}
+    {showDateStrip ? <View style={[styles.dateStripContainer, { backgroundColor: theme.colors.background, borderBottomColor: theme.colors.borderSubtle }]}><DayDateStrip date={selectedDate} onSelectDate={onSelectDate} /></View> : null}
     {error ? <View style={[styles.errorRow, { borderBottomColor: theme.colors.borderSubtle }]}><AppText variant="caption" numberOfLines={1}>{error}</AppText><Pressable onPress={retry}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : null}
     <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} onScroll={(event) => onScrollOffsetChange?.(event.nativeEvent.contentOffset.y)} scrollEventThrottle={100} contentContainerStyle={styles.scrollContent}>
       {beforeContent}
       {allDayItems.length ? <View style={styles.section}><AppText variant="caption" style={styles.sectionLabel}>All day{allDayItems.length > 1 ? ` ${allDayItems.length}` : ''}</AppText>{allDayItems.slice(0, 3).map((item) => <DayAgendaItemRow key={item.id} item={item} onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} />)}{allDayItems.length > 3 ? <AppText variant="caption" style={styles.moreLabel}>+{allDayItems.length - 3} more</AppText> : null}</View> : null}
-      {dueItems.length ? <View style={styles.section}><AppText variant="caption" style={styles.sectionLabel}>Due today {dueItems.length}</AppText>{dueItems.map((item) => <DayAgendaItemRow key={item.id} item={item} onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} />)}</View> : null}
-      <View onLayout={(event) => setTimelineTop(event.nativeEvent.layout.y)} style={styles.timelineSection}>
+      {dueItems.length ? <View style={styles.dueSection}><AppText variant="caption" style={styles.dueLabel}>Due today {dueItems.length}</AppText>{dueItems.map((item) => <DayAgendaItemRow key={item.id} item={item} compact onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} />)}</View> : null}
+      {showTimeline ? <View onLayout={(event) => setTimelineTop(event.nativeEvent.layout.y)} style={styles.timelineSection}>
         <View style={styles.timelineHeader}><AppText variant="caption" style={styles.sectionLabel}>Schedule</AppText>{isLoading ? <AppText variant="caption">Loading…</AppText> : null}</View>
         <View style={styles.timeline}>
           {Array.from({ length: TIMELINE_END_HOUR - TIMELINE_START_HOUR }, (_, index) => renderHour(index + TIMELINE_START_HOUR))}
-          {currentIndicator !== null ? <View pointerEvents="none" style={[styles.currentLine, { top: (currentIndicator / 60) * HOUR_HEIGHT, borderTopColor: theme.colors.accent }]}><AppText variant="caption" style={{ color: theme.colors.accent }}>NOW</AppText></View> : null}
+          {currentIndicator !== null ? <View pointerEvents="none" style={[styles.currentLine, { top: (currentIndicator / 60) * HOUR_HEIGHT, borderTopColor: theme.colors.accent }]}><View style={[styles.currentTimeBadge, { backgroundColor: theme.colors.accent }]}><AppText variant="caption" style={styles.currentTimeLabel}>{formatCurrentTime(now)}</AppText></View></View> : null}
           {positionedItems.map((positioned) => <DayEventBlock key={positioned.item.id} positioned={positioned} onPress={() => onOpenItem(positioned.item)} onLongPress={() => onLongPressItem(positioned.item)} />)}
         </View>
-      </View>
+      </View> : emptyTimelineContent ?? null}
       {afterContent}
     </ScrollView>
   </View>;
@@ -173,19 +181,26 @@ export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView(
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  dateStripContainer: { height: 66, zIndex: 2, elevation: 2, borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: 8 },
+  dateStrip: { height: 58 },
   scrollContent: { paddingBottom: 32 },
   dateCell: { width: CELL_WIDTH, minHeight: 58, alignItems: 'center', justifyContent: 'center', gap: 4 },
   dateNumber: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   section: { paddingTop: 10, paddingBottom: 6 },
-  sectionLabel: { paddingHorizontal: 8, paddingBottom: 4, fontWeight: '700', textTransform: 'uppercase' },
+  sectionLabel: { paddingHorizontal: 8, paddingBottom: 4, fontWeight: '700' },
+  dueSection: { paddingTop: 5, paddingBottom: 4 },
+  dueLabel: { paddingHorizontal: 8, paddingBottom: 2, fontWeight: '600' },
   moreLabel: { paddingHorizontal: 8, paddingTop: 4 },
-  timelineSection: { paddingTop: 12 },
+  timelineSection: { paddingTop: 16 },
   timelineHeader: { minHeight: 30, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   timeline: { position: 'relative', height: (TIMELINE_END_HOUR - TIMELINE_START_HOUR) * HOUR_HEIGHT },
-  hourRow: { height: HOUR_HEIGHT, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth },
-  timeGutter: { width: 58, alignItems: 'flex-end', paddingRight: 8, paddingTop: 5 },
+  hourRow: { height: HOUR_HEIGHT, flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, opacity: 0.92 },
+  timeGutter: { width: 64, alignItems: 'flex-end', paddingRight: 8, paddingTop: 5 },
+  timeLabel: { fontSize: 11, lineHeight: 16 },
   hourContent: { flex: 1 },
-  eventBlock: { position: 'absolute', minHeight: 34, marginLeft: 62, marginRight: 6, padding: 7, borderLeftWidth: 3, borderRadius: 5, overflow: 'hidden' },
-  currentLine: { position: 'absolute', left: 58, right: 0, borderTopWidth: 1, zIndex: 10 },
+  eventBlock: { position: 'absolute', minHeight: 34, marginLeft: 64, marginRight: 6, padding: 7, borderLeftWidth: 3, borderRadius: 5, overflow: 'hidden' },
+  currentLine: { position: 'absolute', left: 64, right: 0, borderTopWidth: 1, zIndex: 10 },
+  currentTimeBadge: { position: 'absolute', right: '100%', top: -11, minWidth: 48, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  currentTimeLabel: { color: '#FFFFFF', fontSize: 11, lineHeight: 16, fontWeight: '600' },
   errorRow: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
 });

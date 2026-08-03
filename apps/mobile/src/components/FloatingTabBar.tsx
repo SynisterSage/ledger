@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
@@ -34,14 +34,14 @@ const routeIconByName: Record<string, TabSymbolName> = {
   notifications: { ios: 'bell', android: 'notifications_none', web: 'notifications_none' },
 };
 
-function FadeStack() {
+function FadeStack({ opacityScale = 1 }: { opacityScale?: number }) {
   const theme = useLedgerTheme();
-  const fadeColor = theme.scheme === 'dark' ? theme.colors.background : theme.colors.tabBar;
+  const fadeColor = theme.colors.background;
 
   return (
     <View pointerEvents="none" style={[styles.fadeWrap, { height: FADE_HEIGHT }]}>
       {Array.from({ length: FADE_HEIGHT }).map((_, index) => {
-        const opacity = Math.min(1, (index + 1) / FADE_HEIGHT);
+        const opacity = Math.min(1, ((index + 1) / FADE_HEIGHT) * opacityScale);
         return (
           <View
             key={index}
@@ -62,17 +62,19 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const { openSearch } = useSearchSheet();
   const appPreferences = useAppPreferencesState();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const [tabLayouts, setTabLayouts] = useState<Record<string, { x: number; width: number }>>({});
   const pillX = useRef(new Animated.Value(0)).current;
   const pillWidth = useRef(new Animated.Value(0)).current;
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
-  const dockFadeColor = theme.scheme === 'dark' ? theme.colors.background : theme.colors.tabBar;
+  const dockFadeColor = theme.colors.background;
   const dockShadowColor = theme.scheme === 'dark' ? '#000000' : theme.colors.textPrimary;
   const dockShadowOpacity = theme.scheme === 'dark' ? 0.28 : theme.shadows.surface.opacity;
   const bottomInset = useMemo(() => Math.max(insets.bottom, 8), [insets.bottom]);
   const bottomOffset = bottomInset + BAR_BOTTOM_GAP;
   const dockHeight = bottomOffset + BAR_HEIGHT + FADE_HEIGHT + BLOCK_HEIGHT;
   const activeRouteKey = state.routes[state.index]?.key;
+  const isCalendarRoute = state.routes[state.index]?.name === 'calendar';
   const activeLayout = activeRouteKey ? tabLayouts[activeRouteKey] : undefined;
 
   useEffect(() => {
@@ -102,6 +104,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
     ]).start();
   }, [activeLayout, pillWidth, pillX, reduceMotionEnabled]);
 
+  // Keep hooks above this branch so the tab bar remains valid when the
+  // Calendar switches between portrait and landscape presentations.
+  if (width > height) {
+    return null;
+  }
+
   return (
     <View pointerEvents="box-none" style={styles.wrapper}>
       <View
@@ -113,7 +121,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
           },
         ]}
       >
-        <FadeStack />
+        <FadeStack opacityScale={isCalendarRoute ? 0.2 : 1} />
         <View
           style={[styles.dockBlock, { height: BLOCK_HEIGHT, backgroundColor: dockFadeColor }]}
         />
@@ -127,7 +135,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
             left: BAR_SIDE_INSET,
             right: BAR_SIDE_INSET,
             bottom: bottomOffset,
-            backgroundColor: theme.colors.surface,
+            backgroundColor: theme.colors.background,
             borderColor: theme.colors.borderSubtle,
             shadowColor: dockShadowColor,
             shadowOpacity: dockShadowOpacity,

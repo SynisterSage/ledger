@@ -4,6 +4,7 @@ import { getMobileCalendarRange, type MobileCalendarRangeResponse } from '@/api/
 import { formatCalendarDateKey } from './calendarMonthGenerator';
 import { normalizeCalendarRange, sortCalendarItems, type MobileCalendarItem } from './calendarItemNormalizer';
 import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
+import { subscribeCalendarDataChanges } from './calendarDataEvents';
 
 const addDays = (date: Date, amount: number) => {
   const next = new Date(date);
@@ -42,6 +43,12 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
     cacheRef.current.delete(`${workspaceId}:${startDate}:${endDate}`);
     setRefreshToken((current) => current + 1);
   }, [endDate, startDate, workspaceId]));
+
+  useEffect(() => subscribeCalendarDataChanges((changedWorkspaceId) => {
+    if (changedWorkspaceId !== workspaceId) return;
+    cacheRef.current.clear();
+    setRefreshToken((current) => current + 1);
+  }), [workspaceId]);
 
   useEffect(() => {
     let cancelled = false;

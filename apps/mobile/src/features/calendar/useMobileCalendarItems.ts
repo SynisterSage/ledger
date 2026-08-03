@@ -5,6 +5,7 @@ import { getMobileCalendarRange, type MobileCalendarRangeResponse } from '@/api/
 import { addCalendarMonths, formatCalendarDateKey, generateCalendarMonth } from './calendarMonthGenerator';
 import { groupCalendarItems, normalizeCalendarRange, sortCalendarItems, type CalendarItemsByDate, type MobileCalendarItem } from './calendarItemNormalizer';
 import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
+import { subscribeCalendarDataChanges } from './calendarDataEvents';
 
 type RangeCacheEntry = {
   key: string;
@@ -39,6 +40,14 @@ export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date,
     cacheRef.current.delete(`${workspaceId}:${range.startDate}:${range.endDate}`);
     setRefreshToken((current) => current + 1);
   }, [range.endDate, range.startDate, workspaceId]));
+
+  useEffect(() => subscribeCalendarDataChanges((changedWorkspaceId) => {
+    if (changedWorkspaceId !== workspaceId) return;
+    for (const key of cacheRef.current.keys()) {
+      if (key.startsWith(`${workspaceId}:`)) cacheRef.current.delete(key);
+    }
+    setRefreshToken((current) => current + 1);
+  }), [workspaceId]);
 
   useEffect(() => {
     let cancelled = false;

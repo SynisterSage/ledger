@@ -1154,10 +1154,10 @@ export const ExpandedSidebar = ({
     const loadNotificationSummary = async () => {
       try {
         const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { active?: number };
+          counts?: { unread?: number };
         };
         if (!cancelled) {
-          setNotificationCount(Math.max(0, Number(payload?.counts?.active ?? 0)));
+          setNotificationCount(Math.max(0, Number(payload?.counts?.unread ?? 0)));
         }
       } catch (error) {
         console.error('Failed to load notification count:', error);
@@ -1167,9 +1167,10 @@ export const ExpandedSidebar = ({
     void loadNotificationSummary();
 
     const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
-      if (typeof detail?.activeCount === 'number' && Number.isFinite(detail.activeCount)) {
-        setNotificationCount(Math.max(0, detail.activeCount));
+      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
+      const unreadCount = detail?.unreadCount ?? detail?.activeCount;
+      if (typeof unreadCount === 'number' && Number.isFinite(unreadCount)) {
+        setNotificationCount(Math.max(0, unreadCount));
         return;
       }
       void loadNotificationSummary();

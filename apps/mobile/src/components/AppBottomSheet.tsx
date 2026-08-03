@@ -44,6 +44,7 @@ type AppBottomSheetProps = {
   backdropOpenDuration?: number;
   backdropCloseDuration?: number;
   dismissKeyboardOnBackdropPress?: boolean;
+  dismissKeyboardOnContentPress?: boolean;
 };
 
 const DEFAULT_SNAP_POINTS: AppBottomSheetSnapPoint[] = ['35%', '55%', '85%'];
@@ -87,6 +88,7 @@ export function AppBottomSheet({
   backdropOpenDuration: backdropOpenDurationProp,
   backdropCloseDuration: backdropCloseDurationProp,
   dismissKeyboardOnBackdropPress = false,
+  dismissKeyboardOnContentPress = false,
 }: AppBottomSheetProps) {
   const theme = useLedgerTheme();
   const appPreferences = useAppPreferencesState();
@@ -402,6 +404,7 @@ export function AppBottomSheet({
 
             <ScrollView
               keyboardShouldPersistTaps="handled"
+              onTouchStart={dismissKeyboardOnContentPress ? () => Keyboard.dismiss() : undefined}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={[
                 styles.content,

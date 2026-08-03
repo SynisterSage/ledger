@@ -118,8 +118,8 @@ function WeekDateStrip({ selectedDate, summaries, onSelectDate }: { selectedDate
 function WeekSummary({ summaries }: { summaries: WeekDaySummary[] }) {
   const theme = useLedgerTheme();
   const totals = summaries.reduce((result, summary) => ({ events: result.events + summary.eventCount, due: result.due + summary.reminderCount + summary.taskCount, deadlines: result.deadlines + summary.projectDateCount }), { events: 0, due: 0, deadlines: 0 });
-  const values = [totals.events ? `${totals.events} events` : null, totals.due ? `${totals.due} due` : null, totals.deadlines ? `${totals.deadlines} deadlines` : null].filter(Boolean);
-  return values.length ? <View style={styles.summary}><AppText variant="caption" style={{ color: theme.colors.textSecondary }}>{values.join('   ')}</AppText></View> : null;
+  const values = [totals.events ? `${totals.events} event${totals.events === 1 ? '' : 's'}` : null, totals.due ? `${totals.due} due` : null, totals.deadlines ? `${totals.deadlines} deadline${totals.deadlines === 1 ? '' : 's'}` : null].filter(Boolean);
+  return values.length ? <View style={styles.summary}><AppText variant="caption" style={{ color: theme.colors.textSecondary }}>{values.join(' · ')}</AppText></View> : null;
 }
 
 export const WeekView = forwardRef<WeekViewHandle, WeekViewProps>(function WeekView({ selectedDate, workspaceId, filters, scrollOffset, onScrollOffsetChange, onSelectDate, onOpenItem, onLongPressItem, onCreateAtTime }, ref) {
@@ -129,7 +129,8 @@ export const WeekView = forwardRef<WeekViewHandle, WeekViewProps>(function WeekV
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
   const summaries = useMemo(() => weekDates.map((date) => buildSummary(date, items)), [items, weekDates]);
   const selectedDayItems = useMemo(() => items.filter((item) => item.dateKey === formatCalendarDateKey(selectedDate)), [items, selectedDate]);
-  const laterItems = useMemo(() => items.filter((item) => item.dateKey > formatCalendarDateKey(selectedDate) && item.dateKey <= formatCalendarDateKey(weekDates[6]) && (item.type === 'milestone' || item.type === 'project_deadline' || item.overdue || (item.type === 'event' || item.type === 'external_event') && item.allDay)).slice(0, 5), [items, selectedDate, weekDates]);
+  const selectedTimedItems = useMemo(() => selectedDayItems.filter((item) => Boolean(item.startAt) && !item.allDay), [selectedDayItems]);
+  const laterItems = useMemo(() => items.filter((item) => item.dateKey > formatCalendarDateKey(selectedDate) && item.dateKey <= formatCalendarDateKey(weekDates[6]) && (item.type === 'task' || item.type === 'project_action' || item.type === 'reminder' || item.type === 'milestone' || item.type === 'project_deadline' || item.overdue || ((item.type === 'event' || item.type === 'external_event') && item.allDay))).slice(0, 5), [items, selectedDate, weekDates]);
 
   useImperativeHandle(ref, () => ({
     scrollToToday: () => {
@@ -142,27 +143,30 @@ export const WeekView = forwardRef<WeekViewHandle, WeekViewProps>(function WeekV
     <WeekDateStrip selectedDate={selectedDate} summaries={summaries} onSelectDate={onSelectDate} />
     <WeekSummary summaries={summaries} />
     <View style={[styles.selectedHeader, { borderTopColor: theme.colors.borderSubtle, borderBottomColor: theme.colors.borderSubtle }]}>
-      <AppText variant="bodyStrong">{formatCalendarDateKey(selectedDate) === formatCalendarDateKey(new Date()) ? 'Today · ' : ''}{selectedDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</AppText>
-      <AppText variant="caption">{selectedDayItems.length} item{selectedDayItems.length === 1 ? '' : 's'}</AppText>
+      <AppText variant="meta" style={styles.selectedTitle}>{formatCalendarDateKey(selectedDate) === formatCalendarDateKey(new Date()) ? 'Today · ' : ''}{selectedDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}</AppText>
+      {selectedDayItems.length ? <AppText variant="caption">{selectedDayItems.length}</AppText> : null}
     </View>
   </View>;
 
-  const afterContent = laterItems.length ? <View style={styles.laterSection}><AppText variant="caption" style={styles.laterLabel}>Later this week</AppText>{laterItems.map((item) => <View key={item.id} style={styles.laterRow}><AppText variant="caption" style={styles.laterDate}>{new Date(`${item.dateKey}T12:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric' }).toUpperCase()}</AppText><View style={styles.laterBody}><DayAgendaItemRow item={item} onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} /></View></View>)}</View> : null;
+  const emptyTimeline = !selectedDayItems.length ? <View style={styles.emptyState}><AppText variant="meta">No plans for {selectedDate.toLocaleDateString([], { weekday: 'long' })}</AppText><Pressable accessibilityRole="button" onPress={() => onCreateAtTime(selectedDate, 9 * 60)}><AppText variant="caption" style={{ color: theme.colors.accent }}>+ Add something</AppText></Pressable></View> : null;
+  const afterContent = laterItems.length ? <View style={styles.laterSection}><AppText variant="caption" style={styles.laterLabel}>Later this week</AppText>{laterItems.map((item) => <View key={item.id} style={styles.laterRow}><AppText variant="caption" style={styles.laterDate}>{new Date(`${item.dateKey}T12:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric' })}</AppText><View style={styles.laterBody}><DayAgendaItemRow item={item} compact onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} /></View></View>)}</View> : null;
 
-  return <DayView ref={dayViewRef} selectedDate={selectedDate} workspaceId={workspaceId} filters={filters} scrollOffset={scrollOffset} onScrollOffsetChange={onScrollOffsetChange} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} onCreateAtTime={onCreateAtTime} showDateStrip={false} beforeContent={beforeContent} afterContent={afterContent} />;
+  return <DayView ref={dayViewRef} selectedDate={selectedDate} workspaceId={workspaceId} filters={filters} scrollOffset={scrollOffset} onScrollOffsetChange={onScrollOffsetChange} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} onCreateAtTime={onCreateAtTime} showDateStrip={false} showTimeline={selectedTimedItems.length > 0} emptyTimelineContent={emptyTimeline} beforeContent={beforeContent} afterContent={afterContent} />;
 });
 
 const styles = StyleSheet.create({
   weekPage: { flexDirection: 'row', justifyContent: 'center' },
-  weekCell: { width: WEEK_CELL_WIDTH, minHeight: 76, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  weekCell: { width: WEEK_CELL_WIDTH, minHeight: 68, alignItems: 'center', justifyContent: 'center', gap: 2 },
   weekNumber: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   density: { height: 5, flexDirection: 'row', alignItems: 'center', gap: 2 },
   dot: { width: 3, height: 3, borderRadius: 2 },
   attentionDot: { width: 4, height: 4, borderRadius: 2 },
-  summary: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8 },
-  selectedHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 8 },
-  laterSection: { paddingTop: 18 },
-  laterLabel: { paddingHorizontal: 8, paddingBottom: 4, fontWeight: '700', textTransform: 'uppercase' },
+  summary: { minHeight: 28, justifyContent: 'center', paddingHorizontal: 8 },
+  selectedHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 8 },
+  selectedTitle: { fontWeight: '600' },
+  emptyState: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 8 },
+  laterSection: { paddingTop: 12 },
+  laterLabel: { paddingHorizontal: 8, paddingBottom: 3, fontWeight: '600' },
   laterRow: { flexDirection: 'row', alignItems: 'flex-start' },
   laterDate: { width: 52, paddingTop: 14, paddingLeft: 8 },
   laterBody: { flex: 1 },

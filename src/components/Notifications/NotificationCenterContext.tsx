@@ -116,7 +116,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       setEarlier(nextEarlier);
       setActiveCount(nextActiveCount);
       setUnreadCount(nextUnreadCount);
-      window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { activeCount: nextUnreadCount } }));
+      window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: nextUnreadCount } }));
     } catch (nextError) {
       if (requestId !== notificationLoadRequestRef.current) return;
       setError(nextError instanceof Error ? nextError.message : 'Could not load notifications');
@@ -139,7 +139,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       setActive((previous) => previous.map((item) => ({ ...item, unread: false, readAt })));
       setEarlier((previous) => previous.map((item) => ({ ...item, unread: false, readAt })));
       setUnreadCount(0);
-      window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { activeCount: 0 } }));
+      window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: 0 } }));
       window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
       await loadNotifications({ force: true, background: true });
     } catch (nextError) {
@@ -164,7 +164,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
         )
       );
       setUnreadCount((previous) => Math.max(0, previous - 1));
-      window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { activeCount: Math.max(0, unreadCount - 1) } }));
+      window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: Math.max(0, unreadCount - 1) } }));
       window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not mark notification as read');
@@ -197,7 +197,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
         const nextUnreadCount = Math.max(0, unreadCount - (item.unread ? 1 : 0));
         setActiveCount(nextActiveCount);
         setUnreadCount(nextUnreadCount);
-        window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { activeCount: nextUnreadCount } }));
+        window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: nextUnreadCount } }));
       }
 
       if (action === 'open') {

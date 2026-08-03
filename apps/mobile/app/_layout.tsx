@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
 import { View } from 'react-native';
@@ -32,6 +33,7 @@ const MIN_SPLASH_MS = 900;
 
 export default function RootLayout() {
   const router = useRouter();
+  const pathname = usePathname();
   const theme = useLedgerTheme();
   const auth = useAuthState();
   const notificationOnboarding = useNotificationOnboardingState();
@@ -42,6 +44,22 @@ export default function RootLayout() {
   const [showSplashOverlay, setShowSplashOverlay] = useState(true);
   const handledNotificationResponseIdRef = useRef<string | null>(null);
   const nativeSplashHiddenRef = useRef(false);
+
+  useEffect(() => {
+    // Older Expo development binaries may not contain this native module.
+    // Optional lookup keeps the JS shell bootable until the binary is rebuilt.
+    const screenOrientation = requireOptionalNativeModule<{
+      lockAsync: (orientationLock: number) => Promise<void>;
+    }>('ExpoScreenOrientation');
+    if (!screenOrientation) return;
+
+    const calendarRouteActive = pathname?.includes('/calendar') ?? false;
+    if (calendarRouteActive) return;
+
+    void screenOrientation.lockAsync(3).catch(() => {
+      // Ignore unsupported orientation policies on older/limited runtimes.
+    });
+  }, [pathname]);
 
   useEffect(() => {
     resetBootState();

@@ -28,25 +28,9 @@ const groupRank = (item: MobileCalendarItem) => {
   return 5;
 };
 
-const groupLabel = (rank: number) => {
-  if (rank === 1) return 'All day';
-  if (rank === 3) return 'Reminders';
-  if (rank === 4) return 'Tasks';
-  if (rank === 5) return 'Project dates';
-  if (rank === 7) return 'Completed or past';
-  return null;
-};
-
 export function dateLabel(dateKey: string) {
   const date = new Date(`${dateKey}T12:00:00`);
-  const today = formatCalendarDateKey(new Date());
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = formatCalendarDateKey(tomorrow);
-  const long = date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-  if (dateKey === today) return `Today · ${long}`;
-  if (dateKey === tomorrowKey) return `Tomorrow · ${long}`;
-  return long;
+  return date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }).replace(',', ' ·');
 }
 
 export function buildAgendaListEntries(items: MobileCalendarItem[], selectedDate: Date) {
@@ -71,13 +55,8 @@ export function buildAgendaListEntries(items: MobileCalendarItem[], selectedDate
       const rankDifference = groupRank(left) - groupRank(right);
       return rankDifference || (left.startAt ?? '').localeCompare(right.startAt ?? '') || left.title.localeCompare(right.title);
     });
-    let previousRank: number | null = null;
     for (const item of sorted) {
-      const rank = groupRank(item);
-      const label = groupLabel(rank);
-      if (label && previousRank !== rank) entries.push({ type: 'group_header', id: `${dateKey}:${rank}`, label });
       entries.push({ type: 'item', item });
-      previousRank = rank;
     }
   }
   return { entries, dateLabel };

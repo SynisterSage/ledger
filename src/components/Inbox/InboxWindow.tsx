@@ -981,9 +981,9 @@ export default function IntakeWindow() {
 
     try {
       const payload = (await api.getNotificationCenterSummary()) as {
-        counts?: { active?: number };
+        counts?: { unread?: number };
       };
-      setNotificationCount(Number(payload?.counts?.active ?? 0));
+      setNotificationCount(Number(payload?.counts?.unread ?? 0));
     } catch {
       setNotificationCount(0);
     }
@@ -1000,8 +1000,8 @@ export default function IntakeWindow() {
     void loadNotificationSummary({ force: true });
 
     const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.activeCount ?? 0));
+      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
+      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
     };
 
     const handleNotificationsUpdated = () => {

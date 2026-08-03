@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { defaultCalendarFilters, type CalendarFilters } from './calendarFilters';
 import * as SecureStore from 'expo-secure-store';
 
-export type MobileCalendarView = 'month' | 'agenda' | 'day' | 'week';
+export type MobileCalendarView = 'year' | 'month' | 'agenda' | 'day';
 
 export type CalendarViewContext = {
   workspaceId: string;
@@ -33,7 +33,7 @@ function readInitialView(): MobileCalendarView {
   try {
     const storage = (globalThis as { localStorage?: { getItem: (key: string) => string | null } }).localStorage;
     const value = storage?.getItem(CALENDAR_VIEW_STORAGE_KEY);
-    if (value === 'month' || value === 'agenda' || value === 'day' || value === 'week') return value;
+    if (value === 'month' || value === 'agenda' || value === 'day') return value;
   } catch {
     // Local preferences are best effort on native platforms.
   }
@@ -134,7 +134,7 @@ export function useMobileCalendarState(workspaceId = 'default') {
   const movePeriod = useCallback((amount: number) => {
     const next = view === 'month'
       ? addMonths(visiblePeriod, amount)
-      : addDays(visiblePeriod, amount * (view === 'week' ? 7 : 1));
+      : addDays(visiblePeriod, amount);
     setVisiblePeriod(next);
     setSelectedDate(next);
   }, [view, visiblePeriod]);

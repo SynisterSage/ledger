@@ -3446,10 +3446,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     const loadNotificationCount = async () => {
       try {
         const payload = (await api.getNotificationCenterSummary()) as {
-          counts?: { active?: number };
+          counts?: { unread?: number };
         };
         if (!cancelled) {
-          setNotificationCount(Number(payload?.counts?.active ?? 0));
+          setNotificationCount(Number(payload?.counts?.unread ?? 0));
         }
       } catch {
         if (!cancelled) setNotificationCount(0);
@@ -3457,8 +3457,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     };
 
     const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.activeCount ?? 0));
+      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
+      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
     };
 
     void loadNotificationCount();

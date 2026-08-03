@@ -3,7 +3,7 @@
     "name": "Ledger",
     "slug": "ledger",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon2.png",
     "scheme": "ledger",
     "userInterfaceStyle": "automatic",
@@ -27,6 +27,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-screen-orientation",
       "expo-notifications",
       "@react-native-community/datetimepicker",
       [

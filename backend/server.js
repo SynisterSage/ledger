@@ -2835,14 +2835,9 @@ const getNotificationCenterItems = async (userId, workspaceId = null) => {
     rows = rows.filter((row) => String(row.workspace_id ?? '') === access.workspace.id);
   }
 
-  rows = rows.filter((row) => {
-    const actionTaken = String(row.action_taken ?? '').trim().toLowerCase();
-    if (row.dismissed_at) return false;
-    if (actionTaken === 'dismiss' || actionTaken === 'snooze' || actionTaken === 'complete') {
-      return false;
-    }
-    return true;
-  });
+  // Keep completed and dismissed events in Earlier so the center is a useful
+  // history, but do not surface a snoozed event until it is delivered again.
+  rows = rows.filter((row) => String(row.action_taken ?? '').trim().toLowerCase() !== 'snooze');
 
   const maps = await buildNotificationCenterSourceMaps(rows);
   const items = rows.map((row) => mapNotificationCenterRow(row, maps));

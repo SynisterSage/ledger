@@ -331,10 +331,10 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     try {
       const [inbox, notifications] = await Promise.all([
         api.getInboxCount() as Promise<{ count?: number }>,
-        api.getNotificationCenterSummary() as Promise<{ counts?: { active?: number } }>,
+        api.getNotificationCenterSummary() as Promise<{ counts?: { unread?: number } }>,
       ]);
       setInboxCount(Math.max(0, Number(inbox?.count ?? 0)));
-      setNotificationCount(Math.max(0, Number(notifications?.counts?.active ?? 0)));
+      setNotificationCount(Math.max(0, Number(notifications?.counts?.unread ?? 0)));
     } catch {
       setInboxCount(0);
       setNotificationCount(0);

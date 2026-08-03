@@ -1,4 +1,5 @@
 import { mobileRequest } from './client';
+import type { MobileCalendarItem } from '@/features/calendar/calendarItemNormalizer';
 
 export type MobileCalendarRangeResponse = {
   workspace_id: string;
@@ -54,6 +55,28 @@ export async function getMobileCalendarRange(workspaceId: string, startDate: str
     milestones: Array.isArray(payload.milestones) ? payload.milestones : [],
     calendars: Array.isArray(payload.calendars) && payload.calendars.length ? payload.calendars : calendars,
   };
+}
+
+export type MobileCalendarMonthResponse = {
+  workspace_id: string;
+  start_date: string;
+  end_date: string;
+  items: MobileCalendarItem[];
+};
+
+/**
+ * Month cells need the server's canonical, date-keyed Ledger items. This is
+ * intentionally separate from the raw range endpoint used by day and agenda:
+ * multi-day events are expanded and every Ledger date type is normalized here
+ * before it reaches the virtualized month grid.
+ */
+export function getMobileCalendarMonth(workspaceId: string, startDate: string, endDate: string) {
+  const params = new URLSearchParams({
+    workspace_id: workspaceId,
+    start_date: startDate,
+    end_date: endDate,
+  });
+  return mobileRequest<MobileCalendarMonthResponse>(`/api/mobile/calendar/month?${params.toString()}`);
 }
 
 export async function createMobileCalendar(workspaceId: string, payload: { name: string; color?: string }) {

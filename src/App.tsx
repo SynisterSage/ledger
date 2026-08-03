@@ -2019,8 +2019,8 @@ function DashboardContent() {
     };
 
     const handleNotificationsSummary = (event: Event) => {
-      const detail = (event as CustomEvent<{ activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.activeCount ?? 0));
+      const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
+      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
     };
 
     void loadNotificationSummary();

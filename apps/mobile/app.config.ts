@@ -12,6 +12,7 @@ const config: ExpoConfig = {
   slug: 'ledger',
   owner: 'synastrr',
   version: '1.0.0',
+  orientation: 'default',
   icon: './assets/images/icon2.png',
   scheme: 'ledger',
   userInterfaceStyle: 'automatic',
@@ -43,6 +44,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     'expo-router',
+    'expo-screen-orientation',
     'expo-notifications',
     '@react-native-community/datetimepicker',
     [
