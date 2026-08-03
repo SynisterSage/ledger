@@ -15,6 +15,7 @@ import {
   type PanResponderGestureState,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 
 import { AppButton } from '@/components/AppButton';
@@ -375,6 +376,7 @@ function htmlToPlainText(value: string) {
 }
 
 export function MobileSearchResultDetailSheet() {
+  const router = useRouter();
   const { activeSearchResult, closeSearchResult } = useSearchSheet();
   const { openFollowUpSheet } = useFollowUpSheet();
   const { openQuickNoteSheet } = useQuickNoteSheet();
@@ -457,6 +459,11 @@ export function MobileSearchResultDetailSheet() {
   };
 
   const handleSearchAction = (actionId: string, result: MobileSearchResult, body?: string | null) => {
+    if (actionId === 'open_project' && result.type === 'project') {
+      closeSearchResult();
+      router.push(`/project/${encodeURIComponent(result.source_id ?? result.id)}`);
+      return;
+    }
     if (result.type === 'note' && actionId === 'add_follow_up') {
       openFollowUpFromSearch(result, body ?? null, 'From note');
       return;

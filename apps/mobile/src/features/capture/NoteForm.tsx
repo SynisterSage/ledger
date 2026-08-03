@@ -7,7 +7,7 @@ import { Row } from '@/components/Row';
 import { Section } from '@/components/Section';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { SymbolView } from 'expo-symbols';
-import { createMobileNote } from '@/api/captures';
+import { createMobileNote, linkMobileNoteToProject } from '@/api/captures';
 import { useLedgerTheme } from '@/theme';
 import {
   getWorkspaceLabel,
@@ -21,13 +21,15 @@ type NoteFormProps = {
   initialTitle?: string;
   initialBody?: string;
   autoSubmit?: boolean;
+  projectId?: string;
+  initialWorkspaceId?: string;
 };
 
-export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false }: NoteFormProps) {
+export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false, projectId, initialWorkspaceId }: NoteFormProps) {
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
-  const [captureWorkspaceId, setCaptureWorkspaceId] = useState(workspaceId);
+  const [captureWorkspaceId, setCaptureWorkspaceId] = useState(initialWorkspaceId || workspaceId);
   const workspaceLabel = useMemo(
     () => getWorkspaceLabel(captureWorkspaceId, workspaceState.options),
     [captureWorkspaceId, workspaceState.options],
@@ -41,8 +43,8 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
   const canSave = Boolean(title.trim()) && captureWorkspaceId !== 'all';
 
   useEffect(() => {
-    setCaptureWorkspaceId(workspaceId);
-  }, [workspaceId]);
+    if (!initialWorkspaceId) setCaptureWorkspaceId(workspaceId);
+  }, [initialWorkspaceId, workspaceId]);
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -54,11 +56,14 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
     setError(null);
 
     try {
-      await createMobileNote(captureWorkspaceId, {
+      const created = await createMobileNote(captureWorkspaceId, {
         title: title.trim(),
         content: body.trim() || null,
         source: 'mobile',
       });
+      if (projectId && typeof created === 'object' && created && 'id' in created && typeof created.id === 'string') {
+        await linkMobileNoteToProject(captureWorkspaceId, projectId, created.id);
+      }
       onSave?.();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save note.');

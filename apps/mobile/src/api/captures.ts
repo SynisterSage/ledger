@@ -236,6 +236,14 @@ export async function createMobileNote(workspaceId: string, payload: CreateMobil
   });
 }
 
+export async function linkMobileNoteToProject(workspaceId: string, projectId: string, noteId: string) {
+  return mobileRequest(`/api/projects/${encodeURIComponent(projectId)}/note-links`, {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId },
+    body: JSON.stringify({ note_id: noteId }),
+  });
+}
+
 export async function updateMobileNote(workspaceId: string, noteId: string, payload: UpdateMobileNoteInput) {
   return mobileRequest(`/api/notes/${encodeURIComponent(noteId)}`, {
     method: 'PATCH',

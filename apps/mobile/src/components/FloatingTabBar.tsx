@@ -5,7 +5,6 @@ import { SymbolView } from 'expo-symbols';
 
 import { AppText } from './AppText';
 
-import { useSearchSheet } from '@/features/search/SearchSheetContext';
 import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 
@@ -15,13 +14,14 @@ const BAR_BOTTOM_GAP = 0;
 const FADE_HEIGHT = 136;
 const BLOCK_HEIGHT = 10;
 const TRACK_PADDING = 4;
-const SEARCH_WIDTH = 44;
 const PILL_ANIMATION_DURATION = 240;
 
 const routeLabelByName: Record<string, string> = {
   today: 'Today',
   calendar: 'Calendar',
   capture: 'Capture',
+  projects: 'Projects',
+  notes: 'Notes',
   notifications: 'Notifications',
 };
 
@@ -31,6 +31,8 @@ const routeIconByName: Record<string, TabSymbolName> = {
   today: { ios: 'house.fill', android: 'home', web: 'home' },
   calendar: { ios: 'calendar', android: 'calendar_month', web: 'calendar_month' },
   capture: { ios: 'plus.circle', android: 'add_circle_outline', web: 'add_circle_outline' },
+  projects: { ios: 'folder', android: 'folder', web: 'folder' },
+  notes: { ios: 'note.text', android: 'note', web: 'note' },
   notifications: { ios: 'bell', android: 'notifications_none', web: 'notifications_none' },
 };
 
@@ -59,7 +61,6 @@ function FadeStack({ opacityScale = 1 }: { opacityScale?: number }) {
 
 export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const theme = useLedgerTheme();
-  const { openSearch } = useSearchSheet();
   const appPreferences = useAppPreferencesState();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -75,6 +76,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const dockHeight = bottomOffset + BAR_HEIGHT + FADE_HEIGHT + BLOCK_HEIGHT;
   const activeRouteKey = state.routes[state.index]?.key;
   const isCalendarRoute = state.routes[state.index]?.name === 'calendar';
+  const visibleRoutes = state.routes.filter((route: any) => route.name !== 'notifications');
   const activeLayout = activeRouteKey ? tabLayouts[activeRouteKey] : undefined;
 
   useEffect(() => {
@@ -161,8 +163,9 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
             ]}
           />
 
-          {state.routes.map((route: any, index: number) => {
-            const isFocused = state.index === index;
+          {visibleRoutes.map((route: any) => {
+            const routeIndex = state.routes.findIndex((candidate: any) => candidate.key === route.key);
+            const isFocused = state.index === routeIndex;
             const options = descriptors[route.key]?.options ?? {};
             const title = routeLabelByName[route.name] ?? String(options.title ?? route.name);
 
@@ -229,39 +232,6 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
           })}
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open search"
-          onPress={() => {
-            openSearch();
-          }}
-          style={({ pressed }) => [
-            styles.searchButton,
-            {
-              opacity: pressed ? 0.72 : 1,
-            },
-          ]}
-        >
-          <SymbolView
-            name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
-            size={20}
-            weight="regular"
-            tintColor={theme.colors.textPrimary}
-            fallback={
-              <AppText
-                variant="body"
-                style={{
-                  fontSize: 18,
-                  lineHeight: 18,
-                  fontWeight: '400',
-                  color: theme.colors.textPrimary,
-                }}
-              >
-                ⌕
-              </AppText>
-            }
-          />
-        </Pressable>
       </View>
     </View>
   );
@@ -323,13 +293,5 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  searchButton: {
-    width: SEARCH_WIDTH,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 0,
-    marginRight: 0,
   },
 });

@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, View } from 'react-native';
+import type { ReactNode } from 'react';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 
@@ -8,9 +9,10 @@ import { useLedgerTheme } from '@/theme';
 
 type CaptureHeaderProps = {
   title: string;
+  rightAccessory?: ReactNode;
 };
 
-export function CaptureHeader({ title }: CaptureHeaderProps) {
+export function CaptureHeader({ title, rightAccessory }: CaptureHeaderProps) {
   const router = useRouter();
   const theme = useLedgerTheme();
 
@@ -39,6 +41,7 @@ export function CaptureHeader({ title }: CaptureHeaderProps) {
       <AppText variant="screenTitle" style={styles.title}>
         {title}
       </AppText>
+      {rightAccessory}
     </View>
   );
 }

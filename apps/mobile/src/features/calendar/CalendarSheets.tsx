@@ -8,7 +8,7 @@ import { AppText } from '@/components/AppText';
 import type { MobileCalendarView } from './useMobileCalendarState';
 import { useLedgerTheme } from '@/theme';
 import { getMobileCalendarRange, createMobileCalendar } from '@/api/calendar';
-import { createMobileEvent, createMobileProjectAction, createMobileReminder, createMobileTask } from '@/api/captures';
+import { createMobileEvent, createMobileNote, createMobileProjectAction, createMobileReminder, createMobileTask } from '@/api/captures';
 import { AppTextInput } from '@/components/AppTextInput';
 import { Row } from '@/components/Row';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
@@ -45,26 +45,27 @@ export function CalendarViewSheet({ visible, value, onChange, onClose }: { visib
   );
 }
 
-type CreateHref = '/capture/event' | '/capture/reminder' | '/capture/task' | '/capture/project-action';
+type CreateHref = '/capture/event' | '/capture/reminder' | '/capture/task' | '/capture/note' | '/capture/project-action';
 
-type CalendarCreateItemType = 'event' | 'reminder' | 'task' | 'project_action';
+export type CalendarCreateItemType = 'event' | 'reminder' | 'task' | 'note' | 'project_action';
 
 type CalendarCreateSheetProps = {
   visible: boolean;
   workspaceId: string;
   initialDateKey: string;
+  initialType?: CalendarCreateItemType;
   initialStartAt?: string;
   initialEndAt?: string;
   onClose: () => void;
   onCreated?: () => void;
 };
 
-export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, initialDateKey, initialStartAt, initialEndAt, onClose, onCreated }: CalendarCreateSheetProps) {
+export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, initialDateKey, initialType = 'event', initialStartAt, initialEndAt, onClose, onCreated }: CalendarCreateSheetProps) {
   const theme = useLedgerTheme();
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const workspaceState = useWorkspaceState();
-  const [type, setType] = useState<CalendarCreateItemType>('event');
+  const [type, setType] = useState<CalendarCreateItemType>(initialType);
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [dateInput, setDateInput] = useState(initialDateKey);
@@ -95,7 +96,7 @@ export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, 
 
   useEffect(() => {
     if (!visible) {
-      setType('event');
+      setType(initialType);
       setTitle('');
       setLocation('');
       setDateInput(initialDateKey);
@@ -109,7 +110,11 @@ export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, 
       setCalendarId(null);
       setError(null);
     }
-  }, [initialDateKey, initialEndAt, initialStartAt, initialWorkspaceId, visible]);
+  }, [initialDateKey, initialEndAt, initialStartAt, initialType, initialWorkspaceId, visible]);
+
+  useEffect(() => {
+    if (visible) setType(initialType);
+  }, [initialType, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -143,7 +148,8 @@ export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, 
     setIsSaving(true);
     setError(null);
     try {
-      if (type === 'event') await createMobileEvent(workspaceId, { title: title.trim(), start_at: startAt!, end_at: endAt, all_day: allDay, notes: notes.trim() || null, location: location.trim() || null, project_id: projectId, calendar_id: calendarId, recurrence_rule: recurrenceRule || null });
+      if (type === 'note') await createMobileNote(workspaceId, { title: title.trim(), content: notes.trim() || null, date: formatDateToLocalIsoDate(date), source: 'mobile' });
+      else if (type === 'event') await createMobileEvent(workspaceId, { title: title.trim(), start_at: startAt!, end_at: endAt, all_day: allDay, notes: notes.trim() || null, location: location.trim() || null, project_id: projectId, calendar_id: calendarId, recurrence_rule: recurrenceRule || null });
       else if (type === 'reminder') await createMobileReminder(workspaceId, { title: title.trim(), remind_at: startAt ?? `${formatDateToLocalIsoDate(date)}T00:00:00.000Z`, body: notes.trim() || null, project_id: projectId, calendar_id: calendarId });
       else {
         const payload = { title: title.trim(), due_date: formatDateToLocalIsoDate(date), due_time: startTime ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(parsedStart) : null, notes: notes.trim() || null, project_id: projectId, show_in_today: true };
@@ -170,17 +176,17 @@ export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, 
   };
   const typeLabel = type === 'project_action' ? 'Project action' : type.charAt(0).toUpperCase() + type.slice(1);
   const options: Array<{ label: string; href: CreateHref; icon: CalendarSymbolName }> = [
-    { label: 'Event', href: '/capture/event', icon: { ios: 'calendar', android: 'event', web: 'event' } }, { label: 'Reminder', href: '/capture/reminder', icon: { ios: 'bell', android: 'notifications_none', web: 'notifications_none' } }, { label: 'Task', href: '/capture/task', icon: { ios: 'checkmark.circle', android: 'check_circle_outline', web: 'check_circle_outline' } }, { label: 'Project action', href: '/capture/project-action', icon: { ios: 'arrow.forward', android: 'subdirectory_arrow_right', web: 'subdirectory_arrow_right' } },
+    { label: 'Event', href: '/capture/event', icon: { ios: 'calendar', android: 'event', web: 'event' } }, { label: 'Reminder', href: '/capture/reminder', icon: { ios: 'bell', android: 'notifications_none', web: 'notifications_none' } }, { label: 'Task', href: '/capture/task', icon: { ios: 'checkmark.circle', android: 'check_circle_outline', web: 'check_circle_outline' } }, { label: 'Note', href: '/capture/note', icon: { ios: 'note.text', android: 'note', web: 'note' } }, { label: 'Project action', href: '/capture/project-action', icon: { ios: 'arrow.forward', android: 'subdirectory_arrow_right', web: 'subdirectory_arrow_right' } },
   ];
   const titleContent = <View style={styles.createHeader}><Pressable accessibilityRole="button" accessibilityLabel="Close create sheet" onPress={onClose} style={styles.createHeaderButton}><SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} size={20} tintColor={theme.colors.textPrimary} /></Pressable><View style={styles.typeSwitcher}>{options.map((option) => { const optionType = option.href.replace('/capture/', '').replace('-', '_') as CalendarCreateItemType; return <Pressable key={option.href} accessibilityRole="button" accessibilityLabel={`Switch to ${option.label}`} onPress={() => chooseType(optionType)} style={[styles.typeSwitchButton, optionType === type && { backgroundColor: theme.colors.surfaceMuted }]}><SymbolView name={option.icon} size={17} tintColor={optionType === type ? theme.colors.accent : theme.colors.textSecondary} /></Pressable>; })}</View><Pressable accessibilityRole="button" accessibilityLabel={`Save ${typeLabel}`} onPress={() => void save()} disabled={isSaving} style={styles.createHeaderButton}><SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={21} tintColor={isSaving ? theme.colors.textMuted : theme.colors.accent} /></Pressable></View>;
   const form = type ? <View style={styles.createForm}>
-    <View style={styles.createFormIntro}><AppText variant="sectionTitle">New {typeLabel.toLowerCase()}</AppText><AppText variant="caption">Add it to your Ledger calendar.</AppText></View>
+    <View style={styles.createFormIntro}><AppText variant="sectionTitle">New {typeLabel.toLowerCase()}</AppText><AppText variant="caption">{type === 'note' ? 'Capture it in Ledger.' : 'Add it to your Ledger calendar.'}</AppText></View>
     <View style={[styles.createInputGroup, { backgroundColor: theme.colors.surfaceMuted }]}><TextInput placeholder={type === 'project_action' ? 'What needs to happen?' : 'Title'} placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={setTitle} style={[styles.createTitleInput, { color: theme.colors.textPrimary, borderBottomColor: theme.colors.borderSubtle }]} autoFocus />{type === 'event' ? <TextInput placeholder="Location or video call" placeholderTextColor={theme.colors.placeholder} value={location} onChangeText={setLocation} style={[styles.createSecondaryInput, { color: theme.colors.textPrimary }]} /> : null}</View>
-    <View style={styles.createSection}><Row title={type === 'event' ? 'Starts' : type === 'reminder' ? 'Remind me' : 'Due date'} subtitle={formatCaptureDateLabel(dateInput)} onPress={() => setDateSheetOpen(true)} chevron titleVariant="body" />
+    {type === 'note' ? <AppTextInput label="Body" placeholder="Write a plain text note" multiline value={notes} onChangeText={setNotes} /> : <View style={styles.createSection}><Row title={type === 'event' ? 'Starts' : type === 'reminder' ? 'Remind me' : 'Due date'} subtitle={formatCaptureDateLabel(dateInput)} onPress={() => setDateSheetOpen(true)} chevron titleVariant="body" />
       {type === 'event' ? <><Row title="All day" subtitle={allDay ? 'On' : 'Off'} right={<Switch value={allDay} onValueChange={setAllDay} trackColor={{ false: theme.colors.borderSubtle, true: theme.colors.accent }} />} titleVariant="body" />{!allDay ? <><Row title="Start time" subtitle={formatCaptureTimeLabel(startTime)} onPress={() => setStartSheetOpen(true)} chevron titleVariant="body" /><Row title="End time" subtitle={formatCaptureTimeLabel(endTime)} onPress={() => setEndSheetOpen(true)} chevron titleVariant="body" /></> : null}<Row title="Repeat" subtitle={recurrenceRule === 'FREQ=DAILY' ? 'Daily' : recurrenceRule === 'FREQ=WEEKLY' ? 'Weekly' : recurrenceRule === 'FREQ=MONTHLY' ? 'Monthly' : 'Never'} onPress={() => setRecurrenceRule((current) => current === '' ? 'FREQ=DAILY' : current === 'FREQ=DAILY' ? 'FREQ=WEEKLY' : current === 'FREQ=WEEKLY' ? 'FREQ=MONTHLY' : '')} chevron titleVariant="body" /></> : <Row title={type === 'reminder' ? 'Time' : 'Due time'} subtitle={startTime ? formatCaptureTimeLabel(startTime) : 'Optional'} onPress={() => setStartSheetOpen(true)} chevron titleVariant="body" />}
       <Row title={type === 'reminder' ? 'Reminder list' : 'Calendar'} subtitle={selectedCalendarLabel} onPress={() => setCalendarSheetOpen(true)} chevron titleVariant="body" /><Row title="Workspace" subtitle={workspaceLabel} onPress={() => setWorkspaceSheetOpen(true)} chevron titleVariant="body" /><Row title="Project" subtitle={selectedProjectLabel} onPress={() => setProjectSheetOpen(true)} chevron titleVariant="body" />
-    </View>
-    <AppTextInput label="Notes" placeholder="Add details or context" multiline value={notes} onChangeText={setNotes} />
+    </View>}
+    {type !== 'note' ? <AppTextInput label="Notes" placeholder="Add details or context" multiline value={notes} onChangeText={setNotes} /> : null}
     {error ? <AppText variant="caption" style={{ color: theme.colors.danger }}>{error}</AppText> : null}
     <Pressable accessibilityRole="button" onPress={() => void save()} disabled={isSaving} style={[styles.createSaveButton, { backgroundColor: theme.colors.accent, opacity: isSaving ? 0.6 : 1 }]}><AppText variant="bodyStrong" style={{ color: '#FFFFFF' }}>{isSaving ? 'Saving…' : `Create ${typeLabel.toLowerCase()}`}</AppText></Pressable>
   </View> : <View>{options.map((option) => <Pressable key={option.href} accessibilityRole="button" accessibilityLabel={`Create ${option.label}`} onPress={() => chooseType(option.href.replace('/capture/', '').replace('-', '_') as CalendarCreateItemType)} style={({ pressed }) => [styles.option, { borderBottomColor: theme.colors.borderSubtle, opacity: pressed ? 0.68 : 1 }]}><View style={styles.optionLabel}><SymbolView name={option.icon} size={19} tintColor={theme.colors.textSecondary} /><AppText variant="bodyStrong">{option.label}</AppText></View><SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.colors.textMuted} /></Pressable>)}</View>;

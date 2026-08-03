@@ -14,11 +14,15 @@ export default function NoteCaptureScreen() {
     title?: string | string[];
     body?: string | string[];
     source?: string | string[];
+    projectId?: string | string[];
+    workspaceId?: string | string[];
   }>();
 
   const title = Array.isArray(params.title) ? params.title[0] : params.title;
   const body = Array.isArray(params.body) ? params.body[0] : params.body;
   const source = Array.isArray(params.source) ? params.source[0] : params.source;
+  const projectId = Array.isArray(params.projectId) ? params.projectId[0] : params.projectId;
+  const workspaceId = Array.isArray(params.workspaceId) ? params.workspaceId[0] : params.workspaceId;
   const isSiri = source === 'siri';
   const saveDestination = isSiri ? '/(tabs)/today' : '/(tabs)/capture';
   const formKey = isSiri ? ['siri-note', title ?? '', body ?? ''].join(':') : 'manual-note';
@@ -34,6 +38,8 @@ export default function NoteCaptureScreen() {
         key={formKey}
         initialTitle={title}
         initialBody={body}
+        projectId={projectId}
+        initialWorkspaceId={workspaceId}
         onSave={() => router.replace(saveDestination)}
       />
     </Screen>

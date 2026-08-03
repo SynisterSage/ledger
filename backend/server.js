@@ -3702,7 +3702,65 @@ const resolveMobileWorkspaceScope = async (userId, workspaceId = 'all') => {
 const MOBILE_TODAY_TASK_SELECT_COLUMNS =
   'id, workspace_id, project_id, title, due_date, due_time, status, priority, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, show_in_today, is_today_focus, completed_at, created_by, created_at, updated_at';
 const MOBILE_TODAY_PROJECT_SELECT_COLUMNS =
-  'id, workspace_id, name, status, completeness, color, start_date, end_date, lead_id, owner_team_id, created_by, created_at, updated_at';
+  'id, workspace_id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_by, created_at, updated_at';
+
+const MOBILE_PROJECT_STALE_DAYS = 14;
+const MOBILE_PROJECT_DEADLINE_WINDOW_DAYS = 7;
+
+const addMobileDateDays = (dateKey, amount) => {
+  const date = new Date(`${dateKey}T12:00:00`);
+  date.setDate(date.getDate() + amount);
+  return date.toISOString().slice(0, 10);
+};
+
+const mobileAttentionDayLabel = (dateKey, todayKey, prefix) => {
+  const days = Math.round((new Date(`${dateKey}T12:00:00`).getTime() - new Date(`${todayKey}T12:00:00`).getTime()) / 86400000);
+  if (days === 0) return `${prefix} today`;
+  if (days === 1) return `${prefix} tomorrow`;
+  if (days > 1) return `${prefix} in ${days} days`;
+  const overdueDays = Math.abs(days);
+  return `${prefix} overdue by ${overdueDays} day${overdueDays === 1 ? '' : 's'}`;
+};
+
+const deriveMobileProjectAttention = ({ project, tasks, milestones, todayKey }) => {
+  const status = String(project.status ?? '').toLowerCase();
+  const completed = isCompletedProjectStatus(project.status) || Number(project.completeness ?? 0) >= 100;
+  const onHold = /paused|hold|archived/.test(status);
+  if (completed || onHold) return null;
+
+  const incompleteTasks = tasks.filter((task) => !['completed', 'done', 'cancelled', 'dismissed'].includes(String(task.status ?? '').toLowerCase()) && !task.completed_at);
+  const overdueTasks = incompleteTasks.filter((task) => task.due_date && String(task.due_date).slice(0, 10) < todayKey);
+  const incompleteMilestones = milestones.filter((milestone) => !milestone.completed);
+  const overdueMilestones = incompleteMilestones.filter((milestone) => milestone.milestone_date && String(milestone.milestone_date).slice(0, 10) < todayKey);
+  const blocked = status.includes('blocked');
+  const active = /inprogress|in_progress|active|doing/.test(status);
+  const nextAction = incompleteTasks
+    .slice()
+    .sort((left, right) => String(left.due_date ?? '9999-12-31').localeCompare(String(right.due_date ?? '9999-12-31')))[0] ?? null;
+  const projectDueDate = project.end_date ? String(project.end_date).slice(0, 10) : null;
+  const activityDates = [
+    project.updated_at,
+    ...tasks.flatMap((task) => [task.created_at, task.completed_at]),
+    ...milestones.flatMap((milestone) => [milestone.created_at, milestone.updated_at]),
+  ].filter(Boolean).map((value) => new Date(value).getTime()).filter((value) => Number.isFinite(value));
+  const staleCutoff = new Date(`${addMobileDateDays(todayKey, -MOBILE_PROJECT_STALE_DAYS)}T23:59:59`).getTime();
+  const stale = active && activityDates.length > 0 && Math.max(...activityDates) < staleCutoff;
+
+  if (overdueTasks.length) return { type: 'overdue_action', severity: 'critical', label: `${overdueTasks.length} overdue action${overdueTasks.length === 1 ? '' : 's'}`, date: overdueTasks[0].due_date, count: overdueTasks.length, priority: 0 };
+  if (blocked) return { type: 'blocked', severity: 'critical', label: 'Blocked', priority: 1 };
+  if (overdueMilestones.length) {
+    const date = String(overdueMilestones[0].milestone_date).slice(0, 10);
+    return { type: 'overdue_milestone', severity: 'critical', label: mobileAttentionDayLabel(date, todayKey, 'Milestone'), date, count: overdueMilestones.length, priority: 2 };
+  }
+  if (projectDueDate && projectDueDate <= addMobileDateDays(todayKey, MOBILE_PROJECT_DEADLINE_WINDOW_DAYS)) {
+    const label = mobileAttentionDayLabel(projectDueDate, todayKey, 'Deadline');
+    return { type: 'deadline_approaching', severity: projectDueDate < todayKey || projectDueDate <= addMobileDateDays(todayKey, 1) ? 'critical' : 'warning', label, date: projectDueDate, priority: 3 };
+  }
+  if (active && !nextAction) return { type: 'missing_next_action', severity: 'warning', label: 'No next action', priority: 4 };
+  if (stale) return { type: 'stale', severity: 'info', label: `No activity for ${MOBILE_PROJECT_STALE_DAYS} days`, priority: 5 };
+  if (status.includes('attention')) return { type: 'explicit', severity: 'warning', label: 'Needs review', priority: 6 };
+  return null;
+};
 
 // Temporary fallback until mobile user timezone preferences are wired through the backend.
 const getLocalDateKey = (dateLike = new Date()) => {
@@ -13132,6 +13190,84 @@ app.get('/api/mobile/today', async (req, res) => {
     });
 
     res.json(payload);
+  } catch (error) {
+    return respondWithMobileError(res, error);
+  }
+});
+
+app.get('/api/mobile/projects', async (req, res) => {
+  try {
+    const user = await requireAuth(req);
+    const requestedWorkspaceId = normalizeNullableText(req.query?.workspace_id) || 'all';
+    const scope = await resolveMobileWorkspaceScope(user.id, requestedWorkspaceId);
+    const includeCompleted = ['true', '1', 'yes'].includes(String(req.query?.include_completed ?? '').toLowerCase());
+    const workspaceIds = scope.workspaceIds.filter(Boolean);
+
+    const [projectsResult, tasksResult, milestonesResult, workspaceResult] = await Promise.all([
+      supabase.from('projects').select(MOBILE_TODAY_PROJECT_SELECT_COLUMNS).in('workspace_id', workspaceIds).order('updated_at', { ascending: false }).limit(500),
+      supabase.from('tasks').select(MOBILE_TODAY_TASK_SELECT_COLUMNS).in('workspace_id', workspaceIds).order('due_date', { ascending: true }).limit(2000),
+      supabase.from('project_milestones').select(projectMilestoneSelectColumns).in('workspace_id', workspaceIds).order('milestone_date', { ascending: true }).limit(2000),
+      supabase.from('workspaces').select('id, name').in('id', workspaceIds),
+    ]);
+    for (const result of [projectsResult, tasksResult, milestonesResult, workspaceResult]) {
+      if (result.error) throw result.error;
+    }
+
+    const todayKey = getLocalDateKey(new Date());
+    const workspaceById = new Map((workspaceResult.data ?? []).map((workspace) => [String(workspace.id), workspace.name]));
+    const tasksByProjectId = new Map();
+    for (const task of tasksResult.data ?? []) {
+      if (!task.project_id) continue;
+      const key = String(task.project_id);
+      tasksByProjectId.set(key, [...(tasksByProjectId.get(key) ?? []), task]);
+    }
+    const milestonesByProjectId = new Map();
+    for (const milestone of milestonesResult.data ?? []) {
+      if (!milestone.project_id) continue;
+      const key = String(milestone.project_id);
+      milestonesByProjectId.set(key, [...(milestonesByProjectId.get(key) ?? []), milestone]);
+    }
+    const projects = (projectsResult.data ?? [])
+      .filter((project) => includeCompleted || !isCompletedProjectStatus(project.status))
+      .map((project) => {
+        const allProjectTasks = tasksByProjectId.get(String(project.id)) ?? [];
+        const projectTasks = allProjectTasks.filter((task) => !['completed', 'done', 'cancelled', 'dismissed'].includes(String(task.status ?? '').toLowerCase()) && !task.completed_at);
+        const nextAction = projectTasks.slice().sort((left, right) => String(left.due_date ?? '9999-12-31').localeCompare(String(right.due_date ?? '9999-12-31')))[0]?.title ?? null;
+        const dueDate = project.end_date ? String(project.end_date).slice(0, 10) : null;
+        const attention = deriveMobileProjectAttention({ project, tasks: allProjectTasks, milestones: milestonesByProjectId.get(String(project.id)) ?? [], todayKey });
+        return {
+          id: String(project.id),
+          workspace_id: String(project.workspace_id),
+          workspace_name: workspaceById.get(String(project.workspace_id)) ?? null,
+          name: project.name ?? 'Untitled project',
+          description: project.description ?? null,
+          project_type: project.project_type ?? 'other',
+          status: project.status ?? null,
+          completeness: Math.max(0, Math.min(100, Number(project.completeness ?? 0))),
+          color: project.color ?? null,
+          start_date: project.start_date ?? null,
+          end_date: dueDate,
+          next_action: nextAction,
+          attention,
+          attention_reason: attention?.label ?? null,
+          owned_by_current_user: String(project.lead_id ?? project.created_by ?? '') === String(user.id),
+          assigned_to_current_user: projectTasks.some((task) => String(task.assigned_to_user_id ?? task.assigned_to ?? '') === String(user.id)),
+          updated_at: project.updated_at ?? null,
+        };
+      });
+    const projectById = new Map(projects.map((project) => [project.id, project]));
+    const milestones = (milestonesResult.data ?? []).map((milestone) => ({
+      id: String(milestone.id),
+      workspace_id: String(milestone.workspace_id),
+      project_id: milestone.project_id ? String(milestone.project_id) : null,
+      project_name: milestone.project_id ? projectById.get(String(milestone.project_id))?.name ?? null : null,
+      title: milestone.title ?? 'Untitled milestone',
+      milestone_date: milestone.milestone_date ?? null,
+      type: milestone.type ?? 'Milestone',
+      completed: Boolean(milestone.completed),
+    }));
+
+    res.json({ workspace_id: scope.workspaceId, projects, milestones });
   } catch (error) {
     return respondWithMobileError(res, error);
   }

@@ -17,6 +17,7 @@ import { useLedgerTheme } from '@/theme';
 import { parseDateInputToIsoDate, parseTimeInputTo24Hour } from '@/utils/captureDates';
 import { formatCaptureDateLabel, formatCaptureTimeLabel, parseMobileDateInput, parseMobileDateTimeInput } from '@/features/capture/dateUtils';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
+import { getMobileProjectPermissions } from '@/features/projects/projectPermissions';
 import {
   getWorkspaceLabel,
   resolveCaptureWorkspaceId,
@@ -26,23 +27,26 @@ import {
 
 type ProjectActionFormProps = {
   onSave?: () => void;
+  initialProjectId?: string | null;
+  initialWorkspaceId?: string | null;
 };
 
-export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
+export function ProjectActionForm({ onSave, initialProjectId = null, initialWorkspaceId = null }: ProjectActionFormProps) {
   const theme = useLedgerTheme();
   const workspaceState = useWorkspaceState();
   const workspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
-  const [captureWorkspaceId, setCaptureWorkspaceId] = useState(workspaceId);
+  const [captureWorkspaceId, setCaptureWorkspaceId] = useState(initialWorkspaceId || workspaceId);
   const workspaceLabel = useMemo(
     () => getWorkspaceLabel(captureWorkspaceId, workspaceState.options),
     [captureWorkspaceId, workspaceState.options],
   );
+  const permissions = useMemo(() => getMobileProjectPermissions(captureWorkspaceId, workspaceState.options), [captureWorkspaceId, workspaceState.options]);
   const { projects, isLoading: projectsLoading } = useCaptureProjects(captureWorkspaceId);
   const [title, setTitle] = useState('');
   const [dateInput, setDateInput] = useState('tomorrow');
   const [timeInput, setTimeInput] = useState('');
   const [notes, setNotes] = useState('');
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -54,8 +58,8 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
   const parsedTime = useMemo(() => parseMobileDateTimeInput(timeInput, parsedDate), [parsedDate, timeInput]);
 
   useEffect(() => {
-    setCaptureWorkspaceId(workspaceId);
-  }, [workspaceId]);
+    if (!initialWorkspaceId) setCaptureWorkspaceId(workspaceId);
+  }, [initialWorkspaceId, workspaceId]);
 
   const selectedProjectLabel = useMemo(() => {
     if (!projectId) return 'No project';
@@ -91,6 +95,8 @@ export function ProjectActionForm({ onSave }: ProjectActionFormProps) {
         setIsSaving(false);
       }
   };
+
+  if (!permissions.canAddAction) return <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>Actions are read-only in this workspace.</AppText>;
 
   return (
     <CaptureFormShell
