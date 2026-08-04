@@ -23,6 +23,11 @@ assert(native.includes('pendingExportsRef.current.clear()'), 'note switches/relo
 assert(editor.includes("{ tag: HYDRATION_TAG }"), 'hydration must use the dedicated Lexical tag');
 assert(editor.includes('!editorWindow.__ledgerDirtyReported'), 'dirty notifications must be edge-triggered');
 assert(editor.includes("post('DOCUMENT_EXPORTED', { noteId: command.noteId, requestId: command.requestId, generation: command.generation"), 'exports must include identity');
+assert(editor.includes("selection.toggleFormat('underline')"), 'underline must toggle the Lexical selection format directly');
+assert(editor.includes("if (command.type === 'TOGGLE_LIST') {\n          editor.focus();"), 'list commands must restore editor focus before dispatch');
+assert(editor.includes("from '@lexical/react/LexicalListPlugin'"), 'list commands must register Lexical list behavior');
+assert(editor.includes("from '@lexical/react/LexicalCheckListPlugin'"), 'checklist commands must register Lexical checklist behavior');
+assert(editor.includes('<ListPlugin />') && editor.includes('<CheckListPlugin />'), 'list plugins must be mounted in the editor');
 assert(editor.includes("editor.update(() => {\n        // DOM conversion creates Lexical nodes"), 'HTML import must run inside an active Lexical update');
 assert(native.includes("source={{ html: MOBILE_EDITOR_HTML"), 'editor must stay local and inline');
 assert(!native.includes("source={{ uri:"), 'editor must not use a remote WebView URL');

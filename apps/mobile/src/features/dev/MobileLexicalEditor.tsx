@@ -154,11 +154,24 @@ export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(
 
   const onLoadStart = () => { onStage?.('html-load-start', `generation ${generationRef.current}`); armReadyTimeout(); readyRef.current = false; hydratedRef.current = false; setReady(false); pendingExportsRef.current.clear(); pendingSelectionsRef.current.clear(); if (activeDocumentRef.current) queueRef.current = [{ type: 'SET_READ_ONLY', value: true }, activeDocumentRef.current]; };
   const command = (next: NativeEditorCommand) => { enqueue(next); setTimeout(() => enqueue({ type: 'FOCUS_EDITOR' }), 0); };
-  const openExternalLink = (value: string) => { if (!/^https?:\/\/[^\s]+$/i.test(value)) { Alert.alert('Unsupported link', 'This link cannot be opened from Ledger.'); return; } void Linking.openURL(value).catch(() => Alert.alert('Could not open link', 'Try again from the note.')); };
   const isLedgerLink = (value: string) => /^ledger:/i.test(value) || /^https?:\/\/ledger\.local(?:\/|$)/i.test(value);
+  const normalizeLink = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (isLedgerLink(trimmed)) return trimmed;
+    const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    try {
+      const parsed = new URL(candidate);
+      if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname || /\s/.test(trimmed)) return null;
+      return candidate;
+    } catch {
+      return null;
+    }
+  };
+  const openExternalLink = (value: string) => { const normalized = normalizeLink(value); if (!normalized || isLedgerLink(normalized)) { Alert.alert('Unsupported link', 'This link cannot be opened from Ledger.'); return; } void Linking.openURL(normalized).catch(() => Alert.alert('Could not open link', 'Try again from the note.')); };
   const openLinkTarget = (value: string) => { if (isLedgerLink(value)) onLedgerLink?.(value); else openExternalLink(value); };
   const openLinkSheet = () => { setLinkUrl(selection.linkUrl ?? ''); setLinkSheetOpen(true); };
-  const submitLink = () => { const normalized = linkUrl.trim(); if (!/^https?:\/\/[^\s]+$/i.test(normalized) && !isLedgerLink(normalized)) { Alert.alert('Enter a valid link', 'Use a full http:// or https:// URL, or a Ledger link.'); return; } setLinkSheetOpen(false); command({ type: 'INSERT_LINK', url: normalized }); };
+  const submitLink = () => { const normalized = normalizeLink(linkUrl); if (!normalized) { Alert.alert('Enter a valid link', 'Use a domain like link.com, an http:// or https:// URL, or a Ledger link.'); return; } setLinkSheetOpen(false); command({ type: 'INSERT_LINK', url: normalized }); };
   const uploadNativeFile = async (uri: string, name: string, mimeType: string, folder: 'images' | 'attachments') => {
     const workspace = workspaceId?.trim(); const currentNoteId = propNoteId ?? identityRef.current?.noteId;
     if (!workspace || !currentNoteId) { Alert.alert('Upload unavailable', 'This note is not associated with a workspace.'); return null; }

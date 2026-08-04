@@ -8,6 +8,8 @@ import { $setBlocksType } from '@lexical/selection';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
+import { CheckListPlugin } from '@lexical/react/LexicalCheckListPlugin';
+import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
@@ -30,7 +32,7 @@ post('EDITOR_STAGE', { stage: 'javascript-started' });
 window.addEventListener('error', (event) => editorError('JAVASCRIPT_ERROR', event.message || 'Editor JavaScript error.'));
 window.addEventListener('unhandledrejection', (event) => editorError('UNHANDLED_REJECTION', event.reason instanceof Error ? event.reason.message : 'Editor promise rejected.'));
 
-const FORMAT_COMMAND = createCommand<'bold' | 'italic'>('LEDGER_FORMAT');
+const FORMAT_COMMAND = createCommand<'bold' | 'italic' | 'underline'>('LEDGER_FORMAT');
 const initialConfig = {
   namespace: 'LedgerMobileEditor',
   theme: { heading: { h1: 'editor-heading editor-heading--h1', h2: 'editor-heading editor-heading--h2', h3: 'editor-heading editor-heading--h3' }, paragraph: 'editor-paragraph', list: { nested: { listitem: 'editor-list-nested' } }, callout: { info: 'editor-callout editor-callout--info', note: 'editor-callout editor-callout--note', warning: 'editor-callout editor-callout--warning', success: 'editor-callout editor-callout--success' } },
@@ -158,9 +160,27 @@ function BridgePlugin() {
         if (command.type === 'RESET_DIRTY') { editorWindow.__ledgerDirtyReported = false; return; }
         if (command.type === 'SET_THEME') { document.documentElement.dataset.theme = command.theme; return; }
         if (command.type === 'FOCUS_EDITOR') { editor.focus(); return; }
-        if (command.type === 'TOGGLE_FORMAT') { editor.dispatchCommand(FORMAT_COMMAND, command.format); return; }
+        if (command.type === 'TOGGLE_FORMAT') {
+          if (command.format === 'underline') {
+            editor.update(() => {
+              const selection = $getSelection();
+              if ($isRangeSelection(selection)) selection.toggleFormat('underline');
+            });
+          } else {
+            editor.dispatchCommand(FORMAT_COMMAND, command.format);
+          }
+          return;
+        }
         if (command.type === 'SET_BLOCK_TYPE') { editor.update(() => { const selection = $getSelection(); if ($isRangeSelection(selection)) $setBlocksType(selection, () => command.block === 'paragraph' ? $createParagraphNode() : $createHeadingNode(command.block)); }); return; }
-        if (command.type === 'TOGGLE_LIST') { const current = selectionState(editor, canUndoRef.current, canRedoRef.current).listType; if (current === command.list) editor.dispatchCommand(REMOVE_LIST_COMMAND, undefined); else if (command.list === 'bullet') editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined); else if (command.list === 'number') editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined); else editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined); return; }
+        if (command.type === 'TOGGLE_LIST') {
+          editor.focus();
+          const current = selectionState(editor, canUndoRef.current, canRedoRef.current).listType;
+          if (current === command.list) editor.dispatchCommand(REMOVE_LIST_COMMAND, undefined);
+          else if (command.list === 'bullet') editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined);
+          else if (command.list === 'number') editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined);
+          else editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined);
+          return;
+        }
         if (command.type === 'INSERT_LINK') { editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url); return; }
         if (command.type === 'REMOVE_LINK') { editor.dispatchCommand(TOGGLE_LINK_COMMAND, null); return; }
         if (command.type === 'INSERT_CALLOUT') { editor.update(() => { const callout = $createLedgerCalloutNode(command.variant); const paragraph = $createParagraphNode(); callout.append(paragraph); $insertNodes([callout]); paragraph.select(); }); return; }
@@ -200,7 +220,7 @@ function Editor() {
     if (noteId && !editorWindow.__ledgerDirtyReported) { editorWindow.__ledgerDirtyReported = true; post('DIRTY_STATE_CHANGED', { noteId, generation: currentGeneration(), dirty: true }); }
     void editor;
   };
-  return <LexicalComposer initialConfig={initialConfig}><div className="editor-shell"><RichTextPlugin contentEditable={<FocusPlugin />} placeholder={<div className="editor-placeholder">Start writing…</div>} ErrorBoundary={({ children }) => <>{children}</>} /><HistoryPlugin /><OnChangePlugin onChange={onChange} ignoreSelectionChange /><InitialContentPlugin /><BridgePlugin /></div></LexicalComposer>;
+  return <LexicalComposer initialConfig={initialConfig}><div className="editor-shell"><RichTextPlugin contentEditable={<FocusPlugin />} placeholder={<div className="editor-placeholder">Start writing…</div>} ErrorBoundary={({ children }) => <>{children}</>} /><HistoryPlugin /><ListPlugin /><CheckListPlugin /><OnChangePlugin onChange={onChange} ignoreSelectionChange /><InitialContentPlugin /><BridgePlugin /></div></LexicalComposer>;
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><Editor /></React.StrictMode>);
