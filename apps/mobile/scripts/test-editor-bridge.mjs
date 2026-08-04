@@ -8,6 +8,7 @@ const sharedValidation = read('packages/mobile-editor-bridge/validation.ts');
 const native = read('apps/mobile/src/features/dev/MobileLexicalEditor.tsx');
 const editor = read('apps/mobile-editor/src/main.tsx');
 const calloutNode = read('apps/mobile-editor/src/LedgerCalloutNode.ts');
+const preservationNode = read('apps/mobile-editor/src/LedgerPreservationNode.ts');
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(`Editor bridge regression: ${message}`);
@@ -38,6 +39,8 @@ assert(editor.includes('if (saved) $setSelection(saved.clone())'), 'inserts must
 assert(editor.includes('selection.insertNodes(nodes)'), 'callouts and blocks must insert through the active Lexical selection');
 assert(editor.includes('else $getRoot().append(...nodes)'), 'block inserts must have a root insertion fallback');
 assert(calloutNode.includes("data-ledger-callout', 'true'"), 'callouts must use the canonical desktop HTML marker');
+assert(calloutNode.includes('priority: 6'), 'callouts must win DOM import over generic preservation nodes');
+assert(preservationNode.includes("element.hasAttribute('data-ledger-callout')"), 'generic preservation must not capture callouts');
 assert(editor.includes("editor.update(() => {\n        // DOM conversion creates Lexical nodes"), 'HTML import must run inside an active Lexical update');
 assert(native.includes("source={{ html: MOBILE_EDITOR_HTML"), 'editor must stay local and inline');
 assert(!native.includes("source={{ uri:"), 'editor must not use a remote WebView URL');

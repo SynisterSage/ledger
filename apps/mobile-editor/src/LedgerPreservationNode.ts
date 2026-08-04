@@ -4,6 +4,7 @@ const PRESERVED_TAGS = ['aside', 'figure', 'img', 'hr', 'section', 'div', 'ul', 
 const PRESERVED_ALWAYS = new Set(['img', 'hr', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'figcaption']);
 
 function hasLedgerMetadata(element: HTMLElement) {
+  if (element.hasAttribute('data-ledger-callout') || element.classList.contains('ledger-callout')) return false;
   return Array.from(element.attributes).some((attribute) => attribute.name.startsWith('data-ledger-')) || element.getAttribute('data-type') === 'check-list';
 }
 

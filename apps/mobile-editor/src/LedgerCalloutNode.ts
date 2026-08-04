@@ -45,7 +45,7 @@ export class LedgerCalloutNode extends ElementNode {
   static importDOM() {
     const convert = (element: HTMLElement) => {
       if (!element.hasAttribute('data-ledger-callout') && !element.classList.contains('ledger-callout')) return null;
-      return { conversion: () => ({ node: new LedgerCalloutNode(variantFromElement(element)) }), priority: 4 };
+      return { conversion: () => ({ node: new LedgerCalloutNode(variantFromElement(element)) }), priority: 6 };
     };
     return {
       aside: convert,
