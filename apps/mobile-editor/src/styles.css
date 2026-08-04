@@ -4,7 +4,7 @@
 html, body, #root { width: 100%; min-height: 100%; margin: 0; }
 html, body { background: var(--background); color: var(--text); overscroll-behavior: none; overflow-x: hidden; -webkit-text-size-adjust: 100%; }
 body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
-.editor-shell { min-height: 100vh; padding: 18px 20px 112px; }
+.editor-shell { position: relative; min-height: 100vh; padding: 18px 20px 112px; }
 .editor-content { min-height: calc(100vh - 36px); outline: none; font-size: 17px; line-height: 1.62; white-space: pre-wrap; word-break: break-word; caret-color: var(--accent); -webkit-user-select: text; user-select: text; }
 .editor-paragraph { margin: 0 0 12px; }
 .editor-heading { margin: 0 0 12px; line-height: 1.22; }
@@ -30,5 +30,5 @@ body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
 .editor-image__resize-handle { position: absolute; right: -3px; bottom: -3px; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 7px; background: #fff7ed; box-shadow: 0 0 0 1px rgba(255,95,64,.2) inset; touch-action: none; }
 .editor-image__resize-handle::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 9px; height: 9px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); }
 .editor-content [data-ledger-attachment-id]::after { content: 'Ledger attachment'; display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }
-.editor-placeholder { position: absolute; color: var(--muted); pointer-events: none; font-size: 17px; }
+.editor-placeholder { position: absolute; top: 18px; left: 20px; color: var(--muted); pointer-events: none; font-size: 17px; }
 ::selection { background: var(--selection); }

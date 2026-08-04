@@ -361,7 +361,13 @@ export function LinkedDesignsSection({
           return { link: current, preview };
         })
       );
-      setLinks(hydrated.map((entry) => entry.link));
+      // A resource can have more than one relationship row after concurrent
+      // link attempts or older data migrations. The note inspector should
+      // still present one resource once, keyed by the canonical reference.
+      const uniqueHydrated = Array.from(
+        new Map(hydrated.map((entry) => [entry.link.external_reference_id, entry])).values()
+      );
+      setLinks(uniqueHydrated.map((entry) => entry.link));
       if (target.targetType === 'project') {
         try {
           const sources = await api.getProjectConnectedSources(target.targetId);
@@ -374,7 +380,7 @@ export function LinkedDesignsSection({
       }
       setPreviews(
         Object.fromEntries(
-          hydrated.map((entry) => [entry.link.external_reference_id, entry.preview])
+          uniqueHydrated.map((entry) => [entry.link.external_reference_id, entry.preview])
         )
       );
       try {
@@ -828,18 +834,16 @@ export function LinkedDesignsSection({
     finally { setBusyId(null); }
   };
 
-  const rows = useMemo(
-    () =>
-      links
-        .map((link) => ({
-          link,
-          reference: (Array.isArray(link.external_references)
-            ? link.external_references[0]
-            : link.external_references) as Reference | undefined,
-        }))
-        .filter((row) => row.reference),
-    [links]
-  );
+  const rows = useMemo(() => {
+    const unique = new Map<string, { link: Link; reference: Reference }>();
+    links.forEach((link) => {
+      const reference = (Array.isArray(link.external_references)
+        ? link.external_references[0]
+        : link.external_references) as Reference | undefined;
+      if (reference && !unique.has(link.external_reference_id)) unique.set(link.external_reference_id, { link, reference });
+    });
+    return Array.from(unique.values());
+  }, [links]);
   const sectionLabel = target.targetType === 'intake' || rows.some(({ reference }) => isGithub(reference)) ? 'Linked work' : 'Linked designs';
   const hasGithubWork = rows.some(({ reference }) => isGithub(reference) && ['issue', 'pullRequest'].includes(String(reference?.external_type ?? '')));
   const githubIssues = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'issue' && String(reference?.metadata?.state ?? '').toLowerCase() === 'open').length;
@@ -856,9 +860,12 @@ export function LinkedDesignsSection({
     const rank = (provider?: string) => provider === 'google_drive' ? 0 : provider === 'github' ? 1 : provider === 'figma' ? 2 : 3;
     return rank(left.reference?.provider) - rank(right.reference?.provider);
   });
-  const visibleContextLinks = compactExternalOnly
-    ? contextLinks.filter((link) => link.resource.type === 'project')
-    : contextLinks;
+  const visibleContextLinks = Array.from(
+    new Map(
+      (compactExternalOnly ? contextLinks.filter((link) => link.resource.type === 'project') : contextLinks)
+        .map((link) => [`${link.resource.type}:${link.resource.id}`, link])
+    ).values()
+  );
   const visibleCalendarItems = compactExternalOnly ? [] : calendarItems;
   const hasConnectedFolders = target.targetType === 'project' && connectedFolders.length > 0;
   return (

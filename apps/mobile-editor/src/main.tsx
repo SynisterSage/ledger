@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { $generateHtmlFromNodes, $generateNodesFromDOM } from '@lexical/html';
-import { LinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
+import { $createLinkNode, LinkNode, TOGGLE_LINK_COMMAND } from '@lexical/link';
 import { INSERT_CHECK_LIST_COMMAND, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND, ListItemNode, ListNode, REMOVE_LIST_COMMAND } from '@lexical/list';
 import { HeadingNode, $createHeadingNode } from '@lexical/rich-text';
 import { $setBlocksType } from '@lexical/selection';
@@ -13,7 +13,7 @@ import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot, $getSelection, $setSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, ElementNode, FORMAT_TEXT_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode, type RangeSelection } from 'lexical';
+import { $getRoot, $getSelection, $setSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, ElementNode, FORMAT_TEXT_COMMAND, KEY_BACKSPACE_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_HIGH, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode, type RangeSelection } from 'lexical';
 import type { NativeEditorCommand } from '../../../packages/mobile-editor-bridge/messages';
 import { HYDRATION_TAG } from '../../../packages/mobile-editor-bridge/constants';
 import { parseNativeEditorCommand } from '../../../packages/mobile-editor-bridge/validation';
@@ -56,6 +56,39 @@ function selectionState(editor: LexicalEditor, canUndo: boolean, canRedo: boolea
       while (linkCursor) { if (linkCursor instanceof LinkNode) { result.linkUrl = linkCursor.getURL(); break; } linkCursor = linkCursor.getParent(); }
   });
   return result;
+}
+
+function hasLedgerLink(root: ElementNode, url: string) {
+  let found = false;
+  const visit = (node: LexicalNode) => {
+    if (node instanceof LinkNode && node.getURL() === url) {
+      found = true;
+      return;
+    }
+    if (node instanceof ElementNode) node.getChildren().forEach(visit);
+  };
+  root.getChildren().forEach(visit);
+  return found;
+}
+
+function dedupeLedgerLinks(root: ElementNode) {
+  const seen = new Set<string>();
+  const visit = (node: LexicalNode) => {
+    if (node instanceof LinkNode && /^ledger:/i.test(node.getURL())) {
+      const key = node.getURL();
+      if (seen.has(key)) {
+        node.remove();
+        return;
+      }
+      seen.add(key);
+    }
+    if (node instanceof ElementNode) node.getChildren().forEach(visit);
+  };
+  root.getChildren().forEach(visit);
+}
+
+function isLedgerLinkNode(node: LexicalNode | null) {
+  return node instanceof LinkNode && /^ledger:/i.test(node.getURL());
 }
 
 function InitialContentPlugin() {
@@ -113,6 +146,7 @@ function BridgePlugin() {
         const root = $getRoot(); root.clear();
         if (nodes.length) root.append(...nodes);
         else root.append($createParagraphNode());
+        dedupeLedgerLinks(root);
       }, { tag: HYDRATION_TAG });
       hydratedRef.current = true;
       editor.setEditable(!command.readOnly);
@@ -197,6 +231,27 @@ function BridgePlugin() {
           editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url);
           return;
         }
+        if (command.type === 'INSERT_LINK_TEXT') {
+          editor.focus();
+          let hasTextSelection = false;
+          let alreadyLinked = false;
+          editor.update(() => {
+            const saved = savedSelectionRef.current;
+            if (saved) $setSelection(saved.clone());
+            const selection = $getSelection();
+            hasTextSelection = $isRangeSelection(selection) && !selection.isCollapsed();
+            alreadyLinked = hasLedgerLink($getRoot(), command.url);
+            if (!hasTextSelection && !alreadyLinked) {
+              const link = $createLinkNode(command.url);
+              link.append($createTextNode(command.text));
+              if ($isRangeSelection(selection)) selection.insertNodes([link]);
+              else $getRoot().append(link);
+            }
+            savedSelectionRef.current = null;
+          });
+          if (hasTextSelection) editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url);
+          return;
+        }
         if (command.type === 'REMOVE_LINK') { editor.dispatchCommand(TOGGLE_LINK_COMMAND, null); return; }
         const insertNodes = (createNodes: () => LexicalNode[], selectEnd = false) => {
           editor.focus();
@@ -236,6 +291,25 @@ function BridgePlugin() {
     const unregisterUndo = editor.registerCommand(CAN_UNDO_COMMAND, (value) => { canUndoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
     const unregisterRedo = editor.registerCommand(CAN_REDO_COMMAND, (value) => { canRedoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
     const unregisterFormat = editor.registerCommand(FORMAT_COMMAND, (format) => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, format); return true; }, COMMAND_PRIORITY_EDITOR);
+    const unregisterLedgerBackspace = editor.registerCommand(KEY_BACKSPACE_COMMAND, () => {
+      let handled = false;
+      editor.update(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
+        const anchor = selection.anchor.getNode();
+        const parent = anchor.getParent();
+        if (isLedgerLinkNode(parent)) {
+          parent.remove();
+          handled = true;
+          return;
+        }
+        if (selection.anchor.offset === 0 && isLedgerLinkNode(anchor.getPreviousSibling())) {
+          anchor.getPreviousSibling()?.remove();
+          handled = true;
+        }
+      });
+      return handled;
+    }, COMMAND_PRIORITY_HIGH);
     const unregisterImageResize = editor.registerCommand(RESIZE_IMAGE_COMMAND, ({ nodeKey, width }) => {
       editor.update(() => {
         let match: LexicalNode | null = null;
@@ -252,7 +326,7 @@ function BridgePlugin() {
     const onImageCopy = (event: Event) => { const detail = (event as CustomEvent<{ src?: unknown }>).detail; const noteId = activeNoteIdRef.current; if (!noteId || typeof detail?.src !== 'string' || !detail.src.trim()) return; post('COPY_IMAGE_REQUEST', { noteId, src: detail.src }); };
     window.addEventListener('ledger-image-resize', onImageResize);
     window.addEventListener('ledger-image-copy', onImageCopy);
-    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); unregisterFormat(); unregisterImageResize(); window.removeEventListener('ledger-image-resize', onImageResize); window.removeEventListener('ledger-image-copy', onImageCopy); };
+    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); unregisterFormat(); unregisterLedgerBackspace(); unregisterImageResize(); window.removeEventListener('ledger-image-resize', onImageResize); window.removeEventListener('ledger-image-copy', onImageCopy); };
   }, [editor]);
   return null;
 }

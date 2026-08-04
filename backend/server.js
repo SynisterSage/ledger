@@ -17257,7 +17257,9 @@ app.get('/api/projects/:id/note-links', authMiddleware, rateLimit('read'), async
       noteById = new Map((notesResult.data ?? []).map((note) => [note.id, note]));
     }
 
-    const links = (data ?? [])
+    const links = Array.from(
+      new Map((data ?? []).map((row) => [`${row.project_id}:${row.note_id}`, row])).values()
+    )
       .map((row) => {
         const note = noteById.get(row.note_id);
         if (!note) return null;
@@ -17350,31 +17352,15 @@ app.post('/api/projects/:id/note-links', authMiddleware, rateLimit('write'), asy
     if (!projectAllowed) return res.status(404).json({ error: 'Project not found' });
     if (!noteAllowed) return res.status(404).json({ error: 'Note not found' });
 
-    const existing = await supabase
+    const { data, error } = await supabase
       .from('project_note_links')
-      .select('id')
-      .eq('workspace_id', workspaceId)
-      .eq('project_id', projectId)
-      .eq('note_id', noteId)
-      .maybeSingle();
-
-    if (existing.error) throw existing.error;
-    if (!existing.data) {
-      const insert = await supabase.from('project_note_links').insert({
+      .upsert({
         workspace_id: workspaceId,
         project_id: projectId,
         note_id: noteId,
         created_by: req.authUser.id,
-      });
-      if (insert.error) throw insert.error;
-    }
-
-    const { data, error } = await supabase
-      .from('project_note_links')
+      }, { onConflict: 'workspace_id,project_id,note_id', ignoreDuplicates: true })
       .select('id, note_id, created_at')
-      .eq('workspace_id', workspaceId)
-      .eq('project_id', projectId)
-      .eq('note_id', noteId)
       .single();
 
     if (error) throw error;

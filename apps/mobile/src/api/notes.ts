@@ -197,7 +197,11 @@ export type MobileProjectNoteLink = { id: string; project_id: string; note_id: s
 
 export async function getMobileWorkspaceNoteLinks(workspaceId: string, noteId?: string) {
   const result = await mobileRequest<{ links?: MobileProjectNoteLink[] }>('/api/workspaces/' + encodeURIComponent(workspaceId) + '/project-note-links');
-  return (result.links ?? []).filter((link) => !noteId || link.note_id === noteId);
+  const unique = new Map<string, MobileProjectNoteLink>();
+  (result.links ?? []).forEach((link) => {
+    if (!noteId || link.note_id === noteId) unique.set(`${link.project_id}:${link.note_id}`, link);
+  });
+  return Array.from(unique.values());
 }
 
 export async function linkMobileNoteToProject(workspaceId: string, projectId: string, noteId: string) {
