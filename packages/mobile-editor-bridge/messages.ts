@@ -29,6 +29,7 @@ export type EditorNativeEvent =
   | { type: 'SELECTION_STATE_CHANGED'; noteId: string; generation: number; selection: EditorSelectionState }
   | { type: 'DOCUMENT_EXPORTED'; noteId: string; requestId: string; generation: number; html: string; plainText: string }
   | { type: 'SELECTION_RESULT'; noteId: string; requestId: string; generation: number; plainText: string; html?: string }
+  | { type: 'COPY_IMAGE_REQUEST'; noteId: string; generation: number; src: string }
   | { type: 'FOCUSED'; generation: number }
   | { type: 'BLURRED'; generation: number }
   | { type: 'EDITOR_ERROR'; noteId?: string; requestId?: string; generation: number; code: string; message: string };

@@ -5,6 +5,7 @@ const PRESERVED_ALWAYS = new Set(['img', 'hr', 'table', 'thead', 'tbody', 'tfoot
 
 function hasLedgerMetadata(element: HTMLElement) {
   if (element.hasAttribute('data-ledger-callout') || element.classList.contains('ledger-callout')) return false;
+  if (element.getAttribute('data-ledger-kind') === 'image') return false;
   return Array.from(element.attributes).some((attribute) => attribute.name.startsWith('data-ledger-')) || element.getAttribute('data-type') === 'check-list';
 }
 
@@ -21,7 +22,25 @@ export class LedgerPreservationNode extends ElementNode {
     const template = document.createElement('template');
     template.innerHTML = this.__html;
     const element = template.content.firstElementChild;
-    return element instanceof HTMLElement ? element : document.createElement(this.__tag);
+    if (!(element instanceof HTMLElement)) return document.createElement(this.__tag);
+    if (element.hasAttribute('data-ledger-file-attachment')) {
+      const href = element.getAttribute('data-url') || element.querySelector('a')?.getAttribute('href') || '';
+      if (href) {
+        let link = element.querySelector('a');
+        if (!link) {
+          const label = element.textContent?.trim() || 'Open attachment';
+          element.textContent = '';
+          link = document.createElement('a');
+          link.textContent = label;
+          element.appendChild(link);
+        }
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.className = 'ledger-attachment-link';
+      }
+    }
+    return element;
   }
   updateDOM() { return false; }
   exportDOM() {

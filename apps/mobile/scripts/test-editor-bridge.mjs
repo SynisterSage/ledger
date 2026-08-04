@@ -9,6 +9,7 @@ const native = read('apps/mobile/src/features/dev/MobileLexicalEditor.tsx');
 const editor = read('apps/mobile-editor/src/main.tsx');
 const calloutNode = read('apps/mobile-editor/src/LedgerCalloutNode.ts');
 const preservationNode = read('apps/mobile-editor/src/LedgerPreservationNode.ts');
+const imageNode = read('apps/mobile-editor/src/LedgerImageNode.ts');
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(`Editor bridge regression: ${message}`);
@@ -41,6 +42,17 @@ assert(editor.includes('else $getRoot().append(...nodes)'), 'block inserts must 
 assert(calloutNode.includes("data-ledger-callout', 'true'"), 'callouts must use the canonical desktop HTML marker');
 assert(calloutNode.includes('priority: 6'), 'callouts must win DOM import over generic preservation nodes');
 assert(preservationNode.includes("element.hasAttribute('data-ledger-callout')"), 'generic preservation must not capture callouts');
+assert(editor.includes('RESIZE_IMAGE_COMMAND'), 'mobile editor must register image resize commands');
+assert(editor.includes('node.getKey() === nodeKey'), 'image resize command must resolve the Lexical image node');
+assert(imageNode.includes('editor-image__resize-handle'), 'mobile images must expose a resize handle');
+assert(imageNode.includes('height = \'auto\''), 'mobile image resizing must preserve aspect ratio');
+assert(imageNode.includes('data-width'), 'mobile image width must round-trip through canonical HTML');
+assert(sharedMessages.includes("type: 'COPY_IMAGE_REQUEST'"), 'image copy must use a typed native bridge event');
+assert(sharedValidation.includes("value.type === 'COPY_IMAGE_REQUEST'"), 'image copy events must be validated');
+assert(imageNode.includes("ledger-image-copy"), 'mobile images must emit a copy event on double click');
+assert(native.includes('Clipboard.setImageAsync'), 'native mobile must write copied images to the clipboard');
+assert(preservationNode.includes("data-ledger-file-attachment"), 'preserved attachments must be normalized as attachment blocks');
+assert(preservationNode.includes("link.href = href"), 'attachment labels with URLs must render as clickable links');
 assert(editor.includes("editor.update(() => {\n        // DOM conversion creates Lexical nodes"), 'HTML import must run inside an active Lexical update');
 assert(native.includes("source={{ html: MOBILE_EDITOR_HTML"), 'editor must stay local and inline');
 assert(!native.includes("source={{ uri:"), 'editor must not use a remote WebView URL');

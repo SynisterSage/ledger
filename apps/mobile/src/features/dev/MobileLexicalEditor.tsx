@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ComponentProps } from 'react';
 import { ActivityIndicator, Alert, Keyboard, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SymbolView } from 'expo-symbols';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import * as ImagePicker from 'expo-image-picker';
@@ -46,6 +47,22 @@ const EMPTY_SELECTION: EditorSelectionState = { bold: false, italic: false, unde
 
 function requestId() { return `mobile-editor-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 let editorGenerationSeed = 0;
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let output = '';
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index];
+    const second = index + 1 < bytes.length ? bytes[index + 1] : 0;
+    const third = index + 2 < bytes.length ? bytes[index + 2] : 0;
+    output += alphabet[first >> 2];
+    output += alphabet[((first & 3) << 4) | (second >> 4)];
+    output += index + 1 < bytes.length ? alphabet[((second & 15) << 2) | (third >> 6)] : '=';
+    output += index + 2 < bytes.length ? alphabet[third & 63] : '=';
+  }
+  return output;
+}
 
 export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(function MobileLexicalEditor({ showToolbar = true, showStatus = true, workspaceId, noteId: propNoteId, onEvent, onEmbeddedError, onStage, onLedgerLink }, ref) {
   const theme = useLedgerTheme();
@@ -148,6 +165,10 @@ export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(
       if (parsed.type === 'SELECTION_STATE_CHANGED') { const identity = identityRef.current; if (identity && identity.generation === parsed.generation && identity.noteId === parsed.noteId) { setSelection(parsed.selection); onEvent?.(parsed); } }
       if (parsed.type === 'DOCUMENT_EXPORTED') { const identity = identityRef.current; const pending = pendingExportsRef.current.get(parsed.requestId); if (!identity || !pending || pending.noteId !== parsed.noteId || pending.generation !== parsed.generation || parsed.generation !== generationRef.current || identity.generation !== parsed.generation) return; pendingExportsRef.current.delete(parsed.requestId); onEvent?.(parsed); }
       if (parsed.type === 'SELECTION_RESULT') { const identity = identityRef.current; const pending = pendingSelectionsRef.current.get(parsed.requestId); if (!identity || !pending || pending.noteId !== parsed.noteId || pending.generation !== parsed.generation || parsed.generation !== generationRef.current || identity.generation !== parsed.generation) return; pendingSelectionsRef.current.delete(parsed.requestId); onEvent?.(parsed); }
+      if (parsed.type === 'COPY_IMAGE_REQUEST') {
+        if (parsed.generation !== generationRef.current || identityRef.current?.noteId !== parsed.noteId) return;
+        void fetch(parsed.src).then(async (response) => { if (!response.ok) throw new Error(`Could not read image (${response.status}).`); return response.arrayBuffer(); }).then((buffer) => Clipboard.setImageAsync(arrayBufferToBase64(buffer))).catch((copyError) => Alert.alert('Could not copy image', copyError instanceof Error ? copyError.message : 'Please try again.'));
+      }
       if (parsed.type === 'EDITOR_STAGE') { onStage?.(parsed.stage as MobileEditorStage, parsed.detail); onEvent?.(parsed); }
       if (parsed.type === 'EDITOR_ERROR') { if (parsed.generation !== generationRef.current) return; setError(parsed.message); onStage?.('bridge-error', `${parsed.code}: ${parsed.message}`); onEmbeddedError?.(parsed.message); onEvent?.(parsed); }
     } catch { const message = 'The embedded editor sent an invalid message.'; setError(message); onStage?.('bridge-error', message); onEmbeddedError?.(message); }

@@ -13,12 +13,13 @@ import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot, $getSelection, $setSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, FORMAT_TEXT_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode, type RangeSelection } from 'lexical';
+import { $getRoot, $getSelection, $setSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, ElementNode, FORMAT_TEXT_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode, type RangeSelection } from 'lexical';
 import type { NativeEditorCommand } from '../../../packages/mobile-editor-bridge/messages';
 import { HYDRATION_TAG } from '../../../packages/mobile-editor-bridge/constants';
 import { parseNativeEditorCommand } from '../../../packages/mobile-editor-bridge/validation';
 import { LedgerPreservationNode } from './LedgerPreservationNode';
 import { $createLedgerCalloutNode, LedgerCalloutNode, type LedgerCalloutVariant } from './LedgerCalloutNode';
+import { $createLedgerImageNode, $isLedgerImageNode, LedgerImageNode, RESIZE_IMAGE_COMMAND } from './LedgerImageNode';
 import { $createLedgerDividerNode, LedgerDividerNode } from './LedgerDividerNode';
 import { $createLedgerPreservationNode } from './LedgerPreservationNode';
 import './styles.css';
@@ -36,7 +37,7 @@ const FORMAT_COMMAND = createCommand<'bold' | 'italic' | 'underline'>('LEDGER_FO
 const initialConfig = {
   namespace: 'LedgerMobileEditor',
   theme: { heading: { h1: 'editor-heading editor-heading--h1', h2: 'editor-heading editor-heading--h2', h3: 'editor-heading editor-heading--h3' }, paragraph: 'editor-paragraph', list: { nested: { listitem: 'editor-list-nested' } }, callout: { info: 'editor-callout editor-callout--info', note: 'editor-callout editor-callout--note', warning: 'editor-callout editor-callout--warning', success: 'editor-callout editor-callout--success' } },
-  nodes: [HeadingNode, ListNode, ListItemNode, LinkNode, LedgerPreservationNode, LedgerCalloutNode, LedgerDividerNode],
+  nodes: [HeadingNode, ListNode, ListItemNode, LinkNode, LedgerPreservationNode, LedgerCalloutNode, LedgerImageNode, LedgerDividerNode],
   onError(error: Error) { editorError('LEXICAL_ERROR', error.message); console.error(error); },
 };
 
@@ -219,7 +220,7 @@ function BridgePlugin() {
           return;
         }
         if (command.type === 'INSERT_DIVIDER') { insertNodes(() => [$createLedgerDividerNode()]); return; }
-        if (command.type === 'INSERT_IMAGE') { insertNodes(() => [$createLedgerPreservationNode(`<figure data-ledger-kind="image"><img src="${command.src.replace(/"/g, '&quot;')}"${command.altText ? ` alt="${command.altText.replace(/"/g, '&quot;')}"` : ''}${command.width ? ` width="${command.width}"` : ''}${command.height ? ` height="${command.height}"` : ''}></figure>`, 'figure')]); return; }
+        if (command.type === 'INSERT_IMAGE') { insertNodes(() => [$createLedgerImageNode({ src: command.src, altText: command.altText ?? '', width: command.width ? Math.min(Math.max(command.width, 160), 720) : 560 })]); return; }
         if (command.type === 'INSERT_ATTACHMENT') { insertNodes(() => [$createLedgerPreservationNode(`<div data-ledger-file-attachment="true"${command.attachmentId ? ` data-ledger-file-attachment-id="${command.attachmentId}"` : ''}${command.mimeType ? ` data-mime-type="${command.mimeType.replace(/"/g, '&quot;')}"` : ''}${command.sizeBytes ? ` data-size-bytes="${command.sizeBytes}"` : ''}${command.url ? ` data-url="${command.url.replace(/"/g, '&quot;')}"` : ''}><a href="${(command.url ?? '').replace(/"/g, '&quot;')}">${command.name.replace(/</g, '&lt;')}</a></div>`, 'div')]); return; }
         if (command.type === 'UNDO') { editor.dispatchCommand(UNDO_COMMAND, undefined); return; }
         if (command.type === 'REDO') { editor.dispatchCommand(REDO_COMMAND, undefined); return; }
@@ -235,7 +236,23 @@ function BridgePlugin() {
     const unregisterUndo = editor.registerCommand(CAN_UNDO_COMMAND, (value) => { canUndoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
     const unregisterRedo = editor.registerCommand(CAN_REDO_COMMAND, (value) => { canRedoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
     const unregisterFormat = editor.registerCommand(FORMAT_COMMAND, (format) => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, format); return true; }, COMMAND_PRIORITY_EDITOR);
-    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); unregisterFormat(); };
+    const unregisterImageResize = editor.registerCommand(RESIZE_IMAGE_COMMAND, ({ nodeKey, width }) => {
+      editor.update(() => {
+        let match: LexicalNode | null = null;
+        const visit = (node: LexicalNode) => {
+          if (node.getKey() === nodeKey) { match = node; return; }
+          if (node instanceof ElementNode) for (const child of node.getChildren()) { if (!match) visit(child); }
+        };
+        visit($getRoot());
+        if ($isLedgerImageNode(match)) match.setWidth(width);
+      });
+      return true;
+    }, COMMAND_PRIORITY_EDITOR);
+    const onImageResize = (event: Event) => { const detail = (event as CustomEvent<{ nodeKey?: unknown; width?: unknown }>).detail; if (typeof detail?.nodeKey !== 'string' || typeof detail.width !== 'number') return; editor.dispatchCommand(RESIZE_IMAGE_COMMAND, { nodeKey: detail.nodeKey, width: detail.width }); };
+    const onImageCopy = (event: Event) => { const detail = (event as CustomEvent<{ src?: unknown }>).detail; const noteId = activeNoteIdRef.current; if (!noteId || typeof detail?.src !== 'string' || !detail.src.trim()) return; post('COPY_IMAGE_REQUEST', { noteId, src: detail.src }); };
+    window.addEventListener('ledger-image-resize', onImageResize);
+    window.addEventListener('ledger-image-copy', onImageCopy);
+    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); unregisterFormat(); unregisterImageResize(); window.removeEventListener('ledger-image-resize', onImageResize); window.removeEventListener('ledger-image-copy', onImageCopy); };
   }, [editor]);
   return null;
 }
