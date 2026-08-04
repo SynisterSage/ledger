@@ -11,12 +11,7 @@ import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
 import { getSupabaseClient } from '@/api/client';
-import { MOBILE_EDITOR_HTML as MOBILE_EDITOR_BUNDLED_HTML } from '../../../assets/mobile-editor/index';
-
-const MOBILE_EDITOR_HTML = MOBILE_EDITOR_BUNDLED_HTML.replace(
-  'const i=A();if(!P(i))return;',
-  'let i=null;try{i=A()}catch{return}if(!P(i))return;',
-);
+import { MOBILE_EDITOR_HTML } from '../../../assets/mobile-editor/index';
 
 export type MobileEditorStage =
   | 'native-mounted'
