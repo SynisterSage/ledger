@@ -252,7 +252,7 @@ export async function linkMobileNoteToPerson(workspaceId: string, noteId: string
   return mobileRequest(`/api/notes/${encodeURIComponent(noteId)}/person-links`, { method: 'POST', headers: { 'x-workspace-id': workspaceId }, body: JSON.stringify({ person_user_id: personId, source_key: `mobile-selection:${sourceText.trim().toLowerCase()}`, source_text: sourceText.trim() }) });
 }
 
-export type MobileNoteVersion = { id: string; note_id: string; reason?: string | null; title?: string | null; content_html?: string | null; mode?: string | null; created_at?: string | null; mind_map_structure?: unknown };
+export type MobileNoteVersion = { id: string; note_id: string; reason?: string | null; title?: string | null; content?: string | null; content_html?: string | null; mode?: string | null; created_at?: string | null; mind_map_structure?: unknown };
 
 export async function getMobileNoteVersions(workspaceId: string, noteId: string) {
   return mobileRequest<MobileNoteVersion[]>(`/api/notes/${encodeURIComponent(noteId)}/versions`, { headers: { 'x-workspace-id': workspaceId } });

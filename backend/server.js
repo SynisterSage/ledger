@@ -3979,7 +3979,6 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .from('projects')
         .select(MOBILE_TODAY_PROJECT_SELECT_COLUMNS)
         .in('workspace_id', workspaceIds)
-        .not('end_date', 'is', null)
         .limit(500),
       supabase
         .from('notes')
@@ -22310,6 +22309,22 @@ app.patch('/api/notes/:id', authMiddleware, rateLimit('write'), async (req, res)
 
     if (Object.keys(update).length === 0) {
       return res.json(mapNoteResponse(existing));
+    }
+
+    const shouldCheckpointNoteVersion = [
+      'title',
+      'content',
+      'content_html',
+      'mode',
+      'mind_map_structure',
+    ].some((field) => Object.prototype.hasOwnProperty.call(update, field));
+    if (shouldCheckpointNoteVersion) {
+      await createNoteVersionSnapshot(
+        workspaceId,
+        req.authUser.id,
+        existing,
+        'autosave_checkpoint'
+      );
     }
 
     update.user_id = req.authUser.id;

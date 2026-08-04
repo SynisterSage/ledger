@@ -200,8 +200,7 @@ export function WorkspaceSelectorSheet({
               styles.list,
               {
                 backgroundColor: theme.colors.surfaceMuted,
-                borderColor: theme.colors.borderSubtle,
-                borderRadius: theme.radius.surface,
+                borderRadius: theme.radius.window,
               },
             ]}>
             {workspaces.map((option) => {
@@ -215,7 +214,6 @@ export function WorkspaceSelectorSheet({
                   onPress={() => handleSelect(option.id)}
                   style={({ pressed }) => [
                     styles.row,
-                    selected ? { backgroundColor: theme.colors.surfaceSelected } : null,
                     {
                       opacity: pressed ? 0.72 : 1,
                     },
@@ -223,10 +221,7 @@ export function WorkspaceSelectorSheet({
                   <View style={styles.rowText}>
                     <AppText
                       variant="body"
-                      style={[
-                        styles.rowTitle,
-                        selected ? styles.rowTitleSelected : null,
-                      ]}>
+                      style={styles.rowTitle}>
                       {option.name}
                     </AppText>
                     {option.subtitle ? <AppText variant="meta">{option.subtitle}</AppText> : null}
@@ -285,26 +280,23 @@ const styles = StyleSheet.create({
     minHeight: 68,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 12,
   },
   headerTitle: {
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: '400',
-    letterSpacing: -0.4,
+    fontSize: 20,
+    lineHeight: 24,
   },
   list: {
-    paddingHorizontal: 16,
+    overflow: 'hidden',
     paddingVertical: 6,
     marginHorizontal: 16,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   row: {
-    minHeight: 44,
+    minHeight: 56,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -317,10 +309,6 @@ const styles = StyleSheet.create({
   rowTitle: {
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: '400',
     letterSpacing: -0.2,
-  },
-  rowTitleSelected: {
-    fontWeight: '500',
   },
 });

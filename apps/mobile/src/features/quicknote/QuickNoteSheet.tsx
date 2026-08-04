@@ -11,9 +11,10 @@ import {
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CaptureFormShell } from '@/components/CaptureFormShell';
-import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { Section } from '@/components/Section';
@@ -55,6 +56,7 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
   const workspaceState = useWorkspaceState();
   const defaultWorkspaceId = useMemo(() => resolveCaptureWorkspaceId(workspaceState), [workspaceState]);
   const { height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const [mounted, setMounted] = useState(visible);
   const progress = useRef(new Animated.Value(visible ? 1 : 0)).current;
@@ -67,6 +69,7 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
     if (visible) {
@@ -106,11 +109,13 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
   }, [backdropProgress, defaultWorkspaceId, dragY, draft, progress, visible]);
 
   useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+    const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
       setIsKeyboardVisible(true);
+      setKeyboardHeight(event.endCoordinates?.height ?? 0);
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setIsKeyboardVisible(false);
+      setKeyboardHeight(0);
     });
 
     return () => {
@@ -145,7 +150,9 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
     });
   };
 
-  const sheetHeight = Math.min(windowHeight * 0.68, 640);
+  const sheetHeight = keyboardHeight > 0
+    ? Math.min(windowHeight * 0.94, Math.max(360, windowHeight - keyboardHeight + insets.top + 24))
+    : Math.min(windowHeight * 0.68, 640);
   const sheetTranslateY = Animated.add(
     progress.interpolate({
       inputRange: [0, 1],
@@ -264,6 +271,8 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
+              borderTopLeftRadius: theme.radius.sheet,
+              borderTopRightRadius: theme.radius.sheet,
               height: sheetHeight,
               transform: [{ translateY: sheetTranslateY }],
             },
@@ -287,24 +296,37 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
                 </AppText>
               ) : null}
             </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Save note"
+              accessibilityState={{ disabled: !canSave || isSaving, busy: isSaving }}
+              disabled={!canSave || isSaving}
+              hitSlop={8}
+              onPress={() => void handleSave()}
+              style={({ pressed }) => [styles.saveButton, { opacity: pressed || isSaving || !canSave ? 0.5 : 1 }]}>
+              <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={28} tintColor={theme.colors.accent} />
+            </Pressable>
           </View>
 
           <CaptureFormShell
-            footer={
-              <AppButton title={isSaving ? 'Saving…' : 'Save note'} size="lg" disabled={!canSave || isSaving} onPress={handleSave} />
-            }
+            footer={null}
             footerBottomPadding={theme.spacing.md}
+            footerPaddingTop={theme.spacing.lg}
+            footerBordered={false}
             contentStyle={{ paddingTop: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.lg }}>
             <Section childrenGap={theme.spacing.sm}>
-              <AppTextInput
-                label="Note"
-                labelVariant="body"
-                placeholder="Type a note"
-                multiline
-                autoFocus
-                value={noteText}
-                onChangeText={setNoteText}
-              />
+              <View style={[styles.noteCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+                <AppTextInput
+                  label="Note"
+                  labelVariant="bodyStrong"
+                  placeholder="Type a note"
+                  multiline
+                  autoFocus
+                  value={noteText}
+                  onChangeText={setNoteText}
+                  style={[styles.noteInput, { color: theme.colors.textPrimary, backgroundColor: 'transparent', borderColor: 'transparent' }]}
+                />
+              </View>
               {error ? (
                 <AppText variant="meta" style={{ color: theme.colors.danger }}>
                   {error}
@@ -330,8 +352,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
   },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
@@ -357,5 +377,23 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     lineHeight: 24,
+  },
+  saveButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noteCard: {
+    padding: 16,
+  },
+  noteInput: {
+    minHeight: 156,
+    borderBottomWidth: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 8,
+    fontSize: 18,
+    lineHeight: 26,
+    textAlignVertical: 'top',
   },
 });

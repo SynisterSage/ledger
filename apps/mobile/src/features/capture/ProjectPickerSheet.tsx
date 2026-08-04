@@ -9,6 +9,7 @@ import {
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
@@ -192,12 +193,13 @@ export function ProjectPickerSheet({
           </View>
 
           <View style={styles.header}>
-            <AppText variant="body" style={styles.headerTitle}>
-              {title}
-            </AppText>
+            <AppText variant="bodyStrong" style={styles.headerTitle}>{title}</AppText>
+            <Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={closeSheet} hitSlop={8}>
+              <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={22} tintColor={theme.colors.accent} />
+            </Pressable>
           </View>
 
-          <View style={styles.list}>
+          <View style={[styles.list, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
             {loading ? (
               <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
                 Loading projects...
@@ -209,7 +211,6 @@ export function ProjectPickerSheet({
                   style={({ pressed }) => [
                     styles.row,
                     {
-                      borderBottomColor: theme.colors.borderSubtle,
                       opacity: pressed ? 0.72 : 1,
                     },
                   ]}>
@@ -217,6 +218,7 @@ export function ProjectPickerSheet({
                     <AppText variant="body">No project</AppText>
                     <AppText variant="meta">Keep this capture unlinked</AppText>
                   </View>
+                  {!selectedProjectId ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={18} tintColor={theme.colors.accent} /> : null}
                 </Pressable>
                 {projects.length ? (
                   projects.map((project) => (
@@ -226,7 +228,6 @@ export function ProjectPickerSheet({
                       style={({ pressed }) => [
                         styles.row,
                         {
-                          borderBottomColor: theme.colors.borderSubtle,
                           opacity: pressed ? 0.72 : 1,
                         },
                       ]}>
@@ -234,6 +235,7 @@ export function ProjectPickerSheet({
                         <AppText variant="body">{project.name}</AppText>
                         <AppText variant="meta">{project.description ?? project.status ?? undefined}</AppText>
                       </View>
+                      {selectedProjectId === project.id ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={18} tintColor={theme.colors.accent} /> : null}
                     </Pressable>
                   ))
                 ) : (
@@ -287,22 +289,23 @@ const styles = StyleSheet.create({
     minHeight: 68,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerTitle: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '500',
-    letterSpacing: -0.2,
+    fontSize: 20,
+    lineHeight: 24,
   },
   list: {
     paddingHorizontal: 12,
     paddingBottom: 28,
+    overflow: 'hidden',
   },
   row: {
     minHeight: 56,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
     paddingVertical: 12,
     justifyContent: 'center',

@@ -10,6 +10,7 @@ import {
   type PanResponderGestureState,
   type ViewStyle,
 } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 import { AppText } from '@/components/AppText';
@@ -208,6 +209,9 @@ export function CaptureDateTimePickerSheet({
             <AppText variant="body" style={styles.headerTitle}>
               {title}
             </AppText>
+            <Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={closeSheet} hitSlop={8}>
+              <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={22} tintColor={theme.colors.accent} />
+            </Pressable>
           </View>
 
           <View style={[styles.content, style]}>
@@ -258,14 +262,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerTitle: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '500',
-    letterSpacing: -0.2,
+    fontSize: 20,
+    lineHeight: 24,
   },
   content: {
     paddingBottom: 28,

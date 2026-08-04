@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
@@ -14,8 +15,18 @@ type FocusPickerSheetProps = {
   onSelect: (item: MobileTodayInteractionItem) => void;
   onRemove: (item: MobileTodayItem) => void;
   onMove: (item: MobileTodayItem, direction: -1 | 1) => void;
-  onCreateTask: () => void;
+  onQuickAdd: (title: string) => Promise<void>;
 };
+
+function candidateTypeLabel(item: MobileTodayInteractionItem) {
+  if ('source' in item) return 'Capture';
+  if (item.type === 'project_action') return 'Project action';
+  if (item.type === 'task') return 'Task';
+  if (item.type === 'event') return 'Event';
+  if (item.type === 'reminder') return 'Reminder';
+  if (item.type === 'deadline') return 'Deadline';
+  return item.type;
+}
 
 export function FocusPickerSheet({
   visible,
@@ -25,47 +36,121 @@ export function FocusPickerSheet({
   onSelect,
   onRemove,
   onMove,
-  onCreateTask,
+  onQuickAdd,
 }: FocusPickerSheetProps) {
   const theme = useLedgerTheme();
-  const [query, setQuery] = useState('');
+  const [quickTitle, setQuickTitle] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const filteredCandidates = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return candidates.filter((item) => !normalized || item.title.toLowerCase().includes(normalized));
-  }, [candidates, query]);
-
   return (
     <AppBottomSheet
       visible={visible}
-      onClose={() => {
-        setQuery('');
-        setEditing(false);
-        onClose();
+        onClose={() => {
+          setQuickTitle('');
+          setQuickError(null);
+          setEditing(false);
+          onClose();
       }}
       title="Focus"
       snapPoints={['55%', '85%']}
       initialSnapPointIndex={1}
+      dragCloseThreshold={48}
+      dragCloseVelocityThreshold={0.55}
     >
       <View style={{ gap: theme.spacing.md }}>
+        <View
+          style={[styles.quickAdd, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}
+        >
+          <View style={styles.quickAddHeader}>
+            <AppText variant="bodyStrong">Quick add focus</AppText>
+            <AppText variant="caption">{focused.length}/3</AppText>
+          </View>
+          <View style={styles.quickAddRow}>
+            <TextInput
+              accessibilityLabel="Quick focus title"
+              autoCorrect
+              editable={!quickSaving && focused.length < 3}
+              onChangeText={(value) => { setQuickTitle(value); setQuickError(null); }}
+              onSubmitEditing={() => {
+                const title = quickTitle.trim();
+                if (!title || quickSaving || focused.length >= 3) return;
+                setQuickSaving(true);
+                void onQuickAdd(title).then(() => setQuickTitle('')).catch((error: unknown) => setQuickError(error instanceof Error ? error.message : 'Could not add focus.')).finally(() => setQuickSaving(false));
+              }}
+              placeholder={focused.length >= 3 ? 'Focus limit reached' : 'What matters today?'}
+              placeholderTextColor={theme.colors.placeholder}
+              returnKeyType="done"
+              value={quickTitle}
+              style={[styles.quickInput, { color: theme.colors.textPrimary, borderColor: 'transparent', backgroundColor: 'transparent' }]}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add quick focus"
+              disabled={!quickTitle.trim() || quickSaving || focused.length >= 3}
+              onPress={() => {
+                const title = quickTitle.trim();
+                if (!title) return;
+                setQuickSaving(true);
+                void onQuickAdd(title).then(() => setQuickTitle('')).catch((error: unknown) => setQuickError(error instanceof Error ? error.message : 'Could not add focus.')).finally(() => setQuickSaving(false));
+              }}
+              style={({ pressed }) => [styles.quickButton, { backgroundColor: theme.colors.accent, opacity: pressed || quickSaving || !quickTitle.trim() || focused.length >= 3 ? 0.5 : 1 }]}
+            >
+              <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={20} tintColor={theme.colors.onAccent} />
+            </Pressable>
+          </View>
+          {quickError ? <AppText variant="caption" style={{ color: theme.colors.danger }}>{quickError}</AppText> : null}
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+          {candidates.length ? (
+            candidates.map((item) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Add ${item.title} to Focus`}
+                onPress={() => onSelect(item)}
+                style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
+              >
+                <AppText variant="body" numberOfLines={1}>
+                  {item.title}
+                </AppText>
+                <AppText variant="meta">
+                  {candidateTypeLabel(item)}
+                </AppText>
+              </Pressable>
+            ))
+          ) : (
+            <AppText variant="meta" style={styles.empty}>
+              No eligible items found.
+            </AppText>
+          )}
+        </View>
+
         <View style={styles.toolbar}>
           <AppText variant="meta">Choose what matters today</AppText>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={editing ? 'Done reordering focus' : 'Reorder focus items'}
+            accessibilityState={{ selected: editing }}
             onPress={() => setEditing((current) => !current)}
             hitSlop={8}
+            style={styles.reorderButton}
           >
-            <AppText variant="meta" style={{ color: theme.colors.accent }}>
-              {editing ? 'Done' : 'Reorder'}
-            </AppText>
+            <SymbolView
+              name={editing
+                ? { ios: 'checkmark', android: 'check', web: 'check' }
+                : { ios: 'arrow.up.arrow.down', android: 'swap_vert', web: 'swap_vert' }}
+              size={18}
+              tintColor={theme.colors.accent}
+            />
           </Pressable>
         </View>
 
         {focused.length ? (
-          <View>
+          <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
             {focused.map((item, index) => (
-              <View key={item.id} style={[styles.row, { borderBottomColor: theme.colors.borderSubtle }]}>
+              <View key={item.id} style={styles.row}>
                 <View style={styles.rowMain}>
                   <AppText variant="body" numberOfLines={1} style={{ flex: 1 }}>
                     {item.title}
@@ -112,58 +197,6 @@ export function FocusPickerSheet({
           </View>
         ) : null}
 
-        <TextInput
-          accessibilityLabel="Search items to add to Focus"
-          autoCorrect={false}
-          placeholder="Search items"
-          placeholderTextColor={theme.colors.placeholder}
-          value={query}
-          onChangeText={setQuery}
-          style={[
-            styles.search,
-            {
-              color: theme.colors.textPrimary,
-              backgroundColor: theme.colors.inputBackground,
-              borderColor: theme.colors.borderSubtle,
-            },
-          ]}
-        />
-
-        <View>
-          {filteredCandidates.length ? (
-            filteredCandidates.map((item) => (
-              <Pressable
-                key={item.id}
-                accessibilityRole="button"
-                accessibilityLabel={`Add ${item.title} to Focus`}
-                onPress={() => onSelect(item)}
-                style={({ pressed }) => [styles.row, { borderBottomColor: theme.colors.borderSubtle, opacity: pressed ? 0.6 : 1 }]}
-              >
-                <AppText variant="body" numberOfLines={1}>
-                  {item.title}
-                </AppText>
-                <AppText variant="meta">
-                  {'source' in item ? 'Capture' : item.type === 'task' ? 'Task' : item.type}
-                </AppText>
-              </Pressable>
-            ))
-          ) : (
-            <AppText variant="meta" style={{ paddingVertical: theme.spacing.sm }}>
-              No eligible items found.
-            </AppText>
-          )}
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Create new task for Focus"
-          onPress={onCreateTask}
-          style={({ pressed }) => [styles.create, { borderColor: theme.colors.borderSubtle, opacity: pressed ? 0.6 : 1 }]}
-        >
-          <AppText variant="body" style={{ color: theme.colors.accent }}>
-            Create new task
-          </AppText>
-        </Pressable>
       </View>
     </AppBottomSheet>
   );
@@ -175,10 +208,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  reorderButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   row: {
-    minHeight: 44,
+    minHeight: 52,
     paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
     justifyContent: 'center',
   },
   rowMain: {
@@ -191,17 +230,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
   },
-  search: {
-    minHeight: 44,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 16,
+  card: {
+    overflow: 'hidden',
   },
-  create: {
-    minHeight: 44,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
+  empty: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  quickAdd: {
+    padding: 16,
+    gap: 10,
+  },
+  quickAddHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  quickAddRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  quickInput: {
+    flex: 1,
+    minHeight: 48,
+    borderWidth: 0,
+    paddingHorizontal: 0,
+    fontSize: 18,
+    lineHeight: 24,
+  },
+  quickButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },

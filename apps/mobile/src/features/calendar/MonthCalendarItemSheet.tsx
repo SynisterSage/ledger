@@ -1,5 +1,8 @@
 import { AppDetailSheet, type AppDetailSheetAction, type AppDetailSheetMetaRow } from '@/components/AppDetailSheet';
 import { AppText } from '@/components/AppText';
+import { Pressable } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { useLedgerTheme } from '@/theme';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
 
 type MonthCalendarItemSheetProps = {
@@ -23,6 +26,8 @@ function formatTime(value: string | null | undefined) {
 }
 
 export function MonthCalendarItemSheet({ visible, item, actionMode = false, onClose, onAction, workspaceLabel }: MonthCalendarItemSheetProps) {
+  const theme = useLedgerTheme();
+
   if (!item) return null;
 
   const typeLabel = item.type === 'external_event' ? 'Imported event' : item.type.replace('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -63,6 +68,11 @@ export function MonthCalendarItemSheet({ visible, item, actionMode = false, onCl
       footer={item.notes ? <AppText variant="caption" style={{ color: '#4B5563' }}>{item.notes}</AppText> : undefined}
       actions={actions}
       actionsInCard
+      headerAccessory={(
+        <Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose} hitSlop={8}>
+          <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={26} tintColor={theme.colors.accent} />
+        </Pressable>
+      )}
       onClose={onClose}
       onAction={(actionId) => onAction?.(actionId, item)}
     />

@@ -41,6 +41,7 @@ type AppDetailSheetProps = {
   onAction?: (actionId: string) => void;
   onClose: () => void;
   footer?: ReactNode;
+  headerAccessory?: ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
   actionsInCard?: boolean;
   metaInCard?: boolean;
@@ -62,6 +63,7 @@ export function AppDetailSheet({
   onAction,
   onClose,
   footer,
+  headerAccessory,
   contentStyle,
   actionsInCard = false,
   metaInCard = false,
@@ -238,8 +240,7 @@ export function AppDetailSheet({
                 </AppText>
               ) : null}
             </View>
-
-            
+            {headerAccessory ? <View>{headerAccessory}</View> : null}
           </View>
 
           <ScrollView
@@ -423,8 +424,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   title: {
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 20,
+    lineHeight: 24,
     fontWeight: '400',
     letterSpacing: 0,
   },

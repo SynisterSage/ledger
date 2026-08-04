@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
@@ -118,12 +119,16 @@ export function MobileActionsSheet({ visible, title, typeLabel, meta, actions, o
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      title={undefined}
+      title={title}
+      headerAccessory={(
+        <Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose} hitSlop={8}>
+          <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={26} tintColor={theme.colors.accent} />
+        </Pressable>
+      )}
       snapPoints={['35%', '55%', '85%']}
       initialSnapPointIndex={2}>
       <View style={{ gap: theme.spacing.md }}>
         <View style={styles.itemHeader}>
-          <AppText variant="screenTitle" style={styles.title}>{title}</AppText>
           {typeLabel ? <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>{typeLabel}</AppText> : null}
           {meta ? (
             <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
@@ -132,7 +137,12 @@ export function MobileActionsSheet({ visible, title, typeLabel, meta, actions, o
           ) : null}
         </View>
 
-        <View style={[styles.actionGroup, { backgroundColor: theme.colors.surfaceMuted }]}>
+        <View
+          style={[
+            styles.actionGroup,
+            { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window },
+          ]}
+        >
           {actions.map((action) => (
             <Pressable
               key={action.id}
@@ -172,15 +182,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     gap: 2,
   },
-  title: {
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: '400',
-    letterSpacing: -0.4,
-  },
   actionRow: {
-    minHeight: 44,
-    paddingVertical: 10,
+    minHeight: 56,
+    paddingVertical: 8,
     justifyContent: 'center',
   },
 });

@@ -16,12 +16,14 @@ import { useLedgerTheme } from '@/theme';
 
 type CaptureFormShellProps = {
   children: ReactNode;
-  footer: ReactNode;
+  footer?: ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
   footerBottomPadding?: number;
+  footerPaddingTop?: number;
+  footerBordered?: boolean;
 };
 
-export function CaptureFormShell({ children, footer, contentStyle, footerBottomPadding }: CaptureFormShellProps) {
+export function CaptureFormShell({ children, footer, contentStyle, footerBottomPadding, footerPaddingTop = 30, footerBordered = true }: CaptureFormShellProps) {
   const theme = useLedgerTheme();
   const insets = useSafeAreaInsets();
 
@@ -48,19 +50,22 @@ export function CaptureFormShell({ children, footer, contentStyle, footerBottomP
           </ScrollView>
         </TouchableWithoutFeedback>
 
-        <View
-          style={[
-            styles.footer,
-            {
-              backgroundColor: theme.colors.background,
-              borderTopColor: theme.colors.borderSubtle,
-              paddingHorizontal: theme.spacing.lg,
-              paddingBottom: footerBottomPadding ?? insets.bottom - 30,
-              paddingTop: 30,
-            },
-          ]}>
-          {footer}
-        </View>
+        {footer ? (
+          <View
+            style={[
+              styles.footer,
+              {
+                backgroundColor: theme.colors.background,
+                borderTopColor: theme.colors.borderSubtle,
+                borderTopWidth: footerBordered ? StyleSheet.hairlineWidth : 0,
+                paddingHorizontal: theme.spacing.lg,
+                paddingBottom: footerBottomPadding ?? insets.bottom - 30,
+                paddingTop: footerPaddingTop,
+              },
+            ]}>
+            {footer}
+          </View>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );

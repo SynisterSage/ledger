@@ -26,6 +26,7 @@ import { useSearchSheet } from '@/features/search/SearchSheetContext';
 import { triggerLightHaptic } from '@/lib/haptics';
 import { getMobileToday } from '@/api/today';
 import { performMobileTodayAction } from '@/api/todayActions';
+import { createMobileTask } from '@/api/captures';
 import { useMobileUnreadNotificationCount } from '@/features/notifications/useMobileUnreadNotificationCount';
 import { useLedgerTheme } from '@/theme';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
@@ -37,6 +38,7 @@ import type {
 import {
   bootstrapWorkspaceState,
   getWorkspaceLabel,
+  resolveCaptureWorkspaceId,
   selectWorkspace,
   useWorkspaceState,
 } from '@/store/workspaceStore';
@@ -202,10 +204,18 @@ export default function TodayScreen() {
     today.upcoming.filter((item) => item.type === 'event').length +
     today.today.filter((item) => item.type === 'event').length;
   const focusedItems = today.today.filter((item) => item.type === 'focus');
+  const orderedFocusedItems = useMemo(() => {
+    const order = new Map(focusOrder.map((id, index) => [id, index]));
+    return [...focusedItems].sort((left, right) => {
+      const leftIndex = order.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = order.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
+  }, [focusedItems, focusOrder]);
   const focusCandidates = useMemo(() => {
     const candidates = [
-      ...today.today.filter((item) => item.type === 'task' && item.status !== 'overdue'),
-      ...today.today.filter((item) => item.type === 'task' && item.status === 'overdue'),
+      ...today.today.filter((item) => (item.type === 'task' || item.type === 'project_action') && item.status !== 'overdue'),
+      ...today.today.filter((item) => (item.type === 'task' || item.type === 'project_action') && item.status === 'overdue'),
       ...today.upcoming.filter((item) => item.type === 'task'),
     ];
     const focusedIds = new Set(focusedItems.map((item) => item.id));
@@ -217,13 +227,32 @@ export default function TodayScreen() {
 
   const moveFocus = (item: MobileTodayItem, direction: -1 | 1) => {
     setFocusOrder((current) => {
-      const ids = current.length ? [...current] : focusedItems.map((entry) => entry.id);
+      const focusedIds = new Set(focusedItems.map((entry) => entry.id));
+      const ids = current.filter((id) => focusedIds.has(id));
+      focusedItems.forEach((entry) => {
+        if (!ids.includes(entry.id)) ids.push(entry.id);
+      });
       const index = ids.indexOf(item.id);
       const nextIndex = index + direction;
       if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return ids;
       [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
       return ids;
     });
+  };
+
+  const quickAddFocus = async (title: string) => {
+    if (orderedFocusedItems.length >= 3) throw new Error('Focus is limited to three items.');
+    const workspaceId = resolveCaptureWorkspaceId(workspaceState);
+    if (workspaceId === 'all') throw new Error('Choose a workspace before adding focus.');
+    await createMobileTask(workspaceId, {
+      title,
+      due_date: formatDateToLocalIsoDate(new Date()),
+      show_in_today: true,
+      is_today_focus: true,
+      source: 'mobile_quick_focus',
+      sourcePlatform: 'mobile',
+    });
+    await loadToday({ silent: true });
   };
 
   const openCalendarDay = () => {
@@ -306,7 +335,7 @@ export default function TodayScreen() {
         return removeFromFeed();
       }
 
-      if (item.type === 'focus' || item.type === 'task') {
+      if (item.type === 'focus' || item.type === 'task' || item.type === 'project_action') {
         if (actionId === 'add_focus') {
           const nextUrgency = item.type === 'focus' ? item.urgency ?? 'Low' : 'Low';
           const nextFocusItem = 'dueLabel' in item
@@ -368,14 +397,6 @@ export default function TodayScreen() {
 
       if (item.type === 'reminder') {
         if (actionId === 'edit') {
-          return current;
-        }
-
-        return removeFromFeed();
-      }
-
-      if (item.type === 'project_action') {
-        if (actionId === 'open_project' || actionId === 'edit') {
           return current;
         }
 
@@ -533,7 +554,7 @@ export default function TodayScreen() {
         />
         <FocusPickerSheet
           visible={focusPickerOpen}
-          focused={focusedItems}
+          focused={orderedFocusedItems}
           candidates={focusCandidates}
           onClose={() => setFocusPickerOpen(false)}
           onSelect={(item) => {
@@ -545,10 +566,7 @@ export default function TodayScreen() {
             void handleTodayItemAction('remove_focus', item);
           }}
           onMove={moveFocus}
-          onCreateTask={() => {
-            setFocusPickerOpen(false);
-            router.push('/capture/task');
-          }}
+          onQuickAdd={quickAddFocus}
         />
 
         <Animated.ScrollView

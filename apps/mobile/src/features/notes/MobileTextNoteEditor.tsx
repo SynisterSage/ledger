@@ -369,8 +369,6 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       updateSaveLifecycle({ saving: false, baseServerUpdatedAt: savedAt, lastConfirmedServerUpdatedAt: savedAt, lastSavedAt: new Date().toISOString(), saveError: undefined, offline: false });
       if (mountedRef.current && loadedIdRef.current === activeNoteId) {
         setLoadedAt(savedAt);
-        setInitialHtml(confirmedHtml);
-        setInitialPlain(htmlToPlainText(confirmedHtml));
         draftRef.current = { ...draftRef.current, title: response.title ?? titleSnapshot, body: plainSnapshot, initialHtml: confirmedHtml, initialPlain: htmlToPlainText(confirmedHtml) };
       }
       if (confirmedRevision === localRevisionRef.current && dirtyRef.current) {
@@ -533,7 +531,22 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     const restored = value as { title?: string | null; content_html?: string | null; content?: string | null; mode?: 'text' | 'meeting_note' | 'mind_map'; mind_map_structure?: unknown; updated_at?: string | null };
     const restoredHtml = restored.content_html ?? restored.content ?? EMPTY_HTML;
     const restoredPlain = htmlToPlainText(restoredHtml);
-    setTitle(restored.title ?? ''); setBody(restoredPlain); setInitialHtml(restoredHtml); setInitialPlain(restoredPlain); setMode(restored.mode ?? 'text'); setMapStructure(restored.mind_map_structure ?? EMPTY_MAP); mapStructureRef.current = restored.mind_map_structure ?? EMPTY_MAP; setLoadedAt(restored.updated_at ?? new Date().toISOString()); draftRef.current = { ...draftRef.current, title: restored.title ?? '', body: restoredPlain, initialHtml: restoredHtml, initialPlain: restoredPlain }; setDraftDirty(false); setSaveState('saved');
+    setTitle(restored.title ?? '');
+    setBody(restoredPlain);
+    setInitialHtml(restoredHtml);
+    setInitialPlain(restoredPlain);
+    setMode(restored.mode ?? 'text');
+    setMapStructure(restored.mind_map_structure ?? EMPTY_MAP);
+    mapStructureRef.current = restored.mind_map_structure ?? EMPTY_MAP;
+    setLoadedAt(restored.updated_at ?? new Date().toISOString());
+    draftRef.current = { ...draftRef.current, title: restored.title ?? '', body: restoredPlain, initialHtml: restoredHtml, initialPlain: restoredPlain };
+    lexicalLoadedRef.current = false;
+    setEditorReady(false);
+    setEditorMountKey((current) => current + 1);
+    setRemoteVersion(false);
+    setDraftDirty(false);
+    updateSaveLifecycle({ hydrated: true, hasUserEdited: false, saving: false, pendingSaveRevision: undefined, saveError: undefined, offline: false });
+    setSaveState('saved');
   };
 
   useEffect(() => {
@@ -553,6 +566,18 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     return () => clearInterval(interval);
   }, [load, loadedAt, noteId]);
 
+  const meetingTitle = mode === 'meeting_note' ? <View style={styles.meetingTitleRow}>
+    <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }, styles.meetingTitle]} />
+    <View style={[styles.modeSwitcher, styles.inlineModeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Write note" onPress={() => setMeetingView('write')} style={[styles.modeItem, meetingView === 'write' && { backgroundColor: theme.colors.surface }]}>
+        <SymbolView name={{ ios: 'square.and.pencil', android: 'edit', web: 'edit' }} size={17} tintColor={theme.colors.textPrimary} />
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="View transcript" onPress={() => setMeetingView('transcript')} style={[styles.modeItem, meetingView === 'transcript' && { backgroundColor: theme.colors.surface }]}>
+        <SymbolView name={{ ios: 'text.bubble', android: 'notes', web: 'notes' }} size={17} tintColor={theme.colors.textPrimary} />
+      </Pressable>
+    </View>
+  </View> : null;
+
   if (hydrating) return <EditorSkeleton />;
   if (loadError) return <EditorState title="Note unavailable" message={loadError} onRetry={() => void load()} onBack={() => router.back()} />;
 
@@ -570,11 +595,11 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
         </Pressable>
       </View>
       <MobileTopFade topOffset={54 + insets.top} />
-      {mode === 'meeting_note' ? <><View style={[styles.meetingMeta, { borderBottomColor: theme.colors.borderSubtle }]}><AppText variant="caption" numberOfLines={1}>{meetingMetadata?.scheduled_start_at ? new Date(meetingMetadata.scheduled_start_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Meeting note'}{meetingMetadata?.calendar_event_title ? ` · ${meetingMetadata.calendar_event_title}` : ''}</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }}>{meetingStatusLabel(meetingMetadata?.transcription_status)}</AppText></View><View style={[styles.modeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}><Pressable onPress={() => setMeetingView('write')} style={[styles.modeItem, meetingView === 'write' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Write</AppText></Pressable><Pressable onPress={() => setMeetingView('transcript')} style={[styles.modeItem, meetingView === 'transcript' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Transcript</AppText></Pressable></View></> : mode === 'mind_map' ? <View style={[styles.modeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}><Pressable onPress={() => setMapView('map')} style={[styles.modeItem, mapView === 'map' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Map</AppText></Pressable><Pressable onPress={() => setMapView('outline')} style={[styles.modeItem, mapView === 'outline' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Outline</AppText></Pressable></View> : null}
+      {mode === 'mind_map' ? <View style={[styles.modeSwitcher, { backgroundColor: theme.colors.surfaceMuted }]}><Pressable onPress={() => setMapView('map')} style={[styles.modeItem, mapView === 'map' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Map</AppText></Pressable><Pressable onPress={() => setMapView('outline')} style={[styles.modeItem, mapView === 'outline' && { backgroundColor: theme.colors.surface }]}><AppText variant="caption">Outline</AppText></Pressable></View> : null}
       {remoteVersion ? <View style={[styles.remoteBanner, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption" style={styles.remoteText}>New version available</AppText><Pressable onPress={() => Alert.alert('Replace local draft?', 'Your unsaved changes will be discarded.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Reload', style: 'destructive', onPress: () => void load() }])}><AppText variant="caption" style={{ color: theme.colors.accent }}>Reload</AppText></Pressable><Pressable onPress={() => setRemoteVersion(false)}><AppText variant="caption">Dismiss</AppText></Pressable></View> : null}
       {!permissions.canEdit ? <View accessibilityRole="text" style={[styles.readOnlyBanner, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption">Read-only note</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }}>You can view this note, but editing is unavailable in this workspace.</AppText></View> : null}
-      {mode === 'mind_map' ? <View style={styles.mapEditor}><TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Mind map title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} style={[styles.title, { color: theme.colors.textPrimary }]} /><MobileMindMapView structure={mapStructure} title={title} view={mapView} hideControls={keyboardVisible} onChange={permissions.canEdit ? handleMapChange : () => undefined} /></View> : mode === 'meeting_note' && meetingView === 'transcript' && noteId ? <MobileTranscriptView noteId={noteId} workspaceId={workspaceId} attendees={meetingMetadata?.attendees ?? []} transcriptionStatus={meetingMetadata?.transcription_status} editable={permissions.canEdit} onAddToSection={permissions.canEdit ? addTranscriptToSection : undefined} /> : <View style={styles.editorSurface}>
-        <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }]} />
+      {mode === 'mind_map' ? <View style={styles.mapEditor}><TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Mind map title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} style={[styles.title, { color: theme.colors.textPrimary }]} /><MobileMindMapView structure={mapStructure} title={title} view={mapView} hideControls={keyboardVisible} onChange={permissions.canEdit ? handleMapChange : () => undefined} /></View> : mode === 'meeting_note' && meetingView === 'transcript' && noteId ? <View style={styles.editorSurface}>{meetingTitle}<MobileTranscriptView noteId={noteId} workspaceId={workspaceId} attendees={meetingMetadata?.attendees ?? []} transcriptionStatus={meetingMetadata?.transcription_status} editable={permissions.canEdit} onAddToSection={permissions.canEdit ? addTranscriptToSection : undefined} /></View> : <View style={styles.editorSurface}>
+        {mode === 'meeting_note' ? meetingTitle : <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }]} />}
         {readOnlyFallback ? <View style={styles.readOnlyContent}><AppText variant="body">{body || 'This note has no text content.'}</AppText><Pressable accessibilityRole="button" onPress={() => { setReadOnlyFallback(false); setEditorFailure(null); setEditorMountKey((current) => current + 1); }}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry editor</AppText></Pressable></View> : editorFailure ? <EditorFailure message={`${editorStage}: ${editorFailure}${editorStageDetail ? ` · ${editorStageDetail}` : ''}`} onRetry={() => { setEditorFailure(null); setEditorMountKey((current) => current + 1); }} onReadOnly={() => { setReadOnlyFallback(true); setEditorFailure(null); }} onBack={() => void leave()} /> : <View style={styles.embeddedEditor}><MobileLexicalEditor key={editorMountKey} ref={lexicalRef} showToolbar={permissions.canEdit} showStatus={false} workspaceId={workspaceId} noteId={noteId} onEvent={handleLexicalEvent} onEmbeddedError={setEditorFailure} onStage={handleEditorStage} onLedgerLink={(url) => { const target = resolveLedgerLink(url); if (!target) { Alert.alert('Ledger link unavailable', 'This link does not contain a valid Ledger destination.'); return; } if (target.kind === 'note' || target.kind === 'notes') { openMobileNote(router, target.id, { workspaceId, returnTo: `/note/${noteId}` }); return; } if (target.kind === 'project' || target.kind === 'projects') { router.push({ pathname: '/project/[id]', params: { id: target.id, workspaceId } }); return; } Alert.alert('Ledger link unavailable', 'This Ledger destination is not available on mobile yet.'); }} />{!editorReady ? <View pointerEvents="none" style={styles.editorLoading}><AppText variant="caption">Loading editor…</AppText></View> : null}</View>}
       </View>}
       <NoteActionSheet visible={actionOpen} note={editorSummary} permissions={permissions} pinned={pinned} onClose={() => setActionOpen(false)} onOpen={() => setActionOpen(false)} onVersionHistory={permissions.canEdit ? () => { setActionOpen(false); setVersionOpen(true); } : undefined} onTogglePin={() => void toggleEditorPin()} onMove={() => { setActionOpen(false); setMoveOpen(true); }} onDuplicate={() => void duplicateEditorNote()} onChild={() => void childEditorNote()} onProjects={() => { setActionOpen(false); setProjectOpen(true); }} onDelete={deleteEditorNote} />
@@ -592,14 +617,6 @@ function statusLabel(state: SaveState, dirty: boolean) {
   if (state === 'error') return 'Couldn’t save · Retry';
   if (state === 'remote') return 'New version available';
   return dirty ? 'Unsaved' : 'Saved';
-}
-
-function meetingStatusLabel(status?: string | null) {
-  if (status === 'recording') return 'Recording';
-  if (status === 'processing') return 'Transcribing…';
-  if (status === 'failed') return 'Transcription failed';
-  if (status === 'complete') return 'Transcript ready';
-  return 'Recording unavailable on this device';
 }
 
 function ToolbarButton({ label, active, onPress }: { label: string; active?: boolean; onPress: () => void }) {
@@ -629,8 +646,10 @@ const styles = StyleSheet.create({
   headerButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   remoteBanner: { paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 14 },
   remoteText: { flex: 1 },
-  meetingMeta: { paddingHorizontal: 22, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  meetingTitleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
+  meetingTitle: { flex: 1, paddingHorizontal: 0 },
   modeSwitcher: { alignSelf: 'center', flexDirection: 'row', padding: 3, borderRadius: 9, marginTop: 12 },
+  inlineModeSwitcher: { alignSelf: 'auto', marginTop: 0, marginLeft: 10 },
   modeItem: { minWidth: 82, alignItems: 'center', paddingVertical: 7, borderRadius: 7 },
   mapEditor: { flex: 1, paddingHorizontal: 18, paddingTop: 16 },
   readOnlyBanner: { marginHorizontal: 18, marginTop: 10, padding: 10, borderRadius: 8, gap: 2 },

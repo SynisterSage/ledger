@@ -1,4 +1,7 @@
 import { AppDetailSheet, type AppDetailSheetAction, type AppDetailSheetMetaRow } from '@/components/AppDetailSheet';
+import { Pressable } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { useLedgerTheme } from '@/theme';
 import type { MobileTodayInteractionItem } from '@/types/ledger';
 import { getTodayItemActions } from './todayActions';
 
@@ -174,6 +177,8 @@ function getActionsForItem(item: TodayDetailSheetItem, mode: TodayDetailSheetMod
 }
 
 export function TodayItemDetailSheet({ visible, item, mode, onClose, onAction }: TodayItemDetailSheetProps) {
+  const theme = useLedgerTheme();
+
   if (!item) {
     return null;
   }
@@ -188,6 +193,11 @@ export function TodayItemDetailSheet({ visible, item, mode, onClose, onAction }:
       body={getItemBody(item, mode) || undefined}
       actions={getActionsForItem(item, mode)}
       actionsInCard
+      headerAccessory={(
+        <Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose} hitSlop={8}>
+          <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={26} tintColor={theme.colors.accent} />
+        </Pressable>
+      )}
       onClose={onClose}
       onAction={(actionId) => onAction(actionId, item)}
     />

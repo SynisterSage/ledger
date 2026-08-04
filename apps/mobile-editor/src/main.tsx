@@ -11,7 +11,7 @@ import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot, $getSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, FORMAT_TEXT_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode } from 'lexical';
+import { $getRoot, $getSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, FORMAT_TEXT_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, type EditorState, type LexicalEditor, type LexicalNode } from 'lexical';
 import type { NativeEditorCommand } from '../../../packages/mobile-editor-bridge/messages';
 import { HYDRATION_TAG } from '../../../packages/mobile-editor-bridge/constants';
 import { parseNativeEditorCommand } from '../../../packages/mobile-editor-bridge/validation';
@@ -30,7 +30,6 @@ post('EDITOR_STAGE', { stage: 'javascript-started' });
 window.addEventListener('error', (event) => editorError('JAVASCRIPT_ERROR', event.message || 'Editor JavaScript error.'));
 window.addEventListener('unhandledrejection', (event) => editorError('UNHANDLED_REJECTION', event.reason instanceof Error ? event.reason.message : 'Editor promise rejected.'));
 
-const FORMAT_COMMAND = createCommand<'bold' | 'italic'>('LEDGER_FORMAT');
 const initialConfig = {
   namespace: 'LedgerMobileEditor',
   theme: { heading: { h1: 'editor-heading editor-heading--h1', h2: 'editor-heading editor-heading--h2', h3: 'editor-heading editor-heading--h3' }, paragraph: 'editor-paragraph', list: { nested: { listitem: 'editor-list-nested' } }, callout: { info: 'editor-callout editor-callout--info', note: 'editor-callout editor-callout--note', warning: 'editor-callout editor-callout--warning', success: 'editor-callout editor-callout--success' } },
@@ -158,7 +157,7 @@ function BridgePlugin() {
         if (command.type === 'RESET_DIRTY') { editorWindow.__ledgerDirtyReported = false; return; }
         if (command.type === 'SET_THEME') { document.documentElement.dataset.theme = command.theme; return; }
         if (command.type === 'FOCUS_EDITOR') { editor.focus(); return; }
-        if (command.type === 'TOGGLE_FORMAT') { editor.dispatchCommand(FORMAT_COMMAND, command.format); return; }
+        if (command.type === 'TOGGLE_FORMAT') { editor.dispatchCommand(FORMAT_TEXT_COMMAND, command.format); return; }
         if (command.type === 'SET_BLOCK_TYPE') { editor.update(() => { const selection = $getSelection(); if ($isRangeSelection(selection)) $setBlocksType(selection, () => command.block === 'paragraph' ? $createParagraphNode() : $createHeadingNode(command.block)); }); return; }
         if (command.type === 'TOGGLE_LIST') { const current = selectionState(editor, canUndoRef.current, canRedoRef.current).listType; if (current === command.list) editor.dispatchCommand(REMOVE_LIST_COMMAND, undefined); else if (command.list === 'bullet') editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined); else if (command.list === 'number') editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined); else editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined); return; }
         if (command.type === 'INSERT_LINK') { editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url); return; }
@@ -180,8 +179,7 @@ function BridgePlugin() {
     const unregisterUpdate = editor.registerUpdateListener(emitSelection);
     const unregisterUndo = editor.registerCommand(CAN_UNDO_COMMAND, (value) => { canUndoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
     const unregisterRedo = editor.registerCommand(CAN_REDO_COMMAND, (value) => { canRedoRef.current = value; emitSelection(); return false; }, COMMAND_PRIORITY_EDITOR);
-    const unregisterFormat = editor.registerCommand(FORMAT_COMMAND, (format) => { editor.dispatchCommand(FORMAT_TEXT_COMMAND, format); return true; }, COMMAND_PRIORITY_EDITOR);
-    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); unregisterFormat(); };
+    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); };
   }, [editor]);
   return null;
 }

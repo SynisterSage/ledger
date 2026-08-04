@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
-import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePickerSheet';
@@ -238,6 +238,18 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
           sheetTitle
         )
       }
+      headerAccessory={(
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={isRescheduleMode ? 'Save reschedule' : 'Save changes'}
+          accessibilityState={{ disabled: isSaving || isLoading, busy: isSaving }}
+          disabled={isSaving || isLoading}
+          hitSlop={8}
+          onPress={() => void save()}
+          style={({ pressed }) => ({ opacity: pressed || isSaving || isLoading ? 0.5 : 1 })}>
+          <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={26} tintColor={theme.colors.accent} />
+        </Pressable>
+      )}
       dismissKeyboardOnBackdropPress={isRescheduleMode}
       snapPoints={['72%', '88%']}
       initialSnapPointIndex={1}>
@@ -254,13 +266,16 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
           </AppText>
         ) : null}
 
-        <AppTextInput
-          label="Title"
-          labelVariant="body"
-          placeholder="Add title"
-          value={draft.title}
-          onChangeText={(value) => setDraft((current) => ({ ...current, title: value }))}
-        />
+        <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+          <AppTextInput
+            label="Title"
+            labelVariant="bodyStrong"
+            placeholder="Add title"
+            value={draft.title}
+            onChangeText={(value) => setDraft((current) => ({ ...current, title: value }))}
+            style={styles.cardInput}
+          />
+        </View>
 
         {isRescheduleMode ? (
           <Pressable
@@ -268,10 +283,7 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
             onPress={() => setReschedulePickerOpen(true)}
             style={({ pressed }) => [
               styles.rescheduleRow,
-              {
-                borderBottomColor: theme.colors.borderSubtle,
-                opacity: pressed ? 0.72 : 1,
-              },
+              { opacity: pressed ? 0.72 : 1 },
             ]}>
             <View style={{ flex: 1, gap: theme.spacing.xs }}>
               <AppText variant="body" style={styles.rescheduleTitle}>
@@ -281,21 +293,22 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
                 {rescheduleLabel}
               </AppText>
             </View>
-            <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
-              ›
-            </AppText>
+            <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.colors.textMuted} />
           </Pressable>
         ) : null}
 
         {!isRescheduleMode ? (
-          <AppTextInput
-            label={notesLabel}
-            labelVariant="body"
-            placeholder={notesPlaceholder}
-            multiline
-            value={draft.notes}
-            onChangeText={(value) => setDraft((current) => ({ ...current, notes: value }))}
-          />
+          <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+            <AppTextInput
+              label={notesLabel}
+              labelVariant="bodyStrong"
+              placeholder={notesPlaceholder}
+              multiline
+              value={draft.notes}
+              onChangeText={(value) => setDraft((current) => ({ ...current, notes: value }))}
+              style={styles.notesInput}
+            />
+          </View>
         ) : null}
 
         {error ? (
@@ -304,15 +317,6 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
           </AppText>
         ) : null}
 
-        <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.xs }}>
-          <AppButton
-            title={isSaving ? 'Saving…' : 'Save changes'}
-            size="lg"
-            disabled={isSaving || isLoading}
-            onPress={save}
-          />
-          <AppButton title="Cancel" variant="secondary" size="lg" onPress={onClose} />
-        </View>
       </View>
 
       {isRescheduleMode ? (
@@ -339,11 +343,25 @@ const styles = StyleSheet.create({
     fontWeight: '400',
   },
   rescheduleRow: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
+    minHeight: 72,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  inputCard: {
+    padding: 16,
+  },
+  cardInput: {
+    borderBottomWidth: 0,
+    minHeight: 44,
+    paddingVertical: 8,
+  },
+  notesInput: {
+    borderBottomWidth: 0,
+    minHeight: 132,
+    paddingVertical: 8,
   },
   rescheduleTitle: {
     fontWeight: '400',
