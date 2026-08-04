@@ -74,7 +74,7 @@ export function NotificationList({
 const styles = {
   container: { gap: 22 },
   earlierOnly: { paddingTop: 18 },
-  sectionHeader: { minHeight: 25, flexDirection: 'row' as const, alignItems: 'baseline' as const, gap: 6, marginBottom: 2, paddingLeft: 34 },
+  sectionHeader: { minHeight: 25, flexDirection: 'row' as const, alignItems: 'baseline' as const, gap: 6, marginBottom: 2 },
   sectionAction: { marginLeft: 'auto' as const, paddingVertical: 3 },
   earlierSection: { paddingTop: 2 },
 };

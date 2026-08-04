@@ -13,11 +13,11 @@ import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot, $getSelection, $setSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, ElementNode, FORMAT_TEXT_COMMAND, KEY_BACKSPACE_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_HIGH, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode, type RangeSelection } from 'lexical';
+import { $getRoot, $getSelection, $setSelection, $isRangeSelection, $isTextNode, $insertNodes, $createParagraphNode, $createTextNode, ElementNode, FORMAT_TEXT_COMMAND, KEY_BACKSPACE_COMMAND, KEY_DELETE_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_HIGH, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode, type RangeSelection } from 'lexical';
 import type { NativeEditorCommand } from '../../../packages/mobile-editor-bridge/messages';
 import { HYDRATION_TAG } from '../../../packages/mobile-editor-bridge/constants';
 import { parseNativeEditorCommand } from '../../../packages/mobile-editor-bridge/validation';
-import { LedgerPreservationNode } from './LedgerPreservationNode';
+import { $isLedgerAttachmentNode, LedgerPreservationNode } from './LedgerPreservationNode';
 import { $createLedgerCalloutNode, LedgerCalloutNode, type LedgerCalloutVariant } from './LedgerCalloutNode';
 import { $createLedgerImageNode, $isLedgerImageNode, LedgerImageNode, RESIZE_IMAGE_COMMAND } from './LedgerImageNode';
 import { $createLedgerDividerNode, LedgerDividerNode } from './LedgerDividerNode';
@@ -58,37 +58,12 @@ function selectionState(editor: LexicalEditor, canUndo: boolean, canRedo: boolea
   return result;
 }
 
-function hasLedgerLink(root: ElementNode, url: string) {
-  let found = false;
-  const visit = (node: LexicalNode) => {
-    if (node instanceof LinkNode && node.getURL() === url) {
-      found = true;
-      return;
-    }
-    if (node instanceof ElementNode) node.getChildren().forEach(visit);
-  };
-  root.getChildren().forEach(visit);
-  return found;
-}
-
-function dedupeLedgerLinks(root: ElementNode) {
-  const seen = new Set<string>();
-  const visit = (node: LexicalNode) => {
-    if (node instanceof LinkNode && /^ledger:/i.test(node.getURL())) {
-      const key = node.getURL();
-      if (seen.has(key)) {
-        node.remove();
-        return;
-      }
-      seen.add(key);
-    }
-    if (node instanceof ElementNode) node.getChildren().forEach(visit);
-  };
-  root.getChildren().forEach(visit);
-}
-
 function isLedgerLinkNode(node: LexicalNode | null) {
   return node instanceof LinkNode && /^ledger:/i.test(node.getURL());
+}
+
+function appendTrailingParagraph(root: ElementNode) {
+  if ($isLedgerAttachmentNode(root.getLastChild())) root.append($createParagraphNode());
 }
 
 function InitialContentPlugin() {
@@ -146,7 +121,7 @@ function BridgePlugin() {
         const root = $getRoot(); root.clear();
         if (nodes.length) root.append(...nodes);
         else root.append($createParagraphNode());
-        dedupeLedgerLinks(root);
+        appendTrailingParagraph(root);
       }, { tag: HYDRATION_TAG });
       hydratedRef.current = true;
       editor.setEditable(!command.readOnly);
@@ -231,25 +206,19 @@ function BridgePlugin() {
           editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url);
           return;
         }
-        if (command.type === 'INSERT_LINK_TEXT') {
-          editor.focus();
-          let hasTextSelection = false;
-          let alreadyLinked = false;
+        if (command.type === 'INSERT_RESOURCE_LINK') {
           editor.update(() => {
             const saved = savedSelectionRef.current;
             if (saved) $setSelection(saved.clone());
             const selection = $getSelection();
-            hasTextSelection = $isRangeSelection(selection) && !selection.isCollapsed();
-            alreadyLinked = hasLedgerLink($getRoot(), command.url);
-            if (!hasTextSelection && !alreadyLinked) {
-              const link = $createLinkNode(command.url);
-              link.append($createTextNode(command.text));
-              if ($isRangeSelection(selection)) selection.insertNodes([link]);
-              else $getRoot().append(link);
-            }
+            const link = $createLinkNode(command.url);
+            link.append($createTextNode(command.text));
+            if ($isRangeSelection(selection)) selection.insertNodes([link]);
+            else $getRoot().append(link);
+            link.selectEnd();
             savedSelectionRef.current = null;
           });
-          if (hasTextSelection) editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url);
+          editor.focus();
           return;
         }
         if (command.type === 'REMOVE_LINK') { editor.dispatchCommand(TOGGLE_LINK_COMMAND, null); return; }
@@ -257,6 +226,7 @@ function BridgePlugin() {
           editor.focus();
           editor.update(() => {
             const nodes = createNodes();
+            if (nodes.some($isLedgerAttachmentNode)) { nodes.push($createParagraphNode()); selectEnd = true; }
             const saved = savedSelectionRef.current;
             if (saved) $setSelection(saved.clone());
             const selection = $getSelection();
@@ -264,6 +234,7 @@ function BridgePlugin() {
             else $getRoot().append(...nodes);
             savedSelectionRef.current = null;
             if (selectEnd && nodes[0] instanceof LedgerCalloutNode) nodes[0].getFirstChild()?.selectEnd();
+            else if (selectEnd) nodes[nodes.length - 1]?.selectEnd();
           });
         };
         if (command.type === 'INSERT_CALLOUT') {
@@ -282,8 +253,7 @@ function BridgePlugin() {
       } catch { editorError('INVALID_COMMAND', 'Invalid editor command.'); }
     };
     window.addEventListener('message', onMessage);
-    document.addEventListener('message', onMessage as EventListener);
-    return () => { window.removeEventListener('message', onMessage); document.removeEventListener('message', onMessage as EventListener); };
+    return () => { window.removeEventListener('message', onMessage); };
   }, [editor]);
   useEffect(() => {
     const emitSelection = () => { if (!hydratedRef.current || !activeNoteIdRef.current) return; const next = selectionState(editor, canUndoRef.current, canRedoRef.current); const serialized = JSON.stringify(next); if (serialized === lastSelectionRef.current) return; lastSelectionRef.current = serialized; post('SELECTION_STATE_CHANGED', { noteId: activeNoteIdRef.current, generation: activeGenerationRef.current, selection: next }); };
@@ -303,8 +273,22 @@ function BridgePlugin() {
           handled = true;
           return;
         }
-        if (selection.anchor.offset === 0 && isLedgerLinkNode(anchor.getPreviousSibling())) {
+        if (selection.anchor.offset === 0 && (isLedgerLinkNode(anchor.getPreviousSibling()) || $isLedgerAttachmentNode(anchor.getPreviousSibling()))) {
           anchor.getPreviousSibling()?.remove();
+          handled = true;
+        }
+      });
+      return handled;
+    }, COMMAND_PRIORITY_HIGH);
+    const unregisterLedgerDelete = editor.registerCommand(KEY_DELETE_COMMAND, () => {
+      let handled = false;
+      editor.update(() => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
+        const anchor = selection.anchor.getNode();
+        const atEnd = $isTextNode(anchor) && selection.anchor.offset >= anchor.getTextContentSize();
+        if (atEnd && $isLedgerAttachmentNode(anchor.getNextSibling())) {
+          anchor.getNextSibling()?.remove();
           handled = true;
         }
       });
@@ -326,7 +310,7 @@ function BridgePlugin() {
     const onImageCopy = (event: Event) => { const detail = (event as CustomEvent<{ src?: unknown }>).detail; const noteId = activeNoteIdRef.current; if (!noteId || typeof detail?.src !== 'string' || !detail.src.trim()) return; post('COPY_IMAGE_REQUEST', { noteId, src: detail.src }); };
     window.addEventListener('ledger-image-resize', onImageResize);
     window.addEventListener('ledger-image-copy', onImageCopy);
-    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); unregisterFormat(); unregisterLedgerBackspace(); unregisterImageResize(); window.removeEventListener('ledger-image-resize', onImageResize); window.removeEventListener('ledger-image-copy', onImageCopy); };
+    return () => { unregisterUpdate(); unregisterUndo(); unregisterRedo(); unregisterFormat(); unregisterLedgerBackspace(); unregisterLedgerDelete(); unregisterImageResize(); window.removeEventListener('ledger-image-resize', onImageResize); window.removeEventListener('ledger-image-copy', onImageCopy); };
   }, [editor]);
   return null;
 }

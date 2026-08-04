@@ -127,25 +127,27 @@ export function FocusPickerSheet({
           )}
         </View>
 
-        <View style={styles.toolbar}>
-          <AppText variant="meta">Choose what matters today</AppText>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={editing ? 'Done reordering focus' : 'Reorder focus items'}
-            accessibilityState={{ selected: editing }}
-            onPress={() => setEditing((current) => !current)}
-            hitSlop={8}
-            style={styles.reorderButton}
-          >
-            <SymbolView
-              name={editing
-                ? { ios: 'checkmark', android: 'check', web: 'check' }
-                : { ios: 'arrow.up.arrow.down', android: 'swap_vert', web: 'swap_vert' }}
-              size={18}
-              tintColor={theme.colors.accent}
-            />
-          </Pressable>
-        </View>
+        {focused.length ? (
+          <View style={styles.toolbar}>
+            <AppText variant="meta">Choose what matters today</AppText>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={editing ? 'Done reordering focus' : 'Reorder focus items'}
+              accessibilityState={{ selected: editing }}
+              onPress={() => setEditing((current) => !current)}
+              hitSlop={8}
+              style={styles.reorderButton}
+            >
+              <SymbolView
+                name={editing
+                  ? { ios: 'checkmark', android: 'check', web: 'check' }
+                  : { ios: 'arrow.up.arrow.down', android: 'swap_vert', web: 'swap_vert' }}
+                size={18}
+                tintColor={theme.colors.accent}
+              />
+            </Pressable>
+          </View>
+        ) : null}
 
         {focused.length ? (
           <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>

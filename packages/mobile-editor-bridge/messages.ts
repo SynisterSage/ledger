@@ -13,7 +13,7 @@ export type NativeEditorCommand =
   | { type: 'SET_BLOCK_TYPE'; block: 'paragraph' | 'h1' | 'h2' | 'h3' }
   | { type: 'TOGGLE_LIST'; list: 'bullet' | 'number' | 'check' }
   | { type: 'INSERT_LINK'; url: string }
-  | { type: 'INSERT_LINK_TEXT'; url: string; text: string }
+  | { type: 'INSERT_RESOURCE_LINK'; url: string; text: string }
   | { type: 'REMOVE_LINK' }
   | { type: 'INSERT_CALLOUT'; variant: 'info' | 'note' | 'warning' | 'success' }
   | { type: 'INSERT_DIVIDER' }

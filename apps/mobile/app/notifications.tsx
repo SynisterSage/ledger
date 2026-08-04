@@ -9,6 +9,7 @@ import { AppText } from '@/components/AppText';
 import { EmptyState } from '@/components/EmptyState';
 import {
   MobilePageHeader,
+  MOBILE_PAGE_HEADER_SCROLL_SPACE,
   MOBILE_PULL_TO_REFRESH_OFFSET,
 } from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
@@ -51,8 +52,6 @@ const EMPTY_NOTIFICATIONS: MobileNotificationCenterResponse = {
     total: 0,
   },
 };
-
-const NOTIFICATIONS_HEADER_SCROLL_SPACE = 104;
 
 function toLocalDateKey(date: Date) {
   const year = date.getFullYear();
@@ -778,7 +777,7 @@ function NotificationsScreen() {
         <Animated.ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingTop: NOTIFICATIONS_HEADER_SCROLL_SPACE,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
             paddingBottom: theme.spacing['3xl'] + insets.bottom + 24,
             flexGrow: 1,
           }}

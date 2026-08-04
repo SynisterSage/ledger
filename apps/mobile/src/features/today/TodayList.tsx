@@ -84,6 +84,16 @@ function compactMetadata(values: Array<string | null | undefined>) {
   return values.filter(Boolean).slice(0, 3) as string[];
 }
 
+function formatProjectStatus(status: string | null | undefined) {
+  const normalized = String(status ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!normalized) return null;
+  if (normalized === 'notstarted' || normalized === 'not_started' || normalized === 'todo' || normalized === 'planned') return 'Not started';
+  if (normalized === 'inprogress' || normalized === 'in_progress' || normalized === 'active' || normalized === 'doing') return 'In progress';
+  if (normalized === 'paused' || normalized === 'on_hold' || normalized === 'onhold') return 'Paused';
+  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done') return 'Completed';
+  return status?.trim() || null;
+}
+
 function isSameLocalDay(left: Date, right: Date) {
   return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
 }
@@ -160,7 +170,8 @@ function rowMetadata(
   if (item.type === 'project') {
     return compactMetadata([
       workspace,
-      item.attentionReason ?? item.nextAction ?? item.projectStatus,
+      item.attentionReason ?? item.nextAction ?? formatProjectStatus(item.projectStatus),
+      item.dueLabel,
       item.itemsDueToday ? `${item.itemsDueToday} due today` : null,
       item.ownerName ? `Owner: ${item.ownerName}` : null,
     ]);
@@ -190,7 +201,7 @@ function rowTrailingLabel(item: MobileTodayInteractionItem) {
   if ('source' in item || item.type === 'note') return null;
   if (item.type === 'focus' || item.status === 'overdue') return null;
   if (item.type === 'deadline') return item.timeLabel;
-  if (item.type === 'project') return item.dueLabel;
+  if (item.type === 'project') return null;
   return 'timeLabel' in item
     ? item.timeLabel ?? ('dueLabel' in item ? item.dueLabel : null) ?? item.dateLabel ?? startsInLabel(item)
     : 'dueLabel' in item

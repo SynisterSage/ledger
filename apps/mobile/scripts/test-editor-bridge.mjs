@@ -54,13 +54,14 @@ assert(imageNode.includes("ledger-image-copy"), 'mobile images must emit a copy 
 assert(native.includes('Clipboard.setImageAsync'), 'native mobile must write copied images to the clipboard');
 assert(native.includes('onLedgerContext'), 'mobile editor must expose a Ledger context action');
 assert(noteEditor.includes('setProjectOpen(true)'), 'note editor must route Ledger context to the existing project link sheet');
-assert(sharedMessages.includes("type: 'INSERT_LINK_TEXT'"), 'Ledger resource insertion must have a typed link-text command');
-assert(sharedValidation.includes("value.type === 'INSERT_LINK_TEXT'"), 'Ledger link-text commands must be validated');
+assert(sharedMessages.includes("type: 'INSERT_RESOURCE_LINK'"), 'Ledger resource insertion must have a typed resource-link command');
+assert(sharedValidation.includes("value.type === 'INSERT_RESOURCE_LINK'"), 'Ledger resource-link commands must be validated');
 assert(editor.includes('$createLinkNode(command.url)'), 'Ledger link insertion must create a Lexical link node');
 assert(native.includes('getMobileNoteSummaries'), 'Ledger link picker must load workspace notes');
 assert(native.includes('listMobileProjects'), 'Ledger link picker must load workspace projects');
 assert(native.includes('ledger://notes?focusNoteId='), 'Ledger note links must use the canonical note route');
 assert(preservationNode.includes("data-ledger-file-attachment"), 'preserved attachments must be normalized as attachment blocks');
+assert(preservationNode.includes('forChild: () => null'), 'preserved HTML blocks must not re-import their child text during hydration');
 assert(preservationNode.includes("link.href = href"), 'attachment labels with URLs must render as clickable links');
 assert(editor.includes("editor.update(() => {\n        // DOM conversion creates Lexical nodes"), 'HTML import must run inside an active Lexical update');
 assert(native.includes("source={{ html: MOBILE_EDITOR_HTML"), 'editor must stay local and inline');

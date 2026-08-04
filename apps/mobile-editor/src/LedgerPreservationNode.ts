@@ -16,7 +16,7 @@ export class LedgerPreservationNode extends ElementNode {
   static getType() { return 'ledger-preservation'; }
   static clone(node: LedgerPreservationNode) { return new LedgerPreservationNode(node.__html, node.__tag, node.__key); }
   static importDOM() {
-    return Object.fromEntries(PRESERVED_TAGS.map((tag) => [tag, (element: HTMLElement) => hasLedgerMetadata(element) || PRESERVED_ALWAYS.has(tag) ? { conversion: () => ({ node: new LedgerPreservationNode(element.outerHTML, tag) }), priority: 4 } : null]));
+    return Object.fromEntries(PRESERVED_TAGS.map((tag) => [tag, (element: HTMLElement) => hasLedgerMetadata(element) || PRESERVED_ALWAYS.has(tag) ? { conversion: () => ({ node: new LedgerPreservationNode(element.outerHTML, tag), forChild: () => null }), priority: 4 } : null]));
   }
   createDOM() {
     const template = document.createElement('template');
@@ -56,3 +56,6 @@ export class LedgerPreservationNode extends ElementNode {
 
 export function $createLedgerPreservationNode(html: string, tag?: string) { return new LedgerPreservationNode(html, tag); }
 export function $isLedgerPreservationNode(node: LexicalNode | null | undefined): node is LedgerPreservationNode { return node instanceof LedgerPreservationNode; }
+export function $isLedgerAttachmentNode(node: LexicalNode | null | undefined): node is LedgerPreservationNode {
+  return node instanceof LedgerPreservationNode && node.__html.includes('data-ledger-file-attachment');
+}
