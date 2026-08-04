@@ -13,7 +13,7 @@ import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import { $getRoot, $getSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, FORMAT_TEXT_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode } from 'lexical';
+import { $getRoot, $getSelection, $setSelection, $isRangeSelection, $insertNodes, $createParagraphNode, $createTextNode, FORMAT_TEXT_COMMAND, UNDO_COMMAND, REDO_COMMAND, CAN_UNDO_COMMAND, CAN_REDO_COMMAND, COMMAND_PRIORITY_EDITOR, createCommand, type EditorState, type LexicalEditor, type LexicalNode, type RangeSelection } from 'lexical';
 import type { NativeEditorCommand } from '../../../packages/mobile-editor-bridge/messages';
 import { HYDRATION_TAG } from '../../../packages/mobile-editor-bridge/constants';
 import { parseNativeEditorCommand } from '../../../packages/mobile-editor-bridge/validation';
@@ -89,6 +89,7 @@ function BridgePlugin() {
   const canUndoRef = useRef(false);
   const canRedoRef = useRef(false);
   const lastSelectionRef = useRef('');
+  const savedSelectionRef = useRef<RangeSelection | null>(null);
   const hydrate = (command: Extract<NativeEditorCommand, { type: 'LOAD_DOCUMENT' }>) => {
     activeNoteIdRef.current = command.noteId;
     editorWindow.__ledgerNoteId = command.noteId;
@@ -97,6 +98,7 @@ function BridgePlugin() {
     activeGenerationRef.current = command.generation;
     hydratedRef.current = false;
     lastSelectionRef.current = '';
+    savedSelectionRef.current = null;
     readOnlyRef.current = Boolean(command.readOnly);
     editor.setEditable(false);
     try {
@@ -159,34 +161,66 @@ function BridgePlugin() {
         if (command.type === 'SET_READ_ONLY') { readOnlyRef.current = command.value; editor.setEditable(!command.value); return; }
         if (command.type === 'RESET_DIRTY') { editorWindow.__ledgerDirtyReported = false; return; }
         if (command.type === 'SET_THEME') { document.documentElement.dataset.theme = command.theme; return; }
-        if (command.type === 'FOCUS_EDITOR') { editor.focus(); return; }
-        if (command.type === 'TOGGLE_FORMAT') {
-          if (command.format === 'underline') {
-            editor.update(() => {
-              const selection = $getSelection();
-              if ($isRangeSelection(selection)) selection.toggleFormat('underline');
-            });
-          } else {
-            editor.dispatchCommand(FORMAT_COMMAND, command.format);
-          }
+        if (command.type === 'CAPTURE_SELECTION') {
+          editor.getEditorState().read(() => {
+            const selection = $getSelection();
+            savedSelectionRef.current = $isRangeSelection(selection) ? selection.clone() : null;
+          });
           return;
         }
-        if (command.type === 'SET_BLOCK_TYPE') { editor.update(() => { const selection = $getSelection(); if ($isRangeSelection(selection)) $setBlocksType(selection, () => command.block === 'paragraph' ? $createParagraphNode() : $createHeadingNode(command.block)); }); return; }
+        if (command.type === 'FOCUS_EDITOR') { editor.focus(); return; }
+        if (command.type === 'TOGGLE_FORMAT') {
+          editor.focus();
+          editor.dispatchCommand(FORMAT_COMMAND, command.format);
+          return;
+        }
+        if (command.type === 'SET_BLOCK_TYPE') { editor.update(() => { const saved = savedSelectionRef.current; if (saved) $setSelection(saved.clone()); const selection = $getSelection(); if ($isRangeSelection(selection)) $setBlocksType(selection, () => command.block === 'paragraph' ? $createParagraphNode() : $createHeadingNode(command.block)); savedSelectionRef.current = null; }); return; }
         if (command.type === 'TOGGLE_LIST') {
           editor.focus();
+          editor.update(() => { const saved = savedSelectionRef.current; if (saved) $setSelection(saved.clone()); });
           const current = selectionState(editor, canUndoRef.current, canRedoRef.current).listType;
           if (current === command.list) editor.dispatchCommand(REMOVE_LIST_COMMAND, undefined);
           else if (command.list === 'bullet') editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined);
           else if (command.list === 'number') editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined);
           else editor.dispatchCommand(INSERT_CHECK_LIST_COMMAND, undefined);
+          savedSelectionRef.current = null;
           return;
         }
-        if (command.type === 'INSERT_LINK') { editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url); return; }
+        if (command.type === 'INSERT_LINK') {
+          editor.focus();
+          editor.update(() => {
+            const saved = savedSelectionRef.current;
+            if (saved) $setSelection(saved.clone());
+            savedSelectionRef.current = null;
+          });
+          editor.dispatchCommand(TOGGLE_LINK_COMMAND, command.url);
+          return;
+        }
         if (command.type === 'REMOVE_LINK') { editor.dispatchCommand(TOGGLE_LINK_COMMAND, null); return; }
-        if (command.type === 'INSERT_CALLOUT') { editor.update(() => { const callout = $createLedgerCalloutNode(command.variant); const paragraph = $createParagraphNode(); callout.append(paragraph); $insertNodes([callout]); paragraph.select(); }); return; }
-        if (command.type === 'INSERT_DIVIDER') { editor.update(() => $insertNodes([$createLedgerDividerNode()])); return; }
-        if (command.type === 'INSERT_IMAGE') { editor.update(() => $insertNodes([$createLedgerPreservationNode(`<figure data-ledger-kind="image"><img src="${command.src.replace(/"/g, '&quot;')}"${command.altText ? ` alt="${command.altText.replace(/"/g, '&quot;')}"` : ''}${command.width ? ` width="${command.width}"` : ''}${command.height ? ` height="${command.height}"` : ''}></figure>`, 'figure')])); return; }
-        if (command.type === 'INSERT_ATTACHMENT') { editor.update(() => $insertNodes([$createLedgerPreservationNode(`<div data-ledger-file-attachment="true"${command.attachmentId ? ` data-ledger-file-attachment-id="${command.attachmentId}"` : ''}${command.mimeType ? ` data-mime-type="${command.mimeType.replace(/"/g, '&quot;')}"` : ''}${command.sizeBytes ? ` data-size-bytes="${command.sizeBytes}"` : ''}${command.url ? ` data-url="${command.url.replace(/"/g, '&quot;')}"` : ''}><a href="${(command.url ?? '').replace(/"/g, '&quot;')}">${command.name.replace(/</g, '&lt;')}</a></div>`, 'div')])); return; }
+        const insertNodes = (createNodes: () => LexicalNode[], selectEnd = false) => {
+          editor.focus();
+          editor.update(() => {
+            const nodes = createNodes();
+            const saved = savedSelectionRef.current;
+            if (saved) $setSelection(saved.clone());
+            const selection = $getSelection();
+            if ($isRangeSelection(selection)) selection.insertNodes(nodes);
+            else $getRoot().append(...nodes);
+            savedSelectionRef.current = null;
+            if (selectEnd && nodes[0] instanceof LedgerCalloutNode) nodes[0].getFirstChild()?.selectEnd();
+          });
+        };
+        if (command.type === 'INSERT_CALLOUT') {
+          insertNodes(() => {
+            const callout = $createLedgerCalloutNode(command.variant);
+            callout.append($createParagraphNode());
+            return [callout];
+          }, true);
+          return;
+        }
+        if (command.type === 'INSERT_DIVIDER') { insertNodes(() => [$createLedgerDividerNode()]); return; }
+        if (command.type === 'INSERT_IMAGE') { insertNodes(() => [$createLedgerPreservationNode(`<figure data-ledger-kind="image"><img src="${command.src.replace(/"/g, '&quot;')}"${command.altText ? ` alt="${command.altText.replace(/"/g, '&quot;')}"` : ''}${command.width ? ` width="${command.width}"` : ''}${command.height ? ` height="${command.height}"` : ''}></figure>`, 'figure')]); return; }
+        if (command.type === 'INSERT_ATTACHMENT') { insertNodes(() => [$createLedgerPreservationNode(`<div data-ledger-file-attachment="true"${command.attachmentId ? ` data-ledger-file-attachment-id="${command.attachmentId}"` : ''}${command.mimeType ? ` data-mime-type="${command.mimeType.replace(/"/g, '&quot;')}"` : ''}${command.sizeBytes ? ` data-size-bytes="${command.sizeBytes}"` : ''}${command.url ? ` data-url="${command.url.replace(/"/g, '&quot;')}"` : ''}><a href="${(command.url ?? '').replace(/"/g, '&quot;')}">${command.name.replace(/</g, '&lt;')}</a></div>`, 'div')]); return; }
         if (command.type === 'UNDO') { editor.dispatchCommand(UNDO_COMMAND, undefined); return; }
         if (command.type === 'REDO') { editor.dispatchCommand(REDO_COMMAND, undefined); return; }
       } catch { editorError('INVALID_COMMAND', 'Invalid editor command.'); }

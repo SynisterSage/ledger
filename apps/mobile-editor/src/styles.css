@@ -18,11 +18,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui,
 .editor-content li[role='checkbox']::before { content: '□'; display: inline-block; width: 22px; color: var(--muted); }
 .editor-content li[aria-checked='true']::before { content: '☑'; color: #ff5f40; }
 .editor-content hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
-.editor-callout { margin: 10px 0 14px; padding: 11px 13px; border-left: 3px solid; border-radius: 8px; }
-.editor-callout--info { background: color-mix(in srgb, #60a5fa 13%, var(--background)); border-color: #60a5fa; }
-.editor-callout--note { background: color-mix(in srgb, #a78bfa 13%, var(--background)); border-color: #a78bfa; }
-.editor-callout--warning { background: color-mix(in srgb, #f59e0b 15%, var(--background)); border-color: #f59e0b; }
-.editor-callout--success { background: color-mix(in srgb, #34d399 13%, var(--background)); border-color: #34d399; }
+.editor-callout, .ledger-callout { margin: 10px 0 14px; padding: 11px 13px; border-left: 3px solid; border-radius: 8px; }
+.editor-callout--info, .editor-callout--note, .ledger-callout--info, .ledger-callout--note { background: rgba(255, 95, 64, 0.08); border-color: #ff5f40; }
+.editor-callout--warning, .ledger-callout--warning { background: rgba(245, 158, 11, 0.10); border-color: #f59e0b; }
+.editor-callout--success, .ledger-callout--success { background: rgba(52, 211, 153, 0.09); border-color: #34d399; }
 .editor-content figure[data-ledger-attachment-id], .editor-content div[data-ledger-attachment-id] { padding: 10px; border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; }
 .editor-content img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
 .editor-content [data-ledger-attachment-id]::after { content: 'Ledger attachment'; display: block; color: var(--muted); font-size: 12px; margin-top: 5px; }

@@ -7,6 +7,7 @@ export type NativeEditorCommand =
   | { type: 'SET_READ_ONLY'; value: boolean }
   | { type: 'RESET_DIRTY' }
   | { type: 'SET_THEME'; theme: 'light' | 'dark' }
+  | { type: 'CAPTURE_SELECTION' }
   | { type: 'FOCUS_EDITOR' }
   | { type: 'TOGGLE_FORMAT'; format: 'bold' | 'italic' | 'underline' }
   | { type: 'SET_BLOCK_TYPE'; block: 'paragraph' | 'h1' | 'h2' | 'h3' }

@@ -14,7 +14,7 @@ export function parseNativeEditorCommand(value: unknown): NativeEditorCommand | 
   if (value.type === 'SET_READ_ONLY' && typeof value.value === 'boolean') return value as NativeEditorCommand;
   if (value.type === 'RESET_DIRTY') return value as NativeEditorCommand;
   if (value.type === 'SET_THEME' && isTheme(value.theme)) return value as NativeEditorCommand;
-  if (value.type === 'FOCUS_EDITOR' || value.type === 'UNDO' || value.type === 'REDO' || value.type === 'REMOVE_LINK' || value.type === 'INSERT_DIVIDER') return value as NativeEditorCommand;
+  if (value.type === 'CAPTURE_SELECTION' || value.type === 'FOCUS_EDITOR' || value.type === 'UNDO' || value.type === 'REDO' || value.type === 'REMOVE_LINK' || value.type === 'INSERT_DIVIDER') return value as NativeEditorCommand;
   if (value.type === 'TOGGLE_FORMAT' && (value.format === 'bold' || value.format === 'italic' || value.format === 'underline')) return value as NativeEditorCommand;
   if (value.type === 'SET_BLOCK_TYPE' && (value.block === 'paragraph' || value.block === 'h1' || value.block === 'h2' || value.block === 'h3')) return value as NativeEditorCommand;
   if (value.type === 'TOGGLE_LIST' && (value.list === 'bullet' || value.list === 'number' || value.list === 'check')) return value as NativeEditorCommand;

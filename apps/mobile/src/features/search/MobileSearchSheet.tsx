@@ -323,7 +323,7 @@ function SearchDetailSheet({
     setIsLoadingNote(true);
     setNoteBody(null);
 
-    void getMobileNote(activeResult.id)
+    void getMobileNote(activeResult.id, activeResult.workspace_id)
       .then((note) => {
         if (cancelled) return;
         setNoteBody(htmlToPlainText(note.content_html ?? note.content ?? '') || null);

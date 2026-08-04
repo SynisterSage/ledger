@@ -101,7 +101,7 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
     const load = async () => {
       try {
       if (editableItem.type === 'note') {
-        const note = await getMobileNote(editableItem.sourceId);
+        const note = await getMobileNote(editableItem.sourceId, editableItem.workspaceId);
           if (cancelled) return;
           setDraft({
             title: note.title ?? editableItem.title ?? '',

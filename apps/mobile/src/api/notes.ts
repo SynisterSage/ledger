@@ -109,8 +109,10 @@ export type MobileMindMapStructure = {
   [key: string]: unknown;
 };
 
-export async function getMobileNote(noteId: string) {
-  return mobileRequest<MobileNoteDetail>(`/api/notes/${encodeURIComponent(noteId)}`);
+export async function getMobileNote(noteId: string, workspaceId?: string) {
+  return mobileRequest<MobileNoteDetail>(`/api/notes/${encodeURIComponent(noteId)}`, {
+    ...(workspaceId && workspaceId !== 'all' ? { headers: { 'x-workspace-id': workspaceId } } : {}),
+  });
 }
 
 export async function getMobileNoteSummaries(workspaceId: string, sectionId?: string) {

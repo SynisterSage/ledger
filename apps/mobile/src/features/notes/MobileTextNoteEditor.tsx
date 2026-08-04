@@ -210,7 +210,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     lexicalLoadedRef.current = false;
     updateSaveLifecycle({ noteId, workspaceId, generation: lexicalRef.current?.getGeneration() ?? 0, hydrated: false, hasUserEdited: false, dirty: false, saving: false, pendingExportRequestId: undefined, pendingSaveRevision: undefined, baseServerUpdatedAt: null, saveError: undefined, offline: false });
     try {
-      const note = await getMobileNote(noteId);
+      const note = await getMobileNote(noteId, workspaceId);
       if (!mountedRef.current || loadedIdRef.current !== noteId) return;
       if (note.workspace_id && workspaceId !== 'all' && note.workspace_id !== workspaceId) throw new Error('This note is not available in the selected workspace.');
       const html = note.content_html ?? note.content;
@@ -557,14 +557,14 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
   useEffect(() => {
     if (!noteId || !loadedAt) return;
     const interval = setInterval(() => {
-      void getMobileNote(noteId).then((remote) => {
+      void getMobileNote(noteId, workspaceId).then((remote) => {
         if (!mountedRef.current || remote.id !== loadedIdRef.current || !remote.updated_at || remote.updated_at === loadedAt) return;
         if (dirtyRef.current) { setRemoteVersion(true); setSaveState('remote'); }
         else { void load(); }
       }).catch(() => undefined);
     }, 30000);
     return () => clearInterval(interval);
-  }, [load, loadedAt, noteId]);
+  }, [load, loadedAt, noteId, workspaceId]);
 
   const meetingTitle = mode === 'meeting_note' ? <View style={styles.meetingTitleRow}>
     <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }, styles.meetingTitle]} />
