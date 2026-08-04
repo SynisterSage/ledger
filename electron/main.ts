@@ -1235,6 +1235,10 @@ function isLedgerWindowDockTarget(target: FloatingDockTarget | null = currentFlo
   return Boolean(target?.isLedgerWindow);
 }
 
+function isWorkspaceWindowAttachedToSidebar() {
+  return shouldAttachWorkspaceWindowToSidebar() && isWorkspaceDockTarget();
+}
+
 function getWorkspaceDockTargetBounds() {
   if (!workspaceModuleWin || workspaceModuleWin.isDestroyed()) return null;
   if (workspaceModuleWin.isMinimized()) return null;
@@ -2741,6 +2745,7 @@ function syncSidebarWorkspaceFullscreenLayer(kind: ModuleWindowKind, win: Browse
   const isWorkspaceShell = win === workspaceModuleWin && isWorkspaceModuleKind(kind);
   const shouldLayer =
     isWorkspaceShell &&
+    isWorkspaceWindowAttachedToSidebar() &&
     (Boolean(workspaceShellFullscreenRestoreBounds) ||
       win.isFullScreen() ||
       isFullscreenLikeBounds(win.getBounds()));
@@ -2768,7 +2773,7 @@ function restoreSidebarAfterWorkspaceShellMinimize() {
 
 function restoreModuleWindowBounds(kind: ModuleWindowKind, win: BrowserWindow) {
   const shouldRestoreWorkspaceDock =
-    kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar();
+    kind === workspaceModuleKind && isWorkspaceWindowAttachedToSidebar();
   if (shouldRestoreWorkspaceDock) {
     pauseWorkspaceDockRefresh(260);
   }
@@ -2812,7 +2817,7 @@ function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow)
     return;
   }
   const shouldAttachSidebar =
-    kind === workspaceModuleKind && shouldAttachWorkspaceWindowToSidebar();
+    kind === workspaceModuleKind && isWorkspaceWindowAttachedToSidebar();
   if (shouldAttachSidebar) {
     pauseWorkspaceDockRefresh(260);
   }
@@ -2994,6 +2999,7 @@ function getFloatingDockStatePayload(
 ) {
   return {
     isDocked,
+    isWorkspaceDocked: isDocked && isWorkspaceDockTarget(),
     attachmentStatus,
     side: currentFloatingDockTarget?.side ?? null,
   };
@@ -3024,6 +3030,7 @@ function clearCurrentFloatingDockTarget(
   attachmentStatus: Exclude<FloatingDockAttachmentStatus, 'attached'> = 'detached'
 ) {
   floatingDockGeneration += 1;
+  setSidebarAboveWorkspaceWindow(false);
   stopFloatingDockNativeTracker();
   stopMacDockHelperTracking();
   currentFloatingDockTarget = null;
@@ -4327,7 +4334,9 @@ async function refreshFloatingDockTarget() {
   }
 }
 
-async function getFloatingDockTargetAtCursor(): Promise<DockTargetResult | null> {
+async function getFloatingDockTargetAtCursor(
+  allowLedgerWindows = false
+): Promise<DockTargetResult | null> {
   try {
     const sidebarBounds = sidebarWin?.getBounds();
     if (!sidebarBounds) return null;
@@ -4390,6 +4399,7 @@ $sidebarRight = ${Math.floor(nativeSidebarBounds.x + nativeSidebarBounds.width)}
 $sidebarBottom = ${Math.floor(nativeSidebarBounds.y + nativeSidebarBounds.height)}
 $sidebarHeight = ${Math.floor(nativeSidebarBounds.height)}
 $parentPid = ${process.pid}
+$allowLedgerWindows = ${allowLedgerWindows ? '$true' : '$false'}
 $threshold = ${Math.floor(nativeSnapDistance)}
 $script:result = $null
 $script:bestScore = [Double]::PositiveInfinity
@@ -4404,7 +4414,7 @@ $script:bestScore = [Double]::PositiveInfinity
   $windowProcessId = 0
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
   $isLedgerWindow = $windowProcessId -eq $parentPid
-  if ($isLedgerWindow) { return $true }
+  if ($isLedgerWindow -and -not $allowLedgerWindows) { return $true }
   $sidebarCenterX = $sidebarLeft + (${Math.floor(nativeSidebarBounds.width)} / 2)
   $sidebarCenterY = $sidebarTop + ($sidebarHeight / 2)
   $rectCenterX = $rect.Left + ($width / 2)
@@ -4507,6 +4517,7 @@ $sidebarTop = ${Math.floor(nativeSidebarBounds.y)}
 $sidebarWidth = ${Math.floor(nativeSidebarBounds.width)}
 $sidebarHeight = ${Math.floor(nativeSidebarBounds.height)}
 $parentPid = ${process.pid}
+$allowLedgerWindows = ${allowLedgerWindows ? '$true' : '$false'}
 $cursorPoint = [Win32+POINT]::new()
 if ([Win32]::GetCursorPos([ref]$cursorPoint)) {
   $cursorX = $cursorPoint.X
@@ -4528,7 +4539,7 @@ $script:result = $null
   $windowProcessId = 0
   [Win32]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId) | Out-Null
   $isLedgerWindow = $windowProcessId -eq $parentPid
-  if ($isLedgerWindow) { return $true }
+  if ($isLedgerWindow -and -not $allowLedgerWindows) { return $true }
   $sidebarCenterX = $sidebarLeft + ($sidebarWidth / 2)
   $sidebarCenterY = $sidebarTop + ($sidebarHeight / 2)
   $rectCenterX = $rect.Left + ($width / 2)
@@ -4950,14 +4961,14 @@ async function dockFloatingSidebarToTarget() {
       : null;
 
   if (!target && process.platform === 'win32') {
-    target = await getFloatingDockTargetAtCursor();
+    target = await getFloatingDockTargetAtCursor(true);
   }
 
   if (!target && process.platform === 'win32') {
     const sidebarBounds = sidebarWin.getBounds();
     target =
-      (await getFloatingDockTargetAtEdge(sidebarBounds, 'left', false)) ??
-      (await getFloatingDockTargetAtEdge(sidebarBounds, 'right', false));
+      (await getFloatingDockTargetAtEdge(sidebarBounds, 'left', true)) ??
+      (await getFloatingDockTargetAtEdge(sidebarBounds, 'right', true));
   }
 
   if (!target && process.platform !== 'win32') {

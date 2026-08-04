@@ -34,6 +34,7 @@ type WorkspaceShellKind =
   | 'notifications';
 type FloatingDockPayload = {
   isDocked?: boolean;
+  isWorkspaceDocked?: boolean;
   side?: SidebarPosition | null;
 };
 
@@ -120,6 +121,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const didNormalizeFloatingStartupRef = React.useRef(false);
   const wasFloatingDockedRef = React.useRef(false);
   const [isFloatingDocked, setIsFloatingDocked] = React.useState(false);
+  const [isWorkspaceFloatingDocked, setIsWorkspaceFloatingDocked] = React.useState(false);
   const [shellFullscreen, setShellFullscreen] = useState(false);
   const [floatingDockSide, setFloatingDockSide] = useState<SidebarPosition | null>(null);
   const [state, setSidebarState] = React.useState<SidebarState>(() => {
@@ -221,6 +223,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const applyFloatingDockPayload = (payload: FloatingDockPayload | null | undefined) => {
       const nextIsDocked = Boolean(payload?.isDocked);
+      const nextIsWorkspaceDocked = Boolean(payload?.isWorkspaceDocked);
       const nextSide =
         payload && typeof (payload as { side?: unknown }).side === 'string'
           ? ((payload as { side?: unknown }).side as SidebarPosition)
@@ -229,6 +232,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
 
       wasFloatingDockedRef.current = nextIsDocked;
       setIsFloatingDocked(nextIsDocked);
+      setIsWorkspaceFloatingDocked(nextIsWorkspaceDocked);
       setFloatingDockSide(nextIsDocked ? nextSide ?? floatingDockSide : null);
 
       if (
@@ -496,8 +500,10 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     const sidebarPlacement = sidebarPreferences.position;
     const effectivePlacement =
       sidebarPlacement === 'floating' ? floatingDockSide ?? 'left' : sidebarPlacement;
+    const canReserveWorkspaceGutter =
+      sidebarPlacement !== 'floating' || isWorkspaceFloatingDocked;
     const sidebarMode: SidebarAttachmentMode =
-      shellFullscreen && isSidebarVisible ? 'attached' : 'overlay';
+      shellFullscreen && isSidebarVisible && canReserveWorkspaceGutter ? 'attached' : 'overlay';
     const verticalSidebarWidth = state === 'expanded' ? 320 : 56;
     const horizontalSidebarHeight = state === 'expanded' ? 144 : 60;
     const isVerticalPlacement = effectivePlacement === 'left' || effectivePlacement === 'right';
@@ -567,6 +573,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   }, [
     floatingDockSide,
     isFloatingDocked,
+    isWorkspaceFloatingDocked,
     isSidebarVisible,
     shellFullscreen,
     sidebarPreferences.position,

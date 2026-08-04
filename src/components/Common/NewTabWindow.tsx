@@ -278,7 +278,12 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
           <div
             className="ledger-new-tab-atmosphere absolute inset-0"
             style={{
-              background: 'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 46%)',
+              background: [
+                'radial-gradient(ellipse 78% 62% at 50% 106%, var(--ledger-new-tab-atmosphere), transparent 76%)',
+                'radial-gradient(ellipse 42% 38% at 12% 112%, var(--ledger-new-tab-atmosphere), transparent 78%)',
+                'radial-gradient(ellipse 42% 38% at 88% 112%, var(--ledger-new-tab-atmosphere), transparent 78%)',
+                'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 72%)',
+              ].join(', '),
             }}
           />
         </div>
