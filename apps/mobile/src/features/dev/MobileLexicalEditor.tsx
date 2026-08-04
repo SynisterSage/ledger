@@ -4,6 +4,7 @@ import { SymbolView } from 'expo-symbols';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 
 import type { EditorDocumentIdentity, EditorNativeEvent, EditorSelectionState, NativeEditorCommand } from '@/bridge/messages';
 import { parseEditorNativeEvent } from '@/bridge/validation';
@@ -179,20 +180,18 @@ export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(
     const client = getSupabaseClient();
     const safeName = name.replace(/[^a-z0-9._-]/gi, '-').slice(0, 160) || 'upload';
     const path = `workspaces/${workspace}/notes/${currentNoteId}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
-    const response = await fetch(uri); const blob = await response.blob();
+    const body = await new File(uri).arrayBuffer();
     const bucket = folder === 'images' ? 'note-images' : 'note-files';
-    const result = await client.storage.from(bucket).upload(path, blob, { contentType: mimeType || 'application/octet-stream', cacheControl: '3600', upsert: false });
+    const result = await client.storage.from(bucket).upload(path, body, { contentType: mimeType || 'application/octet-stream', cacheControl: '3600', upsert: false });
     if (result.error) throw result.error;
     const url = client.storage.from(bucket).getPublicUrl(path).data.publicUrl;
-    return { url, path, sizeBytes: blob.size };
+    return { url, path, sizeBytes: body.byteLength };
   };
   const pickImage = async () => {
     if (uploading) return;
     setUploading(true);
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) { Alert.alert('Photo access needed', 'Allow Ledger to choose an image for this note.'); return; }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.9 });
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, allowsMultipleSelection: false, quality: 0.9 });
       const asset = result.canceled ? null : result.assets[0]; if (!asset) return;
       const uploaded = await uploadNativeFile(asset.uri, asset.fileName ?? `note-image-${Date.now()}.jpg`, asset.mimeType ?? 'image/jpeg', 'images');
       if (uploaded) command({ type: 'INSERT_IMAGE', src: uploaded.url, altText: asset.fileName ?? 'Note image', width: asset.width, height: asset.height });
@@ -209,6 +208,11 @@ export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(
       if (uploaded) command({ type: 'INSERT_ATTACHMENT', name: asset.name, mimeType: asset.mimeType, sizeBytes: asset.size ?? uploaded.sizeBytes, url: uploaded.url });
     } catch (error) { Alert.alert('Attachment upload failed', error instanceof Error ? error.message : 'Please try again.'); } finally { setUploading(false); }
   };
+  const openPickerAfterInsertSheetCloses = (picker: () => void) => {
+    setInsertSheetOpen(false);
+    Keyboard.dismiss();
+    setTimeout(picker, 350);
+  };
   const toolbarVisible = showToolbar && ready && focused && keyboardVisible;
   return <KeyboardAvoidingView style={[styles.container, { backgroundColor: theme.colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     {showStatus ? <View style={styles.status}><AppText variant="caption">{error ?? (ready ? focused ? 'Focused' : dirty ? 'Edited' : 'Ready' : 'Loading editor…')}</AppText>{!ready ? <ActivityIndicator size="small" color={theme.colors.accent} /> : null}</View> : null}
@@ -217,7 +221,7 @@ export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(
     <AppBottomSheet visible={blockSheetOpen} onClose={() => setBlockSheetOpen(false)} title={<AppText variant="sectionTitle">Text style</AppText>} headerAccessory={<SheetDoneButton onPress={() => setBlockSheetOpen(false)} />} snapPoints={['38%', '52%']} initialSnapPointIndex={0}><View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>{[['paragraph', 'Text'], ['h1', 'Heading 1'], ['h2', 'Heading 2'], ['h3', 'Heading 3']].map(([block, label]) => <SheetRow key={block} label={label} selected={selection.blockType === block} onPress={() => { setBlockSheetOpen(false); command({ type: 'SET_BLOCK_TYPE', block: block as 'paragraph' | 'h1' | 'h2' | 'h3' }); }} />)}</View></AppBottomSheet>
     <AppBottomSheet visible={listSheetOpen} onClose={() => setListSheetOpen(false)} title={<AppText variant="sectionTitle">List</AppText>} headerAccessory={<SheetDoneButton onPress={() => setListSheetOpen(false)} />} snapPoints={['38%', '52%']} initialSnapPointIndex={0}><View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>{[['bullet', 'Bulleted list'], ['number', 'Numbered list'], ['check', 'Checklist']].map(([list, label]) => <SheetRow key={list} label={label} selected={selection.listType === list} onPress={() => { setListSheetOpen(false); command({ type: 'TOGGLE_LIST', list: list as 'bullet' | 'number' | 'check' }); }} />)}</View></AppBottomSheet>
     <AppBottomSheet visible={linkSheetOpen} onClose={() => setLinkSheetOpen(false)} title={<AppText variant="sectionTitle">{selection.linkUrl ? 'Edit link' : 'Add link'}</AppText>} headerAccessory={<SheetDoneButton label="Save link" onPress={submitLink} />} snapPoints={['72%', '90%']} initialSnapPointIndex={0} avoidKeyboard><View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}><TextInput autoFocus value={linkUrl} onChangeText={setLinkUrl} placeholder="https://" autoCapitalize="none" keyboardType="url" accessibilityLabel="Link URL" style={[styles.linkInput, { color: theme.colors.textPrimary }]} /><View style={styles.sheetActions}>{selection.linkUrl ? <><Pressable accessibilityRole="button" onPress={() => openLinkTarget(selection.linkUrl!)}><AppText variant="caption">Open link</AppText></Pressable><Pressable accessibilityRole="button" onPress={() => { setLinkSheetOpen(false); command({ type: 'REMOVE_LINK' }); }}><AppText variant="caption" style={{ color: theme.colors.danger }}>Remove</AppText></Pressable></> : null}</View></View></AppBottomSheet>
-    <AppBottomSheet visible={insertSheetOpen} onClose={() => setInsertSheetOpen(false)} title={<AppText variant="sectionTitle">Insert</AppText>} headerAccessory={<SheetDoneButton onPress={() => setInsertSheetOpen(false)} />} snapPoints={['58%', '82%']} initialSnapPointIndex={0}><View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}><SheetRow label="Info callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'info' }); }} /><SheetRow label="Note callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'note' }); }} /><SheetRow label="Warning callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'warning' }); }} /><SheetRow label="Success callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'success' }); }} /><SheetRow label="Divider" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_DIVIDER' }); }} /><SheetRow label={uploading ? 'Uploading…' : 'Image'} onPress={() => { setInsertSheetOpen(false); void pickImage(); }} /><SheetRow label={uploading ? 'Uploading…' : 'Attachment'} onPress={() => { setInsertSheetOpen(false); void pickAttachment(); }} /><SheetRow label="Ledger link" onPress={() => Alert.alert('Ledger link', 'Choose Ledger context from the selected-text actions.')} /></View></AppBottomSheet>
+    <AppBottomSheet visible={insertSheetOpen} onClose={() => setInsertSheetOpen(false)} title={<AppText variant="sectionTitle">Insert</AppText>} headerAccessory={<SheetDoneButton onPress={() => setInsertSheetOpen(false)} />} snapPoints={['58%', '82%']} initialSnapPointIndex={0}><View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}><SheetRow label="Info callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'info' }); }} /><SheetRow label="Note callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'note' }); }} /><SheetRow label="Warning callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'warning' }); }} /><SheetRow label="Success callout" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: 'success' }); }} /><SheetRow label="Divider" onPress={() => { setInsertSheetOpen(false); command({ type: 'INSERT_DIVIDER' }); }} /><SheetRow label={uploading ? 'Uploading…' : 'Image'} onPress={() => openPickerAfterInsertSheetCloses(() => void pickImage())} /><SheetRow label={uploading ? 'Uploading…' : 'Attachment'} onPress={() => openPickerAfterInsertSheetCloses(() => void pickAttachment())} /><SheetRow label="Ledger link" onPress={() => Alert.alert('Ledger link', 'Choose Ledger context from the selected-text actions.')} /></View></AppBottomSheet>
     <AppBottomSheet visible={calloutSheetOpen} onClose={() => setCalloutSheetOpen(false)} title={<AppText variant="sectionTitle">Callout</AppText>} headerAccessory={<SheetDoneButton onPress={() => setCalloutSheetOpen(false)} />} snapPoints={['46%', '62%']} initialSnapPointIndex={0}><View style={[styles.sheetCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>{[['info', 'Info'], ['note', 'Note'], ['warning', 'Warning'], ['success', 'Success']].map(([variant, label]) => <SheetRow key={variant} label={label} onPress={() => { setCalloutSheetOpen(false); command({ type: 'INSERT_CALLOUT', variant: variant as 'info' | 'note' | 'warning' | 'success' }); }} />)}</View></AppBottomSheet>
   </KeyboardAvoidingView>;
 });

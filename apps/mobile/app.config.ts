@@ -22,6 +22,8 @@ const config: ExpoConfig = {
     supportsTablet: true,
     infoPlist: {
       NSSiriUsageDescription: 'Allow Ledger to capture tasks, reminders, notes, and events with Siri.',
+      NSPhotoLibraryUsageDescription: 'Allow Ledger to attach photos to notes.',
+      NSCameraUsageDescription: 'Allow Ledger to take photos for notes.',
       LedgerAPIBaseURL: apiUrl,
       LedgerSupabaseURL: supabaseUrl,
       LedgerSupabaseAnonKey: supabaseAnonKey,
@@ -46,6 +48,14 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-screen-orientation',
     'expo-notifications',
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'Allow Ledger to attach photos to notes.',
+        cameraPermission: 'Allow Ledger to take photos for notes.',
+        microphonePermission: false,
+      },
+    ],
     '@react-native-community/datetimepicker',
     [
       'expo-splash-screen',

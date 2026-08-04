@@ -29,6 +29,14 @@
       "expo-router",
       "expo-screen-orientation",
       "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Ledger to attach photos to notes.",
+          "cameraPermission": "Allow Ledger to take photos for notes.",
+          "microphonePermission": false
+        }
+      ],
       "@react-native-community/datetimepicker",
       [
         "expo-splash-screen",

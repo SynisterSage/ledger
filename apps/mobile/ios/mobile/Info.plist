@@ -47,6 +47,10 @@
 	</dict>
 	<key>NSSiriUsageDescription</key>
 	<string>Allow Ledger to capture tasks, reminders, notes, and events with Siri.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Allow Ledger to attach photos to notes.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Allow Ledger to take photos for notes.</string>
 	<key>LedgerAPIBaseURL</key>
 	<string>https://api.ledgerworkspace.com</string>
 	<key>NSUserActivityTypes</key>
