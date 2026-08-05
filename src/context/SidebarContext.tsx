@@ -508,7 +508,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       sidebarPlacement === 'floating' ? floatingDockSide ?? 'left' : sidebarPlacement;
     const canReserveWorkspaceGutter =
       sidebarPlacement !== 'floating' ||
-      (sidebarPreferences.floatingDockEnabled && !workspaceDockAutoAttachSuppressed);
+      (isWorkspaceFloatingDocked &&
+        sidebarPreferences.floatingDockEnabled &&
+        !workspaceDockAutoAttachSuppressed);
     const sidebarMode: SidebarAttachmentMode =
       shellFullscreen && isSidebarVisible && canReserveWorkspaceGutter ? 'attached' : 'overlay';
     const verticalSidebarWidth = state === 'expanded' ? 320 : 56;

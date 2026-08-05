@@ -123,8 +123,14 @@ export class LocalTranscriptionService {
       this.process = child;
       let stderr = '';
       child.stderr.on('data', (data) => { stderr += String(data).slice(-2000); });
-      child.once('error', reject);
+      const timeoutMs = process.platform === 'win32' ? 10 * 60 * 1000 : 15 * 60 * 1000;
+      const timeout = setTimeout(() => {
+        child.kill();
+        reject(new Error('Whisper took too long to process an audio chunk. The recording is preserved so you can retry.'));
+      }, timeoutMs);
+      child.once('error', (error) => { clearTimeout(timeout); reject(error); });
       child.once('exit', (code) => {
+        clearTimeout(timeout);
         this.process = null;
         if (this.cancelRequested) return reject(new Error('Transcription cancelled.'));
         if (code !== 0) return reject(new Error(stderr.trim() || `Whisper exited with code ${code ?? 'unknown'}.`));
@@ -167,7 +173,10 @@ export class LocalTranscriptionService {
   }
   private updateJob(jobId: string, patch: Parameters<TranscriptionJobStore['update']>[1], event: string) {
     const job = this.jobs.update(jobId, patch, event);
-    if (job) this.sessions.checkpoint(job.sessionId, { transcription: { jobId: job.jobId, status: job.status, progress: job.progress, segmentCount: job.segments.length } });
+    if (job) {
+      this.sessions.checkpoint(job.sessionId, { transcription: { jobId: job.jobId, status: job.status, progress: job.progress, segmentCount: job.segments.length } });
+      this.emit(jobId);
+    }
     return job;
   }
   private publicJob(jobId: string) { const job = this.jobs.get(jobId); if (!job) throw new Error('Transcription job was not found.'); const { segments, ...safe } = job; return { ...safe, segmentCount: segments.length }; }

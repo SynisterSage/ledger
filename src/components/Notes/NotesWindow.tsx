@@ -210,6 +210,8 @@ type TranscriptionModelStatus = {
   label: string;
   approximateBytes: number;
   bytesDownloaded: number;
+  downloadSpeedBytesPerSecond: number;
+  estimatedSecondsRemaining: number | null;
   error: string | null;
 };
 type TranscriptionJobStatus = {
@@ -225,6 +227,22 @@ type TranscriptionJobStatus = {
   totalChunks: number;
   error: string | null;
   segmentCount: number;
+};
+
+const formatModelBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+  return `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+};
+
+const formatDownloadTime = (seconds: number | null) => {
+  if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) return 'calculating time';
+  if (seconds < 60) return `about ${Math.max(1, Math.round(seconds))} sec left`;
+  return `about ${Math.ceil(seconds / 60)} min left`;
+};
+
+const formatDownloadSpeed = (bytesPerSecond: number) => {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return '';
+  return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`;
 };
 
 type WorkspaceMember = {
@@ -1359,7 +1377,7 @@ const MeetingTranscriptSection = ({
                                   current === segment.id ? null : segment.id
                                 )
                               }
-                              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] focus:bg-[var(--ledger-surface-hover)] focus:outline-none"
+                              className="inline-flex items-center gap-0.5 rounded-md px-1 py-0.5 font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] focus:bg-[var(--ledger-surface-hover)] focus:outline-none"
                               aria-haspopup="menu"
                               aria-expanded={openSpeakerId === segment.id}
                               aria-label={`Speaker label: ${
@@ -1384,7 +1402,7 @@ const MeetingTranscriptSection = ({
                                       onSpeakerSelect(segment, option);
                                       setOpenSpeakerId(null);
                                     }}
-                                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                                    className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
                                   >
                                     {option}
                                   </button>
@@ -1418,13 +1436,13 @@ const MeetingTranscriptSection = ({
                                       }}
                                       placeholder="Speaker name"
                                       aria-label="Speaker name"
-                                      className="h-7 w-full rounded border border-[color:var(--ledger-border-subtle)] bg-transparent px-2 text-[10px] text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-accent)]"
+                                      className="h-7 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-transparent px-2 text-[10px] text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-accent)]"
                                     />
                                     <div className="flex justify-end gap-1">
                                       <button
                                         type="button"
                                         onClick={() => setSpeakerEditor(null)}
-                                        className="rounded px-1.5 py-1 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                                        className="rounded-md px-1.5 py-1 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
                                       >
                                         Cancel
                                       </button>
@@ -1432,7 +1450,7 @@ const MeetingTranscriptSection = ({
                                         type="button"
                                         onClick={saveSpeakerEdit}
                                         disabled={!speakerEditor.value.trim()}
-                                        className="rounded bg-[var(--ledger-accent)] px-1.5 py-1 text-[10px] text-white disabled:opacity-40"
+                                        className="rounded-md bg-[var(--ledger-accent)] px-1.5 py-1 text-[10px] text-white disabled:opacity-40"
                                       >
                                         Save
                                       </button>
@@ -1444,7 +1462,7 @@ const MeetingTranscriptSection = ({
                                       type="button"
                                       role="menuitem"
                                       onClick={() => setSpeakerEditor({ segment, value: '' })}
-                                      className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                                      className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
                                     >
                                       Add speaker…
                                     </button>
@@ -1457,7 +1475,7 @@ const MeetingTranscriptSection = ({
                                           value: speakerDrafts[segment.id] ?? sourceLabel,
                                         })
                                       }
-                                      className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                                      className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
                                     >
                                       Rename speaker…
                                     </button>
@@ -2150,6 +2168,35 @@ const MeetingTranscriptionSetup = ({
                 )} MB · stored on this computer`
               : 'Optional local speech-recognition model'}
           </p>
+          {model?.downloading && (
+            <div className="mt-2.5 w-full min-w-[230px]">
+              <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-[var(--ledger-text-muted)]">
+                <span>
+                  {formatModelBytes(model.bytesDownloaded)} of {formatModelBytes(model.approximateBytes)}
+                </span>
+                <span>
+                  {formatDownloadTime(model.estimatedSecondsRemaining)}
+                  {formatDownloadSpeed(model.downloadSpeedBytesPerSecond) && ` · ${formatDownloadSpeed(model.downloadSpeedBytesPerSecond)}`}
+                </span>
+              </div>
+              <div
+                className="h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-muted)]"
+                role="progressbar"
+                aria-label="Whisper model download progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.min(100, Math.round((model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100))}
+              >
+                <div
+                  className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300"
+                  style={{ width: `${Math.min(100, Math.max(2, (model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100))}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--ledger-text-muted)]">
+                Large one-time download. It stays on this computer.
+              </p>
+            </div>
+          )}
           {model?.error && (
             <p className="mt-2 text-xs text-[var(--ledger-danger)]">{model.error}</p>
           )}
@@ -2162,7 +2209,7 @@ const MeetingTranscriptionSetup = ({
         >
           <Download size={13} />
           {model?.downloading
-            ? `${Math.round((model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100)}%`
+            ? 'Downloading…'
             : isBusy
             ? 'Preparing…'
             : 'Download'}
@@ -2308,6 +2355,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const localNoteNavigationRef = useRef<{ noteId: string; at: number } | null>(null);
   const initialTryActionHandledRef = useRef(false);
   const noteViewerPollingDisabledForNoteRef = useRef<string | null>(null);
+  const shownTranscriptionFailureIdsRef = useRef(new Set<string>());
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([]);
@@ -2515,6 +2563,16 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [isLoadingLinkableProjects, setIsLoadingLinkableProjects] = useState(false);
   const [selectedLinkProjectIds, setSelectedLinkProjectIds] = useState<string[]>([]);
   const toast = useToast();
+  const reportTranscriptionError = useCallback(
+    (message: string) => {
+      toast.show('Transcription failed', {
+        detail: message || 'The recording is preserved so you can retry transcription.',
+        variant: 'error',
+        duration: 7000,
+      });
+    },
+    [toast]
+  );
   const { pins, toggleObjectPin } = usePins();
   const { openSearch } = useSearch();
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
@@ -2718,6 +2776,18 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       const progress = event as TranscriptionJobStatus;
       if (progress.noteId && progress.noteId !== selectedNoteIdRef.current) return;
       setTranscriptionJob((current) => (current ? { ...current, ...progress } : current));
+      if (
+        progress.status === 'failed' &&
+        progress.jobId &&
+        !shownTranscriptionFailureIdsRef.current.has(progress.jobId)
+      ) {
+        shownTranscriptionFailureIdsRef.current.add(progress.jobId);
+        toast.show('Transcription failed', {
+          detail: progress.error || 'The recording is preserved so you can retry transcription.',
+          variant: 'error',
+          duration: 7000,
+        });
+      }
     });
     const offModel = transcription.onModelChange((event) =>
       setTranscriptionModel(event as TranscriptionModelStatus)
@@ -2726,7 +2796,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       offProgress();
       offModel();
     };
-  }, [activeWorkspaceId, refreshTranscriptionState, selectedNoteId]);
+  }, [activeWorkspaceId, refreshTranscriptionState, selectedNoteId, toast]);
 
   useEffect(() => {
     const audio = window.meetingAudio;
@@ -4595,7 +4665,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             transcriptionError instanceof Error
               ? transcriptionError.message
               : 'Local transcription could not start.';
-          setAudioError(message);
+          reportTranscriptionError(message);
           await updateMeetingMetadata({
             transcription_status: 'failed',
             duration_seconds: capture?.durationSeconds || getMeetingElapsedSeconds(meetingMetadata),
@@ -4614,7 +4684,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       meetingStopInFlightRef.current = false;
       setMeetingBusyAction(null);
     }
-  }, [activeWorkspaceId, audioCaptureStatus?.sessionId, meetingMetadata, updateMeetingMetadata]);
+  }, [activeWorkspaceId, audioCaptureStatus?.sessionId, meetingMetadata, reportTranscriptionError, updateMeetingMetadata]);
 
   const installTranscriptionModel = useCallback(async () => {
     if (!window.meetingTranscription) return;
@@ -4653,7 +4723,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         });
         setAudioError(null);
       } catch (error) {
-        setAudioError(
+        reportTranscriptionError(
           error instanceof Error ? error.message : 'Could not start local transcription.'
         );
       } finally {
@@ -4663,6 +4733,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     [
       activeWorkspaceId,
       audioCaptureStatus?.sessionId,
+      reportTranscriptionError,
       transcriptionJob?.sessionId,
       updateMeetingMetadata,
     ]
@@ -4680,11 +4751,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         transcription_error: 'Transcription cancelled. Finalized audio is available for retry.',
       });
     } catch (error) {
-      setAudioError(error instanceof Error ? error.message : 'Could not cancel transcription.');
+      reportTranscriptionError(error instanceof Error ? error.message : 'Could not cancel transcription.');
     } finally {
       setTranscriptionBusy(false);
     }
-  }, [transcriptionJob, updateMeetingMetadata]);
+  }, [reportTranscriptionError, transcriptionJob, updateMeetingMetadata]);
 
   useEffect(() => {
     if (
@@ -4769,7 +4840,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : 'Transcript storage failed.';
-        setAudioError(message);
+        reportTranscriptionError(message);
         await window.meetingTranscription!.fail({ jobId: job.jobId, error: message });
         await updateMeetingMetadata({
           transcription_status: 'failed',
@@ -4784,7 +4855,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     return () => {
       cancelled = true;
     };
-  }, [api, meetingMetadata, transcriptionJob, updateMeetingMetadata]);
+  }, [api, meetingMetadata, reportTranscriptionError, transcriptionJob, updateMeetingMetadata]);
 
   const resetFailedMeeting = useCallback(async () => {
     if (!meetingMetadata || meetingMetadata.transcription_status !== 'failed') return;
@@ -8895,7 +8966,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 ? 'Disconnected'
                                 : (audioLevels.user_microphone || 0) > 0.01
                                 ? 'Active'
-                                : 'No signal'}
+                                : 'Listening'}
                             </span>
                           )}
                         </span>
@@ -8948,7 +9019,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 ? 'Disconnected'
                                 : (audioLevels.system_audio || 0) > 0.01
                                 ? 'Active'
-                                : 'No signal'}
+                                : 'Listening'}
                             </span>
                           )}
                         </span>
@@ -9868,7 +9939,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                       (transcriptionModel.bytesDownloaded /
                                         Math.max(1, transcriptionModel.approximateBytes)) *
                                         100
-                                    )}%`
+                                    )}% · ${formatDownloadTime(transcriptionModel.estimatedSecondsRemaining)}`
                                   : transcriptionModel.installed
                                   ? `${transcriptionModel.label} is installed and runs locally.`
                                   : 'Install the optional local Whisper model to process this recording. No API key is required.'}
@@ -9905,7 +9976,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                     Math.max(1, transcriptionModel.approximateBytes)) *
                                     100
                                 )}
-                                %
+                                % · {formatDownloadTime(transcriptionModel.estimatedSecondsRemaining)}
                               </p>
                             )}
                             <div className="flex flex-wrap gap-1.5">

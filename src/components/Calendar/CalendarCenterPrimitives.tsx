@@ -111,7 +111,7 @@ export function CenterInlineItemRow({
       title={titleText ?? title}
       className={`flex min-h-4 w-full items-center gap-1 truncate rounded px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors hover:bg-[var(--ledger-surface-hover)] ${
         selected
-          ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-accent)]/20'
+          ? 'bg-[var(--ledger-surface-hover)]'
           : ''
       } ${muted ? 'opacity-60' : ''} ${completed ? 'line-through opacity-55' : ''} ${className}`}
     >
@@ -154,7 +154,7 @@ export function CenterItemRow({
         compact ? 'min-h-5 px-1 py-0.5' : 'min-h-10 px-2'
       } ${
         selected
-          ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-accent)]/20'
+          ? 'bg-[var(--ledger-surface-hover)]'
           : ''
       } ${muted ? 'opacity-55' : ''}`}
     >

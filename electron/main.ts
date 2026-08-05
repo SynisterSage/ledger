@@ -2668,7 +2668,11 @@ function sendModuleFullscreenState(
 ) {
   try {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send('module:fullscreen-state-changed', { kind, isFullscreen });
+      win.webContents.send('module:fullscreen-state-changed', {
+        kind,
+        isFullscreen,
+        workspaceDocked: isWorkspaceWindowAttachedToSidebar(),
+      });
     }
   } catch {}
 }

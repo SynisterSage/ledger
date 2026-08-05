@@ -901,6 +901,7 @@ export const CalendarWindow = () => {
   const [gridQuickAdd, setGridQuickAdd] = useState<GridQuickAddState | null>(null);
   const [gridQuickTitle, setGridQuickTitle] = useState('');
   const [calendarDrag, setCalendarDrag] = useState<CalendarDragState | null>(null);
+  const calendarDragRef = useRef<CalendarDragState | null>(null);
   const notifyCalendarItemsUpdated = () => {
     window.ipcRenderer?.send('calendar:items-updated');
   };
@@ -1433,12 +1434,21 @@ export const CalendarWindow = () => {
       previewStartAt: event.start_at,
       previewEndAt: event.end_at,
     });
+    calendarDragRef.current = {
+      eventId: event.id,
+      pointerId: pointerEvent.pointerId,
+      startAt: event.start_at,
+      endAt: event.end_at,
+      previewStartAt: event.start_at,
+      previewEndAt: event.end_at,
+    };
   }, [isEventDragAllowed]);
 
   useEffect(() => {
     if (!calendarDrag) return;
     const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerId !== calendarDrag.pointerId) return;
+      const currentDrag = calendarDragRef.current;
+      if (!currentDrag || event.pointerId !== currentDrag.pointerId) return;
       const container = centerScrollRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
@@ -1450,13 +1460,18 @@ export const CalendarWindow = () => {
       const minutes = Math.max(0, Math.min(23 * 60 + 45, Math.round((y / TIMELINE_HOUR_HEIGHT * 60) / 15) * 15));
       const nextStart = new Date(viewConfig.dates[dayIndex] ?? viewAnchor);
       nextStart.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-      const duration = new Date(calendarDrag.endAt).getTime() - new Date(calendarDrag.startAt).getTime();
+      const duration = new Date(currentDrag.endAt).getTime() - new Date(currentDrag.startAt).getTime();
       const nextEnd = new Date(nextStart.getTime() + Math.max(15 * 60 * 1000, duration));
-      setCalendarDrag((current) => current ? { ...current, previewStartAt: nextStart.toISOString(), previewEndAt: nextEnd.toISOString() } : current);
+      const next = { ...currentDrag, previewStartAt: nextStart.toISOString(), previewEndAt: nextEnd.toISOString() };
+      calendarDragRef.current = next;
+      setCalendarDrag(next);
     };
     const onPointerUp = (event: PointerEvent) => {
       if (event.pointerId !== calendarDrag.pointerId) return;
-      void commitEventDrag(calendarDrag).finally(() => {
+      const finalDrag = calendarDragRef.current;
+      if (!finalDrag) return;
+      void commitEventDrag(finalDrag).finally(() => {
+        calendarDragRef.current = null;
         setCalendarDrag(null);
       });
     };
@@ -4796,7 +4811,7 @@ export const CalendarWindow = () => {
         )}
 
         <section className="flex-1 min-w-0 p-0">
-          <div className="flex h-full flex-col overflow-hidden bg-[var(--ledger-surface-card)]">
+          <div className="flex h-full flex-col overflow-hidden bg-[var(--ledger-background)]">
             <div
               ref={centerScrollRef}
               className="relative flex-1 min-w-0 overflow-auto"
@@ -4828,7 +4843,7 @@ export const CalendarWindow = () => {
                     <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Upcoming and dated work</p>
                     <p className="text-[11px] text-[var(--ledger-text-muted)]">{viewConfig.dates.length} days</p>
                   </div>
-                  <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+                  <div className="space-y-1">
                     {viewConfig.dates.map((dayDate) => {
                       const key = formatDateKey(dayDate);
                       const dayEvents = eventsByDay[key] ?? [];
@@ -4836,9 +4851,9 @@ export const CalendarWindow = () => {
                       const dayDueItems = dueItemsByDay[key] ?? [];
                       const itemCount = dayEvents.length + dayReminders.length + dayDueItems.length;
                       return (
-                        <section key={key} className="py-4 first:pt-1">
-                          <div className="mb-2 flex items-baseline justify-between gap-3">
-                            <h2 className={`text-[13px] font-semibold ${key === todayKey ? 'text-[var(--ledger-accent)]' : 'text-[var(--ledger-text-primary)]'}`}>
+                        <section key={key} className="py-3 first:pt-1">
+                          <div className="mb-1 flex min-h-7 items-center justify-between gap-3">
+                            <h2 className={`text-[12px] font-semibold ${key === todayKey ? 'text-[var(--ledger-accent)]' : 'text-[var(--ledger-text-primary)]'}`}>
                               {dayDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
                             </h2>
                             <span className="text-[11px] text-[var(--ledger-text-muted)]">{itemCount ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : 'No items'}</span>
@@ -4850,6 +4865,7 @@ export const CalendarWindow = () => {
                                 return (
                                   <CenterItemRow
                                     key={`event:${event.id}`}
+                                    compact
                                     title={event.title}
                                     time={isAllDayEvent(event) ? 'All day' : formatCompactCalendarTime(new Date(event.start_at))}
                                     detail={event.project_id ? 'Linked project' : event.provider === 'apple' ? 'Apple Calendar' : null}
@@ -4874,6 +4890,7 @@ export const CalendarWindow = () => {
                               {dayReminders.map((reminder) => (
                                 <CenterItemRow
                                   key={`reminder:${reminder.id}`}
+                                  compact
                                   title={reminder.title}
                                   time={reminder.all_day ? 'All day' : formatCompactCalendarTime(new Date(reminder.remind_at))}
                                   detail={reminder.project_id ? 'Linked project' : 'Reminder'}
@@ -4897,6 +4914,7 @@ export const CalendarWindow = () => {
                               {dayDueItems.map((item) => (
                                 <CenterItemRow
                                   key={`due:${item.id}`}
+                                  compact
                                   title={item.title}
                                   time={item.time}
                                   detail={item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'}

@@ -21,12 +21,15 @@ export type ModelStatus = {
   label: string;
   approximateBytes: number;
   bytesDownloaded: number;
+  downloadSpeedBytesPerSecond: number;
+  estimatedSecondsRemaining: number | null;
   error: string | null;
 };
 
 export class TranscriptionModelManager {
   private readonly root = path.join(app.getPath('userData'), 'models', 'whisper');
   private downloadRequest: ClientRequest | null = null;
+  private downloadStartedAt = 0;
   private statusValue: ModelStatus = this.readStatus();
   private listeners = new Set<(status: ModelStatus) => void>();
 
@@ -39,7 +42,8 @@ export class TranscriptionModelManager {
   async download() {
     if (this.statusValue.downloading) return this.status();
     const temporary = `${this.modelPath()}.${process.pid}.download`;
-    this.statusValue = { ...this.status(), downloading: true, bytesDownloaded: 0, error: null };
+    this.downloadStartedAt = Date.now();
+    this.statusValue = { ...this.status(), downloading: true, bytesDownloaded: 0, downloadSpeedBytesPerSecond: 0, estimatedSecondsRemaining: null, error: null };
     this.emit();
     await new Promise<void>((resolve, reject) => {
       const request = https.get(RECOMMENDED_MODEL.url, (response) => {
@@ -57,11 +61,11 @@ export class TranscriptionModelManager {
     }).then(() => {
       fs.renameSync(temporary, this.modelPath());
       if (!this.isInstalled()) throw new Error('The downloaded Whisper model failed validation.');
-      this.statusValue = { ...this.status(), downloading: false, bytesDownloaded: fs.statSync(this.modelPath()).size, error: null };
+      this.statusValue = { ...this.status(), downloading: false, bytesDownloaded: fs.statSync(this.modelPath()).size, estimatedSecondsRemaining: 0, error: null };
       this.emit();
     }).catch((error) => {
       try { fs.rmSync(temporary, { force: true }); } catch {}
-      this.statusValue = { ...this.status(), downloading: false, error: error instanceof Error ? error.message : String(error) };
+    this.statusValue = { ...this.status(), downloading: false, estimatedSecondsRemaining: null, error: error instanceof Error ? error.message : String(error) };
       this.emit();
       throw error;
     }).finally(() => { this.downloadRequest = null; });
@@ -71,14 +75,14 @@ export class TranscriptionModelManager {
   cancelDownload() {
     this.downloadRequest?.destroy(new Error('Model download cancelled.'));
     this.downloadRequest = null;
-    this.statusValue = { ...this.status(), downloading: false, error: 'Model download cancelled.' };
+    this.statusValue = { ...this.status(), downloading: false, estimatedSecondsRemaining: null, error: 'Model download cancelled.' };
     this.emit();
   }
 
   delete() {
     if (this.statusValue.downloading) throw new Error('Stop the model download before deleting the model.');
     fs.rmSync(this.modelPath(), { force: true });
-    this.statusValue = { ...this.status(), installed: false, error: null, bytesDownloaded: 0 };
+    this.statusValue = { ...this.status(), installed: false, error: null, bytesDownloaded: 0, downloadSpeedBytesPerSecond: 0, estimatedSecondsRemaining: null };
     this.emit();
   }
 
@@ -96,7 +100,19 @@ export class TranscriptionModelManager {
   private writeResponse(response: IncomingMessage, temporary: string, resolve: () => void, reject: (error: Error) => void) {
     const file = fs.createWriteStream(temporary, { mode: 0o600 });
     let bytes = 0;
-    response.on('data', (chunk: Buffer) => { bytes += chunk.length; this.statusValue = { ...this.status(), bytesDownloaded: bytes }; this.emit(); });
+    response.on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      const elapsedSeconds = Math.max(0.25, (Date.now() - this.downloadStartedAt) / 1000);
+      const speed = bytes / elapsedSeconds;
+      const remaining = Math.max(0, this.statusValue.approximateBytes - bytes);
+      this.statusValue = {
+        ...this.status(),
+        bytesDownloaded: bytes,
+        downloadSpeedBytesPerSecond: speed,
+        estimatedSecondsRemaining: speed > 0 ? remaining / speed : null,
+      };
+      this.emit();
+    });
     response.on('error', (error) => { file.destroy(); reject(error instanceof Error ? error : new Error(String(error))); });
     file.on('error', reject);
     file.on('finish', () => { file.close(); resolve(); });
@@ -116,7 +132,7 @@ export class TranscriptionModelManager {
   }
 
   private readStatus(): ModelStatus {
-    return { installed: false, downloading: false, modelId: RECOMMENDED_MODEL.id, label: RECOMMENDED_MODEL.label, approximateBytes: RECOMMENDED_MODEL.approximateBytes, bytesDownloaded: 0, error: null };
+    return { installed: false, downloading: false, modelId: RECOMMENDED_MODEL.id, label: RECOMMENDED_MODEL.label, approximateBytes: RECOMMENDED_MODEL.approximateBytes, bytesDownloaded: 0, downloadSpeedBytesPerSecond: 0, estimatedSecondsRemaining: null, error: null };
   }
 
   private emit() { const value = this.status(); this.listeners.forEach((listener) => listener(value)); }
