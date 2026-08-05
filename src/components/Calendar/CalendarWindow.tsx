@@ -10,7 +10,6 @@ import {
   BellRing,
   ClipboardPaste,
   CalendarPlus,
-  Clock3,
   Palette,
   PencilLine,
   Trash2,
@@ -26,7 +25,7 @@ import {
   SlidersHorizontal,
   Mic,
 } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ContextMenu } from '../Common/ContextMenu';
 import * as rruleModule from 'rrule';
@@ -64,6 +63,14 @@ import {
 } from './CalendarSubscriptionModal';
 import { useAppleCalendar } from './appleCalendar';
 import { useAppleReminders } from './appleReminders';
+import {
+  CenterCurrentTimeIndicator,
+  CenterDateHeader,
+  CenterEventBlock,
+  CenterInlineItemRow,
+  CenterItemRow,
+  CenterSectionLabel,
+} from './CalendarCenterPrimitives';
 
 // Get RRule from the module - handles both ESM and CommonJS
 const RRule = (rruleModule as any).RRule || (rruleModule as any).default?.RRule || rruleModule;
@@ -286,7 +293,16 @@ type ListContextMenuState = {
   id: string;
 };
 
-type CalendarViewMode = 'day' | 'week' | 'month';
+type CalendarViewMode = 'day' | 'week' | 'month' | 'agenda';
+
+type CalendarDragState = {
+  eventId: string;
+  pointerId: number;
+  startAt: string;
+  endAt: string;
+  previewStartAt: string;
+  previewEndAt: string;
+};
 
 const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const CALENDAR_DAY_START_HOUR = 0;
@@ -875,13 +891,20 @@ export const CalendarWindow = () => {
     x: number;
     y: number;
   } | null>(null);
+  const [calendarViewMenu, setCalendarViewMenu] = useState<{ x: number; y: number } | null>(null);
   const calendarNewButtonRef = useRef<HTMLButtonElement | null>(null);
   const calendarHeaderMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const calendarViewButtonRef = useRef<HTMLButtonElement | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isImportMessageVisible, setIsImportMessageVisible] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [gridQuickAdd, setGridQuickAdd] = useState<GridQuickAddState | null>(null);
   const [gridQuickTitle, setGridQuickTitle] = useState('');
+  const [calendarDrag, setCalendarDrag] = useState<CalendarDragState | null>(null);
+  const calendarDragOriginRef = useRef<{ startAt: string; endAt: string } | null>(null);
+  const notifyCalendarItemsUpdated = () => {
+    window.ipcRenderer?.send('calendar:items-updated');
+  };
   const [contextMenu, setContextMenu] = useState<CalendarContextMenuState | null>(null);
   const [calendarRowContextMenu, setCalendarRowContextMenu] =
     useState<CalendarRowContextMenuState | null>(null);
@@ -1319,6 +1342,22 @@ export const CalendarWindow = () => {
       };
     }
 
+    if (viewMode === 'agenda') {
+      const start = startOfWeek(viewAnchor, calendarPreferences.weekStartsOn);
+      const end = addDays(start, calendarPreferences.showWeekends ? 7 : 5);
+      const dates = calendarPreferences.showWeekends
+        ? Array.from({ length: 7 }, (_, i) => addDays(start, i))
+        : Array.from({ length: 5 }, (_, i) => addDays(start, i));
+      return {
+        label: `Agenda · ${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} - ${new Date(
+          end.getTime() - 1
+        ).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`,
+        start,
+        end,
+        dates,
+      };
+    }
+
     if (viewMode === 'month') {
       const monthStart = startOfMonth(viewAnchor);
       const start = startOfMonthGrid(viewAnchor);
@@ -1353,6 +1392,86 @@ export const CalendarWindow = () => {
       dates,
     };
   }, [viewAnchor, viewMode, calendarPreferences.showWeekends, calendarPreferences.weekStartsOn]);
+
+  const isEventDragAllowed = useCallback(
+    (event: EventRow) => event.provider !== 'apple' && !event.all_day && (event.recurrence_rule ?? 'none') === 'none',
+    []
+  );
+
+  const commitEventDrag = useCallback(async (drag: CalendarDragState) => {
+    const source = events.find((event) => event.id === drag.eventId);
+    if (!source) return;
+    if (drag.previewStartAt === drag.startAt && drag.previewEndAt === drag.endAt) return;
+
+    const optimistic = { ...source, start_at: drag.previewStartAt, end_at: drag.previewEndAt };
+    setEvents((current) => current.map((event) => event.id === source.id ? optimistic : event));
+    setSelectedEvent((current) => current?.id === source.id ? optimistic : current);
+    try {
+      const updated = (await api.updateEvent(source.id, {
+        start_at: drag.previewStartAt,
+        end_at: drag.previewEndAt,
+      })) as EventRow;
+      setEvents((current) => current.map((event) => event.id === updated.id ? updated : event));
+      setSelectedEvent((current) => current?.id === updated.id ? updated : current);
+      notifyCalendarItemsUpdated();
+    } catch (error) {
+      setEvents((current) => current.map((event) => event.id === source.id ? source : event));
+      setSelectedEvent((current) => current?.id === source.id ? source : current);
+      setError(error instanceof Error ? error.message : 'Could not move this event.');
+    }
+  }, [api, events, notifyCalendarItemsUpdated]);
+
+  const beginEventDrag = useCallback((event: EventRow, pointerEvent: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!isEventDragAllowed(event)) return;
+    pointerEvent.preventDefault();
+    pointerEvent.stopPropagation();
+    pointerEvent.currentTarget.setPointerCapture?.(pointerEvent.pointerId);
+    calendarDragOriginRef.current = { startAt: event.start_at, endAt: event.end_at };
+    setCalendarDrag({
+      eventId: event.id,
+      pointerId: pointerEvent.pointerId,
+      startAt: event.start_at,
+      endAt: event.end_at,
+      previewStartAt: event.start_at,
+      previewEndAt: event.end_at,
+    });
+  }, [isEventDragAllowed]);
+
+  useEffect(() => {
+    if (!calendarDrag) return;
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== calendarDrag.pointerId) return;
+      const container = centerScrollRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const gridWidth = Math.max(1, container.scrollWidth - 72);
+      const dayWidth = gridWidth / Math.max(1, viewConfig.dates.length);
+      const x = event.clientX - rect.left + container.scrollLeft - 72;
+      const dayIndex = Math.max(0, Math.min(viewConfig.dates.length - 1, Math.floor(x / dayWidth)));
+      const y = event.clientY - rect.top + container.scrollTop - 96;
+      const minutes = Math.max(0, Math.min(23 * 60 + 45, Math.round((y / TIMELINE_HOUR_HEIGHT * 60) / 15) * 15));
+      const nextStart = new Date(viewConfig.dates[dayIndex] ?? viewAnchor);
+      nextStart.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+      const duration = new Date(calendarDrag.endAt).getTime() - new Date(calendarDrag.startAt).getTime();
+      const nextEnd = new Date(nextStart.getTime() + Math.max(15 * 60 * 1000, duration));
+      setCalendarDrag((current) => current ? { ...current, previewStartAt: nextStart.toISOString(), previewEndAt: nextEnd.toISOString() } : current);
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== calendarDrag.pointerId) return;
+      void commitEventDrag(calendarDrag).finally(() => {
+        calendarDragOriginRef.current = null;
+        setCalendarDrag(null);
+      });
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [calendarDrag, commitEventDrag, viewAnchor, viewConfig.dates]);
 
   const appleCalendar = useAppleCalendar(user?.id, viewConfig.start, viewConfig.end);
   const appleReminders = useAppleReminders(user?.id, viewConfig.start, viewConfig.end);
@@ -1664,45 +1783,20 @@ export const CalendarWindow = () => {
   }, []);
 
   const renderDueDateRow = (item: DueDateItem, className = '') => (
-    <div
+    <CenterInlineItemRow
       key={item.id}
-      role="button"
-      tabIndex={0}
       onClick={(event) => {
         event.stopPropagation();
         openDueDateItem(item);
       }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          openDueDateItem(item);
-        }
-      }}
-      className={`flex min-h-4 cursor-pointer items-center truncate px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors hover:bg-[var(--ledger-surface-hover)] ${
-        item.completed ? 'line-through opacity-55' : ''
-      } ${className}`}
-      title={`${item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'}: ${item.title}`}
-    >
-      <span
-        className="mr-1 flex h-3 w-3 shrink-0 items-center justify-center"
-        style={{ color: item.color }}
-        aria-hidden="true"
-      >
-        {item.kind === 'task' ? (
-          <CheckSquare size={11} strokeWidth={1.8} />
-        ) : item.kind === 'milestone' ? (
-          <Flag size={11} strokeWidth={1.8} />
-        ) : (
-          <CalendarClock size={11} strokeWidth={1.8} />
-        )}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{item.title}</span>
-      {item.time && (
-        <span className="ml-auto shrink-0 pl-1 text-[10px] text-[var(--ledger-text-muted)]">
-          {item.time}
-        </span>
-      )}
-    </div>
+      title={item.title}
+      time={item.time}
+      color={item.color}
+      completed={item.completed}
+      className={className}
+      titleText={`${item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'}: ${item.title}`}
+      icon={item.kind === 'task' ? <CheckSquare size={11} strokeWidth={1.8} /> : item.kind === 'milestone' ? <Flag size={11} strokeWidth={1.8} /> : <CalendarClock size={11} strokeWidth={1.8} />}
+    />
   );
 
   const eventsByDay = useMemo(() => {
@@ -2238,10 +2332,6 @@ export const CalendarWindow = () => {
       return projectCalendar ?? personalCalendar ?? getDefaultCalendar();
     }
     return personalCalendar ?? workspaceCalendar ?? getDefaultCalendar();
-  };
-
-  const notifyCalendarItemsUpdated = () => {
-    window.ipcRenderer?.send('calendar:items-updated');
   };
 
   const overflowEvents = useMemo(
@@ -4301,17 +4391,21 @@ export const CalendarWindow = () => {
             </ModuleHeaderSegmentedGroup>
 
             <ModuleHeaderSegmentedGroup compact>
-              {(['day', 'week', 'month'] as CalendarViewMode[]).map((mode) => (
-                <ModuleHeaderSegmentedButton
-                  compact
-                  key={mode}
-                  title={`Switch to ${mode} view`}
-                  onClick={() => setViewMode(mode)}
-                  active={viewMode === mode}
-                >
-                  {mode[0].toUpperCase() + mode.slice(1)}
-                </ModuleHeaderSegmentedButton>
-              ))}
+              <ModuleHeaderSegmentedButton
+                compact
+                pill
+                title="Change calendar view"
+                ariaLabel="Change calendar view"
+                onClick={() => {
+                  const buttonRect = calendarViewButtonRef.current?.getBoundingClientRect();
+                  if (!buttonRect) return;
+                  setCalendarViewMenu((current) => current ? null : { x: buttonRect.left, y: buttonRect.bottom + 6 });
+                }}
+                buttonRef={calendarViewButtonRef}
+                active
+              >
+                {viewMode[0].toUpperCase() + viewMode.slice(1)} <ChevronDown size={12} />
+              </ModuleHeaderSegmentedButton>
             </ModuleHeaderSegmentedGroup>
           </div>
         }
@@ -4390,6 +4484,23 @@ export const CalendarWindow = () => {
             ],
           },
         ]}
+      />
+
+      <ContextMenu
+        open={Boolean(calendarViewMenu)}
+        x={calendarViewMenu?.x ?? 0}
+        y={calendarViewMenu?.y ?? 0}
+        width={170}
+        onClose={() => setCalendarViewMenu(null)}
+        ariaLabel="Calendar views"
+        groupLabelCase="normal"
+        groups={[{
+          items: (['agenda', 'day', 'week', 'month'] as CalendarViewMode[]).map((mode) => ({
+            id: `view-${mode}`,
+            label: mode[0].toUpperCase() + mode.slice(1),
+            onClick: () => setViewMode(mode),
+          })),
+        }]}
       />
 
       <input
@@ -4667,8 +4778,8 @@ export const CalendarWindow = () => {
           </div>
         )}
 
-        <section className="flex-1 min-w-0 p-3">
-          <div className="flex h-full flex-col overflow-hidden rounded-[19px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
+        <section className="flex-1 min-w-0 p-0">
+          <div className="flex h-full flex-col overflow-hidden bg-[var(--ledger-surface-card)]">
             <div
               ref={centerScrollRef}
               className="flex-1 min-w-0 overflow-auto"
@@ -4686,8 +4797,110 @@ export const CalendarWindow = () => {
                 container.scrollLeft += event.deltaX;
               }}
             >
+              {calendarDrag ? (
+                <div className="sticky top-3 z-[60] mx-auto flex w-fit items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-[11px] text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
+                  Moving to {new Date(calendarDrag.previewStartAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · {formatCalendarTime(new Date(calendarDrag.previewStartAt))}
+                </div>
+              ) : null}
               {isInitialLoading ? (
                 loadingSkeleton
+              ) : viewMode === 'agenda' ? (
+                <div className="mx-auto max-w-[860px] px-5 py-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Upcoming and dated work</p>
+                    <p className="text-[11px] text-[var(--ledger-text-muted)]">{viewConfig.dates.length} days</p>
+                  </div>
+                  <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+                    {viewConfig.dates.map((dayDate) => {
+                      const key = formatDateKey(dayDate);
+                      const dayEvents = eventsByDay[key] ?? [];
+                      const dayReminders = remindersByDay[key] ?? [];
+                      const dayDueItems = dueItemsByDay[key] ?? [];
+                      const itemCount = dayEvents.length + dayReminders.length + dayDueItems.length;
+                      return (
+                        <section key={key} className="py-4 first:pt-1">
+                          <div className="mb-2 flex items-baseline justify-between gap-3">
+                            <h2 className={`text-[13px] font-semibold ${key === todayKey ? 'text-[var(--ledger-accent)]' : 'text-[var(--ledger-text-primary)]'}`}>
+                              {dayDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
+                            </h2>
+                            <span className="text-[11px] text-[var(--ledger-text-muted)]">{itemCount ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : 'No items'}</span>
+                          </div>
+                          {itemCount ? (
+                            <div className="space-y-0.5">
+                              {dayEvents.map((event) => {
+                                const color = getCalendarColor(event.calendar_id);
+                                return (
+                                  <CenterItemRow
+                                    key={`event:${event.id}`}
+                                    title={event.title}
+                                    time={isAllDayEvent(event) ? 'All day' : formatCompactCalendarTime(new Date(event.start_at))}
+                                    detail={event.project_id ? 'Linked project' : event.provider === 'apple' ? 'Apple Calendar' : null}
+                                    color={color}
+                                    icon={event.project_id ? <Folder size={12} /> : <CalendarDays size={12} />}
+                                    muted={isPastEvent(event)}
+                                    completed={event.status === 'done'}
+                                    selected={selectedEvent?.id === event.id}
+                                    onClick={(clickEvent) => {
+                                      clickEvent.stopPropagation();
+                                      setSelectedEvent(event);
+                                      setSelectedReminder(null);
+                                      setViewAnchor(dayDate);
+                                    }}
+                                    onContextMenu={(contextEvent) => {
+                                      contextEvent.preventDefault();
+                                      setListContextMenu({ x: contextEvent.clientX, y: contextEvent.clientY, kind: 'event', id: event.id });
+                                    }}
+                                  />
+                                );
+                              })}
+                              {dayReminders.map((reminder) => (
+                                <CenterItemRow
+                                  key={`reminder:${reminder.id}`}
+                                  title={reminder.title}
+                                  time={reminder.all_day ? 'All day' : formatCompactCalendarTime(new Date(reminder.remind_at))}
+                                  detail={reminder.project_id ? 'Linked project' : 'Reminder'}
+                                  color={reminder.color ?? '#F59E0B'}
+                                  icon={reminder.is_done ? <Check size={12} /> : <BellRing size={12} />}
+                                  muted={isPastReminder(reminder)}
+                                  completed={reminder.is_done}
+                                  selected={selectedReminder?.id === reminder.id}
+                                  onClick={(clickEvent) => {
+                                    clickEvent.stopPropagation();
+                                    setSelectedReminder(reminder);
+                                    setSelectedEvent(null);
+                                    setViewAnchor(dayDate);
+                                  }}
+                                  onContextMenu={(contextEvent) => {
+                                    contextEvent.preventDefault();
+                                    setListContextMenu({ x: contextEvent.clientX, y: contextEvent.clientY, kind: 'reminder', id: reminder.id });
+                                  }}
+                                />
+                              ))}
+                              {dayDueItems.map((item) => (
+                                <CenterItemRow
+                                  key={`due:${item.id}`}
+                                  title={item.title}
+                                  time={item.time}
+                                  detail={item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'}
+                                  color={item.color}
+                                  icon={item.kind === 'task' ? <CheckSquare size={12} /> : item.kind === 'milestone' ? <Flag size={12} /> : <CalendarClock size={12} />}
+                                  completed={item.completed}
+                                  onClick={(clickEvent) => {
+                                    clickEvent.stopPropagation();
+                                    openDueDateItem(item);
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="px-2 text-[12px] text-[var(--ledger-text-muted)]">Nothing scheduled.</p>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
               ) : viewMode === 'month' ? (
                 <div className="min-w-[720px]">
                   <div
@@ -4706,9 +4919,9 @@ export const CalendarWindow = () => {
                       const dayEvents = eventsByDay[key] ?? [];
                       const dayReminders = remindersByDay[key] ?? [];
                       const dayDueItems = dueItemsByDay[key] ?? [];
-                      const monthRowHeight = 16;
+                      const monthRowHeight = 18;
                       const monthRowGap = 2;
-                      const monthContentHeight = Math.max(0, 122 - 8 - 24);
+                      const monthContentHeight = Math.max(0, 118 - 12 - 28);
                       let usedMonthContentHeight = 0;
                       const visibleReminders: ReminderRow[] = [];
                       const visibleDueItems: DueDateItem[] = [];
@@ -4751,14 +4964,25 @@ export const CalendarWindow = () => {
                       const inMonth = dayDate.getMonth() === viewAnchor.getMonth();
 
                       return (
-                        <button
+                        <div
                           key={key}
                           data-month-cell="true"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => {
                             setSelectedEvent(null);
                             setSelectedReminder(null);
                             setViewMode('day');
                             setViewAnchor(dayDate);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSelectedEvent(null);
+                              setSelectedReminder(null);
+                              setViewMode('day');
+                              setViewAnchor(dayDate);
+                            }
                           }}
                           onContextMenu={(event) => {
                             event.preventDefault();
@@ -4769,17 +4993,19 @@ export const CalendarWindow = () => {
                               hour: 9,
                             });
                           }}
-                          className={`relative min-h-[122px] border-b border-r border-[color:var(--ledger-border-subtle)] p-1 text-left align-top transition-colors hover:bg-[var(--ledger-surface-hover)] ${
+                          className={`relative min-h-[118px] border-b border-r border-[color:var(--ledger-border-subtle)] p-2 text-left align-top transition-colors hover:bg-[var(--ledger-surface-hover)] ${
                             inMonth
                               ? 'bg-[var(--ledger-surface-card)]'
                               : 'bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'
                           }`}
                         >
-                          <div className="absolute right-4 top-1.5 z-10 flex h-6 items-start justify-end">
+                          <div className="absolute left-2 top-1.5 z-10 flex h-6 items-start justify-start">
                             <span
-                              className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[11px] font-medium tabular-nums ${
+                              className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[11px] font-medium tabular-nums transition-colors ${
                                 key === todayKey
                                   ? 'bg-[var(--ledger-accent)] text-white'
+                                  : key === formatDateKey(viewAnchor)
+                                  ? 'border border-[var(--ledger-accent)] text-[var(--ledger-accent)]'
                                   : inMonth
                                   ? 'text-[var(--ledger-text-primary)]'
                                   : 'text-[var(--ledger-text-muted)]'
@@ -4788,27 +5014,21 @@ export const CalendarWindow = () => {
                               {dayDate.getDate()}
                             </span>
                           </div>
-                          <div className="space-y-0.5 pt-5">
+                          <div className="space-y-0.5 pt-8">
                             {visibleReminders.map((reminder) =>
                               (() => {
                                 const pastReminder = isPastReminder(reminder);
                                 return (
-                                  <div
-                                    key={reminder.id}
-                                    className={`flex min-h-4 items-center truncate px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors ${
-                                      reminder.is_done
-                                        ? 'line-through opacity-55'
-                                        : pastReminder
-                                        ? 'opacity-80'
-                                        : ''
-                                    }`}
-                                    style={{
-                                      backgroundColor: 'transparent',
-                                      color: pastReminder
-                                        ? 'var(--ledger-text-muted)'
-                                        : 'var(--ledger-text-primary)',
-                                    }}
-                                    onClick={(e) => {
+                                    <CenterInlineItemRow
+                                      key={reminder.id}
+                                      title={reminder.title}
+                                      time={reminder.all_day ? 'All day' : formatCompactCalendarTime(new Date(reminder.remind_at))}
+                                      color={reminder.color ?? '#F59E0B'}
+                                      muted={pastReminder}
+                                      completed={reminder.is_done}
+                                      selected={selectedReminder?.id === reminder.id}
+                                      icon={reminder.is_done ? <Check size={8} strokeWidth={2.5} /> : <BellRing size={9} strokeWidth={1.8} />}
+                                      onClick={(e) => {
                                       e.stopPropagation();
                                       setListContextMenu(null);
                                       setSelectedEvent(null);
@@ -4824,28 +5044,8 @@ export const CalendarWindow = () => {
                                         id: reminder.id,
                                       });
                                     }}
-                                  >
-                                    <span
-                                      className={`mr-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${
-                                        reminder.is_done ? 'border-[var(--ledger-success)] text-[var(--ledger-success)]' : ''
-                                      }`}
-                                      style={
-                                        reminder.is_done
-                                          ? undefined
-                                          : {
-                                              borderColor: pastReminder
-                                                ? 'var(--ledger-text-muted)'
-                                                : reminder.color ?? '#F59E0B',
-                                            }
-                                      }
-                                    >
-                                      {reminder.is_done && <Check size={8} strokeWidth={2.5} />}
-                                    </span>
-                                    <span className="min-w-0 flex-1 truncate">{reminder.title}</span>
-                                    <span className="ml-auto shrink-0 pl-1 text-[10px] font-normal text-[var(--ledger-text-muted)]">
-                                      {reminder.all_day ? 'All day' : formatCompactCalendarTime(new Date(reminder.remind_at))}
-                                    </span>
-                                  </div>
+                                      titleText={`${formatCompactCalendarTime(new Date(reminder.remind_at))} • ${reminder.title}`}
+                                    />
                                 );
                               })()
                             )}
@@ -4854,23 +5054,16 @@ export const CalendarWindow = () => {
                               (() => {
                                 const calendarColor = getCalendarColor(event.calendar_id);
                                 const pastEvent = isPastEvent(event);
-                                const pastEventMuted = isPastEventMuted(event);
                                 return (
-                                  <div
+                                  <CenterInlineItemRow
                                     key={event.id}
-                                    className={`flex h-4 items-center truncate px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors ${event.status === 'done' ? 'line-through opacity-80' : ''} ${
-                                      event.status === 'cancelled' ? 'opacity-65' : ''
-                                    } ${pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''} ${
-                                      pastEvent && !pastEventMuted
-                                        ? 'opacity-75 grayscale-[0.15]'
-                                        : ''
-                                    }`}
-                                    style={{
-                                      backgroundColor: 'transparent',
-                                      color: pastEvent
-                                        ? 'var(--ledger-text-muted)'
-                                        : 'var(--ledger-text-primary)',
-                                    }}
+                                    title={event.title}
+                                    time={!isAllDayEvent(event) ? formatCompactCalendarTime(new Date(event.start_at)) : null}
+                                    color={calendarColor}
+                                    muted={pastEvent || event.status === 'cancelled'}
+                                    completed={event.status === 'done'}
+                                    selected={selectedEvent?.id === event.id}
+                                    icon={event.project_id ? <Folder size={8} /> : <CalendarDays size={9} />}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setListContextMenu(null);
@@ -4891,40 +5084,8 @@ export const CalendarWindow = () => {
                                         id: event.id,
                                       });
                                     }}
-                                  >
-                                    <span
-                                      className="mr-1 h-3 w-0.5 shrink-0 rounded-full"
-                                      style={{
-                                        backgroundColor: pastEvent
-                                          ? 'var(--ledger-text-muted)'
-                                          : calendarColor,
-                                      }}
-                                    />
-                                    {pastEvent &&
-                                      new Date(event.start_at).getHours() === 0 &&
-                                      (() => {
-                                        try {
-                                          console.debug('[Calendar] month-preview-past-midnight', {
-                                            id: event.id,
-                                            start_at: event.start_at,
-                                            parsed: new Date(event.start_at).toString(),
-                                          });
-                                        } catch (err) {}
-                                        return null;
-                                      })()}
-                                    {event.project_id && (
-                                      <Folder
-                                        size={8}
-                                        className="mr-1 inline-block align-middle text-[var(--ledger-text-muted)]"
-                                      />
-                                    )}
-                                    <span className="min-w-0 flex-1 truncate">{event.title}</span>
-                                    {!isAllDayEvent(event) && (
-                                      <span className="ml-auto shrink-0 pl-1 text-[10px] font-normal text-[var(--ledger-text-muted)]">
-                                        {formatCompactCalendarTime(new Date(event.start_at))}
-                                      </span>
-                                    )}
-                                  </div>
+                                    titleText={`${event.title}${!isAllDayEvent(event) ? ` • ${formatCompactCalendarTime(new Date(event.start_at))}` : ''}`}
+                                  />
                                 );
                               })()
                             )}
@@ -4940,7 +5101,7 @@ export const CalendarWindow = () => {
                               </button>
                             )}
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -4956,27 +5117,17 @@ export const CalendarWindow = () => {
                   >
                     <div className="sticky top-0 z-50 h-14 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]" />
                     {viewConfig.dates.map((dayDate) => (
-                      <div
+                      <CenterDateHeader
                         key={dayDate.toISOString()}
-                        className={`sticky top-0 z-50 flex h-14 flex-col items-center justify-center border-b border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] ${
-                          formatDateKey(dayDate) === todayKey ? 'text-[var(--ledger-text-primary)]' : ''
-                        }`}
-                      >
-                        <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                          {dayDate.toLocaleDateString([], { weekday: 'short' })}
-                        </span>
-                        <span className={`mt-0.5 flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[12px] font-medium tabular-nums ${
-                          formatDateKey(dayDate) === todayKey
-                            ? 'bg-[var(--ledger-accent)] text-white'
-                            : 'text-[var(--ledger-text-secondary)]'
-                        }`}>
-                          {dayDate.getDate()}
-                        </span>
-                      </div>
+                        weekday={dayDate.toLocaleDateString([], { weekday: 'short' })}
+                        date={dayDate.getDate()}
+                        today={formatDateKey(dayDate) === todayKey}
+                        className="sticky top-0 z-50"
+                      />
                     ))}
 
                     <div className="flex h-10 items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-2 pt-1.5 text-[10px] text-[var(--ledger-text-muted)]">
-                      All day
+                      <CenterSectionLabel className="w-full justify-end">All day</CenterSectionLabel>
                     </div>
                     {viewConfig.dates.map((dayDate) => {
                       const key = formatDateKey(dayDate);
@@ -5054,7 +5205,23 @@ export const CalendarWindow = () => {
                             {visibleAllDayDueItems.map((item) =>
                               renderDueDateRow(item, 'rounded px-1.5 py-0.5')
                             )}
-                            {visibleAllDayReminders.map((reminder) => <button key={reminder.id} onClick={(e) => { e.stopPropagation(); setSelectedEvent(null); setSelectedReminder(reminder); setViewMode('day'); setViewAnchor(dayDate); }} className={`w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] leading-tight ${reminder.is_done ? 'line-through opacity-55' : ''}`} style={{ backgroundColor: `${reminder.color ?? '#F59E0B'}18`, borderLeft: `2px solid ${reminder.color ?? '#F59E0B'}`, color: 'var(--ledger-text-primary)' }}><span className="mr-1">◷</span>{reminder.title}</button>)}
+                            {visibleAllDayReminders.map((reminder) => (
+                              <CenterInlineItemRow
+                                key={reminder.id}
+                                title={reminder.title}
+                                color={reminder.color ?? '#F59E0B'}
+                                icon={reminder.is_done ? <Check size={8} /> : <BellRing size={9} />}
+                                completed={reminder.is_done}
+                                selected={selectedReminder?.id === reminder.id}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedEvent(null);
+                                  setSelectedReminder(reminder);
+                                  setViewMode('day');
+                                  setViewAnchor(dayDate);
+                                }}
+                              />
+                            ))}
                             {hiddenAllDayCount > 0 && (
                               <button
                                 onClick={(e) => {
@@ -5074,36 +5241,14 @@ export const CalendarWindow = () => {
                       );
                     })}
 
-                    {visibleToday && (
-                      <div
-                        aria-label={`Current time ${formatCalendarTime(currentTime)}`}
-                        className="pointer-events-none absolute left-0 right-0 z-40"
-                        style={{ top: `${56 + 40 + (currentTimeMinutes / 60) * TIMELINE_HOUR_HEIGHT}px` }}
-                      >
-                        <span className="absolute -top-2 left-4 z-50 rounded-full bg-[var(--ledger-accent)] px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums text-white shadow-sm">
-                          {formatCalendarTime(currentTime)}
-                        </span>
-                        <span
-                          className="absolute bottom-0 left-0 right-0 top-0 grid"
-                          style={{
-                            gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
-                          }}
-                        >
-                          {todayColumnIndex > 0 && (
-                            <span
-                              className="h-px bg-[var(--ledger-accent)]/25"
-                              style={{ gridColumn: `2 / ${todayColumnIndex + 2}` }}
-                            />
-                          )}
-                          <span
-                            className="relative h-px bg-[var(--ledger-accent)]/90"
-                            style={{ gridColumn: `${todayColumnIndex + 2} / -1` }}
-                          >
-                            <span className="absolute -left-[3px] -top-[3px] h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
-                          </span>
-                        </span>
-                      </div>
-                    )}
+                    {visibleToday ? (
+                      <CenterCurrentTimeIndicator
+                        top={56 + 40 + (currentTimeMinutes / 60) * TIMELINE_HOUR_HEIGHT}
+                        label={formatCalendarTime(currentTime)}
+                        todayColumnIndex={todayColumnIndex}
+                        dateCount={viewConfig.dates.length}
+                      />
+                    ) : null}
 
                     {hoursToRender.map((hour) => (
                       <Fragment key={hour}>
@@ -5247,8 +5392,16 @@ export const CalendarWindow = () => {
                                         style={{ marginLeft: `${reminderLaneOffset}px` }}
                                       >
                                         {visibleReminders.map((reminder) => (
-                                          <button
+                                          <CenterItemRow
                                             key={reminder.id}
+                                            compact
+                                            title={reminder.title}
+                                            time={formatCalendarTime(new Date(reminder.remind_at))}
+                                            color={reminder.color ?? '#F59E0B'}
+                                            icon={reminder.is_done ? <Check size={8} /> : <BellRing size={9} />}
+                                            muted={isPastReminder(reminder)}
+                                            completed={reminder.is_done}
+                                            selected={selectedReminder?.id === reminder.id}
                                             onClick={(e) => {
                                               setSelectedEvent(null);
                                               setSelectedReminder(reminder);
@@ -5265,47 +5418,7 @@ export const CalendarWindow = () => {
                                                 id: reminder.id,
                                               });
                                             }}
-                                            className={`relative z-30 flex min-h-5 w-full items-center truncate px-1 py-0.5 text-left text-[11px] leading-tight ${
-                                              reminder.is_done &&
-                                              (calendarPreferences.completedReminderBehavior ??
-                                                'collapse') === 'collapse'
-                                                ? 'line-through opacity-70'
-                                                : reminder.is_done
-                                                ? 'line-through opacity-60'
-                                                : ''
-                                            } ${isPastReminder(reminder) ? 'opacity-80' : ''}`}
-                                            style={{
-                                              backgroundColor: 'transparent',
-                                              color: isPastReminder(reminder)
-                                                ? 'var(--ledger-text-muted)'
-                                                : 'var(--ledger-text-primary)',
-                                            }}
-                                            title={`${formatCalendarTime(
-                                              new Date(reminder.remind_at)
-                                            )} • ${reminder.title}`}
-                                          >
-                                            <span
-                                              className={`mr-1 flex h-3 w-3 shrink-0 items-center justify-center rounded-full border ${
-                                                reminder.is_done
-                                                  ? 'border-[var(--ledger-success)] text-[var(--ledger-success)]'
-                                                  : ''
-                                              }`}
-                                              style={
-                                                reminder.is_done
-                                                  ? undefined
-                                                  : {
-                                                      borderColor: isPastReminder(reminder)
-                                                        ? 'var(--ledger-text-muted)'
-                                                        : reminder.color ?? '#F59E0B',
-                                                    }
-                                              }
-                                            >
-                                              {reminder.is_done && (
-                                                <Check size={8} strokeWidth={2.5} />
-                                              )}
-                                            </span>
-                                            {reminder.title}
-                                          </button>
+                                          />
                                         ))}
                                         {hiddenReminders > 0 && (
                                           <button
@@ -5332,116 +5445,36 @@ export const CalendarWindow = () => {
                                       const durationMinutes = getEventDurationMinutes(evt);
                                       const overlapDepth = timelineEventOffsets.get(evt.id) ?? 0;
                                       return (
-                                        <button
+                                        <CenterEventBlock
                                           key={evt.id}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
+                                          title={evt.title}
+                                          titleContent={
+                                            <span className={pastEventMuted ? 'opacity-70' : undefined}>
+                                              {evt.recurrence_rule && evt.recurrence_rule !== 'none' ? '↻ ' : ''}
+                                              {evt.project_id ? <Folder size={8} className="mr-1 inline-block text-[var(--ledger-text-muted)]" /> : null}
+                                              {evt.title}
+                                            </span>
+                                          }
+                                          timeRange={durationRows > 1 && !(viewMode === 'week' && viewportWidth < 1200) ? formatEventTimeRangeLabel(evt) : null}
+                                          color={eventColor}
+                                          muted={pastEvent}
+                                          selected={selectedEvent?.id === evt.id}
+                                          compact={viewMode === 'week' && viewportWidth < 1200}
+                                          top={Math.max(8, 4 + reminderStackHeight + (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT)}
+                                          left={`${4 + overlapDepth * 14}px`}
+                                          right="4px"
+                                          height={Math.max(24, (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 4)}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
                                             setSelectedEvent(evt);
                                           }}
                                           onContextMenu={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            setListContextMenu({
-                                              x: e.clientX,
-                                              y: e.clientY,
-                                              kind: 'event',
-                                              id: evt.id,
-                                            });
+                                            setListContextMenu({ x: e.clientX, y: e.clientY, kind: 'event', id: evt.id });
                                           }}
-                                          className={`group absolute z-30 flex flex-col rounded-[5px] border text-left text-[11px] leading-tight transition-[border-color,box-shadow,transform] ${
-                                            durationRows > 1 ? 'p-2' : 'px-2 py-1.5'
-                                          }`}
-                                          style={{
-                                            pointerEvents: 'auto',
-                                            left: `${4 + overlapDepth * 14}px`,
-                                            right: '4px',
-                                            top: `${Math.max(
-                                              8,
-                                              4 +
-                                                reminderStackHeight +
-                                                (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT
-                                            )}px`,
-                                            height: `${Math.max(
-                                              24,
-                                              (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 4
-                                            )}px`,
-                                            backgroundColor: pastEvent
-                                              ? 'var(--ledger-surface-hover)'
-                                              : `${eventColor}12`,
-                                            borderColor: pastEvent
-                                              ? 'var(--ledger-border-subtle)'
-                                              : `${eventColor}3d`,
-                                            color: pastEvent
-                                              ? 'var(--ledger-text-muted)'
-                                              : 'var(--ledger-text-primary)',
-                                            boxSizing: 'border-box',
-                                            lineHeight: 1.2,
-                                            overflow: 'hidden',
-                                            boxShadow: pastEvent
-                                              ? 'none'
-                                              : `0 0 0 1px ${eventColor}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
-                                          }}
-                                        >
-                                          <span
-                                            aria-hidden="true"
-                                            className="pointer-events-none absolute bottom-2 left-0.5 top-2 z-10 w-0.5 rounded-full"
-                                            style={{
-                                              backgroundColor: pastEvent
-                                                ? 'var(--ledger-text-muted)'
-                                                : eventColor,
-                                            }}
-                                          />
-                                          <span
-                                            aria-hidden="true"
-                                            className="pointer-events-none absolute inset-0 rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                                            style={{
-                                              backgroundColor: pastEvent
-                                                ? 'var(--ledger-surface-hover)'
-                                                : `${eventColor}1c`,
-                                            }}
-                                          />
-                                          <div className="flex gap-1.5 min-w-0">
-                                            <span
-                                              className="relative z-10 h-1.5 w-1.5 rounded-full shrink-0 mt-0.5"
-                                              style={{ backgroundColor: eventColor }}
-                                            />
-                                            <div className="relative z-10 min-w-0 flex-1">
-                                              <div className="flex items-start gap-1 min-w-0">
-                                                {evt.recurrence_rule && evt.recurrence_rule !== 'none' && (
-                                                  <span className="shrink-0 text-[10px] leading-none text-[var(--ledger-text-muted)]">
-                                                    ↻
-                                                  </span>
-                                                )}
-                                                {evt.project_id && (
-                                                  <Folder
-                                                    size={8}
-                                                    className="shrink-0 text-[var(--ledger-text-muted)]"
-                                                  />
-                                                )}
-                                                <span
-                                                  className={`font-normal ${
-                                                    durationRows > 1 ? 'line-clamp-3' : 'truncate'
-                                                  } ${pastEventMuted ? 'opacity-70' : ''}`}
-                                                >
-                                                  {evt.title}
-                                                </span>
-                                              </div>
-                                              {durationRows > 1 &&
-                                                !(viewMode === 'week' && viewportWidth < 1200) && (
-                                                <div
-                                                  className={`text-[10px] text-[var(--ledger-text-muted)] ${
-                                                    durationRows > 1 ? 'mt-1' : 'mt-0.5'
-                                                  }`}
-                                                >
-                                                  <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                                                    <Clock3 size={9} strokeWidth={1.8} />
-                                                    {formatEventTimeRangeLabel(evt)}
-                                                  </span>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </button>
+                                          onPointerDown={(pointerEvent) => beginEventDrag(evt, pointerEvent)}
+                                        />
                                       );
                                     })}
                                   </div>

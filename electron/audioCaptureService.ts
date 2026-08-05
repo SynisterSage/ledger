@@ -1,19 +1,12 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { app, shell } from 'electron';
+import { shell } from 'electron';
 import { RecordingSessionStore, type RecordingChunk, type RecordingSource } from './recordingSessionStore';
+import { createAudioCaptureAdapter } from './audio-capture/createAudioCaptureAdapter';
+import { AudioCaptureError, type AudioCaptureAdapter, type AudioCaptureEvent, type AudioSourceName } from './audio-capture/types';
 
-export type AudioPermissionState =
-  | 'not_requested'
-  | 'granted'
-  | 'denied'
-  | 'restricted'
-  | 'requires_restart'
-  | 'unavailable';
-
-export type AudioSourceName = 'user_microphone' | 'system_audio';
+export type { AudioInputDevice, AudioPermissionState, AudioSourceName } from './audio-capture/types';
 export type AudioCaptureState = 'idle' | 'recording' | 'paused' | 'stopped';
 
 export type AudioCaptureStatus = {
@@ -36,26 +29,9 @@ export type AudioCaptureStatus = {
   queueDepth: number;
   diskAvailableBytes: number;
 };
-export type AudioInputDevice = {
-  id: string;
-  name: string;
-  kind: 'input';
-  available: boolean;
-  isBluetooth: boolean;
-  isDefault: boolean;
-  isOutputDefault: boolean;
-  channelCount: number;
-};
-
 export type AudioLevelEvent = { source: AudioSourceName; level: number };
 export type AudioErrorEvent = { source: AudioSourceName; error: string };
 
-type BridgeResponse = Record<string, any> & { ok?: boolean; event?: string };
-type BridgeRequest = {
-  resolve: (value: BridgeResponse) => void;
-  reject: (error: Error) => void;
-  timeout: NodeJS.Timeout;
-};
 type ActiveSession = {
   sessionId: string;
   noteId: string | null;
@@ -75,23 +51,26 @@ const SOURCE_NAMES = new Set<AudioSourceName>(['user_microphone', 'system_audio'
 const safeId = (value: unknown) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,180}$/.test(value);
 
 export class MeetingAudioCaptureService {
-  private bridge: ChildProcessWithoutNullStreams | null = null;
-  private bridgeBuffer = '';
-  private bridgeQueue: Promise<unknown> = Promise.resolve();
-  private currentRequest: BridgeRequest | null = null;
+  private readonly adapter: AudioCaptureAdapter;
   private activeSession: ActiveSession | null = null;
   private completedDirectories = new Map<string, string>();
   private levelListeners = new Set<(event: AudioLevelEvent) => void>();
   private errorListeners = new Set<(event: AudioErrorEvent) => void>();
+  private deviceChangeListeners = new Set<() => void>();
   private readonly sessionStore: RecordingSessionStore;
   private diskTimer: NodeJS.Timeout | null = null;
+  private stopInFlight: Promise<AudioCaptureStatus> | null = null;
 
-  constructor(sessionStore = new RecordingSessionStore()) {
+  constructor(sessionStore = new RecordingSessionStore(), adapter = createAudioCaptureAdapter()) {
     this.sessionStore = sessionStore;
+    this.adapter = adapter;
+    this.adapter.onEvent((event) => this.handleCaptureEvent(event));
     this.cleanAbandonedDirectories();
   }
 
   get isActive() { return Boolean(this.activeSession); }
+
+  setRequesterId(requesterId: number) { this.adapter.setRequesterId?.(requesterId); }
 
   onLevel(listener: (event: AudioLevelEvent) => void) {
     this.levelListeners.add(listener);
@@ -103,41 +82,23 @@ export class MeetingAudioCaptureService {
     return () => this.errorListeners.delete(listener);
   }
 
+  onDevicesChanged(listener: () => void) {
+    this.deviceChangeListeners.add(listener);
+    return () => this.deviceChangeListeners.delete(listener);
+  }
+
   async permissions() {
-    const response = await this.invoke({ command: 'permission-status' });
-    return {
-      microphone: this.permissionState(response.microphone),
-      systemAudio: this.permissionState(response.systemAudio),
-    };
+    return this.adapter.permissions();
   }
 
   async requestPermissions() {
-    const response = await this.invoke({ command: 'request-permissions' });
-    return {
-      microphone: this.permissionState(response.microphone),
-      systemAudio: this.permissionState(response.systemAudio),
-    };
+    return this.adapter.requestPermissions();
   }
 
+  openSystemSettings(area: 'microphone' | 'screen-recording') { return this.adapter.openSystemSettings(area); }
+
   async devices() {
-    const response = await this.invoke({ command: 'devices' });
-    return {
-      devices: Array.isArray(response.devices) ? response.devices.filter((device) => device && typeof device.id === 'string' && typeof device.name === 'string').map((device) => ({
-        id: device.id,
-        name: device.name,
-        kind: 'input' as const,
-        available: device.available !== false,
-        isBluetooth: device.isBluetooth === true,
-        isDefault: device.isDefault === true,
-        isOutputDefault: device.isOutputDefault === true,
-        channelCount: Number(device.channelCount) || 1,
-      })) as AudioInputDevice[] : [],
-      outputDevice: response.outputDevice && typeof response.outputDevice.id === 'string' ? {
-        id: response.outputDevice.id,
-        name: String(response.outputDevice.name || 'Current output'),
-        isBluetooth: response.outputDevice.isBluetooth === true,
-      } : null,
-    };
+    return this.adapter.devices();
   }
 
   async start(input: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null }) {
@@ -149,7 +110,7 @@ export class MeetingAudioCaptureService {
     if (!input.microphone && !input.systemAudio) throw new Error('Select at least one audio source.');
     this.assertDiskSpace();
     const sessionId = randomUUID();
-    const directory = path.join(app.getPath('temp'), 'ledger-meeting-audio', sessionId);
+    const directory = this.sessionStore.activeDirectory(sessionId);
     this.sessionStore.start({
       sessionId,
       noteId: input.noteId,
@@ -158,37 +119,33 @@ export class MeetingAudioCaptureService {
       startedAt: new Date().toISOString(),
       status: 'recording',
       enabledSources: [input.microphone ? 'user_microphone' : null, input.systemAudio ? 'system_audio' : null].filter(Boolean) as RecordingSource[],
-      directoryRef: sessionId,
+      directoryRef: path.relative(this.sessionStore.storageRoot, directory),
+      selectedMicrophoneId: input.microphoneDeviceId ?? null,
     });
-    let response: BridgeResponse;
     try {
-      response = await this.invoke({ command: 'start', sessionId, directory, microphone: input.microphone, systemAudio: input.systemAudio, microphoneDeviceId: input.microphone ? input.microphoneDeviceId ?? null : null });
+      const capture = await this.adapter.start({ sessionId, directory, microphone: input.microphone, systemAudio: input.systemAudio, microphoneDeviceId: input.microphone ? input.microphoneDeviceId ?? null : null });
+      this.activeSession = {
+        sessionId,
+        noteId: input.noteId,
+        workspaceId: input.workspaceId,
+        kind: 'meeting',
+        directory,
+        sources: capture.sources,
+        warnings: capture.warnings,
+        startedAt: new Date().toISOString(),
+        state: 'recording',
+        durationSeconds: 0,
+        chunkCount: 0,
+        queueDepth: 0,
+      };
+      this.sessionStore.setSources(sessionId, capture.sources.map((source) => source.source));
+      this.startDiskMonitor();
+      return this.publicStatus();
     } catch (error) {
       this.sessionStore.setStatus(sessionId, 'discarded');
+      this.sessionStore.promoteToRecovery(sessionId);
       throw error;
     }
-    if (!response.ok) {
-      this.sessionStore.setStatus(sessionId, 'discarded');
-      throw new Error(response.error || 'Audio capture could not start.');
-    }
-    const startedAt = new Date().toISOString();
-    this.activeSession = {
-      sessionId,
-      noteId: input.noteId,
-      workspaceId: input.workspaceId,
-      kind: 'meeting',
-      directory,
-      sources: this.normalizeSources(response.sources),
-      warnings: this.normalizeWarnings(response.warnings),
-      startedAt,
-      state: 'recording',
-      durationSeconds: 0,
-      chunkCount: 0,
-      queueDepth: 0,
-    };
-    this.sessionStore.setSources(sessionId, this.normalizeSources(response.sources).map((source) => source.source));
-    this.startDiskMonitor();
-    return this.publicStatus();
   }
 
   async testSource(source: AudioSourceName, microphoneDeviceId?: string | null) {
@@ -196,7 +153,7 @@ export class MeetingAudioCaptureService {
     if (this.activeSession) throw new Error('Stop the current audio test before starting another one.');
     this.assertDiskSpace();
     const sessionId = `test-${randomUUID()}`;
-    const directory = path.join(app.getPath('temp'), 'ledger-meeting-audio', sessionId);
+    const directory = this.sessionStore.activeDirectory(sessionId);
     this.sessionStore.start({
       sessionId,
       noteId: null,
@@ -205,12 +162,16 @@ export class MeetingAudioCaptureService {
       startedAt: new Date().toISOString(),
       status: 'recording',
       enabledSources: [source],
-      directoryRef: sessionId,
+      directoryRef: path.relative(this.sessionStore.storageRoot, directory),
+      selectedMicrophoneId: microphoneDeviceId ?? null,
     });
-    const response = await this.invoke({ command: 'test-source', sessionId, directory, microphone: source === 'user_microphone', systemAudio: source === 'system_audio', microphoneDeviceId: source === 'user_microphone' ? microphoneDeviceId ?? null : null });
-    if (!response.ok) {
+    let capture;
+    try {
+      capture = await this.adapter.testSource({ sessionId, directory, microphone: source === 'user_microphone', systemAudio: source === 'system_audio', microphoneDeviceId: source === 'user_microphone' ? microphoneDeviceId ?? null : null });
+    } catch (error) {
       this.sessionStore.setStatus(sessionId, 'discarded');
-      throw new Error(response.error || 'Audio test could not start.');
+      this.sessionStore.promoteToRecovery(sessionId);
+      throw error;
     }
     this.activeSession = {
       sessionId,
@@ -218,23 +179,22 @@ export class MeetingAudioCaptureService {
       workspaceId: null,
       kind: 'test',
       directory,
-      sources: this.normalizeSources(response.sources),
-      warnings: this.normalizeWarnings(response.warnings),
+      sources: capture.sources,
+      warnings: capture.warnings,
       startedAt: new Date().toISOString(),
       state: 'recording',
       durationSeconds: 0,
       chunkCount: 0,
       queueDepth: 0,
     };
-    this.sessionStore.setSources(sessionId, this.normalizeSources(response.sources).map((item) => item.source));
+    this.sessionStore.setSources(sessionId, capture.sources.map((item) => item.source));
     this.startDiskMonitor();
     return this.publicStatus();
   }
 
   async pause() {
     this.requireActive();
-    const response = await this.invoke({ command: 'pause' });
-    if (!response.ok) throw new Error(response.error || 'Audio capture could not pause.');
+    await this.adapter.pause();
     this.activeSession!.state = 'paused';
     this.sessionStore.addPause(this.activeSession!.sessionId, new Date().toISOString());
     this.sessionStore.setStatus(this.activeSession!.sessionId, 'paused');
@@ -243,8 +203,7 @@ export class MeetingAudioCaptureService {
 
   async resume() {
     this.requireActive();
-    const response = await this.invoke({ command: 'resume' });
-    if (!response.ok) throw new Error(response.error || 'Audio capture could not resume.');
+    await this.adapter.resume();
     this.activeSession!.state = 'recording';
     this.sessionStore.endPause(this.activeSession!.sessionId, new Date().toISOString());
     this.sessionStore.setStatus(this.activeSession!.sessionId, 'recording');
@@ -252,25 +211,59 @@ export class MeetingAudioCaptureService {
   }
 
   async stop() {
+    if (this.stopInFlight) return this.stopInFlight;
+    const operation = this.finalizeStop();
+    this.stopInFlight = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.stopInFlight === operation) this.stopInFlight = null;
+    }
+  }
+
+  async prepareForSuspend() {
+    if (!this.activeSession) return;
+    await this.adapter.flush?.();
+    this.sessionStore.markInterrupted(this.activeSession.sessionId);
+  }
+
+  async checkAfterResume() {
+    if (!this.activeSession || !this.adapter.checkHealth) return true;
+    const sources = await this.adapter.checkHealth();
+    const failed = sources.filter((source) => !source.active);
+    failed.forEach((source) => {
+      this.sessionStore.addSourceError(this.activeSession!.sessionId, source.source, 'Audio capture did not survive system resume.');
+      this.activeSession!.sources = this.activeSession!.sources.map((item) => item.source === source.source ? { ...item, active: false } : item);
+      this.errorListeners.forEach((listener) => listener({ source: source.source, error: source.source === 'system_audio' ? 'Windows audio capture was interrupted by sleep. Your microphone and existing recording are still available.' : 'Your microphone was disconnected after sleep. System audio is still available.' }));
+    });
+    return failed.length === 0;
+  }
+
+  private async finalizeStop(): Promise<AudioCaptureStatus> {
     if (!this.activeSession) return this.publicStatus();
     const session = this.activeSession;
     this.sessionStore.setStatus(session.sessionId, 'finalizing');
-    const response = await this.invoke({ command: 'stop' });
-    if (!response.ok) {
+    let response;
+    try {
+      response = await this.adapter.stop();
+    } catch (error) {
       this.sessionStore.setStatus(session.sessionId, 'recovery_required');
-      throw new Error(response.error || 'Audio capture could not stop. Recoverable audio was preserved.');
+      this.sessionStore.promoteToRecovery(session.sessionId);
+      throw error instanceof AudioCaptureError ? error : new AudioCaptureError('capture_interrupted', 'Audio capture could not stop. Recoverable audio was preserved.', { cause: error });
     }
     session.state = 'stopped';
     session.durationSeconds = Number(response.durationSeconds) || 0;
     const stored = this.sessionStore.get(session.sessionId);
     if (!stored?.chunks.some((chunk) => chunk.finalized && chunk.sizeBytes > 44)) {
       this.sessionStore.setStatus(session.sessionId, 'recovery_required', session.durationSeconds);
+      this.sessionStore.promoteToRecovery(session.sessionId);
       this.activeSession = null;
       this.stopDiskMonitor();
       throw new Error('No usable audio chunks were finalized. The session was preserved for recovery.');
     }
     this.sessionStore.setStatus(session.sessionId, 'ready', session.durationSeconds);
-    this.completedDirectories.set(session.sessionId, session.directory);
+    const completedDirectory = this.sessionStore.promoteToCompleted(session.sessionId);
+    this.completedDirectories.set(session.sessionId, completedDirectory);
     this.activeSession = null;
     this.stopDiskMonitor();
     return {
@@ -298,7 +291,7 @@ export class MeetingAudioCaptureService {
     if (!session || session.kind !== 'meeting' || !session.noteId || !session.workspaceId) {
       throw new Error('That meeting recording is not available for this workspace.');
     }
-    const directory = this.completedDirectories.get(sessionId) ?? path.join(app.getPath('temp'), 'ledger-meeting-audio', session.directoryRef);
+    const directory = this.completedDirectories.get(sessionId) ?? this.sessionStore.directoryFor(session);
     if (!fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) throw new Error('The recording folder is no longer available.');
     const error = await shell.openPath(directory);
     if (error) shell.showItemInFolder(directory);
@@ -307,7 +300,7 @@ export class MeetingAudioCaptureService {
 
   async play(sessionId: string, source: AudioSourceName) {
     if (!safeId(sessionId) || !SOURCE_NAMES.has(source)) throw new Error('Invalid audio file reference.');
-    const directory = this.completedDirectories.get(sessionId) ?? (this.sessionStore.get(sessionId) ? path.join(app.getPath('temp'), 'ledger-meeting-audio', sessionId) : null);
+    const directory = this.completedDirectories.get(sessionId) ?? (this.sessionStore.get(sessionId) ? this.sessionStore.directoryFor(this.sessionStore.get(sessionId)!) : null);
     const firstChunk = this.sessionStore.get(sessionId)?.chunks.find((chunk) => chunk.source === source);
     const file = directory && firstChunk ? path.join(directory, firstChunk.fileName) : null;
     if (!file || !fs.existsSync(file)) throw new Error('The requested temporary recording file is not available.');
@@ -321,7 +314,7 @@ export class MeetingAudioCaptureService {
     if (this.activeSession?.sessionId === sessionId) throw new Error('Active recording audio cannot be deleted.');
     const session = this.sessionStore.get(sessionId);
     if (!session) throw new Error('That temporary recording is no longer available.');
-    const directory = path.join(app.getPath('temp'), 'ledger-meeting-audio', session.directoryRef);
+    const directory = this.sessionStore.directoryFor(session);
     const targets = session.chunks.filter((chunk) => !source || chunk.source === source);
     targets.forEach((chunk) => fs.rmSync(path.join(directory, chunk.fileName), { force: true }));
     if (source) this.sessionStore.removeChunks(sessionId, source);
@@ -336,7 +329,7 @@ export class MeetingAudioCaptureService {
   async recover(sessionId: string, noteId: string, workspaceId: string) {
     const session = this.sessionStore.get(sessionId);
     if (!session || session.recoveryState !== 'required' || session.noteId !== noteId || session.workspaceId !== workspaceId) throw new Error('This recording cannot be attached to the requested note or workspace.');
-    const directory = path.join(app.getPath('temp'), 'ledger-meeting-audio', session.directoryRef);
+    const directory = this.sessionStore.directoryFor(session);
     const usableChunks = session.chunks.filter((chunk) => chunk.finalized && fs.existsSync(path.join(directory, chunk.fileName)));
     if (!usableChunks.length) throw new Error('No recoverable audio chunks were found.');
     session.recoveryState = 'inspected';
@@ -347,7 +340,7 @@ export class MeetingAudioCaptureService {
   discard(sessionId: string) {
     const session = this.sessionStore.get(sessionId);
     if (!session) throw new Error('Recording session was not found.');
-    const directory = path.join(app.getPath('temp'), 'ledger-meeting-audio', session.directoryRef);
+    const directory = this.sessionStore.directoryFor(session);
     fs.rmSync(directory, { recursive: true, force: true });
     this.sessionStore.setStatus(sessionId, 'discarded');
     this.sessionStore.remove(sessionId);
@@ -361,11 +354,7 @@ export class MeetingAudioCaptureService {
   async shutdown() {
     try { if (this.activeSession) await this.stop(); } catch {}
     this.stopDiskMonitor();
-    if (this.bridge) {
-      this.bridge.stdin.end();
-      this.bridge.kill();
-      this.bridge = null;
-    }
+    await this.adapter.shutdown();
   }
 
   private publicStatus(): AudioCaptureStatus {
@@ -406,6 +395,10 @@ export class MeetingAudioCaptureService {
       recoveryState: session.recoveryState,
       durationSeconds: session.durationSeconds,
       warnings: session.warnings,
+      selectedMicrophoneId: session.selectedMicrophoneId ?? null,
+      finalizationState: session.finalizationState ?? 'recording',
+      interruptedAt: session.interruptedAt ?? null,
+      transcription: session.transcription ?? null,
       diskAvailableBytes: this.sessionStore.diskSpace().availableBytes,
     };
   }
@@ -416,115 +409,39 @@ export class MeetingAudioCaptureService {
 
   private requireActive() { if (!this.activeSession) throw new Error('No audio capture session is active.'); }
 
-  private permissionState(value: unknown): AudioPermissionState {
-    return value === 'granted' || value === 'denied' || value === 'restricted' || value === 'requires_restart' || value === 'unavailable' ? value : 'not_requested';
-  }
-
-  private normalizeSources(value: unknown): AudioCaptureStatus['sources'] {
-    if (!Array.isArray(value)) return [];
-    return value.filter((item) => item && SOURCE_NAMES.has(item.source)).map((item) => ({ source: item.source, sampleRate: Number(item.sampleRate) || 16_000, channels: Number(item.channels) || 1, active: item.active !== false }));
-  }
-
-  private normalizeWarnings(value: unknown): AudioCaptureStatus['warnings'] {
-    if (!Array.isArray(value)) return [];
-    return value.filter((item) => item && SOURCE_NAMES.has(item.source) && typeof item.error === 'string').map((item) => ({ source: item.source, error: item.error }));
-  }
-
-  private bridgePath() { return app.isPackaged ? path.join(process.resourcesPath, 'LedgerAudioCaptureBridge') : path.join(app.getAppPath(), 'native', 'LedgerAudioCaptureBridge'); }
-
-  private ensureBridge() {
-    if (process.platform !== 'darwin') throw new Error('Meeting audio capture requires the packaged macOS Ledger app.');
-    if (this.bridge && !this.bridge.killed) return;
-    const child = spawn(this.bridgePath(), [], { stdio: ['pipe', 'pipe', 'pipe'] });
-    this.bridge = child;
-    child.stdout.on('data', (chunk) => this.handleBridgeOutput(String(chunk)));
-    child.stderr.on('data', (chunk) => console.warn('[audio-capture]', String(chunk).trim()));
-    child.once('error', (error) => this.rejectBridgeRequest(error));
-    child.once('exit', () => { this.bridge = null; this.rejectBridgeRequest(new Error('The macOS audio capture helper exited.')); });
-  }
-
-  private invoke(payload: Record<string, unknown>): Promise<BridgeResponse> {
-    const run = async () => {
-      this.ensureBridge();
-      return await new Promise<BridgeResponse>((resolve, reject) => {
-        if (!this.bridge?.stdin.writable) { reject(new Error('The macOS audio capture helper is unavailable.')); return; }
-        const timeout = setTimeout(() => {
-          if (this.currentRequest?.timeout !== timeout) return;
-          this.currentRequest = null;
-          const helper = this.bridge;
-          this.bridge = null;
-          helper?.kill();
-          reject(new Error('The macOS audio capture helper timed out. The meeting controls were unlocked; try again after checking audio permissions.'));
-        }, 15_000);
-        this.currentRequest = { resolve, reject, timeout };
-        this.bridge.stdin.write(`${JSON.stringify(payload)}\n`);
-      });
-    };
-    const next = this.bridgeQueue.then(run, run);
-    this.bridgeQueue = next.then(() => undefined, () => undefined);
-    return next;
-  }
-
-  private handleBridgeOutput(chunk: string) {
-    this.bridgeBuffer += chunk;
-    const lines = this.bridgeBuffer.split(/\r?\n/);
-    this.bridgeBuffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let payload: BridgeResponse;
-      try { payload = JSON.parse(line); } catch { continue; }
-      if (payload.event === 'level' && SOURCE_NAMES.has(payload.source)) {
-        const level = Math.max(0, Math.min(1, Number(payload.level) || 0));
-        this.levelListeners.forEach((listener) => listener({ source: payload.source, level }));
-      } else if (payload.event === 'error' && SOURCE_NAMES.has(payload.source)) {
-        if (this.activeSession) {
-          const message = String(payload.error || 'Audio capture failed.');
-          this.sessionStore.addSourceError(this.activeSession.sessionId, payload.source, message);
-          this.activeSession.sources = this.activeSession.sources.map((source) => source.source === payload.source ? { ...source, active: false } : source);
-          if (this.activeSession.sources.every((source) => !source.active)) {
-            this.activeSession.state = 'paused';
-            this.sessionStore.setStatus(this.activeSession.sessionId, 'paused');
-          }
-        }
-        this.errorListeners.forEach((listener) => listener({ source: payload.source, error: String(payload.error || 'Audio capture failed.') }));
-      } else if (payload.event === 'chunk-finalized' && SOURCE_NAMES.has(payload.source) && this.activeSession) {
-        const session = this.activeSession;
-        const chunk: RecordingChunk = {
-          id: String(payload.id),
-          sessionId: session.sessionId,
-          source: payload.source,
-          sequence: Number(payload.sequence) || 0,
-          startAt: String(payload.startAt || session.startedAt),
-          endAt: payload.endAt ? String(payload.endAt) : null,
-          durationSeconds: Math.max(0, Number(payload.durationSeconds) || 0),
-          fileName: path.basename(String(payload.fileName || '')),
-          finalized: payload.finalized !== false,
-          sizeBytes: Number(payload.sizeBytes) || 0,
-        };
-        if (chunk.fileName) {
-          this.sessionStore.addChunk(session.sessionId, chunk);
-          session.chunkCount = this.sessionStore.get(session.sessionId)?.chunks.length ?? session.chunkCount + 1;
-        }
-      } else if (this.currentRequest) {
-        const request = this.currentRequest;
-        this.currentRequest = null;
-        clearTimeout(request.timeout);
-        request.resolve(payload);
-      }
+  private handleCaptureEvent(event: AudioCaptureEvent) {
+    if (event.type === 'devices-changed') {
+      this.deviceChangeListeners.forEach((listener) => listener());
+      return;
     }
-  }
-
-  private rejectBridgeRequest(error: Error) {
-    if (!this.currentRequest) return;
-    const request = this.currentRequest;
-    this.currentRequest = null;
-    clearTimeout(request.timeout);
-    request.reject(error);
+    if (event.type === 'level') {
+      this.levelListeners.forEach((listener) => listener({ source: event.source, level: event.level }));
+      return;
+    }
+    if (event.type === 'error') {
+      if (this.activeSession) {
+        this.sessionStore.addSourceError(this.activeSession.sessionId, event.source, event.error);
+        this.activeSession.sources = this.activeSession.sources.map((source) => source.source === event.source ? { ...source, active: false } : source);
+        if (this.activeSession.sources.every((source) => !source.active)) {
+          this.activeSession.state = 'paused';
+          this.sessionStore.setStatus(this.activeSession.sessionId, 'paused');
+        }
+      }
+      this.errorListeners.forEach((listener) => listener({ source: event.source, error: event.error }));
+      return;
+    }
+    if (!this.activeSession) return;
+    const session = this.activeSession;
+    const chunk: RecordingChunk = { ...event, fileName: path.basename(event.fileName) };
+    if (chunk.fileName && chunk.sessionId === session.sessionId) {
+      this.sessionStore.addChunk(session.sessionId, chunk);
+      session.chunkCount = this.sessionStore.get(session.sessionId)?.chunks.length ?? session.chunkCount + 1;
+    }
   }
 
   private cleanAbandonedDirectories() {
     try {
-      const root = path.join(app.getPath('temp'), 'ledger-meeting-audio');
+      const root = this.sessionStore.storageRoot;
       for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
         const target = path.join(root, entry.name);
         const age = Date.now() - fs.statSync(target).mtimeMs;

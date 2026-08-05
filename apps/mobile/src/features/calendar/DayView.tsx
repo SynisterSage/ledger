@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Alert, FlatList, PanResponder, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent, type PanResponderGestureState } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
@@ -7,6 +7,8 @@ import { formatCalendarDateKey, getCalendarFirstWeekday } from './calendarMonthG
 import { useMobileCalendarItems } from './useMobileCalendarItems';
 import { DayAgendaItemRow } from './SelectedDayAgenda';
 import { getDayMinutes, positionDayItems, type PositionedDayItem } from './dayTimelineLayout';
+import { updateMobileEvent } from '@/api/captures';
+import { emitCalendarDataChanged } from './calendarDataEvents';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
 import type { CalendarFilters } from './calendarFilters';
 
@@ -99,7 +101,7 @@ function DayDateStrip({ date, onSelectDate }: { date: Date; onSelectDate: (date:
   />;
 }
 
-function DayEventBlock({ positioned, onPress, onLongPress }: { positioned: PositionedDayItem; onPress: () => void; onLongPress: () => void }) {
+function DayEventBlock({ positioned, canDrag, onPress, onLongPress, onMove }: { positioned: PositionedDayItem; canDrag: boolean; onPress: () => void; onLongPress: () => void; onMove: (deltaMinutes: number) => void }) {
   const theme = useLedgerTheme();
   const { item, column, columnCount, top, height } = positioned;
   const color = item.sourceColor ?? theme.colors.accent;
@@ -107,10 +109,34 @@ function DayEventBlock({ positioned, onPress, onLongPress }: { positioned: Posit
   const start = item.startAt ? new Date(item.startAt) : null;
   const end = item.endAt ? new Date(item.endAt) : null;
   const timeLabel = start && end ? `${start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}–${end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : start?.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${item.type.replace('_', ' ')}, ${item.title}, ${timeLabel ?? 'timed'}${item.projectName ? `, ${item.projectName}` : ''}${item.completed ? ', completed' : item.overdue ? ', overdue' : ''}`} onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.eventBlock, { top, height, left: `${(column * 100) / columnCount}%`, width: `${100 / columnCount}%`, opacity: pressed ? 0.65 : item.completed || item.overdue ? 0.55 : 1, backgroundColor: `${color}14`, borderLeftColor: color }]}>
-    <AppText variant="caption" numberOfLines={height > 52 ? 2 : 1} style={{ color: theme.colors.textPrimary, fontWeight: '600' }}>{marker}{item.title}</AppText>
-    {height > 48 ? <AppText variant="caption" numberOfLines={1}>{[timeLabel, item.projectName ?? item.sourceName].filter(Boolean).join(' · ')}</AppText> : null}
-  </Pressable>;
+  const [dragOffset, setDragOffset] = useState(0);
+  const draggingRef = useRef(false);
+  const suppressPressRef = useRef(false);
+  const panResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_event: GestureResponderEvent, gesture: PanResponderGestureState) => canDrag && draggingRef.current && Math.abs(gesture.dy) > 2,
+    onPanResponderMove: (_event, gesture) => {
+      if (draggingRef.current) setDragOffset(gesture.dy);
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      suppressPressRef.current = true;
+      setDragOffset(0);
+      onMove(Math.round((gesture.dy / HOUR_HEIGHT * 60) / 15) * 15);
+    },
+    onPanResponderTerminate: () => {
+      draggingRef.current = false;
+      setDragOffset(0);
+    },
+  }), [canDrag, onMove]);
+
+  return <View {...panResponder.panHandlers} style={[styles.eventDragTarget, { top, height, left: `${(column * 100) / columnCount}%`, width: `${100 / columnCount}%` }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${item.type.replace('_', ' ')}, ${item.title}, ${timeLabel ?? 'timed'}${item.projectName ? `, ${item.projectName}` : ''}${item.completed ? ', completed' : item.overdue ? ', overdue' : ''}`} onPress={() => { if (suppressPressRef.current) { suppressPressRef.current = false; return; } onPress(); }} onLongPress={() => { if (canDrag) { draggingRef.current = true; setDragOffset(0); } else onLongPress(); }} delayLongPress={360} style={({ pressed }) => [styles.eventBlock, { height: '100%', width: '100%', opacity: draggingRef.current ? 0.82 : pressed ? 0.65 : item.completed || item.overdue ? 0.55 : 1, backgroundColor: `${color}14`, borderLeftColor: color, transform: [{ translateY: dragOffset }] }]}>
+      <AppText variant="caption" numberOfLines={height > 52 ? 2 : 1} style={{ color: theme.colors.textPrimary, fontWeight: '600' }}>{marker}{item.title}</AppText>
+      {height > 48 ? <AppText variant="caption" numberOfLines={1}>{[timeLabel, item.projectName ?? item.sourceName].filter(Boolean).join(' · ')}</AppText> : null}
+    </Pressable>
+  </View>;
 }
 
 export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView({ selectedDate, workspaceId, filters, scrollOffset, onScrollOffsetChange, onSelectDate, onOpenItem, onLongPressItem, onCreateAtTime, showDateStrip = true, showTimeline = true, emptyTimelineContent, beforeContent, afterContent }, ref) {
@@ -127,6 +153,26 @@ export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView(
   const timedItems = useMemo(() => dayItems.filter((item) => Boolean(item.startAt) && !item.allDay), [dayItems]);
   const positionedItems = useMemo(() => positionDayItems(timedItems, HOUR_HEIGHT), [timedItems]);
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
+
+  const moveEvent = useCallback(async (item: MobileCalendarItem, deltaMinutes: number) => {
+    if (!item.sourceId || !item.startAt || !item.endAt || item.type !== 'event' || item.readOnly || item.recurrenceRule && item.recurrenceRule !== 'none') return;
+    const start = new Date(item.startAt);
+    const end = new Date(item.endAt);
+    const duration = end.getTime() - start.getTime();
+    const nextStart = new Date(start.getTime() + deltaMinutes * 60 * 1000);
+    const dayStart = new Date(start);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    const clampedStart = new Date(Math.max(dayStart.getTime(), Math.min(dayEnd.getTime() - Math.max(duration, 15 * 60 * 1000), nextStart.getTime())));
+    const nextEnd = new Date(clampedStart.getTime() + duration);
+    try {
+      await updateMobileEvent(workspaceId, item.sourceId, { start_at: clampedStart.toISOString(), end_at: nextEnd.toISOString() });
+      emitCalendarDataChanged(workspaceId);
+    } catch (error) {
+      Alert.alert('Could not move event', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }, [workspaceId]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 60_000);
@@ -171,7 +217,7 @@ export const DayView = forwardRef<DayViewHandle, DayViewProps>(function DayView(
         <View style={styles.timeline}>
           {Array.from({ length: TIMELINE_END_HOUR - TIMELINE_START_HOUR }, (_, index) => renderHour(index + TIMELINE_START_HOUR))}
           {currentIndicator !== null ? <View pointerEvents="none" style={[styles.currentLine, { top: (currentIndicator / 60) * HOUR_HEIGHT, borderTopColor: theme.colors.accent }]}><View style={[styles.currentTimeBadge, { backgroundColor: theme.colors.accent }]}><AppText variant="caption" style={styles.currentTimeLabel}>{formatCurrentTime(now)}</AppText></View></View> : null}
-          {positionedItems.map((positioned) => <DayEventBlock key={positioned.item.id} positioned={positioned} onPress={() => onOpenItem(positioned.item)} onLongPress={() => onLongPressItem(positioned.item)} />)}
+          {positionedItems.map((positioned) => <DayEventBlock key={positioned.item.id} positioned={positioned} canDrag={positioned.item.type === 'event' && !positioned.item.readOnly && (!positioned.item.recurrenceRule || positioned.item.recurrenceRule === 'none')} onPress={() => onOpenItem(positioned.item)} onLongPress={() => onLongPressItem(positioned.item)} onMove={(deltaMinutes) => void moveEvent(positioned.item, deltaMinutes)} />)}
         </View>
       </View> : emptyTimelineContent ?? null}
       {afterContent}
@@ -198,6 +244,7 @@ const styles = StyleSheet.create({
   timeGutter: { width: 64, alignItems: 'flex-end', paddingRight: 8, paddingTop: 5 },
   timeLabel: { fontSize: 11, lineHeight: 16 },
   hourContent: { flex: 1 },
+  eventDragTarget: { position: 'absolute', zIndex: 6 },
   eventBlock: { position: 'absolute', minHeight: 34, marginLeft: 64, marginRight: 6, padding: 7, borderLeftWidth: 3, borderRadius: 5, overflow: 'hidden' },
   currentLine: { position: 'absolute', left: 64, right: 0, borderTopWidth: 1, zIndex: 10 },
   currentTimeBadge: { position: 'absolute', right: '100%', top: -11, minWidth: 48, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },

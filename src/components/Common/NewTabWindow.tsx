@@ -39,6 +39,7 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   const api = useApi();
   const { pins } = usePins();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const isWindows = window.desktopWindow?.platform === 'win32';
   const quickNavRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
   const [inboxCount, setInboxCount] = useState(0);
@@ -279,10 +280,15 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
             className="ledger-new-tab-atmosphere absolute inset-0"
             style={{
               background: [
-                'radial-gradient(ellipse 78% 62% at 50% 106%, var(--ledger-new-tab-atmosphere), transparent 76%)',
-                'radial-gradient(ellipse 42% 38% at 12% 112%, var(--ledger-new-tab-atmosphere), transparent 78%)',
-                'radial-gradient(ellipse 42% 38% at 88% 112%, var(--ledger-new-tab-atmosphere), transparent 78%)',
-                'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 72%)',
+                ...(isWindows
+                  ? [
+                      'radial-gradient(ellipse 125% 110% at 50% 125%, var(--ledger-new-tab-atmosphere), transparent 100%)',
+                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
+                    ]
+                  : [
+                      'radial-gradient(ellipse 68% 48% at 50% 120%, var(--ledger-new-tab-atmosphere), transparent 86%)',
+                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 78%)',
+                    ]),
               ].join(', '),
             }}
           />

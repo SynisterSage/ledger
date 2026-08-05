@@ -1987,7 +1987,7 @@ const MeetingAudioSetup = ({
                       }
                       className="font-medium underline underline-offset-2"
                     >
-                      Use Mac microphone
+                      Use another microphone
                     </button>
                   )}
                 </div>
@@ -2065,9 +2065,9 @@ const MeetingAudioSetup = ({
               })}
             </div>
             <p className="mt-3 text-[10px] leading-4 text-[var(--ledger-text-muted)]">
-              macOS calls system-audio access “Screen &amp; System Audio Recording.” Ledger captures
-              audio, not video. If it is missing from Settings, use <strong>+</strong> to add the
-              packaged Ledger app, then restart if prompted.
+              {typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent)
+                ? 'Windows captures audio from the active output device. Ledger captures audio, not video.'
+                : 'macOS calls system-audio access “Screen &amp; System Audio Recording.” Ledger captures audio, not video. If it is missing from Settings, use + to add the packaged Ledger app, then restart if prompted.'}
             </p>
           </>
         )}
@@ -2188,12 +2188,14 @@ const RecordingRecoveryNotice = ({
   isBusy,
   onRecover,
   onDiscard,
+  onReveal,
 }: {
   recoveries: RecordingRecovery[];
   activeWorkspaceId: string | null;
   isBusy: string | null;
   onRecover: (session: RecordingRecovery) => void;
   onDiscard: (session: RecordingRecovery) => void;
+  onReveal: (session: RecordingRecovery) => void;
 }) => {
   if (!recoveries.length) return null;
   return (
@@ -2228,6 +2230,14 @@ const RecordingRecoveryNotice = ({
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onReveal(session)}
+                        disabled={Boolean(isBusy)}
+                        className="rounded-md border border-amber-300 px-2 py-1 text-[10px] font-medium text-amber-900 disabled:opacity-40"
+                      >
+                        Open audio
+                      </button>
                       <button
                         type="button"
                         onClick={() => onRecover(session)}
@@ -2660,13 +2670,16 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     setAudioDevices(normalized);
     const saved = selectedMicrophoneId;
     const savedDevice = saved ? devices.find((device) => device.id === saved) : null;
+    const captureActive =
+      meetingMetadata?.transcription_status === 'recording' ||
+      meetingMetadata?.transcription_status === 'paused';
     const preferred =
       savedDevice ??
-      (normalized.outputDevice?.isBluetooth
+      (!captureActive && normalized.outputDevice?.isBluetooth
         ? devices.find((device) => !device.isBluetooth)
         : null) ??
-      devices.find((device) => device.isDefault) ??
-      devices[0] ??
+      (!captureActive ? devices.find((device) => device.isDefault) : null) ??
+      (!captureActive ? devices[0] : null) ??
       null;
     if (preferred && preferred.id !== selectedMicrophoneId) {
       setSelectedMicrophoneId(preferred.id);
@@ -2676,7 +2689,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     }
     if (saved && !savedDevice) {
       setAudioDeviceWarning(
-        'The saved microphone is unavailable. Ledger selected another available input.'
+        meetingMetadata?.transcription_status === 'recording' || meetingMetadata?.transcription_status === 'paused'
+          ? 'The selected microphone was disconnected. Ledger will not switch microphones during this recording.'
+          : 'The saved microphone is unavailable. Ledger selected another available input.'
       );
     } else if (preferred?.isBluetooth && normalized.outputDevice?.isBluetooth) {
       setAudioDeviceWarning(
@@ -2686,7 +2701,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       setAudioDeviceWarning(null);
     }
     return normalized;
-  }, [selectedMicrophoneId]);
+  }, [meetingMetadata?.transcription_status, selectedMicrophoneId]);
 
   useEffect(() => {
     if (!isMeetingNote || !window.meetingAudio?.devices) return;
@@ -2748,6 +2763,16 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
       offError();
     };
   }, []);
+
+  useEffect(() => {
+    const audio = window.meetingAudio;
+    if (!audio?.onDevicesChanged || !isMeetingNote) return;
+    return audio.onDevicesChanged(() => {
+      void refreshAudioDevices().catch((error) => {
+        setAudioError(error instanceof Error ? error.message : 'Could not refresh audio devices.');
+      });
+    });
+  }, [isMeetingNote, refreshAudioDevices]);
 
   useEffect(() => {
     const audio = window.meetingAudio;
@@ -4373,6 +4398,15 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     },
     [toast]
   );
+
+  const revealRecovery = useCallback(async (session: RecordingRecovery) => {
+    if (!window.meetingAudio) return;
+    try {
+      await window.meetingAudio.reveal({ sessionId: session.sessionId });
+    } catch (error) {
+      setAudioError(error instanceof Error ? error.message : 'Could not open the saved recording.');
+    }
+  }, []);
 
   const startMeeting = useCallback(async () => {
     if (!meetingMetadata || meetingMetadata.transcription_status !== 'idle') return;
@@ -7520,6 +7554,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         isBusy={recordingRecoveryBusy}
         onRecover={(session) => void recoverRecording(session)}
         onDiscard={(session) => void discardRecording(session)}
+        onReveal={(session) => void revealRecovery(session)}
       />
       <div className="flex-1 flex overflow-hidden">
         {!isLeftPaneCollapsed && hasLoadedOnce ? (
@@ -8852,6 +8887,17 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               }}
                             />
                           </span>
+                          {['recording', 'paused'].includes(meetingMetadata?.transcription_status ?? '') && (
+                            <span className="text-[9px] text-[var(--ledger-text-muted)]">
+                              {!audioCaptureStatus?.sources.some(
+                                (item) => item.source === 'user_microphone' && item.active
+                              )
+                                ? 'Disconnected'
+                                : (audioLevels.user_microphone || 0) > 0.01
+                                ? 'Active'
+                                : 'No signal'}
+                            </span>
+                          )}
                         </span>
                         <span
                           className="inline-flex items-center gap-1.5"
@@ -8894,6 +8940,17 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               }}
                             />
                           </span>
+                          {['recording', 'paused'].includes(meetingMetadata?.transcription_status ?? '') && (
+                            <span className="text-[9px] text-[var(--ledger-text-muted)]">
+                              {!audioCaptureStatus?.sources.some(
+                                (item) => item.source === 'system_audio' && item.active
+                              )
+                                ? 'Disconnected'
+                                : (audioLevels.system_audio || 0) > 0.01
+                                ? 'Active'
+                                : 'No signal'}
+                            </span>
+                          )}
                         </span>
                       </div>
                       {meetingMetadata?.microphone_enabled &&

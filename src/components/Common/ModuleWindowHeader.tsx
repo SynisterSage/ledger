@@ -94,6 +94,7 @@ type ModuleHeaderSegmentedGroupProps = {
 type ModuleHeaderSegmentedButtonProps = {
   children: ReactNode;
   onClick: () => void;
+  buttonRef?: Ref<HTMLButtonElement>;
   title: string;
   ariaLabel?: string;
   active?: boolean;
@@ -356,6 +357,7 @@ export const ModuleHeaderSegmentedGroup = ({
 export const ModuleHeaderSegmentedButton = ({
   children,
   onClick,
+  buttonRef,
   title,
   ariaLabel,
   active = false,
@@ -369,6 +371,7 @@ export const ModuleHeaderSegmentedButton = ({
     : segmentedButtonBaseClassName;
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       title={title}

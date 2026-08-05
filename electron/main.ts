@@ -1,7 +1,7 @@
 import {
   app,
   BrowserWindow,
-  desktopCapturer,
+  dialog,
   Notification,
   ipcMain,
   screen,
@@ -13,6 +13,7 @@ import {
   Tray,
   nativeImage,
   nativeTheme,
+  powerMonitor,
 } from 'electron';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -26,6 +27,7 @@ import { desktopTokens } from '../src/theme/desktopTokens';
 import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
 import { LocalTranscriptionService } from './transcriptionService';
 import { RecordingSessionStore } from './recordingSessionStore';
+import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -61,91 +63,24 @@ function broadcastMeetingAudioEvent(channel: string, payload: unknown) {
 
 meetingAudioCaptureService.onLevel((event) => broadcastMeetingAudioEvent('meeting-audio:level', event));
 meetingAudioCaptureService.onError((event) => broadcastMeetingAudioEvent('meeting-audio:error', event));
+meetingAudioCaptureService.onDevicesChanged(() => broadcastMeetingAudioEvent('meeting-audio:devices-changed', {}));
 localTranscriptionService.onProgress((event) => broadcastMeetingAudioEvent('meeting-transcription:progress', event));
 localTranscriptionService.modelManager.onChange((event) => broadcastMeetingAudioEvent('meeting-transcription:model', event));
 
 const validAudioSource = (value: unknown): value is AudioSourceName => value === 'user_microphone' || value === 'system_audio';
 
-const getMacScreenPermission = async () => {
-  if (process.platform !== 'darwin') return null;
-  let statusValue: 'granted' | 'denied' | 'restricted' | 'not_requested' | null = null;
-  try {
-    const status = systemPreferences.getMediaAccessStatus('screen');
-    if (status === 'granted') statusValue = 'granted';
-    else if (status === 'denied') statusValue = 'denied';
-    else if (status === 'restricted') statusValue = 'restricted';
-    else if (status === 'not-determined') statusValue = 'not_requested';
-  } catch {
-    // Older Electron/macOS combinations may not expose screen status here.
-  }
-  // Reading permission state must remain passive. Calling desktopCapturer here
-  // can cause macOS to present the Screen & System Audio Recording prompt, so
-  // this function must never probe or request capture as a side effect.
-  return statusValue;
-};
-
-const getMacMicrophonePermission = () => {
-  if (process.platform !== 'darwin') return null;
-  try {
-    const status = systemPreferences.getMediaAccessStatus('microphone');
-    if (status === 'granted') return 'granted' as const;
-    if (status === 'denied') return 'denied' as const;
-    if (status === 'restricted') return 'restricted' as const;
-    if (status === 'not-determined') return 'not_requested' as const;
-  } catch {
-    // Fall back to the native bridge on older Electron/macOS combinations.
-  }
-  return null;
-};
-
-const touchMacScreenCapturePermission = async () => {
-  if (process.platform !== 'darwin') return;
-
-  // TCC does not add Ledger to Screen & System Audio Recording merely because
-  // we inspect `getMediaAccessStatus('screen')`. Ask Electron to enumerate a
-  // screen source from the Ledger process so macOS associates the request with
-  // the packaged app instead of the standalone native capture helper.
-  try {
-    await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: 1, height: 1 },
-      fetchWindowIcons: false,
-    });
-  } catch {
-    // Permission state is read immediately below. A denied/unavailable source
-    // must not prevent the microphone permission result from being returned.
-  }
-};
-
-const meetingAudioPermissions = async () => {
-  const permissions = await meetingAudioCaptureService.permissions();
-  const microphonePermission = getMacMicrophonePermission();
-  const screenPermission = await getMacScreenPermission();
-  return {
-    ...permissions,
-    microphone: microphonePermission ?? permissions.microphone,
-    systemAudio: screenPermission ?? permissions.systemAudio,
-  };
-};
-
-ipcMain.handle('meeting-audio:permissions', meetingAudioPermissions);
-ipcMain.handle('meeting-audio:request-permissions', async () => {
-  if (process.platform === 'darwin') {
-    // Request from the Ledger app process so TCC associates the permission
-    // with Ledger.app, not the standalone capture helper executable.
-    await systemPreferences.askForMediaAccess('microphone');
-    await touchMacScreenCapturePermission();
-  } else {
-    await meetingAudioCaptureService.requestPermissions();
-  }
-  return meetingAudioPermissions();
+const bindMeetingAudioRenderer = (event: Electron.IpcMainInvokeEvent) => meetingAudioCaptureService.setRequesterId(event.sender.id);
+ipcMain.handle('meeting-audio:permissions', (event) => {
+  bindMeetingAudioRenderer(event);
+  return meetingAudioCaptureService.permissions();
+});
+ipcMain.handle('meeting-audio:request-permissions', async (event) => {
+  bindMeetingAudioRenderer(event);
+  return meetingAudioCaptureService.requestPermissions();
 });
 ipcMain.handle('meeting-audio:open-system-settings', async (_event, area: unknown) => {
-  if (process.platform !== 'darwin') return false;
-  const target = area === 'microphone' ? 'Privacy_Microphone' : area === 'screen-recording' ? 'Privacy_ScreenCapture' : null;
-  if (!target) throw new Error('Invalid macOS permission area.');
-  await shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${target}`);
-  return true;
+  if (area !== 'microphone' && area !== 'screen-recording') throw new Error('Invalid audio permission area.');
+  return meetingAudioCaptureService.openSystemSettings(area);
 });
 ipcMain.handle('meeting-audio:status', () => meetingAudioCaptureService.status());
 ipcMain.handle('meeting-audio:recoveries', () => meetingAudioCaptureService.recoveries());
@@ -161,29 +96,31 @@ ipcMain.handle('meeting-audio:discard-recovery', (_event, sessionId: unknown) =>
   if (typeof sessionId !== 'string') throw new Error('Invalid recording session.');
   return meetingAudioCaptureService.discard(sessionId);
 });
-ipcMain.handle('meeting-audio:devices', () => meetingAudioCaptureService.devices());
-ipcMain.handle('meeting-audio:start', (_event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown }) => {
+ipcMain.handle('meeting-audio:devices', (event) => {
+  bindMeetingAudioRenderer(event);
+  return meetingAudioCaptureService.devices();
+});
+ipcMain.handle('meeting-audio:start', (event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown }) => {
+  bindMeetingAudioRenderer(event);
   if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Meeting recording identity is invalid.');
   if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
   const start = async () => {
-    // Do not await a macOS desktopCapturer prompt here. On some macOS builds
-    // that promise remains pending while TCC is showing or reconciling the
-    // permission sheet, which would leave the renderer's Start action locked.
-    // The explicit setup flow handles permission requests; capture itself
-    // reports a bounded native error if access is unavailable.
+    // Permission prompting belongs to the adapter's explicit setup flow;
+    // capture itself reports a bounded native error if access is unavailable.
     return meetingAudioCaptureService.start({ noteId: payload.noteId as string, workspaceId: payload.workspaceId as string, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined });
   };
   return start();
 });
-ipcMain.handle('meeting-audio:test-source', (_event, payload: { source?: unknown; microphoneDeviceId?: unknown }) => {
+ipcMain.handle('meeting-audio:test-source', (event, payload: { source?: unknown; microphoneDeviceId?: unknown }) => {
+  bindMeetingAudioRenderer(event);
   const source = payload?.source;
   if (!validAudioSource(source)) throw new Error('Invalid audio source.');
   if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
   return meetingAudioCaptureService.testSource(source, payload.microphoneDeviceId as string | null | undefined);
 });
-ipcMain.handle('meeting-audio:pause', () => meetingAudioCaptureService.pause());
-ipcMain.handle('meeting-audio:resume', () => meetingAudioCaptureService.resume());
-ipcMain.handle('meeting-audio:stop', () => meetingAudioCaptureService.stop());
+ipcMain.handle('meeting-audio:pause', (event) => { bindMeetingAudioRenderer(event); return meetingAudioCaptureService.pause(); });
+ipcMain.handle('meeting-audio:resume', (event) => { bindMeetingAudioRenderer(event); return meetingAudioCaptureService.resume(); });
+ipcMain.handle('meeting-audio:stop', (event) => { bindMeetingAudioRenderer(event); return meetingAudioCaptureService.stop(); });
 ipcMain.handle('meeting-audio:reveal', (_event, payload: { sessionId?: unknown }) => {
   if (typeof payload?.sessionId !== 'string') throw new Error('Invalid recording session.');
   return meetingAudioCaptureService.reveal(payload.sessionId);
@@ -323,18 +260,6 @@ ipcMain.handle('apple-reminders:open-system-settings', async () => {
   return true;
 });
 
-if (process.platform === 'win32') {
-  // Command buffer / GPUControl errors on some Windows drivers can freeze
-  // transparent-window video surfaces into gray frames.
-  // Force software rendering for stable auth splash + login video playback.
-  app.disableHardwareAcceleration();
-
-  // Transparent windows + hardware video surfaces can trigger Skia mailbox errors
-  // on some Windows GPU/driver combos. Disabling DirectComposition stabilizes
-  // auth video playback without changing macOS behavior.
-  app.commandLine.appendSwitch('disable-features', 'DirectComposition');
-}
-
 // File-based logging for dock debugging (disabled unless LEDGER_DOCK_DEBUG=1/true)
 const logFile = path.join(app.getPath('userData'), 'dock-debug.log');
 const dockDebugEnabled = ['1', 'true', 'yes', 'on'].includes(
@@ -404,6 +329,49 @@ const LEDGER_API_URL =
 
 const isSettingsSection = (value: string | null | undefined): value is string =>
   SETTINGS_SECTIONS.has(String(value ?? '').toLowerCase());
+
+type RenderingMode = 'auto' | 'high_quality' | 'compatibility';
+const renderingSettingsPath = path.join(app.getPath('userData'), 'rendering-settings.json');
+
+function readRenderingMode(): RenderingMode {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(renderingSettingsPath, 'utf8')) as { mode?: unknown };
+    if (parsed.mode === 'high_quality' || parsed.mode === 'compatibility') return parsed.mode;
+  } catch {}
+  return 'auto';
+}
+
+let renderingMode = readRenderingMode();
+
+if (renderingMode === 'high_quality' && process.platform === 'win32') {
+  // Explicitly prefer the GPU even when Chromium's driver blocklist would
+  // otherwise fall back to software rendering.
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+}
+
+if (renderingMode === 'compatibility') {
+  // Command buffer / GPUControl errors on some Windows drivers can freeze
+  // transparent-window video surfaces into gray frames. Keep software
+  // rendering as an explicit compatibility mode instead of forcing it on
+  // every Windows GPU.
+  app.disableHardwareAcceleration();
+
+  if (process.platform === 'win32') {
+    // Transparent windows + hardware video surfaces can trigger Skia mailbox
+    // errors on some Windows GPU/driver combinations.
+    app.commandLine.appendSwitch('disable-features', 'DirectComposition');
+  }
+}
+
+function saveRenderingMode(mode: RenderingMode) {
+  renderingMode = mode;
+  try {
+    fs.mkdirSync(path.dirname(renderingSettingsPath), { recursive: true });
+    fs.writeFileSync(renderingSettingsPath, JSON.stringify({ mode }, null, 2));
+  } catch (error) {
+    console.error('[electron] Failed to save rendering preference:', error);
+  }
+}
 
 const extractLedgerProtocolUrl = (argv: string[]) =>
   argv.find((value) =>
@@ -2712,6 +2680,28 @@ function setSidebarAboveWorkspaceWindow(enabled: boolean) {
   const workspaceWin =
     workspaceModuleWin && !workspaceModuleWin.isDestroyed() ? workspaceModuleWin : null;
 
+  // Reparenting transparent BrowserWindows while the workspace is entering
+  // fullscreen is unstable on macOS and can take down both Chromium
+  // renderers. Keep the sidebar independent there and use the native floating
+  // window level for the same visual layering. Windows retain the parent-child
+  // behavior used by the sidebar gutter implementation.
+  if (process.platform === 'darwin') {
+    if (parent) {
+      sidebarWin.setParentWindow(null);
+    }
+    const shouldAlwaysOnTop =
+      enabled ||
+      (currentSidebarMode !== 'auth' &&
+        currentSidebarMode !== 'fullscreen' &&
+        (sidebarAlwaysOnTop || currentSidebarShellFullscreen));
+    sidebarWin.setAlwaysOnTop(shouldAlwaysOnTop, getSidebarAlwaysOnTopLevel());
+    if (enabled && sidebarWin.isVisible()) {
+      sidebarWin.moveTop();
+    }
+    if (!wasFocused && sidebarWin.isFocused()) sidebarWin.blur();
+    return;
+  }
+
   if (
     enabled &&
     workspaceWin &&
@@ -2968,7 +2958,12 @@ function sendFloatingDockChanged(
   const payload = getFloatingDockStatePayload(isDocked, attachmentStatus);
   currentFloatingDockAttachmentStatus = attachmentStatus;
   try {
-    if (sidebarWin && !sidebarWin.isDestroyed() && !sidebarWin.webContents.isDestroyed()) {
+    if (
+      sidebarWin &&
+      !sidebarWin.isDestroyed() &&
+      !sidebarWin.webContents.isDestroyed() &&
+      !sidebarWin.webContents.isCrashed()
+    ) {
       sidebarWin.webContents.send('sidebar:floating-dock-changed', payload);
     }
   } catch {
@@ -2984,7 +2979,7 @@ function sendFloatingDockChanged(
   }
   for (const win of targets) {
     try {
-      if (!win.webContents.isDestroyed()) {
+      if (!win.webContents.isDestroyed() && !win.webContents.isCrashed()) {
         win.webContents.send('sidebar:floating-dock-changed', payload);
       }
     } catch {
@@ -3000,6 +2995,7 @@ function getFloatingDockStatePayload(
   return {
     isDocked,
     isWorkspaceDocked: isDocked && isWorkspaceDockTarget(),
+    workspaceDockAutoAttachSuppressed,
     attachmentStatus,
     side: currentFloatingDockTarget?.side ?? null,
   };
@@ -5886,7 +5882,14 @@ function broadcastWorkspaceNavigationState() {
     if (!win.isDestroyed()) targets.add(win);
   }
   for (const win of targets) {
-    win.webContents.send('workspace:navigation-state', state);
+    try {
+      if (!win.webContents.isDestroyed() && !win.webContents.isCrashed()) {
+        win.webContents.send('workspace:navigation-state', state);
+      }
+    } catch {
+      // A renderer can be disposed between the checks during fullscreen or
+      // window recreation.
+    }
   }
 }
 
@@ -6774,9 +6777,39 @@ app.on('will-quit', () => {
 let audioShutdownInProgress = false;
 app.on('before-quit', (event) => {
   if (audioShutdownInProgress) return;
+  if (meetingAudioCaptureService.isActive && !isQuittingApp) {
+    event.preventDefault();
+    void dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Stop and save', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      message: 'A recording is in progress. Stop and save before closing?',
+    }).then((result) => {
+      if (result.response === 0) {
+        isQuittingApp = true;
+        app.quit();
+      }
+    });
+    return;
+  }
   audioShutdownInProgress = true;
   event.preventDefault();
   void Promise.all([meetingAudioCaptureService.shutdown(), localTranscriptionService.shutdown()]).finally(() => app.quit());
+});
+
+powerMonitor.on('suspend', () => {
+  void meetingAudioCaptureService.prepareForSuspend().catch((error) => {
+    console.warn('[meeting-audio]', JSON.stringify({ event: 'suspend_checkpoint_failed', error: error instanceof Error ? error.message : String(error) }));
+  });
+});
+powerMonitor.on('resume', () => {
+  void meetingAudioCaptureService.checkAfterResume().then((healthy) => {
+    console.info('[meeting-audio]', JSON.stringify({ event: 'resume_checked', healthy, platform: process.platform, active: meetingAudioCaptureService.isActive }));
+  }).catch((error) => {
+    console.warn('[meeting-audio]', JSON.stringify({ event: 'resume_check_failed', error: error instanceof Error ? error.message : String(error) }));
+  });
 });
 
 app.on('activate', () => {
@@ -6829,6 +6862,23 @@ ipcMain.handle('window:hide-temporary', () => {
 
 ipcMain.handle('window:quit-app', () => {
   quitLedgerApp();
+});
+
+ipcMain.handle('window:get-rendering-settings', () => ({
+  mode: renderingMode,
+  platform: process.platform,
+}));
+
+ipcMain.handle('window:set-rendering-mode', (_event, mode: unknown) => {
+  const nextMode: RenderingMode =
+    mode === 'high_quality' || mode === 'compatibility' ? mode : 'auto';
+  saveRenderingMode(nextMode);
+  return { mode: nextMode, requiresRestart: true as const };
+});
+
+ipcMain.handle('window:restart-app', () => {
+  app.relaunch();
+  app.exit(0);
 });
 
 ipcMain.handle('window:set-always-on-top', (_event, alwaysOnTop: boolean) => {
@@ -7839,6 +7889,7 @@ function syncTouchBar() {
 }
 
 app.whenReady().then(() => {
+  registerWindowsLoopbackCapture();
   startAppleCalendarWatcher();
   loadNotificationDeliveryState();
   registerLedgerProtocol();

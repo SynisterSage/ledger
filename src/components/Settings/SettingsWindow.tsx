@@ -68,6 +68,8 @@ import { GithubIntegrationCard } from './GithubIntegrationCard';
 import { GithubIntegrationPage } from './GithubIntegrationPage';
 import { AppleCalendarConnection } from '../Calendar/AppleCalendarConnection';
 
+type RenderingMode = 'auto' | 'high_quality' | 'compatibility';
+
 type UserPreferences = {
   weekStartsOn: 'sunday' | 'monday';
   timeFormat: '12h' | '24h';
@@ -837,6 +839,9 @@ export const SettingsWindow = () => {
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
+  const [renderingMode, setRenderingMode] = useState<RenderingMode>('auto');
+  const [renderingPlatform, setRenderingPlatform] = useState<string | null>(null);
+  const [renderingRestartRequired, setRenderingRestartRequired] = useState(false);
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [meetingDefaultRetention, setMeetingDefaultRetention] = useState<'delete_after_transcription' | 'retain'>(() => {
     try { return localStorage.getItem('ledger.meeting.default-retention') === 'retain' ? 'retain' : 'delete_after_transcription'; } catch { return 'delete_after_transcription'; }
@@ -846,6 +851,26 @@ export const SettingsWindow = () => {
   const [meetingModelStatus, setMeetingModelStatus] = useState<{ installed?: boolean; downloading?: boolean; label?: string; approximateBytes?: number } | null>(null);
   const [isMeetingModelDeleteModalOpen, setIsMeetingModelDeleteModalOpen] = useState(false);
   const [isDeletingMeetingModel, setIsDeletingMeetingModel] = useState(false);
+  useEffect(() => {
+    if (!window.desktopWindow?.getRenderingSettings) return;
+    void window.desktopWindow
+      .getRenderingSettings()
+      .then((settings) => {
+        setRenderingMode(settings.mode);
+        setRenderingPlatform(settings.platform);
+      })
+      .catch(() => {});
+  }, []);
+  const isWindowsRendering = renderingPlatform === 'win32';
+  const updateRenderingMode = async (mode: RenderingMode) => {
+    if (mode === renderingMode) return;
+    if (!window.desktopWindow?.setRenderingMode) return;
+    try {
+      await window.desktopWindow.setRenderingMode(mode);
+      setRenderingMode(mode);
+      setRenderingRestartRequired(true);
+    } catch {}
+  };
   useEffect(() => {
     try { localStorage.setItem('ledger.meeting.default-retention', meetingDefaultRetention); } catch {}
   }, [meetingDefaultRetention]);
@@ -5139,6 +5164,44 @@ export const SettingsWindow = () => {
                       </div>
                     </div>
                   </section>
+
+                  {renderingPlatform && (
+                    <SettingsSection id="accessibility-rendering" title="Rendering">
+                      <SettingsGroup>
+                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                          <span className="min-w-0">
+                            <span className={settingsTheme.label}>Rendering quality</span>
+                            <span className={settingsTheme.help}>
+                              {isWindowsRendering
+                                ? 'Use your GPU for smoother gradients, corners, and window effects.'
+                                : 'Choose whether Ledger may use hardware acceleration.'}
+                            </span>
+                          </span>
+                          <select
+                            value={renderingMode}
+                            onChange={(event) => void updateRenderingMode(event.target.value as RenderingMode)}
+                            className={compactSelectClassName + ' w-auto min-w-36 text-xs'}
+                          >
+                            <option value="auto">Auto</option>
+                            {isWindowsRendering && <option value="high_quality">High quality</option>}
+                            <option value="compatibility">Compatibility</option>
+                          </select>
+                        </div>
+                        {renderingRestartRequired && (
+                          <div className="flex items-center justify-between gap-4 px-4 py-2.5" role="status">
+                            <span className={settingsTheme.help}>Restart Ledger to apply this change.</span>
+                            <button
+                              type="button"
+                              onClick={() => void window.desktopWindow?.restartApp()}
+                              className="shrink-0 rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                            >
+                              Restart
+                            </button>
+                          </div>
+                        )}
+                      </SettingsGroup>
+                    </SettingsSection>
+                  )}
 
                   <SettingsSection id="accessibility-startup" title="Startup">
                     <SettingsGroup>

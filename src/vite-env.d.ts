@@ -83,6 +83,7 @@ interface Window {
     play: (payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
     onLevel: (listener: (event: { source: 'user_microphone' | 'system_audio'; level: number }) => void) => () => void;
     onError: (listener: (event: { source: 'user_microphone' | 'system_audio'; error: string }) => void) => () => void;
+    onDevicesChanged: (listener: () => void) => () => void;
   };
   meetingTranscription?: {
     modelStatus: () => Promise<unknown>;
@@ -99,6 +100,16 @@ interface Window {
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
   desktopWindow?: {
+    platform?: string;
+    getRenderingSettings: () => Promise<{
+      mode: 'auto' | 'high_quality' | 'compatibility';
+      platform: string;
+    }>;
+    setRenderingMode: (mode: 'auto' | 'high_quality' | 'compatibility') => Promise<{
+      mode: 'auto' | 'high_quality' | 'compatibility';
+      requiresRestart: true;
+    }>;
+    restartApp: () => Promise<void>;
     setMode: (mode: SidebarWindowMode) => Promise<void>;
     setVisible: (isVisible: boolean) => Promise<void>;
     hideTemporary: () => Promise<void>;

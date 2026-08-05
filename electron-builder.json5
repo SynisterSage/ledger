@@ -16,7 +16,6 @@
     output: 'release/${version}',
   },
   files: ['dist', 'dist-electron', 'public'],
-  extraResources: [{ from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli'] }],
   mac: {
     target: ['dmg'],
     identity: 'ALEXANDER RAY FERGUSON (CAY3N8J725)',
@@ -24,6 +23,7 @@
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
     binaries: ['native/LedgerAudioCaptureBridge'],
+    extraResources: [{ from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli'] }],
     artifactName: '${productName}-Mac-${version}-Installer.${ext}',
     extendInfo: {
       NSCalendarsUsageDescription: 'Ledger uses calendar access to show events from calendars you choose alongside your Ledger work.',
@@ -42,6 +42,12 @@
       },
     ],
     artifactName: '${productName}-Windows-${version}-Setup.${ext}',
+    extraResources: [{ from: 'native/whisper-cli.exe', to: 'whisper-cli.exe' }],
+    // Windows capture is renderer/Electron based; no macOS native helpers are shipped.
+    // Provide LEDGER_WHISPER_CLI when producing a signed release with the Windows
+    // whisper.cpp executable available in the release environment.
+    signAndEditExecutable: true,
+    signingHashAlgorithms: ['sha256'],
   },
   nsis: {
     oneClick: false,

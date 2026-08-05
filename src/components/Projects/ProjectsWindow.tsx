@@ -5159,6 +5159,7 @@ export const ProjectsWindow = () => {
     const todayLeft = getTimelinePositionFromDate(todayKey());
     const showTodayMarker = todayLeft > 0 && todayLeft < 100;
     const [todayMonthLabel, todayDayLabel] = formatShortDate(todayKey()).split(' ');
+    const todayDate = parseTimelineDate(todayKey());
     const getMonthTickDays = (month: Date) => {
       if (projectsOverviewRange === 'all') return [];
       const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
@@ -5436,7 +5437,7 @@ export const ProjectsWindow = () => {
                               className="pointer-events-none absolute z-[7] -translate-x-1/2"
                               style={{ left: `${dateToX(todayKey())}%`, top: 0, bottom: 0 }}
                             >
-                                  <span className="absolute left-1/2 top-3 z-[8] flex -translate-x-1/2 items-center justify-center rounded-md bg-[var(--ledger-accent)] px-1.5 py-1 text-[10px] font-semibold leading-none text-white">
+                              <span className="absolute left-1/2 top-3 z-[8] -translate-x-1/2 whitespace-nowrap rounded-md bg-[var(--ledger-accent)] px-1.5 py-1 text-center text-[10px] font-semibold leading-none text-white">
                                 <span className="tabular-nums">{todayMonthLabel} {todayDayLabel}</span>
                               </span>
                               <span
@@ -5467,9 +5468,13 @@ export const ProjectsWindow = () => {
                                   key={month.toISOString()}
                                   className="border-r border-[color:var(--ledger-border-subtle)] px-3 py-2 last:border-r-0"
                                 >
-                                  <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[var(--ledger-text-secondary)]">
-                                    {month.toLocaleDateString([], { month: 'short' })}
-                                  </p>
+                                  {(!todayDate ||
+                                    month.getFullYear() !== todayDate.getFullYear() ||
+                                    month.getMonth() !== todayDate.getMonth()) && (
+                                    <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[var(--ledger-text-secondary)]">
+                                      {month.toLocaleDateString([], { month: 'short' })}
+                                    </p>
+                                  )}
                                   {projectsOverviewRange !== 'all' && (
                                     <div
                                       className="mt-1 grid text-[10px] text-[var(--ledger-text-muted)]"

@@ -1,6 +1,177 @@
 import { ipcRenderer, contextBridge } from 'electron';
+import { encodePcmWav, TARGET_SAMPLE_RATE } from './audio-capture/wav';
 
 const rendererListenerWrappers = new Map<string, Map<Function, Function>>();
+
+type WindowsCaptureSource = 'user_microphone' | 'system_audio';
+type WindowsCaptureRuntime = {
+  sessionId: string;
+  startedAt: number;
+  paused: boolean;
+  pauseStartedAt: number | null;
+  pausedMilliseconds: number;
+  sources: Map<WindowsCaptureSource, WindowsCaptureSourceRuntime>;
+  microphoneStream: MediaStream | null;
+  displayStream: MediaStream | null;
+  deviceChange: (() => void) | null;
+  streamListeners: Array<{ stream: MediaStream; listener: () => void }>;
+};
+type WindowsCaptureSourceRuntime = {
+  source: WindowsCaptureSource;
+  stream: MediaStream;
+  context: AudioContext;
+  processor: ScriptProcessorNode;
+  gain: GainNode;
+  buffers: Float32Array[][];
+  frameCount: number;
+  sequence: number;
+  chunkStartedAt: number;
+  flushing: Promise<void>;
+  trackListeners: Array<{ track: MediaStreamTrack; listener: () => void }>;
+};
+const windowsCaptureRuntimes = new Map<string, WindowsCaptureRuntime>();
+const windowsDeviceChangeListener = () => ipcRenderer.send('meeting-audio:windows-event', { event: 'devices-changed' });
+navigator.mediaDevices?.addEventListener('devicechange', windowsDeviceChangeListener);
+window.addEventListener('beforeunload', () => navigator.mediaDevices?.removeEventListener('devicechange', windowsDeviceChangeListener));
+
+function windowsCaptureError(code: string, message: string, source?: WindowsCaptureSource) {
+  return { event: 'error', sessionId: windowsCaptureRuntimes.keys().next().value ?? '', source, code, error: message };
+}
+
+async function flushWindowsSource(runtime: WindowsCaptureRuntime, source: WindowsCaptureSourceRuntime) {
+  if (!source.frameCount) return;
+  const buffers = source.buffers;
+  const frameCount = source.frameCount;
+  source.buffers = Array.from({ length: buffers.length }, () => []);
+  source.frameCount = 0;
+  const startAt = new Date(source.chunkStartedAt).toISOString();
+  source.chunkStartedAt = Date.now();
+  const wav = encodePcmWav(buffers, frameCount, source.context.sampleRate);
+  const endAt = new Date().toISOString();
+  const data = wav;
+  source.flushing = source.flushing.then(async () => {
+    await ipcRenderer.invoke('meeting-audio:windows-chunk', { sessionId: runtime.sessionId, source: source.source, sequence: source.sequence++, startAt, endAt, durationSeconds: frameCount / source.context.sampleRate, data });
+  }).catch((error) => {
+    ipcRenderer.send('meeting-audio:windows-event', windowsCaptureError('capture_interrupted', error instanceof Error ? error.message : 'Windows audio chunk could not be saved.', source.source));
+  });
+  await source.flushing;
+}
+
+async function stopWindowsRuntime(runtime: WindowsCaptureRuntime) {
+  const pending = [...runtime.sources.values()].map((source) => flushWindowsSource(runtime, source));
+  await Promise.allSettled(pending);
+  runtime.sources.forEach((source) => {
+    source.trackListeners.forEach(({ track, listener }) => track.removeEventListener('ended', listener));
+    source.processor.onaudioprocess = null;
+    source.processor.disconnect();
+    source.gain.disconnect();
+    void source.context.close();
+  });
+  [runtime.microphoneStream, runtime.displayStream].forEach((stream) => stream?.getTracks().forEach((track) => track.stop()));
+  if (runtime.deviceChange) navigator.mediaDevices.removeEventListener('devicechange', runtime.deviceChange);
+  runtime.streamListeners.forEach(({ stream, listener }) => stream.removeEventListener('inactive', listener));
+  windowsCaptureRuntimes.delete(runtime.sessionId);
+}
+
+async function startWindowsRuntime(command: { sessionId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null; requestId: string }) {
+  if (windowsCaptureRuntimes.has(command.sessionId)) {
+    ipcRenderer.send('meeting-audio:windows-event', { event: 'error', requestId: command.requestId, sessionId: command.sessionId, code: 'already_recording', error: 'Another Windows audio capture session is already active.' });
+    return;
+  }
+  const runtime: WindowsCaptureRuntime = { sessionId: command.sessionId, startedAt: Date.now(), paused: false, pauseStartedAt: null, pausedMilliseconds: 0, sources: new Map(), microphoneStream: null, displayStream: null, deviceChange: null, streamListeners: [] };
+  windowsCaptureRuntimes.set(command.sessionId, runtime);
+  try {
+    if (command.microphone) {
+      try {
+        runtime.microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: command.microphoneDeviceId ? { deviceId: { exact: command.microphoneDeviceId } } : true, video: false });
+      } catch (error) {
+        throw { code: /denied|permission/i.test(String(error)) ? 'microphone_permission_denied' : 'no_microphone_available', message: 'Ledger could not access the selected Windows microphone.' };
+      }
+      if (!runtime.microphoneStream.getAudioTracks().some((track) => track.readyState === 'live')) throw { code: 'no_microphone_available', message: 'No live Windows microphone track is available.' };
+    }
+    if (command.systemAudio) {
+      try { runtime.displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); }
+      catch { throw { code: 'display_capture_denied', message: 'Windows display capture permission was denied.' }; }
+      if (!runtime.displayStream.getAudioTracks().some((track) => track.readyState === 'live')) throw { code: 'no_output_device_available', message: 'Windows returned no live system-audio track from the active output device.' };
+    }
+    const streams: Array<[WindowsCaptureSource, MediaStream | null]> = [['user_microphone', runtime.microphoneStream], ['system_audio', runtime.displayStream ? new MediaStream(runtime.displayStream.getAudioTracks()) : null]];
+    for (const [sourceName, stream] of streams) {
+      if (!stream) continue;
+      const context = new AudioContext();
+      const mediaSource = context.createMediaStreamSource(stream);
+      const processor = context.createScriptProcessor(4096, Math.max(1, stream.getAudioTracks()[0]?.getSettings().channelCount || 1), Math.max(1, stream.getAudioTracks()[0]?.getSettings().channelCount || 1));
+      const gain = context.createGain();
+      gain.gain.value = 0;
+      const source: WindowsCaptureSourceRuntime = { source: sourceName, stream, context, processor, gain, buffers: Array.from({ length: processor.channelCount }, () => []), frameCount: 0, sequence: 0, chunkStartedAt: Date.now(), flushing: Promise.resolve(), trackListeners: [] };
+      processor.onaudioprocess = (event) => {
+        if (runtime.paused) return;
+        const input = event.inputBuffer;
+        source.frameCount += input.length;
+        for (let channel = 0; channel < source.buffers.length; channel += 1) source.buffers[channel].push(new Float32Array(input.getChannelData(Math.min(channel, input.numberOfChannels - 1))));
+        let energy = 0;
+        const samples = input.getChannelData(0);
+        for (let index = 0; index < samples.length; index += 1) energy += samples[index] * samples[index];
+        ipcRenderer.send('meeting-audio:windows-event', { event: 'level', sessionId: runtime.sessionId, source: sourceName, level: Math.min(1, Math.sqrt(energy / Math.max(1, samples.length)) * 4) });
+        if (source.frameCount >= context.sampleRate * 30) void flushWindowsSource(runtime, source);
+      };
+      const onEnded = () => ipcRenderer.send('meeting-audio:windows-event', windowsCaptureError('device_disconnected', `${sourceName === 'system_audio' ? 'System audio' : 'Microphone'} capture ended.`, sourceName));
+      stream.getTracks().forEach((track) => { track.addEventListener('ended', onEnded); source.trackListeners.push({ track, listener: onEnded }); });
+      if (sourceName === 'system_audio') runtime.displayStream?.getVideoTracks().forEach((track) => { track.addEventListener('ended', onEnded); source.trackListeners.push({ track, listener: onEnded }); });
+      stream.addEventListener('inactive', onEnded); runtime.streamListeners.push({ stream, listener: onEnded });
+      if (sourceName === 'system_audio' && runtime.displayStream) { runtime.displayStream.addEventListener('inactive', onEnded); runtime.streamListeners.push({ stream: runtime.displayStream, listener: onEnded }); }
+      mediaSource.connect(processor); processor.connect(gain); gain.connect(context.destination);
+      source.context.resume();
+      runtime.sources.set(sourceName, source);
+    }
+    runtime.deviceChange = () => {
+      ipcRenderer.send('meeting-audio:windows-event', { event: 'devices-changed' });
+      runtime.sources.forEach((source) => { if (!source.stream.getAudioTracks().some((track) => track.readyState === 'live')) ipcRenderer.send('meeting-audio:windows-event', windowsCaptureError('device_disconnected', `${source.source === 'system_audio' ? 'System audio' : 'Microphone'} device disconnected.`, source.source)); });
+    };
+    navigator.mediaDevices.addEventListener('devicechange', runtime.deviceChange);
+    const sources = [...runtime.sources.values()].map((source) => ({ source: source.source, sampleRate: TARGET_SAMPLE_RATE, channels: 1, active: true }));
+    if (!sources.length) throw { code: 'empty_audio_stream', message: 'Windows did not provide a usable audio stream.' };
+    ipcRenderer.send('meeting-audio:windows-event', { event: 'started', requestId: command.requestId, sessionId: command.sessionId, sources, warnings: [] });
+  } catch (error) {
+    await stopWindowsRuntime(runtime);
+    const detail = error && typeof error === 'object' ? error as { code?: string; message?: string } : {};
+    ipcRenderer.send('meeting-audio:windows-event', { event: 'error', requestId: command.requestId, sessionId: command.sessionId, code: detail.code || 'capture_initialization_failed', error: detail.message || 'Windows audio capture could not start.' });
+  }
+}
+
+async function handleWindowsCaptureCommand(command: { command: string; requestId: string; sessionId: string; microphone?: boolean; systemAudio?: boolean; microphoneDeviceId?: string | null }) {
+  if (command.command === 'start') return startWindowsRuntime({ ...command, microphone: command.microphone !== false, systemAudio: command.systemAudio !== false });
+  if (command.command === 'devices') {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((device) => device.kind === 'audioinput').map((device) => ({ id: device.deviceId, name: device.label || 'Microphone', kind: 'input' as const, available: true, isBluetooth: /bluetooth|headset|airpods/i.test(device.label), isDefault: device.deviceId === 'default', isOutputDefault: false, channelCount: 1 }));
+    const output = devices.find((device) => device.kind === 'audiooutput' && device.deviceId === 'default');
+    ipcRenderer.send('meeting-audio:windows-event', { event: 'started', requestId: command.requestId, sessionId: command.sessionId, devices: inputs, outputDevice: output ? { id: output.deviceId, name: output.label || 'Current output', isBluetooth: /bluetooth|headset|airpods/i.test(output.label) } : null, sources: [], warnings: [] });
+    return;
+  }
+  if (command.command === 'permissions' || command.command === 'request-permissions') {
+    let microphone: 'granted' | 'denied' | 'not_requested' = 'granted';
+    let systemAudio: 'granted' | 'denied' | 'not_requested' = 'granted';
+    try { const status = await navigator.permissions?.query({ name: 'microphone' as PermissionName }); microphone = status?.state === 'denied' ? 'denied' : status?.state === 'prompt' ? 'not_requested' : 'granted'; } catch {}
+    if (command.command === 'request-permissions') {
+      try { const mic = await navigator.mediaDevices.getUserMedia({ audio: true }); mic.getTracks().forEach((track) => track.stop()); microphone = 'granted'; } catch { microphone = 'denied'; }
+      try { const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }); display.getTracks().forEach((track) => track.stop()); systemAudio = 'granted'; } catch { systemAudio = 'denied'; }
+    }
+    ipcRenderer.send('meeting-audio:windows-event', { event: 'started', requestId: command.requestId, sessionId: command.sessionId, microphone, systemAudio, sources: [], warnings: [] });
+    return;
+  }
+  const runtime = windowsCaptureRuntimes.get(command.sessionId);
+  if (!runtime) { ipcRenderer.send('meeting-audio:windows-event', { event: 'error', requestId: command.requestId, sessionId: command.sessionId, code: 'invalid_state', error: 'Windows audio capture is not active.' }); return; }
+  if (command.command === 'pause') { await Promise.all([...runtime.sources.values()].map((source) => flushWindowsSource(runtime, source))); runtime.paused = true; runtime.pauseStartedAt = Date.now(); ipcRenderer.send('meeting-audio:windows-event', { event: 'paused', requestId: command.requestId, sessionId: command.sessionId }); return; }
+  if (command.command === 'resume') { if (runtime.pauseStartedAt) runtime.pausedMilliseconds += Date.now() - runtime.pauseStartedAt; runtime.pauseStartedAt = null; runtime.paused = false; ipcRenderer.send('meeting-audio:windows-event', { event: 'resumed', requestId: command.requestId, sessionId: command.sessionId }); return; }
+  if (command.command === 'flush') { await Promise.all([...runtime.sources.values()].map((source) => flushWindowsSource(runtime, source))); ipcRenderer.send('meeting-audio:windows-event', { event: 'flushed', requestId: command.requestId, sessionId: command.sessionId }); return; }
+  if (command.command === 'health') {
+    const sources = [...runtime.sources.values()].map((source) => ({ source: source.source, sampleRate: TARGET_SAMPLE_RATE, channels: 1, active: source.stream.getAudioTracks().some((track) => track.readyState === 'live') }));
+    ipcRenderer.send('meeting-audio:windows-event', { event: 'health', requestId: command.requestId, sessionId: command.sessionId, sources });
+    return;
+  }
+  if (command.command === 'stop') { await stopWindowsRuntime(runtime); ipcRenderer.send('meeting-audio:windows-event', { event: 'stopped', requestId: command.requestId, sessionId: command.sessionId, durationSeconds: Math.max(0, (Date.now() - runtime.startedAt - runtime.pausedMilliseconds) / 1000) }); }
+}
+
+ipcRenderer.on('meeting-audio:windows-command', (_event, command: Parameters<typeof handleWindowsCaptureCommand>[0]) => { void handleWindowsCaptureCommand(command); });
 
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
@@ -122,6 +293,11 @@ contextBridge.exposeInMainWorld('meetingAudio', {
     ipcRenderer.on('meeting-audio:error', wrapped);
     return () => ipcRenderer.off('meeting-audio:error', wrapped);
   },
+  onDevicesChanged(listener: () => void) {
+    const wrapped = () => listener();
+    ipcRenderer.on('meeting-audio:devices-changed', wrapped);
+    return () => ipcRenderer.off('meeting-audio:devices-changed', wrapped);
+  },
 });
 
 contextBridge.exposeInMainWorld('meetingTranscription', {
@@ -190,6 +366,16 @@ type LedgerTabSession = {
 };
 
 contextBridge.exposeInMainWorld('desktopWindow', {
+  platform: process.platform,
+  getRenderingSettings() {
+    return ipcRenderer.invoke('window:get-rendering-settings');
+  },
+  setRenderingMode(mode: 'auto' | 'high_quality' | 'compatibility') {
+    return ipcRenderer.invoke('window:set-rendering-mode', mode);
+  },
+  restartApp() {
+    return ipcRenderer.invoke('window:restart-app');
+  },
   setMode(mode: SidebarWindowMode) {
     return ipcRenderer.invoke('window:set-mode', mode);
   },
