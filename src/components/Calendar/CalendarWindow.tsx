@@ -901,7 +901,6 @@ export const CalendarWindow = () => {
   const [gridQuickAdd, setGridQuickAdd] = useState<GridQuickAddState | null>(null);
   const [gridQuickTitle, setGridQuickTitle] = useState('');
   const [calendarDrag, setCalendarDrag] = useState<CalendarDragState | null>(null);
-  const calendarDragOriginRef = useRef<{ startAt: string; endAt: string } | null>(null);
   const notifyCalendarItemsUpdated = () => {
     window.ipcRenderer?.send('calendar:items-updated');
   };
@@ -1426,7 +1425,6 @@ export const CalendarWindow = () => {
     pointerEvent.preventDefault();
     pointerEvent.stopPropagation();
     pointerEvent.currentTarget.setPointerCapture?.(pointerEvent.pointerId);
-    calendarDragOriginRef.current = { startAt: event.start_at, endAt: event.end_at };
     setCalendarDrag({
       eventId: event.id,
       pointerId: pointerEvent.pointerId,
@@ -1459,7 +1457,6 @@ export const CalendarWindow = () => {
     const onPointerUp = (event: PointerEvent) => {
       if (event.pointerId !== calendarDrag.pointerId) return;
       void commitEventDrag(calendarDrag).finally(() => {
-        calendarDragOriginRef.current = null;
         setCalendarDrag(null);
       });
     };
@@ -1472,6 +1469,26 @@ export const CalendarWindow = () => {
       window.removeEventListener('pointercancel', onPointerUp);
     };
   }, [calendarDrag, commitEventDrag, viewAnchor, viewConfig.dates]);
+
+  const calendarDragPreview = useMemo(() => {
+    if (!calendarDrag || viewMode === 'month' || viewMode === 'agenda') return null;
+    const start = new Date(calendarDrag.previewStartAt);
+    const dayIndex = viewConfig.dates.findIndex((date) => formatDateKey(date) === formatDateKey(start));
+    if (dayIndex < 0) return null;
+    const source = events.find((event) => event.id === calendarDrag.eventId);
+    if (!source) return null;
+    const durationMinutes = Math.max(
+      15,
+      Math.round((new Date(calendarDrag.previewEndAt).getTime() - start.getTime()) / 60000)
+    );
+    return {
+      title: source.title,
+      color: source.color ?? '#93C5FD',
+      dayIndex,
+      top: 96 + (start.getHours() * 60 + start.getMinutes()) / 60 * TIMELINE_HOUR_HEIGHT,
+      height: Math.max(24, (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 4),
+    };
+  }, [calendarDrag, events, viewConfig.dates, viewMode]);
 
   const appleCalendar = useAppleCalendar(user?.id, viewConfig.start, viewConfig.end);
   const appleReminders = useAppleReminders(user?.id, viewConfig.start, viewConfig.end);
@@ -4782,7 +4799,7 @@ export const CalendarWindow = () => {
           <div className="flex h-full flex-col overflow-hidden bg-[var(--ledger-surface-card)]">
             <div
               ref={centerScrollRef}
-              className="flex-1 min-w-0 overflow-auto"
+              className="relative flex-1 min-w-0 overflow-auto"
               onWheel={(event) => {
                 const container = centerScrollRef.current;
                 if (!container) return;
@@ -4798,7 +4815,7 @@ export const CalendarWindow = () => {
               }}
             >
               {calendarDrag ? (
-                <div className="sticky top-3 z-[60] mx-auto flex w-fit items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-[11px] text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
+                <div className="pointer-events-none absolute left-1/2 top-3 z-[60] flex w-fit -translate-x-1/2 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-[11px] text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
                   Moving to {new Date(calendarDrag.previewStartAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · {formatCalendarTime(new Date(calendarDrag.previewStartAt))}
                 </div>
@@ -5115,6 +5132,24 @@ export const CalendarWindow = () => {
                       gridTemplateColumns: `72px repeat(${viewConfig.dates.length}, minmax(0, 1fr))`,
                     }}
                   >
+                    {calendarDragPreview ? (
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute z-[55] overflow-hidden rounded-[5px] border border-dashed px-2 py-1 text-[11px] font-medium opacity-90"
+                        style={{
+                          top: calendarDragPreview.top,
+                          height: calendarDragPreview.height,
+                          left: `calc(72px + (100% - 72px) * ${calendarDragPreview.dayIndex / viewConfig.dates.length} + 4px)`,
+                          width: `calc((100% - 72px) / ${viewConfig.dates.length} - 8px)`,
+                          color: calendarDragPreview.color,
+                          backgroundColor: `${calendarDragPreview.color}14`,
+                          borderColor: calendarDragPreview.color,
+                        }}
+                      >
+                        <span className="block truncate">{calendarDragPreview.title}</span>
+                        <span className="mt-0.5 block text-[10px] font-normal text-[var(--ledger-text-muted)]">Drop to move</span>
+                      </div>
+                    ) : null}
                     <div className="sticky top-0 z-50 h-14 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]" />
                     {viewConfig.dates.map((dayDate) => (
                       <CenterDateHeader
