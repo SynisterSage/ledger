@@ -8,6 +8,7 @@ const windows = await readFile('electron/audio-capture/adapters/WindowsAudioCapt
 const preload = await readFile('electron/preload.ts', 'utf8');
 const sessions = await readFile('electron/recordingSessionStore.ts', 'utf8');
 const service = await readFile('electron/audioCaptureService.ts', 'utf8');
+const transcription = await readFile('electron/transcriptionService.ts', 'utf8');
 const builder = await readFile('electron-builder.json5', 'utf8');
 
 test('platform routing is centralized in the capture factory', () => {
@@ -51,6 +52,13 @@ test('suspend and resume retain source health handling', () => {
   assert.match(service, /checkAfterResume/);
   assert.match(service, /markInterrupted/);
   assert.match(preload, /readyState === 'live'/);
+});
+
+test('missing Windows Whisper runtime fails before processing starts', () => {
+  assert.match(transcription, /this\.runtimePath\(\);/);
+  assert.match(transcription, /whisper-cli\.exe/);
+  assert.match(transcription, /Windows transcription is not available/);
+  assert.ok(transcription.indexOf('this.runtimePath();') < transcription.indexOf('this.jobs.create('));
 });
 
 test('packaging keeps macOS helpers out of Windows resources', () => {

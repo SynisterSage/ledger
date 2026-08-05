@@ -52,8 +52,13 @@ export class LocalTranscriptionService {
     if (!this.modelManager.status().installed) throw new Error('Install the local Whisper model before starting transcription.');
     if (this.process) throw new Error('Another transcription is already running.');
     const existing = this.jobs.list().find((job) => job.sessionId === input.sessionId && job.status !== 'cancelled');
+    if (existing?.status === 'complete' && !input.force) return this.publicJob(existing.jobId);
+    // Validate the platform-specific Whisper executable before creating a
+    // job or putting the meeting into its processing state. The
+    // model download alone is not enough on Windows; the packaged/dev build
+    // also needs whisper-cli.exe.
+    this.runtimePath();
     const job = existing && !input.force ? existing : this.jobs.create({ jobId: randomUUID(), sessionId: input.sessionId, noteId: input.noteId, workspaceId: input.workspaceId, modelId: RECOMMENDED_MODEL.id, status: 'queued', totalChunks: chunks.length });
-    if (job.status === 'complete' && !input.force) return this.publicJob(job.jobId);
     if (input.force) this.updateJob(job.jobId, { status: 'queued', progress: 0, error: null, completedChunks: 0, currentSource: null, currentChunkSequence: null, segments: [], skippedChunks: [], startedAt: null, completedAt: null }, 'job_restarted');
     void this.run(job.jobId);
     return this.publicJob(job.jobId);
@@ -123,7 +128,7 @@ export class LocalTranscriptionService {
       this.process = child;
       let stderr = '';
       child.stderr.on('data', (data) => { stderr += String(data).slice(-2000); });
-      const timeoutMs = process.platform === 'win32' ? 10 * 60 * 1000 : 15 * 60 * 1000;
+      const timeoutMs = process.platform === 'win32' ? 5 * 60 * 1000 : 15 * 60 * 1000;
       const timeout = setTimeout(() => {
         child.kill();
         reject(new Error('Whisper took too long to process an audio chunk. The recording is preserved so you can retry.'));
@@ -164,7 +169,13 @@ export class LocalTranscriptionService {
     const developmentName = process.platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
     const candidates = [process.env.LEDGER_WHISPER_CLI, app.isPackaged ? path.join(process.resourcesPath, packagedName) : path.join(app.getAppPath(), 'native', developmentName)].filter(Boolean) as string[];
     const found = candidates.find((candidate) => fs.existsSync(candidate));
-    if (!found) throw new Error('The local Whisper runtime is not installed in this Ledger build.');
+    if (!found) {
+      throw new Error(
+        process.platform === 'win32'
+          ? 'Windows transcription is not available in this Ledger build yet. The Windows Whisper runtime (whisper-cli.exe) is missing.'
+          : 'The local Whisper runtime is not installed in this Ledger build.'
+      );
+    }
     return found;
   }
   private deleteSessionAudio(sessionId: string) {
