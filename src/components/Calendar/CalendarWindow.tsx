@@ -4937,7 +4937,7 @@ export const CalendarWindow = () => {
                   </div>
                 </div>
               ) : viewMode === 'month' ? (
-                <div className="min-w-[720px]">
+                <div className="min-w-[720px] bg-[var(--ledger-surface-card)]">
                   <div
                     className="grid grid-cols-7 border-l border-t border-[color:var(--ledger-border-subtle)]"
                   >
@@ -5142,7 +5142,7 @@ export const CalendarWindow = () => {
                   </div>
                 </div>
               ) : (
-                <div className="min-w-[720px]">
+                <div className="min-w-[720px] bg-[var(--ledger-surface-card)]">
                   {/* Removed fallback card: events are rendered into the normal day grid, including off-hour rows */}
                   <div
                     className="relative grid min-w-[720px]"

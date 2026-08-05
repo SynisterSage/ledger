@@ -11,6 +11,7 @@
     "dev:extension": "npm --prefix apps/browser-extension run dev",
     "build": "npm run build:apple-calendar && tsc -p tsconfig.json && vite build && electron-builder",
     "build:windows": "npm run build:apple-calendar && tsc -p tsconfig.json && vite build && electron-builder --win",
+    "build:whisper-windows": "powershell -ExecutionPolicy Bypass -File scripts/build-whisper-windows.ps1",
     "build:apple-calendar": "node scripts/build-apple-calendar-bridge.mjs",
     "build:extension": "npm --prefix apps/browser-extension run build",
     "build:mobile-editor": "node scripts/build-mobile-editor.mjs",

@@ -10,6 +10,7 @@ const sessions = await readFile('electron/recordingSessionStore.ts', 'utf8');
 const service = await readFile('electron/audioCaptureService.ts', 'utf8');
 const transcription = await readFile('electron/transcriptionService.ts', 'utf8');
 const builder = await readFile('electron-builder.json5', 'utf8');
+const runtimeBuild = await readFile('scripts/build-whisper-windows.ps1', 'utf8');
 
 test('platform routing is centralized in the capture factory', () => {
   assert.match(factory, /platform === 'darwin'/);
@@ -66,4 +67,11 @@ test('packaging keeps macOS helpers out of Windows resources', () => {
   assert.match(builder, /extraResources:/);
   assert.match(builder, /signingHashAlgorithms: \['sha256'\]/);
   assert.match(builder, /deleteAppDataOnUninstall: false/);
+});
+
+test('Windows Whisper runtime has a reproducible pinned build path', () => {
+  assert.match(runtimeBuild, /a630b35c6fc02c8879f751ec3f39a61327f01dc7/);
+  assert.match(runtimeBuild, /whisper-cli\.exe/);
+  assert.match(runtimeBuild, /WHISPER_BUILD_EXAMPLES=ON/);
+  assert.match(runtimeBuild, /Copy-Item/);
 });

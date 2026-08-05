@@ -13,3 +13,14 @@ cmake -S /path/to/whisper.cpp -B /tmp/ledger-whisper-build \
 cmake --build /tmp/ledger-whisper-build --config Release --target whisper-cli -j4
 cp /tmp/ledger-whisper-build/bin/whisper-cli native/whisper-cli
 ```
+
+To build the Windows runtime, open PowerShell with Git, CMake, and the Visual
+Studio C++ build tools available, then run this from the Ledger repository:
+
+```powershell
+npm run build:whisper-windows
+```
+
+This checks out the same pinned whisper.cpp commit and writes
+`native/whisper-cli.exe`. Restart Ledger after building it. The model remains a
+separate per-computer download under Ledger application data.

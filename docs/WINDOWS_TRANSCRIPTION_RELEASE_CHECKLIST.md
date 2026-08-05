@@ -5,7 +5,7 @@ This checklist is for the signed packaged Windows build. Automated checks cover 
 ## Build and installation
 
 - [ ] Run `npm run build:windows` on a Windows release machine.
-- [ ] Stage the signed Windows Whisper runtime at `native/whisper-cli.exe` before packaging; `LEDGER_WHISPER_CLI` is available for development overrides.
+- [ ] Run `npm run build:whisper-windows` first, or stage the signed Windows Whisper runtime at `native/whisper-cli.exe`; `LEDGER_WHISPER_CLI` is available for development overrides.
 - [ ] Build with the production code-signing certificate and verify the installer signature.
 - [ ] Install cleanly; verify Ledger name, icon, publisher, and install location.
 - [ ] Upgrade over an older build; confirm `userData/meeting-recordings` remains intact.

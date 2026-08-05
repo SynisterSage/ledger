@@ -44,8 +44,7 @@
     artifactName: '${productName}-Windows-${version}-Setup.${ext}',
     extraResources: [{ from: 'native/whisper-cli.exe', to: 'whisper-cli.exe' }],
     // Windows capture is renderer/Electron based; no macOS native helpers are shipped.
-    // Provide LEDGER_WHISPER_CLI when producing a signed release with the Windows
-    // whisper.cpp executable available in the release environment.
+    // The Windows Whisper executable is staged by build:whisper-windows before packaging.
     signAndEditExecutable: true,
     signingHashAlgorithms: ['sha256'],
   },
