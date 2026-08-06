@@ -33,6 +33,7 @@ import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { UserAvatar } from '../Common/UserAvatar';
 
 type CirclePersonTeam = {
   id: string;
@@ -45,6 +46,7 @@ type CirclePersonSummary = {
   name: string;
   email: string | null;
   avatar_url: string | null;
+  avatar_updated_at?: string | null;
   role: string;
   teams: CirclePersonTeam[];
   team_labels?: string[];
@@ -261,13 +263,6 @@ const compareCirclePeople = (
   return String(a.name).localeCompare(String(b.name));
 };
 
-const getInitials = (name: string, email?: string | null) => {
-  const source = String(name ?? '').trim() || String(email ?? '').split('@')[0] || 'Member';
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-};
-
 const formatShortDate = (value?: string | null) => {
   if (!value) return null;
   const date = new Date(value);
@@ -330,21 +325,7 @@ const formatActivityLabel = (value?: string | null) => {
 };
 
 const CircleAvatar = ({ person }: { person: CirclePersonSummary }) => {
-  const initials = getInitials(person.name, person.email);
-  if (person.avatar_url) {
-    return (
-      <img
-        src={person.avatar_url}
-        alt={person.name}
-        className="h-7 w-7 shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] object-cover"
-      />
-    );
-  }
-  return (
-    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
-      {initials}
-    </span>
-  );
+  return <UserAvatar user={{ id: person.id, displayName: person.name, email: person.email, avatarUrl: person.avatar_url, avatarUpdatedAt: person.avatar_updated_at }} size="sm" />;
 };
 
 const SummaryCell = ({

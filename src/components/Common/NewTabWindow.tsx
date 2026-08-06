@@ -275,23 +275,25 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
         showWorkspaceNavigation
       />
       <main className="relative min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div
-            className="ledger-new-tab-atmosphere absolute inset-0"
-            style={{
-              background: [
-                ...(isWindows
-                  ? [
-                      'radial-gradient(ellipse 125% 56% at 50% 148%, var(--ledger-new-tab-atmosphere), transparent 100%)',
-                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
-                    ]
-                  : [
-                      'radial-gradient(ellipse 68% 42% at 50% 145%, var(--ledger-new-tab-atmosphere), transparent 86%)',
-                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
-                    ]),
-              ].join(', '),
-            }}
-          />
+        <div aria-hidden="true" className="pointer-events-none sticky top-0 z-0 h-0 overflow-visible">
+          <div className="absolute left-0 top-0 h-screen w-full overflow-hidden">
+            <div
+              className="ledger-new-tab-atmosphere absolute inset-0"
+              style={{
+                background: [
+                  ...(isWindows
+                    ? [
+                        'radial-gradient(ellipse 125% 56% at 50% 148%, var(--ledger-new-tab-atmosphere), transparent 100%)',
+                        'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
+                      ]
+                    : [
+                        'radial-gradient(ellipse 68% 42% at 50% 145%, var(--ledger-new-tab-atmosphere), transparent 86%)',
+                        'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
+                      ]),
+                ].join(', '),
+              }}
+            />
+          </div>
         </div>
         <div className="relative z-10 mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
           <img src="./logo-color.svg" alt="Ledger" className="mb-8 h-8 w-8" />

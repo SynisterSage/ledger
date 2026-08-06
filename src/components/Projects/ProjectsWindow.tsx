@@ -66,6 +66,8 @@ import {
   type ProjectTypeKind,
 } from '../../utils/projectTypes';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import { UserAvatar } from '../Common/UserAvatar';
+import { AvatarGroup } from '../Common/AvatarGroup';
 
 const parseProjectsSection = (
   value: string
@@ -193,6 +195,8 @@ type WorkspaceMember = {
   user_id: string;
   email: string | null;
   full_name: string | null;
+  avatar_url?: string | null;
+  avatar_updated_at?: string | null;
 };
 
 type WorkspaceTeam = {
@@ -498,13 +502,6 @@ const formatReminderDateLabel = (reminder: ProjectCalendarReminder) => {
 const displayMemberName = (member: WorkspaceMember | null | undefined) => {
   if (!member) return 'Unknown';
   return member.full_name?.trim() || member.email?.trim() || 'Unknown';
-};
-
-const getInitials = (value: string) => {
-  const parts = value.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
 };
 
 const formatRelativeFromNow = (value: string | null | undefined) => {
@@ -1104,19 +1101,6 @@ export const ProjectsWindow = () => {
     [workspaceMemberById, workspaceTeamById]
   );
 
-  const getAssigneeInitials = useCallback(
-    (assigneeValue: string | null | undefined) => {
-      if (!assigneeValue) return '';
-      const [kind, id] = String(assigneeValue).split(':', 2);
-      if (kind === 'team') {
-        const team = workspaceTeamById.get(id);
-        return team ? getInitials(team.name) : 'T';
-      }
-      return getInitials(displayMemberName(workspaceMemberById.get(id) ?? null));
-    },
-    [workspaceMemberById, workspaceTeamById]
-  );
-
   const getMilestoneAssignmentValue = useCallback(
     (
       milestone: Pick<
@@ -1144,17 +1128,12 @@ export const ProjectsWindow = () => {
           </span>
         );
       }
-      const initials = getAssigneeInitials(assigneeValue);
+      const member = workspaceMemberById.get(id) ?? null;
       return (
-        <span
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[8px] font-semibold text-[var(--ledger-text-secondary)]"
-          title={displayMemberName(workspaceMemberById.get(id) ?? null)}
-        >
-          {initials}
-        </span>
+        <UserAvatar user={{ id, displayName: member?.full_name ?? null, email: member?.email ?? null, avatarUrl: member?.avatar_url ?? null, avatarUpdatedAt: member?.avatar_updated_at ?? null }} size="xs" showTooltip />
       );
     },
-    [getAssigneeInitials, workspaceMemberById, workspaceTeamById]
+    [workspaceMemberById, workspaceTeamById]
   );
 
   const isSharedWorkspace = workspaceMembers.length > 1;
@@ -3223,7 +3202,7 @@ export const ProjectsWindow = () => {
           api.getTeams(),
         ]);
         const payload = membersPayload as {
-          members?: Array<{ user_id: string; email?: string | null; full_name?: string | null }>;
+          members?: Array<{ user_id: string; email?: string | null; full_name?: string | null; avatar_url?: string | null; avatar_updated_at?: string | null }>;
         };
         if (!mounted) return;
         const members = Array.isArray(payload?.members)
@@ -3231,6 +3210,8 @@ export const ProjectsWindow = () => {
               user_id: member.user_id,
               email: member.email ?? null,
               full_name: member.full_name ?? null,
+              avatar_url: member.avatar_url ?? null,
+              avatar_updated_at: member.avatar_updated_at ?? null,
             }))
           : [];
         setWorkspaceMembers(members);
@@ -4612,30 +4593,9 @@ export const ProjectsWindow = () => {
     </div>
   );
 
-  const renderMemberStack = (size = 'h-5 w-5') =>
+  const renderMemberStack = (_size = 'h-5 w-5') =>
     isSharedWorkspace && workspaceMembers.length > 0 ? (
-      <div className="flex -space-x-1">
-        {workspaceMembers.slice(0, 5).map((member) => {
-          const name = displayMemberName(member);
-          return (
-            <span
-              key={member.user_id}
-              title={name}
-              className={`flex ${size} items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]`}
-            >
-              {getInitials(name)}
-            </span>
-          );
-        })}
-        {workspaceMembers.length > 5 && (
-          <span
-            title={`+${workspaceMembers.length - 5} more members`}
-            className={`flex ${size} items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-hover)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]`}
-          >
-            +{workspaceMembers.length - 5}
-          </span>
-        )}
-      </div>
+      <AvatarGroup users={workspaceMembers.map((member) => ({ id: member.user_id, displayName: member.full_name, email: member.email, avatarUrl: member.avatar_url, avatarUpdatedAt: member.avatar_updated_at }))} maxVisible={5} size="xs" />
     ) : null;
 
   const renderDocumentSection = (
@@ -7180,9 +7140,7 @@ export const ProjectsWindow = () => {
                               member.user_id === selectedProject.created_by ? 'Owner' : 'Member';
                             return (
                               <div key={member.user_id} className="flex items-center gap-2">
-                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-hover)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
-                                  {getInitials(name)}
-                                </span>
+                                <UserAvatar user={{ id: member.user_id, displayName: member.full_name, email: member.email, avatarUrl: member.avatar_url, avatarUpdatedAt: member.avatar_updated_at }} size="xs" />
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                     {name}

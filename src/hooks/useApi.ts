@@ -132,7 +132,11 @@ export const useApi = () => {
       // User
       getOnboardingStatus: () => request('/api/user/onboarding'),
       completeOnboarding: () => request('/api/user/onboarding', { method: 'PATCH' }),
+      completeProfileSetup: () => request('/api/user/profile-setup', { method: 'PATCH' }),
       getUserSettings: () => request('/api/user/settings'),
+      getUserProfile: () => request('/api/user/profile'),
+      updateUserProfile: (payload: { full_name?: string | null; avatar_url?: string | null }) =>
+        request('/api/user/profile', { method: 'PATCH', body: JSON.stringify(payload) }),
       deleteAccount: () =>
         request('/api/account', {
           method: 'DELETE',

@@ -100,9 +100,14 @@ import { PageFindBar } from './components/Common/PageFindBar';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
 import { McpAuthorizationPage } from './components/Integrations/McpAuthorizationPage';
 import { McpScopeUpgradeAuthorizationPage } from './components/Integrations/McpScopeUpgradeAuthorizationPage';
+import { AvatarEditorModal } from './components/Settings/AvatarEditorModal';
+import { UserAvatar } from './components/Common/UserAvatar';
+import authService from './services/auth';
+import { userProfileService } from './services/userProfile';
+import type { UserProfile } from './types/userProfile';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
-type OnboardingStep = 'welcome' | 'workspace-type' | 'workspace' | 'team-invite' | 'position';
+type OnboardingStep = 'welcome' | 'profile' | 'workspace-type' | 'workspace' | 'team-invite' | 'position';
 type OnboardingWorkspaceMode = 'create' | 'join';
 type OnboardingWorkspaceType = 'personal' | 'team';
 type ModuleKind =
@@ -592,6 +597,9 @@ function OnboardingFlow({
   inviteValue,
   selectedPosition,
   selectedWorkspaceType,
+  profile,
+  displayName,
+  profileSetupIncluded,
   isSaving,
   error,
   onStepChange,
@@ -600,6 +608,11 @@ function OnboardingFlow({
   onInviteValueChange,
   onPositionChange,
   onWorkspaceTypeChange,
+  onDisplayNameChange,
+  onProfileContinue,
+  onProfileSkip,
+  onProfileSaveAvatar,
+  onProfileRemoveAvatar,
   onSkipSetup,
   onInviteSubmit,
   onInviteSkip,
@@ -612,6 +625,9 @@ function OnboardingFlow({
   inviteValue: string;
   selectedPosition: SidebarPosition;
   selectedWorkspaceType: OnboardingWorkspaceType | null;
+  profile: UserProfile;
+  displayName: string;
+  profileSetupIncluded: boolean;
   isSaving: boolean;
   error: string | null;
   onStepChange: (step: OnboardingStep) => void;
@@ -620,6 +636,11 @@ function OnboardingFlow({
   onInviteValueChange: (value: string) => void;
   onPositionChange: (position: SidebarPosition) => void;
   onWorkspaceTypeChange: (type: OnboardingWorkspaceType) => void;
+  onDisplayNameChange: (value: string) => void;
+  onProfileContinue: () => Promise<void>;
+  onProfileSkip: () => Promise<void>;
+  onProfileSaveAvatar: (blob: Blob) => Promise<void>;
+  onProfileRemoveAvatar: () => Promise<void>;
   onSkipSetup: () => void;
   onInviteSubmit: (emails: string[], role: 'admin' | 'member') => Promise<string[]>;
   onInviteSkip: () => void;
@@ -631,6 +652,8 @@ function OnboardingFlow({
   const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [failedInviteEmails, setFailedInviteEmails] = useState<string[]>([]);
+  const profilePhotoTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [isProfilePhotoEditorOpen, setIsProfilePhotoEditorOpen] = useState(false);
 
   const isValidInviteEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -717,7 +740,7 @@ function OnboardingFlow({
               <div className="mt-7 flex items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={() => onStepChange('workspace-type')}
+                  onClick={() => onStepChange(profileSetupIncluded ? 'profile' : 'workspace-type')}
                   className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--ledger-accent)] px-6 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
                 >
                   Get started
@@ -733,6 +756,72 @@ function OnboardingFlow({
             </div>
           ) : null}
 
+          {step === 'profile' ? (
+            <div className="mx-auto max-w-sm" style={noDragRegionStyle}>
+              <div className="mb-7">
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 1 of 5</p>
+                <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
+                  Set up your profile
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-muted)]">
+                  Help teammates recognize you across Ledger.
+                </p>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <button
+                  ref={profilePhotoTriggerRef}
+                  type="button"
+                  onClick={() => setIsProfilePhotoEditorOpen(true)}
+                  aria-label={profile.avatarUrl ? 'Change profile photo' : 'Add profile photo'}
+                  className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)]/40 focus-visible:ring-offset-4 focus-visible:ring-offset-[var(--ledger-background)]"
+                >
+                  <UserAvatar user={profile} size="xl" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsProfilePhotoEditorOpen(true)}
+                  className="mt-3 text-xs font-medium text-[var(--ledger-accent)] hover:text-[var(--ledger-accent-hover)]"
+                >
+                  {profile.avatarUrl ? 'Change photo' : 'Add photo'}
+                </button>
+              </div>
+
+              <label className="mt-7 block">
+                <span className="mb-2 block text-xs font-medium text-[var(--ledger-text-secondary)]">Display name</span>
+                <input
+                  autoFocus
+                  value={displayName}
+                  onChange={(event) => onDisplayNameChange(event.target.value)}
+                  autoComplete="name"
+                  className="h-11 w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-4 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[var(--ledger-border-strong)] focus:ring-2 focus:ring-[var(--ledger-border-strong)]/20"
+                />
+              </label>
+
+              {error ? <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">{error}</p> : null}
+              <div className="mt-7 flex items-center justify-end gap-3">
+                <button type="button" onClick={() => void onProfileSkip()} disabled={isSaving} className="inline-flex h-11 items-center justify-center rounded-lg px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50">
+                  Skip for now
+                </button>
+                <button type="button" onClick={() => void onProfileContinue()} disabled={isSaving} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50">
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+                  {isSaving ? 'Saving…' : 'Continue'}
+                </button>
+              </div>
+
+              {isProfilePhotoEditorOpen ? (
+                <AvatarEditorModal
+                  isOpen
+                  user={profile}
+                  onClose={() => setIsProfilePhotoEditorOpen(false)}
+                  onSave={onProfileSaveAvatar}
+                  onRemove={onProfileRemoveAvatar}
+                  returnFocusRef={profilePhotoTriggerRef}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
           {step === 'workspace-type' ? (
             <div className="mx-auto" style={noDragRegionStyle}>
               <button
@@ -743,7 +832,7 @@ function OnboardingFlow({
                 Back
               </button>
               <div className="mb-7">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 1 of 4</p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step {profileSetupIncluded ? 2 : 1} of {profileSetupIncluded ? 5 : 4}</p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   How will you use Ledger?
                 </h1>
@@ -855,7 +944,7 @@ function OnboardingFlow({
                 Back
               </button>
               <div className="mb-7">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 2 of 4</p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step {profileSetupIncluded ? 3 : 2} of {profileSetupIncluded ? (selectedWorkspaceType === 'team' ? 5 : 4) : (selectedWorkspaceType === 'team' ? 4 : 3)}</p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   {mode === 'create'
                     ? selectedWorkspaceType === 'team'
@@ -934,7 +1023,7 @@ function OnboardingFlow({
                 Back
               </button>
               <div className="mb-7">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 3 of 4</p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step {profileSetupIncluded ? 4 : 3} of {profileSetupIncluded ? 5 : 4}</p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   Invite your team
                 </h1>
@@ -1072,7 +1161,9 @@ function OnboardingFlow({
               </button>
               <div className="mb-7">
                 <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                  {selectedWorkspaceType === 'team' ? 'Step 4 of 4' : 'Step 3 of 3'}
+                  {selectedWorkspaceType === 'team'
+                    ? `Step ${profileSetupIncluded ? 5 : 4} of ${profileSetupIncluded ? 5 : 4}`
+                    : `Step ${profileSetupIncluded ? 4 : 3} of ${profileSetupIncluded ? 4 : 3}`}
                 </p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   Choose a sidebar position
@@ -1314,7 +1405,7 @@ function DashboardContent() {
     Array<{ note_id: string; project_id: string; project_name: string }>
   >([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<
-    Array<{ user_id: string; full_name: string | null; email: string | null }>
+    Array<{ user_id: string; full_name: string | null; email: string | null; avatar_url?: string | null; avatar_updated_at?: string | null }>
   >([]);
   const [followUpTasks, setFollowUpTasks] = useState<
     Array<{
@@ -1495,7 +1586,7 @@ function DashboardContent() {
     const loadWorkspaceMembers = async () => {
       try {
         const payload = (await api.getWorkspaceMembers(activeWorkspaceId)) as {
-          members?: Array<{ user_id: string; full_name?: string | null; email?: string | null }>;
+          members?: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null; avatar_updated_at?: string | null }>;
         };
         if (cancelled) return;
         const members = Array.isArray(payload?.members)
@@ -1503,6 +1594,8 @@ function DashboardContent() {
               user_id: member.user_id,
               full_name: member.full_name ?? null,
               email: member.email ?? null,
+              avatar_url: member.avatar_url ?? null,
+              avatar_updated_at: member.avatar_updated_at ?? null,
             }))
           : [];
         setWorkspaceMembers(members);
@@ -4374,8 +4467,11 @@ function DashboardContent() {
     progress?: number;
     assignee?: {
       kind: 'user' | 'team';
-      label: string;
+      label?: string;
       name: string;
+      userId?: string | null;
+      avatarUrl?: string | null;
+      avatarUpdatedAt?: string | null;
     };
     assignment?: {
       userId?: string | null;
@@ -4447,13 +4543,6 @@ function DashboardContent() {
     if (status.includes('pause')) return 'Paused';
     if (status.includes('progress')) return 'In progress';
     return 'Not started';
-  };
-
-  const getMemberInitials = (name: string) => {
-    const parts = name.trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return '?';
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
   };
 
   const getWorkspaceMemberLabel = (userId?: string | null) => {
@@ -4653,8 +4742,10 @@ function DashboardContent() {
       assignee: assigneeName
         ? {
             kind: 'user',
-            label: getMemberInitials(assigneeName),
             name: assigneeName,
+            userId: assigneeUserId,
+            avatarUrl: assignedMember?.avatar_url ?? null,
+            avatarUpdatedAt: assignedMember?.avatar_updated_at ?? null,
           }
         : teamIdentifier
         ? {
@@ -4774,8 +4865,10 @@ function DashboardContent() {
       assignee: leadName
         ? {
             kind: 'user',
-            label: getMemberInitials(leadName),
             name: leadName,
+            userId: project.lead_id ?? null,
+            avatarUrl: workspaceMemberById.get(project.lead_id ?? '')?.avatar_url ?? null,
+            avatarUpdatedAt: workspaceMemberById.get(project.lead_id ?? '')?.avatar_updated_at ?? null,
           }
         : ownerTeamName
         ? {
@@ -4925,8 +5018,10 @@ function DashboardContent() {
       assignee: eventUserLabel
         ? {
             kind: 'user',
-            label: getMemberInitials(eventUserLabel),
             name: eventUserLabel,
+            userId: eventUserId,
+            avatarUrl: workspaceMemberById.get(eventUserId ?? '')?.avatar_url ?? null,
+            avatarUpdatedAt: workspaceMemberById.get(eventUserId ?? '')?.avatar_updated_at ?? null,
           }
         : eventTeamLabel
         ? {
@@ -5192,7 +5287,6 @@ function DashboardContent() {
       return row.dateLabel === 'Not set' ? null : row.dateLabel ?? null;
     }
     if (property === 'assignee') {
-      // Assignees are represented by the compact initials/team marker in the row.
       // Keep team assignment text available, but never duplicate a person's name.
       return row.assignment?.userLabel ? null : row.assignment?.teamLabel ?? null;
     }
@@ -6662,8 +6756,10 @@ function DashboardContent() {
                                 (row.assignment?.userLabel
                                   ? {
                                       kind: 'user' as const,
-                                      label: getMemberInitials(row.assignment.userLabel),
                                       name: row.assignment.userLabel,
+                                      userId: row.assignment.userId,
+                                      avatarUrl: row.assignment.userId ? workspaceMemberById.get(row.assignment.userId)?.avatar_url ?? null : null,
+                                      avatarUpdatedAt: row.assignment.userId ? workspaceMemberById.get(row.assignment.userId)?.avatar_updated_at ?? null : null,
                                     }
                                   : row.assignment?.teamLabel
                                   ? {
@@ -6786,7 +6882,7 @@ function DashboardContent() {
                                           title={rowAssignee.name}
                                           aria-label={rowAssignee.name}
                                         >
-                                          {rowAssignee.label}
+                                          {rowAssignee.kind === 'user' ? <UserAvatar user={{ id: rowAssignee.userId ?? undefined, displayName: rowAssignee.name, email: null, avatarUrl: rowAssignee.avatarUrl, avatarUpdatedAt: rowAssignee.avatarUpdatedAt }} size="xs" /> : rowAssignee.label}
                                         </span>
                                       )}
                                     <button
@@ -8068,7 +8164,7 @@ function DashboardContent() {
 // Main app component
 function AppShell() {
   const toast = useToast();
-  const { user, isLoading, error: authError } = useAuthContext();
+  const { user, profile, refreshProfile, isLoading, error: authError } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId, refreshWorkspaces, setActiveWorkspace } =
     useWorkspaceContext();
   const api = useApi();
@@ -8105,6 +8201,8 @@ function AppShell() {
   const [inviteWorkspaceId, setInviteWorkspaceId] = useState<string | null>(null);
   const [inviteWorkspaceName, setInviteWorkspaceName] = useState<string | null>(null);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>('welcome');
+  const [onboardingHasProfileStep, setOnboardingHasProfileStep] = useState(false);
+  const [onboardingDisplayName, setOnboardingDisplayName] = useState('');
   const [onboardingWorkspaceType, setOnboardingWorkspaceType] =
     useState<OnboardingWorkspaceType | null>(null);
   const [onboardingWorkspaceId, setOnboardingWorkspaceId] = useState<string | null>(null);
@@ -8911,6 +9009,13 @@ function AppShell() {
     onboardingResetUserRef.current = currentUserId;
 
     setOnboardingStep(isInviteOnboarding ? 'position' : 'welcome');
+    setOnboardingHasProfileStep(false);
+    setOnboardingDisplayName(
+      profile?.displayName?.trim() ||
+        String(user?.user_metadata?.full_name ?? '').trim() ||
+        user?.email?.split('@')[0] ||
+        ''
+    );
     setOnboardingWorkspaceType(null);
     setOnboardingWorkspaceId(null);
     setOnboardingInviteEmails([]);
@@ -8921,7 +9026,7 @@ function AppShell() {
     setOnboardingSidebarPosition('floating');
     setOnboardingError(null);
     setIsSavingOnboarding(false);
-  }, [isInviteOnboarding, postAuthStage, user?.id]);
+  }, [isInviteOnboarding, postAuthStage, profile?.displayName, user?.email, user?.id, user?.user_metadata?.full_name]);
 
   useEffect(() => {
     const userId = user?.id ?? null;
@@ -8953,6 +9058,13 @@ function AppShell() {
         const onboardingCompleted = Boolean(
           (data as { onboarding_completed?: boolean } | null)?.onboarding_completed
         );
+        const profileSetupCompletedAt = (data as { profile_setup_completed_at?: string | null } | null)
+          ?.profile_setup_completed_at;
+        const profileSetupPending = profileSetupCompletedAt === null;
+        setOnboardingHasProfileStep(profileSetupPending);
+        if (!onboardingCompleted && profileSetupPending) {
+          setOnboardingStep('profile');
+        }
         setPostAuthStage(onboardingCompleted ? 'ready' : 'onboarding');
       } catch (error) {
         if (isCancelled) return;
@@ -9195,6 +9307,49 @@ function AppShell() {
   }
 
   if (postAuthStage === 'onboarding') {
+    const onboardingProfile: UserProfile = profile ?? {
+      id: user?.id ?? '',
+      displayName: onboardingDisplayName,
+      email: user?.email ?? '',
+      avatarUrl: null,
+      avatarUpdatedAt: null,
+    };
+
+    const saveOnboardingAvatar = async (blob: Blob) => {
+      if (!user?.id) throw new Error('You must be signed in to update your profile photo.');
+      await userProfileService.upload(blob, user.id);
+      await refreshProfile();
+    };
+
+    const removeOnboardingAvatar = async () => {
+      if (!user?.id) throw new Error('You must be signed in to update your profile photo.');
+      await userProfileService.remove(user.id);
+      await refreshProfile();
+    };
+
+    const completeProfileSetup = async () => {
+      if (!user || isSavingOnboarding) return;
+      const normalizedName = onboardingDisplayName.trim();
+      if (!normalizedName) {
+        setOnboardingError('Display name is required.');
+        return;
+      }
+
+      setIsSavingOnboarding(true);
+      setOnboardingError(null);
+      try {
+        await api.updateUserSettings({ full_name: normalizedName });
+        await authService.updateProfile(normalizedName);
+        await refreshProfile();
+        await api.completeProfileSetup();
+        setOnboardingStep('workspace-type');
+      } catch (error) {
+        setOnboardingError(error instanceof Error ? error.message : 'Could not save your profile.');
+      } finally {
+        setIsSavingOnboarding(false);
+      }
+    };
+
     const completeWorkspaceSetup = async () => {
       if (!user || isSavingOnboarding) return;
 
@@ -9372,11 +9527,22 @@ function AppShell() {
           setOnboardingError(null);
           setOnboardingWorkspaceType(nextType);
         }}
+        profile={onboardingProfile}
+        displayName={onboardingDisplayName}
+        profileSetupIncluded={onboardingHasProfileStep}
+        onDisplayNameChange={(value) => {
+          setOnboardingError(null);
+          setOnboardingDisplayName(value);
+        }}
+        onProfileContinue={completeProfileSetup}
+        onProfileSkip={completeProfileSetup}
+        onProfileSaveAvatar={saveOnboardingAvatar}
+        onProfileRemoveAvatar={removeOnboardingAvatar}
         onSkipSetup={() => {
           setOnboardingError(null);
           setOnboardingWorkspaceType('personal');
           setOnboardingMode('create');
-          setOnboardingStep('workspace');
+          setOnboardingStep('profile');
         }}
         onInviteSubmit={sendOnboardingInvites}
         onInviteSkip={skipOnboardingInvites}

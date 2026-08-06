@@ -59,6 +59,9 @@ import { buildInviteUrl } from '../../config/invite';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { UserAvatar } from '../Common/UserAvatar';
+import { AvatarEditorModal } from './AvatarEditorModal';
+import { userProfileService } from '../../services/userProfile';
 import authService from '../../services/auth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { FigmaIntegrationPage, type FigmaIntegrationStatus } from './FigmaIntegrationPage';
@@ -134,6 +137,8 @@ type WorkspaceMember = {
   email: string | null;
   full_name: string | null;
   is_owner: boolean;
+  avatar_url?: string | null;
+  avatar_updated_at?: string | null;
 };
 
 type WorkspaceInvitation = {
@@ -832,17 +837,8 @@ const makeTeamIdentifier = (value: string) => {
     .toUpperCase();
 };
 
-const getMemberInitials = (member: WorkspaceMember) => {
-  const value = member.full_name?.trim() || member.email?.trim() || '?';
-  return value
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
-};
-
 export const SettingsWindow = () => {
-  const { user, signOut } = useAuthContext();
+  const { user, profile, signOut, refreshProfile } = useAuthContext();
   const {
     sidebarPreferences,
     position,
@@ -989,6 +985,7 @@ export const SettingsWindow = () => {
   const [accountDeleteConfirmed, setAccountDeleteConfirmed] = useState(false);
   const [accountDeleteError, setAccountDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isAvatarEditorOpen, setIsAvatarEditorOpen] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState<string | null>(null);
   const [workspaceCreateName, setWorkspaceCreateName] = useState('');
   const [workspaceCreateDescription, setWorkspaceCreateDescription] = useState('');
@@ -1067,6 +1064,7 @@ export const SettingsWindow = () => {
   const [isLoadingAccountSessions, setIsLoadingAccountSessions] = useState(false);
   const [accountSessionsError, setAccountSessionsError] = useState<string | null>(null);
   const [accountSessionActionId, setAccountSessionActionId] = useState<string | null>(null);
+  const avatarTriggerRef = useRef<HTMLButtonElement | null>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const sessionHeartbeatTimerRef = useRef<number | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
@@ -1241,7 +1239,7 @@ export const SettingsWindow = () => {
     return () => {
       cancelled = true;
     };
-  }, [api, user?.email, user?.user_metadata?.full_name]);
+  }, [api, refreshProfile, user?.email, user?.user_metadata?.full_name]);
 
   useEffect(() => {
     if (!settingsHydratedRef.current) return;
@@ -1442,6 +1440,7 @@ export const SettingsWindow = () => {
             full_name: nextFullName,
             preferences: nextPreferences,
           });
+          await refreshProfile();
 
           if (String(nextFullName ?? '') !== lastSavedFullNameRef.current) {
             try {
@@ -1481,7 +1480,7 @@ export const SettingsWindow = () => {
         saveStatusTimerRef.current = null;
       }
     };
-  }, [api, fullName, preferences]);
+  }, [api, fullName, preferences, refreshProfile]);
 
   useEffect(() => {
     if (!notificationSettingsHydratedRef.current) return;
@@ -1606,6 +1605,20 @@ export const SettingsWindow = () => {
       );
       setIsDeletingAccount(false);
     }
+  };
+
+  const openAvatarEditor = () => setIsAvatarEditorOpen(true);
+
+  const saveAvatar = async (blob: Blob) => {
+    if (!user?.id) throw new Error('You must be signed in to update your profile photo.');
+    await userProfileService.upload(blob, user.id);
+    await refreshProfile();
+  };
+
+  const removeAvatar = async () => {
+    if (!user?.id) throw new Error('You must be signed in to update your profile photo.');
+    await userProfileService.remove(user.id);
+    await refreshProfile();
   };
 
   const handleCreateWorkspace = async () => {
@@ -2616,32 +2629,55 @@ export const SettingsWindow = () => {
               <SettingsPage>
               {activeSection === 'account' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-account">
-                  <div className="space-y-2">
+                  <header className="space-y-2">
                     <h2 id="settings-account" className={settingsTheme.pageTitle}>
                       Account
                     </h2>
                     <p className={settingsTheme.pageSubtitle}>
-                      Basic identity and security settings.
+                      Manage your personal identity, sign-in, and account security.
                     </p>
-                    <p className={settingsTheme.pageStatus} role="status">
-                      {saveStatus ?? 'Changes save automatically.'}
-                    </p>
-                  </div>
+                  </header>
 
-                  <div className="mt-8 space-y-10">
-                    <section
-                      className={settingsTheme.sectionShell}
-                      aria-labelledby="settings-profile"
-                    >
+                  <div className="mt-8 space-y-9">
+                    <section aria-labelledby="settings-profile">
                       <h3 id="settings-profile" className={settingsTheme.sectionTitle}>
                         Profile
                       </h3>
 
-                      <div className={settingsTheme.sectionRows}>
-                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                      <div className="mt-4 flex items-center gap-4">
+                        <UserAvatar
+                          user={{
+                            displayName: fullName.trim() || profile?.displayName || user?.email || '',
+                            email: profile?.email || user?.email || '',
+                            avatarUrl: profile?.avatarUrl ?? null,
+                            avatarUpdatedAt: profile?.avatarUpdatedAt ?? null,
+                          }}
+                          size="xl"
+                          showTooltip={false}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
+                            {fullName.trim() || profile?.displayName || 'No name set'}
+                          </p>
+                          <p className="mt-0.5 truncate text-sm text-[var(--ledger-text-muted)]">
+                            {profile?.email || user?.email || 'No email available'}
+                          </p>
+                          <button
+                            type="button"
+                            ref={avatarTriggerRef}
+                            onClick={openAvatarEditor}
+                            className="mt-2 text-xs font-medium text-[var(--ledger-accent)] hover:text-[var(--ledger-accent-hover)]"
+                          >
+                            {profile?.avatarUrl ? 'Change photo' : 'Add photo'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
+                        <div className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                           <div className="min-w-0">
                             <p className={settingsTheme.label}>Display name</p>
-                            <p className={settingsTheme.help}>Your name as it appears in Ledger.</p>
+                            <p className={settingsTheme.help}>Your name as it appears throughout Ledger.</p>
                             {isEditingFullName ? (
                               <input
                                 id="settings-full-name"
@@ -2655,47 +2691,48 @@ export const SettingsWindow = () => {
                                 {fullName.trim() || 'No name set'}
                               </p>
                             )}
+                            {saveStatus ? (
+                              <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]" role="status">
+                                {saveStatus}
+                              </p>
+                            ) : null}
                           </div>
                           <button
                             type="button"
                             onClick={() => setIsEditingFullName((value) => !value)}
-                            className={settingsTheme.controlButtonNeutral + ' shrink-0'}
+                            className={settingsTheme.controlButtonNeutral + ' shrink-0 self-start sm:self-center'}
                           >
                             {isEditingFullName ? 'Done' : 'Edit'}
                           </button>
                         </div>
 
-                        <div className="flex items-center justify-between gap-4 px-4 py-3">
+                        <div className="flex flex-col gap-1 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                           <div className="min-w-0">
-                            <p className={settingsTheme.label}>Email</p>
-                            <p className={settingsTheme.help}>Used for signing in.</p>
+                            <p className={settingsTheme.label}>Email address</p>
+                            <p className={settingsTheme.help}>Used for signing in and account communication.</p>
                           </div>
-                          <p className="max-w-[55%] truncate text-right text-[13px] text-[var(--ledger-text-secondary)]">
-                            {user?.email ?? 'No email available'}
+                          <p className="min-w-0 max-w-full truncate text-left text-[13px] text-[var(--ledger-text-secondary)] sm:max-w-[55%] sm:text-right">
+                            {profile?.email || user?.email || 'No email available'}
                           </p>
                         </div>
                       </div>
                     </section>
 
-                    <section
-                      className={settingsTheme.sectionShell}
-                      aria-labelledby="settings-security"
-                    >
+                    <section aria-labelledby="settings-security">
                       <h3 id="settings-security" className={settingsTheme.sectionTitle}>
                         Security
                       </h3>
-                      <div className={settingsTheme.sectionRows}>
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className={settingsTheme.label}>Password</p>
-                          <p className={settingsTheme.help}>Change your account password.</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
+                      <div className="mt-4 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
+                        <div className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                          <div className="min-w-0">
+                            <p className={settingsTheme.label}>Password</p>
+                            <p className={settingsTheme.help}>Change your account password.</p>
+                          </div>
                           {!showPasswordEditor ? (
                             <button
                               type="button"
                               onClick={() => setShowPasswordEditor(true)}
-                              className={settingsTheme.headerButton}
+                              className={settingsTheme.controlButtonNeutral + ' shrink-0 self-start sm:self-center'}
                             >
                               Change password
                             </button>
@@ -2710,16 +2747,15 @@ export const SettingsWindow = () => {
                                 setPasswordError(null);
                                 setPasswordStatus(null);
                               }}
-                              className={settingsTheme.headerButton}
+                              className={settingsTheme.controlButtonNeutral + ' shrink-0 self-start sm:self-center'}
                             >
                               Cancel
                             </button>
                           )}
                         </div>
-                      </div>
 
                       {showPasswordEditor ? (
-                        <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 py-3">
+                        <div className="border-t border-[color:var(--ledger-border-subtle)] py-3.5">
                           <div className="w-full space-y-3">
                           <div className="grid gap-1.5">
                             <label htmlFor="settings-current-password" className={settingsTheme.rowLabel}>
@@ -2794,15 +2830,12 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <section
-                      className={settingsTheme.sectionShell}
-                      aria-labelledby="settings-account-actions"
-                    >
+                    <section aria-labelledby="settings-account-actions">
                       <h3 id="settings-account-actions" className={settingsTheme.sectionTitle}>
                         Account actions
                       </h3>
-                      <div className={settingsTheme.sectionRows}>
-                        <div className="flex items-center justify-between gap-4">
+                      <div className="mt-4 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
+                        <div className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                           <div className="min-w-0">
                             <p className={settingsTheme.label}>Sign out</p>
                             <p className={settingsTheme.help}>
@@ -2814,7 +2847,7 @@ export const SettingsWindow = () => {
                             onClick={() => {
                               void signOut();
                             }}
-                            className={settingsTheme.dangerButton + ' shrink-0'}
+                            className={settingsTheme.controlButtonNeutral + ' shrink-0 self-start sm:self-center'}
                           >
                             Sign out
                           </button>
@@ -2822,32 +2855,29 @@ export const SettingsWindow = () => {
                       </div>
                     </section>
 
-                    <SettingsDangerGroup>
-                      <section aria-labelledby="settings-account-danger-zone">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="space-y-1">
-                            <h3
-                              id="settings-account-danger-zone"
-                              className={settingsTheme.sectionTitle}
-                            >
-                              Danger zone
-                            </h3>
-                            <p className={settingsTheme.sectionStatus}>
-                              Permanently delete your account and all personal data. Shared
-                              workspaces remain available to their other members.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={openAccountDeleteModal}
-                            disabled={isDeletingAccount}
-                            className={settingsTheme.dangerButton + ' shrink-0'}
-                          >
-                            Delete account
-                          </button>
+                    <section
+                      className="border-t border-[color:var(--ledger-border-strong)] pt-7"
+                      aria-labelledby="settings-account-danger-zone"
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                        <div className="space-y-1">
+                          <h3 id="settings-account-danger-zone" className={settingsTheme.sectionTitle}>
+                            Danger zone
+                          </h3>
+                          <p className={settingsTheme.sectionStatus + ' max-w-xl'}>
+                            Permanently delete your account and personal data. Shared workspaces remain available to their other members.
+                          </p>
                         </div>
-                      </section>
-                    </SettingsDangerGroup>
+                        <button
+                          type="button"
+                          onClick={openAccountDeleteModal}
+                          disabled={isDeletingAccount}
+                          className={settingsTheme.dangerButton + ' shrink-0 self-start sm:self-center'}
+                        >
+                          Delete account
+                        </button>
+                      </div>
+                    </section>
                   </div>
                 </section>
               )}
@@ -3146,9 +3176,7 @@ export const SettingsWindow = () => {
                                 className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center"
                               >
                                 <div className="flex min-w-0 items-center gap-3">
-                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--ledger-surface-muted)] text-[11px] font-semibold text-[var(--ledger-text-secondary)]">
-                                    {getMemberInitials(member)}
-                                  </span>
+                                  <UserAvatar user={{ id: member.user_id, displayName: member.full_name, email: member.email, avatarUrl: member.avatar_url, avatarUpdatedAt: member.avatar_updated_at }} size="sm" />
                                   <div className="min-w-0">
                                     <p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
                                       {displayName}
@@ -5341,6 +5369,22 @@ export const SettingsWindow = () => {
               )}
 
               </SettingsPage>
+              {isAvatarEditorOpen && user?.id ? (
+                <AvatarEditorModal
+                  isOpen={isAvatarEditorOpen}
+                  user={profile ?? {
+                    id: user.id,
+                    displayName: fullName.trim() || user.email?.split('@')[0] || '',
+                    email: user.email || '',
+                    avatarUrl: null,
+                    avatarUpdatedAt: null,
+                  }}
+                  onClose={() => setIsAvatarEditorOpen(false)}
+                  onSave={saveAvatar}
+                  onRemove={removeAvatar}
+                  returnFocusRef={avatarTriggerRef}
+                />
+              ) : null}
               <ModalOverlay
                 isOpen={isMeetingModelDeleteModalOpen}
                 onClose={closeMeetingModelDeleteModal}

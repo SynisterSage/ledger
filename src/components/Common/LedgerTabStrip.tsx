@@ -1367,6 +1367,20 @@ export const LedgerTabStrip = () => {
     selectWorkspaceTabRoute(created);
   };
 
+  useEffect(() => {
+    const handleOpenNewTabShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.key.toLowerCase() !== 't') return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      openNewTab();
+    };
+
+    window.addEventListener('keydown', handleOpenNewTabShortcut, true);
+    return () => window.removeEventListener('keydown', handleOpenNewTabShortcut, true);
+  }, [currentRoute, openNewTab, tabOrder]);
+
   return (
     <div
       ref={stripRef}

@@ -10,6 +10,8 @@ export type Database = {
           email: string;
           full_name: string | null;
           avatar_url: string | null;
+          avatar_updated_at: string | null;
+          profile_setup_completed_at: string | null;
           active_workspace_id: string | null;
           onboarding_completed: boolean;
           onboarding_completed_at: string | null;
@@ -22,6 +24,8 @@ export type Database = {
           email: string;
           full_name?: string | null;
           avatar_url?: string | null;
+          avatar_updated_at?: string | null;
+          profile_setup_completed_at?: string | null;
           active_workspace_id?: string | null;
           onboarding_completed?: boolean;
           onboarding_completed_at?: string | null;
@@ -34,6 +38,8 @@ export type Database = {
           email?: string;
           full_name?: string | null;
           avatar_url?: string | null;
+          avatar_updated_at?: string | null;
+          profile_setup_completed_at?: string | null;
           active_workspace_id?: string | null;
           onboarding_completed?: boolean;
           onboarding_completed_at?: string | null;

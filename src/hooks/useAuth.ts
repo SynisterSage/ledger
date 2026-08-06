@@ -3,9 +3,12 @@ import type { User, Session } from '@supabase/supabase-js';
 import { authService } from '../services/auth';
 import { supabaseConfigError } from '../services/supabase';
 import { DEFAULT_API_URL } from '../config/runtime';
+import type { UserProfile } from '../types/userProfile';
+import { userProfileService } from '../services/userProfile';
 
 export interface UseAuthReturn {
   user: User | null;
+  profile: UserProfile | null;
   session: Session | null;
   isLoading: boolean;
   error: Error | null;
@@ -13,14 +16,22 @@ export interface UseAuthReturn {
   signUp: (email: string, password: string, fullName?: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  refreshProfile: () => Promise<UserProfile | null>;
 }
 
 export const useAuth = (): UseAuthReturn => {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const hasEmittedSessionRef = useRef(false);
+
+  const refreshProfile = useCallback(async () => {
+    const next = user?.id ? await userProfileService.get(user.id) : null;
+    setProfile(next);
+    return next;
+  }, [user?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -67,6 +78,11 @@ export const useAuth = (): UseAuthReturn => {
 
       setSession(newSession);
       setUser(newSession?.user ?? null);
+      if (newSession?.user?.id) {
+        userProfileService.get(newSession.user.id).then(setProfile).catch(() => undefined);
+      } else {
+        setProfile(null);
+      }
 
       if (event === 'INITIAL_SESSION') {
         setIsLoading(false);
@@ -81,11 +97,13 @@ export const useAuth = (): UseAuthReturn => {
         if (currentSession) {
           setSession(currentSession);
           setUser(currentSession.user);
+          userProfileService.get(currentSession.user.id).then(setProfile).catch(() => undefined);
           return;
         }
 
         setSession(null);
         setUser(null);
+        setProfile(null);
       } catch (err) {
         if (!isMounted) return;
         setError(err instanceof Error ? err : new Error('Auth initialization failed'));
@@ -113,6 +131,7 @@ export const useAuth = (): UseAuthReturn => {
       if (data?.session) {
         setSession(data.session);
         setUser(data.session.user);
+        userProfileService.get(data.session.user.id).then(setProfile).catch(() => undefined);
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Sign in failed');
@@ -129,6 +148,7 @@ export const useAuth = (): UseAuthReturn => {
       if (data?.session) {
         setSession(data.session);
         setUser(data.session.user);
+        userProfileService.get(data.session.user.id).then(setProfile).catch(() => undefined);
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Sign up failed');
@@ -144,6 +164,7 @@ export const useAuth = (): UseAuthReturn => {
       if (error) throw error;
       setSession(null);
       setUser(null);
+      setProfile(null);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Sign out failed');
       setError(error);
@@ -165,6 +186,7 @@ export const useAuth = (): UseAuthReturn => {
 
   return {
     user,
+    profile,
     session,
     isLoading,
     error,
@@ -172,6 +194,7 @@ export const useAuth = (): UseAuthReturn => {
     signUp,
     signOut,
     resetPassword,
+    refreshProfile,
   };
 };
 

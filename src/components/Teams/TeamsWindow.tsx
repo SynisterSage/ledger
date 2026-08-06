@@ -45,13 +45,16 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { UserAvatar } from '../Common/UserAvatar';
+import { AvatarGroup } from '../Common/AvatarGroup';
 
 type TeamMember = {
   id: string;
   name: string;
   email?: string | null;
   role?: 'lead' | 'member';
-  initials: string;
+  avatar?: string | null;
+  avatar_updated_at?: string | null;
 };
 
 type TeamDisplayMember = {
@@ -59,8 +62,8 @@ type TeamDisplayMember = {
   name: string;
   email?: string | null;
   role?: 'lead' | 'member' | string | null;
-  initials: string;
   avatar?: string | null;
+  avatar_updated_at?: string | null;
   team_role?: string | null;
   is_lead?: boolean;
   open_task_count?: number | null;
@@ -203,7 +206,8 @@ type TeamOverviewResponse = {
     open_task_count?: number | null;
     active_project_count?: number | null;
     joined_at?: string | null;
-    last_active_at?: string | null;
+  last_active_at?: string | null;
+  avatar_updated_at?: string | null;
   }>;
   recent_activity: Array<{
     id: string;
@@ -277,6 +281,8 @@ type WorkspaceMemberPayload = {
   email?: string | null;
   full_name?: string | null;
   role?: string | null;
+  avatar_url?: string | null;
+  avatar_updated_at?: string | null;
 };
 
 type TeamContextMenu = {
@@ -379,13 +385,6 @@ const teamsTheme = {
     'h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]',
 };
 
-const getInitials = (name: string, email?: string | null) => {
-  const source = name.trim() || email?.split('@')[0] || 'Member';
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-};
-
 const formatShortDate = (value?: string | null) => {
   if (!value) return null;
   const date = new Date(String(value));
@@ -416,10 +415,8 @@ const makeIdentifier = (name: string) => {
     .toUpperCase();
 };
 
-const MemberAvatar = ({ member }: { member: { initials: string } }) => (
-  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
-    {member.initials}
-  </span>
+const MemberAvatar = ({ member }: { member: { id: string; name: string; email?: string | null; avatar?: string | null; avatar_updated_at?: string | null } }) => (
+  <UserAvatar user={{ id: member.id, displayName: member.name, email: member.email, avatarUrl: member.avatar, avatarUpdatedAt: member.avatar_updated_at }} size="sm" />
 );
 
 const TeamBadge = ({ team }: { team: Team }) => (
@@ -458,56 +455,14 @@ const AvatarStack = ({
   maxVisible = 3,
   onMemberContextMenu,
 }: {
-  members: Array<{ id: string; name: string; avatar?: string | null }>;
+  members: Array<{ id: string; name: string; email?: string | null; avatar?: string | null; avatar_updated_at?: string | null }>;
   maxVisible?: number;
   onMemberContextMenu?: (
-    member: { id: string; name: string; avatar?: string | null },
+    member: { id: string; name: string; email?: string | null; avatar?: string | null; avatar_updated_at?: string | null },
     event: ReactMouseEvent<HTMLElement>
   ) => void;
 }) => {
-  const visible = members.slice(0, maxVisible);
-  return (
-    <div className="flex items-center">
-      {visible.map((member, index) => (
-        <span
-          key={member.id}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-surface-muted)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]"
-          style={{ marginLeft: index === 0 ? 0 : -6 }}
-          title={member.name}
-          onContextMenu={
-            onMemberContextMenu
-              ? (event) => {
-                  event.preventDefault();
-                  onMemberContextMenu(member, event);
-                }
-              : undefined
-          }
-        >
-          {member.avatar ? (
-            <img
-              src={member.avatar}
-              alt={member.name}
-              className="h-full w-full rounded-full object-cover"
-            />
-          ) : (
-            member.name
-              .split(' ')
-              .filter(Boolean)
-              .slice(0, 2)
-              .map((part) => part[0])
-              .join('')
-              .slice(0, 2)
-              .toUpperCase()
-          )}
-        </span>
-      ))}
-      {members.length > visible.length ? (
-        <span className="ml-1 inline-flex h-6 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[10px] font-medium text-[var(--ledger-text-secondary)]">
-          +{members.length - visible.length}
-        </span>
-      ) : null}
-    </div>
-  );
+  return <AvatarGroup users={members.map((member) => ({ id: member.id, displayName: member.name, email: member.email, avatarUrl: member.avatar, avatarUpdatedAt: member.avatar_updated_at }))} maxVisible={maxVisible} size="xs" onUserContextMenu={onMemberContextMenu ? (user, event) => onMemberContextMenu(members.find((member) => member.id === user.id) ?? { id: user.id ?? '', name: user.displayName ?? '', email: user.email, avatar: user.avatarUrl, avatar_updated_at: user.avatarUpdatedAt }, event) : undefined} />;
 };
 
 const formatRelativeTime = (value?: string | null) => {
@@ -697,7 +652,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                 id: member.user_id,
                 name,
                 email: member.email ?? null,
-                initials: getInitials(name, member.email),
+                avatar: member.avatar_url ?? null,
+                avatar_updated_at: member.avatar_updated_at ?? null,
                 role: member.user_id === user?.id ? ('lead' as const) : undefined,
               };
             })
@@ -1124,13 +1080,13 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     if (teamOverview?.members?.length) {
       return teamOverview.members.map((member) => ({
         ...member,
-        initials: getInitials(member.name),
+        avatar_updated_at: member.avatar_updated_at ?? null,
       }));
     }
 
     return (selectedTeam?.members ?? []).map((member) => ({
       ...member,
-      initials: member.initials,
+      avatar_updated_at: member.avatar_updated_at ?? null,
     }));
   }, [selectedTeam?.members, teamOverview?.members]);
   const teamOverviewMembersById = useMemo(() => {
@@ -4103,7 +4059,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 }
                                 className={`${teamRowBaseClass} ${teamRowHoverClass}`}
                               >
-                                <span className={teamRowIconClass}>{member.initials}</span>
+                                <MemberAvatar member={member} />
                                 <span className="min-w-0">
                                   <span className={teamRowTitleClass}>{member.name}</span>
                                 </span>
@@ -4260,9 +4216,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                           className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                           title={member.name}
                         >
-                          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[9px] font-semibold text-[var(--ledger-text-secondary)]">
-                            {member.initials}
-                          </span>
+                          <MemberAvatar member={member} />
                           <span className="max-w-[160px] truncate">{member.name}</span>
                           <X size={10} />
                         </button>

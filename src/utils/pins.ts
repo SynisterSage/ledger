@@ -60,6 +60,8 @@ export type PinRecord = {
   subtitle?: string | null;
   icon_kind: 'person' | 'project' | 'note' | 'team' | 'task' | 'event' | 'reminder';
   initials?: string | null;
+  avatar_url?: string | null;
+  avatar_updated_at?: string | null;
   color?: string | null;
   destination: PinDestination;
 };

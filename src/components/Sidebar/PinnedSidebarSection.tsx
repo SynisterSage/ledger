@@ -18,6 +18,7 @@ import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { usePins } from '../../context/PinsContext';
 import { sidebarTheme } from './sidebarTheme';
 import { getPinNavigationTarget, type PinRecord } from '../../utils/pins';
+import { UserAvatar } from '../Common/UserAvatar';
 
 type MenuState = {
   type: 'pin';
@@ -57,17 +58,7 @@ const sortPins = (pins: PinRecord[]) =>
 const getPinIcon = (pin: PinRecord) => {
   switch (pin.icon_kind) {
     case 'person':
-      return (
-        <span
-          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold leading-none text-white"
-          style={{ backgroundColor: pin.color || 'var(--ledger-accent)' }}
-        >
-          {String(pin.initials ?? pin.title ?? 'P')
-            .trim()
-            .slice(0, 2)
-            .toUpperCase()}
-        </span>
-      );
+      return <UserAvatar user={{ id: pin.object_id, displayName: pin.title, email: null, avatarUrl: pin.avatar_url, avatarUpdatedAt: pin.avatar_updated_at }} size="xs" />;
     case 'project':
       return <Folder size={12} />;
     case 'note':

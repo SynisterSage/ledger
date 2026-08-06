@@ -3,6 +3,7 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import crypto from 'node:crypto';
+import Jimp from 'jimp-compact';
 import {
   parseExternalUrl,
   createOrGetExternalReference,
@@ -12322,12 +12323,15 @@ app.get('/api/user/onboarding', authMiddleware, rateLimit('read'), async (req, r
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('onboarding_completed')
+      .select('onboarding_completed, profile_setup_completed_at')
       .eq('id', req.authUser.id)
       .maybeSingle();
 
     if (error) throw error;
-    res.json({ onboarding_completed: Boolean(data?.onboarding_completed) });
+    res.json({
+      onboarding_completed: Boolean(data?.onboarding_completed),
+      profile_setup_completed_at: data?.profile_setup_completed_at ?? null,
+    });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -12402,6 +12406,72 @@ app.patch('/api/user/onboarding', authMiddleware, rateLimit('write'), async (req
     return respondWithError(res, error);
   }
 });
+
+app.patch('/api/user/profile-setup', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('users')
+      .update({ profile_setup_completed_at: nowIso, updated_at: nowIso })
+      .eq('id', req.authUser.id)
+      .select('profile_setup_completed_at')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'User profile not found' });
+    return res.json({ profile_setup_completed_at: data.profile_setup_completed_at ?? nowIso });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+const isStaticWebp = (buffer) => {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 16) return false;
+  const riff = buffer.subarray(0, 4).toString('ascii') === 'RIFF';
+  const webp = buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+  const animated = buffer.includes(Buffer.from('ANIM')) || buffer.includes(Buffer.from('ANMF'));
+  const declaredSize = buffer.readUInt32LE(4) + 8;
+  return riff && webp && declaredSize === buffer.length && !animated;
+};
+
+app.put(
+  '/api/user/avatar',
+  authMiddleware,
+  rateLimit('write'),
+  express.raw({ type: ['image/webp', 'application/octet-stream'], limit: '500kb' }),
+  async (req, res) => {
+    const userId = req.authUser.id;
+    const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!isStaticWebp(body)) return res.status(400).json({ error: 'Avatar must be a static WebP image.' });
+    if (body.length > 500 * 1024) return res.status(400).json({ error: 'Avatar must be smaller than 500 KB.' });
+
+    let decoded;
+    try {
+      decoded = await Jimp.read(body);
+    } catch {
+      return res.status(400).json({ error: 'Avatar image could not be decoded.' });
+    }
+    if (decoded.bitmap.width !== 512 || decoded.bitmap.height !== 512) {
+      return res.status(400).json({ error: 'Avatar must be exactly 512 × 512 pixels.' });
+    }
+
+    const storagePath = `${userId}/profile.webp`;
+    let previous = null;
+    try {
+      const existing = await supabase.storage.from('avatars').download(storagePath);
+      if (!existing.error && existing.data) previous = Buffer.from(await existing.data.arrayBuffer());
+      const upload = await supabase.storage.from('avatars').upload(storagePath, body, { contentType: 'image/webp', upsert: true, cacheControl: '31536000' });
+      if (upload.error) throw upload.error;
+      const now = new Date().toISOString();
+      const profile = await supabase.from('users').update({ avatar_url: `avatars/${storagePath}`, avatar_updated_at: now, updated_at: now }).eq('id', userId).select('id, email, full_name, avatar_url, avatar_updated_at').single();
+      if (profile.error) throw profile.error;
+      return res.json({ id: profile.data.id, email: profile.data.email ?? '', full_name: profile.data.full_name ?? null, avatar_url: profile.data.avatar_url ?? null, avatar_updated_at: profile.data.avatar_updated_at ?? null });
+    } catch (error) {
+      if (previous) await supabase.storage.from('avatars').upload(storagePath, previous, { contentType: 'image/webp', upsert: true, cacheControl: '31536000' });
+      else await supabase.storage.from('avatars').remove([storagePath]);
+      return respondWithError(res, error);
+    }
+  }
+);
 
 app.delete('/api/account', authMiddleware, rateLimit('write'), async (req, res) => {
   const userId = req.authUser.id;
@@ -12484,6 +12554,13 @@ app.delete('/api/account', authMiddleware, rateLimit('write'), async (req, res) 
       .eq('user_id', userId);
     if (removeMemberships.error) throw removeMemberships.error;
 
+    // Avatar storage is private and is not removed by deleting the auth user.
+    // Clean the fixed user-owned object before the auth deletion completes.
+    const avatarCleanup = await supabase.storage.from('avatars').remove([`${userId}/profile.webp`]);
+    if (avatarCleanup.error && !/not found|object not found|no such file/i.test(avatarCleanup.error.message ?? '')) {
+      throw avatarCleanup.error;
+    }
+
     const deleteUser = await supabase.auth.admin.deleteUser(userId);
     if (deleteUser.error) {
       // The admin operation can complete before a downstream FK response is
@@ -12504,7 +12581,7 @@ app.get('/api/user/settings', authMiddleware, rateLimit('read'), async (req, res
     const { data, error } = await supabase
       .from('users')
       .select(
-        'id, email, full_name, active_workspace_id, onboarding_completed, preferences, updated_at'
+        'id, email, full_name, avatar_url, avatar_updated_at, active_workspace_id, onboarding_completed, preferences, updated_at'
       )
       .eq('id', req.authUser.id)
       .maybeSingle();
@@ -12517,11 +12594,46 @@ app.get('/api/user/settings', authMiddleware, rateLimit('read'), async (req, res
     res.json({
       full_name: data.full_name ?? null,
       email: data.email ?? null,
+      avatar_url: data.avatar_url ?? null,
+      avatar_updated_at: data.avatar_updated_at ?? null,
       active_workspace_id: data.active_workspace_id ?? null,
       onboarding_completed: Boolean(data.onboarding_completed),
       preferences: normalizeUserPreferences(safeJson(data.preferences, {})),
       updated_at: data.updated_at ?? null,
     });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/user/profile', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('users')
+      .select('id, email, full_name, avatar_url, avatar_updated_at')
+      .eq('id', req.authUser.id).maybeSingle();
+    if (error) throw error;
+    if (!data?.id) return res.status(404).json({ error: 'User not found' });
+    return res.json({ id: data.id, email: data.email ?? '', full_name: data.full_name ?? null, avatar_url: data.avatar_url ?? null, avatar_updated_at: data.avatar_updated_at ?? null });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/user/profile', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const updatePayload = {};
+    if (req.body?.full_name !== undefined) updatePayload.full_name = normalizeNullableText(req.body.full_name);
+    if (req.body?.avatar_url !== undefined) {
+      const avatarUrl = normalizeNullableText(req.body.avatar_url);
+      if (avatarUrl !== null && avatarUrl !== `avatars/${req.authUser.id}/profile.webp`) return res.status(400).json({ error: 'Invalid avatar path' });
+      updatePayload.avatar_url = avatarUrl;
+      updatePayload.avatar_updated_at = new Date().toISOString();
+    }
+    if (!Object.keys(updatePayload).length) return res.status(400).json({ error: 'No profile updates provided' });
+    updatePayload.updated_at = new Date().toISOString();
+    const { data, error } = await supabase.from('users').update(updatePayload).eq('id', req.authUser.id).select('id, email, full_name, avatar_url, avatar_updated_at').single();
+    if (error) throw error;
+    return res.json({ id: data.id, email: data.email ?? '', full_name: data.full_name ?? null, avatar_url: data.avatar_url ?? null, avatar_updated_at: data.avatar_updated_at ?? null });
   } catch (error) {
     return respondWithError(res, error);
   }
@@ -13632,7 +13744,7 @@ app.get(
       const usersResult =
         uniqueUserIds.length === 0
           ? { data: [], error: null }
-          : await supabase.from('users').select('id, email, full_name').in('id', uniqueUserIds);
+          : await supabase.from('users').select('id, email, full_name, avatar_url, avatar_updated_at').in('id', uniqueUserIds);
 
       if (usersResult.error) throw usersResult.error;
 
@@ -13645,6 +13757,8 @@ app.get(
         joined_at: access.workspace.created_at,
         email: ownerUser?.email ?? null,
         full_name: ownerUser?.full_name ?? null,
+        avatar_url: ownerUser?.avatar_url ?? null,
+        avatar_updated_at: ownerUser?.avatar_updated_at ?? null,
         is_owner: true,
       };
 
@@ -13658,6 +13772,8 @@ app.get(
             joined_at: row.joined_at,
             email: user?.email ?? null,
             full_name: user?.full_name ?? null,
+            avatar_url: user?.avatar_url ?? null,
+            avatar_updated_at: user?.avatar_updated_at ?? null,
             is_owner: false,
           };
         })
@@ -14186,7 +14302,7 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
 
   const usersResult =
     userIds.length > 0
-      ? await supabase.from('users').select('id, email, full_name').in('id', userIds)
+      ? await supabase.from('users').select('id, email, full_name, avatar_url, avatar_updated_at').in('id', userIds)
       : { data: [], error: null };
 
   if (usersResult.error) throw usersResult.error;
@@ -14201,10 +14317,11 @@ const loadWorkspaceTeams = async (workspaceId, currentUserId, options = {}) => {
       id: row.user_id,
       name: fullName,
       email: member?.email ?? null,
+      avatar: member?.avatar_url ?? null,
+      avatar_updated_at: member?.avatar_updated_at ?? null,
       role: teamRoleValues.includes(String(row.role ?? '').toLowerCase())
         ? String(row.role ?? '').toLowerCase()
         : 'member',
-      initials: getInitialsFromName(fullName, member?.email ?? null),
     };
     if (!membersByTeamId.has(row.team_id)) {
       membersByTeamId.set(row.team_id, []);
@@ -14602,7 +14719,7 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
     uniqueUserIds.length > 0
       ? await supabase
           .from('users')
-          .select('id, email, full_name, avatar_url, created_at, updated_at')
+          .select('id, email, full_name, avatar_url, avatar_updated_at, created_at, updated_at')
           .in('id', uniqueUserIds)
       : { data: [], error: null };
 
@@ -14674,6 +14791,7 @@ const loadCircleWorkspacePeople = async (workspaceId, currentUserId) => {
       name: normalizeCirclePersonName(user),
       email: user.email ?? null,
       avatar_url: user.avatar_url ?? null,
+      avatar_updated_at: user.avatar_updated_at ?? null,
       role,
       teams: teamMemberships,
       team_labels: teamMemberships.map((team) => team.name).filter(Boolean),
@@ -14875,7 +14993,7 @@ const loadUsersByIds = async (userIds) => {
 
   const result = await supabase
     .from('users')
-    .select('id, email, full_name, avatar_url, created_at, updated_at')
+    .select('id, email, full_name, avatar_url, avatar_updated_at, created_at, updated_at')
     .in('id', ids);
 
   if (result.error) throw result.error;
@@ -14923,7 +15041,9 @@ const buildPinPersonPayload = ({ person, memberRow, currentUserId }) => {
     title: name,
     subtitle: person.workspace_role ? titleCaseLabel(person.workspace_role) : 'Circle',
     icon_kind: 'person',
-    initials: getInitialsFromName(name, person.email),
+    initials: null,
+    avatar_url: person.avatar_url ?? null,
+    avatar_updated_at: person.avatar_updated_at ?? null,
     color: null,
     destination: {
       kind: 'circle',
@@ -15051,7 +15171,7 @@ const resolvePinnedObjectTarget = async ({ workspaceId, userId, objectType, obje
         .maybeSingle(),
       supabase
         .from('users')
-        .select('id, email, full_name, avatar_url')
+        .select('id, email, full_name, avatar_url, avatar_updated_at')
         .eq('id', normalizedObjectId)
         .maybeSingle(),
     ]);
@@ -15066,6 +15186,7 @@ const resolvePinnedObjectTarget = async ({ workspaceId, userId, objectType, obje
       name: normalizeCirclePersonName(userResult.data),
       email: userResult.data.email ?? null,
       avatar_url: userResult.data.avatar_url ?? null,
+      avatar_updated_at: userResult.data.avatar_updated_at ?? null,
       role: String(role ?? 'member').toLowerCase(),
       workspace_role: String(role ?? 'member').toLowerCase(),
       is_owner: workspaceResult.data?.owner_id === normalizedObjectId,
@@ -15204,6 +15325,8 @@ const buildPinnedRecordResponse = (pinRow, target) => ({
   subtitle: target.subtitle ?? null,
   icon_kind: target.icon_kind,
   initials: target.initials ?? null,
+  avatar_url: target.avatar_url ?? null,
+  avatar_updated_at: target.avatar_updated_at ?? null,
   color: target.color ?? null,
   destination: target.destination,
 });

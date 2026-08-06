@@ -11,13 +11,15 @@ import { ModalOverlay } from '../Common/ModalOverlay';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { UserAvatar } from '../Common/UserAvatar';
 
 type TeamMember = {
   id: string;
   name: string;
   email?: string | null;
   role: 'lead' | 'member' | 'viewer';
-  initials: string;
+  avatar?: string | null;
+  avatar_updated_at?: string | null;
 };
 
 type WorkspaceMemberPayload = {
@@ -25,6 +27,8 @@ type WorkspaceMemberPayload = {
   email?: string | null;
   full_name?: string | null;
   role?: string | null;
+  avatar_url?: string | null;
+  avatar_updated_at?: string | null;
 };
 
 type TeamPayload = {
@@ -76,13 +80,6 @@ const settingsTheme = {
     'inline-flex h-8 items-center justify-center rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-60',
   chip:
     'inline-flex items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
-};
-
-const getInitials = (name: string, email?: string | null) => {
-  const source = name.trim() || email?.split('@')[0] || 'Member';
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
 const TeamBadge = ({ color }: { color: string }) => (
@@ -248,7 +245,8 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
         user_id: member.user_id,
         name: member.full_name?.trim() || member.email?.split('@')[0] || 'Workspace member',
         email: member.email ?? null,
-        initials: getInitials(member.full_name?.trim() || '', member.email ?? null),
+        avatar: member.avatar_url ?? null,
+        avatar_updated_at: member.avatar_updated_at ?? null,
       }));
   }, [memberSearch, team?.members, workspaceMembers]);
 
@@ -792,9 +790,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
                   disabled={memberActionId === member.user_id}
                   className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                 >
-                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[10px] font-semibold text-[var(--ledger-text-secondary)]">
-                    {member.initials}
-                  </span>
+                  <UserAvatar user={{ id: member.user_id, displayName: member.name, email: member.email, avatarUrl: member.avatar, avatarUpdatedAt: member.avatar_updated_at }} size="sm" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                       {member.name}

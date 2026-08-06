@@ -23,7 +23,13 @@
     "format:check": "prettier --check .",
     "test:write-mode": "node --test scripts/tests/write-mode-regressions.mjs",
     "test:windows-transcription": "node --test scripts/tests/windows-transcription-regressions.mjs",
-    "test:sidebar-preferences": "node --test scripts/tests/sidebar-preferences-phase2.test.mjs"
+    "test:sidebar-preferences": "node --test scripts/tests/sidebar-preferences-phase2.test.mjs",
+    "test:user-avatar-foundation": "node --test scripts/tests/user-avatar-foundation.test.mjs",
+    "test:avatar-management": "node --test scripts/tests/avatar-management-phase3.test.mjs",
+    "test:onboarding-profile": "node --test scripts/tests/onboarding-profile-phase4.test.mjs",
+    "test:avatar-rollout": "node --test scripts/tests/avatar-rollout-phase5.test.mjs",
+    "test:avatar-reliability": "node --test scripts/tests/avatar-reliability-phase6.test.mjs",
+    "test:avatar-normalization": "node --test scripts/tests/avatar-normalization.test.mjs"
   },
   "dependencies": {
     "@lexical/code": "^0.44.0",
@@ -47,6 +53,7 @@
     "nspell": "^2.1.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-easy-crop": "^5.5.7",
     "rrule": "^2.8.1",
     "word-list": "^4.1.0",
     "zustand": "^5.0.12"
