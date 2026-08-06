@@ -1324,8 +1324,6 @@ export const LedgerTabStrip = () => {
     return () => window.removeEventListener('keydown', handleTabNavigation);
   }, [currentRoute]);
 
-  if (tabOrder.length === 0) return null;
-
   const selectTab = (route: LedgerRoute) => {
     const key = routeKey(route);
     if (closedTabKeysRef.current.has(key)) {
@@ -1380,6 +1378,8 @@ export const LedgerTabStrip = () => {
     window.addEventListener('keydown', handleOpenNewTabShortcut, true);
     return () => window.removeEventListener('keydown', handleOpenNewTabShortcut, true);
   }, [currentRoute, openNewTab, tabOrder]);
+
+  if (tabOrder.length === 0) return null;
 
   return (
     <div

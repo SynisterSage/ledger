@@ -10,6 +10,8 @@ import {
   CircleAlert,
   Copy,
   CalendarDays,
+  Camera,
+  Check,
   CirclePause,
   CirclePlay,
   Loader2,
@@ -31,6 +33,7 @@ import {
   MoreHorizontal,
   Mic,
   Smartphone,
+  X,
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -2645,67 +2648,97 @@ export const SettingsWindow = () => {
                       </h3>
 
                       <div className="mt-4 flex items-center gap-4">
-                        <UserAvatar
-                          user={{
-                            displayName: fullName.trim() || profile?.displayName || user?.email || '',
-                            email: profile?.email || user?.email || '',
-                            avatarUrl: profile?.avatarUrl ?? null,
-                            avatarUpdatedAt: profile?.avatarUpdatedAt ?? null,
-                          }}
-                          size="xl"
-                          showTooltip={false}
-                        />
+                        <button
+                          type="button"
+                          ref={avatarTriggerRef}
+                          onClick={openAvatarEditor}
+                          className="group relative shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-background)]"
+                          aria-label={profile?.avatarUrl ? 'Change profile photo' : 'Add profile photo'}
+                        >
+                          <UserAvatar
+                            user={{
+                              displayName: fullName.trim() || profile?.displayName || user?.email || '',
+                              email: profile?.email || user?.email || '',
+                              avatarUrl: profile?.avatarUrl ?? null,
+                              avatarUpdatedAt: profile?.avatarUpdatedAt ?? null,
+                            }}
+                            size="xl"
+                            showTooltip={false}
+                            className="transition-opacity group-hover:opacity-75"
+                          />
+                          <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/35 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                            <Camera size={20} aria-hidden="true" />
+                          </span>
+                        </button>
                         <div className="min-w-0">
-                          <p className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
-                            {fullName.trim() || profile?.displayName || 'No name set'}
-                          </p>
-                          <p className="mt-0.5 truncate text-sm text-[var(--ledger-text-muted)]">
-                            {profile?.email || user?.email || 'No email available'}
-                          </p>
-                          <button
-                            type="button"
-                            ref={avatarTriggerRef}
-                            onClick={openAvatarEditor}
-                            className="mt-2 text-xs font-medium text-[var(--ledger-accent)] hover:text-[var(--ledger-accent-hover)]"
-                          >
-                            {profile?.avatarUrl ? 'Change photo' : 'Add photo'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
-                        <div className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                          <div className="min-w-0">
-                            <p className={settingsTheme.label}>Display name</p>
-                            <p className={settingsTheme.help}>Your name as it appears throughout Ledger.</p>
-                            {isEditingFullName ? (
+                          {isEditingFullName ? (
+                            <div className="flex max-w-sm items-center gap-1.5 rounded-lg border border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-card)] p-1 shadow-[0_2px_8px_rgba(17,24,39,0.08)]">
                               <input
                                 id="settings-full-name"
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
-                                className={settingsTheme.input + ' mt-3 max-w-sm'}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    setIsEditingFullName(false);
+                                  }
+                                  if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    setFullName(profile?.displayName ?? '');
+                                    setIsEditingFullName(false);
+                                  }
+                                }}
+                                className="h-8 min-w-0 flex-1 bg-transparent px-2 text-sm font-semibold text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-placeholder)]"
                                 autoFocus
+                                aria-label="Display name"
                               />
-                            ) : (
-                              <p className="mt-2 truncate text-[13px] text-[var(--ledger-text-secondary)]">
-                                {fullName.trim() || 'No name set'}
-                              </p>
-                            )}
-                            {saveStatus ? (
-                              <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]" role="status">
-                                {saveStatus}
-                              </p>
-                            ) : null}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setIsEditingFullName((value) => !value)}
-                            className={settingsTheme.controlButtonNeutral + ' shrink-0 self-start sm:self-center'}
-                          >
-                            {isEditingFullName ? 'Done' : 'Edit'}
-                          </button>
+                              <button
+                                type="button"
+                                onClick={() => setIsEditingFullName(false)}
+                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/40"
+                                aria-label="Save display name"
+                              >
+                                <Check size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFullName(profile?.displayName ?? '');
+                                  setIsEditingFullName(false);
+                                }}
+                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/40"
+                                aria-label="Cancel display name editing"
+                              >
+                                <X size={15} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingFullName(true)}
+                              className="group flex max-w-full items-center gap-2 rounded-md -ml-1 px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/40"
+                              aria-label="Edit display name"
+                            >
+                              <span className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
+                                {fullName.trim() || profile?.displayName || 'No name set'}
+                              </span>
+                              <span className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                                Edit
+                              </span>
+                            </button>
+                          )}
+                          <p className="mt-0.5 truncate text-sm text-[var(--ledger-text-muted)]">
+                            {profile?.email || user?.email || 'No email available'}
+                          </p>
+                          {saveStatus ? (
+                            <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]" role="status">
+                              {saveStatus}
+                            </p>
+                          ) : null}
                         </div>
+                      </div>
 
+                      <div className="mt-5 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
                         <div className="flex flex-col gap-1 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                           <div className="min-w-0">
                             <p className={settingsTheme.label}>Email address</p>

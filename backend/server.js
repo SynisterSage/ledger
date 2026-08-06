@@ -3,7 +3,7 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import crypto from 'node:crypto';
-import Jimp from 'jimp-compact';
+import sharp from 'sharp';
 import {
   parseExternalUrl,
   createOrGetExternalReference,
@@ -12429,8 +12429,7 @@ const isStaticWebp = (buffer) => {
   const riff = buffer.subarray(0, 4).toString('ascii') === 'RIFF';
   const webp = buffer.subarray(8, 12).toString('ascii') === 'WEBP';
   const animated = buffer.includes(Buffer.from('ANIM')) || buffer.includes(Buffer.from('ANMF'));
-  const declaredSize = buffer.readUInt32LE(4) + 8;
-  return riff && webp && declaredSize === buffer.length && !animated;
+  return riff && webp && !animated;
 };
 
 app.put(
@@ -12446,11 +12445,14 @@ app.put(
 
     let decoded;
     try {
-      decoded = await Jimp.read(body);
+      decoded = await sharp(body, { animated: true }).metadata();
     } catch {
       return res.status(400).json({ error: 'Avatar image could not be decoded.' });
     }
-    if (decoded.bitmap.width !== 512 || decoded.bitmap.height !== 512) {
+    if (decoded.format !== 'webp' || decoded.pages > 1) {
+      return res.status(400).json({ error: 'Avatar must be a static WebP image.' });
+    }
+    if (decoded.width !== 512 || decoded.height !== 512) {
       return res.status(400).json({ error: 'Avatar must be exactly 512 × 512 pixels.' });
     }
 

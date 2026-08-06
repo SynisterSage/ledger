@@ -28,5 +28,5 @@ test('server rejects non-WebP, animated, oversized, and non-512px uploads', () =
   assert.match(source, /ANIM/);
   assert.match(source, /500 \* 1024/);
   assert.match(source, /decoded\.bitmap\.width !== 512/);
-  assert.match(source, /Jimp\.read\(body\)/);
+  assert.match(source, /sharp\(body, \{ animated: true \}\)\.metadata\(\)/);
 });
