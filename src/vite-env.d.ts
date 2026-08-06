@@ -103,6 +103,7 @@ interface Window {
   };
   desktopWindow?: {
     platform?: string;
+    getDeviceSessionId: (legacyDeviceId?: string) => string;
     getRenderingSettings: () => Promise<{
       mode: 'auto' | 'high_quality' | 'compatibility';
       platform: string;

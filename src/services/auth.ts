@@ -60,7 +60,13 @@ export const authService = {
 
   // Sign out
   async signOut() {
-    const { error } = await supabase.auth.signOut();
+    // Device/session removal must only clear this installation. Supabase's
+    // default scope is global and would sign every other Ledger device out.
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (!error && typeof window !== 'undefined') {
+      await window.desktopWindow?.setMode('auth').catch(() => undefined);
+      await window.desktopWindow?.setVisible(true).catch(() => undefined);
+    }
     return { error };
   },
 

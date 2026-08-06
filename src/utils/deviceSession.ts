@@ -68,6 +68,12 @@ export const getLedgerSessionDeviceName = (): string => {
 export const getOrCreateLedgerDeviceId = (): string => {
   if (typeof window === 'undefined') return 'server';
   const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY)?.trim();
+  const desktopWindow = (window as Window & {
+    desktopWindow?: { getDeviceSessionId?: (legacyDeviceId?: string) => string };
+  }).desktopWindow;
+  if (desktopWindow?.getDeviceSessionId) {
+    return desktopWindow.getDeviceSessionId(existing);
+  }
   if (existing) return existing;
 
   const generated =

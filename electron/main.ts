@@ -63,11 +63,36 @@ const recordingSessionStore = new RecordingSessionStore();
 const meetingAudioCaptureService = new MeetingAudioCaptureService(recordingSessionStore);
 const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore);
 
+const desktopDeviceIdPath = () => path.join(app.getPath('userData'), 'ledger-device-id');
+
+const getOrCreateDesktopDeviceId = (legacyDeviceId?: string) => {
+  const filePath = desktopDeviceIdPath();
+  try {
+    const stored = fs.readFileSync(filePath, 'utf8').trim();
+    if (stored) return stored;
+  } catch {}
+
+  const deviceId = legacyDeviceId?.trim() || randomUUID();
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, deviceId, 'utf8');
+  } catch (error) {
+    console.error('[electron] Failed to persist desktop device id:', error);
+  }
+  return deviceId;
+};
+
 function broadcastMeetingAudioEvent(channel: string, payload: unknown) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, payload);
   }
 }
+
+ipcMain.on('device-session:get-id', (event, legacyDeviceId: unknown) => {
+  event.returnValue = getOrCreateDesktopDeviceId(
+    typeof legacyDeviceId === 'string' ? legacyDeviceId : undefined
+  );
+});
 
 meetingAudioCaptureService.onLevel((event) => broadcastMeetingAudioEvent('meeting-audio:level', event));
 meetingAudioCaptureService.onError((event) => broadcastMeetingAudioEvent('meeting-audio:error', event));

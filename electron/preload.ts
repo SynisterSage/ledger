@@ -369,6 +369,9 @@ type LedgerTabSession = {
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   platform: process.platform,
+  getDeviceSessionId(legacyDeviceId?: string) {
+    return ipcRenderer.sendSync('device-session:get-id', legacyDeviceId) as string;
+  },
   getRenderingSettings() {
     return ipcRenderer.invoke('window:get-rendering-settings');
   },
