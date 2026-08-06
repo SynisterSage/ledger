@@ -282,8 +282,8 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
               background: [
                 ...(isWindows
                   ? [
-                      'radial-gradient(ellipse 125% 76% at 50% 125%, var(--ledger-new-tab-atmosphere), transparent 100%)',
-                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 82%)',
+                      'radial-gradient(ellipse 125% 56% at 50% 135%, var(--ledger-new-tab-atmosphere), transparent 100%)',
+                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 78%)',
                     ]
                   : [
                       'radial-gradient(ellipse 68% 48% at 50% 120%, var(--ledger-new-tab-atmosphere), transparent 86%)',

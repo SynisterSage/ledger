@@ -12,8 +12,16 @@ $output = Join-Path $ledgerRoot 'native\whisper-cli.exe'
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   throw 'Git is required to build the Windows Whisper runtime.'
 }
-if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
-  throw 'CMake is required to build the Windows Whisper runtime.'
+$cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue | Select-Object -First 1
+$cmakePath = if ($cmakeCommand) { $cmakeCommand.Source } else {
+  @(
+    (Join-Path $env:ProgramFiles 'CMake\bin\cmake.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'CMake\bin\cmake.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\CMake\bin\cmake.exe')
+  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $cmakePath) {
+  throw 'CMake is required to build the Windows Whisper runtime. Close and reopen PowerShell after installing CMake, or add its bin folder to PATH.'
 }
 
 if (-not (Test-Path (Join-Path $WhisperSource '.git'))) {
@@ -23,12 +31,12 @@ if (-not (Test-Path (Join-Path $WhisperSource '.git'))) {
 git -C $WhisperSource fetch --tags origin
 git -C $WhisperSource checkout --force $commit
 
-cmake -S $WhisperSource -B $buildDir `
+& $cmakePath -S $WhisperSource -B $buildDir `
   -DWHISPER_BUILD_TESTS=OFF `
   -DWHISPER_BUILD_EXAMPLES=ON `
   -DGGML_NATIVE=OFF `
   -DBUILD_SHARED_LIBS=OFF
-cmake --build $buildDir --config Release --target whisper-cli --parallel
+& $cmakePath --build $buildDir --config Release --target whisper-cli --parallel
 
 $built = Get-ChildItem -Path $buildDir -Recurse -Filter 'whisper-cli.exe' -File | Select-Object -First 1
 if (-not $built) {
