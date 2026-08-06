@@ -32,6 +32,7 @@ import {
   Inbox,
   MoreHorizontal,
   Mic,
+  Pencil,
   Smartphone,
   X,
 } from 'lucide-react';
@@ -2719,11 +2720,11 @@ export const SettingsWindow = () => {
                               className="group flex max-w-full items-center gap-2 rounded-md -ml-1 px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/40"
                               aria-label="Edit display name"
                             >
-                              <span className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
+                              <span className="whitespace-nowrap text-base font-semibold text-[var(--ledger-text-primary)]">
                                 {fullName.trim() || profile?.displayName || 'No name set'}
                               </span>
-                              <span className="shrink-0 text-xs font-medium text-[var(--ledger-text-muted)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                                Edit
+                              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden="true">
+                                <Pencil size={13} />
                               </span>
                             </button>
                           )}
