@@ -3,6 +3,10 @@ import { useSidebar } from '../../context/SidebarContext';
 import { MinimizedSidebar } from './MinimizedSidebar';
 import { ExpandedSidebar } from './ExpandedSidebar';
 import { CollapsedSidebar } from './CollapsedSidebar';
+import {
+  getSidebarMaterialAlpha,
+  getSidebarNativeMacTintAlpha,
+} from '../../theme/sidebarMaterial';
 
 export const SidebarContainer = () => {
   const {
@@ -11,7 +15,15 @@ export const SidebarContainer = () => {
     isExpanded,
     position,
     opacity,
-    blur,
+    effectiveFrostedBackground,
+    transparencyOverrideActive,
+    materialEngine,
+    materialRequestedEngine,
+    materialFallbackReason,
+    nativeMaterialActive,
+    materialMacVibrancy,
+    materialMacVisualEffectState,
+    reduceMotion,
     autoHide,
     collapseSidebar,
     restoreSidebarView,
@@ -28,19 +40,15 @@ export const SidebarContainer = () => {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const isWindowsPlatform =
     typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
-  const prefersReducedMotion = useMemo(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }, []);
   const AUTO_HIDE_DELAY_MS = 3000;
   const AUTO_HIDE_FADE_MS = 300;
   const isFloating = position === 'floating';
   const isHorizontal = position === 'top' || position === 'bottom';
   const isFullscreenAttachedShell = workspaceShellLayout.shellFullscreen && state !== 'fullscreen';
-  const motionDurationMs = prefersReducedMotion ? 0 : 160;
-  const motionClass = prefersReducedMotion
+  const motionDurationMs = reduceMotion ? 0 : 160;
+  const motionClass = reduceMotion
     ? ''
-    : 'transition-[width,height,opacity,transform,border-radius,clip-path] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
+    : 'transition-[width,height,opacity,transform] duration-[100ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
   const targetContentView = useMemo(() => ({ state, isExpanded }), [state, isExpanded]);
   const [contentView, setContentView] = useState(targetContentView);
   const contentSwapTimerRef = useRef<number | null>(null);
@@ -49,6 +57,7 @@ export const SidebarContainer = () => {
   const introFrameRef = useRef<number | null>(null);
   const hasPlayedSidebarIntroRef = useRef(false);
   const [isIntroVisible, setIsIntroVisible] = useState(false);
+  const materialRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleShutdownState = (event: Event) => {
@@ -64,7 +73,7 @@ export const SidebarContainer = () => {
       return;
     }
 
-    if (prefersReducedMotion) {
+    if (reduceMotion) {
       hasPlayedSidebarIntroRef.current = true;
       setIsIntroVisible(true);
       return;
@@ -83,7 +92,7 @@ export const SidebarContainer = () => {
         introFrameRef.current = null;
       }
     };
-  }, [isHydrated, isVisible, prefersReducedMotion, state]);
+  }, [isHydrated, isVisible, reduceMotion, state]);
 
   useEffect(() => {
     if (!autoHide) {
@@ -151,7 +160,7 @@ export const SidebarContainer = () => {
     }
 
     const isOpeningExpanded = state === 'expanded' && targetContentView.state === 'expanded';
-    if (!didMountRef.current || prefersReducedMotion || positionChanged || !isOpeningExpanded) {
+    if (!didMountRef.current || reduceMotion || positionChanged || !isOpeningExpanded) {
       didMountRef.current = true;
       setContentView(targetContentView);
       return;
@@ -162,9 +171,7 @@ export const SidebarContainer = () => {
       setContentView(targetContentView);
       contentSwapTimerRef.current = null;
     }, 110);
-  }, [position, prefersReducedMotion, state, targetContentView]);
-
-  if (!isVisible || state === 'fullscreen') return null;
+  }, [position, reduceMotion, state, targetContentView]);
 
   const shellSizeClasses =
     state === 'expanded'
@@ -188,24 +195,91 @@ export const SidebarContainer = () => {
       : isFullscreenAttachedShell && position === 'bottom'
       ? 'rounded-b-[var(--ledger-window-radius)] rounded-t-none'
       : 'rounded-[var(--ledger-window-radius)]';
-  const shellClipRadius =
-    isFullscreenAttachedShell && position === 'left'
-      ? 'var(--ledger-window-radius) 0 0 var(--ledger-window-radius)'
-      : isFullscreenAttachedShell && position === 'right'
-      ? '0 var(--ledger-window-radius) var(--ledger-window-radius) 0'
-      : isFullscreenAttachedShell && position === 'top'
-      ? 'var(--ledger-window-radius) var(--ledger-window-radius) 0 0'
-      : isFullscreenAttachedShell && position === 'bottom'
-      ? '0 0 var(--ledger-window-radius) var(--ledger-window-radius)'
-      : 'var(--ledger-window-radius)';
-  const shellOverflowClass = 'overflow-hidden';
   const glassAttachmentClass =
     !isFloating && workspaceShellLayout.sidebarMode === 'attached'
-      ? 'sidebar-glass--attached'
-      : 'sidebar-glass--floating';
-  const shellSurfaceClass = blur
-    ? `sidebar-glass ${glassAttachmentClass}`
-    : 'sidebar-glass sidebar-glass--solid';
+      ? 'sidebar-glass-material--attached'
+      : 'sidebar-glass-material--floating';
+  const isAttachedRendererMaterial =
+    !isFloating &&
+    workspaceShellLayout.sidebarMode === 'attached' &&
+    materialEngine === 'renderer';
+  const isNativeMacMaterial = materialEngine === 'native-macos';
+  const materialAlpha = Math.max(
+    0,
+    isNativeMacMaterial
+      ? getSidebarNativeMacTintAlpha(opacity)
+      : getSidebarMaterialAlpha(opacity) -
+          (isAttachedRendererMaterial && effectiveFrostedBackground ? 0.05 : 0)
+  );
+  const materialClass = `sidebar-glass-material ${glassAttachmentClass}${
+    isAttachedRendererMaterial && effectiveFrostedBackground
+      ? ' sidebar-glass-material--blur'
+      : ''
+  }`;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || !materialRef.current) return;
+    const material = materialRef.current;
+    const computed = window.getComputedStyle(material);
+    const content = material.parentElement?.querySelector('.sidebar-glass-content');
+    const contentComputed = content ? window.getComputedStyle(content) : null;
+    const hasSameRendererBackdrop = Boolean(
+      document.querySelector('[data-ledger-renderer-backdrop]')
+    );
+    const diagnostics = {
+      requestedEngine: materialRequestedEngine,
+      resolvedEngine: materialEngine,
+      attached: isAttachedRendererMaterial,
+      sidebarMode: workspaceShellLayout.sidebarMode,
+      effectiveFrostedBackground,
+      reduceTransparencyOverride: transparencyOverrideActive,
+      nativeMaterialEnabled: nativeMaterialActive,
+      requestedMacVibrancy: materialMacVibrancy,
+      visualEffectState: materialMacVisualEffectState,
+      backdropFilter:
+        computed.backdropFilter ||
+        (computed as CSSStyleDeclaration & { webkitBackdropFilter?: string }).webkitBackdropFilter ||
+        'none',
+      rendererBackdropContentAvailable: hasSameRendererBackdrop,
+      materialCoveredByOpaqueLayer:
+        contentComputed?.opacity === '1' &&
+        contentComputed.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+        contentComputed.backgroundColor !== 'transparent',
+      materialRgb: computed.getPropertyValue('--sidebar-material-rgb').trim(),
+      materialAlpha: computed.getPropertyValue('--sidebar-material-alpha').trim(),
+      computedBackgroundColor: computed.backgroundColor,
+      blurRadius: computed.getPropertyValue('--sidebar-frost-blur').trim() || '10px',
+      clipping: computed.overflow,
+      fallbackReason: materialFallbackReason,
+      reason: transparencyOverrideActive
+        ? 'Reduce Transparency or forced colors resolved the sidebar to solid.'
+        : nativeMaterialActive
+        ? 'Native material is active; CSS backdrop-filter is intentionally disabled.'
+        : !isAttachedRendererMaterial
+        ? 'Floating renderer material cannot sample arbitrary desktop content.'
+        : !hasSameRendererBackdrop
+        ? 'No same-renderer Chromium content is available behind the material layer.'
+        : effectiveFrostedBackground
+        ? 'Attached renderer frost is active with one backdrop-filter layer and a 0.05 tint-alpha reduction.'
+        : 'Frosted background is disabled; the renderer uses the normal translucent tint.'
+    };
+    (window as unknown as { __LEDGER_SIDEBAR_MATERIAL_DIAGNOSTICS__?: unknown })
+      .__LEDGER_SIDEBAR_MATERIAL_DIAGNOSTICS__ = diagnostics;
+  }, [
+    effectiveFrostedBackground,
+    isAttachedRendererMaterial,
+    materialEngine,
+    materialFallbackReason,
+    materialMacVibrancy,
+    materialMacVisualEffectState,
+    materialRequestedEngine,
+    nativeMaterialActive,
+    opacity,
+    transparencyOverrideActive,
+    workspaceShellLayout.sidebarMode,
+  ]);
+
+  if (!isVisible || state === 'fullscreen') return null;
 
   const scheduleAutoHideHide = () => {
     if (!autoHide) return;
@@ -392,7 +466,7 @@ export const SidebarContainer = () => {
     opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
     transform: isIntroVisible
       ? 'translate3d(0, 0, 0) scale(1)'
-      : prefersReducedMotion
+      : reduceMotion
       ? 'translate3d(0, 0, 0) scale(1)'
       : isFloating
       ? 'translate3d(0, 10px, 0) scale(0.985)'
@@ -411,22 +485,18 @@ export const SidebarContainer = () => {
     height: isHorizontal ? (state === 'expanded' ? '144px' : '60px') : undefined,
     backgroundColor: undefined,
     ['--sidebar-material-alpha' as string]: (() => {
-      const normalizedOpacity = (Math.max(0.7, Math.min(1, opacity)) - 0.7) / 0.3;
-      return isFloating ? 0.9 + normalizedOpacity * 0.1 : 0.84 + normalizedOpacity * 0.16;
+      if (transparencyOverrideActive) return 1;
+      return materialAlpha;
     })(),
-    clipPath: `inset(0 round ${shellClipRadius})`,
     contain: 'layout style',
     transitionProperty:
       isDragging && isFloating
         ? 'opacity'
         : isHorizontal
         ? 'opacity'
-        : 'opacity, transform, width, height, border-radius, clip-path',
+        : 'opacity, transform, width, height',
     transitionDuration: shouldDisableShellMotion ? '0ms' : `${motionDurationMs}ms`,
     transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
-    willChange: shouldDisableShellMotion
-      ? 'opacity'
-      : 'width, height, opacity, transform, border-radius, clip-path',
   };
 
   const renderSidebarContent = (
@@ -468,19 +538,28 @@ export const SidebarContainer = () => {
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative ${shellOverflowClass} ${shellRadiusClass} ${shellSurfaceClass} ${shellSizeClasses} ${
-        prefersReducedMotion || isHorizontal ? '' : motionClass
-      } ${autoHide && !isHovered && !isDragging ? 'shadow-sm' : ''} ${hydrationClass}`}
+      className={`relative ${shellSizeClasses} ${
+        reduceMotion || isHorizontal ? '' : motionClass
+      } ${hydrationClass}`}
+      data-frosted={effectiveFrostedBackground ? 'true' : 'false'}
+      data-material-engine={materialEngine}
+      data-reduce-motion={reduceMotion ? 'true' : 'false'}
+      data-reduce-transparency={transparencyOverrideActive ? 'true' : 'false'}
     >
-      {renderSidebarContent(
-        contentView.state as Exclude<typeof state, 'fullscreen'>,
-        contentView.isExpanded
-      )}
-      {isShuttingDown && (
-        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--ledger-surface-muted)]/92 text-sm font-medium text-[var(--ledger-text-primary)]">
-          Shutting down
+      <div className={`sidebar-glass-clip h-full w-full ${shellRadiusClass}`}>
+        <div ref={materialRef} className={materialClass} aria-hidden="true" />
+        <div className="sidebar-glass-content h-full w-full">
+          {renderSidebarContent(
+            contentView.state as Exclude<typeof state, 'fullscreen'>,
+            contentView.isExpanded
+          )}
+          {isShuttingDown && (
+            <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--ledger-surface-muted)]/92 text-sm font-medium text-[var(--ledger-text-primary)]">
+              Shutting down
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

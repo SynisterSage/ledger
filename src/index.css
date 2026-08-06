@@ -57,25 +57,25 @@ body {
   --ledger-sheet-radius: 24px;
   --ledger-pill-radius: 999px;
   --ledger-window-radius: 18px;
-  --ledger-sidebar-surface-rgb: 246 247 249;
   --ledger-screen-x: 20px;
   --ledger-screen-y: 24px;
 
-  /* Sidebar glass tokens light */
-  --ledger-sidebar-glass-white: rgba(255, 255, 255, 0.94);
-  --ledger-sidebar-glass-cream: rgba(249, 249, 249, 0.9);
-  --ledger-sidebar-glass-icon-white: rgba(255, 255, 255, 0.78);
-  --ledger-sidebar-glass-icon-cream: rgba(249, 249, 249, 0.74);
-  --ledger-sidebar-glass-border: rgba(229, 229, 229, 0.93);
-  --ledger-sidebar-glass-outline: rgba(0, 0, 0, 0.08);
-  --ledger-sidebar-glass-shadow: 0 30px 90px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(0, 0, 0, 0.04);
-  --ledger-sidebar-glass-icon-shadow: 0 14px 38px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  --ledger-sidebar-glass-highlight: rgba(255, 255, 255, 0.75);
-  --ledger-sidebar-glass-sheen: rgba(255, 255, 255, 0.4);
-  --ledger-sidebar-glass-solid-background: rgba(255, 255, 255, 0.97);
-  --ledger-sidebar-glass-solid-border: rgba(229, 229, 229, 0.92);
+  /* Sidebar material tokens are shared across light/dark themes and platforms. */
+  --sidebar-material-rgb: 22 22 24;
+  --sidebar-solid-rgb: 24 24 26;
+  --sidebar-material-alpha-default: 0.9;
+  --sidebar-material-alpha-min: 0.84;
+  --sidebar-material-alpha-max: 1;
+  --sidebar-frost-blur: 10px;
+  --sidebar-edge-color: rgb(255 255 255 / 0.06);
+  --sidebar-selected-row-background: rgb(255 255 255 / 0.08);
+  --sidebar-hover-row-background: rgb(255 255 255 / 0.06);
+  --sidebar-surface-background: rgb(255 255 255 / 0.04);
+  --sidebar-material-text-primary: rgb(245 247 250);
+  --sidebar-material-text-secondary: rgb(190 196 205);
+  --sidebar-material-text-muted: rgb(139 148 160);
+  --sidebar-scrollbar-color: rgb(255 255 255 / 0.18);
+  --sidebar-scrollbar-color-hover: rgb(255 255 255 / 0.28);
 
   /* Modal backdrop light */
   --ledger-modal-backdrop: rgba(10, 10, 10, 0.4);
@@ -117,24 +117,6 @@ body {
     --ledger-backdrop: rgba(15, 15, 15, 0.6);
     --ledger-shadow: rgba(0, 0, 0, 0.3);
     --ledger-shadow-accent: 0 10px 26px rgba(255, 140, 95, 0.16);
-    --ledger-sidebar-surface-rgb: 24 25 27;
-
-    /* Sidebar glass tokens dark */
-    --ledger-sidebar-glass-white: rgba(26, 26, 26, 0.85);
-    --ledger-sidebar-glass-cream: rgba(30, 30, 30, 0.92);
-    --ledger-sidebar-glass-icon-white: rgba(26, 26, 26, 0.75);
-    --ledger-sidebar-glass-icon-cream: rgba(30, 30, 30, 0.84);
-    --ledger-sidebar-glass-border: rgba(100, 100, 100, 0.2);
-    --ledger-sidebar-glass-outline: rgba(100, 100, 100, 0.1);
-    --ledger-sidebar-glass-shadow: 0 32px 90px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(100, 100, 100, 0.06);
-    --ledger-sidebar-glass-icon-shadow: 0 14px 38px rgba(0, 0, 0, 0.25),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    --ledger-sidebar-glass-highlight: rgba(100, 100, 100, 0.1);
-    --ledger-sidebar-glass-sheen: rgba(100, 100, 100, 0.12);
-    --ledger-sidebar-glass-solid-background: rgba(26, 26, 26, 0.96);
-    --ledger-sidebar-glass-solid-border: rgba(100, 100, 100, 0.18);
-
     /* Modal backdrop dark */
     --ledger-modal-backdrop: rgba(15, 15, 15, 0.65);
 
@@ -352,204 +334,93 @@ body.has-modal-open #root > * {
   border-color: var(--ledger-border-strong, rgb(208 208 208)) !important;
 }
 
-.sidebar-glass {
+/* Shared sidebar material: one clipped container, one tint/filter layer, normal content. */
+.sidebar-glass-clip {
   position: relative;
+  overflow: hidden;
   isolation: isolate;
-  /* The shell owns the material; its children remain crisp above it. */
+  border: 1px solid var(--sidebar-edge-color);
+  box-sizing: border-box;
+  --ledger-text-primary: var(--sidebar-material-text-primary);
+  --ledger-text-secondary: var(--sidebar-material-text-secondary);
+  --ledger-text-muted: var(--sidebar-material-text-muted);
+  --ledger-surface: rgb(var(--sidebar-material-rgb));
+  --ledger-surface-card: rgb(var(--sidebar-material-rgb));
+  --ledger-surface-muted: var(--sidebar-surface-background);
+  --ledger-surface-hover: var(--sidebar-hover-row-background);
+  --ledger-surface-selected: var(--sidebar-selected-row-background);
+  --ledger-border-subtle: var(--sidebar-edge-color);
+  --ledger-border-strong: rgb(255 255 255 / 0.12);
+  --ledger-scrollbar-thumb: var(--sidebar-scrollbar-color);
+  --ledger-scrollbar-thumb-hover: var(--sidebar-scrollbar-color-hover);
 }
 
-/* One material layer: tint, edge, restrained highlight, gloss, and shadow. */
-.sidebar-glass::after {
-  content: '';
+.sidebar-glass-material {
   position: absolute;
   inset: 0;
-  z-index: 0;
-  border-radius: inherit;
   pointer-events: none;
-  background: none;
-  border: 1px solid var(--ledger-sidebar-glass-border, rgba(229, 229, 229, 0.93));
-  outline: 1px solid var(--ledger-sidebar-glass-outline, rgba(0, 0, 0, 0.08));
-  box-shadow: var(--ledger-sidebar-glass-shadow, 0 30px 90px rgba(0, 0, 0, 0.12));
-}
-
-/* Legacy pseudo-element is intentionally empty; Blur-on decoration is defined below. */
-.sidebar-glass::before {
-  content: none;
-}
-
-/* All content stays fully opaque at z-index 2 */
-.sidebar-glass > * {
-  position: relative;
-  z-index: 2;
-  opacity: 1;
-}
-
-.sidebar-glass-icon {
-  position: relative;
-  isolation: isolate;
-  background-color: rgba(255, 251, 247, var(--sidebar-glass-material-alpha-light, 66%));
-  background: radial-gradient(circle at 18% 4%, rgba(255, 255, 255, 0.06), transparent 32%),
-    color-mix(
-      in srgb,
-      var(--ledger-surface-card, #fafafa) var(--sidebar-glass-material-alpha-light, 86%),
-      transparent
-    );
-  border: 1px solid var(--ledger-sidebar-glass-border, rgba(229, 229, 229, 0.7));
-  box-shadow: var(--ledger-sidebar-glass-icon-shadow, 0 14px 38px rgba(0, 0, 0, 0.08));
-}
-
-/* Icon content stays fully opaque */
-.sidebar-glass-icon > * {
-  position: relative;
-  z-index: 1;
-  opacity: 1;
-}
-
-/* Real backdrop blur is progressive enhancement for attached Chromium content only. */
-.sidebar-glass--attached::after {
-  -webkit-backdrop-filter: blur(12px) saturate(1.12);
-  backdrop-filter: blur(12px) saturate(1.12);
-}
-
-.sidebar-glass-icon.sidebar-glass--attached {
-  -webkit-backdrop-filter: blur(12px) saturate(1.12);
-  backdrop-filter: blur(12px) saturate(1.12);
-}
-
-.sidebar-glass--solid::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: rgba(255, 251, 247, var(--sidebar-glass-solid-alpha-light, 75%));
-  background: color-mix(
-    in srgb,
-    var(--ledger-surface-card, #fafafa) var(--sidebar-glass-solid-alpha-light, 90%),
-    transparent
-  );
-  border-color: var(--ledger-sidebar-glass-solid-border, rgba(229, 229, 229, 0.92));
-  box-shadow: var(--ledger-sidebar-glass-shadow, 0 20px 58px rgba(0, 0, 0, 0.12));
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-.sidebar-glass--solid::before {
-  content: none;
-}
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .sidebar-glass--attached::after {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .sidebar-glass::after {
-    background: rgba(255, 251, 247, var(--sidebar-glass-solid-alpha-light, 75%));
-    border-color: var(--ledger-sidebar-glass-solid-border, rgba(229, 229, 229, 0.94));
-    box-shadow: var(--ledger-sidebar-glass-shadow, 0 20px 58px rgba(0, 0, 0, 0.12));
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  .sidebar-glass::before {
-    content: none;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .sidebar-glass::after,
-  .sidebar-glass-icon {
-    background: none;
-  }
-
-  .sidebar-glass::after,
-  .sidebar-glass-icon {
-    background: none;
-  }
-
-  .sidebar-glass--solid::after {
-    background: rgba(31, 31, 31, var(--sidebar-glass-solid-alpha, 65%));
-    background: color-mix(
-      in srgb,
-      var(--ledger-surface-card, #1f1f1f) var(--sidebar-glass-solid-alpha, 84%),
-      transparent
-    );
-  }
-}
-
-/* Sidebar material override: opacity is the shared base alpha; Blur only decorates it. */
-.sidebar-glass {
   background-color: rgb(
-    var(--ledger-sidebar-surface-rgb, 246 247 249) / var(--sidebar-material-alpha, 0.95)
+    var(--sidebar-material-rgb) /
+      var(--sidebar-material-alpha, var(--sidebar-material-alpha-default))
   );
-  border: 1px solid var(--ledger-border-subtle, rgba(229, 229, 229, 0.9));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 18px 48px var(--ledger-shadow, rgba(17, 24, 39, 0.28));
+  color: var(--sidebar-material-text-primary);
 }
 
-.sidebar-glass--solid::before,
-.sidebar-glass--solid::after {
-  content: none;
-  background: none;
-  box-shadow: none;
+.sidebar-glass-content {
+  position: relative;
+  z-index: 1;
+  color: var(--sidebar-material-text-primary);
+}
+
+.sidebar-glass-material--blur.sidebar-glass-material--attached {
+  -webkit-backdrop-filter: blur(var(--sidebar-frost-blur));
+  backdrop-filter: blur(var(--sidebar-frost-blur));
+}
+
+[data-material-engine='native-macos'] .sidebar-glass-material,
+[data-material-engine='native-windows-mica'] .sidebar-glass-material,
+[data-material-engine='native-windows-mica-alt'] .sidebar-glass-material,
+[data-material-engine='native-windows-acrylic'] .sidebar-glass-material {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
-.sidebar-glass:not(.sidebar-glass--solid)::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(130% 75% at 8% 0%, rgba(255, 255, 255, 0.07), transparent 58%),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.02), transparent 32%),
-    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.018) 0 0.7px, transparent 0.9px);
-  background-size: auto, auto, 4px 4px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+[data-reduce-transparency='true'] .sidebar-glass-material {
+  background: rgb(var(--sidebar-solid-rgb));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-.sidebar-glass:not(.sidebar-glass--solid)::before {
-  content: '';
-  position: absolute;
-  inset: -24px;
-  z-index: 1;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(70% 45% at 18% 12%, rgba(255, 255, 255, 0.16), transparent 70%),
-    radial-gradient(80% 55% at 82% 75%, rgba(255, 255, 255, 0.08), transparent 72%),
-    rgb(var(--ledger-sidebar-surface-rgb, 246 247 249) / 0.1);
-  filter: blur(18px);
-  opacity: 0.75;
+[data-material-engine='solid'] .sidebar-glass-material {
+  background: rgb(var(--sidebar-solid-rgb));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-.sidebar-glass--attached:not(.sidebar-glass--solid)::after {
-  -webkit-backdrop-filter: blur(14px) saturate(110%);
-  backdrop-filter: blur(14px) saturate(110%);
+[data-reduce-motion='true'] .sidebar-glass-material,
+[data-reduce-motion='true'] .sidebar-glass-content {
+  transition: none !important;
 }
 
-@media (prefers-reduced-transparency: reduce) {
-  .sidebar-glass:not(.sidebar-glass--solid)::before,
-  .sidebar-glass:not(.sidebar-glass--solid)::after {
-    content: none;
-    background: none;
-    filter: none;
+[data-reduce-motion='true'] .sidebar-glass-content * {
+  animation-duration: 0ms !important;
+  transition-duration: 0ms !important;
+}
+
+@media (forced-colors: active) {
+  .sidebar-glass-material {
+    background: rgb(var(--sidebar-solid-rgb));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .sidebar-glass:not(.sidebar-glass--solid)::after {
-    background: radial-gradient(130% 75% at 8% 0%, rgba(255, 255, 255, 0.05), transparent 58%),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.015), transparent 32%),
-      radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.012) 0 0.7px, transparent 0.9px);
-  }
+.sidebar-glass-clip ::-webkit-scrollbar-thumb {
+  background-color: var(--sidebar-scrollbar-color);
+}
+
+.sidebar-glass-clip ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sidebar-scrollbar-color-hover);
 }
 
 /* Focus states */
@@ -675,31 +546,6 @@ button:focus {
   }
 }
 
-@keyframes ledger-prelogin-ring {
-  0% {
-    transform: scale(0.9);
-    opacity: 0.12;
-  }
-  50% {
-    transform: scale(1);
-    opacity: 0.32;
-  }
-  100% {
-    transform: scale(0.9);
-    opacity: 0.12;
-  }
-}
-
-@keyframes ledger-prelogin-mark {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-3px);
-  }
-}
-
 .ledger-auth-left-enter {
   animation: ledger-auth-left-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
   will-change: opacity, transform;
@@ -718,45 +564,6 @@ button:focus {
 .ledger-auth-form-enter {
   animation: ledger-auth-form-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) 130ms both;
   will-change: opacity, transform;
-}
-
-.ledger-prelogin-ring {
-  position: absolute;
-  border-radius: 9999px;
-  border: 1px solid rgba(255, 95, 64, 0.14);
-  background: rgba(255, 95, 64, 0.04);
-  animation: ledger-prelogin-ring 1.8s ease-in-out infinite;
-}
-
-.ledger-prelogin-ring-1 {
-  width: 112px;
-  height: 112px;
-}
-
-.ledger-prelogin-ring-2 {
-  width: 88px;
-  height: 88px;
-  animation-delay: 180ms;
-}
-
-.ledger-prelogin-ring-3 {
-  width: 68px;
-  height: 68px;
-  animation-delay: 360ms;
-}
-
-.ledger-prelogin-mark {
-  position: relative;
-  display: flex;
-  height: 72px;
-  width: 72px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 20px;
-  border: 1px solid var(--ledger-border-subtle, rgba(229, 229, 229, 0.93));
-  background: var(--ledger-surface-card, rgba(250, 250, 250, 0.84));
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.12);
-  animation: ledger-prelogin-mark 1.8s ease-in-out infinite;
 }
 
 @keyframes ledger-new-tab-atmosphere-drift {
@@ -784,11 +591,6 @@ button:focus {
     opacity: 1;
     transform: none;
     will-change: auto;
-  }
-
-  .ledger-prelogin-ring,
-  .ledger-prelogin-mark {
-    animation: none;
   }
 
   .ledger-new-tab-atmosphere {

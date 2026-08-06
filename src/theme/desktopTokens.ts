@@ -27,19 +27,6 @@ type DesktopColorTokens = {
   tabBarBorder: string;
   backdrop: string;
   shadow: string;
-  glassWhite: string;
-  glassCream: string;
-  glassIconWhite: string;
-  glassIconCream: string;
-  glassBorder: string;
-  glassOutline: string;
-  glassShadow: string;
-  glassIconShadow: string;
-  glassHighlight: string;
-  glassSheen: string;
-  glassSolidBackground: string;
-  glassSolidBorder: string;
-  sidebarSurfaceRgb: string;
   modalBackdrop: string;
   scrollbarThumb: string;
   scrollbarThumbHover: string;
@@ -176,22 +163,6 @@ const lightColors: DesktopColorTokens = {
   backdrop: 'rgba(10, 10, 10, 0.4)',
   shadow: 'rgba(0, 0, 0, 0.06)',
 
-  glassWhite: 'rgba(255, 255, 255, 0.94)',
-  glassCream: 'rgba(249, 249, 249, 0.90)',
-  glassIconWhite: 'rgba(255, 255, 255, 0.78)',
-  glassIconCream: 'rgba(249, 249, 249, 0.74)',
-  glassBorder: 'rgba(229, 229, 229, 0.93)',
-  glassOutline: 'rgba(0, 0, 0, 0.08)',
-  glassShadow:
-    '0 30px 90px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(0, 0, 0, 0.04)',
-  glassIconShadow: '0 14px 38px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85)',
-  glassHighlight: 'rgba(255, 255, 255, 0.75)',
-  glassSheen: 'rgba(255, 255, 255, 0.40)',
-
-  glassSolidBackground: 'rgba(255, 255, 255, 0.97)',
-  glassSolidBorder: 'rgba(229, 229, 229, 0.92)',
-  sidebarSurfaceRgb: '246 247 249',
-
   modalBackdrop: 'rgba(10, 10, 10, 0.4)',
 
   scrollbarThumb: 'rgb(200 200 200)',
@@ -232,22 +203,6 @@ const darkColors: DesktopColorTokens = {
 
   backdrop: 'rgba(15, 15, 15, 0.6)',
   shadow: 'rgba(0, 0, 0, 0.3)',
-
-  glassWhite: 'rgba(26, 26, 26, 0.85)',
-  glassCream: 'rgba(30, 30, 30, 0.92)',
-  glassIconWhite: 'rgba(26, 26, 26, 0.75)',
-  glassIconCream: 'rgba(30, 30, 30, 0.84)',
-  glassBorder: 'rgba(100, 100, 100, 0.20)',
-  glassOutline: 'rgba(100, 100, 100, 0.10)',
-  glassShadow:
-    '0 32px 90px rgba(0, 0, 0, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(100, 100, 100, 0.06)',
-  glassIconShadow: '0 14px 38px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-  glassHighlight: 'rgba(100, 100, 100, 0.10)',
-  glassSheen: 'rgba(100, 100, 100, 0.12)',
-
-  glassSolidBackground: 'rgba(26, 26, 26, 0.96)',
-  glassSolidBorder: 'rgba(100, 100, 100, 0.18)',
-  sidebarSurfaceRgb: '24 25 27',
 
   modalBackdrop: 'rgba(15, 15, 15, 0.65)',
 
@@ -293,6 +248,34 @@ export const resolveDesktopThemeScheme = (
 export const getDesktopCssVars = (scheme: DesktopThemeScheme = 'light'): Record<string, string> => {
   const tokens = getDesktopTokens(scheme);
   const colors = tokens.colors;
+  const sidebarMaterial =
+    scheme === 'dark'
+      ? {
+          rgb: '22 22 24',
+          solidRgb: '24 24 26',
+          edge: 'rgb(255 255 255 / 0.06)',
+          selected: 'rgb(255 255 255 / 0.08)',
+          hover: 'rgb(255 255 255 / 0.06)',
+          surface: 'rgb(255 255 255 / 0.04)',
+          textPrimary: 'rgb(245 247 250)',
+          textSecondary: 'rgb(190 196 205)',
+          textMuted: 'rgb(139 148 160)',
+          scrollbar: 'rgb(255 255 255 / 0.18)',
+          scrollbarHover: 'rgb(255 255 255 / 0.28)',
+        }
+      : {
+          rgb: '248 249 251',
+          solidRgb: '244 245 247',
+          edge: 'rgb(0 0 0 / 0.10)',
+          selected: 'rgb(0 0 0 / 0.08)',
+          hover: 'rgb(0 0 0 / 0.05)',
+          surface: 'rgb(0 0 0 / 0.035)',
+          textPrimary: 'rgb(17 24 39)',
+          textSecondary: 'rgb(75 85 99)',
+          textMuted: 'rgb(107 114 128)',
+          scrollbar: 'rgb(0 0 0 / 0.18)',
+          scrollbarHover: 'rgb(0 0 0 / 0.28)',
+        };
 
   return {
     '--ledger-background': colors.background,
@@ -330,22 +313,20 @@ export const getDesktopCssVars = (scheme: DesktopThemeScheme = 'light'): Record<
     '--ledger-window-radius': `${tokens.radius.window}px`,
     '--ledger-screen-x': `${tokens.spacing.screenX}px`,
     '--ledger-screen-y': `${tokens.spacing.screenY}px`,
-    '--ledger-sidebar-glass-white': colors.glassWhite,
-    '--ledger-sidebar-glass-cream': colors.glassCream,
-    '--ledger-sidebar-glass-icon-white': colors.glassIconWhite,
-    '--ledger-sidebar-glass-icon-cream': colors.glassIconCream,
-    '--ledger-sidebar-glass-border': colors.glassBorder,
-    '--ledger-sidebar-glass-outline': colors.glassOutline,
-    '--ledger-sidebar-glass-shadow': colors.glassShadow,
-    '--ledger-sidebar-glass-icon-shadow': colors.glassIconShadow,
-    '--ledger-sidebar-glass-highlight': colors.glassHighlight,
-    '--ledger-sidebar-glass-sheen': colors.glassSheen,
-    '--ledger-sidebar-glass-solid-background': colors.glassSolidBackground,
-    '--ledger-sidebar-glass-solid-border': colors.glassSolidBorder,
-    '--ledger-sidebar-surface-rgb': colors.sidebarSurfaceRgb,
     '--ledger-modal-backdrop': colors.modalBackdrop,
     '--ledger-scrollbar-thumb': colors.scrollbarThumb,
     '--ledger-scrollbar-thumb-hover': colors.scrollbarThumbHover,
+    '--sidebar-material-rgb': sidebarMaterial.rgb,
+    '--sidebar-solid-rgb': sidebarMaterial.solidRgb,
+    '--sidebar-edge-color': sidebarMaterial.edge,
+    '--sidebar-selected-row-background': sidebarMaterial.selected,
+    '--sidebar-hover-row-background': sidebarMaterial.hover,
+    '--sidebar-surface-background': sidebarMaterial.surface,
+    '--sidebar-material-text-primary': sidebarMaterial.textPrimary,
+    '--sidebar-material-text-secondary': sidebarMaterial.textSecondary,
+    '--sidebar-material-text-muted': sidebarMaterial.textMuted,
+    '--sidebar-scrollbar-color': sidebarMaterial.scrollbar,
+    '--sidebar-scrollbar-color-hover': sidebarMaterial.scrollbarHover,
   } as const;
 };
 

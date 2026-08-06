@@ -980,7 +980,7 @@ export const SearchModal = () => {
         manageWindowChrome={false}
         classNameContainer={`${
           isFullscreen ? 'h-full w-full' : 'w-full max-w-[680px]'
-        } !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none`}
+        } ${isFullscreen ? '' : '!self-start !mt-6'} !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none`}
       >
         {searchPanel}
       </ModalOverlay>

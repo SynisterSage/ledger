@@ -47,3 +47,6 @@ Thumbs.db
 
 # Electron app cache
 *.app/
+
+# Local regression probes
+scripts/tests/sidebar-preferences-regressions.mjs

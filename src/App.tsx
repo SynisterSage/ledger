@@ -9023,7 +9023,7 @@ function AppShell() {
   }, [
     isLoading,
     sidebarPreferences.position,
-    sidebarPreferences.blur,
+    sidebarPreferences.frostedBackgroundEnabled,
     sidebarPreferences.defaultState,
     sidebarPreferences.alwaysOnTop,
     sidebarPreferences.autoHide,

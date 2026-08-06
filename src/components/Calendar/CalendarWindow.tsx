@@ -5209,6 +5209,7 @@ export const CalendarWindow = () => {
                               const eventColor = getCalendarColor(evt.calendar_id);
                               const pastEvent = isPastEvent(evt);
                               const pastEventMuted = isPastEventMuted(evt);
+                              const selected = selectedEvent?.id === evt.id;
                               return (
                                 <button
                                   key={evt.id}
@@ -5229,14 +5230,16 @@ export const CalendarWindow = () => {
                                       id: evt.id,
                                     });
                                   }}
-                                  className={`w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] leading-tight transition-colors ${
+                                  className={`w-full truncate rounded-md px-1.5 py-0.5 text-left text-[11px] leading-tight transition-[background-color,border-color,filter] hover:brightness-105 ${
                                     pastEventMuted ? 'opacity-50 grayscale-[0.35]' : ''
                                   }`}
                                   style={{
-                                    backgroundColor: pastEvent
+                                    backgroundColor: selected
+                                      ? `color-mix(in srgb, ${eventColor} 14%, transparent)`
+                                      : pastEvent
                                       ? 'var(--ledger-surface-hover)'
-                                      : `${eventColor}22`,
-                                    borderLeft: `2px solid ${pastEvent ? 'var(--ledger-text-muted)' : eventColor}`,
+                                      : `color-mix(in srgb, ${eventColor} 9%, transparent)`,
+                                    border: `1px solid ${selected ? eventColor : pastEvent ? 'var(--ledger-border-subtle)' : `color-mix(in srgb, ${eventColor} 20%, transparent)`}`,
                                     color: pastEvent
                                       ? 'var(--ledger-text-muted)'
                                       : 'var(--ledger-text-primary)',

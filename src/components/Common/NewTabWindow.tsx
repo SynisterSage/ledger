@@ -282,12 +282,12 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
               background: [
                 ...(isWindows
                   ? [
-                      'radial-gradient(ellipse 125% 56% at 50% 135%, var(--ledger-new-tab-atmosphere), transparent 100%)',
-                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 78%)',
+                      'radial-gradient(ellipse 125% 56% at 50% 148%, var(--ledger-new-tab-atmosphere), transparent 100%)',
+                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
                     ]
                   : [
-                      'radial-gradient(ellipse 68% 48% at 50% 120%, var(--ledger-new-tab-atmosphere), transparent 86%)',
-                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 78%)',
+                      'radial-gradient(ellipse 68% 42% at 50% 145%, var(--ledger-new-tab-atmosphere), transparent 86%)',
+                      'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
                     ]),
               ].join(', '),
             }}
@@ -355,7 +355,6 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
               ))}
             </div>
             <div className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-[var(--ledger-background)] to-transparent opacity-0" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--ledger-background)] to-transparent" />
           </div>
 
           {trimmedQuery && (

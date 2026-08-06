@@ -10,7 +10,7 @@ export type SidebarFloatingPosition = {
 export type SidebarPreferences = {
   position: SidebarPosition;
   opacity: number;
-  blur: boolean;
+  frostedBackgroundEnabled: boolean;
   defaultState: SidebarDefaultState;
   alwaysOnTop: boolean;
   autoHide: boolean;
@@ -25,13 +25,31 @@ export type SidebarPreferences = {
 };
 
 export const SIDEBAR_PREFERENCES_STORAGE_KEY = 'ledger:sidebar:v1';
-const clampSidebarOpacity = (value: number) => Math.max(0.7, Math.min(1, value));
+export const SIDEBAR_OPACITY_MIN = 0.7;
+export const SIDEBAR_OPACITY_MAX = 1;
+export const SIDEBAR_SETTINGS_MIGRATION_VERSION = 2;
+export const clampSidebarOpacity = (value: number) =>
+  Number.isFinite(value)
+    ? Math.max(SIDEBAR_OPACITY_MIN, Math.min(SIDEBAR_OPACITY_MAX, value))
+    : defaultSidebarPreferences.opacity;
 const getDefaultSidebarOpacity = () => 0.9;
+const isSidebarPosition = (value: unknown): value is SidebarPosition =>
+  value === 'right' ||
+  value === 'left' ||
+  value === 'top' ||
+  value === 'bottom' ||
+  value === 'floating';
+const isSidebarDefaultState = (value: unknown): value is SidebarDefaultState =>
+  value === 'expanded' || value === 'collapsed' || value === 'remember';
+const isCollapsedRestoreView = (value: unknown): value is SidebarPreferences['collapsedRestoreView'] =>
+  value === 'expanded' || value === 'rail' || value === 'collapsed';
+const isSidebarState = (value: unknown): value is SidebarPreferences['lastState'] =>
+  value === 'expanded' || value === 'collapsed';
 
 export const defaultSidebarPreferences: SidebarPreferences = {
   position: 'right',
   opacity: getDefaultSidebarOpacity(),
-  blur: true,
+  frostedBackgroundEnabled: true,
   defaultState: 'collapsed',
   alwaysOnTop: false,
   autoHide: false,
@@ -45,6 +63,78 @@ export const defaultSidebarPreferences: SidebarPreferences = {
   lastState: 'expanded',
 };
 
+export const normalizeSidebarPreferences = (
+  parsed: Partial<SidebarPreferences> & {
+    blur?: unknown;
+    sidebarSettingsVersion?: number;
+    floatingSnapEnabled?: boolean;
+    floatingSnapThreshold?: number;
+  }
+): SidebarPreferences => {
+  const legacyVisible = (parsed as { isVisible?: boolean }).isVisible;
+  const legacyExpanded = parsed.isExpanded;
+  const legacyRestoreView: SidebarPreferences['collapsedRestoreView'] =
+    parsed.collapsedRestoreView ??
+    (parsed.lastState === 'collapsed'
+      ? legacyExpanded === false
+        ? 'collapsed'
+        : 'rail'
+      : 'expanded');
+  const frostedBackgroundEnabled =
+    typeof parsed.frostedBackgroundEnabled === 'boolean'
+      ? parsed.frostedBackgroundEnabled
+      : typeof parsed.blur === 'boolean'
+      ? parsed.blur
+      : defaultSidebarPreferences.frostedBackgroundEnabled;
+
+  return {
+    position: isSidebarPosition(parsed.position)
+      ? parsed.position
+      : defaultSidebarPreferences.position,
+    opacity:
+      typeof parsed.opacity === 'number'
+        ? clampSidebarOpacity(parsed.opacity)
+        : defaultSidebarPreferences.opacity,
+    frostedBackgroundEnabled,
+    defaultState: isSidebarDefaultState(parsed.defaultState)
+      ? parsed.defaultState
+      : defaultSidebarPreferences.defaultState,
+    alwaysOnTop: parsed.alwaysOnTop ?? defaultSidebarPreferences.alwaysOnTop,
+    autoHide: parsed.autoHide ?? defaultSidebarPreferences.autoHide,
+    isExpanded: parsed.isExpanded ?? legacyExpanded ?? true,
+    collapsedRestoreIsExpanded: parsed.collapsedRestoreIsExpanded ?? legacyExpanded ?? true,
+    collapsedRestoreView: isCollapsedRestoreView(legacyRestoreView)
+      ? legacyRestoreView
+      : defaultSidebarPreferences.collapsedRestoreView,
+    isHidden: parsed.isHidden ?? legacyVisible === false,
+    floatingPosition: {
+      x:
+        typeof parsed.floatingPosition?.x === 'number' && Number.isFinite(parsed.floatingPosition.x)
+          ? parsed.floatingPosition.x
+          : defaultSidebarPreferences.floatingPosition.x,
+      y:
+        typeof parsed.floatingPosition?.y === 'number' && Number.isFinite(parsed.floatingPosition.y)
+          ? parsed.floatingPosition.y
+          : defaultSidebarPreferences.floatingPosition.y,
+    },
+    floatingDockEnabled:
+      parsed.floatingDockEnabled ??
+      parsed.floatingSnapEnabled ??
+      defaultSidebarPreferences.floatingDockEnabled,
+    floatingDockThreshold:
+      typeof parsed.floatingDockThreshold === 'number'
+        ? Math.max(8, Math.min(80, parsed.floatingDockThreshold))
+        : typeof parsed.floatingSnapThreshold === 'number'
+        ? Math.max(8, Math.min(80, parsed.floatingSnapThreshold))
+        : defaultSidebarPreferences.floatingDockThreshold,
+    lastState: isSidebarState(parsed.lastState)
+      ? parsed.lastState
+      : legacyExpanded === false
+      ? 'collapsed'
+      : defaultSidebarPreferences.lastState,
+  };
+};
+
 export const loadSidebarPreferences = (): SidebarPreferences => {
   try {
     const raw = window.localStorage.getItem(SIDEBAR_PREFERENCES_STORAGE_KEY);
@@ -52,50 +142,17 @@ export const loadSidebarPreferences = (): SidebarPreferences => {
 
     const parsed = JSON.parse(raw) as
       | (Partial<SidebarPreferences> & {
+          blur?: unknown;
+          sidebarSettingsVersion?: number;
           floatingSnapEnabled?: boolean;
           floatingSnapThreshold?: number;
         })
       | null;
-
-    const legacyVisible = (parsed as { isVisible?: boolean } | null)?.isVisible;
-    const legacyExpanded = (parsed as { isExpanded?: boolean } | null)?.isExpanded;
-    const legacyRestoreView: SidebarPreferences['collapsedRestoreView'] =
-      parsed?.collapsedRestoreView ??
-      (parsed?.lastState === 'collapsed'
-        ? legacyExpanded === false
-          ? 'collapsed'
-          : 'rail'
-        : 'expanded');
-    return {
-      position: parsed?.position ?? defaultSidebarPreferences.position,
-      opacity:
-        typeof parsed?.opacity === 'number'
-          ? clampSidebarOpacity(parsed.opacity)
-          : defaultSidebarPreferences.opacity,
-      blur: parsed?.blur ?? defaultSidebarPreferences.blur,
-      defaultState: parsed?.defaultState ?? defaultSidebarPreferences.defaultState,
-      alwaysOnTop: parsed?.alwaysOnTop ?? defaultSidebarPreferences.alwaysOnTop,
-      autoHide: parsed?.autoHide ?? defaultSidebarPreferences.autoHide,
-      isExpanded: parsed?.isExpanded ?? legacyExpanded ?? true,
-      collapsedRestoreIsExpanded: parsed?.collapsedRestoreIsExpanded ?? legacyExpanded ?? true,
-      collapsedRestoreView: legacyRestoreView,
-      isHidden: parsed?.isHidden ?? legacyVisible === false,
-      floatingPosition: {
-        x: parsed?.floatingPosition?.x ?? defaultSidebarPreferences.floatingPosition.x,
-        y: parsed?.floatingPosition?.y ?? defaultSidebarPreferences.floatingPosition.y,
-      },
-      floatingDockEnabled:
-        parsed?.floatingDockEnabled ??
-        parsed?.floatingSnapEnabled ??
-        defaultSidebarPreferences.floatingDockEnabled,
-      floatingDockThreshold:
-        typeof parsed?.floatingDockThreshold === 'number'
-          ? Math.max(8, Math.min(80, parsed.floatingDockThreshold))
-          : typeof parsed?.floatingSnapThreshold === 'number'
-          ? Math.max(8, Math.min(80, parsed.floatingSnapThreshold))
-          : defaultSidebarPreferences.floatingDockThreshold,
-      lastState: parsed?.lastState ?? (legacyExpanded === false ? 'collapsed' : 'expanded'),
-    };
+    const normalized = normalizeSidebarPreferences(parsed ?? {});
+    const hadLegacyBlur = typeof parsed?.blur === 'boolean';
+    const needsMigration = hadLegacyBlur || parsed?.sidebarSettingsVersion !== SIDEBAR_SETTINGS_MIGRATION_VERSION;
+    if (needsMigration) saveSidebarPreferences(normalized);
+    return normalized;
   } catch {
     return defaultSidebarPreferences;
   }
@@ -106,7 +163,9 @@ export const saveSidebarPreferences = (preferences: SidebarPreferences) => {
     SIDEBAR_PREFERENCES_STORAGE_KEY,
     JSON.stringify({
       ...preferences,
+      sidebarSettingsVersion: SIDEBAR_SETTINGS_MIGRATION_VERSION,
       opacity: clampSidebarOpacity(preferences.opacity),
+      frostedBackgroundEnabled: Boolean(preferences.frostedBackgroundEnabled),
       floatingDockThreshold: Math.max(8, Math.min(80, preferences.floatingDockThreshold)),
       floatingSnapEnabled: preferences.floatingDockEnabled,
       floatingSnapThreshold: Math.max(8, Math.min(80, preferences.floatingDockThreshold)),

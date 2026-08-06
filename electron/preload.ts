@@ -258,6 +258,8 @@ contextBridge.exposeInMainWorld('meetingAudio', {
     return ipcRenderer.invoke('meeting-audio:open-system-settings', area);
   },
   status() { return ipcRenderer.invoke('meeting-audio:status'); },
+  storagePath() { return ipcRenderer.invoke('meeting-audio:storage-path'); },
+  openStoragePath() { return ipcRenderer.invoke('meeting-audio:open-storage-path'); },
   devices() { return ipcRenderer.invoke('meeting-audio:devices'); },
   recoveries() { return ipcRenderer.invoke('meeting-audio:recoveries'); },
   inspect(sessionId?: string) { return ipcRenderer.invoke('meeting-audio:inspect', sessionId); },
@@ -370,6 +372,23 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   getRenderingSettings() {
     return ipcRenderer.invoke('window:get-rendering-settings');
   },
+  getSidebarAccessibilityState() {
+    return ipcRenderer.invoke('window:get-sidebar-accessibility');
+  },
+  getSidebarMaterialState() {
+    return ipcRenderer.invoke('window:get-sidebar-material-state');
+  },
+  setSidebarMaterialDevelopmentSelection(
+    enabled: boolean | 'under-window' | 'sidebar' | 'hud' | 'mica' | 'mica-alt' | 'acrylic'
+  ) {
+    return ipcRenderer.invoke('window:set-sidebar-material-development-selection', enabled);
+  },
+  setSidebarMaterialDevelopmentVisualEffectState(state: 'followWindow' | 'active') {
+    return ipcRenderer.invoke('window:set-sidebar-material-development-visual-effect-state', state);
+  },
+  resetSidebarMaterialDiagnostics() {
+    return ipcRenderer.invoke('window:reset-sidebar-material-diagnostics');
+  },
   setRenderingMode(mode: 'auto' | 'high_quality' | 'compatibility') {
     return ipcRenderer.invoke('window:set-rendering-mode', mode);
   },
@@ -440,7 +459,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   applySidebarPreferences(preferences: {
     position?: 'right' | 'left' | 'top' | 'bottom' | 'floating';
     opacity?: number;
-    blur?: boolean;
+    frostedBackgroundEnabled?: boolean;
     defaultState?: 'expanded' | 'collapsed' | 'remember';
     alwaysOnTop?: boolean;
     shellFullscreen?: boolean;

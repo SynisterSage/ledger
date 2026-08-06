@@ -554,7 +554,7 @@ const settingsTheme = {
     'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
   root: 'flex-1 overflow-hidden bg-[var(--ledger-background)]',
   aside:
-    'overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pb-3 pt-8',
+    'overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 pb-3 pt-8',
   main: 'overflow-auto bg-[var(--ledger-background)] px-8 py-8 lg:px-10',
   sectionTitle: 'text-[13px] font-semibold text-[var(--ledger-text-primary)]',
   sectionSubtitle: 'text-sm text-[var(--ledger-text-secondary)]',
@@ -601,7 +601,7 @@ const settingsTheme = {
   headerButton:
     'h-9 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   navButton:
-    'group flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)]',
+    'group flex w-full items-center gap-1.5 rounded-md border px-2 py-1 text-left transition outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)]',
   navButtonActive:
     'border-transparent bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] shadow-none',
   navButtonIdle:
@@ -751,10 +751,12 @@ const InlineSwitch = ({
   checked,
   onToggle,
   label,
+  disabled = false,
 }: {
   checked: boolean;
   onToggle: () => void;
   label: string;
+  disabled?: boolean;
 }) => {
   return (
     <button
@@ -763,6 +765,7 @@ const InlineSwitch = ({
       aria-checked={checked}
       aria-label={label}
       onClick={onToggle}
+      disabled={disabled}
       className={`${inlineSwitchClassName} ${
         checked
           ? 'border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)]'
@@ -812,13 +815,14 @@ export const SettingsWindow = () => {
     sidebarPreferences,
     position,
     opacity,
-    blur,
+    frostedBackgroundEnabled,
+    transparencyOverrideActive,
     defaultState,
     alwaysOnTop,
     autoHide,
     setPosition,
     setOpacity,
-    setBlur,
+    setFrostedBackgroundEnabled,
     setDefaultState,
     setAlwaysOnTop,
     setAutoHide,
@@ -848,6 +852,7 @@ export const SettingsWindow = () => {
   });
   const [meetingConsentReminder, setMeetingConsentReminder] = useState(true);
   const [meetingDefaultTimestamps, setMeetingDefaultTimestamps] = useState(true);
+  const [meetingRecordingPath, setMeetingRecordingPath] = useState<string | null>(null);
   const [meetingModelStatus, setMeetingModelStatus] = useState<{ installed?: boolean; downloading?: boolean; label?: string; approximateBytes?: number } | null>(null);
   const [isMeetingModelDeleteModalOpen, setIsMeetingModelDeleteModalOpen] = useState(false);
   const [isDeletingMeetingModel, setIsDeletingMeetingModel] = useState(false);
@@ -877,6 +882,10 @@ export const SettingsWindow = () => {
   useEffect(() => {
     if (activeSection !== 'meeting_notes' || !window.meetingTranscription) return;
     void window.meetingTranscription.modelStatus().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus)).catch(() => setMeetingModelStatus(null));
+  }, [activeSection]);
+  useEffect(() => {
+    if (activeSection !== 'meeting_notes' || !window.meetingAudio?.storagePath) return;
+    void window.meetingAudio.storagePath().then((path) => setMeetingRecordingPath(path || null)).catch(() => setMeetingRecordingPath(null));
   }, [activeSection]);
   const closeMeetingModelDeleteModal = () => {
     if (!isDeletingMeetingModel) setIsMeetingModelDeleteModalOpen(false);
@@ -1257,7 +1266,7 @@ export const SettingsWindow = () => {
       });
   }, [
     sidebarPreferences.position,
-    sidebarPreferences.blur,
+    sidebarPreferences.frostedBackgroundEnabled,
     sidebarPreferences.defaultState,
     sidebarPreferences.alwaysOnTop,
     sidebarPreferences.autoHide,
@@ -1328,7 +1337,7 @@ export const SettingsWindow = () => {
   const handleResetSidebarSettings = () => {
     setPosition(defaultSidebarPreferences.position);
     setOpacity(defaultSidebarPreferences.opacity);
-    setBlur(defaultSidebarPreferences.blur);
+    setFrostedBackgroundEnabled(defaultSidebarPreferences.frostedBackgroundEnabled);
     setDefaultState(defaultSidebarPreferences.defaultState);
     setAlwaysOnTop(defaultSidebarPreferences.alwaysOnTop);
     setAutoHide(defaultSidebarPreferences.autoHide);
@@ -2500,15 +2509,15 @@ export const SettingsWindow = () => {
       />
 
       <div className={settingsTheme.root}>
-        <div className="h-full grid grid-cols-[260px_1fr]">
+        <div className="h-full grid grid-cols-[240px_1fr]">
           <aside className={settingsTheme.aside} aria-label="Settings sections">
-            <nav className="space-y-3" aria-label="Settings navigation">
+            <nav className="space-y-2.5" aria-label="Settings navigation">
               {settingsNavGroups.map((group) => (
                 <section key={group.id} className="space-y-1.5">
                   <div className="px-1 text-xs font-medium text-[var(--ledger-text-muted)]">
                     {group.label}
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     {group.sections
                       .filter((section) => section.id !== 'members' || !activeWorkspace?.is_personal)
                       .map((section) => {
@@ -2535,7 +2544,7 @@ export const SettingsWindow = () => {
                             <SectionIcon size={12} />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{section.label}</p>
+                            <p className="truncate text-[13px] font-medium">{section.label}</p>
                           </span>
                         </button>
                       );
@@ -4983,19 +4992,25 @@ export const SettingsWindow = () => {
                             step="0.01"
                             value={opacity}
                             onChange={(event) => setOpacity(Number(event.target.value))}
-                            className="ledger-range mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent"
+                            disabled={transparencyOverrideActive}
+                            className="ledger-range mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
                             style={getSidebarOpacitySliderStyle(opacity)}
                           />
                         </div>
                       </SettingsRow>
                       <SettingsRow
-                        label="Background blur"
-                        help="Blur content behind the sidebar."
+                        label="Frosted background"
+                        help={
+                          transparencyOverrideActive
+                            ? "Disabled while your system's Reduce Transparency setting is active."
+                            : 'Adds a translucent system-style material behind the sidebar.'
+                        }
                       >
                         <InlineSwitch
-                          checked={blur}
-                          onToggle={() => setBlur(!blur)}
-                          label="Blur sidebar background"
+                          checked={frostedBackgroundEnabled}
+                          onToggle={() => setFrostedBackgroundEnabled(!frostedBackgroundEnabled)}
+                          label="Frosted background"
+                          disabled={transparencyOverrideActive}
                         />
                       </SettingsRow>
                     </div>
@@ -5064,6 +5079,7 @@ export const SettingsWindow = () => {
                       <label className="flex items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className={settingsTheme.label}>Default audio retention</span><span className={settingsTheme.help}>Audio is deleted only after transcript storage succeeds.</span></span><select value={meetingDefaultRetention} onChange={(event) => setMeetingDefaultRetention(event.target.value as typeof meetingDefaultRetention)} className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1 text-xs"><option value="delete_after_transcription">Delete after transcription</option><option value="retain">Retain until deleted</option></select></label>
                       <div className="flex items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className={settingsTheme.label}>Consent reminder</span><span className={settingsTheme.help}>Remind me that meeting participants may need to consent.</span></span><InlineSwitch checked={meetingConsentReminder} onToggle={() => setMeetingConsentReminder((current) => !current)} label="Meeting consent reminder" /></div>
                       <div className="flex items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className={settingsTheme.label}>Transcript timestamps</span><span className={settingsTheme.help}>Show timestamps by default when reviewing transcripts.</span></span><InlineSwitch checked={meetingDefaultTimestamps} onToggle={() => setMeetingDefaultTimestamps((current) => !current)} label="Transcript timestamps" /></div>
+                      <div className="flex items-center justify-between gap-4 px-4 py-3"><span className="min-w-0"><span className={settingsTheme.label}>Recording location</span><span className={settingsTheme.help}>Local meeting audio is saved on this computer.</span></span><button type="button" onClick={() => void window.meetingAudio?.openStoragePath()} disabled={!meetingRecordingPath} className="max-w-[min(48%,34rem)] truncate text-right text-[11px] text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)] disabled:cursor-default disabled:opacity-60" title={meetingRecordingPath ? `Open ${meetingRecordingPath}` : undefined}>{meetingRecordingPath || 'Loading location…'}</button></div>
                     </div>
                   </section>
                   <section className={settingsTheme.sectionShell + ' mt-5'} aria-labelledby="meeting-model">

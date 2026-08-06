@@ -235,18 +235,8 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           >
             <div className="absolute inset-0 flex items-center justify-center p-6 sm:p-10">
               <div className="flex flex-col items-center text-center">
-                <div className="relative flex h-28 w-28 items-center justify-center">
-                  <span className="ledger-prelogin-ring ledger-prelogin-ring-1" />
-                  <span className="ledger-prelogin-ring ledger-prelogin-ring-2" />
-                  <span className="ledger-prelogin-ring ledger-prelogin-ring-3" />
-                  <div className="ledger-prelogin-mark">
-                    <img src="./logo-color.svg" alt="Ledger" className="h-12 w-12" />
-                  </div>
-                </div>
-                <p className="mt-5 text-base font-medium tracking-[0.01em] text-(--ledger-text-primary)">
-                  Ledger
-                </p>
-                <p className="mt-1 text-sm text-(--ledger-text-muted)">Preparing your workspace</p>
+                <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8 select-none" />
+                <p className="mt-3 text-xs text-(--ledger-text-muted)">Preparing sign in…</p>
               </div>
             </div>
           </div>

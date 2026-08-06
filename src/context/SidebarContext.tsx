@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import {
   SIDEBAR_PREFERENCES_STORAGE_KEY,
+  clampSidebarOpacity,
   loadSidebarPreferences,
   saveSidebarPreferences,
   type SidebarFloatingPosition,
@@ -16,10 +17,16 @@ import {
   type SidebarPosition,
   type SidebarPreferences,
 } from '../config/sidebarPreferences';
+import type {
+  SidebarMaterialEngine,
+  SidebarMaterialFallbackReason,
+} from '../theme/sidebarMaterial';
 
 export type SidebarState = 'minimized' | 'expanded' | 'fullscreen';
+export type { SidebarMaterialEngine } from '../theme/sidebarMaterial';
 export type ModuleView = 'dashboard' | 'calendar';
 export type SidebarAttachmentMode = 'attached' | 'overlay';
+const SETTINGS_STORAGE_KEY = 'ledger:settings:v1';
 type WorkspaceShellKind =
   | 'new-tab'
   | 'circle'
@@ -83,8 +90,18 @@ interface SidebarContextType {
   setPosition: (position: SidebarPosition) => void;
   opacity: number;
   setOpacity: (opacity: number) => void;
-  blur: boolean;
-  setBlur: (blur: boolean) => void;
+  frostedBackgroundEnabled: boolean;
+  setFrostedBackgroundEnabled: (enabled: boolean) => void;
+  effectiveFrostedBackground: boolean;
+  systemPrefersReducedTransparency: boolean;
+  transparencyOverrideActive: boolean;
+  materialEngine: SidebarMaterialEngine;
+  materialRequestedEngine: SidebarMaterialEngine;
+  materialFallbackReason: SidebarMaterialFallbackReason;
+  nativeMaterialActive: boolean;
+  materialMacVibrancy: 'under-window' | 'sidebar' | 'hud' | null;
+  materialMacVisualEffectState: 'followWindow' | 'active';
+  reduceMotion: boolean;
   defaultState: SidebarDefaultState;
   setDefaultState: (defaultState: SidebarDefaultState) => void;
   alwaysOnTop: boolean;
@@ -126,6 +143,31 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [workspaceDockAutoAttachSuppressed, setWorkspaceDockAutoAttachSuppressed] =
     React.useState(false);
   const [shellFullscreen, setShellFullscreen] = useState(false);
+  const [systemPrefersReducedTransparency, setSystemPrefersReducedTransparency] = useState(false);
+  const [materialEngine, setMaterialEngine] = useState<SidebarMaterialEngine>('renderer');
+  const [materialRequestedEngine, setMaterialRequestedEngine] =
+    useState<SidebarMaterialEngine>('renderer');
+  const [materialFallbackReason, setMaterialFallbackReason] =
+    useState<SidebarMaterialFallbackReason>(null);
+  const [nativeMaterialActive, setNativeMaterialActive] = useState(false);
+  const [materialMacVibrancy, setMaterialMacVibrancy] = useState<
+    'under-window' | 'sidebar' | 'hud' | null
+  >(null);
+  const [materialMacVisualEffectState, setMaterialMacVisualEffectState] =
+    useState<'followWindow' | 'active'>('followWindow');
+  const [forcedColorsActive, setForcedColorsActive] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(() => {
+    let appPreference = false;
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as { reduceMotion?: unknown }) : null;
+      appPreference = parsed?.reduceMotion === true;
+    } catch {}
+    const systemPreference =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return appPreference || systemPreference;
+  });
   const [floatingDockSide, setFloatingDockSide] = useState<SidebarPosition | null>(null);
   const [state, setSidebarState] = React.useState<SidebarState>(() => {
     const prefs = loadSidebarPreferences();
@@ -157,6 +199,78 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       if (opacityFrameRef.current !== null) {
         window.cancelAnimationFrame(opacityFrameRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    const isMaterialEngine = (value: unknown): value is SidebarMaterialEngine =>
+      value === 'solid' ||
+      value === 'renderer' ||
+      value === 'native-macos' ||
+      value === 'native-windows-mica' ||
+      value === 'native-windows-mica-alt' ||
+      value === 'native-windows-acrylic';
+    const handleMaterialState = (
+      _event: unknown,
+      payload: {
+        requestedEngine?: unknown;
+        resolvedEngine?: unknown;
+        fallbackReason?: unknown;
+        nativeMaterialActive?: unknown;
+        requestedMacVibrancy?: unknown;
+        visualEffectState?: unknown;
+      }
+    ) => {
+      setMaterialEngine(isMaterialEngine(payload?.resolvedEngine) ? payload.resolvedEngine : 'renderer');
+      setMaterialRequestedEngine(
+        isMaterialEngine(payload?.requestedEngine) ? payload.requestedEngine : 'renderer'
+      );
+      setMaterialFallbackReason(
+        typeof payload?.fallbackReason === 'string'
+          ? (payload.fallbackReason as SidebarMaterialFallbackReason)
+          : null
+      );
+      setNativeMaterialActive(payload?.nativeMaterialActive === true);
+      setMaterialMacVibrancy(
+        payload?.requestedMacVibrancy === 'under-window' ||
+          payload?.requestedMacVibrancy === 'sidebar' ||
+          payload?.requestedMacVibrancy === 'hud'
+          ? payload.requestedMacVibrancy
+          : null
+      );
+      setMaterialMacVisualEffectState(payload?.visualEffectState === 'active' ? 'active' : 'followWindow');
+    };
+
+    window.ipcRenderer?.on('sidebar:material-state', handleMaterialState);
+    void window.desktopWindow?.getSidebarMaterialState?.().then((payload) => {
+      setMaterialEngine(isMaterialEngine(payload?.resolvedEngine) ? payload.resolvedEngine : 'renderer');
+      setMaterialRequestedEngine(
+        isMaterialEngine(payload?.requestedEngine) ? payload.requestedEngine : 'renderer'
+      );
+      setMaterialFallbackReason(
+        typeof payload?.fallbackReason === 'string'
+          ? (payload.fallbackReason as SidebarMaterialFallbackReason)
+          : null
+      );
+      setNativeMaterialActive(payload?.nativeMaterialActive === true);
+      setMaterialMacVibrancy(
+        payload?.requestedMacVibrancy === 'under-window' ||
+          payload?.requestedMacVibrancy === 'sidebar' ||
+          payload?.requestedMacVibrancy === 'hud'
+          ? payload.requestedMacVibrancy
+          : null
+      );
+      setMaterialMacVisualEffectState(payload?.visualEffectState === 'active' ? 'active' : 'followWindow');
+    }).catch(() => {
+      setMaterialEngine('renderer');
+      setMaterialRequestedEngine('renderer');
+      setMaterialFallbackReason(null);
+      setNativeMaterialActive(false);
+      setMaterialMacVibrancy(null);
+      setMaterialMacVisualEffectState('followWindow');
+    });
+    return () => {
+      window.ipcRenderer?.off('sidebar:material-state', handleMaterialState);
     };
   }, []);
 
@@ -202,6 +316,76 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [state]);
+
+  useEffect(() => {
+    const handleAccessibilityState = (
+      _event: unknown,
+      payload: { prefersReducedTransparency?: unknown }
+    ) => {
+      setSystemPrefersReducedTransparency(payload?.prefersReducedTransparency === true);
+    };
+
+    window.ipcRenderer?.on('sidebar:accessibility-updated', handleAccessibilityState);
+    void window.desktopWindow?.getSidebarAccessibilityState?.().then((payload) => {
+      setSystemPrefersReducedTransparency(payload?.prefersReducedTransparency === true);
+    }).catch(() => {
+      // Browser development mode and older preload bridges keep the false fallback.
+    });
+    return () => {
+      window.ipcRenderer?.off('sidebar:accessibility-updated', handleAccessibilityState);
+    };
+  }, []);
+
+  useEffect(() => {
+    const readAppReduceMotion = () => {
+      try {
+        const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+        const parsed = raw ? (JSON.parse(raw) as { reduceMotion?: unknown }) : null;
+        return parsed?.reduceMotion === true;
+      } catch {
+        return false;
+      }
+    };
+    const mediaQuery =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : null;
+    const updateReduceMotion = () => {
+      setReduceMotion(Boolean(readAppReduceMotion() || mediaQuery?.matches));
+    };
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === SETTINGS_STORAGE_KEY) updateReduceMotion();
+    };
+
+    updateReduceMotion();
+    window.addEventListener('storage', handleStorageChange);
+    if (mediaQuery?.addEventListener) mediaQuery.addEventListener('change', updateReduceMotion);
+    else mediaQuery?.addListener(updateReduceMotion);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      if (mediaQuery?.removeEventListener) {
+        mediaQuery.removeEventListener('change', updateReduceMotion);
+      } else {
+        mediaQuery?.removeListener(updateReduceMotion);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mediaQuery = window.matchMedia('(forced-colors: active)');
+    const updateForcedColors = () => setForcedColorsActive(mediaQuery.matches);
+    updateForcedColors();
+    if (mediaQuery.addEventListener) mediaQuery.addEventListener('change', updateForcedColors);
+    else mediaQuery.addListener(updateForcedColors);
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', updateForcedColors);
+      } else {
+        mediaQuery.removeListener(updateForcedColors);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (didNormalizeFloatingStartupRef.current) return;
@@ -428,7 +612,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const setOpacity = (opacity: number) => {
-    const clampedOpacity = Math.max(0.7, Math.min(1, opacity));
+    const clampedOpacity = clampSidebarOpacity(opacity);
     pendingOpacityRef.current = clampedOpacity;
 
     if (opacityFrameRef.current !== null) return;
@@ -451,10 +635,10 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const setBlur = (blur: boolean) => {
+  const setFrostedBackgroundEnabled = (enabled: boolean) => {
     setSidebarPreferences((current) => ({
       ...current,
-      blur,
+      frostedBackgroundEnabled: enabled,
     }));
   };
 
@@ -502,6 +686,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const isSidebarVisible = !sidebarPreferences.isHidden;
+  const transparencyOverrideActive = systemPrefersReducedTransparency || forcedColorsActive;
+  const effectiveFrostedBackground =
+    sidebarPreferences.frostedBackgroundEnabled && !transparencyOverrideActive;
   const workspaceShellLayout = useMemo<WorkspaceShellLayout>(() => {
     const sidebarPlacement = sidebarPreferences.position;
     const effectivePlacement =
@@ -610,8 +797,18 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         setPosition,
         opacity: sidebarPreferences.opacity,
         setOpacity,
-        blur: sidebarPreferences.blur,
-        setBlur,
+        frostedBackgroundEnabled: sidebarPreferences.frostedBackgroundEnabled,
+        setFrostedBackgroundEnabled,
+        effectiveFrostedBackground,
+        systemPrefersReducedTransparency,
+        transparencyOverrideActive,
+        materialEngine,
+        materialRequestedEngine,
+        materialFallbackReason,
+        nativeMaterialActive,
+        materialMacVibrancy,
+        materialMacVisualEffectState,
+        reduceMotion,
         defaultState: sidebarPreferences.defaultState,
         setDefaultState,
         alwaysOnTop: sidebarPreferences.alwaysOnTop,

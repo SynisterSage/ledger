@@ -109,15 +109,21 @@ export function CenterInlineItemRow({
         }
       }}
       title={titleText ?? title}
-      className={`flex min-h-4 w-full items-center gap-1 truncate rounded px-0.5 py-0 text-[11px] font-normal leading-tight transition-colors hover:bg-[var(--ledger-surface-hover)] ${
-        selected
-          ? 'bg-[var(--ledger-surface-hover)]'
-          : ''
-      } ${muted ? 'opacity-60' : ''} ${completed ? 'line-through opacity-55' : ''} ${className}`}
+      className={`flex min-h-4 w-full items-center gap-1 truncate rounded-md border px-1 py-0 text-[11px] font-normal leading-tight transition-[background-color,border-color,box-shadow] hover:brightness-105 ${
+        muted ? 'opacity-60' : ''
+      } ${completed ? 'line-through opacity-55' : ''} ${className}`}
+      style={{
+        backgroundColor: selected
+          ? `color-mix(in srgb, ${color} 12%, transparent)`
+          : `color-mix(in srgb, ${color} 7%, transparent)`,
+        borderColor: selected
+          ? `color-mix(in srgb, ${color} 30%, transparent)`
+          : `color-mix(in srgb, ${color} 16%, transparent)`,
+        boxShadow: selected ? `0 0 0 1px color-mix(in srgb, ${color} 10%, transparent)` : 'none',
+      }}
     >
-      <span className="h-3 w-0.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
       {icon ? (
-        <span className="flex h-3 w-3 shrink-0 items-center justify-center text-[var(--ledger-text-muted)]">
+        <span className="flex h-3 w-3 shrink-0 items-center justify-center" style={{ color }}>
           {icon}
         </span>
       ) : null}
@@ -150,20 +156,21 @@ export function CenterItemRow({
       type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`group flex w-full items-center gap-2 rounded-md text-left transition-colors hover:bg-[var(--ledger-surface-hover)] ${
+      className={`group flex w-full items-center gap-2 rounded-md border text-left transition-[background-color,border-color,box-shadow] hover:brightness-105 ${
         compact ? 'min-h-5 px-1 py-0.5' : 'min-h-10 px-2'
-      } ${
-        selected
-          ? 'bg-[var(--ledger-surface-hover)]'
-          : ''
       } ${muted ? 'opacity-55' : ''}`}
+      style={{
+        backgroundColor: selected
+          ? `color-mix(in srgb, ${color} 14%, transparent)`
+          : `color-mix(in srgb, ${color} 8%, transparent)`,
+        borderColor: selected
+          ? `color-mix(in srgb, ${color} 32%, transparent)`
+          : `color-mix(in srgb, ${color} 18%, transparent)`,
+        boxShadow: selected ? `0 0 0 1px color-mix(in srgb, ${color} 10%, transparent)` : 'none',
+      }}
     >
-      <span
-        className={`${compact ? 'h-4' : 'h-6'} w-0.5 shrink-0 rounded-full`}
-        style={{ backgroundColor: color }}
-      />
       {icon ? (
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--ledger-text-muted)]">
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center" style={{ color }}>
           {icon}
         </span>
       ) : null}
@@ -238,17 +245,25 @@ export function CenterEventBlock({
     left,
     right,
     width,
-    backgroundColor: selected ? `${color}20` : muted ? 'var(--ledger-surface-hover)' : `${color}12`,
-    borderColor: selected ? color : muted ? 'var(--ledger-border-subtle)' : `${color}3d`,
+    backgroundColor: selected
+      ? `color-mix(in srgb, ${color} 12%, transparent)`
+      : muted
+      ? 'var(--ledger-surface-hover)'
+      : `color-mix(in srgb, ${color} 7%, transparent)`,
+    borderColor: selected
+      ? color
+      : muted
+      ? 'var(--ledger-border-subtle)'
+      : `color-mix(in srgb, ${color} 24%, transparent)`,
     color: muted ? 'var(--ledger-text-muted)' : 'var(--ledger-text-primary)',
     boxSizing: 'border-box',
     lineHeight: 1.2,
     overflow: 'hidden',
     boxShadow: selected
-      ? `0 0 0 1px ${color}20`
+      ? `0 0 0 1px color-mix(in srgb, ${color} 16%, transparent)`
       : muted
       ? 'none'
-      : `0 0 0 1px ${color}12, 0 1px 2px rgba(15, 23, 42, 0.04)`,
+      : `0 0 0 1px color-mix(in srgb, ${color} 7%, transparent), 0 1px 2px rgba(15, 23, 42, 0.04)`,
   };
 
   return (
@@ -258,17 +273,18 @@ export function CenterEventBlock({
       onContextMenu={onContextMenu}
       onPointerDown={onPointerDown}
       style={{ ...style, touchAction: 'none' }}
-      className={`group absolute z-30 flex flex-col rounded-[5px] border text-left text-[11px] leading-tight transition-[border-color,box-shadow,transform] ${compact ? 'px-1.5 py-1' : 'p-2'}`}
+      className={`group absolute z-30 flex flex-col rounded-[5px] border text-left text-[11px] leading-tight transition-[border-color,box-shadow,transform] ${
+        compact ? 'px-1.5 py-1' : 'p-2'
+      }`}
     >
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-2 left-0.5 top-2 z-10 w-0.5 rounded-full"
-        style={{ backgroundColor: muted ? 'var(--ledger-text-muted)' : color }}
-      />
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-        style={{ backgroundColor: muted ? 'var(--ledger-surface-hover)' : `${color}1c` }}
+        className="pointer-events-none absolute inset-0 rounded-[5px] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+        style={{
+          backgroundColor: muted
+            ? 'color-mix(in srgb, var(--ledger-surface-hover) 80%, transparent)'
+            : `color-mix(in srgb, ${color} 8%, transparent)`,
+        }}
       />
       <span className="relative z-10 flex min-w-0 gap-1.5">
         <span

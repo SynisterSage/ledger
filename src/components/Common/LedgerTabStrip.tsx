@@ -1000,20 +1000,21 @@ export const LedgerTabStrip = () => {
 
   const closeTab = useCallback((route: LedgerRoute) => {
     const key = routeKey(route);
-    window.dispatchEvent(
-      new CustomEvent('ledger:workspace-route-closed', { detail: { ...route } })
-    );
     const currentTabOrder = tabOrderRef.current;
     const index = currentTabOrder.findIndex((item) => sameRoute(item, route));
     if (index < 0) return;
 
-    const nextOrder = currentTabOrder.filter((item) => !sameRoute(item, route));
-    tabOrderRef.current = nextOrder;
-    setTabOrder(nextOrder);
+    // Mark the route closed before notifying the rest of the shell. The
+    // notification is also observed by this tab strip, so broadcasting first
+    // lets the same route re-enter closeTab recursively before it is removed.
     const nextClosed = new Set(closedTabKeysRef.current);
     nextClosed.add(key);
     closedTabKeysRef.current = nextClosed;
     setClosedTabKeys(nextClosed);
+
+    const nextOrder = currentTabOrder.filter((item) => !sameRoute(item, route));
+    tabOrderRef.current = nextOrder;
+    setTabOrder(nextOrder);
     window.dispatchEvent(
       new CustomEvent('ledger:workspace-route-closed', { detail: { ...route } })
     );
@@ -1103,6 +1104,47 @@ export const LedgerTabStrip = () => {
     return () =>
       window.removeEventListener('ledger:workspace-route-closed', handleExternalRouteClosed);
   }, [closeTab]);
+
+  useEffect(() => {
+    const handleRouteReplaced = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        from?: ModuleFocusPayload;
+        to?: ModuleFocusPayload;
+      }>).detail;
+      const from = normalizeRoute(detail?.from);
+      const to = normalizeRoute(detail?.to);
+      if (!from || !to) return;
+
+      const currentOrder = tabOrderRef.current;
+      const fromIndex = currentOrder.findIndex((route) => sameRoute(route, from));
+      if (fromIndex < 0) return;
+
+      const activeRoute = visualCurrentRouteRef.current ?? currentRouteRef.current;
+      const isActiveRoute = Boolean(activeRoute && sameRoute(activeRoute, from));
+      const hasDestinationTab = currentOrder.some((route) => sameRoute(route, to));
+      const nextOrder = hasDestinationTab
+        ? currentOrder.filter((route) => !sameRoute(route, from))
+        : currentOrder.map((route, index) => (index === fromIndex ? to : route));
+
+      tabOrderRef.current = nextOrder;
+      setTabOrder(nextOrder);
+      try {
+        sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(nextOrder));
+      } catch {
+        // Keep the in-memory tab state authoritative when storage is unavailable.
+      }
+
+      if (isActiveRoute) {
+        setVisualRouteOverride(to);
+        visualCurrentRouteRef.current = to;
+        selectWorkspaceTabRoute(to);
+      }
+    };
+
+    window.addEventListener('ledger:workspace-route-replaced', handleRouteReplaced);
+    return () =>
+      window.removeEventListener('ledger:workspace-route-replaced', handleRouteReplaced);
+  }, []);
 
   const finishTabDrag = useCallback(
     async (event: ReactPointerEvent<HTMLDivElement>) => {

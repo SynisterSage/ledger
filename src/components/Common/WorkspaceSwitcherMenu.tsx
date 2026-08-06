@@ -15,10 +15,12 @@ import {
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useSidebar } from '../../context/SidebarContext';
 import { buildInviteUrl } from '../../config/invite';
 import { ModalOverlay } from './ModalOverlay';
 import { ModalCloseButton } from './ModalCloseButton';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
+import { getSidebarMaterialAlpha, getSidebarNativeMacTintAlpha } from '../../theme/sidebarMaterial';
 
 type WorkspaceSwitcherMenuProps = {
   variant?: 'header' | 'sidebar';
@@ -27,6 +29,10 @@ type WorkspaceSwitcherMenuProps = {
 
 type AppRegionStyle = CSSProperties & {
   WebkitAppRegion?: 'drag' | 'no-drag';
+};
+
+type SidebarMenuStyle = CSSProperties & {
+  '--sidebar-material-alpha'?: string;
 };
 
 const menuWidth = 284;
@@ -58,6 +64,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
   const { signOut } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace, workspaces, setActiveWorkspace, refreshWorkspaces } =
     useWorkspaceContext();
+  const sidebar = useSidebar();
   const api = useApi();
   const [isOpen, setIsOpen] = useState(false);
   const [submenuOpen, setSubmenuOpen] = useState(false);
@@ -87,6 +94,33 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
   const workspaceName = resolvedWorkspace?.name?.trim() || 'Workspace';
   const workspaceInitials = getWorkspaceInitials(workspaceName);
   const isPersonalWorkspace = Boolean(resolvedWorkspace?.is_personal);
+
+  // The menu is portaled to document.body, so it cannot inherit the material
+  // alpha set on SidebarContainer. Keep the header variant on its existing
+  // opaque menu surface and give only the sidebar variant the shared sidebar
+  // material values.
+  const sidebarMenuStyle: SidebarMenuStyle | undefined =
+    variant === 'sidebar'
+      ? sidebar.transparencyOverrideActive || sidebar.materialEngine === 'solid'
+        ? {
+            backgroundColor: 'rgb(var(--sidebar-solid-rgb) / 1)',
+            borderColor: 'var(--sidebar-edge-color)',
+          }
+        : {
+            '--sidebar-material-alpha': String(
+              sidebar.materialEngine === 'native-macos'
+                ? getSidebarNativeMacTintAlpha(sidebar.opacity)
+                : getSidebarMaterialAlpha(sidebar.opacity) -
+                    (sidebar.materialEngine === 'renderer' &&
+                    sidebar.workspaceShellLayout.sidebarMode === 'attached' &&
+                    sidebar.effectiveFrostedBackground
+                      ? 0.05
+                      : 0)
+            ),
+            backgroundColor: 'rgb(var(--sidebar-material-rgb) / var(--sidebar-material-alpha))',
+            borderColor: 'var(--sidebar-edge-color)',
+          }
+      : undefined;
 
   const primaryButtonClass =
     variant === 'header'
@@ -485,7 +519,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                 ref={menuRef}
                 role="menu"
                 aria-label="Workspace menu"
-                style={menuStyle ?? undefined}
+                style={{ ...menuStyle, ...sidebarMenuStyle }}
                 className={`${sidebarTheme.menu} max-h-[calc(100vh-16px)] overflow-x-hidden overflow-y-auto py-1 shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none`}
                 onKeyDown={handlePrimaryKeyDown}
                 onMouseDown={(event) => event.stopPropagation()}
@@ -570,7 +604,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                   ref={submenuRef}
                   role="menu"
                   aria-label="Switch workspace submenu"
-                  style={submenuStyle ?? undefined}
+                  style={{ ...submenuStyle, ...sidebarMenuStyle }}
                   className={`${sidebarTheme.menu} max-h-[calc(100vh-16px)] overflow-x-hidden overflow-y-auto py-1 shadow-[0_16px_48px_rgba(15,23,42,0.14)] ring-0 outline-none`}
                   onKeyDown={handleSubmenuKeyDown}
                   onMouseDown={(event) => event.stopPropagation()}

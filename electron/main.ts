@@ -28,6 +28,10 @@ import { MeetingAudioCaptureService, type AudioSourceName } from './audioCapture
 import { LocalTranscriptionService } from './transcriptionService';
 import { RecordingSessionStore } from './recordingSessionStore';
 import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
+import {
+  SidebarMaterialController,
+  type SidebarMaterialControllerSnapshot,
+} from './sidebarMaterialController';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -83,6 +87,11 @@ ipcMain.handle('meeting-audio:open-system-settings', async (_event, area: unknow
   return meetingAudioCaptureService.openSystemSettings(area);
 });
 ipcMain.handle('meeting-audio:status', () => meetingAudioCaptureService.status());
+ipcMain.handle('meeting-audio:storage-path', () => meetingAudioCaptureService.storagePath());
+ipcMain.handle('meeting-audio:open-storage-path', async () => {
+  const error = await shell.openPath(meetingAudioCaptureService.storagePath());
+  return { ok: !error, error: error || undefined };
+});
 ipcMain.handle('meeting-audio:recoveries', () => meetingAudioCaptureService.recoveries());
 ipcMain.handle('meeting-audio:inspect', (_event, sessionId?: unknown) => {
   if (sessionId !== undefined && typeof sessionId !== 'string') throw new Error('Invalid recording session.');
@@ -959,7 +968,7 @@ type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullsc
 type SidebarPreferencesPayload = {
   position?: 'right' | 'left' | 'top' | 'bottom' | 'floating';
   opacity?: number;
-  blur?: boolean;
+  frostedBackgroundEnabled?: boolean;
   defaultState?: 'expanded' | 'collapsed' | 'remember';
   alwaysOnTop?: boolean;
   shellFullscreen?: boolean;
@@ -1055,6 +1064,12 @@ type WindowsDockTraceInput = {
 };
 
 let sidebarWin: BrowserWindow | null = null;
+const sendSidebarAccessibilityState = () => {
+  if (!sidebarWin || sidebarWin.isDestroyed() || sidebarWin.webContents.isDestroyed()) return;
+  sidebarWin.webContents.send('sidebar:accessibility-updated', {
+    prefersReducedTransparency: nativeTheme.prefersReducedTransparency === true,
+  });
+};
 const moduleWins = new Map<ModuleWindowKind, BrowserWindow>();
 const detachedWindows = new Map<string, DetachedWindowRecord>();
 const ledgerWindowIds = new WeakMap<BrowserWindow, string>();
@@ -1097,6 +1112,48 @@ let currentSidebarMode: SidebarWindowMode = 'auth';
 let currentSidebarPosition: SidebarPosition = 'right';
 let currentFloatingPosition = { ...defaultSidebarPreferences.floatingPosition };
 let currentSidebarPreferences = { ...defaultSidebarPreferences };
+let lastLoggedMaterialFallback = '';
+const sidebarMaterialController = new SidebarMaterialController({
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  environment: process.env,
+});
+
+const sendSidebarMaterialState = (snapshot: SidebarMaterialControllerSnapshot) => {
+  if (!sidebarWin || sidebarWin.isDestroyed() || sidebarWin.webContents.isDestroyed()) return;
+  if (!app.isPackaged && snapshot.lastApplicationResult === 'fallback') {
+    const fallbackKey = `${snapshot.requestedEngine}:${snapshot.resolvedEngine}:${snapshot.fallbackReason}`;
+    if (fallbackKey !== lastLoggedMaterialFallback) {
+      console.warn('[electron][sidebar][material]', {
+        requestedEngine: snapshot.requestedEngine,
+        resolvedEngine: snapshot.resolvedEngine,
+        fallbackReason: snapshot.fallbackReason,
+      });
+      lastLoggedMaterialFallback = fallbackKey;
+    }
+  } else {
+    lastLoggedMaterialFallback = '';
+  }
+  sidebarWin.webContents.send('sidebar:material-state', {
+    ...snapshot,
+    frostedBackgroundEnabled: currentSidebarPreferences.frostedBackgroundEnabled === true,
+    prefersReducedTransparency: nativeTheme.prefersReducedTransparency === true,
+    prefersHighContrast: nativeTheme.shouldUseHighContrastColors === true,
+    electronVersion: process.versions.electron,
+    osVersion: process.getSystemVersion(),
+    transparencyEffectsAvailable: !nativeTheme.prefersReducedTransparency,
+  });
+};
+
+function syncSidebarMaterial() {
+  const snapshot = sidebarMaterialController.apply(sidebarWin, {
+    frostedBackgroundEnabled: currentSidebarPreferences.frostedBackgroundEnabled === true,
+    prefersReducedTransparency: nativeTheme.prefersReducedTransparency === true,
+    prefersHighContrast: nativeTheme.shouldUseHighContrastColors === true,
+    ...sidebarMaterialController.getSupportState(sidebarWin),
+  });
+  sendSidebarMaterialState(snapshot);
+}
 let currentSidebarShellFullscreen = false;
 let currentFloatingDockTarget: FloatingDockTarget | null = null;
 let currentFloatingDockBounds: Rect | null = null;
@@ -5335,6 +5392,7 @@ function applySidebarWindowMode(mode: SidebarWindowMode, animate = true) {
   const wasFocused = sidebarWin.isFocused();
   const previousMode = currentSidebarMode;
   currentSidebarMode = mode;
+  syncSidebarMaterial();
   applySidebarOpacity(currentSidebarPreferences.opacity);
 
   if (mode === 'fullscreen') {
@@ -5664,6 +5722,9 @@ function createSidebarWindow() {
     minHeight: AUTH_MIN_HEIGHT,
     alwaysOnTop: false,
     ...getWindowChromeOptions(),
+    ...(process.platform === 'darwin'
+      ? { visualEffectState: sidebarMaterialController.getMacVisualEffectState() }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       spellcheck: true,
@@ -5682,14 +5743,14 @@ function createSidebarWindow() {
     } catch {}
   }
 
-  // Keep sidebar translucency pure RGBA/CSS-only to avoid platform compositor blur artifacts.
+  // The native material prototype is opt-in and immediately falls back to the
+  // renderer material when disabled, unsupported, or inaccessible.
+  syncSidebarMaterial();
 
   lockWindowZoom(sidebarWin);
   attachWindowsCloseShortcut(sidebarWin);
   attachNativeContextMenu(sidebarWin);
   applyWindowsModuleWindowShape(sidebarWin);
-
-  // Keep the sidebar rendering path purely CSS-based for consistent frosted glass.
 
   sidebarWin.on('closed', () => {
     stopFloatingDockTracking();
@@ -5761,6 +5822,8 @@ function createSidebarWindow() {
               : getDockedBounds(EXPANDED_WIDTH);
           sidebarWin.setBounds(nextBounds);
           applyWindowsModuleWindowShape(sidebarWin);
+          sendSidebarAccessibilityState();
+          syncSidebarMaterial();
           sidebarWin.showInactive();
           console.log('[electron][sidebar] window bounds reset:', nextBounds);
         }
@@ -5808,8 +5871,8 @@ function sendModuleFocus(
     if (focusProjectId) {
       existing.webContents.send('module:focus-project', { kind, focusProjectId });
     }
-    if (focusNoteId) {
-      existing.webContents.send('module:focus-note', { kind, focusNoteId });
+    if (focusNoteId !== undefined) {
+      existing.webContents.send('module:focus-note', { kind, focusNoteId, focusContext });
     }
     if (focusTaskId) {
       existing.webContents.send('module:focus-task', { kind, focusTaskId });
@@ -6809,6 +6872,7 @@ powerMonitor.on('suspend', () => {
   });
 });
 powerMonitor.on('resume', () => {
+  syncSidebarMaterial();
   void meetingAudioCaptureService.checkAfterResume().then((healthy) => {
     console.info('[meeting-audio]', JSON.stringify({ event: 'resume_checked', healthy, platform: process.platform, active: meetingAudioCaptureService.isActive }));
   }).catch((error) => {
@@ -6872,6 +6936,57 @@ ipcMain.handle('window:get-rendering-settings', () => ({
   mode: renderingMode,
   platform: process.platform,
 }));
+
+ipcMain.handle('window:get-sidebar-accessibility', () => ({
+  prefersReducedTransparency: nativeTheme.prefersReducedTransparency === true,
+}));
+
+ipcMain.handle('window:get-sidebar-material-state', () => ({
+  ...sidebarMaterialController.getSnapshot(),
+  frostedBackgroundEnabled: currentSidebarPreferences.frostedBackgroundEnabled === true,
+  prefersReducedTransparency: nativeTheme.prefersReducedTransparency === true,
+  prefersHighContrast: nativeTheme.shouldUseHighContrastColors === true,
+  electronVersion: process.versions.electron,
+  osVersion: process.getSystemVersion(),
+  transparencyEffectsAvailable: !nativeTheme.prefersReducedTransparency,
+}));
+
+ipcMain.handle('window:set-sidebar-material-development-selection', (_event, enabled: unknown) => {
+  if (
+    enabled !== true &&
+    enabled !== false &&
+    enabled !== 'under-window' &&
+    enabled !== 'sidebar' &&
+    enabled !== 'hud' &&
+    enabled !== 'mica' &&
+    enabled !== 'mica-alt' &&
+    enabled !== 'acrylic'
+  ) {
+    return { enabled: false, engine: 'renderer', supported: false };
+  }
+  if (!sidebarMaterialController.setDevelopmentSelection(enabled)) {
+    return { enabled: false, engine: 'renderer', supported: false };
+  }
+  syncSidebarMaterial();
+  return {
+    enabled: sidebarMaterialController.getSnapshot().requestedEngine !== 'renderer',
+    engine: sidebarMaterialController.getSnapshot().requestedEngine,
+    supported: true,
+  };
+});
+
+ipcMain.handle('window:set-sidebar-material-development-visual-effect-state', (_event, state: unknown) => {
+  if (state !== 'followWindow' && state !== 'active') return { supported: false };
+  const supported = sidebarMaterialController.setDevelopmentVisualEffectState(state);
+  if (supported) syncSidebarMaterial();
+  return { supported };
+});
+
+ipcMain.handle('window:reset-sidebar-material-diagnostics', () => {
+  const snapshot = sidebarMaterialController.resetDiagnostics();
+  sendSidebarMaterialState(snapshot);
+  return snapshot;
+});
 
 ipcMain.handle('window:set-rendering-mode', (_event, mode: unknown) => {
   const nextMode: RenderingMode =
@@ -6960,6 +7075,10 @@ ipcMain.handle(
       ...currentSidebarPreferences,
       ...preferences,
     };
+    if (typeof preferences.opacity === 'number') {
+      sidebarMaterialController.noteOpacityUpdate();
+    }
+    syncSidebarMaterial();
     // Always send preferences update including opacity to renderer so it can
     // apply opacity only to the background glass layer via CSS variables
     sidebarWin.webContents.send('sidebar:preferences-updated', preferences);
@@ -7893,6 +8012,10 @@ function syncTouchBar() {
 }
 
 app.whenReady().then(() => {
+  nativeTheme.on('updated', () => {
+    sendSidebarAccessibilityState();
+    syncSidebarMaterial();
+  });
   registerWindowsLoopbackCapture();
   startAppleCalendarWatcher();
   loadNotificationDeliveryState();
@@ -7900,8 +8023,15 @@ app.whenReady().then(() => {
   // A remembered module window may refer to a display that was disconnected
   // or whose work area changed. Reconcile open module windows against the
   // current display layout without touching the sidebar's docking geometry.
-  screen.on('display-removed', clampOpenModuleWindowsToDisplays);
-  screen.on('display-metrics-changed', clampOpenModuleWindowsToDisplays);
+  screen.on('display-removed', () => {
+    clampOpenModuleWindowsToDisplays();
+    syncSidebarMaterial();
+  });
+  screen.on('display-added', syncSidebarMaterial);
+  screen.on('display-metrics-changed', () => {
+    clampOpenModuleWindowsToDisplays();
+    syncSidebarMaterial();
+  });
   createSidebarWindow();
   syncTray();
   processPendingLedgerProtocolUrl();

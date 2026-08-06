@@ -2479,7 +2479,7 @@ export const ExpandedSidebar = ({
     return (
       <div className="flex h-full w-full flex-col items-center gap-1.25 p-1.25">
         <div
-          className={`flex h-15 w-full items-center gap-2 px-2.5 backdrop-blur-sm ${sidebarTheme.surface}`}
+          className={`flex h-15 w-full items-center gap-2 px-2.5 ${sidebarTheme.surface}`}
         >
           <div className="flex shrink-0 items-center gap-1.5">
             <HoldToQuitLogo

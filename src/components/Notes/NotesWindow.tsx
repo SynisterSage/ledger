@@ -1131,7 +1131,7 @@ const MeetingTranscriptSection = ({
           setIsTranscriptExpanded((current) => !current);
           onToggle();
         }}
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+        className="flex w-full rounded-t-xl items-center gap-2 px-3 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
         aria-expanded={isTranscriptExpanded}
       >
         <ChevronDown
@@ -2137,94 +2137,60 @@ const MeetingTranscriptionSetup = ({
     backdropBorderRadius="inherit"
     disablePortal
     manageWindowChrome={false}
-    classNameContainer="w-full max-w-lg overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+    classNameContainer="w-full max-w-[560px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
   >
-    <div role="dialog" aria-modal="true" aria-label="Set up local transcription">
-      <div className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(255,95,64,0.12)] text-[var(--ledger-accent)]">
-            <Download size={16} />
-          </span>
-          <div>
-            <h2 className="text-[15px] font-semibold">Install local transcription</h2>
-            <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-              Runs locally. No API key required.
-            </p>
+    <div role="dialog" aria-modal="true" aria-label="Set up local transcription" className="px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[color:rgba(255,95,64,0.12)] text-[var(--ledger-accent)]">
+          <Download size={15} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <h2 className="truncate text-[13px] font-semibold">{model?.label || 'Whisper model'}</h2>
+            <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+              {model?.downloading
+                ? `${Math.round((model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100)}% · ${formatDownloadTime(model.estimatedSecondsRemaining)}`
+                : 'Runs locally · no API key'}
+            </span>
           </div>
-        </div>
-        <ModalCloseButton
-          onClick={onClose}
-          ariaLabel="Close transcription setup"
-          disabled={isBusy}
-        />
-      </div>
-      <div className="flex items-center justify-between gap-4 px-5 py-4">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-semibold">{model?.label || 'Whisper model'}</p>
-          <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">
-            {model?.approximateBytes
-              ? `About ${Math.round(
-                  model.approximateBytes / 1024 / 1024
-                )} MB · stored on this computer`
+          <p className="mt-0.5 truncate text-[10px] text-[var(--ledger-text-muted)]">
+            {model?.downloading
+              ? `${formatModelBytes(model.bytesDownloaded)} of ${formatModelBytes(model.approximateBytes)}${formatDownloadSpeed(model.downloadSpeedBytesPerSecond) ? ` · ${formatDownloadSpeed(model.downloadSpeedBytesPerSecond)}` : ''}`
+              : model?.approximateBytes
+              ? `About ${Math.round(model.approximateBytes / 1024 / 1024)} MB · stored on this computer`
               : 'Optional local speech-recognition model'}
           </p>
-          {model?.downloading && (
-            <div className="mt-2.5 w-full min-w-[230px]">
-              <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-[var(--ledger-text-muted)]">
-                <span>
-                  {formatModelBytes(model.bytesDownloaded)} of {formatModelBytes(model.approximateBytes)}
-                </span>
-                <span>
-                  {formatDownloadTime(model.estimatedSecondsRemaining)}
-                  {formatDownloadSpeed(model.downloadSpeedBytesPerSecond) && ` · ${formatDownloadSpeed(model.downloadSpeedBytesPerSecond)}`}
-                </span>
-              </div>
-              <div
-                className="h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-muted)]"
-                role="progressbar"
-                aria-label="Whisper model download progress"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.min(100, Math.round((model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100))}
-              >
-                <div
-                  className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300"
-                  style={{ width: `${Math.min(100, Math.max(2, (model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100))}%` }}
-                />
-              </div>
-              <p className="mt-1 text-[10px] text-[var(--ledger-text-muted)]">
-                Large one-time download. It stays on this computer.
-              </p>
-            </div>
-          )}
-          {model?.error && (
-            <p className="mt-2 text-xs text-[var(--ledger-danger)]">{model.error}</p>
-          )}
         </div>
         <button
           type="button"
           onClick={onInstall}
           disabled={isBusy || model?.downloading}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-[11px] font-medium text-white disabled:opacity-40"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-[var(--ledger-accent)] px-2.5 text-[10px] font-medium text-white disabled:opacity-40"
         >
-          <Download size={13} />
-          {model?.downloading
-            ? 'Downloading…'
-            : isBusy
-            ? 'Preparing…'
-            : 'Download'}
+          <Download size={12} />
+          {model?.downloading ? 'Downloading…' : isBusy ? 'Preparing…' : 'Download'}
         </button>
+        <ModalCloseButton onClick={onClose} ariaLabel="Close transcription setup" disabled={isBusy} />
       </div>
-      <div className="flex justify-end border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={isBusy}
-          className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] disabled:opacity-40"
-        >
-          Not now
-        </button>
-      </div>
+      {model?.downloading && (
+        <div className="mt-2.5">
+          <div
+            className="h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-muted)]"
+            role="progressbar"
+            aria-label="Whisper model download progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.min(100, Math.round((model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100))}
+          >
+            <div
+              className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300"
+              style={{ width: `${Math.min(100, Math.max(2, (model.bytesDownloaded / Math.max(1, model.approximateBytes)) * 100))}%` }}
+            />
+          </div>
+          <p className="mt-1 text-[9px] text-[var(--ledger-text-muted)]">Large one-time download · stays on this computer</p>
+        </div>
+      )}
+      {model?.error && <p className="mt-2 text-[10px] text-[var(--ledger-danger)]">{model.error}</p>}
     </div>
   </ModalOverlay>
 );
@@ -6989,6 +6955,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const deleteSelectedNote = useCallback(async () => {
     if (!selectedNote) return;
+    const deletedNoteId = selectedNote.id;
 
     if (autosaveTimerRef.current) {
       window.clearTimeout(autosaveTimerRef.current);
@@ -7001,6 +6968,14 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     try {
       await stopAndDiscardRecordingForNote(selectedNote.id);
       await api.deleteNote(selectedNote.id);
+      window.dispatchEvent(
+        new CustomEvent('ledger:workspace-route-replaced', {
+          detail: {
+            from: { kind: 'notes', focusNoteId: deletedNoteId },
+            to: { kind: 'notes', focusContext: 'home' },
+          },
+        })
+      );
       // Deleting the open note returns to Notes Home. Do not select an
       // arbitrary sibling: its hydration can race with the deleted note's
       // in-flight effects and briefly render "Note not found".
@@ -7050,6 +7025,14 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         await api.deleteNote(noteId);
         const deletedOpenNote = selectedNoteIdRef.current === noteId;
         if (deletedOpenNote) {
+          window.dispatchEvent(
+            new CustomEvent('ledger:workspace-route-replaced', {
+              detail: {
+                from: { kind: 'notes', focusNoteId: noteId },
+                to: { kind: 'notes', focusContext: 'home' },
+              },
+            })
+          );
           selectedNoteIdRef.current = null;
           hydrationNoteIdRef.current = null;
           setSelectedNoteId(null);
@@ -7379,15 +7362,19 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [saveCurrentNoteAndRefresh, selectedNoteId]);
 
-  const focusNoteHandlersRef = useRef({ openNote, openNoteById });
-  focusNoteHandlersRef.current = { openNote, openNoteById };
+  const focusNoteHandlersRef = useRef({ openNote, openNoteById, goToNotesHome });
+  focusNoteHandlersRef.current = { openNote, openNoteById, goToNotesHome };
 
   useEffect(() => {
     const focusNoteListener = (
       _event: unknown,
-      payload: { kind?: string; focusNoteId?: string | null }
+      payload: { kind?: string; focusNoteId?: string | null; focusContext?: string | null }
     ) => {
-      if (payload?.kind !== 'notes' || !payload.focusNoteId) return;
+      if (payload?.kind !== 'notes') return;
+      if (!payload.focusNoteId) {
+        void focusNoteHandlersRef.current.goToNotesHome();
+        return;
+      }
       const localNavigation = localNoteNavigationRef.current;
       if (
         localNavigation &&
@@ -8818,6 +8805,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                         )}
                         {isLoadingMeetingMetadata
                           ? 'Loading meeting…'
+                          : meetingBusyAction === 'stop'
+                          ? 'Stopping…'
                           : meetingStatusLabel(meetingMetadata?.transcription_status)}
                       </div>
                       <span className="inline-flex items-center gap-1 text-xs tabular-nums text-[var(--ledger-text-secondary)]">
@@ -8871,9 +8860,10 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               meetingMetadata?.transcription_status ?? ''
                             ) || Boolean(meetingBusyAction)
                           }
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Stop audio capture"
                           title="Stop audio capture and mark the meeting as processing"
+                          aria-busy={meetingBusyAction === 'stop'}
                         >
                           <Square size={11} />
                         </button>

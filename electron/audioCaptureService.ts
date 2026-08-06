@@ -70,6 +70,8 @@ export class MeetingAudioCaptureService {
 
   get isActive() { return Boolean(this.activeSession); }
 
+  storagePath() { return this.sessionStore.storageRoot; }
+
   setRequesterId(requesterId: number) { this.adapter.setRequesterId?.(requesterId); }
 
   onLevel(listener: (event: AudioLevelEvent) => void) {

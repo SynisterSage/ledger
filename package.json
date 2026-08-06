@@ -22,7 +22,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:write-mode": "node --test scripts/tests/write-mode-regressions.mjs",
-    "test:windows-transcription": "node --test scripts/tests/windows-transcription-regressions.mjs"
+    "test:windows-transcription": "node --test scripts/tests/windows-transcription-regressions.mjs",
+    "test:sidebar-preferences": "node --test scripts/tests/sidebar-preferences-phase2.test.mjs"
   },
   "dependencies": {
     "@lexical/code": "^0.44.0",

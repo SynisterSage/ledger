@@ -69,6 +69,8 @@ interface Window {
     }>;
     openSystemSettings: (area: 'microphone' | 'screen-recording') => Promise<boolean>;
     status: () => Promise<unknown>;
+    storagePath: () => Promise<string>;
+    openStoragePath: () => Promise<{ ok: boolean; error?: string }>;
     recoveries: () => Promise<unknown>;
     inspect: (sessionId?: string) => Promise<unknown>;
     recover: (payload: { sessionId: string; noteId: string; workspaceId: string }) => Promise<unknown>;
@@ -105,6 +107,55 @@ interface Window {
       mode: 'auto' | 'high_quality' | 'compatibility';
       platform: string;
     }>;
+    getSidebarAccessibilityState: () => Promise<{
+      prefersReducedTransparency: boolean;
+    }>;
+    getSidebarMaterialState?: () => Promise<{
+      requestedEngine:
+        | 'solid'
+        | 'renderer'
+        | 'native-macos'
+        | 'native-windows-mica'
+        | 'native-windows-mica-alt'
+        | 'native-windows-acrylic';
+      resolvedEngine:
+        | 'solid'
+        | 'renderer'
+        | 'native-macos'
+        | 'native-windows-mica'
+        | 'native-windows-mica-alt'
+        | 'native-windows-acrylic';
+      featureFlagEnabled: boolean;
+      nativeMaterialActive?: boolean;
+      fallbackReason?: string | null;
+      requestedMacVibrancy?: 'under-window' | 'sidebar' | 'hud';
+      resolvedMacVibrancy?: 'under-window' | 'sidebar' | 'hud' | null;
+      visualEffectState?: 'followWindow' | 'active';
+      frostedBackgroundEnabled: boolean;
+      prefersReducedTransparency: boolean;
+      electronVersion?: string;
+      osVersion?: string;
+      prefersHighContrast?: boolean;
+      macOSVersion?: string;
+      windowsVersion?: string;
+      transparencyEffectsAvailable?: boolean;
+      failure?: string;
+    }>;
+    setSidebarMaterialDevelopmentSelection?: (enabled: boolean | 'under-window' | 'sidebar' | 'hud' | 'mica' | 'mica-alt' | 'acrylic') => Promise<{
+      enabled: boolean;
+      engine:
+        | 'solid'
+        | 'renderer'
+        | 'native-macos'
+        | 'native-windows-mica'
+        | 'native-windows-mica-alt'
+        | 'native-windows-acrylic';
+      supported: boolean;
+    }>;
+    setSidebarMaterialDevelopmentVisualEffectState?: (state: 'followWindow' | 'active') => Promise<{
+      supported: boolean;
+    }>;
+    resetSidebarMaterialDiagnostics?: () => Promise<unknown>;
     setRenderingMode: (mode: 'auto' | 'high_quality' | 'compatibility') => Promise<{
       mode: 'auto' | 'high_quality' | 'compatibility';
       requiresRestart: true;
@@ -150,7 +201,7 @@ interface Window {
     applySidebarPreferences: (preferences: {
       position?: 'right' | 'left' | 'top' | 'bottom' | 'floating';
       opacity?: number;
-      blur?: boolean;
+      frostedBackgroundEnabled?: boolean;
       defaultState?: 'expanded' | 'collapsed' | 'remember';
       alwaysOnTop?: boolean;
       shellFullscreen?: boolean;
