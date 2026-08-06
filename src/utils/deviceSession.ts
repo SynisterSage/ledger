@@ -46,6 +46,10 @@ export const getLedgerSessionDeviceName = (): string => {
   if (typeof navigator === 'undefined') return getLedgerSessionAppName();
 
   if (getLedgerSessionPlatform() === 'desktop') {
+    const userAgent = getNavigatorUserAgent().toLowerCase();
+    if (userAgent.includes('mac os')) return 'Ledger Desktop · Mac';
+    if (userAgent.includes('windows')) return 'Ledger Desktop · Windows';
+    if (userAgent.includes('linux')) return 'Ledger Desktop · Linux';
     return 'Ledger Desktop';
   }
 

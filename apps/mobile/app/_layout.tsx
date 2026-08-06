@@ -4,10 +4,11 @@ import { Stack, usePathname, useRouter } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { initializeAuth } from '@/api/auth';
+import { mobileRequest } from '@/api/client';
 import { registerCurrentMobilePushToken, revokeCurrentMobilePushToken } from '@/api/pushNotifications';
 import { getMobileUserSettings, readMobileNotificationPreferences } from '@/api/userSettings';
 import { AppLoadingScreen } from '@/components/AppLoadingScreen';
@@ -101,6 +102,30 @@ export default function RootLayout() {
 
     void bootstrapAppPreferencesState(auth.user.id);
   }, [auth.user?.id]);
+
+  useEffect(() => {
+    if (!auth.user?.id || auth.isLoading) return;
+
+    let cancelled = false;
+    const heartbeat = () => {
+      if (cancelled || (AppState.currentState && AppState.currentState !== 'active')) return;
+      void mobileRequest('/api/account/sessions/heartbeat', { method: 'POST' }).catch(() => {
+        // Session tracking is best effort and must not interrupt app use.
+      });
+    };
+
+    heartbeat();
+    const heartbeatTimer = setInterval(heartbeat, 10 * 60 * 1000);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') heartbeat();
+    });
+
+    return () => {
+      cancelled = true;
+      clearInterval(heartbeatTimer);
+      appStateSubscription.remove();
+    };
+  }, [auth.isLoading, auth.user?.id]);
 
   useEffect(() => {
     let cancelled = false;

@@ -22,7 +22,11 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
-import { defaultSidebarPreferences, type SidebarPosition } from '../src/config/sidebarPreferences';
+import {
+  clampSidebarOpacity,
+  defaultSidebarPreferences,
+  type SidebarPosition,
+} from '../src/config/sidebarPreferences';
 import { desktopTokens } from '../src/theme/desktopTokens';
 import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
 import { LocalTranscriptionService } from './transcriptionService';
@@ -1325,6 +1329,12 @@ const MIN_DOCK_HEIGHT = {
   compact: 480,
   minimized: 480,
 } as const;
+
+// Windows' shaped frameless windows can leave a one-DIP seam when two Ledger
+// windows meet at exactly adjacent bounds. Overlap only the Ledger workspace
+// window; third-party app docking keeps the existing edge-to-edge placement.
+const getLedgerWorkspaceAttachmentOverlap = () => (process.platform === 'win32' ? 1 : 0);
+
 const DASHBOARD_WIDTH = 1200;
 const DASHBOARD_HEIGHT = 760;
 const AUTH_WIDTH = 1060;
@@ -2941,7 +2951,11 @@ function getDockedBoundsForTarget(
       : MIN_DOCK_HEIGHT.expanded;
   const minHeight = Math.min(baseMinHeight, maxHeight);
   const height = Math.max(minHeight, Math.min(targetBounds.height, maxHeight));
-  const x = side === 'left' ? targetBounds.x - width : targetBounds.x + targetBounds.width;
+  const overlap = isWorkspaceDockTarget() ? getLedgerWorkspaceAttachmentOverlap() : 0;
+  const x =
+    side === 'left'
+      ? targetBounds.x - width + overlap
+      : targetBounds.x + targetBounds.width - overlap;
   const y = targetBounds.y;
   return clampDockedRectToWorkArea({ x, y, width, height }, targetDisplay.workArea, options);
 }
@@ -5259,7 +5273,7 @@ function resolveWorkspaceModuleBounds(kind: ModuleWindowKind): Electron.Rectangl
   const defaultHeight = kind === 'dashboard' ? DASHBOARD_HEIGHT : MODULE_DEFAULT_HEIGHT;
   const minWidth = MODULE_MIN_WIDTH;
   const minHeight = MODULE_MIN_HEIGHT;
-  const attachmentGap = 0;
+  const attachmentGap = -getLedgerWorkspaceAttachmentOverlap();
 
   const sidebarBounds = sidebarWin?.getBounds() ?? getDockedBounds(RAIL_SIZE);
   const sidebarAnchorPoint = {
@@ -5491,6 +5505,18 @@ function applySidebarOpacity(_opacity: number) {
   // that only affect the background glass layer, keeping content fully opaque.
   // Renderer receives opacity via sidebar:preferences-updated IPC message.
 }
+
+ipcMain.on('window:preview-sidebar-opacity', (_event, opacity: unknown) => {
+  const nextOpacity = clampSidebarOpacity(Number(opacity));
+  if (!Number.isFinite(nextOpacity) || !sidebarWin || sidebarWin.isDestroyed()) return;
+
+  currentSidebarPreferences = {
+    ...currentSidebarPreferences,
+    opacity: nextOpacity,
+  };
+  sidebarMaterialController.noteOpacityUpdate();
+  sidebarWin.webContents.send('sidebar:opacity-preview', { opacity: nextOpacity });
+});
 
 function applySidebarVisibility(isVisible: boolean, activate = false) {
   if (!sidebarWin || sidebarWin.isDestroyed()) return;

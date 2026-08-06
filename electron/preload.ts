@@ -474,6 +474,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   }) {
     return ipcRenderer.invoke('window:apply-sidebar-preferences', preferences);
   },
+  previewSidebarOpacity(opacity: number) {
+    ipcRenderer.send('window:preview-sidebar-opacity', opacity);
+  },
   dockFloatingWindow() {
     return ipcRenderer.invoke('window:dock-floating-window');
   },

@@ -38,7 +38,6 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import {
   defaultSidebarPreferences,
-  saveSidebarPreferences,
   type SidebarDefaultState,
   type SidebarPosition,
 } from '../../config/sidebarPreferences';
@@ -842,6 +841,12 @@ export const SettingsWindow = () => {
   );
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
+  const commitSidebarOpacity = (value: number) => {
+    void window.desktopWindow?.applySidebarPreferences({ opacity: value }).catch(() => {
+      // No-op outside Electron (browser development mode).
+    });
+  };
+
   const [preferences, setPreferences] = useState<UserPreferences>(defaultPrefs);
   const [renderingMode, setRenderingMode] = useState<RenderingMode>('auto');
   const [renderingPlatform, setRenderingPlatform] = useState<string | null>(null);
@@ -1288,15 +1293,7 @@ export const SettingsWindow = () => {
       return;
     }
 
-    saveSidebarPreferences({
-      ...sidebarPreferences,
-      opacity: sidebarPreferences.opacity,
-    });
-    void window.desktopWindow
-      ?.applySidebarPreferences({ opacity: sidebarPreferences.opacity })
-      .catch(() => {
-        // No-op outside Electron (browser dev mode)
-      });
+    window.desktopWindow?.previewSidebarOpacity(sidebarPreferences.opacity);
   }, [sidebarPreferences.opacity]);
 
   useEffect(() => {
@@ -4992,6 +4989,8 @@ export const SettingsWindow = () => {
                             step="0.01"
                             value={opacity}
                             onChange={(event) => setOpacity(Number(event.target.value))}
+                            onPointerUp={(event) => commitSidebarOpacity(Number(event.currentTarget.value))}
+                            onKeyUp={(event) => commitSidebarOpacity(Number(event.currentTarget.value))}
                             disabled={transparencyOverrideActive}
                             className="ledger-range mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
                             style={getSidebarOpacitySliderStyle(opacity)}

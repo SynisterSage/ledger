@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'ledger-mobile-auth';
+const DEVICE_ID_STORAGE_KEY = 'ledger-mobile-device-id-v1';
 
 const extra = (Constants.expoConfig?.extra ?? {}) as {
   ledgerApiUrl?: string;
@@ -32,6 +33,32 @@ export const supabaseConfigError =
     : null;
 
 const memoryStorage = new Map<string, string>();
+
+let mobileDeviceIdPromise: Promise<string> | null = null;
+
+async function getMobileDeviceId() {
+  if (mobileDeviceIdPromise) return mobileDeviceIdPromise;
+
+  mobileDeviceIdPromise = (async () => {
+    const stored = await authStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    if (stored?.trim()) return stored.trim();
+
+    const generated =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `ledger-mobile-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+    await authStorage.setItem(DEVICE_ID_STORAGE_KEY, generated);
+    return generated;
+  })();
+
+  return mobileDeviceIdPromise;
+}
+
+function getMobileDeviceName() {
+  const configuredName = Constants.deviceName?.trim();
+  if (configuredName) return configuredName;
+  return Platform.OS === 'ios' ? 'iPhone' : 'Android phone';
+}
 
 const authStorage = {
   async getItem(key: string) {
@@ -119,9 +146,17 @@ export async function getMobileAccessToken() {
 export async function mobileRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const baseUrl = getMobileApiBaseUrl();
   const accessToken = await getMobileAccessToken();
+  const deviceId = await getMobileDeviceId();
   const headers = new Headers(init.headers ?? {});
   headers.set('Authorization', `Bearer ${accessToken}`);
   headers.set('Accept', 'application/json');
+  headers.set('X-Ledger-Device-Id', deviceId);
+  headers.set('X-Ledger-Platform', Platform.OS === 'ios' ? 'ios' : 'android');
+  headers.set('X-Ledger-Device-Name', getMobileDeviceName());
+  headers.set('X-Ledger-App-Name', 'Ledger Mobile');
+  if (Constants.expoConfig?.version) {
+    headers.set('X-Ledger-App-Version', Constants.expoConfig.version);
+  }
 
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');

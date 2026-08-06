@@ -214,6 +214,7 @@ interface Window {
       floatingDockThreshold?: number;
       lastState?: 'expanded' | 'collapsed';
     }) => Promise<void>;
+    previewSidebarOpacity: (opacity: number) => void;
     dockFloatingWindow: () => Promise<{
       x: number;
       y: number;

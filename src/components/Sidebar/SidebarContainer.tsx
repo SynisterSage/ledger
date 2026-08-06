@@ -214,8 +214,32 @@ export const SidebarContainer = () => {
   const materialClass = `sidebar-glass-material ${glassAttachmentClass}${
     isAttachedRendererMaterial && effectiveFrostedBackground
       ? ' sidebar-glass-material--blur'
-      : ''
+    : ''
   }`;
+
+  useEffect(() => {
+    const handleOpacityPreview = (
+      _event: unknown,
+      payload: { opacity?: unknown }
+    ) => {
+      const nextOpacity = Number(payload?.opacity);
+      if (transparencyOverrideActive || !Number.isFinite(nextOpacity) || !materialRef.current) return;
+
+      const nextAlpha = Math.max(
+        0,
+        isNativeMacMaterial
+          ? getSidebarNativeMacTintAlpha(nextOpacity)
+          : getSidebarMaterialAlpha(nextOpacity) -
+              (isAttachedRendererMaterial && effectiveFrostedBackground ? 0.05 : 0)
+      );
+      materialRef.current.style.setProperty('--sidebar-material-alpha', String(nextAlpha));
+    };
+
+    window.ipcRenderer?.on('sidebar:opacity-preview', handleOpacityPreview);
+    return () => {
+      window.ipcRenderer?.off('sidebar:opacity-preview', handleOpacityPreview);
+    };
+  }, [effectiveFrostedBackground, isAttachedRendererMaterial, isNativeMacMaterial, transparencyOverrideActive]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || !materialRef.current) return;
