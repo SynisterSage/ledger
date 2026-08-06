@@ -313,6 +313,31 @@ const authMiddleware = async (req, res, next) => {
     }
 
     req.authUser = data.user;
+
+    // Account sessions are application-level device leases. Supabase's JWT can
+    // remain valid after a device is removed, so enforce our revocation state
+    // on requests that identify a Ledger device.
+    const metadata = readSessionMetadataFromRequest(req);
+    if (metadata?.device_id) {
+      try {
+        const sessionResult = await supabase
+          .from('app_sessions')
+          .select('revoked_at')
+          .eq('user_id', data.user.id)
+          .eq('device_id', metadata.device_id)
+          .maybeSingle();
+
+        if (sessionResult.error && !isMissingRelationError(sessionResult.error, 'app_sessions')) {
+          throw sessionResult.error;
+        }
+        if (sessionResult.data?.revoked_at) {
+          return res.status(401).json({ error: 'SESSION_REVOKED' });
+        }
+      } catch (sessionError) {
+        if (!isMissingRelationError(sessionError, 'app_sessions')) throw sessionError;
+      }
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Auth failed' });
@@ -6602,6 +6627,46 @@ app.post('/api/account/sessions/heartbeat', authMiddleware, rateLimit('write'), 
       currentSessionId: metadata.device_id,
       session: mapAccountSession(session, metadata.device_id),
     });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/account/sessions/:sessionId/revoke', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId ?? '').trim();
+    if (!sessionId) return res.status(400).json({ error: 'Session id is required' });
+
+    const metadata = readSessionMetadataFromRequest(req);
+    const existing = await supabase
+      .from('app_sessions')
+      .select('id, device_id, revoked_at')
+      .eq('id', sessionId)
+      .eq('user_id', req.authUser.id)
+      .maybeSingle();
+
+    if (existing.error) {
+      if (isMissingRelationError(existing.error, 'app_sessions')) {
+        return res.status(503).json({ error: 'Session tracking is not available.' });
+      }
+      throw existing.error;
+    }
+    if (!existing.data?.id) return res.status(404).json({ error: 'Session not found' });
+    if (metadata?.device_id && existing.data.device_id === metadata.device_id) {
+      return res.status(400).json({ error: 'The current device cannot be revoked here.' });
+    }
+    if (existing.data.revoked_at) return res.json({ revoked: true, sessionId });
+
+    const revokedAt = new Date().toISOString();
+    const result = await supabase
+      .from('app_sessions')
+      .update({ revoked_at: revokedAt, updated_at: revokedAt })
+      .eq('id', sessionId)
+      .eq('user_id', req.authUser.id)
+      .is('revoked_at', null);
+    if (result.error) throw result.error;
+
+    res.json({ revoked: true, sessionId, revokedAt });
   } catch (error) {
     return respondWithError(res, error);
   }

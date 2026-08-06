@@ -115,7 +115,7 @@ export default function RootLayout() {
     };
 
     heartbeat();
-    const heartbeatTimer = setInterval(heartbeat, 10 * 60 * 1000);
+    const heartbeatTimer = setInterval(heartbeat, 60 * 1000);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') heartbeat();
     });

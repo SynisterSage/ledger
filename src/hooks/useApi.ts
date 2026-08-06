@@ -107,8 +107,13 @@ export const useApi = () => {
     try {
       return await executeRequest(currentToken);
     } catch (error) {
-      const isUnauthorized = error instanceof Error && /invalid token|missing token|401/i.test(error.message);
+      const isUnauthorized = error instanceof Error && /invalid token|missing token|session_revoked|401/i.test(error.message);
       if (!isUnauthorized || !currentToken) {
+        throw error;
+      }
+
+      if (/session_revoked/i.test(error.message)) {
+        await authService.signOut();
         throw error;
       }
 
@@ -168,6 +173,12 @@ export const useApi = () => {
       // Sessions
       getAccountSessions: () =>
         request('/api/account/sessions', {
+          skipWorkspaceHeader: true,
+          headers: buildLedgerSessionHeaders(),
+        }),
+      revokeAccountSession: (sessionId: string) =>
+        request(`/api/account/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+          method: 'POST',
           skipWorkspaceHeader: true,
           headers: buildLedgerSessionHeaders(),
         }),

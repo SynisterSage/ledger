@@ -30,6 +30,7 @@ import {
   Inbox,
   MoreHorizontal,
   Mic,
+  Smartphone,
 } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
@@ -213,6 +214,38 @@ type AccountSessionRow = {
 type AccountSessionsResponse = {
   currentSessionId: string | null;
   sessions: AccountSessionRow[];
+};
+
+const getSessionIcon = (session: Pick<AccountSessionRow, 'device_name' | 'platform'>) => {
+  const deviceName = session.device_name?.toLowerCase() ?? '';
+  if (deviceName.includes('windows')) return '/windows.svg';
+  if (deviceName.includes('mac') || session.platform === 'ios') return '/apple.svg';
+  return null;
+};
+
+const SessionDeviceIcon = ({
+  session,
+  current = false,
+}: {
+  session: Pick<AccountSessionRow, 'device_name' | 'platform'>;
+  current?: boolean;
+}) => {
+  const icon = getSessionIcon(session);
+  return (
+    <span
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+        current ? 'bg-[var(--ledger-surface-hover)]' : 'bg-[var(--ledger-surface-muted)]'
+      } text-[var(--ledger-text-secondary)]`}
+    >
+      {icon ? (
+        <img src={icon} alt="" className="h-5 w-5 object-contain brightness-0 dark:invert" />
+      ) : session.platform === 'android' ? (
+        <Smartphone size={16} />
+      ) : (
+        <Monitor size={16} />
+      )}
+    </span>
+  );
 };
 
 type InviteModalState = {
@@ -1033,6 +1066,7 @@ export const SettingsWindow = () => {
   const [accountSessions, setAccountSessions] = useState<AccountSessionRow[]>([]);
   const [isLoadingAccountSessions, setIsLoadingAccountSessions] = useState(false);
   const [accountSessionsError, setAccountSessionsError] = useState<string | null>(null);
+  const [accountSessionActionId, setAccountSessionActionId] = useState<string | null>(null);
   const inviteEmailRef = useRef<HTMLInputElement | null>(null);
   const sessionHeartbeatTimerRef = useRef<number | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
@@ -1325,6 +1359,26 @@ export const SettingsWindow = () => {
     () => accountSessions.filter((session) => !session.is_current),
     [accountSessions]
   );
+  const handleRevokeAccountSession = async (session: AccountSessionRow) => {
+    const deviceLabel =
+      session.device_name?.trim() || formatLedgerSessionPlatformLabel(session.platform);
+    if (!window.confirm(`Sign out ${deviceLabel}? That device will be signed out shortly.`)) {
+      return;
+    }
+
+    setAccountSessionActionId(session.id);
+    setAccountSessionsError(null);
+    try {
+      await api.revokeAccountSession(session.id);
+      setAccountSessions((current) => current.filter((item) => item.id !== session.id));
+    } catch (err) {
+      setAccountSessionsError(
+        err instanceof Error ? err.message : 'Could not sign out that device.'
+      );
+    } finally {
+      setAccountSessionActionId(null);
+    }
+  };
   const currentSessionDeviceLabel =
     currentAccountSession?.device_name?.trim() || getLedgerSessionDeviceName();
   const currentSessionPlatformLabel = formatLedgerSessionPlatformLabel(
@@ -2814,23 +2868,30 @@ export const SettingsWindow = () => {
                     ) : null}
                   </div>
 
-                  <div className="mt-8 space-y-10">
+                  <div className="mt-6 space-y-7">
                     <section
                       className={settingsTheme.sectionShell}
                       aria-labelledby="settings-current-session"
                     >
-                      <h3 id="settings-current-session" className={settingsTheme.sectionTitle}>
-                        Current device
-                      </h3>
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 id="settings-current-session" className={settingsTheme.sectionTitle}>
+                          Current device
+                        </h3>
+                        <span className={settingsTheme.rowMuted}>Signed in here</span>
+                      </div>
                       <div className={settingsTheme.sectionRows}>
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-accent)]">
-                            <Monitor size={15} />
-                          </span>
+                        <div className="flex min-h-16 items-center gap-3">
+                          <SessionDeviceIcon
+                            session={{
+                              device_name: currentSessionDeviceLabel,
+                              platform: currentAccountSession?.platform ?? getLedgerSessionPlatform(),
+                            }}
+                            current
+                          />
                           <div className="min-w-0 flex-1">
                             <p className={settingsTheme.label}>{currentSessionDeviceLabel}</p>
-                            <p className={settingsTheme.help}>
-                              This device · {currentSessionPlatformLabel} ·{' '}
+                            <p className={settingsTheme.rowMuted}>
+                              {currentSessionPlatformLabel} ·{' '}
                               {formatLedgerSessionRelativeTime(currentAccountSession?.last_seen_at)}
                             </p>
                           </div>
@@ -2860,7 +2921,7 @@ export const SettingsWindow = () => {
                             Signed-in devices besides this one.
                           </p>
                         </div>
-                        <span className={settingsTheme.pill}>
+                        <span className={settingsTheme.pill + ' shrink-0'}>
                           {otherAccountSessions.length} device
                           {otherAccountSessions.length === 1 ? '' : 's'}
                         </span>
@@ -2879,29 +2940,27 @@ export const SettingsWindow = () => {
                           otherAccountSessions.map((session) => (
                             <div
                               key={session.id}
-                              className="grid gap-4 px-4 py-3 md:grid-cols-[220px_minmax(0,1fr)_auto]"
+                              className="flex min-h-16 items-center gap-3"
                             >
-                              <div className={settingsTheme.rowLabel}>
-                                {session.device_name?.trim() ||
-                                  formatLedgerSessionPlatformLabel(session.platform)}
-                              </div>
-                              <div className="space-y-0.5">
-                                <div className={settingsTheme.rowValue}>
-                                  {formatLedgerSessionPlatformLabel(session.platform)}
+                              <SessionDeviceIcon session={session} />
+                              <div className="min-w-0 flex-1">
+                                <div className={settingsTheme.rowLabel}>
+                                  {session.device_name?.trim() ||
+                                    formatLedgerSessionPlatformLabel(session.platform)}
                                 </div>
                                 <div className={settingsTheme.rowMuted}>
+                                  {formatLedgerSessionPlatformLabel(session.platform)} ·{' '}
                                   {formatLedgerSessionRelativeTime(session.last_seen_at)}
                                 </div>
                               </div>
-                              <div className="md:justify-self-end">
-                                <button
-                                  type="button"
-                                  disabled
-                                  className={settingsTheme.disabledButton}
-                                >
-                                  Coming soon
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                disabled={accountSessionActionId === session.id}
+                                onClick={() => void handleRevokeAccountSession(session)}
+                                className={settingsTheme.dangerButton + ' shrink-0'}
+                              >
+                                {accountSessionActionId === session.id ? 'Signing out…' : 'Sign out'}
+                              </button>
                             </div>
                           ))
                         )}

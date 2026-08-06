@@ -8247,7 +8247,7 @@ function AppShell() {
     const heartbeatTimer = window.setInterval(() => {
       if (document.hidden) return;
       ping();
-    }, 10 * 60 * 1000);
+    }, 60 * 1000);
 
     const handleVisibilityChange = () => {
       if (!document.hidden) {

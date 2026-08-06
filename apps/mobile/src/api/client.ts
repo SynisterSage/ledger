@@ -181,6 +181,9 @@ export async function mobileRequest<T>(path: string, init: RequestInit = {}): Pr
       payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
         ? String((payload as { error: string }).error)
         : `Request failed with status ${response.status}`;
+    if (response.status === 401 && message === 'SESSION_REVOKED') {
+      await getSupabaseClient().auth.signOut({ scope: 'local' });
+    }
     throw new Error(message);
   }
 
