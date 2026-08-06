@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $commit = 'a630b35c6fc02c8879f751ec3f39a61327f01dc7'
 $repo = 'https://github.com/ggml-org/whisper.cpp.git'
 $ledgerRoot = Split-Path $PSScriptRoot -Parent
-$buildDir = Join-Path $env:TEMP 'ledger-whisper-windows-build'
+$buildDir = Join-Path $ledgerRoot '.build\whisper-windows'
 $output = Join-Path $ledgerRoot 'native\whisper-cli.exe'
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -31,11 +31,13 @@ if (-not (Test-Path (Join-Path $WhisperSource '.git'))) {
 git -C $WhisperSource fetch --tags origin
 git -C $WhisperSource checkout --force $commit
 
+Write-Host "Configuring pinned Whisper runtime in $buildDir..."
 & $cmakePath -S $WhisperSource -B $buildDir `
   -DWHISPER_BUILD_TESTS=OFF `
   -DWHISPER_BUILD_EXAMPLES=ON `
   -DGGML_NATIVE=OFF `
   -DBUILD_SHARED_LIBS=OFF
+Write-Host 'Building whisper-cli.exe (the first build may take several minutes)...'
 & $cmakePath --build $buildDir --config Release --target whisper-cli --parallel
 
 $built = Get-ChildItem -Path $buildDir -Recurse -Filter 'whisper-cli.exe' -File | Select-Object -First 1
