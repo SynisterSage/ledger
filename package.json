@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "npm run dev:desktop",
     "dev:web": "node scripts/dev-web.mjs",
+    "build:web": "tsc -p tsconfig.json --noEmit && vite build --mode web",
     "dev:electron": "node scripts/dev-electron.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:extension": "npm --prefix apps/browser-extension run dev",
@@ -40,6 +41,9 @@
     ,"test:web-reliability-phase10": "node --experimental-strip-types --test scripts/tests/web-reliability-phase10.test.mjs"
     ,"test:web-dev-launch-phase10-5": "node --experimental-strip-types --test scripts/tests/web-dev-launch-phase10-5.test.mjs"
     ,"test:web-qa-phase11": "node --experimental-strip-types --test scripts/tests/web-qa-phase11.test.mjs"
+    ,"test:web-production-phase13": "node --experimental-strip-types --test scripts/tests/web-production-phase13.test.mjs"
+    ,"test:web-invite-phase15": "node --experimental-strip-types --test scripts/tests/web-invite-phase15.test.mjs"
+    ,"test:web-deployment-phase16": "node --test scripts/tests/web-deployment-phase16.test.mjs"
   },
   "dependencies": {
     "@lexical/code": "^0.44.0",

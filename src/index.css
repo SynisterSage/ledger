@@ -34,6 +34,7 @@ body {
   --ledger-text-muted: #999999;
   --ledger-border-subtle: #e5e5e5;
   --ledger-border-strong: #d0d0d0;
+  --ledger-focus-ring: #8f8f8f;
   --ledger-accent: #ff5f40;
   --ledger-accent-hover: #e85430;
   --ledger-accent-soft: #ffe8dc;
@@ -99,6 +100,7 @@ body {
     --ledger-text-muted: #808080;
     --ledger-border-subtle: #333333;
     --ledger-border-strong: #404040;
+    --ledger-focus-ring: #8f8f8f;
     --ledger-accent: #ff8c5f;
     --ledger-accent-hover: #ff7a4d;
     --ledger-accent-soft: #ffab8f;
@@ -435,7 +437,7 @@ a:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--ledger-accent);
+  outline: 1px solid var(--ledger-focus-ring);
   outline-offset: 2px;
 }
 

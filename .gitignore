@@ -33,6 +33,7 @@ backend/.env.local
 # Build outputs
 out/
 dist-electron/
+dist-web/
 release/
 
 # OS

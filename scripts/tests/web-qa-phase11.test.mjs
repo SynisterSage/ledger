@@ -18,7 +18,7 @@ test('desktop and browser launch targets remain explicitly separated', async () 
   const vite = await fs.readFile(new URL('../../vite.config.ts', import.meta.url), 'utf8');
   const web = await fs.readFile(new URL('../../scripts/dev-web.mjs', import.meta.url), 'utf8');
   const desktop = await fs.readFile(new URL('../../scripts/dev-desktop.mjs', import.meta.url), 'utf8');
-  assert.match(vite, /isWebDevelopment \? \[\] : \[electron\(/);
+  assert.match(vite, /isWebDevelopment \|\| isBrowserBuild \? \[\] : \[electron\(/);
   assert.match(web, /LEDGER_DEV_TARGET: 'web'/);
   assert.match(desktop, /LEDGER_DEV_TARGET: 'desktop'/);
 });

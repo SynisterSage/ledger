@@ -105,6 +105,7 @@ import { UserAvatar } from './components/Common/UserAvatar';
 import authService from './services/auth';
 import { userProfileService } from './services/userProfile';
 import type { UserProfile } from './types/userProfile';
+import { clearBrowserInviteContinuation, readBrowserInviteContinuation } from './web/browserInviteContinuation';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep = 'welcome' | 'profile' | 'workspace-type' | 'workspace' | 'team-invite' | 'position';
@@ -388,6 +389,8 @@ const getInviteTokenFromLocation = () => {
   }
   return new URLSearchParams(window.location.search).get('token')?.trim() || null;
 };
+
+const getInitialInviteToken = () => getInviteTokenFromLocation() || readBrowserInviteContinuation();
 
 const getInviteTokenFromInput = (value: string) => {
   const raw = value.trim();
@@ -8214,10 +8217,10 @@ export function AppShell({
   const [postAuthStage, setPostAuthStage] = useState<PostAuthStage>('idle');
   const [isSavingOnboarding, setIsSavingOnboarding] = useState(false);
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() =>
-    getInviteTokenFromLocation()
+    getInitialInviteToken()
   );
   const [isInviteOnboarding, setIsInviteOnboarding] = useState(() =>
-    Boolean(getInviteTokenFromLocation())
+    Boolean(getInitialInviteToken())
   );
   const [inviteFlowStatus, setInviteFlowStatus] = useState<
     'idle' | 'checking' | 'awaiting-auth' | 'processing' | 'accepted' | 'already-member' | 'error'
@@ -8241,6 +8244,7 @@ export function AppShell({
     useState<SidebarPosition>('floating');
   const [onboardingError, setOnboardingError] = useState<string | null>(null);
   const onboardingResetUserRef = useRef<string | null>(null);
+  const completedInviteOnboardingRef = useRef<string | null>(null);
   const handledInviteTokenRef = useRef<string | null>(null);
   const postAuthBootstrapUserRef = useRef<string | null>(null);
   const ensuredVisibleOnBootRef = useRef(false);
@@ -8865,21 +8869,23 @@ export function AppShell({
         setInviteWorkspaceName(payload.invitation?.workspace_name ?? 'Workspace');
 
         if (payload.status === 'accepted') {
-          if (!user) {
+          if (!user && !browserMode) {
             setInviteFlowStatus('idle');
             window.history.replaceState({}, '', '/');
+            clearBrowserInviteContinuation();
             setPendingInviteToken(null);
             return;
           }
 
-          setInviteFlowStatus('accepted');
-          setInviteFlowNotice('This invite has already been accepted. Switching workspaces.');
+          setInviteFlowStatus(user ? 'accepted' : 'awaiting-auth');
+          if (user) setInviteFlowNotice('This invite has already been accepted. Switching workspaces.');
           return;
         }
 
         if (payload.status === 'expired') {
           setInviteFlowStatus('error');
           setInviteFlowError('Invite unavailable');
+          clearBrowserInviteContinuation();
           return;
         }
 
@@ -8888,6 +8894,7 @@ export function AppShell({
         if (cancelled) return;
         setInviteFlowStatus('error');
         setInviteFlowError(error instanceof Error ? error.message : 'Invalid invitation.');
+        clearBrowserInviteContinuation();
       }
     };
 
@@ -8914,6 +8921,7 @@ export function AppShell({
         // Leave the accepted state visible; the workspace can still be selected manually.
       } finally {
         if (cancelled) return;
+        clearBrowserInviteContinuation();
         window.history.replaceState({}, '', browserMode ? `/app/w/${inviteWorkspaceId}/home` : '/');
         if (browserMode) window.dispatchEvent(new PopStateEvent('popstate'));
         setPendingInviteToken(null);
@@ -8992,12 +9000,15 @@ export function AppShell({
         if (cancelled) return;
         setInviteFlowStatus('error');
         setInviteFlowError(error instanceof Error ? error.message : 'Could not accept invitation.');
+        clearBrowserInviteContinuation();
       } finally {
         if (cancelled) return;
 
-        window.history.replaceState({}, '', browserMode && acceptedWorkspaceId ? `/app/w/${acceptedWorkspaceId}/home` : '/');
-        if (browserMode) window.dispatchEvent(new PopStateEvent('popstate'));
-        setPendingInviteToken(null);
+        if (acceptedWorkspaceId || !browserMode) {
+          window.history.replaceState({}, '', browserMode ? `/app/w/${acceptedWorkspaceId}/home` : '/');
+          if (browserMode) window.dispatchEvent(new PopStateEvent('popstate'));
+          setPendingInviteToken(null);
+        }
       }
     };
 
@@ -9059,10 +9070,31 @@ export function AppShell({
   }, [isInviteOnboarding, postAuthStage, profile?.displayName, user?.email, user?.id, user?.user_metadata?.full_name]);
 
   useEffect(() => {
+    if (!browserMode || !isInviteOnboarding || !inviteWorkspaceId || !user?.id) return;
+    if (postAuthStage !== 'onboarding' || onboardingHasProfileStep) return;
+    if (completedInviteOnboardingRef.current === user.id) return;
+
+    completedInviteOnboardingRef.current = user.id;
+    let cancelled = false;
+    void api.completeOnboarding().then(async () => {
+      if (cancelled) return;
+      await refreshWorkspaces();
+      if (!cancelled) setPostAuthStage('ready');
+    }).catch(() => {
+      completedInviteOnboardingRef.current = null;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, browserMode, inviteWorkspaceId, isInviteOnboarding, onboardingHasProfileStep, postAuthStage, refreshWorkspaces, user?.id]);
+
+  useEffect(() => {
     const userId = user?.id ?? null;
 
     if (!userId) {
       postAuthBootstrapUserRef.current = null;
+      completedInviteOnboardingRef.current = null;
       if (authTransitionTimerRef.current !== null) {
         window.clearTimeout(authTransitionTimerRef.current);
         authTransitionTimerRef.current = null;
@@ -9372,7 +9404,13 @@ export function AppShell({
         await authService.updateProfile(normalizedName);
         await refreshProfile();
         await api.completeProfileSetup();
-        setOnboardingStep('workspace-type');
+        if (browserMode && isInviteOnboarding && inviteWorkspaceId) {
+          await api.completeOnboarding();
+          await refreshWorkspaces();
+          setPostAuthStage('ready');
+        } else {
+          setOnboardingStep('workspace-type');
+        }
       } catch (error) {
         setOnboardingError(error instanceof Error ? error.message : 'Could not save your profile.');
       } finally {

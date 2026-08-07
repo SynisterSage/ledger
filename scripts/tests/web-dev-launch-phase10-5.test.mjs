@@ -8,7 +8,7 @@ test('web development target excludes Electron while desktop target keeps it', a
   const desktop = await fs.readFile(new URL('../../scripts/dev-desktop.mjs', import.meta.url), 'utf8');
 
   assert.match(vite, /LEDGER_DEV_TARGET === 'web'/);
-  assert.match(vite, /isWebDevelopment \? \[\] : \[electron\(/);
+  assert.match(vite, /isWebDevelopment \|\| isBrowserBuild \? \[\] : \[electron\(/);
   assert.match(web, /LEDGER_DEV_TARGET: 'web'/);
   assert.match(desktop, /LEDGER_DEV_TARGET: 'desktop'/);
 });

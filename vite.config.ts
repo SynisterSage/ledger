@@ -6,16 +6,19 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const isWebDevelopment = mode !== 'production' && process.env.LEDGER_DEV_TARGET === 'web';
+  const isBrowserBuild = mode === 'web' || process.env.LEDGER_BUILD_TARGET === 'web';
 
   return ({
   // Electron opens the packaged renderer from file://. Relative public asset
-  // URLs keep icons and other files inside the bundled dist directory.
-  base: mode === 'production' ? './' : '/',
+  // URLs keep icons and other files inside the bundled dist directory. The
+  // browser build is a separate target and must use normal absolute web paths.
+  base: isBrowserBuild ? '/' : mode === 'production' ? './' : '/',
   build: {
     copyPublicDir: true,
+    outDir: isBrowserBuild ? 'dist-web' : 'dist',
   },
   plugins: [
-    ...(mode === 'production'
+    ...(mode === 'production' && !isBrowserBuild
       ? [
           {
             name: 'ledger-relative-public-assets',
@@ -32,7 +35,7 @@ export default defineConfig(({ mode }) => {
         ]
       : []),
     react(),
-    ...(isWebDevelopment ? [] : [electron({
+    ...(isWebDevelopment || isBrowserBuild ? [] : [electron({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
