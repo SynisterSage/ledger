@@ -2,6 +2,8 @@
   "buildCommand": "npm run build:web",
   "outputDirectory": "dist-web",
   "rewrites": [
+    { "source": "/app/runtime-config.js", "destination": "/runtime-config.js" },
+    { "source": "/app/assets/:path*", "destination": "/assets/:path*" },
     { "source": "/app", "destination": "/index.html" },
     { "source": "/app/:path*", "destination": "/index.html" }
   ],

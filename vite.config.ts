@@ -12,7 +12,10 @@ export default defineConfig(({ mode }) => {
   // Electron opens the packaged renderer from file://. Relative public asset
   // URLs keep icons and other files inside the bundled dist directory. The
   // browser build is a separate target and must use normal absolute web paths.
-  base: isBrowserBuild ? '/' : mode === 'production' ? './' : '/',
+  // Ledger Web is served beneath /app in production. Vite dev also serves
+  // the browser shell at /app, so one base path keeps preview and production
+  // asset URLs identical. Electron retains its relative file:// asset base.
+  base: isBrowserBuild ? '/app/' : mode === 'production' ? './' : '/',
   build: {
     copyPublicDir: true,
     outDir: isBrowserBuild ? 'dist-web' : 'dist',
