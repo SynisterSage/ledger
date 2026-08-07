@@ -3,6 +3,18 @@
   "rewrites": [
     { "source": "/app/runtime-config.js", "destination": "/runtime-config.js" },
     { "source": "/app/assets/:path*", "destination": "/assets/:path*" },
+    { "source": "/app/logo-color.svg", "destination": "/logo-color.svg" },
+    { "source": "/app/logo.svg", "destination": "/logo.svg" },
+    { "source": "/app/logo@2x.svg", "destination": "/logo@2x.svg" },
+    { "source": "/app/vite.svg", "destination": "/vite.svg" },
+    { "source": "/app/apple.svg", "destination": "/apple.svg" },
+    { "source": "/app/drive.svg", "destination": "/drive.svg" },
+    { "source": "/app/github-mark.svg", "destination": "/github-mark.svg" },
+    { "source": "/app/slack.svg", "destination": "/slack.svg" },
+    { "source": "/app/slack-outline.svg", "destination": "/slack-outline.svg" },
+    { "source": "/app/loginfourm_dark_4x.webp", "destination": "/loginfourm_dark_4x.webp" },
+    { "source": "/app/loginfourm_light_4x.webp", "destination": "/loginfourm_light_4x.webp" },
+    { "source": "/app/mcp-icons/:path*", "destination": "/mcp-icons/:path*" },
     { "source": "/app", "destination": "/index.html" },
     { "source": "/app/:path*", "destination": "/index.html" }
   ],
