@@ -4,6 +4,7 @@ import { test } from 'node:test';
 const { parseWebLocation } = await import('../../src/web/webRouteState.ts');
 
 test('web shell parses app, workspace-root, home, dashboard, and today locations', () => {
+  assert.deepEqual(parseWebLocation({ pathname: '/', search: '' }), { kind: 'app-root' });
   assert.deepEqual(parseWebLocation({ pathname: '/app', search: '' }), { kind: 'app-root' });
   assert.deepEqual(parseWebLocation({ pathname: '/app/w/workspace-1', search: '' }), {
     kind: 'workspace-root',

@@ -21,7 +21,10 @@ const safeDecode = (value: string) => {
 
 export const parseWebLocation = (location: Pick<Location, 'pathname' | 'search'>, historyState?: unknown): ParsedWebLocation => {
   const pathname = location.pathname.replace(/\/$/, '') || '/';
-  if (pathname === '/app' || pathname === '/login') return { kind: 'app-root' };
+  // The standalone browser deployment can be opened at its root hostname
+  // before the public /app rewrite is connected. Treat it as the product
+  // entry instead of rendering the route fallback.
+  if (pathname === '/' || pathname === '/app' || pathname === '/login') return { kind: 'app-root' };
   const personalSettings = pathname.match(/^\/app\/settings\/([^/]+)$/);
   if (personalSettings && ['account', 'sessions', 'accessibility', 'shortcuts', 'browser-extension'].includes(personalSettings[1])) {
     return { kind: 'app-settings', section: personalSettings[1] as 'account' | 'sessions' | 'accessibility' | 'shortcuts' | 'browser-extension' };
