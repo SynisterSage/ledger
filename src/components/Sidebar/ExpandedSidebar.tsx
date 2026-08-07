@@ -42,7 +42,7 @@ import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
-import { usePlatform } from '../../platform';
+import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
 
 type FocusItem = {
   id: string;
@@ -348,6 +348,29 @@ export const ExpandedSidebar = ({
   const { openSearch } = useSearch();
   const api = useApi();
   const platform = usePlatform();
+  const openSidebarModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus & { kind?: string } = {}) => {
+    const { kind: _legacyKind, ...legacyFocus } = focus;
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, kind, legacyFocus);
+      return;
+    }
+    void window.desktopWindow?.openModule(kind, focus as any);
+  };
+  const toggleSidebarModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus & { kind?: string } = {}) => {
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
+      return;
+    }
+    void window.desktopWindow?.toggleModule(kind, focus as any);
+  };
+  const handleLogoClick = () => {
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, 'new-tab');
+      return;
+    }
+    onCollapseRequest?.();
+    collapseToRail();
+  };
   const openQuickCapture = (action: 'note' | 'task' | 'event' | 'reminder' | 'follow-up', projectId?: string, date?: string, entityId?: string) => {
     if (!activeWorkspaceId) return;
     platform.navigation.openOverlay({
@@ -2317,6 +2340,10 @@ export const ExpandedSidebar = ({
   const horizontalTodaySummary =
     todayTotalCount > 0 ? `${completedToday.length}/${todayTotalCount} complete` : 'Nothing yet';
   const openSettingsSection = (focusContext: 'workspace' | 'integrations' | 'shortcuts') => {
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, 'settings', { focusContext });
+      return;
+    }
     void window.desktopWindow?.openModule('settings', {
       kind: 'settings',
       focusContext,
@@ -2332,7 +2359,7 @@ export const ExpandedSidebar = ({
       title: 'Try project roadmap',
       icon: FolderKanban,
       action: () =>
-        window.desktopWindow?.openModule('projects', {
+        openSidebarModule('projects', {
           kind: 'projects',
           focusSection: 'timeline:all',
         }),
@@ -2341,7 +2368,7 @@ export const ExpandedSidebar = ({
       title: 'Invite a member',
       icon: UserPlus,
       action: () =>
-        window.desktopWindow?.openModule('teams', {
+        openSidebarModule('teams', {
           kind: 'teams',
           focusContext: 'try:invite-member',
         }),
@@ -2350,7 +2377,7 @@ export const ExpandedSidebar = ({
       title: 'Add a milestone',
       icon: Milestone,
       action: () =>
-        window.desktopWindow?.openModule('projects', {
+        openSidebarModule('projects', {
           kind: 'projects',
           focusSection: 'timeline:all',
           focusContext: 'try:add-milestone',
@@ -2360,7 +2387,7 @@ export const ExpandedSidebar = ({
       title: 'Review unfinished',
       icon: CheckSquare2,
       action: () =>
-        window.desktopWindow?.openModule('dashboard', {
+        openSidebarModule('dashboard', {
           kind: 'dashboard',
           focusSection: 'today',
         }),
@@ -2379,7 +2406,7 @@ export const ExpandedSidebar = ({
       title: 'Link a note to a project',
       icon: Link2,
       action: () =>
-        window.desktopWindow?.openModule('projects', {
+        openSidebarModule('projects', {
           kind: 'projects',
           focusSection: 'timeline:all',
         }),
@@ -2398,7 +2425,7 @@ export const ExpandedSidebar = ({
       title: 'Try a note template',
       icon: FileText,
       action: () =>
-        window.desktopWindow?.openModule('notes', {
+        openSidebarModule('notes', {
           kind: 'notes',
           focusContext: 'try:template',
         }),
@@ -2407,7 +2434,7 @@ export const ExpandedSidebar = ({
       title: 'Review Intake',
       icon: Funnel,
       action: () =>
-        window.desktopWindow?.openModule('inbox', {
+        openSidebarModule('inbox', {
           kind: 'inbox',
           focusSection: 'unprocessed',
         }),
@@ -2416,7 +2443,7 @@ export const ExpandedSidebar = ({
       title: 'Open Circle',
       icon: CircleUserRound,
       action: () =>
-        window.desktopWindow?.openModule('circle', {
+        openSidebarModule('circle', {
           kind: 'circle',
           focusContext: 'overview',
         }),
@@ -2425,7 +2452,7 @@ export const ExpandedSidebar = ({
       title: 'Create a team meeting note',
       icon: Users,
       action: () =>
-        window.desktopWindow?.openModule('notes', {
+        openSidebarModule('notes', {
           kind: 'notes',
           focusContext: 'try:team-meeting-template',
         }),
@@ -2492,10 +2519,7 @@ export const ExpandedSidebar = ({
         >
           <div className="flex shrink-0 items-center gap-1.5">
             <HoldToQuitLogo
-              onClick={() => {
-                onCollapseRequest?.();
-                collapseToRail();
-              }}
+              onClick={handleLogoClick}
               className="flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-[var(--ledger-surface-muted)]"
               imageClassName="h-7 w-7 opacity-100"
               title="Ledger"
@@ -2522,36 +2546,36 @@ export const ExpandedSidebar = ({
               {
                 label: 'Notifications',
                 icon: Bell,
-                action: () => window.desktopWindow?.openModule('notifications'),
+                action: () => openSidebarModule('notifications'),
               },
               {
                 label: 'Overview',
                 icon: BarChart3,
-                action: () => window.desktopWindow?.toggleModule('dashboard'),
+                action: () => toggleSidebarModule('dashboard'),
               },
               ...(!isPersonalWorkspace
                 ? [
                     {
                       label: 'Circle',
                       icon: CircleUserRound,
-                      action: () => window.desktopWindow?.toggleModule('circle'),
+                      action: () => toggleSidebarModule('circle'),
                     },
                   ]
                 : []),
               {
                 label: 'Projects',
                 icon: Folder,
-                action: () => window.desktopWindow?.toggleModule('projects'),
+                action: () => toggleSidebarModule('projects'),
               },
               {
                 label: 'Notes',
                 icon: StickyNote,
-                action: () => window.desktopWindow?.toggleModule('notes'),
+                action: () => toggleSidebarModule('notes'),
               },
               {
                 label: 'Calendar',
                 icon: CalendarDays,
-                action: () => window.desktopWindow?.openModule('calendar'),
+                action: () => openSidebarModule('calendar'),
               },
             ].map((item) => (
               <button
@@ -2632,7 +2656,7 @@ export const ExpandedSidebar = ({
 
           <button
             type="button"
-            onClick={() => window.desktopWindow?.openModule('calendar')}
+            onClick={() => openSidebarModule('calendar')}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
             <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Upcoming</span>
@@ -2645,7 +2669,7 @@ export const ExpandedSidebar = ({
 
           <button
             type="button"
-            onClick={() => window.desktopWindow?.toggleModule('projects')}
+            onClick={() => toggleSidebarModule('projects')}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
             <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Projects</span>
@@ -2657,7 +2681,7 @@ export const ExpandedSidebar = ({
           <div className="ml-auto">
             <button
               type="button"
-              onClick={() => window.desktopWindow?.toggleModule('dashboard')}
+            onClick={() => toggleSidebarModule('dashboard')}
               className="inline-flex items-center rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3.5 py-1.5 text-[13px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]"
             >
               Open Overview
@@ -2779,6 +2803,7 @@ export const ExpandedSidebar = ({
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5 bg-transparent text-left">
             <HoldToQuitLogo
+              onClick={platform.kind === 'web' ? handleLogoClick : undefined}
               imageClassName="h-7 w-7 shrink-0"
               title="Ledger"
             />
@@ -2804,7 +2829,7 @@ export const ExpandedSidebar = ({
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <button
-              onClick={() => window.desktopWindow?.openModule('notifications')}
+              onClick={() => openSidebarModule('notifications')}
               onMouseDown={(e) => e.stopPropagation()}
               className="relative inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Notifications"
@@ -2840,22 +2865,22 @@ export const ExpandedSidebar = ({
               {
                 label: 'Overview',
                 icon: BarChart3,
-                action: () => window.desktopWindow?.toggleModule('dashboard'),
+                action: () => toggleSidebarModule('dashboard'),
               },
               {
                 label: 'Projects',
                 icon: Folder,
-                action: () => window.desktopWindow?.toggleModule('projects'),
+                action: () => toggleSidebarModule('projects'),
               },
               {
                 label: 'Notes',
                 icon: StickyNote,
-                action: () => window.desktopWindow?.toggleModule('notes'),
+                action: () => toggleSidebarModule('notes'),
               },
               {
                 label: 'Calendar',
                 icon: CalendarDays,
-                action: () => window.desktopWindow?.openModule('calendar'),
+                action: () => openSidebarModule('calendar'),
               },
             ].map((item) => (
               <button
@@ -2896,7 +2921,7 @@ export const ExpandedSidebar = ({
             {!isPersonalWorkspace && (
               <button
                 type="button"
-                onClick={() => window.desktopWindow?.toggleModule('teams')}
+                onClick={() => toggleSidebarModule('teams')}
                 className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               >
                 <Users size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
@@ -2948,7 +2973,7 @@ export const ExpandedSidebar = ({
                           key={task.id}
                           type="button"
                           onClick={() =>
-                            void window.desktopWindow?.toggleModule('dashboard', {
+                            toggleSidebarModule('dashboard', {
                               focusTaskId: task.id,
                             })
                           }
@@ -2974,7 +2999,7 @@ export const ExpandedSidebar = ({
                       {workspaceTaskCount > visibleWorkspaceTasks.length && (
                         <button
                           type="button"
-                          onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                            onClick={() => toggleSidebarModule('dashboard')}
                           className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                         >
                           View all tasks
@@ -3105,14 +3130,14 @@ export const ExpandedSidebar = ({
                                 });
                               }}
                               onClick={() =>
-                                void window.desktopWindow?.toggleModule('dashboard', {
+                                toggleSidebarModule('dashboard', {
                                   focusTaskId: item.id,
                                 })
                               }
                               onKeyDown={(event) => {
                                 if (event.key !== 'Enter' && event.key !== ' ') return;
                                 event.preventDefault();
-                                void window.desktopWindow?.toggleModule('dashboard', {
+                                toggleSidebarModule('dashboard', {
                                   focusTaskId: item.id,
                                 });
                               }}
@@ -3155,7 +3180,7 @@ export const ExpandedSidebar = ({
                           {todayItems.length > visibleTodayItems.length && (
                             <button
                               type="button"
-                              onClick={() => void window.desktopWindow?.toggleModule('dashboard')}
+                              onClick={() => toggleSidebarModule('dashboard')}
                               className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                             >
                               View all today
@@ -3250,14 +3275,14 @@ export const ExpandedSidebar = ({
                                     });
                                   }}
                                   onClick={() =>
-                                    void window.desktopWindow?.toggleModule('dashboard', {
+                                    toggleSidebarModule('dashboard', {
                                       focusTaskId: item.id,
                                     })
                                   }
                                   onKeyDown={(event) => {
                                     if (event.key !== 'Enter' && event.key !== ' ') return;
                                     event.preventDefault();
-                                    void window.desktopWindow?.toggleModule('dashboard', {
+                                    toggleSidebarModule('dashboard', {
                                       focusTaskId: item.id,
                                     });
                                   }}
@@ -3297,7 +3322,7 @@ export const ExpandedSidebar = ({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    void window.desktopWindow?.toggleModule('dashboard')
+                                    toggleSidebarModule('dashboard')
                                   }
                                   className="w-full rounded-xl px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                                 >
@@ -3518,7 +3543,7 @@ export const ExpandedSidebar = ({
                               key={note.id}
                               type="button"
                               onClick={() =>
-                                void window.desktopWindow?.toggleModule('notes', {
+                                toggleSidebarModule('notes', {
                                   focusNoteId: note.id,
                                 })
                               }
@@ -3542,7 +3567,7 @@ export const ExpandedSidebar = ({
                         {savedNotes.length > visibleSavedNotes.length && (
                           <button
                             type="button"
-                            onClick={() => void window.desktopWindow?.toggleModule('notes')}
+                            onClick={() => toggleSidebarModule('notes')}
                             className="w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                           >
                             View all notes
@@ -3670,7 +3695,7 @@ export const ExpandedSidebar = ({
                               key={item.id}
                               type="button"
                               onClick={() =>
-                                void window.desktopWindow?.toggleModule('calendar', {
+                                toggleSidebarModule('calendar', {
                                   focusContext: `focus-event:${item.id}`,
                                 })
                               }
@@ -3686,7 +3711,7 @@ export const ExpandedSidebar = ({
                           ))}
                           <button
                             type="button"
-                            onClick={() => void window.desktopWindow?.openModule('calendar')}
+                            onClick={() => openSidebarModule('calendar')}
                             className="w-full rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                           >
                             View all events
@@ -3766,7 +3791,7 @@ export const ExpandedSidebar = ({
                             key={project.id}
                             type="button"
                             onClick={() => {
-                              void window.desktopWindow?.toggleModule('projects', {
+                              toggleSidebarModule('projects', {
                                 kind: 'projects',
                                 focusProjectId: project.id,
                               });
@@ -3810,7 +3835,7 @@ export const ExpandedSidebar = ({
                       {projects.length > 4 && (
                         <button
                           type="button"
-                          onClick={() => window.desktopWindow?.toggleModule('projects')}
+                          onClick={() => toggleSidebarModule('projects')}
                           className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                         >
                           +{projects.length - 4} more projects
@@ -3872,7 +3897,7 @@ export const ExpandedSidebar = ({
 
             <button
               type="button"
-              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              onClick={() => toggleSidebarModule('inbox')}
               className="relative flex h-9 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               title="Intake"
               aria-label="Open intake"
@@ -3890,7 +3915,7 @@ export const ExpandedSidebar = ({
             {isSlackConnected && (
               <button
                 type="button"
-                onClick={() => window.desktopWindow?.toggleModule('slack')}
+                onClick={() => toggleSidebarModule('slack')}
                 className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
                 title="Slack"
                 aria-label="Open Slack"
@@ -3902,7 +3927,7 @@ export const ExpandedSidebar = ({
             {!isPersonalWorkspace && (
               <button
                 type="button"
-                onClick={() => window.desktopWindow?.toggleModule('circle')}
+                onClick={() => toggleSidebarModule('circle')}
                 className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
               >
                 <CircleUserRound size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
@@ -3967,7 +3992,7 @@ export const ExpandedSidebar = ({
                               type="button"
                               onClick={() => {
                                 persistMyTeamsActiveRoute({ teamId: team.id, kind: 'team' });
-                                void window.desktopWindow?.openModule('teams', {
+                                openSidebarModule('teams', {
                                   kind: 'teams',
                                   focusContext: `team:${team.id}`,
                                 });
@@ -4006,7 +4031,7 @@ export const ExpandedSidebar = ({
                                 type="button"
                                 onClick={() => {
                                   persistMyTeamsActiveRoute({ teamId: team.id, kind: 'intake' });
-                                  void window.desktopWindow?.toggleModule('inbox', {
+                                  toggleSidebarModule('inbox', {
                                     kind: 'inbox',
                                     focusContext: `team:${team.id}`,
                                   });
@@ -4035,7 +4060,7 @@ export const ExpandedSidebar = ({
                                 type="button"
                                 onClick={() => {
                                   persistMyTeamsActiveRoute({ teamId: team.id, kind: 'tasks' });
-                                  void window.desktopWindow?.toggleModule('dashboard', {
+                                  toggleSidebarModule('dashboard', {
                                     kind: 'dashboard',
                                     focusContext: `team:${team.id}`,
                                   });
@@ -4064,7 +4089,7 @@ export const ExpandedSidebar = ({
                                 type="button"
                                 onClick={() => {
                                   persistMyTeamsActiveRoute({ teamId: team.id, kind: 'projects' });
-                                  void window.desktopWindow?.toggleModule('projects', {
+                                  toggleSidebarModule('projects', {
                                     kind: 'projects',
                                     focusContext: `team:${team.id}`,
                                   });
@@ -4146,7 +4171,7 @@ export const ExpandedSidebar = ({
                   onClick={() => {
                     const project = projects.find((p) => p.id === contextMenu.id);
                     if (project) {
-                      void window.desktopWindow?.toggleModule('projects', {
+                      toggleSidebarModule('projects', {
                         kind: 'projects',
                         focusProjectId: project.id,
                       });

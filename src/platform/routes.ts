@@ -67,6 +67,30 @@ export const routeForLegacyWorkspaceState = (workspaceId: string, route: {
     case 'inbox': return routeForInboxItem(workspaceId, route.focusInboxId ?? (route.focusContext?.startsWith('inbox:') ? route.focusContext.slice('inbox:'.length) : undefined), route.focusSection as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined);
     case 'notifications': return routeForNotification(workspaceId, route.focusContext ?? undefined, route.focusSection as 'active' | 'earlier' | undefined);
     case 'slack': return routeForSlackCapture(workspaceId, route.focusContext ?? undefined);
+    case 'settings': {
+      type WorkspaceSettingsSection = Extract<LedgerWorkspaceRoute, { page: 'settings' }>['section'];
+      const section = route.focusSection as WorkspaceSettingsSection;
+      const validSections: WorkspaceSettingsSection[] = [
+        'workspace',
+        'members',
+        'calendar',
+        'notifications',
+        'sidebar',
+        'meeting-notes',
+        'integrations',
+        'google-drive',
+        'github',
+        'slack',
+        'figma',
+      ];
+      return {
+        kind: 'workspace',
+        workspaceId,
+        page: 'settings',
+        scope: 'workspace',
+        section: validSections.includes(section) ? section : 'workspace',
+      };
+    }
     default: return routeForHome(workspaceId);
   }
 };

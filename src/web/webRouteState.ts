@@ -96,9 +96,11 @@ export const parseWebLocation = (location: Pick<Location, 'pathname' | 'search'>
         const teamId = safeDecode(team[1]);
         return teamId ? { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'team', teamId, settings: remainder.endsWith('/settings') } } : { kind: 'unknown' };
       }
-      const settings = remainder.match(/^settings\/(workspace|members|calendar|notifications|sidebar|meeting-notes|integrations)(?:\/(google-drive|github|slack|figma))?$/);
+      // Workspace settings serialize as settings/workspace/<section>, while
+      // older links may still use the flat settings/<section> form.
+      const settings = remainder.match(/^settings\/(?:(workspace)\/)?(workspace|members|calendar|notifications|sidebar|meeting-notes|integrations)(?:\/(google-drive|github|slack|figma))?$/);
       if (settings) {
-        const section = settings[2] ?? settings[1];
+        const section = settings[3] ?? settings[2];
         return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'settings', scope: 'workspace', section: section === 'meeting-notes' ? 'meeting-notes' : section as 'workspace' | 'members' | 'calendar' | 'notifications' | 'sidebar' | 'integrations' | 'google-drive' | 'github' | 'slack' | 'figma' } };
       }
       return { kind: 'unknown' };

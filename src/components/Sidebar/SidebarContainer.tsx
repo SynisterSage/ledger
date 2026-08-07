@@ -186,8 +186,9 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
       : isHorizontal
         ? 'w-auto h-[60px]'
         : 'w-14 h-14';
-  const shellRadiusClass =
-    isFullscreenAttachedShell && effectivePosition === 'left'
+  const shellRadiusClass = browserMode
+    ? 'rounded-none'
+    : isFullscreenAttachedShell && effectivePosition === 'left'
       ? 'rounded-l-[var(--ledger-window-radius)] rounded-r-none'
       : isFullscreenAttachedShell && effectivePosition === 'right'
       ? 'rounded-r-[var(--ledger-window-radius)] rounded-l-none'
@@ -563,7 +564,7 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
       style={shellStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`relative ${shellSizeClasses} ${
+      className={`relative ${shellSizeClasses} ${browserMode ? 'web-sidebar-shell' : ''} ${
         reduceMotion || isHorizontal ? '' : motionClass
       } ${hydrationClass}`}
       data-frosted={effectiveFrostedBackground ? 'true' : 'false'}

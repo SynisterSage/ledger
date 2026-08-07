@@ -454,16 +454,18 @@ const CompactButton = ({
 const AvatarStack = ({
   members,
   maxVisible = 3,
+  className = '',
   onMemberContextMenu,
 }: {
   members: Array<{ id: string; name: string; email?: string | null; avatar?: string | null; avatar_updated_at?: string | null }>;
   maxVisible?: number;
+  className?: string;
   onMemberContextMenu?: (
     member: { id: string; name: string; email?: string | null; avatar?: string | null; avatar_updated_at?: string | null },
     event: ReactMouseEvent<HTMLElement>
   ) => void;
 }) => {
-  return <AvatarGroup users={members.map((member) => ({ id: member.id, displayName: member.name, email: member.email, avatarUrl: member.avatar, avatarUpdatedAt: member.avatar_updated_at }))} maxVisible={maxVisible} size="xs" onUserContextMenu={onMemberContextMenu ? (user, event) => onMemberContextMenu(members.find((member) => member.id === user.id) ?? { id: user.id ?? '', name: user.displayName ?? '', email: user.email, avatar: user.avatarUrl, avatar_updated_at: user.avatarUpdatedAt }, event) : undefined} />;
+  return <AvatarGroup users={members.map((member) => ({ id: member.id, displayName: member.name, email: member.email, avatarUrl: member.avatar, avatarUpdatedAt: member.avatar_updated_at }))} maxVisible={maxVisible} size="xs" className={className} onUserContextMenu={onMemberContextMenu ? (user, event) => onMemberContextMenu(members.find((member) => member.id === user.id) ?? { id: user.id ?? '', name: user.displayName ?? '', email: user.email, avatar: user.avatarUrl, avatar_updated_at: user.avatarUpdatedAt }, event) : undefined} />;
 };
 
 const formatRelativeTime = (value?: string | null) => {
@@ -2176,6 +2178,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               <AvatarStack
                 members={teamMembers}
                 maxVisible={3}
+                className="gap-1 [&>span]:!ml-0"
                 onMemberContextMenu={(member, event) =>
                   openTeamRowContextMenu(event, {
                     kind: 'member',
@@ -3209,6 +3212,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           <>
             <ModuleHeaderStripAction
               icon={<Inbox size={14} />}
+              webDestination="inbox"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               title="Intake"
               ariaLabel="Open Intake"

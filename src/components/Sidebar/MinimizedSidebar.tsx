@@ -14,6 +14,8 @@ import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
 
 export const MinimizedSidebar = ({
   onDragHandleMouseDown,
@@ -21,6 +23,23 @@ export const MinimizedSidebar = ({
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
   const { collapseSidebar, setState, position } = useSidebar();
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
+  const toggleModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
+    if (platform.kind === 'web') return openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
+    return window.desktopWindow?.toggleModule(kind, focus as any);
+  };
+  const openModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
+    if (platform.kind === 'web') return openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
+    return window.desktopWindow?.openModule(kind, focus as any);
+  };
+  const handleLogoClick = () => {
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, 'new-tab');
+      return;
+    }
+    collapseSidebar();
+  };
   const { openSearch } = useSearch();
   const isHorizontal = position === 'top' || position === 'bottom';
   const isTopDock = position === 'top';
@@ -52,7 +71,7 @@ export const MinimizedSidebar = ({
         } shrink-0`}
       >
         <HoldToQuitLogo
-          onClick={() => collapseSidebar()}
+          onClick={handleLogoClick}
           className="flex h-10 w-10 items-center justify-center bg-transparent transition-opacity duration-150 hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
           imageClassName="h-7 w-7 opacity-100"
           title="Ledger"
@@ -62,6 +81,10 @@ export const MinimizedSidebar = ({
           <button
             aria-label="Open search"
             onClick={() => {
+              if (platform.kind === 'web') {
+                openSearch();
+                return;
+              }
               void (async () => {
                 const wasForwarded = await window.desktopWindow?.openSearchInWorkspaceWindow?.();
                 if (wasForwarded) return;
@@ -77,7 +100,7 @@ export const MinimizedSidebar = ({
           <button
             aria-label="Open overview"
             onClick={() => {
-              window.desktopWindow?.toggleModule('dashboard');
+              toggleModule('dashboard');
             }}
             onMouseDown={(e) => e.stopPropagation()}
             className={neutralIcon}
@@ -86,7 +109,7 @@ export const MinimizedSidebar = ({
           </button>
           <button
             aria-label="Open calendar"
-            onClick={() => window.desktopWindow?.openModule('calendar')}
+              onClick={() => openModule('calendar')}
             onMouseDown={(e) => e.stopPropagation()}
             className={neutralIcon}
           >
@@ -94,7 +117,7 @@ export const MinimizedSidebar = ({
           </button>
           <button
             aria-label="Open projects"
-            onClick={() => window.desktopWindow?.toggleModule('projects')}
+              onClick={() => toggleModule('projects')}
             onMouseDown={(e) => e.stopPropagation()}
             className={neutralIcon}
           >
@@ -102,7 +125,7 @@ export const MinimizedSidebar = ({
           </button>
           <button
             aria-label="Open notes"
-            onClick={() => window.desktopWindow?.toggleModule('notes')}
+              onClick={() => toggleModule('notes')}
             onMouseDown={(e) => e.stopPropagation()}
             className={neutralIcon}
           >

@@ -47,6 +47,7 @@ export const HoldToQuitLogo = ({
   };
 
   const finishHold = () => {
+    if (!window.desktopWindow) return;
     holdStartedAtRef.current = null;
     frameRef.current = null;
     suppressClickRef.current = true;
@@ -78,7 +79,7 @@ export const HoldToQuitLogo = ({
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => {
         event.stopPropagation();
-        if (isQuitting) return;
+        if (isQuitting || !window.desktopWindow) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         holdStartedAtRef.current = performance.now();
         setProgress(0);
@@ -106,7 +107,7 @@ export const HoldToQuitLogo = ({
       }}
     >
       <img
-        src="./logo-color.svg"
+        src={`${import.meta.env.BASE_URL}logo-color.svg`}
         alt="Ledger"
         className={`${imageClassName} ${progress > 0 ? 'animate-pulse' : ''}`}
         draggable={false}

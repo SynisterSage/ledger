@@ -276,13 +276,13 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
 
   return (
     <div
-      className="relative flex h-screen min-h-0 flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
+      className={`relative flex h-screen min-h-0 flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none ${isBrowser ? 'web-new-tab-module' : ''}`}
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <ModuleWindowHeader
         title="Ledger"
         stripTitle="New Tab"
-        icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
+        icon={<img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-5 w-5" />}
         onClose={onClose}
         minimizeLabel="Minimize New Tab"
         onMinimize={isBrowser ? undefined : () => void window.desktopWindow?.minimizeModule('new-tab')}
@@ -293,6 +293,7 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
             <ModuleHeaderStripAction
               icon={<Funnel size={12} />}
               count={inboxCount}
+              webDestination="inbox"
               onClick={() => void window.desktopWindow?.openModule('inbox')}
               title="Open Intake"
               ariaLabel="Open Intake"
@@ -310,7 +311,7 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         showBodyHeader={false}
         showWorkspaceNavigation
       />
-      <main className="relative min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
+      <main className="web-new-tab-content relative min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
         <div aria-hidden="true" className="pointer-events-none sticky top-0 z-0 h-0 overflow-visible">
           <div className="absolute left-0 top-0 h-screen w-full overflow-hidden">
             <div
@@ -331,8 +332,8 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
             />
           </div>
         </div>
-        <div className="relative z-10 mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
-          <img src="./logo-color.svg" alt="Ledger" className="mb-8 h-8 w-8" />
+        <div className="web-new-tab-body relative z-10 mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
+          <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="mb-8 h-8 w-8" />
           <h1 className="text-[28px] font-regular tracking-[-0.03em] text-[var(--ledger-text-primary)]">
             {openSomethingExpression}
           </h1>

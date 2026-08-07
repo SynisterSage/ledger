@@ -29,21 +29,21 @@ const WebSearchRoute = ({ query }: { query: string }) => {
 
 export const WebModuleHost = ({ route }: { route: LedgerWorkspaceRoute }) => {
   const platform = usePlatform();
-  const closeToDashboard = () => platform.navigation.openRoute({ kind: 'workspace', workspaceId: route.workspaceId, page: 'dashboard' });
+  const closeToHome = () => platform.navigation.openRoute({ kind: 'workspace', workspaceId: route.workspaceId, page: 'home' });
 
   switch (route.page) {
-    case 'home': return <NewTabWindow isBrowser onClose={closeToDashboard} />;
+    case 'home': return <NewTabWindow isBrowser onClose={closeToHome} />;
     case 'dashboard':
     case 'today': {
       const section = route.page === 'today' ? 'today' : route.query?.section === 'today' ? 'today' : route.query?.section === 'assigned' ? 'assigned' : 'all';
-      return <DashboardContent browserMode initialSection={section} onBrowserClose={closeToDashboard} />;
+      return <DashboardContent browserMode initialSection={section} onBrowserClose={closeToHome} />;
     }
     case 'circle': return <CircleWindow focusContext={route.query?.person ? `ledger-person|${route.query.person}||overview` : route.query?.context} />;
     case 'calendar': return <CalendarWindow webQuery={route.query} />;
-    case 'notes': return <NotesWindow />;
-    case 'note': return <NotesWindow focusContext={`focus-note:${route.noteId}`} initialView={route.query?.view} />;
-    case 'projects': return <ProjectsWindow />;
-    case 'project': return <ProjectsWindow webQuery={{ projectId: route.projectId, taskId: route.taskId }} />;
+    case 'notes': return <NotesWindow key="notes-home" />;
+    case 'note': return <NotesWindow key={`note:${route.noteId}:${route.query?.view ?? ''}`} focusContext={`focus-note:${route.noteId}`} initialView={route.query?.view} />;
+    case 'projects': return <ProjectsWindow key="projects-home" />;
+    case 'project': return <ProjectsWindow key={`project:${route.projectId}:${route.taskId ?? ''}`} webQuery={{ projectId: route.projectId, taskId: route.taskId }} />;
     case 'teams': return <TeamsWindow />;
     case 'team': return route.settings ? <TeamSettingsWindow focusContext={`team-settings:${route.teamId}`} /> : <TeamsWindow focusContext={`team:${route.teamId}`} />;
     case 'inbox': return <IntakeWindow webQuery={route.query} />;
@@ -51,7 +51,7 @@ export const WebModuleHost = ({ route }: { route: LedgerWorkspaceRoute }) => {
     case 'notifications': return <NotificationCenterWindow mode="window" initialFilter={route.query?.filter} initialItem={route.query?.item} />;
     case 'search': return <WebSearchRoute query={route.query.q} />;
     case 'settings': return <SettingsWindow initialSection={(route.section === 'meeting-notes' ? 'meeting_notes' : ['google-drive', 'github', 'slack', 'figma'].includes(route.section) ? 'integrations' : route.section) as 'workspace' | 'members' | 'calendar' | 'notifications' | 'sidebar' | 'meeting_notes' | 'integrations'} />;
-    case 'task': return <ProjectsWindow webQuery={{ taskId: route.taskId }} />;
+    case 'task': return <ProjectsWindow key={`task:${route.taskId}`} webQuery={{ taskId: route.taskId }} />;
     case 'event': return <CalendarWindow webQuery={{ event: route.eventId, view: 'day' }} />;
     default: return <NotMounted label="This Ledger route" />;
   }

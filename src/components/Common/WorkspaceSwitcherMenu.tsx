@@ -21,6 +21,7 @@ import { ModalOverlay } from './ModalOverlay';
 import { ModalCloseButton } from './ModalCloseButton';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { getSidebarMaterialAlpha, getSidebarNativeMacTintAlpha } from '../../theme/sidebarMaterial';
+import { usePlatform } from '../../platform';
 
 type WorkspaceSwitcherMenuProps = {
   variant?: 'header' | 'sidebar';
@@ -65,6 +66,7 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
   const { activeWorkspaceId, activeWorkspace, workspaces, setActiveWorkspace, refreshWorkspaces } =
     useWorkspaceContext();
   const sidebar = useSidebar();
+  const platform = usePlatform();
   const api = useApi();
   const [isOpen, setIsOpen] = useState(false);
   const [submenuOpen, setSubmenuOpen] = useState(false);
@@ -130,6 +132,21 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
   const openSettingsSection = (
     focusSection: 'account' | 'workspace' | 'members' | 'integrations' | 'sidebar'
   ) => {
+    if (!window.desktopWindow) {
+      if (focusSection === 'account') {
+        platform.navigation.openRoute({ kind: 'app', page: 'settings', section: 'account' });
+      } else if (activeWorkspaceId) {
+        platform.navigation.openRoute({
+          kind: 'workspace',
+          workspaceId: activeWorkspaceId,
+          page: 'settings',
+          scope: 'workspace',
+          section: focusSection,
+        });
+      }
+      return;
+    }
+
     const route = { kind: 'settings' as const, focusSection };
     // This is an intentional destination selected from the workspace menu.
     // Clear any closed-tab tombstone before Electron reuses the Settings

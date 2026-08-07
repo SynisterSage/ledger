@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { NotificationCenterWindow } from './NotificationCenterWindow';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { usePlatform } from '../../platform';
 
 export const NOTIFICATION_TRAY_TOGGLE_EVENT = 'ledger:toggle-notification-tray';
 
@@ -14,6 +16,8 @@ type NotificationTrayProps = {
 
 export const NotificationTray: React.FC<NotificationTrayProps> = ({ isOpen, onClose }) => {
   const trayRef = useRef<HTMLDivElement | null>(null);
+  const platform = usePlatform();
+  const { activeWorkspaceId } = useWorkspaceContext();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -55,6 +59,14 @@ export const NotificationTray: React.FC<NotificationTrayProps> = ({ isOpen, onCl
         onRequestClose={onClose}
         onViewAll={() => {
           onClose();
+          if (platform.kind === 'web' && activeWorkspaceId) {
+            platform.navigation.openRoute({
+              kind: 'workspace',
+              workspaceId: activeWorkspaceId,
+              page: 'notifications',
+            });
+            return;
+          }
           void window.desktopWindow?.openModule('notifications', { kind: 'notifications' });
         }}
       />

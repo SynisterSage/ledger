@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { Lock, Loader2, Mail, X, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from './ToastProvider';
+import { runtimeConfig } from '../../config/runtime';
 
 interface LoginProps {
   onSuccess?: () => void;
@@ -33,9 +34,12 @@ function LedgerAuthPreview() {
   return (
     <div className="relative h-full min-h-full overflow-hidden bg-(--ledger-background)">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcSet="./loginfourm_dark_4x.webp" />
+        <source
+          media="(prefers-color-scheme: dark)"
+          srcSet={`${import.meta.env.BASE_URL}loginfourm_dark_4x.webp`}
+        />
         <img
-          src="./loginfourm_light_4x.webp"
+          src={`${import.meta.env.BASE_URL}loginfourm_light_4x.webp`}
           alt="Ledger workspace overview"
           className="absolute inset-0 h-full w-full object-cover"
         />
@@ -69,6 +73,11 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
   const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const handleCloseWindow = () => {
+    if (!window.desktopWindow) {
+      const publicSiteUrl = (runtimeConfig.ledgerWebUrl || 'https://ledgerworkspace.com').replace(/\/$/, '');
+      window.location.assign(`${publicSiteUrl}/`);
+      return;
+    }
     void window.desktopWindow?.quitApp();
   };
 
@@ -235,7 +244,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
           >
             <div className="absolute inset-0 flex items-center justify-center p-6 sm:p-10">
               <div className="flex flex-col items-center text-center">
-                <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8 select-none" />
+                <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="h-8 w-8 select-none" />
                 <p className="mt-3 text-xs text-(--ledger-text-muted)">Preparing sign in…</p>
               </div>
             </div>
@@ -275,7 +284,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                 }`}
               >
                 <div className="mb-4 flex items-center gap-2.5">
-                  <img src="./logo-color.svg" alt="Ledger" className="h-8 w-8" />
+                  <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="h-8 w-8" />
                   <h1
                     className={`text-[22px] font-medium leading-none ${authTextPrimaryClassName}`}
                   >

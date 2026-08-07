@@ -441,31 +441,170 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
-.web-ledger-shell {
+[data-platform='web'] {
+  --web-content-gutter: clamp(12px, 2vw, 28px);
+  --web-sidebar-width: clamp(236px, 22vw, 320px);
+  --web-sidebar-collapsed-width: 56px;
+  --web-inspector-width: 280px;
+  --web-header-height: 40px;
+  --web-pane-gap: clamp(12px, 1.5vw, 20px);
+  min-width: 0;
   min-height: 100dvh;
 }
 
-.web-ledger-sidebar {
-  width: clamp(220px, 22vw, 320px);
-  max-width: 36vw;
+[data-platform='web'] .web-app-root,
+[data-platform='web'] .web-ledger-shell {
+  min-width: 0;
+  min-height: 100dvh;
 }
 
-@media (max-width: 900px) {
-  .web-ledger-sidebar {
-    width: 236px;
-    max-width: 32vw;
+[data-platform='web'] .web-ledger-shell {
+  /* Browser content fills the viewport; Electron keeps the window radius. */
+  --ledger-window-radius: 0px;
+  container-type: inline-size;
+  container-name: web-shell;
+}
+
+[data-platform='web'] .web-ledger-sidebar {
+  position: relative;
+  z-index: 20;
+  flex: 0 0 var(--web-sidebar-width);
+  width: var(--web-sidebar-width);
+  max-width: none;
+  min-width: 0;
+  overflow: hidden;
+}
+
+[data-platform='web'] .web-ledger-sidebar[data-sidebar-state='rail'] {
+  flex-basis: var(--web-sidebar-collapsed-width);
+  width: var(--web-sidebar-collapsed-width);
+}
+
+[data-platform='web'] .web-ledger-sidebar[data-sidebar-orientation='horizontal'] {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 144px;
+}
+
+[data-platform='web'] .web-ledger-sidebar[data-sidebar-orientation='horizontal'][data-sidebar-state='rail'] {
+  height: 60px;
+}
+
+[data-platform='web'] .web-sidebar-shell {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+}
+
+[data-platform='web'] .web-ledger-content {
+  min-width: 0;
+  overflow: hidden;
+}
+
+[data-platform='web'] .web-module-layout {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  container-name: web-module;
+}
+
+[data-platform='web'] .web-module-layout > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[data-platform='web'] .web-module-header {
+  min-width: 0;
+}
+
+[data-platform='web'] .web-module-header-strip {
+  min-width: 0;
+  min-height: var(--web-header-height);
+}
+
+[data-platform='web'] .web-dashboard-content {
+  padding: var(--web-content-gutter);
+}
+
+[data-platform='web'] .web-dashboard-panels {
+  grid-template-columns: minmax(0, 1fr) var(--web-inspector-width);
+  gap: var(--web-pane-gap);
+}
+
+[data-platform='web'] .web-dashboard-secondary {
+  min-width: 0;
+  overflow: hidden;
+}
+
+[data-platform='web'] .web-new-tab-body {
+  padding-inline: var(--web-content-gutter);
+  padding-top: clamp(40px, 8vh, 96px);
+}
+
+@container web-module (max-width: 980px) {
+  [data-platform='web'] .web-dashboard-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-platform='web'] .web-dashboard-secondary {
+    border-left: 0;
+    border-top: 1px solid var(--ledger-border-subtle);
   }
 }
 
-@media (max-width: 720px) {
-  .web-ledger-sidebar {
-    width: 200px;
-    max-width: 200px;
+@container web-module (max-width: 680px) {
+  [data-platform='web'] .web-module-header-strip {
+    padding-inline: 10px;
+    gap: 8px;
+  }
+
+  [data-platform='web'] .web-new-tab-body {
+    padding-top: 36px;
+  }
+
+  [data-platform='web'] .web-dashboard-content {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 900px) {
+  [data-platform='web'] {
+    --web-sidebar-width: 236px;
+  }
+}
+
+@media (max-width: 799px) {
+  [data-platform='web'] {
+    --web-sidebar-width: 240px;
+    --web-pane-gap: 12px;
+  }
+
+  [data-platform='web'] .web-ledger-sidebar[data-sidebar-state='expanded'] {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: min(var(--web-sidebar-width), calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    box-shadow: 12px 0 30px rgb(15 23 42 / 0.12);
+  }
+
+  [data-platform='web'] [data-sidebar-position='right'] .web-ledger-sidebar[data-sidebar-state='expanded'] {
+    inset-inline: auto 0;
+    box-shadow: -12px 0 30px rgb(15 23 42 / 0.12);
+  }
+}
+
+@media (max-width: 600px) {
+  [data-platform='web'] {
+    --web-content-gutter: 12px;
   }
 }
 
 @media (min-resolution: 1.5dppx) {
-  .web-ledger-shell {
+  [data-platform='web'] .web-ledger-shell {
     font-size: 0.98em;
   }
 }

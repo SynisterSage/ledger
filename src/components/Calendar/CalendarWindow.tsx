@@ -4340,6 +4340,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
               count={inboxCount}
+              webDestination="inbox"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               title="Open Intake"
               ariaLabel="Open Intake"

@@ -524,6 +524,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
               count={inboxCount}
+              webDestination="inbox"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               title="Open Intake"
               ariaLabel="Open Intake"

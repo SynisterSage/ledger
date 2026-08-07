@@ -24,6 +24,9 @@ import {
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from './ToastProvider';
+import { routeForLegacyWorkspaceState, serializeLedgerRoute } from '../../platform';
+import type { LedgerWorkspaceRoute } from '../../platform';
+import { parseWebLocation } from '../../web/webRouteState';
 
 type LedgerRoute = {
   kind: ModuleWindowKind;
@@ -31,6 +34,7 @@ type LedgerRoute = {
   focusProjectId?: string | null;
   focusNoteId?: string | null;
   focusTaskId?: string | null;
+  focusInboxId?: string | null;
   focusContext?: string | null;
   focusSection?: string | null;
 };
@@ -170,6 +174,29 @@ const normalizeRoute = (route?: ModuleFocusPayload | null): LedgerRoute | null =
   return { ...route, kind: route.kind };
 };
 
+const webRouteToTabRoute = (route: LedgerWorkspaceRoute): LedgerRoute => {
+  switch (route.page) {
+    case 'home': return { kind: 'new-tab', focusContext: 'new-tab:browser' };
+    case 'dashboard': return { kind: 'dashboard', focusSection: route.query?.section };
+    case 'today': return { kind: 'dashboard', focusSection: 'today' };
+    case 'circle': return { kind: 'circle', focusContext: route.query?.person ? `ledger-person|${route.query.person}` : route.query?.context };
+    case 'calendar': return { kind: 'calendar', focusDate: route.query?.date, focusContext: route.query?.event ? `focus-event:${route.query.event}` : route.query?.reminder ? `focus-reminder:${route.query.reminder}` : undefined, focusSection: route.query?.view };
+    case 'notes': return { kind: 'notes' };
+    case 'note': return { kind: 'notes', focusNoteId: route.noteId, focusContext: route.query?.view ? `note-view:${route.query.view}` : undefined };
+    case 'projects': return { kind: 'projects' };
+    case 'project': return { kind: 'projects', focusProjectId: route.projectId, focusTaskId: route.taskId };
+    case 'task': return { kind: 'projects', focusTaskId: route.taskId };
+    case 'event': return { kind: 'calendar', focusContext: `focus-event:${route.eventId}` };
+    case 'teams': return { kind: 'teams' };
+    case 'team': return { kind: 'teams', focusContext: `team:${route.teamId}` };
+    case 'inbox': return { kind: 'inbox', focusInboxId: route.query?.item, focusSection: route.query?.section };
+    case 'slack': return { kind: 'slack', focusContext: route.query?.capture };
+    case 'notifications': return { kind: 'notifications', focusContext: route.query?.item, focusSection: route.query?.filter };
+    case 'search': return { kind: 'new-tab', focusContext: `search:${route.query.q}` };
+    case 'settings': return { kind: 'settings', focusSection: route.section };
+  }
+};
+
 const sameRoute = (left: LedgerRoute, right: LedgerRoute) => routeKey(left) === routeKey(right);
 const sameRouteState = (left: LedgerRoute, right: LedgerRoute) =>
   left.kind === right.kind &&
@@ -226,10 +253,17 @@ const getInitialTabOrder = (): LedgerRoute[] => {
   }
 };
 
-const selectWorkspaceTabRoute = (route: LedgerRoute) => {
+const selectWorkspaceTabRoute = (route: LedgerRoute, workspaceId?: string | null) => {
   // Update the local module shell immediately; Electron remains authoritative
   // for the persisted workspace route and history state.
   rememberRouteHint(route);
+  if (!window.desktopWindow && workspaceId) {
+    const webRoute = routeForLegacyWorkspaceState(workspaceId, route);
+    const path = serializeLedgerRoute(webRoute);
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new CustomEvent('ledger:route-intent', { detail: { route: webRoute, path } }));
+    return;
+  }
   window.dispatchEvent(
     new CustomEvent('ledger:workspace-route-requested', { detail: { ...route } })
   );
@@ -556,6 +590,42 @@ export const LedgerTabStrip = () => {
   }, [tabOrder]);
 
   useEffect(() => {
+    if (window.desktopWindow || !activeWorkspaceId) return;
+
+    const applyBrowserRoute = (route: LedgerWorkspaceRoute) => {
+      if (route.workspaceId !== activeWorkspaceId) return;
+      const tabRoute = webRouteToTabRoute(route);
+      const key = routeKey(tabRoute);
+      const nextOrder = tabOrderRef.current.some((candidate) => routeKey(candidate) === key)
+        ? tabOrderRef.current
+        : [...tabOrderRef.current, tabRoute];
+      tabOrderRef.current = nextOrder;
+      setTabOrder(nextOrder);
+      setNavigationState((current) => ({
+        ...current,
+        currentModule: tabRoute.kind,
+        currentRoute: tabRoute,
+      }));
+      setVisualRouteOverride(tabRoute);
+      visualCurrentRouteRef.current = tabRoute;
+      rememberRouteHint(tabRoute);
+    };
+
+    const initial = parseWebLocation(window.location, window.history.state);
+    if (initial.kind === 'route' && initial.route.kind === 'workspace') {
+      applyBrowserRoute(initial.route);
+    }
+
+    const handleRouteIntent = (event: Event) => {
+      const route = (event as CustomEvent<{ route?: unknown }>).detail?.route;
+      if (!route || typeof route !== 'object' || (route as { kind?: string }).kind !== 'workspace') return;
+      applyBrowserRoute(route as LedgerWorkspaceRoute);
+    };
+    window.addEventListener('ledger:route-intent', handleRouteIntent);
+    return () => window.removeEventListener('ledger:route-intent', handleRouteIntent);
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
     currentRouteRef.current = currentRoute;
   }, [currentRoute]);
 
@@ -613,6 +683,33 @@ export const LedgerTabStrip = () => {
         // Browser privacy settings can disable sessionStorage; the in-memory session still works.
       }
 
+      if (!window.desktopWindow) {
+        const locationState = parseWebLocation(window.location, window.history.state);
+        if (locationState.kind === 'route' && locationState.route.kind === 'workspace') {
+          const currentTab = webRouteToTabRoute(locationState.route);
+          const currentKey = routeKey(currentTab);
+          if (!restored.some((route) => routeKey(route) === currentKey)) {
+            restored.push(currentTab);
+          }
+          setNavigationState({
+            currentModule: currentTab.kind,
+            currentRoute: currentTab,
+          });
+          setVisualRouteOverride(currentTab);
+          visualCurrentRouteRef.current = currentTab;
+          rememberRouteHint(currentTab);
+        }
+        if (restored.length === 0) restored = [createNewTabRoute()];
+        tabOrderRef.current = restored;
+        setTabOrder(restored);
+        try {
+          sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(restored));
+        } catch {
+          // Keep the in-memory browser tab state usable when storage is unavailable.
+        }
+        return;
+      }
+
       const state = await window.desktopWindow?.getWorkspaceNavigationState?.().catch(() => null);
       if (!mounted) return;
       if (state) setNavigationState(state);
@@ -626,7 +723,7 @@ export const LedgerTabStrip = () => {
         } else {
           restored = [createNewTabRoute()];
           suppressInitialRouteRef.current = true;
-          selectWorkspaceTabRoute(restored[0]);
+          selectWorkspaceTabRoute(restored[0], activeWorkspaceId);
         }
       }
       tabOrderRef.current = restored;
@@ -833,7 +930,7 @@ export const LedgerTabStrip = () => {
         }
       }
       setVisualRouteOverride(fallbackRoute);
-      selectWorkspaceTabRoute(fallbackRoute);
+      selectWorkspaceTabRoute(fallbackRoute, activeWorkspaceId);
       return;
     }
 
@@ -1024,6 +1121,36 @@ export const LedgerTabStrip = () => {
     } catch {
       // The in-memory tab state remains authoritative when storage is unavailable.
     }
+
+    if (!window.desktopWindow) {
+      const locationState = parseWebLocation(window.location, window.history.state);
+      const browserCurrent =
+        locationState.kind === 'route' && locationState.route.kind === 'workspace'
+          ? webRouteToTabRoute(locationState.route)
+          : null;
+      const activeRoute =
+        browserCurrent ?? visualCurrentRouteRef.current ?? currentRouteRef.current;
+
+      if (activeRoute && sameRoute(route, activeRoute)) {
+        const destination =
+          nextOrder[index - 1] ?? nextOrder[index] ?? createNewTabRoute();
+        const destinationOrder = nextOrder.length > 0 ? nextOrder : [destination];
+        tabOrderRef.current = destinationOrder;
+        setTabOrder(destinationOrder);
+        setVisualRouteOverride(destination);
+        visualCurrentRouteRef.current = destination;
+        closedTabKeysRef.current = new Set();
+        setClosedTabKeys(closedTabKeysRef.current);
+        try {
+          sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, JSON.stringify(destinationOrder));
+        } catch {
+          // Keep the in-memory browser tab state usable when storage is unavailable.
+        }
+        selectWorkspaceTabRoute(destination, activeWorkspaceId);
+      }
+      return;
+    }
+
     if (nextOrder.length === 0) {
       if (isNewTabRoute(route)) {
         try {
@@ -1046,7 +1173,7 @@ export const LedgerTabStrip = () => {
       } catch {
         // Keep the in-memory tab usable when storage is unavailable.
       }
-      selectWorkspaceTabRoute(newTab);
+      selectWorkspaceTabRoute(newTab, activeWorkspaceId);
       void window.desktopWindow?.closeWorkspaceRoute?.(route);
       return;
     }
@@ -1074,14 +1201,14 @@ export const LedgerTabStrip = () => {
         ) {
           return;
         }
-        selectWorkspaceTabRoute(activeRoute);
+        selectWorkspaceTabRoute(activeRoute, activeWorkspaceId);
       });
       return;
     }
     if (nextRoute) {
       setVisualRouteOverride(nextRoute);
       visualCurrentRouteRef.current = nextRoute;
-      selectWorkspaceTabRoute(nextRoute);
+      selectWorkspaceTabRoute(nextRoute, activeWorkspaceId);
       void window.desktopWindow?.closeWorkspaceRoute?.(route);
       return;
     }
@@ -1334,7 +1461,7 @@ export const LedgerTabStrip = () => {
     }
     setIsOverflowOpen(false);
     setVisualRouteOverride(route);
-    selectWorkspaceTabRoute(route);
+    selectWorkspaceTabRoute(route, activeWorkspaceId);
   };
 
   const openNewTab = () => {
@@ -1362,7 +1489,7 @@ export const LedgerTabStrip = () => {
     tabOrderRef.current = nextOrder;
     setTabOrder(nextOrder);
     setVisualRouteOverride(created);
-    selectWorkspaceTabRoute(created);
+    selectWorkspaceTabRoute(created, activeWorkspaceId);
   };
 
   useEffect(() => {

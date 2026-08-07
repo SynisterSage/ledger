@@ -19,6 +19,7 @@ import { usePins } from '../../context/PinsContext';
 import { sidebarTheme } from './sidebarTheme';
 import { getPinNavigationTarget, type PinRecord } from '../../utils/pins';
 import { UserAvatar } from '../Common/UserAvatar';
+import { openLegacyModule, usePlatform } from '../../platform';
 
 type MenuState = {
   type: 'pin';
@@ -108,6 +109,7 @@ const getPinnedTypeLabel = (pin: PinRecord) => {
 export const PinnedSidebarSection = () => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
   const { pins, activePinId, isLoadingPins, reorderPins, unpinObject } = usePins();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -190,6 +192,10 @@ export const PinnedSidebarSection = () => {
   const openPin = (pin: PinRecord, openInNewWindow = false) => {
     const target = resolvePinTarget(pin);
     if (!target) return;
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, target.module as any, target.focus as any);
+      return;
+    }
     const openMethod =
       openInNewWindow || target.openInNewWindow
         ? window.desktopWindow?.openModule

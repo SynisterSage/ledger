@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AppShell } from '../App';
 import { NotificationCenterProvider } from '../components/Notifications/NotificationCenterContext';
 import { NotificationMonitor } from '../components/Common/NotificationMonitor';
@@ -7,12 +7,13 @@ import { SearchProvider } from '../context/SearchContext';
 import { ToastProvider, useToast } from '../components/Common/ToastProvider';
 import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { usePlatform, type LedgerWorkspaceRoute } from '../platform';
-import { WebSidebar } from './WebSidebar';
+import { WebShellLayout } from './WebSidebar';
 import { WebModuleHost } from './WebModuleHost';
 import { parseWebLocation, useWebRouteState } from './webRouteState';
 import { QuickCaptureWindow } from '../components/Common/QuickCaptureWindow';
 import SettingsWindow from '../components/Settings/SettingsWindow';
 import { WebReliabilityProvider } from './WebReliabilityProvider';
+import { NotificationTray, NOTIFICATION_TRAY_TOGGLE_EVENT } from '../components/Notifications/NotificationTray';
 
 const Status = ({ children, error = false }: { children: string; error?: boolean }) => (
   <div className={`flex h-screen items-center justify-center bg-[var(--ledger-background)] px-6 text-center text-sm ${error ? 'text-[var(--ledger-danger)]' : 'text-[var(--ledger-text-muted)]'}`}>
@@ -87,7 +88,7 @@ const WebAuthenticatedContent = () => {
   }, [activeWorkspaceId, isLoading, locationState, platform.navigation, setActiveWorkspace, workspaces]);
 
   if (locationState.kind === 'app-settings') {
-    return <div className="web-ledger-shell flex h-screen min-h-0 overflow-hidden bg-[var(--ledger-background)]"><WebSidebar /><main className="min-w-0 flex-1 overflow-hidden"><SettingsWindow initialSection={locationState.section === 'browser-extension' ? 'integrations' : locationState.section} /></main></div>;
+    return <WebShellLayout><SettingsWindow initialSection={locationState.section === 'browser-extension' ? 'integrations' : locationState.section} /></WebShellLayout>;
   }
   if (locationState.kind === 'app-root' || locationState.kind === 'app-page') {
     if (locationState.kind === 'app-page' && locationState.page === 'onboarding') {
@@ -112,16 +113,14 @@ const WebAuthenticatedContent = () => {
       ? locationState.route.context ?? (locationState.route.projectId ? `ledger-selection|||${locationState.route.projectId}` : undefined)
       : locationState.route.entityId;
     return (
-      <div className="web-ledger-shell relative flex h-screen min-h-0 overflow-hidden bg-[var(--ledger-background)]">
-        <WebSidebar />
-        <main className="relative min-w-0 flex-1 overflow-hidden"><WebModuleHost route={backgroundRoute} />
+      <WebShellLayout>
+        <WebModuleHost route={backgroundRoute} />
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/10 p-6">
             <div className="max-h-full w-full max-w-xl overflow-hidden rounded-[var(--ledger-window-radius)]">
               <QuickCaptureWindow browserMode kind={locationState.route.page === 'follow-up' ? 'quick-follow-up' : `quick-${locationState.route.action}` as 'quick-note' | 'quick-task' | 'quick-event' | 'quick-reminder'} context={context} initialDate={locationState.route.page === 'capture' ? locationState.route.date : undefined} />
             </div>
           </div>
-        </main>
-      </div>
+      </WebShellLayout>
     );
   }
   if (locationState.kind === 'workspace-root') return <Status>Opening your workspace…</Status>;
@@ -138,25 +137,38 @@ const WebAuthenticatedContent = () => {
   if (isLoading || activeWorkspaceId !== route.workspaceId) return <Status>Opening your workspace…</Status>;
 
   return (
-    <div className="web-ledger-shell flex h-screen min-h-0 overflow-hidden bg-[var(--ledger-background)]">
-      <WebSidebar />
-      <main className="min-w-0 flex-1 overflow-hidden"><WebModuleHost route={route} /></main>
-    </div>
+    <WebShellLayout><WebModuleHost route={route} /></WebShellLayout>
   );
 };
 
 const routeWorkspaceId = (workspaceId: string) => workspaceId;
 
-export const WebAppShell = () => (
-  <WebReliabilityProvider>
-    <SearchProvider>
-      <ToastProvider>
-        <NotificationCenterProvider>
-          <NotificationMonitor />
-          <AppShell browserMode browserContent={<WebAuthenticatedContent />} />
-          <SearchModal />
-        </NotificationCenterProvider>
-      </ToastProvider>
-    </SearchProvider>
-  </WebReliabilityProvider>
-);
+export const WebAppShell = () => {
+  const [isNotificationTrayOpen, setIsNotificationTrayOpen] = useState(false);
+
+  useEffect(() => {
+    const handleToggleNotificationTray = () => setIsNotificationTrayOpen((current) => !current);
+    window.addEventListener(NOTIFICATION_TRAY_TOGGLE_EVENT, handleToggleNotificationTray);
+    return () => window.removeEventListener(NOTIFICATION_TRAY_TOGGLE_EVENT, handleToggleNotificationTray);
+  }, []);
+
+  return (
+    <div data-platform="web" className="web-app-root">
+      <WebReliabilityProvider>
+      <SearchProvider>
+        <ToastProvider>
+          <NotificationCenterProvider>
+            <NotificationMonitor />
+            <AppShell browserMode browserContent={<WebAuthenticatedContent />} />
+            <NotificationTray
+              isOpen={isNotificationTrayOpen}
+              onClose={() => setIsNotificationTrayOpen(false)}
+            />
+            <SearchModal />
+          </NotificationCenterProvider>
+        </ToastProvider>
+      </SearchProvider>
+      </WebReliabilityProvider>
+    </div>
+  );
+};

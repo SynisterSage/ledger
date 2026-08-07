@@ -874,6 +874,29 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? getInitialSettingsSection());
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
+  useEffect(() => {
+    if (!window.desktopWindow && initialSection) setActiveSection(initialSection);
+  }, [initialSection]);
+
+  const selectSettingsSection = (section: SettingsSectionId) => {
+    setActiveSection(section);
+    if (window.desktopWindow) return;
+
+    if (section === 'account' || section === 'sessions' || section === 'accessibility' || section === 'shortcuts') {
+      platform.navigation.openRoute({ kind: 'app', page: 'settings', section });
+      return;
+    }
+
+    if (!activeWorkspaceId) return;
+    platform.navigation.openRoute({
+      kind: 'workspace',
+      workspaceId: activeWorkspaceId,
+      page: 'settings',
+      scope: 'workspace',
+      section: section === 'meeting_notes' ? 'meeting-notes' : section,
+    });
+  };
+
   const commitSidebarOpacity = (value: number) => {
     void window.desktopWindow?.applySidebarPreferences({ opacity: value }).catch(() => {
       // No-op outside Electron (browser development mode).
@@ -2569,6 +2592,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
           <>
             <ModuleHeaderStripAction
               icon={<Inbox size={14} />}
+              webDestination="inbox"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               title="Open Intake"
               ariaLabel="Open Intake"
@@ -2602,7 +2626,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       return (
                         <button
                           key={section.id}
-                          onClick={() => setActiveSection(section.id)}
+                          onClick={() => selectSettingsSection(section.id)}
                           title={section.description}
                           className={`${settingsTheme.navButton} ${
                             isActive ? settingsTheme.navButtonActive : settingsTheme.navButtonIdle
@@ -5043,31 +5067,38 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         <div className="px-4 py-3">
                           <p className={settingsTheme.label}>Sidebar position</p>
                           <p className={settingsTheme.help}>
-                            Choose where the sidebar is attached, or use it as a floating window.
+                            {platform.kind === 'web'
+                              ? 'Choose where the sidebar is attached in the browser.'
+                              : 'Choose where the sidebar is attached, or use it as a floating window.'}
                           </p>
                         </div>
                         <div className="grid grid-cols-4 gap-1.5 border-t border-[color:var(--ledger-border-subtle)] p-3">
-                          {sidebarPositionOptions.map((option) => {
-                            const Icon = option.icon;
-                            const isActive = position === option.value;
-                            const isFloating = option.value === 'floating';
+                          {sidebarPositionOptions
+                            .filter((option) => platform.kind !== 'web' || option.value !== 'floating')
+                            .map((option) => {
+                              const Icon = option.icon;
+                              const isActive =
+                                (platform.kind === 'web' && position === 'floating'
+                                  ? 'left'
+                                  : position) === option.value;
+                              const isFloating = option.value === 'floating';
 
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => setPosition(option.value)}
-                                className={`${isFloating ? 'col-span-4' : ''} flex min-h-9 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium transition ${
-                                  isActive
-                                    ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                                    : 'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                                }`}
-                              >
-                                <Icon className="h-4 w-4 shrink-0" />
-                                <span>{option.label}</span>
-                              </button>
-                            );
-                          })}
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setPosition(option.value)}
+                                  className={`${isFloating ? 'col-span-4' : ''} flex min-h-9 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium transition ${
+                                    isActive
+                                      ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                                      : 'border-transparent text-[var(--ledger-text-secondary)] hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                                  }`}
+                                >
+                                  <Icon className="h-4 w-4 shrink-0" />
+                                  <span>{option.label}</span>
+                                </button>
+                              );
+                            })}
                         </div>
                       </div>
                       <SettingsRow

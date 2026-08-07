@@ -1784,6 +1784,7 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
           <>
             <ModuleHeaderStripAction
               icon={<Inbox size={14} />}
+              webDestination="inbox"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               title="Open Intake"
               ariaLabel="Open Intake"

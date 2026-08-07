@@ -38,6 +38,8 @@ import { IntegrationProviderMark } from './IntegrationProviderMark';
 import { WorkspaceSwitcherMenu } from './WorkspaceSwitcherMenu';
 import { LedgerTabStrip } from './LedgerTabStrip';
 import { useSearch } from '../../context/SearchContext';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { usePlatform } from '../../platform';
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string;
@@ -127,6 +129,7 @@ type ModuleHeaderStripActionProps = {
   title: string;
   ariaLabel: string;
   notificationTrayToggle?: boolean;
+  webDestination?: 'inbox' | 'notifications';
 };
 
 type WorkspaceNavigationState = {
@@ -470,11 +473,42 @@ export const ModuleHeaderStripAction = ({
   title,
   ariaLabel,
   notificationTrayToggle = false,
+  webDestination,
 }: ModuleHeaderStripActionProps) => {
+  const platform = usePlatform();
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const handleClick = () => {
+    if (platform.kind === 'web') {
+      // Electron uses the tray/pop-out event. Web renders that same tray in
+      // the browser shell, so do not turn the notification button into a
+      // full-page navigation.
+      if (notificationTrayToggle) {
+        onClick();
+        return;
+      }
+      const workspaceMatch = window.location.pathname.match(/^\/app\/w\/([^/]+)/);
+      const workspaceId = workspaceMatch
+        ? decodeURIComponent(workspaceMatch[1])
+        : activeWorkspaceId;
+      if (workspaceId) {
+        const destination = webDestination ?? (notificationTrayToggle ? 'notifications' : undefined);
+        if (destination) {
+          platform.navigation.openRoute({
+            kind: 'workspace',
+            workspaceId,
+            page: destination,
+          });
+          return;
+        }
+      }
+    }
+    onClick();
+  };
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={handleClick}
       title={title}
       aria-label={ariaLabel}
       {...(notificationTrayToggle ? { 'data-notification-tray-toggle': true } : {})}
@@ -521,6 +555,8 @@ export const ModuleWindowHeader = ({
   headerRef,
 }: ModuleWindowHeaderProps) => {
   const { openSearch } = useSearch();
+  const platform = usePlatform();
+  const isBrowser = !window.desktopWindow;
   void icon;
   const controlClassName = `flex h-5 w-5 items-center justify-center rounded-full border ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${sidebarTheme.textSecondary} shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:${sidebarTheme.hoverSurface} hover:${sidebarTheme.textPrimary}`;
 
@@ -713,6 +749,21 @@ export const ModuleWindowHeader = ({
 
   const currentRoute = workspaceNavigationState.currentRoute ?? null;
   const handleClose = () => {
+    if (!window.desktopWindow) {
+      if (window.location.pathname.includes('/capture/') || window.location.pathname.endsWith('/follow-up')) {
+        platform.navigation.closeOverlay();
+        return;
+      }
+      const workspaceMatch = window.location.pathname.match(/^\/app\/w\/([^/]+)/);
+      if (workspaceMatch) {
+        platform.navigation.openRoute({
+          kind: 'workspace',
+          workspaceId: decodeURIComponent(workspaceMatch[1]),
+          page: 'home',
+        });
+        return;
+      }
+    }
     if (currentRoute) {
       window.dispatchEvent(
         new CustomEvent('ledger:workspace-route-closed', { detail: { ...currentRoute } })
@@ -802,17 +853,17 @@ export const ModuleWindowHeader = ({
     <div
       ref={headerRef}
       data-ledger-module-header
-      className={`w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`}
+      className={`web-module-header w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`}
       style={dragRegionStyle}
       onDoubleClickCapture={handleStripDoubleClick}
     >
       <div
-        className={`flex h-10 w-full cursor-default items-center justify-between border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} px-4`}
+        className={`web-module-header-strip flex h-10 w-full cursor-default items-center justify-between border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.hoverSurface} px-4`}
         style={dragRegionStyle}
         onDoubleClickCapture={handleStripDoubleClick}
       >
         <div className="flex shrink-0 items-center gap-2" style={noDragRegionStyle}>
-          <div className="flex shrink-0 items-center gap-1">
+          {!isBrowser && <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={handleClose}
@@ -847,12 +898,12 @@ export const ModuleWindowHeader = ({
                 <Maximize2 size={12} />
               </button>
             )}
-          </div>
+          </div>}
 
-          <div
+          {!isBrowser && <div
             aria-hidden="true"
             className="mx-1.5 self-stretch border-l border-[color:var(--ledger-border-subtle)]"
-          />
+          />}
 
           <div className="flex shrink-0 items-center gap-0.5">
             {onGoBack && !showWorkspaceNavigation && (

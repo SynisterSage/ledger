@@ -642,6 +642,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
               count={inboxCount}
+              webDestination="inbox"
               onClick={() => window.desktopWindow?.openModule('inbox')}
               title="Open Intake"
               ariaLabel="Open Intake"

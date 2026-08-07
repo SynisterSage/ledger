@@ -529,7 +529,7 @@ function AuthStatusScreen({
         className="flex h-32 w-32 flex-col items-center justify-center gap-4 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         style={noDragRegionStyle}
       >
-        <img src="./logo-color.svg" alt="Ledger" className="h-11 w-11 select-none" />
+        <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="h-11 w-11 select-none" />
         <Loader2 size={14} className="animate-spin text-[var(--ledger-text-muted)]" aria-hidden="true" />
       </div>
     </div>
@@ -735,7 +735,7 @@ function OnboardingFlow({
         >
           {step === 'welcome' ? (
             <div className="mx-auto text-center" style={noDragRegionStyle}>
-              <img src="./logo-color.svg" alt="Ledger" className="mx-auto mb-5 h-10 w-10" />
+              <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="mx-auto mb-5 h-10 w-10" />
               <h1 className="text-[30px] font-regular leading-tight text-[var(--ledger-text-primary)]">
                 Welcome to Ledger
               </h1>
@@ -6234,7 +6234,7 @@ export function DashboardContent({
   };
   return (
     <div
-      className={dashboardTheme.shell}
+      className={`${dashboardTheme.shell} ${browserMode ? 'web-dashboard-module' : ''}`}
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
       <CloseGuardModal
@@ -6268,7 +6268,7 @@ export function DashboardContent({
       <ModuleWindowHeader
         title="Workspace overview"
         stripTitle="Workspace overview"
-        icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
+        icon={<img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-5 w-5" />}
         globalActions={
           <>
             <ModuleHeaderStripAction
@@ -6644,10 +6644,12 @@ export function DashboardContent({
       />
 
       <div
-        className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} px-4 py-4 lg:px-5 lg:py-5`}
+        className={`flex-1 min-h-0 overflow-auto ${dashboardTheme.content} ${
+          browserMode ? 'web-dashboard-content' : 'px-4 py-4 lg:px-5 lg:py-5'
+        }`}
         style={{ scrollbarGutter: 'auto' }}
       >
-        <div className="flex h-full min-h-[680px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
+        <div className="web-dashboard-surface flex h-full min-h-[680px] w-full flex-col rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)]">
           <header className="border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
             <div className="min-w-0">
               <p className="mt-1 text-[13px] text-[var(--ledger-text-muted)]">
@@ -6662,7 +6664,7 @@ export function DashboardContent({
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="web-dashboard-panels grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_280px]">
             <main className="flex min-h-0 min-w-0 flex-col overflow-auto px-3 py-3">
               {isLoadingDashboard ? (
                 <div className="space-y-2 p-3">
@@ -6943,7 +6945,7 @@ export function DashboardContent({
               )}
             </main>
 
-            <aside className="min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 md:border-l md:border-t-0">
+            <aside className="web-dashboard-secondary min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 md:border-l md:border-t-0">
               <div className="flex h-full min-h-0 flex-col overflow-y-auto pr-0.5">
                 {!selectedOverviewRow ? (
                   <>

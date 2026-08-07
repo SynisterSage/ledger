@@ -4,6 +4,8 @@ import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, F
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
 
 export const CollapsedSidebar = ({
   onDragHandleMouseDown,
@@ -11,11 +13,25 @@ export const CollapsedSidebar = ({
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
   const { restoreSidebarView, position } = useSidebar();
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
+  const toggleModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
+    if (platform.kind === 'web') return openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
+    return window.desktopWindow?.toggleModule(kind, focus as any);
+  };
+  const openModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
+    if (platform.kind === 'web') return openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
+    return window.desktopWindow?.openModule(kind, focus as any);
+  };
   const { openSearch } = useSearch();
   const isHorizontal = position === 'top' || position === 'bottom';
   const isTopDock = position === 'top';
   const ExpandChevron = isTopDock ? ChevronDown : ChevronUp;
   const handleClick = () => {
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, 'new-tab');
+      return;
+    }
     restoreSidebarView();
   };
 
@@ -49,6 +65,10 @@ export const CollapsedSidebar = ({
             <button
               aria-label="Open search"
               onClick={() => {
+                if (platform.kind === 'web') {
+                  openSearch();
+                  return;
+                }
                 void (async () => {
                   const wasForwarded = await window.desktopWindow?.openSearchInWorkspaceWindow?.();
                   if (wasForwarded) return;
@@ -66,7 +86,7 @@ export const CollapsedSidebar = ({
           <div className="flex items-center gap-2">
             <button
               aria-label="Open overview"
-              onClick={() => window.desktopWindow?.toggleModule('dashboard')}
+              onClick={() => toggleModule('dashboard')}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}
             >
@@ -74,7 +94,7 @@ export const CollapsedSidebar = ({
             </button>
             <button
               aria-label="Open circle"
-              onClick={() => window.desktopWindow?.toggleModule('circle')}
+              onClick={() => toggleModule('circle')}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}
             >
@@ -82,7 +102,7 @@ export const CollapsedSidebar = ({
             </button>
             <button
               aria-label="Open Intake"
-              onClick={() => window.desktopWindow?.toggleModule('inbox')}
+              onClick={() => toggleModule('inbox')}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}
             >
@@ -90,7 +110,7 @@ export const CollapsedSidebar = ({
             </button>
             <button
               aria-label="Open calendar"
-              onClick={() => window.desktopWindow?.openModule('calendar')}
+              onClick={() => openModule('calendar')}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}
             >
@@ -98,7 +118,7 @@ export const CollapsedSidebar = ({
             </button>
             <button
               aria-label="Open projects"
-              onClick={() => window.desktopWindow?.toggleModule('projects')}
+              onClick={() => toggleModule('projects')}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}
             >
@@ -106,7 +126,7 @@ export const CollapsedSidebar = ({
             </button>
             <button
               aria-label="Open notes"
-              onClick={() => window.desktopWindow?.toggleModule('notes')}
+              onClick={() => toggleModule('notes')}
               onMouseDown={(e) => e.stopPropagation()}
               className={iconButtonClass}
             >

@@ -6466,6 +6466,18 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       }
       syncDraftFromNote(noteToOpen);
       recordNoteOpened(note.id);
+      if (!window.desktopWindow && activeWorkspaceId) {
+        const notePath = `/app/w/${encodeURIComponent(activeWorkspaceId)}/notes/${encodeURIComponent(note.id)}`;
+        if (window.location.pathname !== notePath) {
+          platform.navigation.openRoute({
+            kind: 'workspace',
+            workspaceId: activeWorkspaceId,
+            page: 'note',
+            noteId: note.id,
+            query: initialView ? { view: initialView } : undefined,
+          });
+        }
+      }
     },
     [
       flushAutosave,
@@ -6475,6 +6487,9 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       api,
       selectedNoteIds.length,
       syncDraftFromNote,
+      activeWorkspaceId,
+      initialView,
+      platform.navigation,
     ]
   );
 
@@ -7565,6 +7580,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
             <ModuleHeaderStripAction
               icon={<Inbox size={12} />}
               count={inboxCount}
+              webDestination="inbox"
               onClick={() => window.desktopWindow?.toggleModule('inbox')}
               title="Open Intake"
               ariaLabel="Open Intake"
