@@ -36,6 +36,7 @@ import { useApi } from '../../hooks/useApi';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { IntegrationProviderMark, normalizeIntegrationProvider } from '../Common/IntegrationProviderMark';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, routeForTask, routeForTeam, usePlatform } from '../../platform';
 
 type SearchResultType =
   | 'note'
@@ -506,6 +507,7 @@ export const SearchModal = () => {
   const isModuleWindow = new URLSearchParams(window.location.search).get('window') === 'module';
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const platform = usePlatform();
   const { isSearchOpen, initialQuery, closeSearch } = useSearch();
   const api = useApi();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -652,6 +654,49 @@ export const SearchModal = () => {
 
   const jumpToResult = useCallback(
     (result: SearchResult) => {
+      if (platform.kind === 'web' && activeWorkspaceId) {
+        if (result.type === 'note' || result.type === 'transcript' || result.type === 'meeting_metadata') {
+          platform.navigation.openRoute(routeForNote(activeWorkspaceId, result.note_id ?? result.id));
+        } else if (result.type === 'project') {
+          platform.navigation.openRoute(routeForProject(activeWorkspaceId, result.id));
+        } else if (result.type === 'task') {
+          platform.navigation.openRoute(result.project_id ? routeForProject(activeWorkspaceId, result.project_id, result.id) : routeForTask(activeWorkspaceId, result.id));
+        } else if (result.type === 'event') {
+          platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, result.id, result.focusDate ?? undefined));
+        } else if (result.type === 'reminder') {
+          platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId, result.id));
+        } else if (result.type === 'intake') {
+          platform.navigation.openRoute(routeForInboxItem(activeWorkspaceId, result.id));
+        } else if (result.type === 'team') {
+          platform.navigation.openRoute(routeForTeam(activeWorkspaceId, result.id));
+        } else if (result.type === 'person') {
+          platform.navigation.openRoute({ kind: 'workspace', workspaceId: activeWorkspaceId, page: 'circle', query: { person: result.id } });
+        } else if (result.type === 'command') {
+          const action = result.actionId ?? '';
+          if (action === 'new-note' || action === 'new-task') {
+            platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'capture', action: action === 'new-note' ? 'note' : 'task' });
+            closeSearch();
+            return;
+          }
+          const commandRoutes: Record<string, ReturnType<typeof routeForProject>> = {
+            overview: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'dashboard' },
+            settings: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'settings', scope: 'workspace', section: 'workspace' },
+            projects: routeForProject(activeWorkspaceId),
+            notes: routeForNote(activeWorkspaceId),
+            calendar: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'calendar' },
+            today: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'today' },
+            tasks: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'dashboard', query: { section: 'assigned' } },
+            intake: routeForInboxItem(activeWorkspaceId),
+            notifications: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'notifications' },
+            teams: routeForTeam(activeWorkspaceId),
+          };
+          const commandKey = action.replace(/^settings-(?:page|section):/, '');
+          const commandRoute = commandRoutes[action] ?? commandRoutes[commandKey];
+          if (commandRoute) platform.navigation.openRoute(commandRoute);
+        }
+        closeSearch();
+        return;
+      }
       if (result.type === 'command') {
         if (result.actionId?.startsWith('settings-page:')) {
           const pageId = result.actionId.slice('settings-page:'.length);
@@ -786,7 +831,7 @@ export const SearchModal = () => {
 
       closeSearch();
     },
-    [closeSearch]
+    [activeWorkspaceId, closeSearch, platform]
   );
 
   const onKeyDown = useCallback(

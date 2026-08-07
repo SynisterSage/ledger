@@ -1,11 +1,13 @@
 import { ArrowRight, Check, FileText, Calendar, Bell } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { ModuleWindowHeader } from './ModuleWindowHeader';
 import { CloseGuardModal } from './CloseGuardModal';
 import { findSmartDateMatch, formatSmartDateKey } from '../Notes/smartDateUtils';
+import { usePlatform } from '../../platform';
+import { removeWebDraft, readWebDraft, unwrapWebDraft, webDraftKey, writeWebDraft } from '../../web/webPersistence';
 
 type FollowUpContext = {
   eventId: string;
@@ -106,25 +108,30 @@ const parseSelectionContext = (value?: string): SelectionContext | null => {
 export const QuickCaptureWindow = ({
   kind,
   context,
+  browserMode = false,
+  initialDate,
 }: {
   kind: 'quick-follow-up' | 'quick-task' | 'quick-note' | 'quick-event' | 'quick-reminder';
   context?: string;
+  browserMode?: boolean;
+  initialDate?: string;
 }) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
+  const platform = usePlatform();
 
   const [taskTitle, setTaskTitle] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [eventTitle, setEventTitle] = useState('');
-  const [eventDate, setEventDate] = useState(() => {
+  const [eventDate, setEventDate] = useState(() => initialDate || (() => {
     const today = new Date();
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     const day = String(today.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-  });
+  })());
   const [eventTime, setEventTime] = useState('09:00');
   const [eventDurationValue, setEventDurationValue] = useState(30);
   const [eventDurationUnit, setEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
@@ -137,10 +144,60 @@ export const QuickCaptureWindow = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
+  const saveInFlightRef = useRef(false);
+  const [draftHydrated, setDraftHydrated] = useState(!browserMode);
 
   const taskInputRef = useRef<HTMLInputElement>(null);
   const noteInputRef = useRef<HTMLTextAreaElement>(null);
   const eventInputRef = useRef<HTMLInputElement>(null);
+
+  const draftKey = useMemo(
+    () => webDraftKey(user?.id, activeWorkspaceId, kind, context, initialDate),
+    [activeWorkspaceId, context, initialDate, kind, user?.id]
+  );
+
+  useEffect(() => {
+    if (!browserMode || !user?.id || !activeWorkspaceId) {
+      setDraftHydrated(true);
+      return;
+    }
+    const stored = unwrapWebDraft<{
+      taskTitle?: string;
+      noteTitle?: string;
+      noteContent?: string;
+      eventTitle?: string;
+      eventDate?: string;
+      eventTime?: string;
+    }>(readWebDraft<{ value?: {
+      taskTitle?: string;
+      noteTitle?: string;
+      noteContent?: string;
+      eventTitle?: string;
+      eventDate?: string;
+      eventTime?: string;
+    } }>(draftKey));
+    if (stored) {
+      if (typeof stored.taskTitle === 'string') setTaskTitle(stored.taskTitle);
+      if (typeof stored.noteTitle === 'string') setNoteTitle(stored.noteTitle);
+      if (typeof stored.noteContent === 'string') setNoteContent(stored.noteContent);
+      if (typeof stored.eventTitle === 'string') setEventTitle(stored.eventTitle);
+      if (typeof stored.eventDate === 'string') setEventDate(stored.eventDate);
+      if (typeof stored.eventTime === 'string') setEventTime(stored.eventTime);
+    }
+    setDraftHydrated(true);
+  }, [activeWorkspaceId, browserMode, draftKey, user?.id]);
+
+  useEffect(() => {
+    if (!browserMode || !draftHydrated || !user?.id || !activeWorkspaceId) return;
+    const hasDraft = Boolean(
+      taskTitle.trim() || noteTitle.trim() || noteContent.trim() || eventTitle.trim()
+    );
+    if (!hasDraft) {
+      removeWebDraft(draftKey);
+      return;
+    }
+    writeWebDraft(draftKey, { taskTitle, noteTitle, noteContent, eventTitle, eventDate, eventTime });
+  }, [activeWorkspaceId, browserMode, draftHydrated, draftKey, eventDate, eventTime, eventTitle, noteContent, noteTitle, taskTitle, user?.id]);
 
   // Auto-focus on mount
   useEffect(() => {
@@ -213,7 +270,8 @@ export const QuickCaptureWindow = ({
   }, [api, kind, user]);
 
   const closeWindowNow = () => {
-    void window.desktopWindow?.closeModule(kind as any);
+    if (browserMode) platform.navigation.closeOverlay();
+    else void window.desktopWindow?.closeModule(kind as any);
   };
 
   const resetTaskDraft = () => setTaskTitle('');
@@ -331,12 +389,18 @@ export const QuickCaptureWindow = ({
   }, [context, kind, selectionContext?.text]);
 
   const saveQuickTask = async () => {
+    if (saveInFlightRef.current) return;
     if (!user || !activeWorkspaceId || !taskTitle.trim()) {
       setError('Task title cannot be empty');
       return;
     }
+    if (browserMode && typeof navigator !== 'undefined' && !navigator.onLine) {
+      setError('You appear to be offline. Reconnect before saving this task.');
+      return;
+    }
 
     try {
+      saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
       const followUpDate = followUpContext
@@ -405,11 +469,13 @@ export const QuickCaptureWindow = ({
       }
       setShowCloseGuardModal(false);
       resetTaskDraft();
+      removeWebDraft(draftKey);
       closeWindowNow();
     } catch (error) {
       console.error('Failed to create task:', error);
       setError('Failed to create task. Please try again.');
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };
@@ -430,12 +496,18 @@ export const QuickCaptureWindow = ({
   };
 
   const saveQuickNote = async () => {
+    if (saveInFlightRef.current) return;
     if (!user || !activeWorkspaceId || !noteTitle.trim()) {
       setError('Note title cannot be empty');
       return;
     }
+    if (browserMode && typeof navigator !== 'undefined' && !navigator.onLine) {
+      setError('You appear to be offline. Reconnect before saving this note.');
+      return;
+    }
 
     try {
+      saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
       const createdNote = await api.createNote(noteTitle.trim(), noteContent.trim(), {
@@ -452,22 +524,30 @@ export const QuickCaptureWindow = ({
       }));
       setShowCloseGuardModal(false);
       resetNoteDraft();
+      removeWebDraft(draftKey);
       closeWindowNow();
     } catch (error) {
       console.error('Failed to create note:', error);
       setError('Failed to create note. Please try again.');
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };
 
   const saveQuickEvent = async () => {
+    if (saveInFlightRef.current) return;
     if (!user || !activeWorkspaceId || !eventTitle.trim()) {
       setError('Event title cannot be empty');
       return;
     }
+    if (browserMode && typeof navigator !== 'undefined' && !navigator.onLine) {
+      setError('You appear to be offline. Reconnect before saving this event.');
+      return;
+    }
 
     try {
+      saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
       const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
@@ -519,11 +599,13 @@ export const QuickCaptureWindow = ({
       });
       setShowCloseGuardModal(false);
       resetEventDraft();
+      removeWebDraft(draftKey);
       closeWindowNow();
     } catch (error) {
       console.error('Failed to create event:', error);
       setError('Failed to create event. Please try again.');
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };
@@ -662,11 +744,17 @@ export const QuickCaptureWindow = ({
   }
 
   const saveQuickReminder = async () => {
+    if (saveInFlightRef.current) return;
     if (!user || !activeWorkspaceId || !eventTitle.trim()) {
       setError('Reminder title cannot be empty');
       return;
     }
+    if (browserMode && typeof navigator !== 'undefined' && !navigator.onLine) {
+      setError('You appear to be offline. Reconnect before saving this reminder.');
+      return;
+    }
     try {
+      saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
       const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
@@ -693,11 +781,13 @@ export const QuickCaptureWindow = ({
       });
       setShowCloseGuardModal(false);
       resetEventDraft();
+      removeWebDraft(draftKey);
       closeWindowNow();
     } catch (error) {
       console.error('Failed to create reminder:', error);
       setError('Failed to create reminder. Please try again.');
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };

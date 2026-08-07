@@ -12,6 +12,7 @@ import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
+import { openLegacyModule, usePlatform } from '../../platform';
 
 export type NotificationAction = 'open' | 'dismiss' | 'complete' | 'snooze';
 export type NotificationFilter = 'active' | 'unread' | 'dismissed';
@@ -53,6 +54,7 @@ const NotificationCenterContext = createContext<NotificationCenterContextValue |
 export const NotificationCenterProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
   const toast = useToast();
   const api = useApi();
   const [active, setActive] = useState<NotificationCenterItem[]>([]);
@@ -185,8 +187,18 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   const openTarget = useCallback(async (item: NotificationCenterItem) => {
     const focus = item.focusPayload ?? undefined;
     const kind = item.moduleKind ?? 'dashboard';
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, kind, {
+        focusDate: typeof focus?.focusDate === 'string' ? focus.focusDate : undefined,
+        focusProjectId: typeof focus?.focusProjectId === 'string' ? focus.focusProjectId : item.sourceType === 'project' ? item.sourceId : undefined,
+        focusTaskId: typeof focus?.focusTaskId === 'string' ? focus.focusTaskId : item.sourceType === 'task' ? item.sourceId : undefined,
+        focusInboxId: typeof focus?.focusInboxId === 'string' ? focus.focusInboxId : item.sourceType === 'inbox' ? item.sourceId : undefined,
+        focusContext: typeof focus?.focusContext === 'string' ? focus.focusContext : item.sourceType === 'event' ? `focus-event:${item.sourceId}` : item.sourceType === 'reminder' ? `focus-reminder:${item.sourceId}` : undefined,
+      });
+      return;
+    }
     await window.desktopWindow?.openModule(kind, focus as any);
-  }, []);
+  }, [activeWorkspaceId, platform]);
 
   const applyAction = useCallback(async (item: NotificationCenterItem, action: NotificationAction) => {
     try {

@@ -4,7 +4,10 @@ import electron from 'vite-plugin-electron/simple';
 import react from '@vitejs/plugin-react';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }) => {
+  const isWebDevelopment = mode !== 'production' && process.env.LEDGER_DEV_TARGET === 'web';
+
+  return ({
   // Electron opens the packaged renderer from file://. Relative public asset
   // URLs keep icons and other files inside the bundled dist directory.
   base: mode === 'production' ? './' : '/',
@@ -29,7 +32,7 @@ export default defineConfig(({ mode }) => ({
         ]
       : []),
     react(),
-    electron({
+    ...(isWebDevelopment ? [] : [electron({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
@@ -60,6 +63,7 @@ export default defineConfig(({ mode }) => ({
           ? // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
             undefined
           : {},
-    }),
+    })]),
   ],
-}));
+  });
+});

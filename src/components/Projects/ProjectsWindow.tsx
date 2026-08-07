@@ -563,7 +563,7 @@ type ProjectDraft = {
   leadId: string;
 };
 
-export const ProjectsWindow = () => {
+export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; taskId?: string } } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
@@ -571,13 +571,13 @@ export const ProjectsWindow = () => {
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
-  const initialFocusProjectId = new URLSearchParams(window.location.search).get('focusProjectId');
+  const initialFocusProjectId = webQuery?.projectId ?? new URLSearchParams(window.location.search).get('focusProjectId');
   const initialProjectsSection =
     new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
   const initialFocusHandledRef = useRef(false);
   const initialTeamFocusHandledRef = useRef(false);
   const initialTryActionHandledRef = useRef(false);
-  const initialFocusTaskId = new URLSearchParams(window.location.search).get('focusTaskId');
+  const initialFocusTaskId = webQuery?.taskId ?? new URLSearchParams(window.location.search).get('focusTaskId');
   const initialFocusContext =
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
   const autosaveTimerRef = useRef<number | null>(null);

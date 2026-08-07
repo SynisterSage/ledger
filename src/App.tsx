@@ -618,6 +618,7 @@ function OnboardingFlow({
   onInviteSkip,
   onWorkspaceSubmit,
   onOpenLedger,
+  browserMode = false,
 }: {
   step: OnboardingStep;
   mode: OnboardingWorkspaceMode;
@@ -646,6 +647,7 @@ function OnboardingFlow({
   onInviteSkip: () => void;
   onWorkspaceSubmit: () => Promise<void>;
   onOpenLedger: (position: SidebarPosition) => Promise<void>;
+  browserMode?: boolean;
 }) {
   const [inviteDraft, setInviteDraft] = useState('');
   const [inviteEmails, setInviteEmails] = useState<string[]>([]);
@@ -1166,14 +1168,17 @@ function OnboardingFlow({
                     : `Step ${profileSetupIncluded ? 4 : 3} of ${profileSetupIncluded ? 4 : 3}`}
                 </p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
-                  Choose a sidebar position
+                  {browserMode ? 'Your workspace is ready' : 'Choose a sidebar position'}
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-[var(--ledger-text-muted)]">
-                  Choose where Ledger starts. You can change this anytime.
+                  {browserMode
+                    ? 'Ledger Web is ready. You can start working in your workspace now.'
+                    : 'Choose where Ledger starts. You can change this anytime.'}
                 </p>
               </div>
 
               <div
+                hidden={browserMode}
                 className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2"
                 role="radiogroup"
                 aria-label="Sidebar position"
@@ -1260,12 +1265,12 @@ function OnboardingFlow({
                   type="button"
                   disabled={isSaving}
                   onClick={() => {
-                    void onOpenLedger(selectedPosition);
+                    void onOpenLedger(browserMode ? 'left' : selectedPosition);
                   }}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
                 >
                   {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
-                  {isSaving ? 'Opening...' : 'Open Ledger'}
+                  {isSaving ? 'Opening...' : browserMode ? 'Enter Ledger' : 'Open Ledger'}
                 </button>
               </div>
             </div>
@@ -1285,7 +1290,15 @@ const dashboardCache = new Map<
 >();
 
 // Dashboard content component
-function DashboardContent() {
+export function DashboardContent({
+  browserMode = false,
+  initialSection,
+  onBrowserClose,
+}: {
+  browserMode?: boolean;
+  initialSection?: 'all' | 'assigned' | 'today' | 'projects' | 'notes';
+  onBrowserClose?: () => void;
+} = {}) {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
@@ -1628,7 +1641,7 @@ function DashboardContent() {
   const [isOverviewRescheduleOpen, setIsOverviewRescheduleOpen] = useState(false);
   const [overviewRescheduleDate, setOverviewRescheduleDate] = useState('');
   const currentDashboardSection =
-    new URLSearchParams(window.location.search).get('section')?.trim() ?? moduleSection;
+    initialSection ?? new URLSearchParams(window.location.search).get('section')?.trim() ?? moduleSection;
   type OverviewTab = 'all' | 'assigned' | 'today' | 'projects' | 'notes';
   type OverviewFilterKey =
     | 'type'
@@ -6198,6 +6211,13 @@ function DashboardContent() {
     visibleOverviewRows,
   ]);
 
+  const closeDashboard = () => {
+    if (browserMode) {
+      onBrowserClose?.();
+      return;
+    }
+    void window.desktopWindow?.closeModule('dashboard');
+  };
   const attemptCloseDashboard = () => {
     const hasUnsaved =
       overviewTaskTitle.trim().length > 0 ||
@@ -6207,7 +6227,7 @@ function DashboardContent() {
       setShowCloseGuardModal(true);
       return;
     }
-    void window.desktopWindow?.closeModule('dashboard');
+    closeDashboard();
   };
   return (
     <div
@@ -6229,7 +6249,7 @@ function DashboardContent() {
           setOverviewTaskAssigneeValue('');
           setOverviewTaskDueDate('');
           setIsOverviewTaskModalOpen(false);
-          void window.desktopWindow?.closeModule('dashboard');
+          closeDashboard();
         }}
         onRetrySaveAndClose={() => {
           void (async () => {
@@ -6238,7 +6258,7 @@ function DashboardContent() {
               await createOverviewTask();
             }
             setShowCloseGuardModal(false);
-            void window.desktopWindow?.closeModule('dashboard');
+            closeDashboard();
           })();
         }}
       />
@@ -6608,11 +6628,11 @@ function DashboardContent() {
         }
         closeLabel="Close overview"
         minimizeLabel="Minimize overview"
-        onMinimize={() => {
+        onMinimize={browserMode ? undefined : () => {
           void window.desktopWindow?.minimizeModule('dashboard');
         }}
         fullscreenLabel="Fullscreen overview"
-        onToggleFullscreen={() => {
+        onToggleFullscreen={browserMode ? undefined : () => {
           void window.desktopWindow?.toggleModuleFullscreen('dashboard');
         }}
         onClose={attemptCloseDashboard}
@@ -8162,7 +8182,13 @@ function DashboardContent() {
 }
 
 // Main app component
-function AppShell() {
+export function AppShell({
+  browserMode = false,
+  browserContent,
+}: {
+  browserMode?: boolean;
+  browserContent?: ReactNode;
+} = {}) {
   const toast = useToast();
   const { user, profile, refreshProfile, isLoading, error: authError } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId, refreshWorkspaces, setActiveWorkspace } =
@@ -8888,7 +8914,8 @@ function AppShell() {
         // Leave the accepted state visible; the workspace can still be selected manually.
       } finally {
         if (cancelled) return;
-        window.history.replaceState({}, '', '/');
+        window.history.replaceState({}, '', browserMode ? `/app/w/${inviteWorkspaceId}/home` : '/');
+        if (browserMode) window.dispatchEvent(new PopStateEvent('popstate'));
         setPendingInviteToken(null);
       }
     };
@@ -8939,6 +8966,7 @@ function AppShell() {
     let cancelled = false;
 
     const acceptInvitation = async () => {
+      let acceptedWorkspaceId: string | null = null;
       try {
         setInviteFlowStatus('processing');
         setInviteFlowError(null);
@@ -8947,6 +8975,7 @@ function AppShell() {
           already_member?: boolean;
           workspace_id?: string | null;
         };
+        acceptedWorkspaceId = payload.workspace_id ?? null;
         await refreshWorkspaces();
         if (payload.workspace_id) {
           await setActiveWorkspace(payload.workspace_id);
@@ -8966,7 +8995,8 @@ function AppShell() {
       } finally {
         if (cancelled) return;
 
-        window.history.replaceState({}, '', '/');
+        window.history.replaceState({}, '', browserMode && acceptedWorkspaceId ? `/app/w/${acceptedWorkspaceId}/home` : '/');
+        if (browserMode) window.dispatchEvent(new PopStateEvent('popstate'));
         setPendingInviteToken(null);
       }
     };
@@ -9008,7 +9038,7 @@ function AppShell() {
     if (onboardingResetUserRef.current === currentUserId) return;
     onboardingResetUserRef.current = currentUserId;
 
-    setOnboardingStep(isInviteOnboarding ? 'position' : 'welcome');
+    setOnboardingStep(browserMode ? 'welcome' : isInviteOnboarding ? 'position' : 'welcome');
     setOnboardingHasProfileStep(false);
     setOnboardingDisplayName(
       profile?.displayName?.trim() ||
@@ -9557,6 +9587,7 @@ function AppShell() {
         onPositionChange={setOnboardingSidebarPosition}
         onWorkspaceSubmit={completeWorkspaceSetup}
         onOpenLedger={openLedgerFromOnboarding}
+        browserMode={browserMode}
       />
     );
   }
@@ -9573,6 +9604,8 @@ function AppShell() {
       <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} isExiting={isAuthExiting} />
     );
   }
+
+  if (browserContent) return <>{browserContent}</>;
 
   return (
     <>

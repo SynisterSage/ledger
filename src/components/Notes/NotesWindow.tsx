@@ -82,6 +82,7 @@ import type {
 import { htmlToPlainText, normalizeEditorHtml } from './editor/utils/html';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { usePlatform } from '../../platform';
 import { CreateNoteModal } from './CreateNoteModal';
 import { BulkExportModal } from './BulkExportModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
@@ -1910,6 +1911,8 @@ type MeetingAudioSetupProps = {
   onOpenSettings: (area: 'microphone' | 'screen-recording') => void;
   audioError: string | null;
   onClose: () => void;
+  isBrowser?: boolean;
+  canCaptureMicrophone?: boolean;
 };
 
 const MeetingAudioSetup = ({
@@ -1926,6 +1929,8 @@ const MeetingAudioSetup = ({
   onOpenSettings,
   audioError,
   onClose,
+  isBrowser = false,
+  canCaptureMicrophone = false,
 }: MeetingAudioSetupProps) => (
   <ModalOverlay
     isOpen
@@ -1961,8 +1966,13 @@ const MeetingAudioSetup = ({
           </div>
         )}
         {!window.meetingAudio ? (
-          <div className="rounded-lg bg-[color:rgba(217,45,32,0.06)] px-3 py-2 text-xs text-[var(--ledger-danger)]">
-            Meeting audio capture requires the packaged macOS Ledger app.
+          <div className="space-y-3 rounded-lg bg-[color:rgba(217,45,32,0.06)] px-3 py-3 text-xs text-[var(--ledger-danger)]">
+            <p>{isBrowser ? 'Ledger Web can check microphone permission, but native recording and system-audio capture require the desktop app.' : 'Meeting audio capture requires the packaged macOS Ledger app.'}</p>
+            {isBrowser && canCaptureMicrophone && (
+              <button type="button" onClick={onRequestPermissions} disabled={isBusy} className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)] disabled:opacity-50">
+                Check microphone permission
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -2289,7 +2299,8 @@ const RecordingRecoveryNotice = ({
   );
 };
 
-export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) => {
+export const NotesWindow = ({ focusContext, initialView }: { focusContext?: string; initialView?: 'write' | 'outline' | 'map' | 'transcribe' } = {}) => {
+  const platform = usePlatform();
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
@@ -2300,6 +2311,9 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     focusContext?.trim() ||
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ||
     '';
+  const initialFocusNoteFromContext = initialFocusContext.startsWith('focus-note:')
+    ? initialFocusContext.slice('focus-note:'.length).trim()
+    : '';
   const titleRef = useRef<HTMLInputElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const savingIndicatorTimerRef = useRef<number | null>(null);
@@ -2332,7 +2346,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialFocusNoteId);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialFocusNoteId || initialFocusNoteFromContext || null);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [meetingMetadata, setMeetingMetadata] = useState<MeetingNoteMetadata | null>(null);
   const [meetingSeriesOccurrences, setMeetingSeriesOccurrences] = useState<
@@ -3436,7 +3450,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     {
       kind: 'notes',
       focusNoteId: selectedNoteId,
-      focusContext: selectedNoteId ? null : 'home',
+      focusContext: selectedNoteId ? (initialView ? `note-view:${initialView}` : null) : 'home',
     },
     true
   );
@@ -4314,6 +4328,11 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   }, [api, isMeetingNote, selectedNote]);
 
   const requestAudioPermissions = useCallback(async () => {
+    if (platform.kind === 'web') {
+      const microphone = await platform.meetingAudio.requestMicrophone();
+      setAudioPermissions({ microphone: microphone === 'granted' ? 'granted' : microphone === 'denied' ? 'denied' : 'unavailable', systemAudio: 'unavailable' });
+      return;
+    }
     if (!window.meetingAudio) return;
     setIsAudioBusy(true);
     setAudioError(null);
@@ -4326,7 +4345,7 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     } finally {
       setIsAudioBusy(false);
     }
-  }, []);
+  }, [platform]);
 
   const openAudioSettings = useCallback(async (area: 'microphone' | 'screen-recording') => {
     if (!window.meetingAudio) return;
@@ -10855,6 +10874,8 @@ export const NotesWindow = ({ focusContext }: { focusContext?: string } = {}) =>
             if (testingAudioSource) void stopAudioTest();
             setIsAudioSetupOpen(false);
           }}
+          isBrowser={platform.kind === 'web'}
+          canCaptureMicrophone={platform.capabilities.canCaptureMicrophone}
         />
       )}
       {isTranscriptionSetupOpen && (

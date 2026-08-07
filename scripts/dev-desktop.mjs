@@ -36,6 +36,7 @@ const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port
     ...process.env,
     ...loadedEnv,
     VITE_LAUNCH_ELECTRON: '1',
+    LEDGER_DEV_TARGET: 'desktop',
   },
 });
 

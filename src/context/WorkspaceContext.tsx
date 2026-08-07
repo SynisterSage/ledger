@@ -216,6 +216,20 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   useEffect(() => {
+    const onBroadcast = (event: Event) => {
+      const nextWorkspaceId = String(
+        (event as CustomEvent<{ workspaceId?: string | null }>).detail?.workspaceId ?? ''
+      ).trim() || null;
+      if (!nextWorkspaceId || nextWorkspaceId === activeWorkspaceIdRef.current) return;
+      activeWorkspaceIdRef.current = nextWorkspaceId;
+      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId);
+      setActiveWorkspaceId(nextWorkspaceId);
+    };
+    window.addEventListener('ledger:workspace-broadcast', onBroadcast);
+    return () => window.removeEventListener('ledger:workspace-broadcast', onBroadcast);
+  }, []);
+
+  useEffect(() => {
     // Keep workspace in sync across Electron windows where StorageEvent propagation
     // can be inconsistent depending on process/webview boundaries.
     const syncFromStorage = () => {

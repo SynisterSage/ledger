@@ -43,6 +43,8 @@ import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { FigmaMark } from '../Common/FigmaMark';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
+import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 type ConversionType = 'task' | 'note' | 'reminder' | 'event' | 'project';
@@ -754,9 +756,10 @@ const snoozeOffset = (
 const INTAKE_CACHE_MAX_AGE = 45_000;
 const intakeItemsCache = new Map<string, { updatedAt: number; items: InboxItem[] }>();
 
-export default function IntakeWindow() {
+export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string; section?: InboxStatus } } = {}) {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const platform = usePlatform();
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
@@ -764,10 +767,8 @@ export default function IntakeWindow() {
 
   const initialFocusContext =
     new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
-  const initialFocusSection =
-    new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
-  const initialFocusInboxId =
-    new URLSearchParams(window.location.search).get('focusInboxId')?.trim() ?? '';
+  const initialFocusSection = webQuery?.section ?? new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
+  const initialFocusInboxId = webQuery?.item ?? new URLSearchParams(window.location.search).get('focusInboxId')?.trim() ?? '';
   const initialInboxStatus: InboxStatus = statusLabels.some(
     ({ value }) => value === initialFocusSection
   )
@@ -783,6 +784,15 @@ export default function IntakeWindow() {
   const [filters, setFilters] = useState<IntakeFilterState>(defaultFilters);
   const [display, setDisplay] = useState<IntakeDisplayState>(defaultDisplayState);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  useWorkspaceRouteHistory(
+    {
+      kind: 'inbox',
+      focusInboxId: selectedItemId,
+      focusSection: activeStatus,
+    },
+    Boolean(activeWorkspaceId) && platform.kind === 'web',
+    { pushHistory: false }
+  );
   const [draft, setDraft] = useState<IntakeDraftState | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
@@ -2860,44 +2870,31 @@ export default function IntakeWindow() {
           if (convertedType === 'project') {
             return {
               label: 'Open created item',
-              onClick: () =>
-                void window.desktopWindow?.toggleModule('projects', {
-                  focusProjectId: convertedId,
-                }),
+              onClick: () => platform.navigation.openRoute(routeForProject(activeWorkspaceId ?? '', convertedId)),
             };
           }
           if (convertedType === 'note') {
             return {
               label: 'Open created item',
-              onClick: () =>
-                void window.desktopWindow?.toggleModule('notes', { focusNoteId: convertedId }),
+              onClick: () => platform.navigation.openRoute(routeForNote(activeWorkspaceId ?? '', convertedId)),
             };
           }
           if (convertedType === 'task') {
             return {
               label: 'Open created item',
-              onClick: () =>
-                void window.desktopWindow?.toggleModule('dashboard', { focusTaskId: convertedId }),
+              onClick: () => platform.navigation.openRoute(routeForTask(activeWorkspaceId ?? '', convertedId)),
             };
           }
           if (convertedType === 'event') {
             return {
               label: 'Open created item',
-              onClick: () =>
-                void window.desktopWindow?.openModule('calendar', {
-                  kind: 'calendar',
-                  focusContext: `focus-event:${convertedId}`,
-                } as any),
+              onClick: () => platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId ?? '', convertedId)),
             };
           }
           if (convertedType === 'reminder') {
             return {
               label: 'Open created item',
-              onClick: () =>
-                void window.desktopWindow?.openModule('calendar', {
-                  kind: 'calendar',
-                  focusContext: `focus-reminder:${convertedId}`,
-                } as any),
+              onClick: () => platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId ?? '', convertedId)),
             };
           }
           return null;

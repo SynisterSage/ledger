@@ -74,6 +74,7 @@ import { GoogleDriveIntegrationPage } from './GoogleDriveIntegrationPage';
 import { GithubIntegrationCard } from './GithubIntegrationCard';
 import { GithubIntegrationPage } from './GithubIntegrationPage';
 import { AppleCalendarConnection } from '../Calendar/AppleCalendarConnection';
+import { usePlatform } from '../../platform';
 
 type RenderingMode = 'auto' | 'high_quality' | 'compatibility';
 
@@ -841,7 +842,8 @@ const makeTeamIdentifier = (value: string) => {
     .toUpperCase();
 };
 
-export const SettingsWindow = () => {
+export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSectionId } = {}) => {
+  const platform = usePlatform();
   const { user, profile, signOut, refreshProfile } = useAuthContext();
   const {
     sidebarPreferences,
@@ -869,9 +871,7 @@ export const SettingsWindow = () => {
     refreshWorkspaces,
     error: workspaceError,
   } = useWorkspaceContext();
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(
-    getInitialSettingsSection()
-  );
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? getInitialSettingsSection());
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
   const commitSidebarOpacity = (value: number) => {
@@ -2001,11 +2001,19 @@ export const SettingsWindow = () => {
   };
 
   const openExternalUrl = async (url: string) => {
-    if (window.desktopWindow?.openExternal) {
-      await window.desktopWindow.openExternal(url);
+    await platform.externalLinks.open(url, { newTab: true });
+  };
+
+  const toggleDesktopNotifications = async () => {
+    if (notificationPreferences.desktopEnabled) {
+      setNotificationPreferences((prev) => ({ ...prev, desktopEnabled: false }));
       return;
     }
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (platform.kind === 'web') {
+      const permission = await platform.notifications.requestPermission();
+      if (permission !== 'granted') return;
+    }
+    setNotificationPreferences((prev) => ({ ...prev, desktopEnabled: true }));
   };
 
   useEffect(() => {
@@ -4452,17 +4460,13 @@ export const SettingsWindow = () => {
                       <div className={settingsTheme.sectionRows}>
                         <SettingsRow
                           label="Desktop notifications"
-                          help="Use native system notifications when Ledger is running."
+                          help={platform.kind === 'web' ? 'Allow browser notifications when Ledger is open.' : 'Use native system notifications when Ledger is running.'}
                         >
                           <InlineSwitch
                             checked={notificationPreferences.desktopEnabled}
-                            onToggle={() =>
-                              setNotificationPreferences((prev) => ({
-                                ...prev,
-                                desktopEnabled: !prev.desktopEnabled,
-                              }))
-                            }
+                            onToggle={() => void toggleDesktopNotifications()}
                             label="Desktop notifications"
+                            disabled={platform.kind === 'web' && !platform.capabilities.canUseBrowserNotifications}
                           />
                         </SettingsRow>
                         <SettingsRow
@@ -5121,7 +5125,9 @@ export const SettingsWindow = () => {
                       <SettingsRow
                         label="Frosted background"
                         help={
-                          transparencyOverrideActive
+                          !platform.capabilities.canUseNativeMaterial
+                            ? 'Browser windows use the standard Ledger surface.'
+                            : transparencyOverrideActive
                             ? "Disabled while your system's Reduce Transparency setting is active."
                             : 'Adds a translucent system-style material behind the sidebar.'
                         }
@@ -5130,7 +5136,7 @@ export const SettingsWindow = () => {
                           checked={frostedBackgroundEnabled}
                           onToggle={() => setFrostedBackgroundEnabled(!frostedBackgroundEnabled)}
                           label="Frosted background"
-                          disabled={transparencyOverrideActive}
+                          disabled={transparencyOverrideActive || !platform.capabilities.canUseNativeMaterial}
                         />
                       </SettingsRow>
                     </div>
@@ -5141,7 +5147,7 @@ export const SettingsWindow = () => {
                       Behavior
                     </h3>
                     <div className={settingsTheme.sectionRows}>
-                      {position === 'floating' && (
+                      {position === 'floating' && platform.capabilities.canUseNativeWindowControls && (
                       <SettingsRow label="Always on top" help="Keep the floating sidebar above other windows.">
                         <InlineSwitch
                           checked={alwaysOnTop}
@@ -5152,12 +5158,13 @@ export const SettingsWindow = () => {
                       )}
                       <SettingsRow
                         label="Auto-hide"
-                        help="Hide the sidebar when your pointer leaves it."
+                        help={platform.kind === 'web' ? 'Auto-hide is available in the desktop app.' : 'Hide the sidebar when your pointer leaves it.'}
                       >
                         <InlineSwitch
                           checked={autoHide}
                           onToggle={() => setAutoHide(!autoHide)}
                           label="Auto hide"
+                          disabled={!platform.capabilities.canUseNativeWindowControls}
                         />
                       </SettingsRow>
                     </div>

@@ -14,6 +14,8 @@ import {
   useWorkspaceSearch,
 } from '../Search/useWorkspaceSearch';
 import { IntegrationProviderMark, normalizeIntegrationProvider } from './IntegrationProviderMark';
+import { usePlatform } from '../../platform';
+import type { LedgerWorkspaceRoute } from '../../platform';
 
 const destinations: Array<{
   label: string;
@@ -32,10 +34,11 @@ const destinations: Array<{
   { label: 'Notifications', kind: 'notifications', icon: Bell },
 ];
 
-export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
+export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => void; isBrowser?: boolean }) => {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
+  const platform = usePlatform();
   const api = useApi();
   const { pins } = usePins();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -170,16 +173,49 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
   }, []);
 
   const openDestination = (kind: ModuleWindowKind, route?: ModuleFocusPayload) => {
-    void window.desktopWindow?.openModule(kind, { kind, ...(route ?? {}) });
+    if (!activeWorkspaceId) return;
+    if (kind === 'quick-follow-up') {
+      platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'follow-up', entityId: route?.focusContext ?? undefined });
+      return;
+    }
+    if (kind.startsWith('quick-')) {
+      const action = kind.replace('quick-', '') as 'note' | 'task' | 'event' | 'reminder';
+      if (action === 'note' || action === 'task' || action === 'event' || action === 'reminder') {
+        platform.navigation.openOverlay({
+          kind: 'overlay',
+          workspaceId: activeWorkspaceId,
+          page: 'capture',
+          action,
+          projectId: route?.focusProjectId ?? undefined,
+          date: route?.focusDate ?? undefined,
+        });
+      }
+      return;
+    }
+
+    const base = { kind: 'workspace' as const, workspaceId: activeWorkspaceId };
+    let destination: LedgerWorkspaceRoute;
+    switch (kind) {
+      case 'new-tab': destination = { ...base, page: 'home' }; break;
+      case 'dashboard': destination = { ...base, page: 'dashboard', query: route?.focusSection ? { section: route.focusSection as 'today' | 'assigned' | 'focus' | 'review' } : undefined }; break;
+      case 'circle': destination = { ...base, page: 'circle', query: route?.focusContext ? { context: route.focusContext } : undefined }; break;
+      case 'calendar': destination = { ...base, page: 'calendar', query: { date: route?.focusDate ?? undefined, event: route?.focusContext?.startsWith('focus-event:') ? route.focusContext.slice(12) : undefined, reminder: route?.focusContext?.startsWith('focus-reminder:') ? route.focusContext.slice(15) : undefined } }; break;
+      case 'notes': destination = route?.focusNoteId ? { ...base, page: 'note', noteId: route.focusNoteId } : { ...base, page: 'notes' }; break;
+      case 'projects': destination = route?.focusProjectId ? { ...base, page: 'project', projectId: route.focusProjectId, taskId: route.focusTaskId ?? undefined } : { ...base, page: 'projects' }; break;
+      case 'teams': destination = route?.focusContext?.startsWith('team:') ? { ...base, page: 'team', teamId: route.focusContext.slice(5) } : { ...base, page: 'teams' }; break;
+      case 'inbox': destination = { ...base, page: 'inbox', query: { item: route?.focusInboxId ?? undefined, section: route?.focusSection as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined } }; break;
+      case 'slack': destination = { ...base, page: 'slack' }; break;
+      case 'notifications': destination = { ...base, page: 'notifications', query: { item: route?.focusContext ?? undefined, filter: route?.focusSection as 'active' | 'earlier' | undefined } }; break;
+      case 'settings': destination = { ...base, page: 'settings', scope: 'workspace', section: route?.focusContext === 'integrations' ? 'integrations' : route?.focusContext === 'shortcuts' ? 'sidebar' : 'workspace' }; break;
+      default: return;
+    }
+    platform.navigation.openRoute(destination);
   };
 
   const openPinnedItem = (pin: (typeof pins)[number]) => {
     const target = getPinNavigationTarget(pin);
     if (!target) return;
-    void window.desktopWindow?.openModule(
-      target.module as ModuleWindowKind,
-      target.focus as ModuleFocusPayload
-    );
+    openDestination(target.module as ModuleWindowKind, target.focus as ModuleFocusPayload);
   };
 
   const getPinnedLabel = (pin: (typeof pins)[number]) => {
@@ -249,9 +285,9 @@ export const NewTabWindow = ({ onClose }: { onClose: () => void }) => {
         icon={<img src="./logo-color.svg" alt="" className="h-5 w-5" />}
         onClose={onClose}
         minimizeLabel="Minimize New Tab"
-        onMinimize={() => void window.desktopWindow?.minimizeModule('new-tab')}
+        onMinimize={isBrowser ? undefined : () => void window.desktopWindow?.minimizeModule('new-tab')}
         fullscreenLabel="Fullscreen New Tab"
-        onToggleFullscreen={() => void window.desktopWindow?.toggleModuleFullscreen('new-tab')}
+        onToggleFullscreen={isBrowser ? undefined : () => void window.desktopWindow?.toggleModuleFullscreen('new-tab')}
         globalActions={
           <>
             <ModuleHeaderStripAction

@@ -42,6 +42,7 @@ import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
+import { usePlatform } from '../../platform';
 
 type FocusItem = {
   id: string;
@@ -346,6 +347,14 @@ export const ExpandedSidebar = ({
   const { collapseToRail, position } = useSidebar();
   const { openSearch } = useSearch();
   const api = useApi();
+  const platform = usePlatform();
+  const openQuickCapture = (action: 'note' | 'task' | 'event' | 'reminder' | 'follow-up', projectId?: string, date?: string, entityId?: string) => {
+    if (!activeWorkspaceId) return;
+    platform.navigation.openOverlay({
+      kind: 'overlay', workspaceId: activeWorkspaceId, page: action === 'follow-up' ? 'follow-up' : 'capture',
+      ...(action === 'follow-up' ? { entityId } : { action, projectId, date }),
+    } as any);
+  };
   const isHorizontal = position === 'top' || position === 'bottom';
   const getWorkspaceTaskMetadata = () => ({
     workspace_id: activeWorkspaceId ?? null,
@@ -2364,7 +2373,7 @@ export const ExpandedSidebar = ({
     {
       title: 'Create a meeting note',
       icon: FileText,
-      action: () => window.desktopWindow?.openModule('quick-note', { kind: 'quick-note' }),
+      action: () => openQuickCapture('note'),
     },
     {
       title: 'Link a note to a project',
@@ -2378,7 +2387,7 @@ export const ExpandedSidebar = ({
     {
       title: 'Try long-term tasks',
       icon: Check,
-      action: () => window.desktopWindow?.openModule('quick-task', { kind: 'quick-task' }),
+      action: () => openQuickCapture('task'),
     },
     {
       title: 'See all shortcuts',

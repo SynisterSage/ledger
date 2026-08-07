@@ -429,6 +429,45 @@ button:focus {
   outline: none;
 }
 
+input:focus-visible,
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--ledger-accent);
+  outline-offset: 2px;
+}
+
+.web-ledger-shell {
+  min-height: 100dvh;
+}
+
+.web-ledger-sidebar {
+  width: clamp(220px, 22vw, 320px);
+  max-width: 36vw;
+}
+
+@media (max-width: 900px) {
+  .web-ledger-sidebar {
+    width: 236px;
+    max-width: 32vw;
+  }
+}
+
+@media (max-width: 720px) {
+  .web-ledger-sidebar {
+    width: 200px;
+    max-width: 200px;
+  }
+}
+
+@media (min-resolution: 1.5dppx) {
+  .web-ledger-shell {
+    font-size: 0.98em;
+  }
+}
+
 /* Smooth scrollbar */
 ::-webkit-scrollbar {
   width: 0.5rem;

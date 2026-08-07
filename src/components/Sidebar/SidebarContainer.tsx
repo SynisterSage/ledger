@@ -8,7 +8,7 @@ import {
   getSidebarNativeMacTintAlpha,
 } from '../../theme/sidebarMaterial';
 
-export const SidebarContainer = () => {
+export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolean }) => {
   const {
     state,
     isVisible,
@@ -42,8 +42,9 @@ export const SidebarContainer = () => {
     typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('win');
   const AUTO_HIDE_DELAY_MS = 3000;
   const AUTO_HIDE_FADE_MS = 300;
-  const isFloating = position === 'floating';
-  const isHorizontal = position === 'top' || position === 'bottom';
+  const effectivePosition = browserMode && position === 'floating' ? 'left' : position;
+  const isFloating = !browserMode && effectivePosition === 'floating';
+  const isHorizontal = effectivePosition === 'top' || effectivePosition === 'bottom';
   const isFullscreenAttachedShell = workspaceShellLayout.shellFullscreen && state !== 'fullscreen';
   const motionDurationMs = reduceMotion ? 0 : 160;
   const motionClass = reduceMotion
@@ -52,7 +53,7 @@ export const SidebarContainer = () => {
   const targetContentView = useMemo(() => ({ state, isExpanded }), [state, isExpanded]);
   const [contentView, setContentView] = useState(targetContentView);
   const contentSwapTimerRef = useRef<number | null>(null);
-  const lastPositionRef = useRef(position);
+  const lastPositionRef = useRef(effectivePosition);
   const didMountRef = useRef(false);
   const introFrameRef = useRef<number | null>(null);
   const hasPlayedSidebarIntroRef = useRef(false);
@@ -151,8 +152,8 @@ export const SidebarContainer = () => {
   }, []);
 
   useEffect(() => {
-    const positionChanged = lastPositionRef.current !== position;
-    lastPositionRef.current = position;
+    const positionChanged = lastPositionRef.current !== effectivePosition;
+    lastPositionRef.current = effectivePosition;
 
     if (contentSwapTimerRef.current !== null) {
       window.clearTimeout(contentSwapTimerRef.current);
@@ -171,7 +172,7 @@ export const SidebarContainer = () => {
       setContentView(targetContentView);
       contentSwapTimerRef.current = null;
     }, 110);
-  }, [position, reduceMotion, state, targetContentView]);
+  }, [effectivePosition, reduceMotion, state, targetContentView]);
 
   const shellSizeClasses =
     state === 'expanded'
@@ -186,13 +187,13 @@ export const SidebarContainer = () => {
         ? 'w-auto h-[60px]'
         : 'w-14 h-14';
   const shellRadiusClass =
-    isFullscreenAttachedShell && position === 'left'
+    isFullscreenAttachedShell && effectivePosition === 'left'
       ? 'rounded-l-[var(--ledger-window-radius)] rounded-r-none'
-      : isFullscreenAttachedShell && position === 'right'
+      : isFullscreenAttachedShell && effectivePosition === 'right'
       ? 'rounded-r-[var(--ledger-window-radius)] rounded-l-none'
-      : isFullscreenAttachedShell && position === 'top'
+      : isFullscreenAttachedShell && effectivePosition === 'top'
       ? 'rounded-t-[var(--ledger-window-radius)] rounded-b-none'
-      : isFullscreenAttachedShell && position === 'bottom'
+      : isFullscreenAttachedShell && effectivePosition === 'bottom'
       ? 'rounded-b-[var(--ledger-window-radius)] rounded-t-none'
       : 'rounded-[var(--ledger-window-radius)]';
   const glassAttachmentClass =
@@ -494,11 +495,11 @@ export const SidebarContainer = () => {
       ? 'translate3d(0, 0, 0) scale(1)'
       : isFloating
       ? 'translate3d(0, 10px, 0) scale(0.985)'
-      : position === 'left'
+      : effectivePosition === 'left'
       ? 'translate3d(-12px, 0, 0) scale(0.985)'
-      : position === 'right'
+      : effectivePosition === 'right'
       ? 'translate3d(12px, 0, 0) scale(0.985)'
-      : position === 'top'
+      : effectivePosition === 'top'
       ? 'translate3d(0, -12px, 0) scale(0.985)'
       : 'translate3d(0, 12px, 0) scale(0.985)',
     width: isHorizontal

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useSidebar } from '../../context/SidebarContext';
 import { useToast } from './ToastProvider';
+import { openLegacyModule, usePlatform } from '../../platform';
 
 type NotificationAction = 'open' | 'dismiss' | 'complete' | 'snooze';
 
@@ -79,6 +80,7 @@ const joinToastDetail = (parts: Array<string | null | undefined>) =>
 export const NotificationMonitor: React.FC = () => {
   const api = useApi();
   const toast = useToast();
+  const platform = usePlatform();
   const { state } = useSidebar();
   const seenToastIdsRef = useRef<Set<string>>(new Set());
   const activeToastIdsRef = useRef<Set<string>>(new Set());
@@ -95,7 +97,13 @@ export const NotificationMonitor: React.FC = () => {
   useEffect(() => {
     const openNotificationTarget = async (item: NotificationItem) => {
       const { kind, focus } = buildModuleLaunch(item);
-      await window.desktopWindow?.openModule(kind, focus as any);
+      openLegacyModule(platform.navigation, item.workspaceId ?? null, kind, {
+        focusDate: typeof focus?.focusDate === 'string' ? focus.focusDate : undefined,
+        focusProjectId: typeof focus?.focusProjectId === 'string' ? focus.focusProjectId : item.sourceType === 'project' ? item.sourceId : undefined,
+        focusTaskId: typeof focus?.focusTaskId === 'string' ? focus.focusTaskId : item.sourceType === 'task' ? item.sourceId : undefined,
+        focusInboxId: typeof focus?.focusInboxId === 'string' ? focus.focusInboxId : item.sourceType === 'inbox' ? item.sourceId : undefined,
+        focusContext: typeof focus?.focusContext === 'string' ? focus.focusContext : item.sourceType === 'event' ? `focus-event:${item.sourceId}` : item.sourceType === 'reminder' ? `focus-reminder:${item.sourceId}` : undefined,
+      });
     };
 
     const handleBatch = (_event: unknown, notifications?: NotificationItem[]) => {
@@ -116,6 +124,7 @@ export const NotificationMonitor: React.FC = () => {
             ? item.title
             : getToastFallbackTitle(item);
         const detail = item.body?.trim() || joinToastDetail([item.context, item.workspaceName]);
+        if (platform.kind === 'web') void platform.notifications.show(title, { body: detail, tag: item.id });
         const toastId = toast.show(title, {
           detail,
           variant: 'info',
@@ -197,7 +206,7 @@ export const NotificationMonitor: React.FC = () => {
       window.ipcRenderer?.off('ledger:notifications-batch', handleBatch);
       window.ipcRenderer?.off('ledger:notifications-summary', handleSummary);
     };
-  }, [api, state, toast]);
+  }, [api, platform, state, toast]);
 
   return null;
 };

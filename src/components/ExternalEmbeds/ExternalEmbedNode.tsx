@@ -5,6 +5,7 @@ import { $createLinkNode } from '@lexical/link';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
+import { usePlatform } from '../../platform';
 
 export type ExternalEmbedTargetType = 'note' | 'meetingNote' | 'task' | 'project' | 'intake';
 export type ExternalEmbedTarget = { targetType: ExternalEmbedTargetType; targetId: string | null };
@@ -25,10 +26,6 @@ export const ExternalEmbedProvider = ({ targetType = 'note', targetId, canEdit, 
 type ExternalReference = { id: string; provider?: string; external_type?: string; normalized_url?: string; external_url?: string; metadata?: Record<string, unknown>; access_status?: string };
 type ExternalPreview = { url?: string | null; capturedAt?: string | null; sourceLastModifiedAt?: string | null; status?: string };
 
-const openExternal = (url: string) => {
-  if (window.desktopWindow?.openExternal) void window.desktopWindow.openExternal(url);
-  else window.open(url, '_blank', 'noopener,noreferrer');
-};
 const formatCapturedAt = (value?: string | null) => {
   if (!value) return null;
   const date = new Date(value);
@@ -39,6 +36,7 @@ export const ExternalEmbedRenderer = ({ nodeKey, externalReferenceId, externalUr
   const [editor] = useLexicalComposerContext();
   const api = useApi();
   const toast = useToast();
+  const platform = usePlatform();
   const { targetType, targetId, canEdit } = useContext(ExternalEmbedContext);
   const [reference, setReference] = useState<ExternalReference | null>(null);
   const [preview, setPreview] = useState<ExternalPreview | null>(null);
@@ -142,7 +140,7 @@ export const ExternalEmbedRenderer = ({ nodeKey, externalReferenceId, externalUr
 
   const githubSignals = github ? [githubMetadata.reviewSummary?.reviewRequestedCount ? 'Review requested' : '', githubMetadata.reviewSummary?.changesRequestedCount ? 'Changes requested' : '', githubMetadata.checksSummary?.overallState && githubMetadata.checksSummary.overallState !== 'none' ? `${githubMetadata.checksSummary.overallState} checks` : ''].filter(Boolean).join(' · ') : '';
   return <ExternalEmbedShell nodeKey={nodeKey} loading={loading} preview={github ? null : preview} previewAlt={nodeName || githubTitle || fileName} statusMessage={statusMessage || 'Reference unavailable.'} onPreviewClick={() => setExpanded(true)}>
-    <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-3 py-2.5"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">{github ? <img src="/github-mark.svg" alt="" className="h-4 w-4" /> : googleDrive && metadata.iconUrl ? <img src={String(metadata.iconUrl)} alt="" className="h-4 w-4" /> : <Plug2 size={15} />}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">{github ? githubTitle : nodeName || fileName}</p><p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{github ? `GitHub · ${githubMetadata.repositoryFullName ?? ''} · ${githubSignals || githubMetadata.state || ''}` : googleDrive ? `Google Drive · ${metadata.fileType || 'File'}${metadata.modifiedAtExternal ? ` · Updated ${formatCapturedAt(String(metadata.modifiedAtExternal))}` : ''}` : `Figma · ${nodeType}${preview?.capturedAt ? ` · Preview captured ${formatCapturedAt(preview.capturedAt)}` : ''}`}</p></div><button type="button" onClick={() => openExternal(externalUrl)} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Open in {github ? 'GitHub' : googleDrive ? 'Google Drive' : 'Figma'} <ExternalLink size={12} /></button><button type="button" aria-label="Reference actions" onClick={() => setMenuOpen((value) => !value)} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={15} /></button></div>
+    <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-3 py-2.5"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">{github ? <img src="/github-mark.svg" alt="" className="h-4 w-4" /> : googleDrive && metadata.iconUrl ? <img src={String(metadata.iconUrl)} alt="" className="h-4 w-4" /> : <Plug2 size={15} />}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">{github ? githubTitle : nodeName || fileName}</p><p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{github ? `GitHub · ${githubMetadata.repositoryFullName ?? ''} · ${githubSignals || githubMetadata.state || ''}` : googleDrive ? `Google Drive · ${metadata.fileType || 'File'}${metadata.modifiedAtExternal ? ` · Updated ${formatCapturedAt(String(metadata.modifiedAtExternal))}` : ''}` : `Figma · ${nodeType}${preview?.capturedAt ? ` · Preview captured ${formatCapturedAt(preview.capturedAt)}` : ''}`}</p></div><button type="button" onClick={() => void platform.externalLinks.open(externalUrl)} className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Open in {github ? 'GitHub' : googleDrive ? 'Google Drive' : 'Figma'} <ExternalLink size={12} /></button><button type="button" aria-label="Reference actions" onClick={() => setMenuOpen((value) => !value)} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={15} /></button></div>
     {copyState && <span className="px-3 pb-2 text-[11px] text-[var(--ledger-text-muted)]">Link copied</span>}
     {!github && changeState === 'updated' && <div className="flex items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] text-[var(--ledger-text-secondary)]"><span>Design updated · saved preview unchanged</span><button type="button" className="font-medium hover:text-[var(--ledger-text-primary)]" onClick={() => void refresh()} disabled={refreshing || !canEdit}>{refreshing ? 'Refreshing…' : 'Refresh preview'}</button></div>}
     {menuOpen && <ExternalEmbedMenu onCheck={() => void checkForUpdates()} onRefresh={() => void refresh()} onCopy={() => void copyLink()} onConvert={() => void remove(true)} onRemove={() => void remove(false)} refreshing={refreshing} canEdit={canEdit} />}

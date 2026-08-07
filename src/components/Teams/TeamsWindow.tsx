@@ -45,6 +45,7 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { usePlatform } from '../../platform';
 import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
 
@@ -505,6 +506,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   const api = useApi();
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
   const { workspaceShellLayout } = useSidebar();
   const workspaceName = activeWorkspace?.name?.trim() || 'Workspace';
   const focusTeamId = useMemo(() => {
@@ -1696,23 +1698,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   };
 
   const openPersonTaskComposer = (memberId: string, memberName?: string | null) => {
-    void window.desktopWindow?.toggleModule(
-      'quick-task' as any,
-      {
-        kind: 'quick-task' as any,
-        focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
-      } as any
-    );
+    platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId ?? '', page: 'capture', action: 'task', context: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}` });
   };
 
   const openPersonFollowUpComposer = (memberId: string, memberName?: string | null) => {
-    void window.desktopWindow?.toggleModule(
-      'quick-follow-up' as any,
-      {
-        kind: 'quick-follow-up' as any,
-        focusContext: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}`,
-      } as any
-    );
+    platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId ?? '', page: 'follow-up', entityId: `ledger-person|${memberId}|${encodeURIComponent(memberName ?? 'Member')}` });
   };
 
   const closeTeamRowContextMenu = () => setTeamRowContextMenu(null);

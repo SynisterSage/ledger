@@ -29,7 +29,17 @@
     "test:onboarding-profile": "node --test scripts/tests/onboarding-profile-phase4.test.mjs",
     "test:avatar-rollout": "node --test scripts/tests/avatar-rollout-phase5.test.mjs",
     "test:avatar-reliability": "node --test scripts/tests/avatar-reliability-phase6.test.mjs",
-    "test:avatar-normalization": "node --test scripts/tests/avatar-normalization.test.mjs"
+    "test:avatar-normalization": "node --test scripts/tests/avatar-normalization.test.mjs",
+    "test:platform-capability-layer": "node --test scripts/tests/platform-capability-layer.test.mjs",
+    "test:web-shell-phase4": "node --experimental-strip-types --test scripts/tests/web-shell-phase4.test.mjs",
+    "test:web-startup-phase5": "node --experimental-strip-types --test scripts/tests/web-startup-phase5.test.mjs"
+    ,"test:web-modules-phase6": "node --experimental-strip-types --test scripts/tests/web-modules-phase6.test.mjs"
+    ,"test:web-navigation-phase7": "node --experimental-strip-types --test scripts/tests/web-navigation-phase7.test.mjs"
+    ,"test:web-capture-phase8": "node --experimental-strip-types --test scripts/tests/web-capture-phase8.test.mjs"
+    ,"test:web-capabilities-phase9": "node --experimental-strip-types --test scripts/tests/web-capabilities-phase9.test.mjs"
+    ,"test:web-reliability-phase10": "node --experimental-strip-types --test scripts/tests/web-reliability-phase10.test.mjs"
+    ,"test:web-dev-launch-phase10-5": "node --experimental-strip-types --test scripts/tests/web-dev-launch-phase10-5.test.mjs"
+    ,"test:web-qa-phase11": "node --experimental-strip-types --test scripts/tests/web-qa-phase11.test.mjs"
   },
   "dependencies": {
     "@lexical/code": "^0.44.0",

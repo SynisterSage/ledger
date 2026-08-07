@@ -37,6 +37,7 @@ import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { UserAvatar } from '../Common/UserAvatar';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, usePlatform } from '../../platform';
 
 type SlackWindowProps = { routeWorkspaceId?: string | null };
 type CaptureFilter = 'all' | 'in_intake' | 'converted' | 'failed';
@@ -174,6 +175,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   const api = useApi();
   const { workspaceShellLayout } = useSidebar();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
   const workspaceId = routeWorkspaceId || activeWorkspaceId;
   const routeMatchesActiveWorkspace = !routeWorkspaceId || routeWorkspaceId === activeWorkspaceId;
   const canManage = routeMatchesActiveWorkspace && (activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin');
@@ -392,37 +394,27 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   }, [captures, filter]);
 
   const openSettings = () => {
-    void window.desktopWindow?.openModule('settings', {
-      kind: 'settings',
-      focusSection: 'integrations',
-    });
+    platform.navigation.openRoute({ kind: 'workspace', workspaceId: workspaceId ?? activeWorkspaceId ?? '', page: 'settings', scope: 'workspace', section: 'integrations' });
   };
 
   const openSlack = (url?: string | null) => {
-    if (url) void window.desktopWindow?.openExternal(url);
-    else void window.desktopWindow?.openExternal('https://slack.com');
+    void platform.externalLinks.open(url || 'https://slack.com', { newTab: true });
   };
 
   const openIntake = (id?: string | null) => {
     if (!id) return;
-    void window.desktopWindow?.openModule('inbox', { kind: 'inbox', focusInboxId: id });
+    platform.navigation.openRoute(routeForInboxItem(workspaceId ?? activeWorkspaceId ?? '', id));
   };
 
   const openConvertedItem = (capture: SlackCapture) => {
     const item = capture.converted_item;
     if (!item) return;
     if (item.type === 'note') {
-      void window.desktopWindow?.openModule('notes', { kind: 'notes', focusNoteId: item.id });
+      platform.navigation.openRoute(routeForNote(workspaceId ?? activeWorkspaceId ?? '', item.id));
     } else if (item.type === 'task' || item.type === 'project') {
-      void window.desktopWindow?.openModule('projects', {
-        kind: 'projects',
-        ...(item.type === 'task' ? { focusTaskId: item.id } : { focusProjectId: item.id }),
-      });
+      platform.navigation.openRoute(item.type === 'task' ? { kind: 'workspace', workspaceId: workspaceId ?? activeWorkspaceId ?? '', page: 'task', taskId: item.id } : routeForProject(workspaceId ?? activeWorkspaceId ?? '', item.id));
     } else {
-      void window.desktopWindow?.openModule('calendar', {
-        kind: 'calendar',
-        focusContext: `focus-${item.type}:${item.id}`,
-      });
+      platform.navigation.openRoute(item.type === 'event' ? routeForCalendarEvent(workspaceId ?? activeWorkspaceId ?? '', item.id) : routeForCalendarReminder(workspaceId ?? activeWorkspaceId ?? '', item.id));
     }
   };
 

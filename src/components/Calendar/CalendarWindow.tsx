@@ -54,6 +54,8 @@ import {
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { usePlatform } from '../../platform';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import {
   CalendarSubscriptionModal,
@@ -804,11 +806,12 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
   return out;
 };
 
-export const CalendarWindow = () => {
+export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'week' | 'day' | 'agenda'; date?: string; event?: string; reminder?: string } } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
+  const platform = usePlatform();
   const viewportWidth = useViewportWidth();
   const centerScrollRef = useRef<HTMLDivElement | null>(null);
   const hasAutoScrolledToNowRef = useRef(false);
@@ -816,11 +819,9 @@ export const CalendarWindow = () => {
   const hasLoadedDataRef = useRef(false);
   const calendarDataCacheRef = useRef(new Map<string, CalendarDataCacheEntry>());
   const hasAppliedInitialFocusContextRef = useRef(false);
-  const initialFocusDate = new URLSearchParams(window.location.search).get('focusDate');
-  const initialFocusContext =
-    new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
-  const initialCalendarSection =
-    new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
+  const initialFocusDate = webQuery?.date ?? new URLSearchParams(window.location.search).get('focusDate');
+  const initialFocusContext = webQuery?.event ? `focus-event:${webQuery.event}` : webQuery?.reminder ? `focus-reminder:${webQuery.reminder}` : new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
+  const initialCalendarSection = webQuery?.view ?? new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
   const [viewMode, setViewMode] = useState<CalendarViewMode>(
     initialCalendarSection === 'day' || initialCalendarSection === 'month'
       ? initialCalendarSection
@@ -915,6 +916,16 @@ export const CalendarWindow = () => {
   const [appleEditorSnapshot, setAppleEditorSnapshot] = useState<EventRow | null>(null);
   const previousAppleEventIdsRef = useRef<Set<string>>(new Set());
   const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null);
+  useWorkspaceRouteHistory(
+    {
+      kind: 'calendar',
+      focusSection: viewMode,
+      focusDate: selectedEvent ? formatDateKey(new Date(selectedEvent.start_at)) : selectedReminder ? formatDateKey(new Date(selectedReminder.remind_at)) : formatDateKey(viewAnchor),
+      focusContext: selectedEvent ? `focus-event:${baseEventId(selectedEvent.id) ?? selectedEvent.id}` : selectedReminder ? `focus-reminder:${baseReminderId(selectedReminder.id) ?? selectedReminder.id}` : null,
+    },
+    Boolean(activeWorkspaceId) && platform.kind === 'web',
+    { pushHistory: false }
+  );
   const [reminderEditorReminder, setReminderEditorReminder] = useState<ReminderRow | null>(null);
   const [appleReminderEditorSnapshot, setAppleReminderEditorSnapshot] = useState<ReminderRow | null>(null);
   const previousAppleReminderIdsRef = useRef<Set<string>>(new Set());
@@ -5765,15 +5776,13 @@ export const CalendarWindow = () => {
                       <button
                         type="button"
                         onClick={() =>
-                          window.desktopWindow?.toggleModule('quick-follow-up' as any, {
-                            focusContext: `ledger-followup|${baseEventId(
+                          platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId ?? '', page: 'follow-up', entityId: `ledger-followup|${baseEventId(
                               selectedEventPreview.id
                             )}|${encodeURIComponent(selectedEventPreview.title)}|${
                               selectedEventPreview.project_id ?? ''
                             }|${selectedEventPreview.note_id ?? ''}|${
                               calendarPreferences.followUpDefaultTime ?? 'tomorrow_9'
-                            }|${calendarPreferences.linkedProjectFollowUps ?? 'project_and_today'}`,
-                          })
+                            }|${calendarPreferences.linkedProjectFollowUps ?? 'project_and_today'}` })
                         }
                         className="inline-flex items-center gap-0.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
                       >

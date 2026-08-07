@@ -8,6 +8,7 @@ const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port
   env: {
     ...process.env,
     VITE_LAUNCH_ELECTRON: '0',
+    LEDGER_DEV_TARGET: 'web',
   },
 });
 

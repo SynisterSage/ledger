@@ -1,10 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { PlatformProvider } from './platform';
+import { WebAppShell } from './web/WebAppShell';
 import { AuthProvider } from './context/AuthContext';
 import { PinsProvider } from './context/PinsContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
 import { SidebarProvider } from './context/SidebarContext';
+import { WebErrorBoundary } from './web/WebErrorBoundary';
 import './index.css';
 import {
   applyDesktopCssVars,
@@ -68,13 +71,15 @@ if (typeof document !== 'undefined') {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AuthProvider>
-      <WorkspaceProvider>
-        <PinsProvider>
-          <SidebarProvider>
-            <App />
-          </SidebarProvider>
-        </PinsProvider>
-      </WorkspaceProvider>
+      <PlatformProvider>
+        <WorkspaceProvider>
+          <PinsProvider>
+            <SidebarProvider>
+              {window.desktopWindow ? <App /> : <WebErrorBoundary><WebAppShell /></WebErrorBoundary>}
+            </SidebarProvider>
+          </PinsProvider>
+        </WorkspaceProvider>
+      </PlatformProvider>
     </AuthProvider>
   </React.StrictMode>
 );

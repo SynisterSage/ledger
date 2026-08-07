@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { usePlatform, routeForLegacyWorkspaceState } from '../platform';
 
 type WorkspaceRoute = {
   kind: ModuleWindowKind;
@@ -6,6 +7,7 @@ type WorkspaceRoute = {
   focusProjectId?: string | null;
   focusNoteId?: string | null;
   focusTaskId?: string | null;
+  focusInboxId?: string | null;
   focusContext?: string | null;
   focusSection?: string | null;
 };
@@ -21,6 +23,7 @@ const buildWorkspaceRouteKey = (route: WorkspaceRoute) =>
     route.focusProjectId ?? '',
     route.focusNoteId ?? '',
     route.focusTaskId ?? '',
+    route.focusInboxId ?? '',
     route.focusContext ?? '',
     route.focusSection ?? '',
   ].join('|');
@@ -33,6 +36,7 @@ const buildWorkspaceRouteSearch = (route: WorkspaceRoute) => {
   if (route.focusProjectId) searchParams.set('focusProjectId', route.focusProjectId);
   if (route.focusNoteId) searchParams.set('focusNoteId', route.focusNoteId);
   if (route.focusTaskId) searchParams.set('focusTaskId', route.focusTaskId);
+  if (route.focusInboxId) searchParams.set('focusInboxId', route.focusInboxId);
   if (route.focusContext) searchParams.set('focusContext', route.focusContext);
   if (route.focusSection) searchParams.set('section', route.focusSection);
   return searchParams.toString();
@@ -43,6 +47,7 @@ export const useWorkspaceRouteHistory = (
   enabled = true,
   options: WorkspaceRouteHistoryOptions = {}
 ) => {
+  const platform = usePlatform();
   const didMountRef = useRef(false);
   const lastRouteKeyRef = useRef('');
   const routeRef = useRef(route);
@@ -80,6 +85,7 @@ export const useWorkspaceRouteHistory = (
         'focusProjectId',
         'focusNoteId',
         'focusTaskId',
+        'focusInboxId',
         'focusContext',
         'focusSection',
       ] as const) {
@@ -127,6 +133,16 @@ export const useWorkspaceRouteHistory = (
 
     lastRouteKeyRef.current = nextKey;
 
+    if (platform.kind === 'web') {
+      const workspaceId = window.location.pathname.match(/^\/app\/w\/([^/]+)/)?.[1];
+      if (workspaceId) {
+        const canonicalRoute = routeForLegacyWorkspaceState(decodeURIComponent(workspaceId), route);
+        const replace = options.pushHistory === false || route.kind === 'projects' || route.kind === 'calendar' || route.kind === 'circle' || route.kind === 'teams' || route.kind === 'inbox' || route.kind === 'notifications';
+        platform.navigation.openRoute(canonicalRoute, { replace });
+      }
+      return;
+    }
+
     const nextSearch = buildWorkspaceRouteSearch(route);
     const nextUrl = `${window.location.pathname}?${nextSearch}${window.location.hash}`;
     window.history.replaceState({}, '', nextUrl);
@@ -150,5 +166,7 @@ export const useWorkspaceRouteHistory = (
     route?.focusProjectId,
     route?.focusSection,
     route?.focusTaskId,
+    route?.focusInboxId,
+    platform,
   ]);
 };

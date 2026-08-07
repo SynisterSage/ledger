@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, RotateCcw, Inbox, CalendarDays, Folder, CheckCircle2, Clock3, MoreHorizontal, ExternalLink, Check, Clock, X, CheckCheck } from 'lucide-react';
 import {
   ModuleHeaderSegmentedButton,
@@ -431,23 +431,36 @@ type NotificationCenterWindowProps = {
   mode?: 'window' | 'tray';
   onRequestClose?: () => void;
   onViewAll?: () => void;
+  initialFilter?: 'active' | 'earlier';
+  initialItem?: string;
 };
 
 export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> = ({
   mode = 'window',
   onRequestClose,
   onViewAll,
+  initialFilter,
+  initialItem,
 }) => {
   const { active, earlier, loading, error, unreadCount, loadNotifications, applyAction, markAsRead, markAllAsRead } =
     useNotificationCenter();
   const { workspaceShellLayout } = useSidebar();
   const inboxCount = 0;
-  const [filter, setFilter] = useState<'active' | 'earlier'>('active');
+  const [filter, setFilter] = useState<'active' | 'earlier'>(initialFilter ?? 'active');
+  const openedInitialItemRef = useRef<string | null>(null);
 
   useEffect(() => {
     const context = new URLSearchParams(window.location.search).get('focusContext') ?? '';
-    setFilter(context === 'notifications:filter:earlier' ? 'earlier' : 'active');
-  }, []);
+    setFilter(initialFilter ?? (context === 'notifications:filter:earlier' ? 'earlier' : 'active'));
+  }, [initialFilter]);
+
+  useEffect(() => {
+    if (!initialItem || openedInitialItemRef.current === initialItem) return;
+    const item = [...active, ...earlier].find((candidate) => candidate.id === initialItem);
+    if (!item) return;
+    openedInitialItemRef.current = initialItem;
+    void applyAction(item, 'open');
+  }, [active, applyAction, earlier, initialItem]);
 
   const selectFilter = (nextFilter: 'active' | 'earlier') => {
     setFilter(nextFilter);
