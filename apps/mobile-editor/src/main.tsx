@@ -22,6 +22,7 @@ import { $createLedgerCalloutNode, LedgerCalloutNode, type LedgerCalloutVariant 
 import { $createLedgerImageNode, $isLedgerImageNode, LedgerImageNode, RESIZE_IMAGE_COMMAND } from './LedgerImageNode';
 import { $createLedgerDividerNode, LedgerDividerNode } from './LedgerDividerNode';
 import { $createLedgerPreservationNode } from './LedgerPreservationNode';
+import { sanitizeEditorHtml } from './sanitizeHtml';
 import './styles.css';
 
 const editorWindow = window as Window & { __ledgerEditorGeneration?: number; __ledgerActiveGeneration?: number; __ledgerNoteId?: string; __ledgerDirtyReported?: boolean };
@@ -112,7 +113,7 @@ function BridgePlugin() {
     editor.setEditable(false);
     try {
       if (command.html.includes('data-ledger-test-import-failure')) throw new Error('Test import failure requested.');
-      const document = new DOMParser().parseFromString(command.html, 'text/html');
+      const document = new DOMParser().parseFromString(sanitizeEditorHtml(command.html), 'text/html');
       editor.update(() => {
         // DOM conversion creates Lexical nodes and must run inside the active
         // editor update. Running it before update triggers Lexical #337 on

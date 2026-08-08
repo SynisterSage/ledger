@@ -50,9 +50,9 @@ export const SearchProvider = ({ children }: { children: ReactNode }) => {
       setIsSearchOpen(true);
     };
 
-    window.ipcRenderer?.on('search:open', handleSearchOpen as any);
+    window.ledgerIpc?.events?.onSearchOpen(handleSearchOpen as any);
     return () => {
-      window.ipcRenderer?.off('search:open', handleSearchOpen as any);
+      window.ledgerIpc?.events?.offSearchOpen(handleSearchOpen as any);
     };
   }, []);
 

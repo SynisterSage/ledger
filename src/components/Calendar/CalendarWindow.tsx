@@ -904,7 +904,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const [calendarDrag, setCalendarDrag] = useState<CalendarDragState | null>(null);
   const calendarDragRef = useRef<CalendarDragState | null>(null);
   const notifyCalendarItemsUpdated = () => {
-    window.ipcRenderer?.send('calendar:items-updated');
+    window.ledgerIpc?.commands?.calendarItemsUpdated();
   };
   const [contextMenu, setContextMenu] = useState<CalendarContextMenuState | null>(null);
   const [calendarRowContextMenu, setCalendarRowContextMenu] =
@@ -1099,7 +1099,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       void loadInboxCount();
     };
 
-    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
     window.addEventListener('focus', handleRefreshInboxCount);
     document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
@@ -1110,7 +1110,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
       window.removeEventListener('focus', handleRefreshInboxCount);
       document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
@@ -1138,7 +1138,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
     const handleNotificationsSummary = (event: Event) => {
       const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
+      setNotificationCount(Number(detail?.unreadCount ?? 0));
     };
 
     void loadNotificationCount();
@@ -1316,9 +1316,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       applyFocusContext(payload.focusContext);
     };
 
-    window.ipcRenderer?.on('module:focus-context', focusContextListener);
+    window.ledgerIpc?.events?.onModuleFocusContext(focusContextListener);
     return () => {
-      window.ipcRenderer?.off('module:focus-context', focusContextListener);
+      window.ledgerIpc?.events?.offModuleFocusContext(focusContextListener);
     };
   }, [initialFocusContext, events, reminders]);
 
@@ -2602,7 +2602,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       void loadCalendarData();
     };
 
-    window.ipcRenderer?.on('calendar:items-updated', handleCalendarItemsUpdated);
+    window.ledgerIpc?.events?.onCalendarItemsUpdated(handleCalendarItemsUpdated);
 
     const refreshTimer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
@@ -2611,7 +2611,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
     return () => {
       cancelled = true;
-      window.ipcRenderer?.off('calendar:items-updated', handleCalendarItemsUpdated);
+      window.ledgerIpc?.events?.offCalendarItemsUpdated(handleCalendarItemsUpdated);
       window.clearInterval(refreshTimer);
     };
   }, [
@@ -2820,9 +2820,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       });
     };
 
-    window.ipcRenderer?.on('calendar:follow-up-created', handleFollowUpCreated);
+    window.ledgerIpc?.events?.onCalendarFollowUpCreated(handleFollowUpCreated);
     return () => {
-      window.ipcRenderer?.off('calendar:follow-up-created', handleFollowUpCreated);
+      window.ledgerIpc?.events?.offCalendarFollowUpCreated(handleFollowUpCreated);
     };
   }, []);
 
@@ -3142,7 +3142,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             linked_event_id: null,
             dismissed_at: null,
           });
-          window.ipcRenderer?.send('notes:smart-links-updated', {
+          window.ledgerIpc?.commands?.notesSmartLinksUpdated({
             noteId: smartDateContext.noteId,
           });
         } catch (linkError) {
@@ -3245,7 +3245,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
           linked_reminder_id: null,
           dismissed_at: null,
         });
-        window.ipcRenderer?.send('notes:smart-links-updated', {
+        window.ledgerIpc?.commands?.notesSmartLinksUpdated({
           noteId: smartDateContext.noteId,
         });
       } catch (linkError) {

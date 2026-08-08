@@ -2759,9 +2759,9 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       startMilestonePlacement();
     };
 
-    window.ipcRenderer?.on('module:focus-context', handleTryAction as any);
+    window.ledgerIpc?.events?.onModuleFocusContext(handleTryAction as any);
     return () => {
-      window.ipcRenderer?.off('module:focus-context', handleTryAction as any);
+      window.ledgerIpc?.events?.offModuleFocusContext(handleTryAction as any);
     };
   }, [startMilestonePlacement]);
 
@@ -3106,7 +3106,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       void loadInboxCount();
     };
 
-    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
     window.addEventListener('focus', handleRefreshInboxCount);
     document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
@@ -3118,7 +3118,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
       window.removeEventListener('focus', handleRefreshInboxCount);
       document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
@@ -3146,7 +3146,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
 
     const handleNotificationsSummary = (event: Event) => {
       const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
+      setNotificationCount(Number(detail?.unreadCount ?? 0));
     };
 
     void loadNotificationCount();
@@ -3295,10 +3295,10 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       void focusProjectById(payload.focusProjectId);
     };
 
-    window.ipcRenderer?.on('module:focus-project', focusProjectListener);
+    window.ledgerIpc?.events?.onModuleFocusProject(focusProjectListener);
 
     return () => {
-      window.ipcRenderer?.off('module:focus-project', focusProjectListener);
+      window.ledgerIpc?.events?.offModuleFocusProject(focusProjectListener);
     };
   }, [focusProjectById, openCreateProjectComposer]);
 
@@ -3329,9 +3329,9 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       applyTeamFocusContext(payload.focusContext);
     };
 
-    window.ipcRenderer?.on('module:focus-context', focusContextListener);
+    window.ledgerIpc?.events?.onModuleFocusContext(focusContextListener);
     return () => {
-      window.ipcRenderer?.off('module:focus-context', focusContextListener);
+      window.ledgerIpc?.events?.offModuleFocusContext(focusContextListener);
     };
   }, [initialFocusContext]);
 
@@ -3368,10 +3368,10 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
 
-    window.ipcRenderer?.on('module:focus-task', focusTaskListener);
+    window.ledgerIpc?.events?.onModuleFocusTask(focusTaskListener);
 
     return () => {
-      window.ipcRenderer?.off('module:focus-task', focusTaskListener);
+      window.ledgerIpc?.events?.offModuleFocusTask(focusTaskListener);
     };
   }, [tasks]);
 

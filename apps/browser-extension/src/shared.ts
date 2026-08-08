@@ -62,19 +62,9 @@ const storageGet = (keys: string[] | string) =>
     chrome.storage.local.get(keys, resolve);
   });
 
-const syncStorageGet = (keys: string[] | string) =>
-  new Promise<Record<string, unknown>>((resolve) => {
-    chrome.storage.sync.get(keys, resolve);
-  });
-
 const storageSet = (value: Record<string, unknown>) =>
   new Promise<void>((resolve) => {
     chrome.storage.local.set(value, () => resolve());
-  });
-
-const syncStorageSet = (value: Record<string, unknown>) =>
-  new Promise<void>((resolve) => {
-    chrome.storage.sync.set(value, () => resolve());
   });
 
 const storageRemove = (keys: string[] | string) =>
@@ -82,39 +72,23 @@ const storageRemove = (keys: string[] | string) =>
     chrome.storage.local.remove(keys, () => resolve());
   });
 
-const syncStorageRemove = (keys: string[] | string) =>
+const clearLegacySyncToken = () =>
   new Promise<void>((resolve) => {
-    chrome.storage.sync.remove(keys, () => resolve());
+    chrome.storage.sync.remove(['extension_token'], () => resolve());
   });
 
 export const getStoredToken = async () => {
   const result = (await storageGet('extension_token')) as StorageState;
-  const localToken = String(result.extension_token ?? '').trim();
-  if (localToken) return localToken;
-
-  const syncResult = (await syncStorageGet('extension_token')) as StorageState;
-  const syncToken = String(syncResult.extension_token ?? '').trim();
-  if (syncToken) {
-    await storageSet({ extension_token: syncToken });
-    return syncToken;
-  }
-
-  return null;
+  return String(result.extension_token ?? '').trim() || null;
 };
 
 export const setStoredToken = async (token: string) => {
   const cleanedToken = String(token ?? '').trim();
-  await Promise.all([
-    storageSet({ extension_token: cleanedToken }),
-    syncStorageSet({ extension_token: cleanedToken }),
-  ]);
+  await Promise.all([storageSet({ extension_token: cleanedToken }), clearLegacySyncToken()]);
 };
 
 export const clearStoredToken = async () => {
-  await Promise.all([
-    storageRemove(['extension_token', 'default_workspace_id']),
-    syncStorageRemove(['extension_token', 'default_workspace_id']),
-  ]);
+  await Promise.all([storageRemove(['extension_token', 'default_workspace_id']), clearLegacySyncToken()]);
 };
 
 export const setStoredWorkspaceId = async (workspaceId: string | null) => {
@@ -187,5 +161,11 @@ export const firstLine = (value: string) => {
 
 export const normalizeUrl = (value: string | null | undefined) => {
   const url = String(value ?? '').trim();
-  return url || null;
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 };

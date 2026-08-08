@@ -105,10 +105,20 @@ import { UserAvatar } from './components/Common/UserAvatar';
 import authService from './services/auth';
 import { userProfileService } from './services/userProfile';
 import type { UserProfile } from './types/userProfile';
-import { clearBrowserInviteContinuation, readBrowserInviteContinuation } from './web/browserInviteContinuation';
+import {
+  clearBrowserInviteContinuation,
+  readBrowserInviteContinuation,
+} from './web/browserInviteContinuation';
+import { usePlatform } from './platform';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
-type OnboardingStep = 'welcome' | 'profile' | 'workspace-type' | 'workspace' | 'team-invite' | 'position';
+type OnboardingStep =
+  | 'welcome'
+  | 'profile'
+  | 'workspace-type'
+  | 'workspace'
+  | 'team-invite'
+  | 'position';
 type OnboardingWorkspaceMode = 'create' | 'join';
 type OnboardingWorkspaceType = 'personal' | 'team';
 type ModuleKind =
@@ -132,7 +142,8 @@ type ModuleKind =
 
 const windowParams = new URLSearchParams(window.location.search);
 const workspaceSlackMatch = window.location.pathname.match(/^\/workspaces\/([^/]+)\/slack\/?$/);
-const isGoogleDriveSettingsRoute = window.location.pathname === '/settings/integrations/google-drive';
+const isGoogleDriveSettingsRoute =
+  window.location.pathname === '/settings/integrations/google-drive';
 const pathnameModuleKind =
   window.location.pathname === '/intake' || window.location.pathname === '/inbox'
     ? ('inbox' as const)
@@ -190,18 +201,18 @@ const workspaceShellRouteKey = (route: ModuleFocusPayload | null | undefined): s
     ? route.kind === 'new-tab'
       ? `new-tab|${route.focusContext ?? 'default'}`
       : route.kind === 'notes'
-        ? route.focusNoteId
-          ? `notes|note|${route.focusNoteId}`
-          : 'notes|home'
-        : route.kind === 'projects'
-          ? route.focusProjectId
-            ? `projects|project|${route.focusProjectId}`
-            : 'projects|home'
-          : route.kind === 'circle'
-            ? 'circle'
-            : route.kind === 'teams'
-              ? 'teams'
-              : String(route.kind ?? '')
+      ? route.focusNoteId
+        ? `notes|note|${route.focusNoteId}`
+        : 'notes|home'
+      : route.kind === 'projects'
+      ? route.focusProjectId
+        ? `projects|project|${route.focusProjectId}`
+        : 'projects|home'
+      : route.kind === 'circle'
+      ? 'circle'
+      : route.kind === 'teams'
+      ? 'teams'
+      : String(route.kind ?? '')
     : '';
 
 const getWorkspaceShellRouteFromLocation = (): WorkspaceShellRoute => {
@@ -529,8 +540,16 @@ function AuthStatusScreen({
         className="flex h-32 w-32 flex-col items-center justify-center gap-4 rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         style={noDragRegionStyle}
       >
-        <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="h-11 w-11 select-none" />
-        <Loader2 size={14} className="animate-spin text-[var(--ledger-text-muted)]" aria-hidden="true" />
+        <img
+          src={`${import.meta.env.BASE_URL}logo-color.svg`}
+          alt="Ledger"
+          className="h-11 w-11 select-none"
+        />
+        <Loader2
+          size={14}
+          className="animate-spin text-[var(--ledger-text-muted)]"
+          aria-hidden="true"
+        />
       </div>
     </div>
   );
@@ -735,7 +754,11 @@ function OnboardingFlow({
         >
           {step === 'welcome' ? (
             <div className="mx-auto text-center" style={noDragRegionStyle}>
-              <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="mx-auto mb-5 h-10 w-10" />
+              <img
+                src={`${import.meta.env.BASE_URL}logo-color.svg`}
+                alt="Ledger"
+                className="mx-auto mb-5 h-10 w-10"
+              />
               <h1 className="text-[30px] font-regular leading-tight text-[var(--ledger-text-primary)]">
                 Welcome to Ledger
               </h1>
@@ -793,7 +816,9 @@ function OnboardingFlow({
               </div>
 
               <label className="mt-7 block">
-                <span className="mb-2 block text-xs font-medium text-[var(--ledger-text-secondary)]">Display name</span>
+                <span className="mb-2 block text-xs font-medium text-[var(--ledger-text-secondary)]">
+                  Display name
+                </span>
                 <input
                   autoFocus
                   value={displayName}
@@ -803,12 +828,26 @@ function OnboardingFlow({
                 />
               </label>
 
-              {error ? <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">{error}</p> : null}
+              {error ? (
+                <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">
+                  {error}
+                </p>
+              ) : null}
               <div className="mt-7 flex items-center justify-end gap-3">
-                <button type="button" onClick={() => void onProfileSkip()} disabled={isSaving} className="inline-flex h-11 items-center justify-center rounded-lg px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50">
+                <button
+                  type="button"
+                  onClick={() => void onProfileSkip()}
+                  disabled={isSaving}
+                  className="inline-flex h-11 items-center justify-center rounded-lg px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
+                >
                   Skip for now
                 </button>
-                <button type="button" onClick={() => void onProfileContinue()} disabled={isSaving} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50">
+                <button
+                  type="button"
+                  onClick={() => void onProfileContinue()}
+                  disabled={isSaving}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
                   {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
                   {isSaving ? 'Saving…' : 'Continue'}
                 </button>
@@ -837,7 +876,9 @@ function OnboardingFlow({
                 Back
               </button>
               <div className="mb-7">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step {profileSetupIncluded ? 2 : 1} of {profileSetupIncluded ? 5 : 4}</p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                  Step {profileSetupIncluded ? 2 : 1} of {profileSetupIncluded ? 5 : 4}
+                </p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   How will you use Ledger?
                 </h1>
@@ -949,7 +990,16 @@ function OnboardingFlow({
                 Back
               </button>
               <div className="mb-7">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step {profileSetupIncluded ? 3 : 2} of {profileSetupIncluded ? (selectedWorkspaceType === 'team' ? 5 : 4) : (selectedWorkspaceType === 'team' ? 4 : 3)}</p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                  Step {profileSetupIncluded ? 3 : 2} of{' '}
+                  {profileSetupIncluded
+                    ? selectedWorkspaceType === 'team'
+                      ? 5
+                      : 4
+                    : selectedWorkspaceType === 'team'
+                    ? 4
+                    : 3}
+                </p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   {mode === 'create'
                     ? selectedWorkspaceType === 'team'
@@ -1028,7 +1078,9 @@ function OnboardingFlow({
                 Back
               </button>
               <div className="mb-7">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step {profileSetupIncluded ? 4 : 3} of {profileSetupIncluded ? 5 : 4}</p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                  Step {profileSetupIncluded ? 4 : 3} of {profileSetupIncluded ? 5 : 4}
+                </p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   Invite your team
                 </h1>
@@ -1304,9 +1356,19 @@ export function DashboardContent({
 } = {}) {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
   const api = useApi();
   const { workspaceShellLayout } = useSidebar();
   const toast = useToast();
+  const openQuickTask = () => {
+    if (!activeWorkspaceId) return;
+    platform.navigation.openOverlay({
+      kind: 'overlay',
+      workspaceId: activeWorkspaceId,
+      page: 'capture',
+      action: 'task',
+    });
+  };
 
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
@@ -1421,7 +1483,13 @@ export function DashboardContent({
     Array<{ note_id: string; project_id: string; project_name: string }>
   >([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<
-    Array<{ user_id: string; full_name: string | null; email: string | null; avatar_url?: string | null; avatar_updated_at?: string | null }>
+    Array<{
+      user_id: string;
+      full_name: string | null;
+      email: string | null;
+      avatar_url?: string | null;
+      avatar_updated_at?: string | null;
+    }>
   >([]);
   const [followUpTasks, setFollowUpTasks] = useState<
     Array<{
@@ -1442,7 +1510,17 @@ export function DashboardContent({
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [githubAttention, setGithubAttention] = useState<Array<{ id: string; target_type?: string | null; target_id?: string | null; attention_type: string; title: string; reason: string; metadata?: { canonicalUrl?: string | null; repositoryFullName?: string | null } }>>([]);
+  const [githubAttention, setGithubAttention] = useState<
+    Array<{
+      id: string;
+      target_type?: string | null;
+      target_id?: string | null;
+      attention_type: string;
+      title: string;
+      reason: string;
+      metadata?: { canonicalUrl?: string | null; repositoryFullName?: string | null };
+    }>
+  >([]);
   const [overviewTaskMode, setOverviewTaskMode] = useState<'focus' | 'today' | 'long_term'>(
     'focus'
   );
@@ -1482,14 +1560,18 @@ export function DashboardContent({
       return;
     }
     let cancelled = false;
-    void api.getGithubAttention()
+    void api
+      .getGithubAttention()
       .then((rows) => {
-        if (!cancelled) setGithubAttention(Array.isArray(rows) ? (rows as typeof githubAttention) : []);
+        if (!cancelled)
+          setGithubAttention(Array.isArray(rows) ? (rows as typeof githubAttention) : []);
       })
       .catch(() => {
         if (!cancelled) setGithubAttention([]);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [activeWorkspaceId, api, dashboardRefreshToken, user]);
   const [isLoadingUpcomingQuickTeams, setIsLoadingUpcomingQuickTeams] = useState(false);
   const [isOverviewLinkProjectOpen, setIsOverviewLinkProjectOpen] = useState(false);
@@ -1602,7 +1684,13 @@ export function DashboardContent({
     const loadWorkspaceMembers = async () => {
       try {
         const payload = (await api.getWorkspaceMembers(activeWorkspaceId)) as {
-          members?: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null; avatar_updated_at?: string | null }>;
+          members?: Array<{
+            user_id: string;
+            full_name?: string | null;
+            email?: string | null;
+            avatar_url?: string | null;
+            avatar_updated_at?: string | null;
+          }>;
         };
         if (cancelled) return;
         const members = Array.isArray(payload?.members)
@@ -1644,7 +1732,9 @@ export function DashboardContent({
   const [isOverviewRescheduleOpen, setIsOverviewRescheduleOpen] = useState(false);
   const [overviewRescheduleDate, setOverviewRescheduleDate] = useState('');
   const currentDashboardSection =
-    initialSection ?? new URLSearchParams(window.location.search).get('section')?.trim() ?? moduleSection;
+    initialSection ??
+    new URLSearchParams(window.location.search).get('section')?.trim() ??
+    moduleSection;
   type OverviewTab = 'all' | 'assigned' | 'today' | 'projects' | 'notes';
   type OverviewFilterKey =
     | 'type'
@@ -2084,14 +2174,14 @@ export function DashboardContent({
             ? 'all_accessible_workspaces'
             : 'current_workspace'
         );
-        window.ipcRenderer?.send('tray:update-state', {
+        window.ledgerIpc?.commands?.trayUpdateState({
           showTrayIcon: payload?.preferences?.showTrayIcon !== false,
           runInBackground: payload?.preferences?.runInBackground !== false,
         });
       } catch {
         if (!cancelled) {
           setCalendarScope('current_workspace');
-          window.ipcRenderer?.send('tray:update-state', {
+          window.ledgerIpc?.commands?.trayUpdateState({
             showTrayIcon: true,
             runInBackground: true,
           });
@@ -2129,7 +2219,7 @@ export function DashboardContent({
 
     const handleNotificationsSummary = (event: Event) => {
       const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
+      setNotificationCount(Number(detail?.unreadCount ?? 0));
     };
 
     void loadNotificationSummary();
@@ -2148,7 +2238,7 @@ export function DashboardContent({
   }, [api, user]);
 
   useEffect(() => {
-    window.ipcRenderer?.send('tray:update-state', {
+    window.ledgerIpc?.commands?.trayUpdateState({
       inboxCount,
       notificationCount,
     });
@@ -2661,7 +2751,7 @@ export function DashboardContent({
       void loadInboxCount();
     };
 
-    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
     window.addEventListener('focus', handleRefreshInboxCount);
     document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
@@ -2672,7 +2762,7 @@ export function DashboardContent({
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
       window.removeEventListener('focus', handleRefreshInboxCount);
       document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
@@ -2695,9 +2785,9 @@ export function DashboardContent({
       }));
     };
 
-    window.ipcRenderer?.on('daily:checkin-updated', handleCheckinUpdated);
+    window.ledgerIpc?.events?.onDailyCheckinUpdated(handleCheckinUpdated);
     return () => {
-      window.ipcRenderer?.off('daily:checkin-updated', handleCheckinUpdated);
+      window.ledgerIpc?.events?.offDailyCheckinUpdated(handleCheckinUpdated);
     };
   }, []);
 
@@ -2883,9 +2973,9 @@ export function DashboardContent({
       applyTeamFocusContext(payload.focusContext);
     };
 
-    window.ipcRenderer?.on('module:focus-context', focusContextListener);
+    window.ledgerIpc?.events?.onModuleFocusContext(focusContextListener);
     return () => {
-      window.ipcRenderer?.off('module:focus-context', focusContextListener);
+      window.ledgerIpc?.events?.offModuleFocusContext(focusContextListener);
     };
   }, []);
 
@@ -3560,9 +3650,9 @@ export function DashboardContent({
       ]);
     };
 
-    window.ipcRenderer?.on('dashboard:today-task-created', handleTaskCreated);
+    window.ledgerIpc?.events?.onDashboardTodayTaskCreated(handleTaskCreated);
     return () => {
-      window.ipcRenderer?.off('dashboard:today-task-created', handleTaskCreated);
+      window.ledgerIpc?.events?.offDashboardTodayTaskCreated(handleTaskCreated);
     };
   }, [activeWorkspace?.color, activeWorkspace?.name, activeWorkspaceId]);
 
@@ -3628,9 +3718,9 @@ export function DashboardContent({
       );
     };
 
-    window.ipcRenderer?.on('dashboard:today-task-deleted', handleTaskDeleted);
+    window.ledgerIpc?.events?.onDashboardTodayTaskDeleted(handleTaskDeleted);
     return () => {
-      window.ipcRenderer?.off('dashboard:today-task-deleted', handleTaskDeleted);
+      window.ledgerIpc?.events?.offDashboardTodayTaskDeleted(handleTaskDeleted);
     };
   }, [activeWorkspace?.color, activeWorkspace?.name, activeWorkspaceId]);
 
@@ -4884,7 +4974,8 @@ export function DashboardContent({
             name: leadName,
             userId: project.lead_id ?? null,
             avatarUrl: workspaceMemberById.get(project.lead_id ?? '')?.avatar_url ?? null,
-            avatarUpdatedAt: workspaceMemberById.get(project.lead_id ?? '')?.avatar_updated_at ?? null,
+            avatarUpdatedAt:
+              workspaceMemberById.get(project.lead_id ?? '')?.avatar_updated_at ?? null,
           }
         : ownerTeamName
         ? {
@@ -5074,13 +5165,20 @@ export function DashboardContent({
     const sourceId = item.id.slice(separatorIndex + 1);
     if (kind === 'event') {
       const eventRow = eventRows.find((row) => row.sourceId === sourceId);
-      return eventRow ? [{ ...eventRow, id: `Needs attention:${item.id}`, group: 'Needs attention', chips: ['Focus'] }] : [];
+      return eventRow
+        ? [
+            {
+              ...eventRow,
+              id: `Needs attention:${item.id}`,
+              group: 'Needs attention',
+              chips: ['Focus'],
+            },
+          ]
+        : [];
     }
     if (kind === 'reminder') {
       const reminder = upcomingReminders.find((candidate) => candidate.id === sourceId);
-      return reminder
-        ? [buildTaskRow(reminder, 'Needs attention', ['Focus'])]
-        : [];
+      return reminder ? [buildTaskRow(reminder, 'Needs attention', ['Focus'])] : [];
     }
     return [];
   });
@@ -5128,7 +5226,12 @@ export function DashboardContent({
   const githubAttentionRows = githubAttention.slice(0, 8).map<OverviewRow>((signal) => ({
     id: `GitHub attention:${signal.id}`,
     sourceId: signal.target_id ?? signal.id,
-    kind: signal.target_type === 'project' ? 'project' : signal.target_type === 'note' ? 'note' : 'task',
+    kind:
+      signal.target_type === 'project'
+        ? 'project'
+        : signal.target_type === 'note'
+        ? 'note'
+        : 'task',
     title: signal.title,
     meta: [signal.reason, signal.metadata?.repositoryFullName].filter(Boolean).join(' · '),
     chips: [
@@ -5137,10 +5240,22 @@ export function DashboardContent({
     ].filter(Boolean),
     group: 'Needs attention',
     icon: <CircleAlert size={13} />,
-    filterValues: buildOverviewFilterValues({ type: ['task'], status: ['needs_attention'], assignment: [], team: [], project: [], date: ['no_date'], priority: ['no_priority'], progress: [], has: ['linked_context'] }),
+    filterValues: buildOverviewFilterValues({
+      type: ['task'],
+      status: ['needs_attention'],
+      assignment: [],
+      team: [],
+      project: [],
+      date: ['no_date'],
+      priority: ['no_priority'],
+      progress: [],
+      has: ['linked_context'],
+    }),
     open: () => {
-      if (signal.target_type === 'project' && signal.target_id) openModule('projects', { kind: 'projects', focusProjectId: signal.target_id });
-      else if (signal.target_type === 'note' && signal.target_id) openModule('notes', { kind: 'notes', focusNoteId: signal.target_id });
+      if (signal.target_type === 'project' && signal.target_id)
+        openModule('projects', { kind: 'projects', focusProjectId: signal.target_id });
+      else if (signal.target_type === 'note' && signal.target_id)
+        openModule('notes', { kind: 'notes', focusNoteId: signal.target_id });
       else if (signal.target_id) setSelectedOverviewRowId(`GitHub attention:${signal.id}`);
     },
   }));
@@ -5490,7 +5605,11 @@ export function DashboardContent({
         actions.push({
           label: 'Delete task',
           icon: <Trash2 size={13} />,
-          action: () => void deleteOverviewRow({ kind: selectedOverviewRow.kind, sourceId: selectedOverviewRow.sourceId }),
+          action: () =>
+            void deleteOverviewRow({
+              kind: selectedOverviewRow.kind,
+              sourceId: selectedOverviewRow.sourceId,
+            }),
           disabled: false,
         });
 
@@ -5587,7 +5706,7 @@ export function DashboardContent({
               {
                 label: 'Add action',
                 icon: <Plus size={13} />,
-                action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+                action: openQuickTask,
                 disabled: false,
               },
               {
@@ -5602,7 +5721,7 @@ export function DashboardContent({
               {
                 label: 'Create action',
                 icon: <Plus size={13} />,
-                action: () => window.desktopWindow?.toggleModule('quick-task' as any),
+                action: openQuickTask,
                 disabled: false,
               },
               {
@@ -6631,13 +6750,21 @@ export function DashboardContent({
         }
         closeLabel="Close overview"
         minimizeLabel="Minimize overview"
-        onMinimize={browserMode ? undefined : () => {
-          void window.desktopWindow?.minimizeModule('dashboard');
-        }}
+        onMinimize={
+          browserMode
+            ? undefined
+            : () => {
+                void window.desktopWindow?.minimizeModule('dashboard');
+              }
+        }
         fullscreenLabel="Fullscreen overview"
-        onToggleFullscreen={browserMode ? undefined : () => {
-          void window.desktopWindow?.toggleModuleFullscreen('dashboard');
-        }}
+        onToggleFullscreen={
+          browserMode
+            ? undefined
+            : () => {
+                void window.desktopWindow?.toggleModuleFullscreen('dashboard');
+              }
+        }
         onClose={attemptCloseDashboard}
         compact
         showBodyHeader={false}
@@ -6783,8 +6910,14 @@ export function DashboardContent({
                                       kind: 'user' as const,
                                       name: row.assignment.userLabel,
                                       userId: row.assignment.userId,
-                                      avatarUrl: row.assignment.userId ? workspaceMemberById.get(row.assignment.userId)?.avatar_url ?? null : null,
-                                      avatarUpdatedAt: row.assignment.userId ? workspaceMemberById.get(row.assignment.userId)?.avatar_updated_at ?? null : null,
+                                      avatarUrl: row.assignment.userId
+                                        ? workspaceMemberById.get(row.assignment.userId)
+                                            ?.avatar_url ?? null
+                                        : null,
+                                      avatarUpdatedAt: row.assignment.userId
+                                        ? workspaceMemberById.get(row.assignment.userId)
+                                            ?.avatar_updated_at ?? null
+                                        : null,
                                     }
                                   : row.assignment?.teamLabel
                                   ? {
@@ -6853,27 +6986,33 @@ export function DashboardContent({
                                     <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
                                       {row.chips
                                         .slice(0, 2)
-                                        .sort((left, right) => Number(left !== 'Closed') - Number(right !== 'Closed'))
+                                        .sort(
+                                          (left, right) =>
+                                            Number(left !== 'Closed') - Number(right !== 'Closed')
+                                        )
                                         .map((chip) => {
-                                        const provider = normalizeIntegrationProvider(chip);
-                                        return provider ? (
-                                          <span
-                                            key={chip}
-                                            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
-                                            aria-label={chip}
-                                            title={chip}
-                                          >
-                                            <IntegrationProviderMark provider={provider} size={12} />
-                                          </span>
-                                        ) : (
-                                          <span
-                                            key={chip}
-                                            className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
-                                          >
-                                            {chip}
-                                          </span>
-                                        );
-                                      })}
+                                          const provider = normalizeIntegrationProvider(chip);
+                                          return provider ? (
+                                            <span
+                                              key={chip}
+                                              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
+                                              aria-label={chip}
+                                              title={chip}
+                                            >
+                                              <IntegrationProviderMark
+                                                provider={provider}
+                                                size={12}
+                                              />
+                                            </span>
+                                          ) : (
+                                            <span
+                                              key={chip}
+                                              className="shrink-0 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]"
+                                            >
+                                              {chip}
+                                            </span>
+                                          );
+                                        })}
                                     </span>
                                     {visibleMetadata.length > 0 && (
                                       <span className="hidden min-w-0 max-w-80 truncate whitespace-nowrap text-[11px] leading-4 text-[var(--ledger-text-muted)] md:inline">
@@ -6907,7 +7046,20 @@ export function DashboardContent({
                                           title={rowAssignee.name}
                                           aria-label={rowAssignee.name}
                                         >
-                                          {rowAssignee.kind === 'user' ? <UserAvatar user={{ id: rowAssignee.userId ?? undefined, displayName: rowAssignee.name, email: null, avatarUrl: rowAssignee.avatarUrl, avatarUpdatedAt: rowAssignee.avatarUpdatedAt }} size="xs" /> : rowAssignee.label}
+                                          {rowAssignee.kind === 'user' ? (
+                                            <UserAvatar
+                                              user={{
+                                                id: rowAssignee.userId ?? undefined,
+                                                displayName: rowAssignee.name,
+                                                email: null,
+                                                avatarUrl: rowAssignee.avatarUrl,
+                                                avatarUpdatedAt: rowAssignee.avatarUpdatedAt,
+                                              }}
+                                              size="xs"
+                                            />
+                                          ) : (
+                                            rowAssignee.label
+                                          )}
                                         </span>
                                       )}
                                     <button
@@ -7736,18 +7888,21 @@ export function DashboardContent({
                 const target = isTaskRow ? findOverviewTaskTarget(row.sourceId) : null;
                 const dateBucket = target?.due_date ? getOverviewDateBucket(target.due_date) : null;
                 const isOverdueTask = isTaskRow && dateBucket === 'overdue';
-                const hasFutureDueDate = isTaskRow && dateBucket !== null && dateBucket !== 'overdue' && dateBucket !== 'today';
+                const hasFutureDueDate =
+                  isTaskRow &&
+                  dateBucket !== null &&
+                  dateBucket !== 'overdue' &&
+                  dateBucket !== 'today';
                 const canReschedule = isOverdueTask || hasFutureDueDate;
-                const moveLabel =
-                  canReschedule
-                    ? hasFutureDueDate
-                      ? 'Change due date'
-                      : 'Reschedule'
-                    : row.group === 'Today'
-                    ? 'Move to Long-term'
-                    : row.group === 'Long-term tasks'
-                    ? 'Move to Today'
-                    : null;
+                const moveLabel = canReschedule
+                  ? hasFutureDueDate
+                    ? 'Change due date'
+                    : 'Reschedule'
+                  : row.group === 'Today'
+                  ? 'Move to Long-term'
+                  : row.group === 'Long-term tasks'
+                  ? 'Move to Today'
+                  : null;
                 const addToFocusIcon =
                   row.kind === 'reminder' ? <Bell size={14} /> : <CircleAlert size={14} />;
                 const moveLabelIcon =
@@ -7799,10 +7954,7 @@ export function DashboardContent({
                   }
                 };
                 const selectRescheduleDate = (dueDate: string | null) => {
-                  void rescheduleOverviewTask(
-                    { kind: row.kind, sourceId: row.sourceId },
-                    dueDate
-                  );
+                  void rescheduleOverviewTask({ kind: row.kind, sourceId: row.sourceId }, dueDate);
                 };
                 const getRelativeDateKey = (days: number) => {
                   const date = new Date();
@@ -7871,9 +8023,15 @@ export function DashboardContent({
                                 {moveLabel}
                               </span>
                               {isOverviewRescheduleOpen ? (
-                                <ChevronDown size={14} className="text-[var(--ledger-text-muted)]" />
+                                <ChevronDown
+                                  size={14}
+                                  className="text-[var(--ledger-text-muted)]"
+                                />
                               ) : (
-                                <ChevronRight size={14} className="text-[var(--ledger-text-muted)]" />
+                                <ChevronRight
+                                  size={14}
+                                  className="text-[var(--ledger-text-muted)]"
+                                />
                               )}
                             </button>
                             {isOverviewRescheduleOpen && (
@@ -7888,16 +8046,24 @@ export function DashboardContent({
                                     onClick={() => selectRescheduleDate(value)}
                                     className={rescheduleRowClass}
                                   >
-                                    <CalendarDays size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                                    <CalendarDays
+                                      size={13}
+                                      className="shrink-0 text-[var(--ledger-text-muted)]"
+                                    />
                                     <span className="truncate">{label}</span>
                                   </button>
                                 ))}
                                 <div className="mt-1 flex h-8 items-center gap-2 rounded-md px-3 text-left text-[12px] text-[var(--ledger-text-secondary)]">
-                                  <CalendarDays size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                                  <CalendarDays
+                                    size={13}
+                                    className="shrink-0 text-[var(--ledger-text-muted)]"
+                                  />
                                   <input
                                     type="date"
                                     value={overviewRescheduleDate}
-                                    onChange={(event) => setOverviewRescheduleDate(event.target.value)}
+                                    onChange={(event) =>
+                                      setOverviewRescheduleDate(event.target.value)
+                                    }
                                     className="h-7 min-w-0 flex-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none"
                                   />
                                   <button
@@ -7915,7 +8081,10 @@ export function DashboardContent({
                                   onClick={() => selectRescheduleDate(null)}
                                   className={rescheduleRowClass}
                                 >
-                                  <CalendarDays size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                                  <CalendarDays
+                                    size={13}
+                                    className="shrink-0 text-[var(--ledger-text-muted)]"
+                                  />
                                   Remove due date
                                 </button>
                               </div>
@@ -8336,16 +8505,13 @@ export function AppShell({
       applyWorkspaceRoute(route);
     };
 
-    window.ipcRenderer?.on('workspace:route-changed', handleWorkspaceRouteChanged as any);
-    window.ipcRenderer?.on('workspace:route-requested', handleWorkspaceRouteRequested as any);
+    window.ledgerIpc?.events?.onWorkspaceRouteChanged(handleWorkspaceRouteChanged as any);
+    window.ledgerIpc?.events?.onWorkspaceRouteRequested(handleWorkspaceRouteRequested as any);
     window.addEventListener('ledger:workspace-route-closed', handleWorkspaceRouteClosed);
-    window.addEventListener(
-      'ledger:workspace-route-requested',
-      handleLocalWorkspaceRouteRequested
-    );
+    window.addEventListener('ledger:workspace-route-requested', handleLocalWorkspaceRouteRequested);
     return () => {
-      window.ipcRenderer?.off('workspace:route-changed', handleWorkspaceRouteChanged as any);
-      window.ipcRenderer?.off('workspace:route-requested', handleWorkspaceRouteRequested as any);
+      window.ledgerIpc?.events?.offWorkspaceRouteChanged(handleWorkspaceRouteChanged as any);
+      window.ledgerIpc?.events?.offWorkspaceRouteRequested(handleWorkspaceRouteRequested as any);
       window.removeEventListener('ledger:workspace-route-closed', handleWorkspaceRouteClosed);
       window.removeEventListener(
         'ledger:workspace-route-requested',
@@ -8542,9 +8708,9 @@ export function AppShell({
       setIsVisible(payload.isVisible);
     };
 
-    window.ipcRenderer?.on('sidebar:visibility-changed', handleSidebarVisibilityChanged);
+    window.ledgerIpc?.events?.onSidebarVisibilityChanged(handleSidebarVisibilityChanged);
     return () => {
-      window.ipcRenderer?.off('sidebar:visibility-changed', handleSidebarVisibilityChanged);
+      window.ledgerIpc?.events?.offSidebarVisibilityChanged(handleSidebarVisibilityChanged);
     };
   }, [setIsVisible, user]);
 
@@ -8555,9 +8721,9 @@ export function AppShell({
       setState('expanded');
     };
 
-    window.ipcRenderer?.on('sidebar:open-checkin', handleOpenCheckin);
+    window.ledgerIpc?.events?.onSidebarOpenCheckin(handleOpenCheckin);
     return () => {
-      window.ipcRenderer?.off('sidebar:open-checkin', handleOpenCheckin);
+      window.ledgerIpc?.events?.offSidebarOpenCheckin(handleOpenCheckin);
     };
   }, [setIsExpanded, setIsVisible, setState]);
 
@@ -8597,9 +8763,9 @@ export function AppShell({
       openSearch();
     };
 
-    window.ipcRenderer?.on('touchbar:open-search', handleTouchBarOpenSearch);
+    window.ledgerIpc?.events?.onTouchbarOpenSearch(handleTouchBarOpenSearch);
     return () => {
-      window.ipcRenderer?.off('touchbar:open-search', handleTouchBarOpenSearch);
+      window.ledgerIpc?.events?.offTouchbarOpenSearch(handleTouchBarOpenSearch);
     };
   }, [isLoading, openSearch, setState, state, user]);
 
@@ -8623,9 +8789,9 @@ export function AppShell({
       window.history.replaceState({}, '', `/?token=${encodeURIComponent(token)}`);
     };
 
-    window.ipcRenderer?.on('ledger:open-invite', handleOpenInvite);
+    window.ledgerIpc?.events?.onLedgerOpenInvite(handleOpenInvite);
     return () => {
-      window.ipcRenderer?.off('ledger:open-invite', handleOpenInvite);
+      window.ledgerIpc?.events?.offLedgerOpenInvite(handleOpenInvite);
     };
   }, []);
 
@@ -8880,7 +9046,8 @@ export function AppShell({
           }
 
           setInviteFlowStatus(user ? 'accepted' : 'awaiting-auth');
-          if (user) setInviteFlowNotice('This invite has already been accepted. Switching workspaces.');
+          if (user)
+            setInviteFlowNotice('This invite has already been accepted. Switching workspaces.');
           return;
         }
 
@@ -9007,7 +9174,11 @@ export function AppShell({
         if (cancelled) return;
 
         if (acceptedWorkspaceId || !browserMode) {
-          window.history.replaceState({}, '', browserMode ? `/app/w/${acceptedWorkspaceId}/home` : '/');
+          window.history.replaceState(
+            {},
+            '',
+            browserMode ? `/app/w/${acceptedWorkspaceId}/home` : '/'
+          );
           if (browserMode) window.dispatchEvent(new PopStateEvent('popstate'));
           setPendingInviteToken(null);
         }
@@ -9069,7 +9240,14 @@ export function AppShell({
     setOnboardingSidebarPosition('floating');
     setOnboardingError(null);
     setIsSavingOnboarding(false);
-  }, [isInviteOnboarding, postAuthStage, profile?.displayName, user?.email, user?.id, user?.user_metadata?.full_name]);
+  }, [
+    isInviteOnboarding,
+    postAuthStage,
+    profile?.displayName,
+    user?.email,
+    user?.id,
+    user?.user_metadata?.full_name,
+  ]);
 
   useEffect(() => {
     if (!browserMode || !isInviteOnboarding || !inviteWorkspaceId || !user?.id) return;
@@ -9078,18 +9256,30 @@ export function AppShell({
 
     completedInviteOnboardingRef.current = user.id;
     let cancelled = false;
-    void api.completeOnboarding().then(async () => {
-      if (cancelled) return;
-      await refreshWorkspaces();
-      if (!cancelled) setPostAuthStage('ready');
-    }).catch(() => {
-      completedInviteOnboardingRef.current = null;
-    });
+    void api
+      .completeOnboarding()
+      .then(async () => {
+        if (cancelled) return;
+        await refreshWorkspaces();
+        if (!cancelled) setPostAuthStage('ready');
+      })
+      .catch(() => {
+        completedInviteOnboardingRef.current = null;
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [api, browserMode, inviteWorkspaceId, isInviteOnboarding, onboardingHasProfileStep, postAuthStage, refreshWorkspaces, user?.id]);
+  }, [
+    api,
+    browserMode,
+    inviteWorkspaceId,
+    isInviteOnboarding,
+    onboardingHasProfileStep,
+    postAuthStage,
+    refreshWorkspaces,
+    user?.id,
+  ]);
 
   useEffect(() => {
     const userId = user?.id ?? null;
@@ -9122,8 +9312,9 @@ export function AppShell({
         const onboardingCompleted = Boolean(
           (data as { onboarding_completed?: boolean } | null)?.onboarding_completed
         );
-        const profileSetupCompletedAt = (data as { profile_setup_completed_at?: string | null } | null)
-          ?.profile_setup_completed_at;
+        const profileSetupCompletedAt = (
+          data as { profile_setup_completed_at?: string | null } | null
+        )?.profile_setup_completed_at;
         const profileSetupPending = profileSetupCompletedAt === null;
         setOnboardingHasProfileStep(profileSetupPending);
         if (!onboardingCompleted && profileSetupPending) {
@@ -9687,7 +9878,21 @@ function App() {
           {user && !isModuleWindow ? <MeetingRecordingIndicator /> : null}
           {user && !isModuleWindow ? <TranscriptionFailureToast /> : null}
           <AuthSessionToastReset />
-          {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? <McpScopeUpgradeAuthorizationPage sessionId={mcpScopeUpgradeSession} code={mcpScopeUpgradeCode} /> : mcpAuthSession && mcpAuthCode && user ? <McpAuthorizationPage sessionId={mcpAuthSession} code={mcpAuthCode} /> : figmaPluginAuthSession && figmaPluginAuthCode && user ? <FigmaPluginAuthorizationPage sessionId={figmaPluginAuthSession} code={figmaPluginAuthCode} /> : <AppShell />}
+          {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? (
+            <McpScopeUpgradeAuthorizationPage
+              sessionId={mcpScopeUpgradeSession}
+              code={mcpScopeUpgradeCode}
+            />
+          ) : mcpAuthSession && mcpAuthCode && user ? (
+            <McpAuthorizationPage sessionId={mcpAuthSession} code={mcpAuthCode} />
+          ) : figmaPluginAuthSession && figmaPluginAuthCode && user ? (
+            <FigmaPluginAuthorizationPage
+              sessionId={figmaPluginAuthSession}
+              code={figmaPluginAuthCode}
+            />
+          ) : (
+            <AppShell />
+          )}
           {user && isModuleWindow ? (
             <NotificationTray
               isOpen={isNotificationTrayOpen}
@@ -9703,7 +9908,12 @@ function App() {
 }
 
 function MeetingRecordingIndicator() {
-  const [status, setStatus] = useState<{ state?: string; noteId?: string | null; durationSeconds?: number; transcriptionStatus?: string } | null>(null);
+  const [status, setStatus] = useState<{
+    state?: string;
+    noteId?: string | null;
+    durationSeconds?: number;
+    transcriptionStatus?: string;
+  } | null>(null);
 
   useEffect(() => {
     const audio = window.meetingAudio;
@@ -9713,12 +9923,24 @@ function MeetingRecordingIndicator() {
       void Promise.all([
         audio.status(),
         window.meetingTranscription?.status() ?? Promise.resolve([]),
-      ]).then(([nextAudio, nextJobs]) => {
-        if (cancelled) return;
-        const jobs = Array.isArray(nextJobs) ? nextJobs as Array<{ noteId?: string; status?: string }> : [];
-        const activeJob = jobs.find((job) => ['queued', 'preparing', 'transcribing', 'merging', 'failed'].includes(String(job.status)));
-        setStatus({ ...(nextAudio as { state?: string; noteId?: string | null; durationSeconds?: number }), noteId: (nextAudio as { noteId?: string | null }).noteId ?? activeJob?.noteId ?? null, transcriptionStatus: activeJob?.status });
-      }).catch(() => undefined);
+      ])
+        .then(([nextAudio, nextJobs]) => {
+          if (cancelled) return;
+          const jobs = Array.isArray(nextJobs)
+            ? (nextJobs as Array<{ noteId?: string; status?: string }>)
+            : [];
+          const activeJob = jobs.find((job) =>
+            ['queued', 'preparing', 'transcribing', 'merging', 'failed'].includes(
+              String(job.status)
+            )
+          );
+          setStatus({
+            ...(nextAudio as { state?: string; noteId?: string | null; durationSeconds?: number }),
+            noteId: (nextAudio as { noteId?: string | null }).noteId ?? activeJob?.noteId ?? null,
+            transcriptionStatus: activeJob?.status,
+          });
+        })
+        .catch(() => undefined);
     };
     refresh();
     const timer = window.setInterval(refresh, 2000);
@@ -9736,12 +9958,24 @@ function MeetingRecordingIndicator() {
     <button
       type="button"
       onClick={() => {
-        if (status.noteId) void window.desktopWindow?.openModule('notes', { kind: 'notes', focusNoteId: status.noteId });
+        if (status.noteId)
+          void window.desktopWindow?.openModule('notes', {
+            kind: 'notes',
+            focusNoteId: status.noteId,
+          });
       }}
       className="fixed bottom-3 left-3 z-[80] inline-flex items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
       title="Return to the active meeting note"
     >
-      <span className={`h-2 w-2 rounded-full ${status.state === 'recording' ? 'bg-[var(--ledger-accent)]' : status.transcriptionStatus === 'failed' ? 'bg-[var(--ledger-danger)]' : 'bg-amber-500'}`} />
+      <span
+        className={`h-2 w-2 rounded-full ${
+          status.state === 'recording'
+            ? 'bg-[var(--ledger-accent)]'
+            : status.transcriptionStatus === 'failed'
+            ? 'bg-[var(--ledger-danger)]'
+            : 'bg-amber-500'
+        }`}
+      />
       {status.state === 'recording' ? 'Meeting recording' : 'Meeting paused'}
     </button>
   );
@@ -9760,7 +9994,8 @@ function TranscriptionFailureToast() {
       if (event?.status !== 'failed' || !jobId || shownJobIdsRef.current.has(jobId)) return;
       shownJobIdsRef.current.add(jobId);
       toast.show('Transcription failed', {
-        detail: String(event?.error ?? '').trim() || 'Open the meeting note to retry transcription.',
+        detail:
+          String(event?.error ?? '').trim() || 'Open the meeting note to retry transcription.',
         variant: 'error',
         duration: 7000,
       });

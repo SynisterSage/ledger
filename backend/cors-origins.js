@@ -20,12 +20,16 @@ export const getAllowedCorsOrigins = (env = process.env) => new Set([
   'https://www.ledgerworkspace.com',
   env.FRONTEND_URL?.trim(),
   env.PUBLIC_FRONTEND_URL?.trim(),
-  env.DEV_FRONTEND_URL?.trim(),
+  ...(env.NODE_ENV === 'production' ? [] : [env.DEV_FRONTEND_URL?.trim()]),
   ...configuredExtensionOrigins(env),
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:4173',
-  'http://127.0.0.1:4173',
+  ...(env.NODE_ENV === 'production'
+    ? []
+    : [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:4173',
+        'http://127.0.0.1:4173',
+      ]),
 ].filter((origin) => {
   if (!origin) return false;
   if (/^(?:chrome|moz|safari)-extension:/i.test(origin)) {
@@ -35,5 +39,5 @@ export const getAllowedCorsOrigins = (env = process.env) => new Set([
 }));
 
 export const isAllowedCorsOrigin = (origin, allowedOrigins) => (
-  !origin || origin === 'null' || allowedOrigins.has(origin)
+  !origin || origin !== 'null' && allowedOrigins.has(origin)
 );

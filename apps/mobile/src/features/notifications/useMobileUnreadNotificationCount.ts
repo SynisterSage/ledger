@@ -9,7 +9,7 @@ export function useMobileUnreadNotificationCount(workspaceId: string) {
   const load = useCallback(async () => {
     try {
       const response = await getMobileNotifications(workspaceId);
-      setUnreadCount(response.counts.unread ?? response.counts.active);
+      setUnreadCount(response.counts.unread ?? 0);
     } catch {
       // Keep the current count if notification hydration is unavailable.
     }

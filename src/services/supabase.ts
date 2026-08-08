@@ -21,6 +21,7 @@ export const supabase: SupabaseClient<Database> = createClient<Database>(
       autoRefreshToken: true,
       detectSessionInUrl: true,
       storageKey: 'ledger-auth',
+      storage: typeof window !== 'undefined' && !window.desktopWindow ? window.sessionStorage : undefined,
     },
   }
 );

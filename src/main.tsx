@@ -52,7 +52,7 @@ if (typeof document !== 'undefined') {
     applyDesktopCssVars(document.documentElement, scheme);
   };
 
-  window.ipcRenderer?.on?.('ledger:theme-updated', handleThemeBroadcast as any);
+  window.ledgerIpc?.events?.onLedgerThemeUpdated(handleThemeBroadcast as any);
 
   if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');

@@ -68,7 +68,7 @@ export const parseWebLocation = (location: Pick<Location, 'pathname' | 'search'>
     case 'teams': return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'teams' } };
     case 'inbox': return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'inbox', query: { item: params.get('item') ?? undefined, section: enumParam('section', ['unprocessed', 'converted', 'snoozed', 'archived']) as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined } } };
     case 'slack': return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'slack', query: { capture: params.get('capture') ?? undefined } } };
-    case 'notifications': return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'notifications', query: { filter: enumParam('filter', ['active', 'earlier']) as 'active' | 'earlier' | undefined, item: params.get('item') ?? undefined } } };
+    case 'notifications': return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'notifications', query: { filter: enumParam('filter', ['active', 'unread', 'earlier']) as 'active' | 'unread' | 'earlier' | undefined, item: params.get('item') ?? undefined } } };
     case 'search': return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'search', query: { q: params.get('q') ?? '' } } };
     default: {
       const note = remainder.match(/^notes\/([^/]+)$/);

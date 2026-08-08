@@ -8,7 +8,7 @@ import {
   type SerializedLexicalNode,
   $applyNodeReplacement,
 } from 'lexical'
-import { supabase } from '../../../services/supabase'
+import { createSignedStorageUrl, getStorageObjectUrl } from '../../../services/privateStorage'
 
 export type SerializedImageNode = SerializedLexicalNode & {
   type: 'image'
@@ -34,7 +34,16 @@ const resolveImageSrc = (src: string, storagePath: string | null) => {
     return normalizedSrc
   }
   if (!storagePath) return normalizedSrc
-  return supabase.storage.from(NOTE_IMAGE_BUCKET).getPublicUrl(storagePath).data?.publicUrl ?? normalizedSrc
+  return getStorageObjectUrl(NOTE_IMAGE_BUCKET, storagePath) || normalizedSrc
+}
+
+const hydrateSignedImageUrl = (img: HTMLImageElement, storagePath: string | null) => {
+  if (!storagePath) return
+  void createSignedStorageUrl(NOTE_IMAGE_BUCKET, storagePath)
+    .then((signedUrl) => {
+      if (img.isConnected && img.dataset.storagePath === storagePath) img.src = signedUrl
+    })
+    .catch(() => undefined)
 }
 
 const extractStoragePathFromSrc = (src: string): string | null => {
@@ -174,6 +183,7 @@ export class ImageNode extends DecoratorNode<null> {
     img.src = resolveImageSrc(this.__src, this.__storagePath)
     img.alt = this.__altText || 'Pasted image'
     if (this.__storagePath) img.setAttribute('data-storage-path', this.__storagePath)
+    hydrateSignedImageUrl(img, this.__storagePath)
     if (this.__width) {
       img.setAttribute('width', String(this.__width))
       img.setAttribute('data-width', String(this.__width))
@@ -240,6 +250,7 @@ export class ImageNode extends DecoratorNode<null> {
     if (img) {
       img.src = resolveImageSrc(this.__src, this.__storagePath)
       img.alt = this.__altText || 'Pasted image'
+      hydrateSignedImageUrl(img, this.__storagePath)
     }
     if (this.__storagePath) {
       img?.setAttribute('data-storage-path', this.__storagePath)

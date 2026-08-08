@@ -194,7 +194,8 @@ chrome.contextMenus.onClicked.addListener(async (info: ContextMenuClickInfo) => 
   }
 });
 
-chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender: unknown, sendResponse: MessageResponder) => {
+chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender: { id?: string }, sendResponse: MessageResponder) => {
+  if (sender.id !== chrome.runtime.id) return false;
   if (!message || typeof message !== 'object') return false;
 
   const type = String((message as { type?: string }).type ?? '');
@@ -204,6 +205,9 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender: unknown,
       try {
         const payload = (message as { payload?: BrowserCapturePayload }).payload;
         if (!payload) throw new Error('Missing capture payload.');
+        if (!['link', 'selection', 'manual'].includes(payload.capture_type) || typeof payload.title !== 'string' || (payload.body !== null && typeof payload.body !== 'string') || (payload.source_url !== null && typeof payload.source_url !== 'string')) {
+          throw new Error('Invalid capture payload.');
+        }
 
         const token = await getStoredToken();
         if (!token) {

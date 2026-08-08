@@ -791,9 +791,9 @@ export const LedgerTabStrip = () => {
       }
     };
 
-    window.ipcRenderer?.on?.('tab:hydrate-session', handleHydrateSession as any);
+    window.ledgerIpc?.events?.onTabHydrateSession(handleHydrateSession as any);
     return () => {
-      window.ipcRenderer?.off?.('tab:hydrate-session', handleHydrateSession as any);
+      window.ledgerIpc?.events?.offTabHydrateSession(handleHydrateSession as any);
     };
   }, []);
 
@@ -845,11 +845,11 @@ export const LedgerTabStrip = () => {
       visualCurrentRouteRef.current = route;
       rememberRouteHint(route);
     };
-    window.ipcRenderer?.on?.('workspace:navigation-state', handleState as any);
-    window.ipcRenderer?.on?.('workspace:route-changed', handleRouteChanged as any);
+    window.ledgerIpc?.events?.onWorkspaceNavigationState(handleState as any);
+    window.ledgerIpc?.events?.onWorkspaceRouteChanged(handleRouteChanged as any);
     return () => {
-      window.ipcRenderer?.off?.('workspace:navigation-state', handleState as any);
-      window.ipcRenderer?.off?.('workspace:route-changed', handleRouteChanged as any);
+      window.ledgerIpc?.events?.offWorkspaceNavigationState(handleState as any);
+      window.ledgerIpc?.events?.offWorkspaceRouteChanged(handleRouteChanged as any);
     };
   }, []);
 
@@ -883,10 +883,10 @@ export const LedgerTabStrip = () => {
       }
     };
 
-    window.ipcRenderer?.on?.('workspace:route-requested', handleRouteRequested as any);
+    window.ledgerIpc?.events?.onWorkspaceRouteRequested(handleRouteRequested as any);
     window.addEventListener('ledger:workspace-route-requested', handleLocalRouteRequested);
     return () => {
-      window.ipcRenderer?.off?.('workspace:route-requested', handleRouteRequested as any);
+      window.ledgerIpc?.events?.offWorkspaceRouteRequested(handleRouteRequested as any);
       window.removeEventListener('ledger:workspace-route-requested', handleLocalRouteRequested);
     };
   }, []);

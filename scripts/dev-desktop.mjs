@@ -30,7 +30,10 @@ function loadDotEnv(envPath) {
 
 const loadedEnv = loadDotEnv(path.join(process.cwd(), '.env.local'));
 
-const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', '5173'], {
+const child = spawn(
+  process.execPath,
+  [viteEntry, '--host', '127.0.0.1', '--port', '5173', '--strictPort'],
+  {
   stdio: 'inherit',
   env: {
     ...process.env,
@@ -38,7 +41,8 @@ const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port
     VITE_LAUNCH_ELECTRON: '1',
     LEDGER_DEV_TARGET: 'desktop',
   },
-});
+  }
+);
 
 const exit = (code = 0) => {
   if (!child.killed) {

@@ -5,6 +5,7 @@ const root = resolve(process.cwd(), '..', '..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const sharedMessages = read('packages/mobile-editor-bridge/messages.ts');
 const sharedValidation = read('packages/mobile-editor-bridge/validation.ts');
+const mobileSanitizer = read('apps/mobile-editor/src/sanitizeHtml.ts');
 const native = read('apps/mobile/src/features/dev/MobileLexicalEditor.tsx');
 const noteEditor = read('apps/mobile/src/features/notes/MobileTextNoteEditor.tsx');
 const editor = read('apps/mobile-editor/src/main.tsx');
@@ -56,6 +57,8 @@ assert(native.includes('onLedgerContext'), 'mobile editor must expose a Ledger c
 assert(noteEditor.includes('setProjectOpen(true)'), 'note editor must route Ledger context to the existing project link sheet');
 assert(sharedMessages.includes("type: 'INSERT_RESOURCE_LINK'"), 'Ledger resource insertion must have a typed resource-link command');
 assert(sharedValidation.includes("value.type === 'INSERT_RESOURCE_LINK'"), 'Ledger resource-link commands must be validated');
+assert(sharedValidation.includes('normalizeEditorUrl'), 'editor URLs must cross one strict protocol validator');
+assert(sharedValidation.includes('javascript|vbscript|data|file|blob'), 'unsafe editor URL protocols must be rejected');
 assert(editor.includes('$createLinkNode(command.url)'), 'Ledger link insertion must create a Lexical link node');
 assert(native.includes('getMobileNoteSummaries'), 'Ledger link picker must load workspace notes');
 assert(native.includes('listMobileProjects'), 'Ledger link picker must load workspace projects');
@@ -64,6 +67,8 @@ assert(preservationNode.includes("data-ledger-file-attachment"), 'preserved atta
 assert(preservationNode.includes('forChild: () => null'), 'preserved HTML blocks must not re-import their child text during hydration');
 assert(preservationNode.includes("link.href = href"), 'attachment labels with URLs must render as clickable links');
 assert(editor.includes("editor.update(() => {\n        // DOM conversion creates Lexical nodes"), 'HTML import must run inside an active Lexical update');
+assert(editor.includes('sanitizeEditorHtml(command.html)'), 'mobile document hydration must sanitize HTML');
+assert(mobileSanitizer.includes("querySelectorAll('script, style, iframe, object, embed, meta, link, base')"), 'mobile sanitizer must remove active HTML');
 assert(native.includes("source={{ html: MOBILE_EDITOR_HTML"), 'editor must stay local and inline');
 assert(!native.includes("source={{ uri:"), 'editor must not use a remote WebView URL');
 

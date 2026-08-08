@@ -144,7 +144,7 @@ export const NotificationMonitor: React.FC = () => {
                     // ignore workspace switch failures and proceed to open
                   }
                   await openNotificationTarget(item);
-                  window.ipcRenderer?.send('notifications:refresh');
+                  window.ledgerIpc?.commands?.notificationsRefresh();
                 },
               };
             }
@@ -154,7 +154,7 @@ export const NotificationMonitor: React.FC = () => {
                 label: 'Complete',
                 onClick: async () => {
                   await api.updateNotificationAction(item.id, 'complete');
-                  window.ipcRenderer?.send('notifications:refresh');
+                  window.ledgerIpc?.commands?.notificationsRefresh();
                 },
               };
             }
@@ -167,7 +167,7 @@ export const NotificationMonitor: React.FC = () => {
                   await api.updateNotificationAction(item.id, 'snooze', {
                     snooze_until: until,
                   });
-                  window.ipcRenderer?.send('notifications:refresh');
+                  window.ledgerIpc?.commands?.notificationsRefresh();
                 },
               };
             }
@@ -177,7 +177,7 @@ export const NotificationMonitor: React.FC = () => {
               variant: 'destructive' as const,
               onClick: async () => {
                 await api.updateNotificationAction(item.id, 'dismiss');
-                window.ipcRenderer?.send('notifications:refresh');
+                window.ledgerIpc?.commands?.notificationsRefresh();
               },
             };
           }),
@@ -189,22 +189,22 @@ export const NotificationMonitor: React.FC = () => {
     const handleSummary = (_event: unknown, payload?: { unreadCount?: number; activeCount?: number }) => {
       window.dispatchEvent(
         new CustomEvent('ledger:notifications-summary', {
-          detail: { unreadCount: Number(payload?.unreadCount ?? payload?.activeCount ?? 0) },
+          detail: { unreadCount: Number(payload?.unreadCount ?? 0) },
         })
       );
     };
 
     const handleRefreshNotifications = () => {
-      window.ipcRenderer?.send('notifications:refresh');
+      window.ledgerIpc?.commands?.notificationsRefresh();
     };
 
     window.addEventListener('ledger:notifications-refresh', handleRefreshNotifications);
-    window.ipcRenderer?.on('ledger:notifications-batch', handleBatch);
-    window.ipcRenderer?.on('ledger:notifications-summary', handleSummary);
+    window.ledgerIpc?.events?.onLedgerNotificationsBatch(handleBatch);
+    window.ledgerIpc?.events?.onLedgerNotificationsSummary(handleSummary);
     return () => {
       window.removeEventListener('ledger:notifications-refresh', handleRefreshNotifications);
-      window.ipcRenderer?.off('ledger:notifications-batch', handleBatch);
-      window.ipcRenderer?.off('ledger:notifications-summary', handleSummary);
+      window.ledgerIpc?.events?.offLedgerNotificationsBatch(handleBatch);
+      window.ledgerIpc?.events?.offLedgerNotificationsSummary(handleSummary);
     };
   }, [api, platform, state, toast]);
 

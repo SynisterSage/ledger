@@ -120,7 +120,7 @@ const render = () => {
   const workspaceOptions = state.workspaces
     .map(
       (workspace) =>
-        `<option value="${workspace.id}" ${workspace.id === state.workspaceId ? 'selected' : ''}>${workspace.name}</option>`
+        `<option value="${escapeHtml(workspace.id)}" ${workspace.id === state.workspaceId ? 'selected' : ''}>${escapeHtml(workspace.name)}</option>`
     )
     .join('');
 

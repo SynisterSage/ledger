@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Settings2,
   Sparkles,
   Trash2,
   UserPlus,
@@ -602,6 +603,23 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     setOpenedTeamId(teamId);
     setActiveTab('Overview');
     setTeamNotesQuery('');
+  };
+
+  const openTeamSettings = (teamId: string) => {
+    if (platform.kind === 'web' && activeWorkspaceId) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'team',
+        teamId,
+        settings: true,
+      });
+      return;
+    }
+    void window.desktopWindow?.openModule('teams', {
+      kind: 'teams',
+      focusContext: `team-settings:${teamId}`,
+    } as any);
   };
 
   const goBackToTeamsList = () => {
@@ -2239,11 +2257,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               },
               {
                 label: 'Team settings',
-                icon: <Link2 size={13} />,
-                action: () =>
-                  void window.desktopWindow?.openModule('teams', {
-                    focusContext: `team-settings:${currentTeam.id}`,
-                  } as any),
+                icon: <Settings2 size={13} />,
+                action: () => openTeamSettings(currentTeam.id),
               },
             ].map((item) => (
               <button
@@ -3399,19 +3414,30 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void navigator.clipboard
-                        ?.writeText(`${window.location.origin}/teams/${openedTeam.id}`)
-                        .catch(() => undefined)
-                    }
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                    title="Copy team link"
-                    aria-label="Copy team link"
-                  >
-                    <Link2 size={13} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openTeamSettings(openedTeam.id)}
+                      className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      title="Open team settings"
+                    >
+                      <Settings2 size={13} />
+                      Team settings
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void navigator.clipboard
+                          ?.writeText(`${window.location.origin}/teams/${openedTeam.id}`)
+                          .catch(() => undefined)
+                      }
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      title="Copy team link"
+                      aria-label="Copy team link"
+                    >
+                      <Link2 size={13} />
+                    </button>
+                  </div>
                 </header>
                 <div className="flex flex-wrap items-center justify-between gap-3 px-1">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
@@ -4847,10 +4873,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           </CompactButton>
           <CompactButton
             onClick={() => {
-              void window.desktopWindow?.openModule('teams', {
-                kind: 'teams',
-                focusContext: `team-settings:${contextMenu.teamId}`,
-              } as any);
+              openTeamSettings(contextMenu.teamId);
               setContextMenu(null);
             }}
           >

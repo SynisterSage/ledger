@@ -6,6 +6,25 @@ const isNonEmptyString = (value: unknown): value is string => typeof value === '
 const isTheme = (value: unknown): value is 'light' | 'dark' => value === 'light' || value === 'dark';
 const isGeneration = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
+export const normalizeEditorUrl = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const url = value.trim();
+  if (!url || url.length > 2_000 || /[\u0000-\u001f\u007f]/.test(url)) return null;
+  if (/^(?:javascript|vbscript|data|file|blob):/i.test(url)) return null;
+  if (/^(?:[a-z][a-z0-9+.-]*):/i.test(url)) {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:', 'mailto:', 'tel:', 'ledger:'].includes(parsed.protocol)) return null;
+      if (parsed.username || parsed.password) return null;
+    } catch {
+      return null;
+    }
+  } else if (!url.startsWith('/') && !url.startsWith('#')) {
+    return null;
+  }
+  return url;
+};
+
 export function parseNativeEditorCommand(value: unknown): NativeEditorCommand | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null;
   if (value.type === 'LOAD_DOCUMENT' && isNonEmptyString(value.noteId) && isNonEmptyString(value.requestId) && isGeneration(value.generation) && typeof value.html === 'string' && value.html.length <= MAX_DOCUMENT_HTML_LENGTH && (value.readOnly === undefined || typeof value.readOnly === 'boolean')) return value as NativeEditorCommand;
@@ -18,11 +37,11 @@ export function parseNativeEditorCommand(value: unknown): NativeEditorCommand | 
   if (value.type === 'TOGGLE_FORMAT' && (value.format === 'bold' || value.format === 'italic' || value.format === 'underline')) return value as NativeEditorCommand;
   if (value.type === 'SET_BLOCK_TYPE' && (value.block === 'paragraph' || value.block === 'h1' || value.block === 'h2' || value.block === 'h3')) return value as NativeEditorCommand;
   if (value.type === 'TOGGLE_LIST' && (value.list === 'bullet' || value.list === 'number' || value.list === 'check')) return value as NativeEditorCommand;
-  if (value.type === 'INSERT_LINK' && isNonEmptyString(value.url) && value.url.length <= 2000) return value as NativeEditorCommand;
-  if (value.type === 'INSERT_RESOURCE_LINK' && isNonEmptyString(value.url) && value.url.length <= 2000 && isNonEmptyString(value.text) && value.text.length <= 240) return value as NativeEditorCommand;
+  if (value.type === 'INSERT_LINK' && normalizeEditorUrl(value.url)) return { ...value, url: normalizeEditorUrl(value.url) } as NativeEditorCommand;
+  if (value.type === 'INSERT_RESOURCE_LINK' && normalizeEditorUrl(value.url) && isNonEmptyString(value.text) && value.text.length <= 240) return { ...value, url: normalizeEditorUrl(value.url) } as NativeEditorCommand;
   if (value.type === 'INSERT_CALLOUT' && (value.variant === 'info' || value.variant === 'note' || value.variant === 'warning' || value.variant === 'success')) return value as NativeEditorCommand;
   if (value.type === 'INSERT_IMAGE' && isNonEmptyString(value.src) && value.src.length <= 4000 && (value.altText === undefined || typeof value.altText === 'string') && (value.width === undefined || typeof value.width === 'number') && (value.height === undefined || typeof value.height === 'number')) return value as NativeEditorCommand;
-  if (value.type === 'INSERT_ATTACHMENT' && isNonEmptyString(value.name) && value.name.length <= 240 && (value.attachmentId === undefined || isNonEmptyString(value.attachmentId)) && (value.mimeType === undefined || typeof value.mimeType === 'string') && (value.sizeBytes === undefined || typeof value.sizeBytes === 'number') && (value.url === undefined || typeof value.url === 'string')) return value as NativeEditorCommand;
+  if (value.type === 'INSERT_ATTACHMENT' && isNonEmptyString(value.name) && value.name.length <= 240 && (value.attachmentId === undefined || isNonEmptyString(value.attachmentId)) && (value.mimeType === undefined || typeof value.mimeType === 'string') && (value.sizeBytes === undefined || typeof value.sizeBytes === 'number') && (value.url === undefined || normalizeEditorUrl(value.url))) return { ...value, ...(value.url === undefined ? {} : { url: normalizeEditorUrl(value.url) }) } as NativeEditorCommand;
   return null;
 }
 

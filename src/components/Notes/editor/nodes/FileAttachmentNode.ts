@@ -8,6 +8,7 @@ import {
   type SerializedLexicalNode,
   $applyNodeReplacement,
 } from 'lexical';
+import { createSignedStorageUrl, getStorageObjectUrl } from '../../../../services/privateStorage';
 
 export type SerializedFileAttachmentNode = SerializedLexicalNode & {
   type: 'ledger-file-attachment';
@@ -21,6 +22,10 @@ export type SerializedFileAttachmentNode = SerializedLexicalNode & {
 };
 
 type FileAttachmentArgs = Omit<SerializedFileAttachmentNode, 'type' | 'version'>;
+const NOTE_FILE_BUCKET = 'note-files';
+
+const resolveAttachmentUrl = (storagePath: string, url: string) =>
+  storagePath ? getStorageObjectUrl(NOTE_FILE_BUCKET, storagePath) || url : url;
 
 const formatBytes = (size: number) => {
   if (!Number.isFinite(size) || size < 1024) return `${Math.max(0, Math.round(size))} B`;
@@ -127,7 +132,7 @@ export class FileAttachmentNode extends DecoratorNode<null> {
     element.dataset.ledgerFileAttachment = 'true';
     element.dataset.lexicalFileAttachmentKey = node.getKey();
     element.dataset.storagePath = node.__storagePath;
-    element.dataset.url = node.__url;
+    element.dataset.url = resolveAttachmentUrl(node.__storagePath, node.__url);
     element.dataset.fileName = node.__fileName;
     element.dataset.label = node.__label;
     element.dataset.mimeType = node.__mimeType;
@@ -152,11 +157,18 @@ export class FileAttachmentNode extends DecoratorNode<null> {
     )}`;
     body.append(label, meta);
     const link = document.createElement('a');
-    link.href = node.__url;
+    link.href = resolveAttachmentUrl(node.__storagePath, node.__url);
     link.target = '_blank';
     link.rel = 'noreferrer';
     link.className = 'ledger-file-attachment__open';
     link.textContent = 'Open';
+    if (node.__storagePath) {
+      void createSignedStorageUrl(NOTE_FILE_BUCKET, node.__storagePath)
+        .then((signedUrl) => {
+          if (link.isConnected) link.href = signedUrl;
+        })
+        .catch(() => undefined);
+    }
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'ledger-file-attachment__remove';
@@ -182,13 +194,13 @@ export class FileAttachmentNode extends DecoratorNode<null> {
     const element = document.createElement('div');
     element.setAttribute('data-ledger-file-attachment', 'true');
     element.setAttribute('data-storage-path', this.__storagePath);
-    element.setAttribute('data-url', this.__url);
+    element.setAttribute('data-url', resolveAttachmentUrl(this.__storagePath, this.__url));
     element.setAttribute('data-file-name', this.__fileName);
     element.setAttribute('data-label', this.__label);
     element.setAttribute('data-mime-type', this.__mimeType);
     element.setAttribute('data-size-bytes', String(this.__sizeBytes));
     const link = document.createElement('a');
-    link.href = this.__url;
+    link.href = resolveAttachmentUrl(this.__storagePath, this.__url);
     link.textContent = this.__label;
     element.appendChild(link);
     return { element };

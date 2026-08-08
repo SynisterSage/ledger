@@ -16,7 +16,7 @@ export async function getMobileNotifications(workspaceId?: string) {
 
 export async function performMobileNotificationAction(
   notificationId: string,
-  action: 'open' | 'dismiss' | 'complete' | 'snooze',
+  action: 'open' | 'read' | 'unread' | 'dismiss' | 'complete' | 'snooze',
   options: { snoozeUntil?: string | null } = {},
 ) {
   const body =

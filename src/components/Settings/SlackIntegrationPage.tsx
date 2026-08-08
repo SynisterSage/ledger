@@ -73,7 +73,7 @@ export const SlackIntegrationPage = ({ workspaceId, canManage, onBack, onStatusC
   const disconnectWorkspace = async () => {
     if (!workspaceId || !canManage) return;
     setBusy('disconnect'); setError(null);
-    try { await api.disconnectSlackIntegration(workspaceId); setConfirmDisconnect(false); await refresh(); window.ipcRenderer?.send('slack:connection-changed'); }
+    try { await api.disconnectSlackIntegration(workspaceId); setConfirmDisconnect(false); await refresh(); window.ledgerIpc?.commands?.slackConnectionChanged(); }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not disconnect Slack.'); }
     finally { setBusy(null); }
   };

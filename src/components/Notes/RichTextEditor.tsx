@@ -1193,9 +1193,9 @@ const EditorContextMenuPlugin = ({
         setSpellcheck(next);
       }
     };
-    window.ipcRenderer?.on?.('spellcheck:context-menu', onSpellcheckContext as any);
+    window.ledgerIpc?.events?.onSpellcheckContextMenu(onSpellcheckContext as any);
     return () => {
-      window.ipcRenderer?.off?.('spellcheck:context-menu', onSpellcheckContext as any);
+      window.ledgerIpc?.events?.offSpellcheckContextMenu(onSpellcheckContext as any);
     };
   }, []);
 
@@ -1304,10 +1304,9 @@ const EditorContextMenuPlugin = ({
             endOffset: wordRange.endOffset,
           }
         : null;
-      if (wordRange?.word && window.ipcRenderer?.invoke) {
+      if (wordRange?.word && window.ledgerIpc?.commands?.spellcheckSuggestions) {
         const requestedPosition = { x: event.clientX, y: event.clientY };
-        void window.ipcRenderer
-          .invoke('spellcheck:suggestions', { word: wordRange.word })
+        void Promise.resolve(window.ledgerIpc?.commands?.spellcheckSuggestions({ word: wordRange.word }))
           .then((result: unknown) => {
             const value = result as { word?: unknown; suggestions?: unknown } | null;
             const currentPosition = contextPositionRef.current;
@@ -1449,12 +1448,12 @@ const EditorContextMenuPlugin = ({
             replaced = true;
           });
         }
-        if (!replaced) window.ipcRenderer?.send('spellcheck:replace', suggestion);
+        if (!replaced) window.ledgerIpc?.commands?.spellcheckReplace(suggestion);
         spellcheckRangeRef.current = null;
       }}
       onAddMisspelledWord={() => {
         if (spellcheck?.misspelledWord) {
-          window.ipcRenderer?.send('spellcheck:add-word', spellcheck.misspelledWord);
+          window.ledgerIpc?.commands?.spellcheckAddWord(spellcheck.misspelledWord);
         }
       }}
       linkUrl={linkUrl}

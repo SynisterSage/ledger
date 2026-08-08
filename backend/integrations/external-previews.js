@@ -56,14 +56,11 @@ const getLatestReady = async (supabase, workspaceId, referenceId) => {
 export const mapPreviewResponse = async (supabase, preview) => {
   if (!preview) return null;
   const signed = await supabase.storage.from(PREVIEW_BUCKET).createSignedUrl(preview.storage_key, 300);
-  const publicUrl = signed.error
-    ? supabase.storage.from(PREVIEW_BUCKET).getPublicUrl(preview.storage_key)?.data?.publicUrl ?? null
-    : null;
   return {
     id: preview.id,
     workspaceId: preview.workspace_id,
     externalReferenceId: preview.external_reference_id,
-    url: signed.error ? publicUrl : signed.data?.signedUrl ?? null,
+    url: signed.error ? null : signed.data?.signedUrl ?? null,
     mimeType: preview.mime_type,
     width: preview.width ?? null,
     height: preview.height ?? null,

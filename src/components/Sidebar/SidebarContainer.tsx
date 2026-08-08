@@ -237,9 +237,9 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
       materialRef.current.style.setProperty('--sidebar-material-alpha', String(nextAlpha));
     };
 
-    window.ipcRenderer?.on('sidebar:opacity-preview', handleOpacityPreview);
+    window.ledgerIpc?.events?.onSidebarOpacityPreview(handleOpacityPreview);
     return () => {
-      window.ipcRenderer?.off('sidebar:opacity-preview', handleOpacityPreview);
+      window.ledgerIpc?.events?.offSidebarOpacityPreview(handleOpacityPreview);
     };
   }, [effectiveFrostedBackground, isAttachedRendererMaterial, isNativeMacMaterial, transparencyOverrideActive]);
 

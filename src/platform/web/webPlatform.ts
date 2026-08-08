@@ -1,5 +1,9 @@
 import type { LedgerPlatform, NavigationPort } from '../types/capabilities';
-import { serializeLedgerRoute, type LedgerOverlayRoute, type LedgerRoute } from '../types/routes.ts';
+import {
+  serializeLedgerRoute,
+  type LedgerOverlayRoute,
+  type LedgerRoute,
+} from '../types/routes.ts';
 
 const DEVICE_ID_KEY = 'ledger:platform-device-id:v1';
 
@@ -21,7 +25,8 @@ const browserNotifications = {
 
 const browserMeetingAudio = {
   async getCapabilities() {
-    const microphone = typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
+    const microphone =
+      typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
     return {
       microphone,
       systemAudio: false,
@@ -31,7 +36,8 @@ const browserMeetingAudio = {
     };
   },
   async requestMicrophone() {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return 'unsupported' as const;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia)
+      return 'unsupported' as const;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
@@ -45,19 +51,49 @@ const browserMeetingAudio = {
 const emitRouteIntent = (route: LedgerRoute | LedgerOverlayRoute, replace = false) => {
   const path = serializeLedgerRoute(route);
   if (typeof window === 'undefined') return;
-  const state = route.kind === 'overlay'
-    ? { ledgerOverlay: true, backgroundPath: `${window.location.pathname}${window.location.search}` }
-    : {};
+  const state =
+    route.kind === 'overlay'
+      ? {
+          ledgerOverlay: true,
+          backgroundPath: `${window.location.pathname}${window.location.search}`,
+        }
+      : {};
   window.history[replace ? 'replaceState' : 'pushState'](state, '', path);
-  window.dispatchEvent(new CustomEvent('ledger:route-intent', { detail: { route, path, replace } }));
+  window.dispatchEvent(
+    new CustomEvent('ledger:route-intent', { detail: { route, path, replace } })
+  );
 };
 
 const navigation: NavigationPort = {
-  openRoute(route, options) { emitRouteIntent(route, options?.replace); },
-  goBack() { if (typeof window !== 'undefined') window.history.back(); },
-  goForward() { if (typeof window !== 'undefined') window.history.forward(); },
-  openOverlay(route) { emitRouteIntent(route); },
-  closeOverlay() { if (typeof window !== 'undefined') window.history.back(); },
+  openRoute(route, options) {
+    emitRouteIntent(route, options?.replace);
+  },
+  goBack() {
+    if (typeof window !== 'undefined') window.history.back();
+  },
+  goForward() {
+    if (typeof window !== 'undefined') window.history.forward();
+  },
+  openOverlay(route) {
+    emitRouteIntent(route);
+  },
+  closeOverlay() {
+    if (typeof window === 'undefined') return;
+    if (window.history.state?.ledgerOverlay === true) {
+      window.history.back();
+      return;
+    }
+    const workspaceMatch = window.location.pathname.match(
+      /^\/app\/w\/([^/]+)\/(?:capture|follow-up)(?:\/|$)/
+    );
+    if (!workspaceMatch) {
+      window.history.back();
+      return;
+    }
+    const fallbackPath = `/app/w/${workspaceMatch[1]}/home`;
+    window.history.replaceState({}, '', fallbackPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  },
 };
 
 const externalLinks = {
@@ -75,9 +111,10 @@ const deviceSession = {
     if (typeof window === 'undefined') return 'server';
     const existing = window.localStorage.getItem(DEVICE_ID_KEY);
     if (existing) return existing;
-    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `ledger-web-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+    const id =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `ledger-web-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
     window.localStorage.setItem(DEVICE_ID_KEY, id);
     return id;
   },
@@ -92,7 +129,8 @@ export const createWebPlatform = (): LedgerPlatform => ({
     canUseNativeMaterial: false,
     canUseNativeNotifications: false,
     canUseBrowserNotifications: typeof Notification !== 'undefined',
-    canCaptureMicrophone: typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia),
+    canCaptureMicrophone:
+      typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia),
     canCaptureSystemAudio: false,
     canOpenSystemSettings: false,
     canRevealFiles: false,
@@ -106,7 +144,9 @@ export const createWebPlatform = (): LedgerPlatform => ({
     canDragWindow: false,
     async close() {},
     async minimize() {},
-    async toggleFullscreen() { return false; },
+    async toggleFullscreen() {
+      return false;
+    },
   },
   notifications: browserNotifications,
   meetingAudio: browserMeetingAudio,

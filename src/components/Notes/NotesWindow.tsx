@@ -56,6 +56,7 @@ import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSearch } from '../../context/SearchContext';
 import { usePins } from '../../context/PinsContext';
 import { supabase } from '../../services/supabase';
+import { createSignedStorageUrl } from '../../services/privateStorage';
 import {
   ModuleHeaderActionButton,
   ModuleHeaderStatus,
@@ -351,7 +352,7 @@ type SpellcheckAutocorrectResult = {
 };
 
 const autocorrectNoteContent = async (title: string, contentHtml: string) => {
-  return window.ipcRenderer.invoke('spellcheck:autocorrect-note', {
+  return window.ledgerIpc?.commands?.spellcheckAutocorrectNote({
     title,
     content_html: contentHtml,
   }) as Promise<SpellcheckAutocorrectResult>;
@@ -3062,7 +3063,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         contentType: file.type || 'application/octet-stream',
       });
       if (error) throw error;
-      const url = supabase.storage.from('note-files').getPublicUrl(storagePath).data.publicUrl;
+      const url = await createSignedStorageUrl('note-files', storagePath);
       return {
         storagePath,
         url,
@@ -3315,7 +3316,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           source_object_id: noteId,
         });
         if (!data) throw new Error('intake_create_failed');
-        window.ipcRenderer?.send('inbox:items-updated', { delta: 1 });
+        window.ledgerIpc?.commands?.inboxItemsUpdated({ delta: 1 });
         toast.show('Sent to Intake.', { variant: 'success' });
       } catch (error) {
         console.error('Failed to send selected note text to Intake:', error);
@@ -3494,7 +3495,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       void loadInboxCount();
     };
 
-    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
     window.addEventListener('focus', handleRefreshInboxCount);
     document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
@@ -3505,7 +3506,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
       window.removeEventListener('focus', handleRefreshInboxCount);
       document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
@@ -3533,7 +3534,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
     const handleNotificationsSummary = (event: Event) => {
       const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
+      setNotificationCount(Number(detail?.unreadCount ?? 0));
     };
 
     void loadNotificationCount();
@@ -7427,10 +7428,10 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       void focusNoteHandlersRef.current.openNoteById(payload.focusNoteId);
     };
 
-    window.ipcRenderer?.on('module:focus-note', focusNoteListener);
+    window.ledgerIpc?.events?.onModuleFocusNote(focusNoteListener);
 
     return () => {
-      window.ipcRenderer?.off('module:focus-note', focusNoteListener);
+      window.ledgerIpc?.events?.offModuleFocusNote(focusNoteListener);
     };
   }, []);
 

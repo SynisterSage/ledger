@@ -54,6 +54,18 @@ export default defineConfig(({ mode }) => {
         // Shortcut of `build.rollupOptions.input`.
         // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
         input: path.join(__dirname, 'electron/preload.ts'),
+        vite: {
+          build: {
+            rollupOptions: {
+              output: {
+                // vite-plugin-electron emits this entry as preload.mjs. Keep
+                // the generated module ESM so Electron does not execute a
+                // CommonJS `require` inside an ES-module preload.
+                format: 'es',
+              },
+            },
+          },
+        },
       },
       onstart: ({ startup }) => {
         if (process.env.VITE_LAUNCH_ELECTRON === '0') {

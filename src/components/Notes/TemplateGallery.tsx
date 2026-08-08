@@ -2,6 +2,7 @@ import { Copy, Eye, MoreHorizontal, Pencil, Pin, Plus, Search, Trash2 } from 'lu
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
+import { sanitizeEditorHtml } from './editor/utils/html';
 import { useToast } from '../Common/ToastProvider';
 import { isTeamOrientedTemplate, type TemplateSummary } from './templateDefinitions';
 
@@ -254,7 +255,10 @@ export const TemplateGallery = ({
             <div
               className="prose prose-sm max-w-none text-[var(--ledger-text-primary)]"
               dangerouslySetInnerHTML={{
-                __html: previewTemplate.content_html || '<p>Empty template</p>',
+                // Templates are shared/user-controlled HTML. Sanitize at the
+                // render boundary as well as on editor import so persisted or
+                // externally-created templates cannot execute in the gallery.
+                __html: sanitizeEditorHtml(previewTemplate.content_html || '<p>Empty template</p>'),
               }}
             />
           )}

@@ -22,3 +22,12 @@ test('keeps wildcards and malformed extension origins out of the extension confi
   assert.equal(isAllowedCorsOrigin('chrome-extension://valid-extension', allowed), true);
   assert.equal(isAllowedCorsOrigin('chrome-extension://other-extension', allowed), false);
 });
+
+test('production CORS excludes local and null origins', () => {
+  const allowed = getAllowedCorsOrigins({ NODE_ENV: 'production' });
+
+  assert.equal(isAllowedCorsOrigin('null', allowed), false);
+  assert.equal(isAllowedCorsOrigin('http://localhost:5173', allowed), false);
+  assert.equal(isAllowedCorsOrigin('http://127.0.0.1:4173', allowed), false);
+  assert.equal(isAllowedCorsOrigin('https://ledgerworkspace.com', allowed), true);
+});

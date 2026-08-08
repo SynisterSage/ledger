@@ -94,11 +94,11 @@ export const useWorkspaceRouteHistory = (
       pendingExternalRouteKeyRef.current = buildWorkspaceRouteKey(mergedRoute);
     };
 
-    window.ipcRenderer?.on?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
-    window.ipcRenderer?.on?.('workspace:route-requested', handleWorkspaceRouteRequested as any);
+    window.ledgerIpc?.events?.onWorkspaceRouteChanged(handleWorkspaceRouteChanged as any);
+    window.ledgerIpc?.events?.onWorkspaceRouteRequested(handleWorkspaceRouteRequested as any);
     return () => {
-      window.ipcRenderer?.off?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
-      window.ipcRenderer?.off?.('workspace:route-requested', handleWorkspaceRouteRequested as any);
+      window.ledgerIpc?.events?.offWorkspaceRouteChanged(handleWorkspaceRouteChanged as any);
+      window.ledgerIpc?.events?.offWorkspaceRouteRequested(handleWorkspaceRouteRequested as any);
     };
   }, []);
 

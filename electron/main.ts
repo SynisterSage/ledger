@@ -371,6 +371,8 @@ const isSettingsSection = (value: string | null | undefined): value is string =>
 type RenderingMode = 'auto' | 'high_quality' | 'compatibility';
 const renderingSettingsPath = path.join(app.getPath('userData'), 'rendering-settings.json');
 
+type AutoRenderingMode = 'auto' | 'high_quality' | 'compatibility';
+
 function readRenderingMode(): RenderingMode {
   try {
     const parsed = JSON.parse(fs.readFileSync(renderingSettingsPath, 'utf8')) as { mode?: unknown };
@@ -379,15 +381,29 @@ function readRenderingMode(): RenderingMode {
   return 'auto';
 }
 
-let renderingMode = readRenderingMode();
+function readAutoRenderingMode(): AutoRenderingMode {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(renderingSettingsPath, 'utf8')) as {
+      autoMode?: unknown;
+    };
+    if (parsed.autoMode === 'high_quality' || parsed.autoMode === 'compatibility') {
+      return parsed.autoMode;
+    }
+  } catch {}
+  return 'auto';
+}
 
-if (renderingMode === 'high_quality' && process.platform === 'win32') {
+let renderingMode = readRenderingMode();
+let autoRenderingMode = readAutoRenderingMode();
+const startupRenderingMode = renderingMode === 'auto' ? autoRenderingMode : renderingMode;
+
+if (startupRenderingMode === 'high_quality' && process.platform === 'win32') {
   // Explicitly prefer the GPU even when Chromium's driver blocklist would
   // otherwise fall back to software rendering.
   app.commandLine.appendSwitch('ignore-gpu-blocklist');
 }
 
-if (renderingMode === 'compatibility') {
+if (startupRenderingMode === 'compatibility') {
   // Command buffer / GPUControl errors on some Windows drivers can freeze
   // transparent-window video surfaces into gray frames. Keep software
   // rendering as an explicit compatibility mode instead of forcing it on
@@ -403,13 +419,86 @@ if (renderingMode === 'compatibility') {
 
 function saveRenderingMode(mode: RenderingMode) {
   renderingMode = mode;
+  if (mode === 'auto') autoRenderingMode = 'auto';
   try {
     fs.mkdirSync(path.dirname(renderingSettingsPath), { recursive: true });
-    fs.writeFileSync(renderingSettingsPath, JSON.stringify({ mode }, null, 2));
+    fs.writeFileSync(
+      renderingSettingsPath,
+      JSON.stringify({ mode, autoMode: autoRenderingMode }, null, 2)
+    );
   } catch (error) {
     console.error('[electron] Failed to save rendering preference:', error);
   }
 }
+
+function saveAutoRenderingMode(mode: AutoRenderingMode) {
+  if (renderingMode !== 'auto' || autoRenderingMode === mode) return;
+  autoRenderingMode = mode;
+  try {
+    fs.mkdirSync(path.dirname(renderingSettingsPath), { recursive: true });
+    fs.writeFileSync(
+      renderingSettingsPath,
+      JSON.stringify({ mode: renderingMode, autoMode: autoRenderingMode }, null, 2)
+    );
+    console.info('[electron][gpu] Auto rendering recommendation:', mode);
+  } catch (error) {
+    console.error('[electron] Failed to save automatic rendering recommendation:', error);
+  }
+}
+
+function isSoftwareGpuStatus(value: unknown) {
+  return value === 'disabled_software' || value === 'unavailable_software';
+}
+
+async function updateAutomaticRenderingRecommendation() {
+  if (process.platform !== 'win32' || renderingMode !== 'auto') return;
+
+  const status = app.getGPUFeatureStatus() as unknown as Record<string, unknown>;
+  const criticalFeatures = [status.gpu_compositing, status.rasterization, status.webgl];
+  const hasSoftwareCriticalFeature = criticalFeatures.some(isSoftwareGpuStatus);
+  const hasDisabledCriticalFeature = criticalFeatures.some(
+    (value) => value === 'disabled_off' || value === 'unavailable_off'
+  );
+
+  let gpuInfo: { auxAttributes?: { directRendering?: boolean } } = {};
+  try {
+    gpuInfo = (await app.getGPUInfo('basic')) as typeof gpuInfo;
+  } catch {}
+
+  const hardwareAccelerationEnabled =
+    typeof (app as Electron.App & { isHardwareAccelerationEnabled?: () => boolean })
+      .isHardwareAccelerationEnabled === 'function'
+      ? (app as Electron.App & { isHardwareAccelerationEnabled: () => boolean })
+          .isHardwareAccelerationEnabled()
+      : true;
+
+  if (!hardwareAccelerationEnabled || hasDisabledCriticalFeature) {
+    saveAutoRenderingMode('compatibility');
+    return;
+  }
+
+  // A directly-rendering GPU with software/blocklisted critical features is
+  // the case where the existing High quality mode can help. Do not force it
+  // on machines that are genuinely software-only or have no direct renderer.
+  if (hasSoftwareCriticalFeature && gpuInfo.auxAttributes?.directRendering === true) {
+    saveAutoRenderingMode('high_quality');
+    return;
+  }
+
+  if (criticalFeatures.every((value) => typeof value === 'string' && value.startsWith('enabled'))) {
+    saveAutoRenderingMode('auto');
+  }
+}
+
+app.on('gpu-info-update', () => {
+  void updateAutomaticRenderingRecommendation();
+});
+
+app.on('child-process-gone', (_event, details) => {
+  if (process.platform === 'win32' && details.type === 'GPU') {
+    saveAutoRenderingMode('compatibility');
+  }
+});
 
 const extractLedgerProtocolUrl = (argv: string[]) =>
   argv.find((value) =>
@@ -1505,9 +1594,9 @@ const rememberDeliveredNotification = (namespace: string, id: string) => {
 const getNotificationWindows = () =>
   BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
 
-const broadcastNotificationSummary = (activeCount: number) => {
+const broadcastNotificationSummary = (activeCount: number, unreadCount: number) => {
   for (const win of getNotificationWindows()) {
-    win.webContents.send('ledger:notifications-summary', { activeCount });
+    win.webContents.send('ledger:notifications-summary', { activeCount, unreadCount });
   }
 };
 
@@ -1894,11 +1983,14 @@ const runNotificationScheduler = async () => {
     const shouldPauseDelivery = Boolean(prefs.paused);
 
     if (shouldPauseDelivery) {
-      const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
+      const summary = await fetchLedgerApi<{ counts?: { active?: number; unread?: number } }>(
         '/api/notifications/summary',
         notificationAccessToken
       );
-      broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
+      broadcastNotificationSummary(
+        Number(summary?.counts?.active ?? 0),
+        Number(summary?.counts?.unread ?? 0)
+      );
       return;
     }
 
@@ -1907,7 +1999,7 @@ const runNotificationScheduler = async () => {
       notificationAccessToken,
       { method: 'POST' }
     );
-    const summary = await fetchLedgerApi<{ counts?: { active?: number } }>(
+    const summary = await fetchLedgerApi<{ counts?: { active?: number; unread?: number } }>(
       '/api/notifications/summary',
       notificationAccessToken
     );
@@ -1941,7 +2033,10 @@ const runNotificationScheduler = async () => {
         unseenItems.forEach((item) => deliverDesktopNotification(item));
       }
     }
-    broadcastNotificationSummary(Number(summary?.counts?.active ?? 0));
+    broadcastNotificationSummary(
+      Number(summary?.counts?.active ?? 0),
+      Number(summary?.counts?.unread ?? 0)
+    );
     notificationScheduler429Streak = 0;
   } catch (error) {
     if (
@@ -5680,6 +5775,31 @@ function getRendererUrl(search: string) {
   return `file://${path.join(RENDERER_DIST, 'index.html')}${search}`;
 }
 
+const isAllowedRendererUrl = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === 'file:') {
+      return decodeURIComponent(parsed.pathname).startsWith(RENDERER_DIST);
+    }
+    if (VITE_DEV_SERVER_URL) {
+      return parsed.origin === new URL(VITE_DEV_SERVER_URL).origin;
+    }
+  } catch {}
+  return false;
+};
+
+const hardenRendererWindow = (win: BrowserWindow) => {
+  win.webContents.setWindowOpenHandler(() => {
+    // Renderer-created windows must not become an alternate external-link
+    // path. Callers use window:open-external, which applies the central URL
+    // validation before invoking the native shell.
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedRendererUrl(url)) event.preventDefault();
+  });
+};
+
 function attachNativeContextMenu(win: BrowserWindow) {
   win.webContents.on('context-menu', (_event, params) => {
     const template: Electron.MenuItemConstructorOptions[] = [];
@@ -5778,9 +5898,16 @@ function createSidebarWindow() {
       : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      // The preload imports Node modules and native capture helpers. Enabling
+      // sandboxing here would change that established architecture; the
+      // renderer remains isolated behind the fixed ledgerIpc bridge.
+      sandbox: false,
       spellcheck: true,
     },
   });
+  hardenRendererWindow(sidebarWin);
 
   sidebarWin.setMenuBarVisibility(false);
   sidebarWin.setMenu(null);
@@ -6503,9 +6630,13 @@ function openModuleWindow(
     maximizable: !isQuickCapture,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
       spellcheck: true,
     },
   });
+  hardenRendererWindow(moduleWin);
 
   moduleWin.setMenuBarVisibility(false);
   moduleWin.setMenu(null);
@@ -7852,16 +7983,28 @@ ipcMain.handle('window:get-tab-detach-session', (event, transferId: unknown) => 
 });
 
 ipcMain.handle('window:open-external', async (_event, url: string) => {
-  if (typeof url !== 'string' || (!/^https?:\/\//i.test(url) && !/^webcal:\/\//i.test(url))) {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(url));
+  } catch {
+    return { ok: false, error: 'Unsupported external URL.' };
+  }
+  if (
+    !['http:', 'https:', 'webcal:'].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    /^(?:javascript|data|vbscript):$/i.test(parsed.protocol)
+  ) {
     return { ok: false, error: 'Unsupported external URL protocol.' };
   }
-  if (process.platform === 'darwin' && /^webcal:\/\//i.test(url)) {
+  const safeUrl = parsed.toString();
+  if (process.platform === 'darwin' && parsed.protocol === 'webcal:') {
     try {
-      await execFileAsync('/usr/bin/open', ['-a', 'Calendar', '--', url]);
+      await execFileAsync('/usr/bin/open', ['-a', 'Calendar', '--', safeUrl]);
       return { ok: true };
     } catch (calendarError) {
       try {
-        await shell.openExternal(url);
+        await shell.openExternal(safeUrl);
         return { ok: true };
       } catch (fallbackError) {
         console.warn('[electron] Could not open Apple Calendar subscription', {
@@ -7873,7 +8016,7 @@ ipcMain.handle('window:open-external', async (_event, url: string) => {
     }
   }
   try {
-    await shell.openExternal(url);
+    await shell.openExternal(safeUrl);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Could not open the external link.' };

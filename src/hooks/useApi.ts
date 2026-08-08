@@ -166,7 +166,7 @@ export const useApi = () => {
         }),
       updateNotificationAction: (
         notificationId: string,
-        action: 'open' | 'dismiss' | 'complete' | 'snooze',
+        action: 'open' | 'read' | 'unread' | 'dismiss' | 'complete' | 'snooze',
         payload?: { snooze_until?: string }
       ) =>
         request(`/api/notifications/${notificationId}/action`, {

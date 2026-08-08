@@ -617,11 +617,11 @@ export const ExpandedSidebar = ({
   useEffect(() => {
     void refreshSlackStatus();
     const handleConnectionChange = () => void refreshSlackStatus();
-    window.ipcRenderer?.on('slack:connection-changed', handleConnectionChange);
+    window.ledgerIpc?.events?.onSlackConnectionChanged(handleConnectionChange);
     window.addEventListener('focus', handleConnectionChange);
     const timer = window.setInterval(handleConnectionChange, 30_000);
     return () => {
-      window.ipcRenderer?.off('slack:connection-changed', handleConnectionChange);
+      window.ledgerIpc?.events?.offSlackConnectionChanged(handleConnectionChange);
       window.removeEventListener('focus', handleConnectionChange);
       window.clearInterval(timer);
     };
@@ -1158,7 +1158,7 @@ export const ExpandedSidebar = ({
       void loadInboxState();
     };
 
-    window.ipcRenderer?.on('inbox:items-updated', handleInboxItemsUpdated);
+    window.ledgerIpc?.events?.onInboxItemsUpdated(handleInboxItemsUpdated);
     window.addEventListener('focus', handleRefreshInboxCount);
     document.addEventListener('visibilitychange', handleRefreshInboxCount);
 
@@ -1169,7 +1169,7 @@ export const ExpandedSidebar = ({
     return () => {
       cancelled = true;
       window.clearInterval(refreshTimer);
-      window.ipcRenderer?.off('inbox:items-updated', handleInboxItemsUpdated);
+      window.ledgerIpc?.events?.offInboxItemsUpdated(handleInboxItemsUpdated);
       window.removeEventListener('focus', handleRefreshInboxCount);
       document.removeEventListener('visibilitychange', handleRefreshInboxCount);
     };
@@ -1200,7 +1200,7 @@ export const ExpandedSidebar = ({
 
     const handleNotificationsSummary = (event: Event) => {
       const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      const unreadCount = detail?.unreadCount ?? detail?.activeCount;
+      const unreadCount = detail?.unreadCount;
       if (typeof unreadCount === 'number' && Number.isFinite(unreadCount)) {
         setNotificationCount(Math.max(0, unreadCount));
         return;
@@ -1316,11 +1316,11 @@ export const ExpandedSidebar = ({
       void loadUpcoming();
     };
 
-    window.ipcRenderer?.on('calendar:items-updated', handleCalendarItemsUpdated);
+    window.ledgerIpc?.events?.onCalendarItemsUpdated(handleCalendarItemsUpdated);
 
     return () => {
       cancelled = true;
-      window.ipcRenderer?.off('calendar:items-updated', handleCalendarItemsUpdated);
+      window.ledgerIpc?.events?.offCalendarItemsUpdated(handleCalendarItemsUpdated);
       window.clearInterval(refreshTimer);
     };
   }, [user?.id, activeWorkspaceId, effectiveCalendarScope, api]);
@@ -1367,9 +1367,9 @@ export const ExpandedSidebar = ({
       }, 80);
     };
 
-    window.ipcRenderer?.on('sidebar:open-checkin', handleOpenCheckin);
+    window.ledgerIpc?.events?.onSidebarOpenCheckin(handleOpenCheckin);
     return () => {
-      window.ipcRenderer?.off('sidebar:open-checkin', handleOpenCheckin);
+      window.ledgerIpc?.events?.offSidebarOpenCheckin(handleOpenCheckin);
     };
   }, []);
 
@@ -1605,7 +1605,7 @@ export const ExpandedSidebar = ({
     const clientId = (target as TodayTask & { client_id?: string | null }).client_id ?? null;
     setTodayItems((list) => list.filter((task) => task.id !== taskId));
     setContextMenu(null);
-    window.ipcRenderer?.send('dashboard:today-task-deleted', {
+    window.ledgerIpc?.commands?.dashboardTodayTaskDeleted({
       source: 'sidebar',
       optimistic: true,
       client_id: clientId,
@@ -1634,7 +1634,7 @@ export const ExpandedSidebar = ({
       }
     } catch (error) {
       setTodayItems(previous);
-      window.ipcRenderer?.send('dashboard:today-task-deleted', {
+      window.ledgerIpc?.commands?.dashboardTodayTaskDeleted({
         source: 'sidebar',
         rollback: true,
         client_id: clientId,
@@ -1662,7 +1662,7 @@ export const ExpandedSidebar = ({
   };
 
   const saveCheckin = async () => {
-    window.ipcRenderer?.send('daily:checkin-updated', {
+    window.ledgerIpc?.commands?.dailyCheckinUpdated({
       finished: checkin.finished,
       blocked: checkin.blocked,
       firstTaskTomorrow: checkin.firstTaskTomorrow,
@@ -1767,7 +1767,7 @@ export const ExpandedSidebar = ({
         setNoteDraft('');
         setQuickCaptureMode('none');
         setQuickCaptureNotice('Sent to Intake');
-        window.ipcRenderer?.send('inbox:items-updated');
+        window.ledgerIpc?.commands?.inboxItemsUpdated();
         return;
       }
 
@@ -1823,7 +1823,7 @@ export const ExpandedSidebar = ({
       ...getWorkspaceTaskMetadata(),
     };
     setTodayItems((prev) => [optimisticTask, ...prev]);
-    window.ipcRenderer?.send('dashboard:today-task-created', {
+    window.ledgerIpc?.commands?.dashboardTodayTaskCreated({
       source: 'sidebar',
       optimistic: true,
       client_id: tempId,
@@ -1859,7 +1859,7 @@ export const ExpandedSidebar = ({
           },
           ...prev.filter((item) => item.id !== tempId && item.id !== createdId),
         ]);
-        window.ipcRenderer?.send('dashboard:today-task-created', {
+        window.ledgerIpc?.commands?.dashboardTodayTaskCreated({
           source: 'sidebar',
           optimistic: false,
           client_id: tempId,
@@ -1878,7 +1878,7 @@ export const ExpandedSidebar = ({
     } catch (error) {
       setTodayItems((prev) => prev.filter((item) => item.id !== tempId));
       setTodayQuickDraft(base);
-      window.ipcRenderer?.send('dashboard:today-task-created', {
+      window.ledgerIpc?.commands?.dashboardTodayTaskCreated({
         source: 'sidebar',
         rollback: true,
         client_id: tempId,

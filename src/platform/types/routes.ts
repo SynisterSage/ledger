@@ -31,7 +31,7 @@ export type InboxQuery = {
   section?: 'unprocessed' | 'converted' | 'snoozed' | 'archived';
 };
 export type NotificationsQuery = {
-  filter?: 'active' | 'earlier';
+  filter?: 'active' | 'unread' | 'earlier';
   item?: string;
 };
 export type SlackQuery = { capture?: string };

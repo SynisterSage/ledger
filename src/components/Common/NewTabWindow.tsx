@@ -205,7 +205,7 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       case 'teams': destination = route?.focusContext?.startsWith('team:') ? { ...base, page: 'team', teamId: route.focusContext.slice(5) } : { ...base, page: 'teams' }; break;
       case 'inbox': destination = { ...base, page: 'inbox', query: { item: route?.focusInboxId ?? undefined, section: route?.focusSection as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined } }; break;
       case 'slack': destination = { ...base, page: 'slack' }; break;
-      case 'notifications': destination = { ...base, page: 'notifications', query: { item: route?.focusContext ?? undefined, filter: route?.focusSection as 'active' | 'earlier' | undefined } }; break;
+      case 'notifications': destination = { ...base, page: 'notifications', query: { item: route?.focusContext ?? undefined, filter: route?.focusSection as 'active' | 'unread' | 'earlier' | undefined } }; break;
       case 'settings': destination = { ...base, page: 'settings', scope: 'workspace', section: route?.focusContext === 'integrations' ? 'integrations' : route?.focusContext === 'shortcuts' ? 'sidebar' : 'workspace' }; break;
       default: return;
     }

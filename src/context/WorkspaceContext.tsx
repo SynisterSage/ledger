@@ -319,9 +319,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         })();
       };
 
-      window.ipcRenderer?.on('ledger:set-active-workspace', handler as any);
+      window.ledgerIpc?.events?.onLedgerSetActiveWorkspace(handler as any);
       return () => {
-        window.ipcRenderer?.off('ledger:set-active-workspace', handler as any);
+        window.ledgerIpc?.events?.offLedgerSetActiveWorkspace(handler as any);
       };
     }, [setActiveWorkspace]);
 

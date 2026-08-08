@@ -1170,9 +1170,9 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       }
     };
 
-    window.ipcRenderer?.on('module:focus-context', handleFocusContext);
+    window.ledgerIpc?.events?.onModuleFocusContext(handleFocusContext);
     return () => {
-      window.ipcRenderer?.off('module:focus-context', handleFocusContext);
+      window.ledgerIpc?.events?.offModuleFocusContext(handleFocusContext);
     };
   }, []);
 
@@ -1273,7 +1273,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
 
     const scheme = resolveDesktopThemeScheme(preferences.theme, getSystemDesktopThemeScheme());
     applyDesktopCssVars(document.documentElement, scheme);
-    window.ipcRenderer?.send('ledger:theme-updated', {
+    window.ledgerIpc?.commands?.ledgerThemeUpdated({
       theme: preferences.theme,
     });
   }, [preferences.theme]);
@@ -1365,9 +1365,9 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       }
     };
 
-    window.ipcRenderer?.on('settings:focus-section', handleFocusSection);
+    window.ledgerIpc?.events?.onSettingsFocusSection(handleFocusSection);
     return () => {
-      window.ipcRenderer?.off('settings:focus-section', handleFocusSection);
+      window.ledgerIpc?.events?.offSettingsFocusSection(handleFocusSection);
     };
   }, []);
 
@@ -1478,7 +1478,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
           }
 
           saveCachedPreferences(nextPreferences);
-          window.ipcRenderer?.send('tray:update-state', {
+          window.ledgerIpc?.commands?.trayUpdateState({
             showTrayIcon: nextPreferences.showTrayIcon,
             runInBackground: nextPreferences.runInBackground,
           });
@@ -1530,8 +1530,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       void (async () => {
         try {
           await api.updateNotificationPreferences(notificationPreferences);
-          window.ipcRenderer?.send('notifications:refresh');
-          window.ipcRenderer?.send('tray:update-state', {
+          window.ledgerIpc?.commands?.notificationsRefresh();
+          window.ledgerIpc?.commands?.trayUpdateState({
             notificationsPaused: notificationPreferences.paused,
           });
 

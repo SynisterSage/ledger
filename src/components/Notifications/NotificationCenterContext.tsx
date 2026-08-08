@@ -46,6 +46,7 @@ type NotificationCenterContextValue = {
   loadNotifications: (options?: { force?: boolean; background?: boolean }) => Promise<void>;
   applyAction: (item: NotificationCenterItem, action: NotificationAction) => Promise<void>;
   markAsRead: (item: NotificationCenterItem) => Promise<void>;
+  markAsUnread: (item: NotificationCenterItem) => Promise<void>;
   markAllAsRead: () => Promise<void>;
 };
 
@@ -105,7 +106,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       const payload = (await api.getNotificationCenter()) as {
         active?: NotificationCenterItem[];
         earlier?: NotificationCenterItem[];
-        counts?: { active?: number };
+        counts?: { active?: number; unread?: number };
       };
       const nextActive = Array.isArray(payload.active) ? payload.active : [];
       const nextEarlier = Array.isArray(payload.earlier) ? payload.earlier : [];
@@ -143,6 +144,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
       setUnreadCount(0);
       window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: 0 } }));
       window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
+      window.ledgerIpc?.commands?.notificationsRefresh();
       await loadNotifications({ force: true, background: true });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not mark notifications as read');
@@ -153,7 +155,7 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   const markAsRead = useCallback(async (item: NotificationCenterItem) => {
     if (item.unread !== true) return;
     try {
-      await api.updateNotificationAction(item.id, 'open');
+      await api.updateNotificationAction(item.id, 'read');
       const readAt = new Date().toISOString();
       setActive((previous) =>
         previous.map((notification) =>
@@ -165,14 +167,39 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
           notification.id === item.id ? { ...notification, unread: false, readAt } : notification
         )
       );
-      setUnreadCount((previous) => Math.max(0, previous - 1));
-      window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: Math.max(0, unreadCount - 1) } }));
+      if (item.status === 'active') {
+        setUnreadCount((previous) => {
+          const nextCount = Math.max(0, previous - 1);
+          window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: nextCount } }));
+          return nextCount;
+        });
+      }
       window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not mark notification as read');
       toast.show('Could not mark notification as read.', { variant: 'error' });
     }
-  }, [api, toast, unreadCount]);
+  }, [api, toast]);
+
+  const markAsUnread = useCallback(async (item: NotificationCenterItem) => {
+    if (item.unread === true) return;
+    try {
+      await api.updateNotificationAction(item.id, 'unread');
+      setActive((previous) => previous.map((notification) => notification.id === item.id ? { ...notification, unread: true, readAt: null } : notification));
+      setEarlier((previous) => previous.map((notification) => notification.id === item.id ? { ...notification, unread: true, readAt: null } : notification));
+      if (item.status === 'active') {
+        setUnreadCount((previous) => {
+          const nextCount = previous + 1;
+          window.dispatchEvent(new CustomEvent('ledger:notifications-summary', { detail: { unreadCount: nextCount } }));
+          return nextCount;
+        });
+      }
+      window.dispatchEvent(new CustomEvent('ledger:notifications-updated'));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Could not mark notification as unread');
+      toast.show('Could not mark notification as unread.', { variant: 'error' });
+    }
+  }, [api, toast]);
 
   useEffect(() => {
     void loadNotifications();
@@ -244,8 +271,8 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   }, [activeCount, api, defaultSnoozeMinutes, loadNotifications, openTarget, toast, unreadCount]);
 
   const value = useMemo(
-    () => ({ active, earlier, loading, error, activeCount, unreadCount, loadNotifications, applyAction, markAsRead, markAllAsRead }),
-    [active, earlier, loading, error, activeCount, unreadCount, loadNotifications, applyAction, markAsRead, markAllAsRead]
+    () => ({ active, earlier, loading, error, activeCount, unreadCount, loadNotifications, applyAction, markAsRead, markAsUnread, markAllAsRead }),
+    [active, earlier, loading, error, activeCount, unreadCount, loadNotifications, applyAction, markAsRead, markAsUnread, markAllAsRead]
   );
 
   return <NotificationCenterContext.Provider value={value}>{children}</NotificationCenterContext.Provider>;

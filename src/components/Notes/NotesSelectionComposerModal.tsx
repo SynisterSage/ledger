@@ -168,7 +168,7 @@ export const NotesSelectionComposerModal = ({ context, members, onClose, onCreat
             onCreated?.({ type: 'event', id: (created as { id: string }).id });
           toast.show('Saved event.', { variant: 'success' });
         }
-        window.ipcRenderer?.send('calendar:items-updated');
+        window.ledgerIpc?.commands?.calendarItemsUpdated();
       }
       onClose();
     } catch (saveError) {

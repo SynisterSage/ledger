@@ -40,7 +40,7 @@ export const useAuth = (): UseAuthReturn => {
 
     if (accessToken) {
       hasEmittedSessionRef.current = true;
-      window.ipcRenderer?.send('notifications:set-session', {
+      window.ledgerIpc?.commands?.notificationsSetSession({
         accessToken,
         userId,
         apiUrl: DEFAULT_API_URL,
@@ -51,7 +51,7 @@ export const useAuth = (): UseAuthReturn => {
     if (!hasEmittedSessionRef.current) return;
 
     hasEmittedSessionRef.current = false;
-    window.ipcRenderer?.send('notifications:set-session', {
+    window.ledgerIpc?.commands?.notificationsSetSession({
       accessToken: null,
       userId: null,
       apiUrl: DEFAULT_API_URL,

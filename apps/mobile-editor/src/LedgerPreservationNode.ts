@@ -1,4 +1,5 @@
 import { ElementNode, type LexicalNode, type NodeKey } from 'lexical';
+import { sanitizeEditorHtml } from './sanitizeHtml';
 
 const PRESERVED_TAGS = ['aside', 'figure', 'img', 'hr', 'section', 'div', 'ul', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'figcaption'];
 const PRESERVED_ALWAYS = new Set(['img', 'hr', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'figcaption']);
@@ -20,7 +21,7 @@ export class LedgerPreservationNode extends ElementNode {
   }
   createDOM() {
     const template = document.createElement('template');
-    template.innerHTML = this.__html;
+    template.innerHTML = sanitizeEditorHtml(this.__html);
     const element = template.content.firstElementChild;
     if (!(element instanceof HTMLElement)) return document.createElement(this.__tag);
     if (element.hasAttribute('data-ledger-file-attachment')) {
@@ -45,7 +46,7 @@ export class LedgerPreservationNode extends ElementNode {
   updateDOM() { return false; }
   exportDOM() {
     const template = document.createElement('template');
-    template.innerHTML = this.__html;
+    template.innerHTML = sanitizeEditorHtml(this.__html);
     return { element: template.content.firstElementChild ?? document.createElement(this.__tag) };
   }
   isInline() { return false; }

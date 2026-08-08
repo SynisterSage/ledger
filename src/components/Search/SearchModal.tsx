@@ -35,8 +35,20 @@ import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
-import { IntegrationProviderMark, normalizeIntegrationProvider } from '../Common/IntegrationProviderMark';
-import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, routeForTask, routeForTeam, usePlatform } from '../../platform';
+import {
+  IntegrationProviderMark,
+  normalizeIntegrationProvider,
+} from '../Common/IntegrationProviderMark';
+import {
+  routeForCalendarEvent,
+  routeForCalendarReminder,
+  routeForInboxItem,
+  routeForNote,
+  routeForProject,
+  routeForTask,
+  routeForTeam,
+  usePlatform,
+} from '../../platform';
 
 type SearchResultType =
   | 'note'
@@ -655,14 +667,26 @@ export const SearchModal = () => {
   const jumpToResult = useCallback(
     (result: SearchResult) => {
       if (platform.kind === 'web' && activeWorkspaceId) {
-        if (result.type === 'note' || result.type === 'transcript' || result.type === 'meeting_metadata') {
-          platform.navigation.openRoute(routeForNote(activeWorkspaceId, result.note_id ?? result.id));
+        if (
+          result.type === 'note' ||
+          result.type === 'transcript' ||
+          result.type === 'meeting_metadata'
+        ) {
+          platform.navigation.openRoute(
+            routeForNote(activeWorkspaceId, result.note_id ?? result.id)
+          );
         } else if (result.type === 'project') {
           platform.navigation.openRoute(routeForProject(activeWorkspaceId, result.id));
         } else if (result.type === 'task') {
-          platform.navigation.openRoute(result.project_id ? routeForProject(activeWorkspaceId, result.project_id, result.id) : routeForTask(activeWorkspaceId, result.id));
+          platform.navigation.openRoute(
+            result.project_id
+              ? routeForProject(activeWorkspaceId, result.project_id, result.id)
+              : routeForTask(activeWorkspaceId, result.id)
+          );
         } else if (result.type === 'event') {
-          platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, result.id, result.focusDate ?? undefined));
+          platform.navigation.openRoute(
+            routeForCalendarEvent(activeWorkspaceId, result.id, result.focusDate ?? undefined)
+          );
         } else if (result.type === 'reminder') {
           platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId, result.id));
         } else if (result.type === 'intake') {
@@ -670,24 +694,49 @@ export const SearchModal = () => {
         } else if (result.type === 'team') {
           platform.navigation.openRoute(routeForTeam(activeWorkspaceId, result.id));
         } else if (result.type === 'person') {
-          platform.navigation.openRoute({ kind: 'workspace', workspaceId: activeWorkspaceId, page: 'circle', query: { person: result.id } });
+          platform.navigation.openRoute({
+            kind: 'workspace',
+            workspaceId: activeWorkspaceId,
+            page: 'circle',
+            query: { person: result.id },
+          });
         } else if (result.type === 'command') {
           const action = result.actionId ?? '';
           if (action === 'new-note' || action === 'new-task') {
-            platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'capture', action: action === 'new-note' ? 'note' : 'task' });
+            platform.navigation.openOverlay({
+              kind: 'overlay',
+              workspaceId: activeWorkspaceId,
+              page: 'capture',
+              action: action === 'new-note' ? 'note' : 'task',
+            });
             closeSearch();
             return;
           }
           const commandRoutes: Record<string, ReturnType<typeof routeForProject>> = {
             overview: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'dashboard' },
-            settings: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'settings', scope: 'workspace', section: 'workspace' },
+            settings: {
+              kind: 'workspace',
+              workspaceId: activeWorkspaceId,
+              page: 'settings',
+              scope: 'workspace',
+              section: 'workspace',
+            },
             projects: routeForProject(activeWorkspaceId),
             notes: routeForNote(activeWorkspaceId),
             calendar: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'calendar' },
             today: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'today' },
-            tasks: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'dashboard', query: { section: 'assigned' } },
+            tasks: {
+              kind: 'workspace',
+              workspaceId: activeWorkspaceId,
+              page: 'dashboard',
+              query: { section: 'assigned' },
+            },
             intake: routeForInboxItem(activeWorkspaceId),
-            notifications: { kind: 'workspace', workspaceId: activeWorkspaceId, page: 'notifications' },
+            notifications: {
+              kind: 'workspace',
+              workspaceId: activeWorkspaceId,
+              page: 'notifications',
+            },
             teams: routeForTeam(activeWorkspaceId),
           };
           const commandKey = action.replace(/^settings-(?:page|section):/, '');
@@ -772,10 +821,24 @@ export const SearchModal = () => {
             });
             break;
           case 'new-note':
-            void window.desktopWindow?.openModule('quick-note', { kind: 'quick-note' });
+            if (activeWorkspaceId) {
+              platform.navigation.openOverlay({
+                kind: 'overlay',
+                workspaceId: activeWorkspaceId,
+                page: 'capture',
+                action: 'note',
+              });
+            }
             break;
           case 'new-task':
-            void window.desktopWindow?.openModule('quick-task', { kind: 'quick-task' });
+            if (activeWorkspaceId) {
+              platform.navigation.openOverlay({
+                kind: 'overlay',
+                workspaceId: activeWorkspaceId,
+                page: 'capture',
+                action: 'task',
+              });
+            }
             break;
           case 'invite-member':
             void window.desktopWindow?.openModule('teams', {
@@ -808,7 +871,10 @@ export const SearchModal = () => {
       } else if (result.type === 'transcript' || result.type === 'meeting_metadata') {
         void window.desktopWindow?.toggleModule('notes', {
           focusNoteId: result.note_id ?? result.id,
-          focusContext: result.type === 'transcript' && result.segment_id ? `transcript-segment:${result.segment_id}` : undefined,
+          focusContext:
+            result.type === 'transcript' && result.segment_id
+              ? `transcript-segment:${result.segment_id}`
+              : undefined,
         });
       } else if (result.type === 'project') {
         void window.desktopWindow?.toggleModule('projects', { focusProjectId: result.id });
@@ -920,98 +986,107 @@ export const SearchModal = () => {
         </div>
       </div>
 
-      {!isSearchIdle && <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
-        {trimmedQuery.length < 2 && commandResults.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-            Type at least 2 characters to search.
-          </div>
-        ) : isLoading ? (
-          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-            Searching…
-          </div>
-        ) : results.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
-            No results for “{trimmedQuery}”
-          </div>
-        ) : (
-          <div className="space-y-0.5">
-            {results.map((result, index) => {
-              const Icon = getSearchResultIcon(result);
-              const selected = index === selectedIndex;
-              const showCategory = index === 0 || results[index - 1]?.category !== result.category;
+      {!isSearchIdle && (
+        <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
+          {trimmedQuery.length < 2 && commandResults.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
+              Type at least 2 characters to search.
+            </div>
+          ) : isLoading ? (
+            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
+              Searching…
+            </div>
+          ) : results.length === 0 ? (
+            <div className="flex h-full items-center justify-center px-4 text-sm text-[var(--ledger-text-muted)]">
+              No results for “{trimmedQuery}”
+            </div>
+          ) : (
+            <div className="space-y-0.5">
+              {results.map((result, index) => {
+                const Icon = getSearchResultIcon(result);
+                const selected = index === selectedIndex;
+                const showCategory =
+                  index === 0 || results[index - 1]?.category !== result.category;
 
-              return (
-                <div key={`${result.type}-${result.id}`}>
-                  {showCategory && (
-                    <p
-                      className={`${
-                        index === 0 ? 'pt-0' : 'pt-3'
-                      } px-2 pb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]`}
-                    >
-                      {searchCategoryLabels[result.category]}
-                    </p>
-                  )}
-                  <button
-                    ref={(element) => {
-                      itemRefs.current[index] = element;
-                    }}
-                    type="button"
-                    onMouseEnter={() => setSelectedIndex(index)}
-                    onClick={() => jumpToResult(result)}
-                    className={`flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition ${
-                      selected
-                        ? 'bg-[var(--ledger-surface-hover)]'
-                        : 'hover:bg-[var(--ledger-surface-hover)]'
-                    }`}
-                  >
-                    <span
-                      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
+                return (
+                  <div key={`${result.type}-${result.id}`}>
+                    {showCategory && (
+                      <p
+                        className={`${
+                          index === 0 ? 'pt-0' : 'pt-3'
+                        } px-2 pb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]`}
+                      >
+                        {searchCategoryLabels[result.category]}
+                      </p>
+                    )}
+                    <button
+                      ref={(element) => {
+                        itemRefs.current[index] = element;
+                      }}
+                      type="button"
+                      onMouseEnter={() => setSelectedIndex(index)}
+                      onClick={() => jumpToResult(result)}
+                      className={`flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition ${
                         selected
-                          ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)]'
-                          : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
+                          ? 'bg-[var(--ledger-surface-hover)]'
+                          : 'hover:bg-[var(--ledger-surface-hover)]'
                       }`}
                     >
-                      <Icon size={13} />
-                    </span>
-                    <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                      {result.title}
-                    </p>
-                    {normalizeIntegrationProvider(
-                      result.provider,
-                      result.source_provider,
-                      result.type === 'github' ? 'github' : ''
-                    ) && (
-                      <IntegrationProviderMark
-                        provider={normalizeIntegrationProvider(
-                          result.provider,
-                          result.source_provider,
-                          result.type === 'github' ? 'github' : ''
-                        )}
-                        size={13}
-                        className="shrink-0"
-                      />
-                    )}
-                    {result.type !== 'command' && (
-                      <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
-                        {result.type === 'meeting_metadata' ? 'Meeting metadata' : result.type === 'transcript' ? 'Transcript' : result.type}
+                      <span
+                        className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
+                          selected
+                            ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-secondary)]'
+                            : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]'
+                        }`}
+                      >
+                        <Icon size={13} />
                       </span>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>}
+                      <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                        {result.title}
+                      </p>
+                      {normalizeIntegrationProvider(
+                        result.provider,
+                        result.source_provider,
+                        result.type === 'github' ? 'github' : ''
+                      ) && (
+                        <IntegrationProviderMark
+                          provider={normalizeIntegrationProvider(
+                            result.provider,
+                            result.source_provider,
+                            result.type === 'github' ? 'github' : ''
+                          )}
+                          size={13}
+                          className="shrink-0"
+                        />
+                      )}
+                      {result.type !== 'command' && (
+                        <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
+                          {result.type === 'meeting_metadata'
+                            ? 'Meeting metadata'
+                            : result.type === 'transcript'
+                            ? 'Transcript'
+                            : result.type}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
-      {!isSearchIdle && <div className="flex items-center gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-[11px] text-[var(--ledger-text-muted)]">
-        <span className="min-w-0 flex-1 truncate">
-          ↑↓ to navigate • Enter to jump • ESC to close
-        </span>
-        <span className="hidden max-w-[42%] shrink-0 truncate text-right min-[460px]:inline">
-          {activeResult ? `${activeResult.type} selected` : ' '}
-        </span>
-      </div>}
+      {!isSearchIdle && (
+        <div className="flex items-center gap-2 border-t border-[color:var(--ledger-border-subtle)] px-4 py-3 text-[11px] text-[var(--ledger-text-muted)]">
+          <span className="min-w-0 flex-1 truncate">
+            ↑↓ to navigate • Enter to jump • ESC to close
+          </span>
+          <span className="hidden max-w-[42%] shrink-0 truncate text-right min-[460px]:inline">
+            {activeResult ? `${activeResult.type} selected` : ' '}
+          </span>
+        </div>
+      )}
     </div>
   );
 
@@ -1023,9 +1098,9 @@ export const SearchModal = () => {
         backdropBorderRadius="var(--window-radius)"
         backdropInset="0px"
         manageWindowChrome={false}
-        classNameContainer={`${
-          isFullscreen ? 'h-full w-full' : 'w-full max-w-[680px]'
-        } ${isFullscreen ? '' : '!self-start !mt-6'} !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none`}
+        classNameContainer={`${isFullscreen ? 'h-full w-full' : 'w-full max-w-[680px]'} ${
+          isFullscreen ? '' : '!self-start !mt-6'
+        } !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none`}
       >
         {searchPanel}
       </ModalOverlay>

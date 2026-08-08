@@ -173,42 +173,95 @@ async function handleWindowsCaptureCommand(command: { command: string; requestId
 
 ipcRenderer.on('meeting-audio:windows-command', (_event, command: Parameters<typeof handleWindowsCaptureCommand>[0]) => { void handleWindowsCaptureCommand(command); });
 
-// --------- Expose some API to the Renderer process ---------
-contextBridge.exposeInMainWorld('ipcRenderer', {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
-    const [channel, listener] = args;
-    const wrapped = (event: Electron.IpcRendererEvent, ...payload: unknown[]) =>
-      listener(event, ...payload);
-    let channelListeners = rendererListenerWrappers.get(channel);
-    if (!channelListeners) {
-      channelListeners = new Map();
-      rendererListenerWrappers.set(channel, channelListeners);
-    }
-    channelListeners.set(listener, wrapped);
-    return ipcRenderer.on(channel, wrapped as Parameters<typeof ipcRenderer.on>[1]);
-  },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, listener] = args;
-    const wrapped = rendererListenerWrappers.get(channel)?.get(listener);
-    const result = ipcRenderer.off(
-      channel,
-      (wrapped ?? listener) as Parameters<typeof ipcRenderer.off>[1]
-    );
-    rendererListenerWrappers.get(channel)?.delete(listener);
-    return result;
-  },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.send(channel, ...omit);
-  },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.invoke(channel, ...omit);
-  },
+// --------- Expose a fixed, least-privilege API to the Renderer process ---------
+// Keep channel names in this preload-only allowlist. The renderer receives
+// named methods, never an arbitrary ipcRenderer channel dispatcher.
+const subscribeToLedgerEvent = (channel: string, listener: Function) => {
+  const wrapped = (event: Electron.IpcRendererEvent, ...payload: unknown[]) => listener(event, ...payload);
+  let channelListeners = rendererListenerWrappers.get(channel);
+  if (!channelListeners) {
+    channelListeners = new Map();
+    rendererListenerWrappers.set(channel, channelListeners);
+  }
+  channelListeners.set(listener, wrapped);
+  ipcRenderer.on(channel, wrapped as Parameters<typeof ipcRenderer.on>[1]);
+};
 
-  // You can expose other APTs you need here.
-  // ...
-});
+const unsubscribeFromLedgerEvent = (channel: string, listener: Function) => {
+  const wrapped = rendererListenerWrappers.get(channel)?.get(listener);
+  ipcRenderer.off(channel, (wrapped ?? listener) as Parameters<typeof ipcRenderer.off>[1]);
+  rendererListenerWrappers.get(channel)?.delete(listener);
+};
+
+const ledgerEventChannels = {
+  onCalendarFollowUpCreated: 'calendar:follow-up-created', offCalendarFollowUpCreated: 'calendar:follow-up-created',
+  onCalendarItemsUpdated: 'calendar:items-updated', offCalendarItemsUpdated: 'calendar:items-updated',
+  onDailyCheckinUpdated: 'daily:checkin-updated', offDailyCheckinUpdated: 'daily:checkin-updated',
+  onDashboardTodayTaskCreated: 'dashboard:today-task-created', offDashboardTodayTaskCreated: 'dashboard:today-task-created',
+  onDashboardTodayTaskDeleted: 'dashboard:today-task-deleted', offDashboardTodayTaskDeleted: 'dashboard:today-task-deleted',
+  onInboxItemsUpdated: 'inbox:items-updated', offInboxItemsUpdated: 'inbox:items-updated',
+  onLedgerNotificationsBatch: 'ledger:notifications-batch', offLedgerNotificationsBatch: 'ledger:notifications-batch',
+  onLedgerNotificationsSummary: 'ledger:notifications-summary', offLedgerNotificationsSummary: 'ledger:notifications-summary',
+  onLedgerOpenInvite: 'ledger:open-invite', offLedgerOpenInvite: 'ledger:open-invite',
+  onLedgerSetActiveWorkspace: 'ledger:set-active-workspace', offLedgerSetActiveWorkspace: 'ledger:set-active-workspace',
+  onLedgerThemeUpdated: 'ledger:theme-updated', offLedgerThemeUpdated: 'ledger:theme-updated',
+  onModuleFocusContext: 'module:focus-context', offModuleFocusContext: 'module:focus-context',
+  onModuleFocusInbox: 'module:focus-inbox', offModuleFocusInbox: 'module:focus-inbox',
+  onModuleFocusNote: 'module:focus-note', offModuleFocusNote: 'module:focus-note',
+  onModuleFocusProject: 'module:focus-project', offModuleFocusProject: 'module:focus-project',
+  onModuleFocusSection: 'module:focus-section', offModuleFocusSection: 'module:focus-section',
+  onModuleFocusTask: 'module:focus-task', offModuleFocusTask: 'module:focus-task',
+  onModuleFullscreenStateChanged: 'module:fullscreen-state-changed', offModuleFullscreenStateChanged: 'module:fullscreen-state-changed',
+  onModuleStateChanged: 'module:state-changed', offModuleStateChanged: 'module:state-changed',
+  onNotesSmartLinksUpdated: 'notes:smart-links-updated', offNotesSmartLinksUpdated: 'notes:smart-links-updated',
+  onSearchOpen: 'search:open', offSearchOpen: 'search:open',
+  onSettingsFocusSection: 'settings:focus-section', offSettingsFocusSection: 'settings:focus-section',
+  onSettingsGithubCallback: 'settings:github-callback', offSettingsGithubCallback: 'settings:github-callback',
+  onSidebarAccessibilityUpdated: 'sidebar:accessibility-updated', offSidebarAccessibilityUpdated: 'sidebar:accessibility-updated',
+  onSidebarFloatingDockChanged: 'sidebar:floating-dock-changed', offSidebarFloatingDockChanged: 'sidebar:floating-dock-changed',
+  onSidebarMaterialState: 'sidebar:material-state', offSidebarMaterialState: 'sidebar:material-state',
+  onSidebarOpacityPreview: 'sidebar:opacity-preview', offSidebarOpacityPreview: 'sidebar:opacity-preview',
+  onSidebarOpenCheckin: 'sidebar:open-checkin', offSidebarOpenCheckin: 'sidebar:open-checkin',
+  onSidebarPreferencesUpdated: 'sidebar:preferences-updated', offSidebarPreferencesUpdated: 'sidebar:preferences-updated',
+  onSidebarStateChanged: 'sidebar:state-changed', offSidebarStateChanged: 'sidebar:state-changed',
+  onSidebarVisibilityChanged: 'sidebar:visibility-changed', offSidebarVisibilityChanged: 'sidebar:visibility-changed',
+  onSlackConnectionChanged: 'slack:connection-changed', offSlackConnectionChanged: 'slack:connection-changed',
+  onSlackIdentityChanged: 'slack:identity-changed', offSlackIdentityChanged: 'slack:identity-changed',
+  onSpellcheckContextMenu: 'spellcheck:context-menu', offSpellcheckContextMenu: 'spellcheck:context-menu',
+  onTabHydrateSession: 'tab:hydrate-session', offTabHydrateSession: 'tab:hydrate-session',
+  onTouchbarOpenSearch: 'touchbar:open-search', offTouchbarOpenSearch: 'touchbar:open-search',
+  onWorkspaceNavigationState: 'workspace:navigation-state', offWorkspaceNavigationState: 'workspace:navigation-state',
+  onWorkspaceRouteChanged: 'workspace:route-changed', offWorkspaceRouteChanged: 'workspace:route-changed',
+  onWorkspaceRouteRequested: 'workspace:route-requested', offWorkspaceRouteRequested: 'workspace:route-requested',
+} as const;
+
+const ledgerEvents = Object.fromEntries(Object.entries(ledgerEventChannels).map(([name, channel]) => [
+  name,
+  (listener: Function) => name.startsWith('on')
+    ? subscribeToLedgerEvent(channel, listener)
+    : unsubscribeFromLedgerEvent(channel, listener),
+])) as Record<string, (listener: Function) => void>;
+
+const ledgerCommands = {
+  calendarFollowUpCreated: (payload?: unknown) => ipcRenderer.send('calendar:follow-up-created', payload),
+  calendarItemsUpdated: () => ipcRenderer.send('calendar:items-updated'),
+  dailyCheckinUpdated: (payload?: unknown) => ipcRenderer.send('daily:checkin-updated', payload),
+  dashboardTodayTaskCreated: (payload?: unknown) => ipcRenderer.send('dashboard:today-task-created', payload),
+  dashboardTodayTaskDeleted: (payload?: unknown) => ipcRenderer.send('dashboard:today-task-deleted', payload),
+  inboxItemsUpdated: (payload?: unknown) => ipcRenderer.send('inbox:items-updated', payload),
+  ledgerThemeUpdated: (payload?: unknown) => ipcRenderer.send('ledger:theme-updated', payload),
+  notesSmartLinksUpdated: (payload?: unknown) => ipcRenderer.send('notes:smart-links-updated', payload),
+  notificationsRefresh: () => ipcRenderer.send('notifications:refresh'),
+  notificationsSetSession: (payload?: unknown) => ipcRenderer.send('notifications:set-session', payload),
+  slackConnectionChanged: () => ipcRenderer.send('slack:connection-changed'),
+  spellcheckAddWord: (word: string) => ipcRenderer.send('spellcheck:add-word', word),
+  spellcheckReplace: (suggestion: string) => ipcRenderer.send('spellcheck:replace', suggestion),
+  trayUpdateState: (payload?: unknown) => ipcRenderer.send('tray:update-state', payload),
+  spellcheckAutocorrectNote: (payload: unknown) => ipcRenderer.invoke('spellcheck:autocorrect-note', payload),
+  spellcheckSuggestions: (payload: unknown) => ipcRenderer.invoke('spellcheck:suggestions', payload),
+};
+
+contextBridge.exposeInMainWorld('ledgerIpc', { events: ledgerEvents, commands: ledgerCommands });
 
 contextBridge.exposeInMainWorld('appleCalendar', {
   status() { return ipcRenderer.invoke('apple-calendar:status'); },

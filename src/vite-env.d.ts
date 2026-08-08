@@ -51,6 +51,10 @@ interface ImportMeta {
 }
 
 interface Window {
+  ledgerIpc?: {
+    events?: Record<string, (listener: (...args: any[]) => void) => void>;
+    commands?: Record<string, (payload?: any) => Promise<unknown> | void>;
+  };
   __LEDGER_RUNTIME__?: {
     apiUrl?: string;
     ledgerWebUrl?: string;

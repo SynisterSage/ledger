@@ -1,13 +1,18 @@
-import { ArrowRight, Check, FileText, Calendar, Bell } from 'lucide-react';
+import { ArrowRight, Bell, Calendar, Check, FileText, Maximize2, Minus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
-import { ModuleWindowHeader } from './ModuleWindowHeader';
 import { CloseGuardModal } from './CloseGuardModal';
 import { findSmartDateMatch, formatSmartDateKey } from '../Notes/smartDateUtils';
 import { usePlatform } from '../../platform';
-import { removeWebDraft, readWebDraft, unwrapWebDraft, webDraftKey, writeWebDraft } from '../../web/webPersistence';
+import {
+  removeWebDraft,
+  readWebDraft,
+  unwrapWebDraft,
+  webDraftKey,
+  writeWebDraft,
+} from '../../web/webPersistence';
 
 type FollowUpContext = {
   eventId: string;
@@ -48,14 +53,28 @@ type QuickCaptureCalendar = {
   name?: string | null;
 };
 
-const githubUrlPattern = /https:\/\/(?:www\.)?github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+(?:\/(?:issues|pull)\/\d+)?(?:\?[^\s#]*)?(?:#[^\s]*)?/gi;
-const extractGithubUrls = (value: string) => [...new Set((value.match(githubUrlPattern) ?? []).map((url) => url.replace(/[),.;]+$/, '')).filter((url) => {
-  try {
-    const parsed = new URL(url);
-    const parts = parsed.pathname.split('/').filter(Boolean);
-    return ['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase()) && (parts.length === 2 || (parts.length === 4 && ['issues', 'pull'].includes(parts[2].toLowerCase())));
-  } catch { return false; }
-}))].slice(0, 3);
+const githubUrlPattern =
+  /https:\/\/(?:www\.)?github\.com\/[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+(?:\/(?:issues|pull)\/\d+)?(?:\?[^\s#]*)?(?:#[^\s]*)?/gi;
+const extractGithubUrls = (value: string) =>
+  [
+    ...new Set(
+      (value.match(githubUrlPattern) ?? [])
+        .map((url) => url.replace(/[),.;]+$/, ''))
+        .filter((url) => {
+          try {
+            const parsed = new URL(url);
+            const parts = parsed.pathname.split('/').filter(Boolean);
+            return (
+              ['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase()) &&
+              (parts.length === 2 ||
+                (parts.length === 4 && ['issues', 'pull'].includes(parts[2].toLowerCase())))
+            );
+          } catch {
+            return false;
+          }
+        })
+    ),
+  ].slice(0, 3);
 
 const parseFollowUpContext = (value?: string): FollowUpContext | null => {
   if (!value) return null;
@@ -105,17 +124,108 @@ const parseSelectionContext = (value?: string): SelectionContext | null => {
   };
 };
 
+const quickCaptureTitle = (kind: QuickCaptureWindowProps['kind']) => {
+  switch (kind) {
+    case 'quick-follow-up':
+      return 'Quick follow-up';
+    case 'quick-task':
+      return 'Quick task';
+    case 'quick-note':
+      return 'Quick note';
+    case 'quick-event':
+      return 'Quick event';
+    case 'quick-reminder':
+      return 'Quick reminder';
+  }
+};
+
+type QuickCaptureWindowProps = {
+  kind: 'quick-follow-up' | 'quick-task' | 'quick-note' | 'quick-event' | 'quick-reminder';
+  context?: string;
+  browserMode?: boolean;
+  initialDate?: string;
+};
+
+const QuickCaptureHeader = ({
+  kind,
+  browserMode,
+  onClose,
+  onMinimize,
+  onToggleFullscreen,
+}: Pick<QuickCaptureWindowProps, 'kind' | 'browserMode'> & {
+  onClose: () => void;
+  onMinimize: () => void;
+  onToggleFullscreen: () => void;
+}) => {
+  const icon =
+    kind === 'quick-follow-up' ? (
+      <ArrowRight size={15} />
+    ) : kind === 'quick-task' ? (
+      <Check size={15} />
+    ) : kind === 'quick-note' ? (
+      <FileText size={15} />
+    ) : kind === 'quick-reminder' ? (
+      <Bell size={15} />
+    ) : (
+      <Calendar size={15} />
+    );
+
+  const iconButton =
+    'inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
+
+  return (
+    <header className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-3.5">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-accent-soft)] text-[var(--ledger-accent)]">
+          {icon}
+        </span>
+        <h1 className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
+          {quickCaptureTitle(kind)}
+        </h1>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        {!browserMode && (
+          <>
+            <button
+              type="button"
+              onClick={onMinimize}
+              className={iconButton}
+              aria-label="Minimize window"
+              title="Minimize"
+            >
+              <Minus size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={onToggleFullscreen}
+              className={iconButton}
+              aria-label="Toggle fullscreen"
+              title="Fullscreen"
+            >
+              <Maximize2 size={14} />
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className={iconButton}
+          aria-label="Close"
+          title="Close"
+        >
+          <X size={15} />
+        </button>
+      </div>
+    </header>
+  );
+};
+
 export const QuickCaptureWindow = ({
   kind,
   context,
   browserMode = false,
   initialDate,
-}: {
-  kind: 'quick-follow-up' | 'quick-task' | 'quick-note' | 'quick-event' | 'quick-reminder';
-  context?: string;
-  browserMode?: boolean;
-  initialDate?: string;
-}) => {
+}: QuickCaptureWindowProps) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
@@ -125,13 +235,17 @@ export const QuickCaptureWindow = ({
   const [noteTitle, setNoteTitle] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [eventTitle, setEventTitle] = useState('');
-  const [eventDate, setEventDate] = useState(() => initialDate || (() => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  })());
+  const [eventDate, setEventDate] = useState(
+    () =>
+      initialDate ||
+      (() => {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      })()
+  );
   const [eventTime, setEventTime] = useState('09:00');
   const [eventDurationValue, setEventDurationValue] = useState(30);
   const [eventDurationUnit, setEventDurationUnit] = useState<'minutes' | 'hours'>('minutes');
@@ -148,7 +262,7 @@ export const QuickCaptureWindow = ({
   const [draftHydrated, setDraftHydrated] = useState(!browserMode);
 
   const taskInputRef = useRef<HTMLInputElement>(null);
-  const noteInputRef = useRef<HTMLTextAreaElement>(null);
+  const noteTitleInputRef = useRef<HTMLInputElement>(null);
   const eventInputRef = useRef<HTMLInputElement>(null);
 
   const draftKey = useMemo(
@@ -168,14 +282,18 @@ export const QuickCaptureWindow = ({
       eventTitle?: string;
       eventDate?: string;
       eventTime?: string;
-    }>(readWebDraft<{ value?: {
-      taskTitle?: string;
-      noteTitle?: string;
-      noteContent?: string;
-      eventTitle?: string;
-      eventDate?: string;
-      eventTime?: string;
-    } }>(draftKey));
+    }>(
+      readWebDraft<{
+        value?: {
+          taskTitle?: string;
+          noteTitle?: string;
+          noteContent?: string;
+          eventTitle?: string;
+          eventDate?: string;
+          eventTime?: string;
+        };
+      }>(draftKey)
+    );
     if (stored) {
       if (typeof stored.taskTitle === 'string') setTaskTitle(stored.taskTitle);
       if (typeof stored.noteTitle === 'string') setNoteTitle(stored.noteTitle);
@@ -196,8 +314,27 @@ export const QuickCaptureWindow = ({
       removeWebDraft(draftKey);
       return;
     }
-    writeWebDraft(draftKey, { taskTitle, noteTitle, noteContent, eventTitle, eventDate, eventTime });
-  }, [activeWorkspaceId, browserMode, draftHydrated, draftKey, eventDate, eventTime, eventTitle, noteContent, noteTitle, taskTitle, user?.id]);
+    writeWebDraft(draftKey, {
+      taskTitle,
+      noteTitle,
+      noteContent,
+      eventTitle,
+      eventDate,
+      eventTime,
+    });
+  }, [
+    activeWorkspaceId,
+    browserMode,
+    draftHydrated,
+    draftKey,
+    eventDate,
+    eventTime,
+    eventTitle,
+    noteContent,
+    noteTitle,
+    taskTitle,
+    user?.id,
+  ]);
 
   // Auto-focus on mount
   useEffect(() => {
@@ -207,7 +344,7 @@ export const QuickCaptureWindow = ({
       } else if (kind === 'quick-follow-up') {
         taskInputRef.current?.focus();
       } else if (kind === 'quick-note') {
-        noteInputRef.current?.focus();
+        noteTitleInputRef.current?.focus();
       } else if (kind === 'quick-event' || kind === 'quick-reminder') {
         eventInputRef.current?.focus();
       }
@@ -318,12 +455,12 @@ export const QuickCaptureWindow = ({
   };
 
   const footer = (onSave: () => void, canSave: boolean) => (
-    <div className="border-t border-gray-200 bg-[#FFFBF7] p-4">
+    <div className="border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-3">
       <div className="flex gap-2">
         <button
           type="button"
           onClick={closeWindow}
-          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          className="flex-1 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
         >
           Cancel
         </button>
@@ -331,19 +468,25 @@ export const QuickCaptureWindow = ({
           type="button"
           onClick={onSave}
           disabled={isSaving || !canSave}
-          className="flex-1 rounded-lg bg-[#FF5F40] px-3 py-2 text-sm font-medium text-white hover:bg-[#E54E30] disabled:opacity-50"
+          className="flex-1 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-[13px] font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/30 disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {isSaving ? 'Saving...' : 'Save'}
+          {isSaving ? 'Saving…' : 'Save'}
         </button>
       </div>
     </div>
   );
 
-  const shellClassName =
-    'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[var(--ledger-window-radius)] border border-gray-200 bg-[#FFF9F4] shadow-[0_24px_80px_rgba(15,23,42,0.08)]';
+  const shellClassName = browserMode
+    ? 'grid h-auto max-h-[min(680px,calc(100vh-48px))] min-h-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[var(--ledger-shadow)]'
+    : 'grid h-screen w-screen grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[var(--ledger-shadow)]';
 
   const scrollAreaClassName =
-    'min-h-0 overflow-y-auto overflow-x-hidden p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+    'min-h-0 overflow-y-auto overflow-x-hidden px-4 py-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+  const fieldClassName =
+    'w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-input-background)] px-3 py-2 text-[13px] text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] transition focus:border-[color:var(--ledger-border-strong)] focus:outline-none focus:ring-1 focus:ring-[color:var(--ledger-accent)]/10';
+  const labelClassName = 'mb-1.5 block text-[11px] font-semibold text-[var(--ledger-text-muted)]';
+  const errorClassName =
+    'rounded-lg border border-[color:var(--ledger-danger)]/20 bg-[color:var(--ledger-danger)]/8 px-3 py-2 text-xs text-[var(--ledger-danger)]';
   const contextText = context?.trim();
   const followUpContext = parseFollowUpContext(contextText);
   const personContext = parsePersonContext(contextText);
@@ -379,7 +522,7 @@ export const QuickCaptureWindow = ({
             ? `${String(match.resolvedDate.getHours()).padStart(2, '0')}:${String(
                 match.resolvedDate.getMinutes()
               ).padStart(2, '0')}`
-            : ''
+            : '09:00'
         );
       } else {
         setEventDate('');
@@ -450,18 +593,25 @@ export const QuickCaptureWindow = ({
         show_in_today: showInToday,
         is_today_focus: false,
       });
-      await Promise.all(extractGithubUrls(`${taskTitle}\n${selectionContext?.text ?? ''}`).map(async (url) => {
-        try {
-          const reference = await api.createExternalReference('github', url) as { id: string };
-          await api.resolveExternalReference(reference.id);
-          await api.linkExternalReference(reference.id, 'task', String(createdTask.id), 'integration');
-        } catch {
-          // A plain URL remains usable when GitHub is disconnected or unapproved.
-        }
-      }));
+      await Promise.all(
+        extractGithubUrls(`${taskTitle}\n${selectionContext?.text ?? ''}`).map(async (url) => {
+          try {
+            const reference = (await api.createExternalReference('github', url)) as { id: string };
+            await api.resolveExternalReference(reference.id);
+            await api.linkExternalReference(
+              reference.id,
+              'task',
+              String(createdTask.id),
+              'integration'
+            );
+          } catch {
+            // A plain URL remains usable when GitHub is disconnected or unapproved.
+          }
+        })
+      );
 
       if (followUpContext) {
-        window.ipcRenderer?.send('calendar:follow-up-created', {
+        window.ledgerIpc?.commands?.calendarFollowUpCreated({
           eventId: followUpContext.eventId,
           eventTitle: followUpContext.eventTitle,
           task: createdTask,
@@ -513,15 +663,22 @@ export const QuickCaptureWindow = ({
       const createdNote = await api.createNote(noteTitle.trim(), noteContent.trim(), {
         source: 'quick_capture',
       });
-      await Promise.all(extractGithubUrls(`${noteTitle}\n${noteContent}`).map(async (url) => {
-        try {
-          const reference = await api.createExternalReference('github', url) as { id: string };
-          await api.resolveExternalReference(reference.id);
-          await api.linkExternalReference(reference.id, 'note', String(createdNote.id), 'integration');
-        } catch {
-          // Keep quick capture non-blocking when GitHub metadata is unavailable.
-        }
-      }));
+      await Promise.all(
+        extractGithubUrls(`${noteTitle}\n${noteContent}`).map(async (url) => {
+          try {
+            const reference = (await api.createExternalReference('github', url)) as { id: string };
+            await api.resolveExternalReference(reference.id);
+            await api.linkExternalReference(
+              reference.id,
+              'note',
+              String(createdNote.id),
+              'integration'
+            );
+          } catch {
+            // Keep quick capture non-blocking when GitHub metadata is unavailable.
+          }
+        })
+      );
       setShowCloseGuardModal(false);
       resetNoteDraft();
       removeWebDraft(draftKey);
@@ -550,9 +707,13 @@ export const QuickCaptureWindow = ({
       saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
+      if (!eventDate || !eventTime) {
+        setError('Choose a date and time for this event');
+        return;
+      }
       const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
-      if (!eventDate) {
-        setError('Choose a date for this event');
+      if (Number.isNaN(startDateTime.getTime())) {
+        setError('Choose a valid date and time for this event');
         return;
       }
       const endDateTime = new Date(startDateTime.getTime() + getEventDurationMinutes() * 60 * 1000);
@@ -626,18 +787,20 @@ export const QuickCaptureWindow = ({
             void saveQuickTask();
           }}
         />
-        <ModuleWindowHeader
-          title={kind === 'quick-follow-up' ? 'Quick Follow-Up' : 'Quick Task'}
-          icon={kind === 'quick-follow-up' ? <ArrowRight size={16} /> : <Check size={16} />}
+        <QuickCaptureHeader
+          kind={kind}
+          browserMode={browserMode}
           onClose={closeWindow}
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}
         />
 
         {truncatedContext && (
-          <div className="border-b border-gray-200 bg-[#FFFDFB] px-4 py-2">
-            <p className="text-[11px] text-gray-500">From Calendar</p>
-            <p className="mt-0.5 text-xs font-medium text-gray-900 truncate whitespace-nowrap">
+          <div className="mx-4 mt-4 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+              Context
+            </p>
+            <p className="mt-0.5 truncate whitespace-nowrap text-xs font-medium text-[var(--ledger-text-secondary)]">
               {truncatedContext}
             </p>
           </div>
@@ -646,7 +809,7 @@ export const QuickCaptureWindow = ({
         <div className={scrollAreaClassName}>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Task Title</label>
+              <label className={labelClassName}>Task title</label>
               <input
                 ref={taskInputRef}
                 type="text"
@@ -659,15 +822,11 @@ export const QuickCaptureWindow = ({
                     void saveQuickTask();
                   }
                 }}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
+                className={fieldClassName}
               />
             </div>
 
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {error}
-              </div>
-            )}
+            {error && <div className={errorClassName}>{error}</div>}
           </div>
         </div>
         {footer(() => void saveQuickTask(), Boolean(taskTitle.trim()))}
@@ -691,51 +850,51 @@ export const QuickCaptureWindow = ({
             void saveQuickNote();
           }}
         />
-        <ModuleWindowHeader
-          title="Quick Note"
-          icon={<FileText size={16} />}
+        <QuickCaptureHeader
+          kind={kind}
+          browserMode={browserMode}
           onClose={closeWindow}
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}
         />
 
         {contextText && (
-          <div className="border-b border-gray-200 bg-[#FFFDFB] px-4 py-2">
-            <p className="text-[11px] text-gray-500">From Calendar</p>
-            <p className="mt-0.5 text-xs font-medium text-gray-900 truncate">{contextText}</p>
+          <div className="mx-4 mt-4 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+              Context
+            </p>
+            <p className="mt-0.5 truncate text-xs font-medium text-[var(--ledger-text-secondary)]">
+              {contextText}
+            </p>
           </div>
         )}
 
         <div className={scrollAreaClassName}>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Note Title</label>
+              <label className={labelClassName}>Note title</label>
               <input
+                ref={noteTitleInputRef}
                 type="text"
                 value={noteTitle}
                 onChange={(e) => setNoteTitle(e.target.value)}
                 placeholder="Note title..."
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
+                className={fieldClassName}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Content</label>
+              <label className={labelClassName}>Content</label>
               <textarea
-                ref={noteInputRef}
                 value={noteContent}
                 onChange={(e) => setNoteContent(e.target.value)}
                 placeholder="Add your notes here..."
                 rows={4}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none resize-none"
+                className={`${fieldClassName} resize-none`}
               />
             </div>
 
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {error}
-              </div>
-            )}
+            {error && <div className={errorClassName}>{error}</div>}
           </div>
         </div>
         {footer(() => void saveQuickNote(), Boolean(noteTitle.trim()))}
@@ -757,9 +916,13 @@ export const QuickCaptureWindow = ({
       saveInFlightRef.current = true;
       setIsSaving(true);
       setError(null);
+      if (!eventDate || !eventTime) {
+        setError('Choose a date and time for this reminder');
+        return;
+      }
       const startDateTime = new Date(`${eventDate}T${eventTime}:00`);
-      if (!eventDate) {
-        setError('Choose a date for this reminder');
+      if (Number.isNaN(startDateTime.getTime())) {
+        setError('Choose a valid date and time for this reminder');
         return;
       }
       const calendars = (await api.getCalendars({
@@ -805,57 +968,63 @@ export const QuickCaptureWindow = ({
             closeWindowNow();
           }}
           onRetrySaveAndClose={() => {
-            void saveQuickEvent();
+            void (kind === 'quick-reminder' ? saveQuickReminder() : saveQuickEvent());
           }}
         />
-        <ModuleWindowHeader
-          title={kind === 'quick-reminder' ? 'Quick Reminder' : 'Quick Event'}
-          icon={kind === 'quick-reminder' ? <Bell size={16} /> : <Calendar size={16} />}
+        <QuickCaptureHeader
+          kind={kind}
+          browserMode={browserMode}
           onClose={closeWindow}
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}
         />
 
         {contextText && (
-          <div className="border-b border-gray-200 bg-[#FFFDFB] px-4 py-2">
-            <p className="text-[11px] text-gray-500">From Notes</p>
-            <p className="mt-0.5 text-xs font-medium text-gray-900 truncate">{contextText}</p>
+          <div className="mx-4 mt-4 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+              Context
+            </p>
+            <p className="mt-0.5 truncate text-xs font-medium text-[var(--ledger-text-secondary)]">
+              {contextText}
+            </p>
           </div>
         )}
 
         <div className={scrollAreaClassName}>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                {kind === 'quick-reminder' ? 'Reminder Title' : 'Event Title'}
+              <label className={labelClassName}>
+                {kind === 'quick-reminder' ? 'Reminder title' : 'Event title'}
               </label>
               <input
                 ref={eventInputRef}
                 type="text"
                 value={eventTitle}
                 onChange={(e) => setEventTitle(e.target.value)}
-                placeholder="Event name..."
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
+                placeholder={
+                  kind === 'quick-reminder' ? 'What should you remember?' : 'What is happening?'
+                }
+                className={fieldClassName}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                <label className={labelClassName}>Date</label>
                 <input
                   type="date"
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
+                  className={fieldClassName}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Time</label>
+                <label className={labelClassName}>Time</label>
                 <input
                   type="time"
                   value={eventTime}
                   onChange={(e) => setEventTime(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
+                  className={fieldClassName}
                 />
               </div>
             </div>
@@ -863,24 +1032,22 @@ export const QuickCaptureWindow = ({
             {kind === 'quick-event' && (
               <div className="grid grid-cols-[1fr_92px] gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Duration</label>
+                  <label className={labelClassName}>Duration</label>
                   <input
                     type="number"
                     min="1"
                     step="1"
                     value={eventDurationValue}
                     onChange={(e) => setEventDurationValue(Number(e.target.value) || 1)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none"
+                    className={fieldClassName}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1 invisible">
-                    Duration unit
-                  </label>
+                  <label className={`${labelClassName} invisible`}>Duration unit</label>
                   <select
                     value={eventDurationUnit}
                     onChange={(e) => setEventDurationUnit(e.target.value as 'minutes' | 'hours')}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:bg-[#FFFDFB] focus:outline-none bg-[#FFFDFB]"
+                    className={fieldClassName}
                   >
                     <option value="minutes">minutes</option>
                     <option value="hours">hours</option>
@@ -889,11 +1056,7 @@ export const QuickCaptureWindow = ({
               </div>
             )}
 
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {error}
-              </div>
-            )}
+            {error && <div className={errorClassName}>{error}</div>}
           </div>
         </div>
         {footer(

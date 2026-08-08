@@ -30,7 +30,7 @@ export function NotificationActionsSheet({
     const state = getNotificationDisplayState(item);
     return [
       { id: 'open', label: 'Open' },
-      ...(state === 'unread' ? [{ id: 'mark_read', label: 'Mark as read' }] : []),
+      { id: state === 'unread' ? 'mark_read' : 'mark_unread', label: state === 'unread' ? 'Mark as read' : 'Mark as unread' },
       ...getNotificationActions(item),
       { id: 'notification_settings', label: 'Notification settings' },
     ];

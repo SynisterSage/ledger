@@ -241,7 +241,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       setMaterialMacVisualEffectState(payload?.visualEffectState === 'active' ? 'active' : 'followWindow');
     };
 
-    window.ipcRenderer?.on('sidebar:material-state', handleMaterialState);
+    window.ledgerIpc?.events?.onSidebarMaterialState(handleMaterialState);
     void window.desktopWindow?.getSidebarMaterialState?.().then((payload) => {
       setMaterialEngine(isMaterialEngine(payload?.resolvedEngine) ? payload.resolvedEngine : 'renderer');
       setMaterialRequestedEngine(
@@ -270,7 +270,7 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       setMaterialMacVisualEffectState('followWindow');
     });
     return () => {
-      window.ipcRenderer?.off('sidebar:material-state', handleMaterialState);
+      window.ledgerIpc?.events?.offSidebarMaterialState(handleMaterialState);
     };
   }, []);
 
@@ -295,9 +295,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       if (!didChange) return;
     };
 
-    window.ipcRenderer?.on('sidebar:preferences-updated', handlePreferenceSync);
+    window.ledgerIpc?.events?.onSidebarPreferencesUpdated(handlePreferenceSync);
     return () => {
-      window.ipcRenderer?.off('sidebar:preferences-updated', handlePreferenceSync);
+      window.ledgerIpc?.events?.offSidebarPreferencesUpdated(handlePreferenceSync);
     };
   }, [state]);
 
@@ -325,14 +325,14 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       setSystemPrefersReducedTransparency(payload?.prefersReducedTransparency === true);
     };
 
-    window.ipcRenderer?.on('sidebar:accessibility-updated', handleAccessibilityState);
+    window.ledgerIpc?.events?.onSidebarAccessibilityUpdated(handleAccessibilityState);
     void window.desktopWindow?.getSidebarAccessibilityState?.().then((payload) => {
       setSystemPrefersReducedTransparency(payload?.prefersReducedTransparency === true);
     }).catch(() => {
       // Browser development mode and older preload bridges keep the false fallback.
     });
     return () => {
-      window.ipcRenderer?.off('sidebar:accessibility-updated', handleAccessibilityState);
+      window.ledgerIpc?.events?.offSidebarAccessibilityUpdated(handleAccessibilityState);
     };
   }, []);
 
@@ -452,9 +452,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         // Older desktop builds may not expose the dock-state read API.
       });
 
-    window.ipcRenderer?.on('sidebar:floating-dock-changed', handleFloatingDockChanged);
+    window.ledgerIpc?.events?.onSidebarFloatingDockChanged(handleFloatingDockChanged);
     return () => {
-      window.ipcRenderer?.off('sidebar:floating-dock-changed', handleFloatingDockChanged);
+      window.ledgerIpc?.events?.offSidebarFloatingDockChanged(handleFloatingDockChanged);
     };
   }, [floatingDockSide, sidebarPreferences.position, state]);
 
@@ -469,9 +469,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       setShellFullscreen(Boolean(payload?.isFullscreen));
     };
 
-    window.ipcRenderer?.on('module:fullscreen-state-changed', handleModuleFullscreenState);
+    window.ledgerIpc?.events?.onModuleFullscreenStateChanged(handleModuleFullscreenState);
     return () => {
-      window.ipcRenderer?.off('module:fullscreen-state-changed', handleModuleFullscreenState);
+      window.ledgerIpc?.events?.offModuleFullscreenStateChanged(handleModuleFullscreenState);
     };
   }, []);
 
@@ -484,9 +484,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       setSidebarState(payload.state);
     };
 
-    window.ipcRenderer?.on('sidebar:state-changed', handleSidebarStateChanged);
+    window.ledgerIpc?.events?.onSidebarStateChanged(handleSidebarStateChanged);
     return () => {
-      window.ipcRenderer?.off('sidebar:state-changed', handleSidebarStateChanged);
+      window.ledgerIpc?.events?.offSidebarStateChanged(handleSidebarStateChanged);
     };
   }, []);
 
@@ -505,9 +505,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       collapseSidebar();
     };
 
-    window.ipcRenderer?.on('module:state-changed', handleModuleStateChanged);
+    window.ledgerIpc?.events?.onModuleStateChanged(handleModuleStateChanged);
     return () => {
-      window.ipcRenderer?.off('module:state-changed', handleModuleStateChanged);
+      window.ledgerIpc?.events?.offModuleStateChanged(handleModuleStateChanged);
     };
   }, [collapseSidebar, shellFullscreen]);
 

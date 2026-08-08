@@ -129,7 +129,7 @@ export const useAppleReminders = (userId: string | undefined, start: Date, end: 
     if (requestId !== requestIdRef.current) return;
     setReminders(((response.reminders ?? []) as Array<Record<string, unknown>>).filter((item) => item.id && item.dueAt).map(mapAppleReminder));
     setSyncStatus('synced');
-    if (broadcast) window.ipcRenderer?.send('calendar:items-updated');
+    if (broadcast) window.ledgerIpc?.commands?.calendarItemsUpdated();
   }, [end, start, state, supported]);
 
   useEffect(() => { if (userId) setState(readState(userId)); }, [userId]);

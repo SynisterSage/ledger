@@ -8,6 +8,8 @@ import {
 } from '../Common/ModuleWindowHeader';
 import { useNotificationCenter, type NotificationCenterItem } from './NotificationCenterContext';
 import { useSidebar } from '../../context/SidebarContext';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { usePlatform } from '../../platform';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 
 const isGenericTitle = (title: string | null | undefined, sourceType: NotificationCenterItem['sourceType']) => {
@@ -144,7 +146,8 @@ const actionLabel = (item: NotificationCenterItem, action: NotificationCenterIte
 const getNotificationMenuGroups = (
   item: NotificationCenterItem,
   applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>,
-  markAsRead: (item: NotificationCenterItem) => Promise<void>
+  markAsRead: (item: NotificationCenterItem) => Promise<void>,
+  markAsUnread: (item: NotificationCenterItem) => Promise<void>
 ): ContextMenuGroup[] => {
   const groups: ContextMenuGroup[] = [];
   if (item.actions.includes('open')) {
@@ -169,6 +172,15 @@ const getNotificationMenuGroups = (
           onClick: () => void markAsRead(item),
         },
       ],
+    });
+  } else {
+    groups.push({
+      items: [{
+        id: 'unread',
+        label: 'Mark as unread',
+        icon: <CheckCheck size={13} />,
+        onClick: () => void markAsUnread(item),
+      }],
     });
   }
   const workflowActions =
@@ -205,11 +217,13 @@ const CompactTrayList = ({
   items,
   applyAction,
   markAsRead,
+  markAsUnread,
   onRequestClose,
 }: {
   items: NotificationCenterItem[];
   applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>;
   markAsRead: (item: NotificationCenterItem) => Promise<void>;
+  markAsUnread: (item: NotificationCenterItem) => Promise<void>;
   onRequestClose?: () => void;
 }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: NotificationCenterItem } | null>(null);
@@ -285,7 +299,7 @@ const CompactTrayList = ({
         x={contextMenu?.x ?? 0}
         y={contextMenu?.y ?? 0}
         width={208}
-        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyTrayAction, markAsRead) : []}
+        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyTrayAction, markAsRead, markAsUnread) : []}
         onClose={() => setContextMenu(null)}
         ariaLabel="Notification actions"
         groupLabelCase="normal"
@@ -299,11 +313,13 @@ const CompactNotificationList = ({
   sectionLabel,
   applyAction,
   markAsRead,
+  markAsUnread,
 }: {
   items: NotificationCenterItem[];
-  sectionLabel: 'Open' | 'Earlier';
+  sectionLabel: 'Needs attention' | 'Unread' | 'History';
   applyAction: (item: NotificationCenterItem, action: NotificationCenterItem['actions'][number]) => Promise<void>;
   markAsRead: (item: NotificationCenterItem) => Promise<void>;
+  markAsUnread: (item: NotificationCenterItem) => Promise<void>;
 }) => {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -325,11 +341,11 @@ const CompactNotificationList = ({
         {items.map((item) => {
           const Icon = iconForItem(item);
           const display = getDisplayData(item);
-          const inlineAction = sectionLabel === 'Open' && item.actions.includes('complete')
+          const inlineAction = sectionLabel === 'Needs attention' && item.actions.includes('complete')
             ? 'complete'
-            : sectionLabel === 'Open' && item.actions.includes('snooze')
+            : sectionLabel !== 'History' && item.actions.includes('snooze')
             ? 'snooze'
-            : sectionLabel === 'Open' && item.actions.includes('open')
+            : sectionLabel !== 'History' && item.actions.includes('open')
             ? 'open'
             : null;
           const isUnread = item.unread === true;
@@ -418,7 +434,7 @@ const CompactNotificationList = ({
         x={contextMenu?.x ?? 0}
         y={contextMenu?.y ?? 0}
         width={208}
-        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyAction, markAsRead) : []}
+        groups={contextMenu ? getNotificationMenuGroups(contextMenu.item, applyAction, markAsRead, markAsUnread) : []}
         onClose={() => setContextMenu(null)}
         ariaLabel="Notification actions"
         groupLabelCase="normal"
@@ -431,7 +447,7 @@ type NotificationCenterWindowProps = {
   mode?: 'window' | 'tray';
   onRequestClose?: () => void;
   onViewAll?: () => void;
-  initialFilter?: 'active' | 'earlier';
+  initialFilter?: 'active' | 'unread' | 'earlier';
   initialItem?: string;
 };
 
@@ -442,16 +458,18 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
   initialFilter,
   initialItem,
 }) => {
-  const { active, earlier, loading, error, unreadCount, loadNotifications, applyAction, markAsRead, markAllAsRead } =
+  const { active, earlier, loading, error, unreadCount, loadNotifications, applyAction, markAsRead, markAsUnread, markAllAsRead } =
     useNotificationCenter();
   const { workspaceShellLayout } = useSidebar();
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
   const inboxCount = 0;
-  const [filter, setFilter] = useState<'active' | 'earlier'>(initialFilter ?? 'active');
+  const [filter, setFilter] = useState<'active' | 'unread' | 'earlier'>(initialFilter ?? 'active');
   const openedInitialItemRef = useRef<string | null>(null);
 
   useEffect(() => {
     const context = new URLSearchParams(window.location.search).get('focusContext') ?? '';
-    setFilter(initialFilter ?? (context === 'notifications:filter:earlier' ? 'earlier' : 'active'));
+    setFilter(initialFilter ?? (context === 'notifications:filter:earlier' ? 'earlier' : context === 'notifications:filter:unread' ? 'unread' : 'active'));
   }, [initialFilter]);
 
   useEffect(() => {
@@ -462,9 +480,18 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
     void applyAction(item, 'open');
   }, [active, applyAction, earlier, initialItem]);
 
-  const selectFilter = (nextFilter: 'active' | 'earlier') => {
+  const selectFilter = (nextFilter: 'active' | 'unread' | 'earlier') => {
     setFilter(nextFilter);
     if (mode === 'tray') return;
+    if (platform.kind === 'web' && activeWorkspaceId) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'notifications',
+        query: { filter: nextFilter },
+      });
+      return;
+    }
     void window.desktopWindow?.openModule('notifications', {
       kind: 'notifications',
       focusContext: `notifications:filter:${nextFilter}`,
@@ -477,9 +504,10 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
   );
 
   const isTray = mode === 'tray';
-  const displayActive = isTray || filter === 'active' ? active : [];
+  const unreadActive = active.filter((item) => item.unread === true);
+  const displayActive = isTray || filter === 'active' ? active : filter === 'unread' ? unreadActive : [];
   const displayEarlier = isTray || filter === 'earlier' ? earlier : [];
-  const trayItems = filter === 'earlier' ? earlier : active;
+  const trayItems = filter === 'earlier' ? earlier : filter === 'unread' ? unreadActive : active;
 
   return (
     <div
@@ -503,17 +531,18 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
         viewControls={
           !isTray ? (
             <ModuleHeaderSegmentedGroup compact>
-              {(['active', 'earlier'] as const).map((option) => (
+              {(['active', 'unread', 'earlier'] as const).map((option) => (
                 <ModuleHeaderSegmentedButton
                   key={option}
                   compact
                   active={filter === option}
-                  title={`Show ${option === 'active' ? 'open' : 'earlier'} notifications`}
+                  aria-label={option === 'active' ? 'Show notifications needing attention' : option === 'unread' ? 'Show unread notifications' : 'Show notification history'}
+                  title={`Show ${option === 'active' ? 'notifications needing attention' : option === 'unread' ? 'unread notifications' : 'notification history'}`}
                   onClick={() => selectFilter(option)}
                 >
-                  {option === 'active' ? 'Open' : 'Earlier'}
+                  {option === 'active' ? 'Needs attention' : option === 'unread' ? 'Unread' : 'History'}
                   <span className="ml-1 text-[10px] text-[var(--ledger-text-muted)]">
-                    {option === 'active' ? active.length : earlier.length}
+                    {option === 'active' ? active.length : option === 'unread' ? unreadActive.length : earlier.length}
                   </span>
                 </ModuleHeaderSegmentedButton>
               ))}
@@ -608,20 +637,22 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
 
       {isTray && (
         <div className="flex h-10 shrink-0 items-center gap-1 border-b border-[color:var(--ledger-border-subtle)] px-3">
-          {(['active', 'earlier'] as const).map((option) => (
+          {(['active', 'unread', 'earlier'] as const).map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => selectFilter(option)}
+              aria-current={filter === option ? 'page' : undefined}
+              aria-label={option === 'active' ? 'Show notifications needing attention' : option === 'unread' ? 'Show unread notifications' : 'Show notification history'}
               className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${
                 filter === option
-                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                  ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] shadow-[0_0_0_1px_rgba(17,24,39,0.04)]'
                   : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
               }`}
             >
-              {option === 'active' ? 'Open' : 'Earlier'}
+              {option === 'active' ? 'Needs attention' : option === 'unread' ? 'Unread' : 'History'}
               <span className="ml-1 text-[10px] text-[var(--ledger-text-muted)]">
-                {option === 'active' ? active.length : earlier.length}
+                {option === 'active' ? active.length : option === 'unread' ? unreadActive.length : earlier.length}
               </span>
             </button>
           ))}
@@ -629,7 +660,7 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
       )}
 
       <div className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto ${isTray ? 'bg-[var(--ledger-surface-card)] px-0 py-0' : 'bg-[var(--ledger-background)] px-5 py-4'}`}>
-        <div className={isTray ? '' : 'mx-auto w-full max-w-6xl'}>
+        <div className={isTray ? '' : 'mx-auto w-full max-w-4xl'}>
         {error && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
@@ -658,12 +689,14 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
           <div className="flex min-h-[280px] items-center justify-center">
             <div className="max-w-sm text-center">
               <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                {filter === 'earlier' ? 'No earlier notifications' : 'Nothing open'}
+                {filter === 'earlier' ? 'No notification history' : filter === 'unread' ? 'Nothing unread' : 'Nothing needs attention'}
               </p>
               <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
                 {filter === 'earlier'
                   ? 'Completed, dismissed, and expired notifications stay here for reference.'
-                  : 'Open notifications stay here until you complete, snooze, or dismiss them.'}
+                  : filter === 'unread'
+                  ? 'New notifications will appear here when something needs your attention.'
+                  : 'Read notifications stay here until you complete, snooze, or dismiss them.'}
               </p>
             </div>
           </div>
@@ -672,15 +705,17 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
             items={trayItems}
             applyAction={applyAction}
             markAsRead={markAsRead}
+            markAsUnread={markAsUnread}
             onRequestClose={onRequestClose}
           />
         ) : (
           <div className="space-y-5">
             <CompactNotificationList
               items={filter === 'earlier' ? displayEarlier : displayActive}
-              sectionLabel={filter === 'earlier' ? 'Earlier' : 'Open'}
+              sectionLabel={filter === 'earlier' ? 'History' : filter === 'unread' ? 'Unread' : 'Needs attention'}
               applyAction={applyAction}
               markAsRead={markAsRead}
+              markAsUnread={markAsUnread}
             />
           </div>
         )}

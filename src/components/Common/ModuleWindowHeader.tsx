@@ -639,12 +639,12 @@ export const ModuleWindowHeader = ({
 
     if (showWorkspaceNavigation) {
       void loadNavigationState();
-      window.ipcRenderer?.on?.('workspace:navigation-state', handleNavigationState as any);
+      window.ledgerIpc?.events?.onWorkspaceNavigationState(handleNavigationState as any);
     }
 
     return () => {
       mounted = false;
-      window.ipcRenderer?.off?.('workspace:navigation-state', handleNavigationState as any);
+      window.ledgerIpc?.events?.offWorkspaceNavigationState(handleNavigationState as any);
     };
   }, [showWorkspaceNavigation]);
 

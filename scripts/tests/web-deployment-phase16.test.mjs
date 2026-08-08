@@ -14,10 +14,12 @@ test('browser deployment builds the dedicated dist-web artifact', () => {
 });
 
 test('app roots use the browser SPA entry without catching assets', () => {
-  assert.deepEqual(vercel.rewrites, [
+  const appRoutes = vercel.rewrites.filter(({ source }) => source === '/app' || source === '/app/:path*');
+  assert.deepEqual(appRoutes, [
     { source: '/app', destination: '/index.html' },
     { source: '/app/:path*', destination: '/index.html' },
   ]);
+  assert.ok(vercel.rewrites.some(({ source, destination }) => source === '/app/assets/:path*' && destination === '/assets/:path*'));
   assert.equal(vercel.rewrites.some(({ source }) => source === '/:path*'), false);
 });
 

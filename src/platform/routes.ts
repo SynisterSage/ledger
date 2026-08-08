@@ -28,7 +28,7 @@ export const routeForTeam = (workspaceId: string, teamId?: string, settings = fa
   : { kind: 'workspace', workspaceId, page: 'teams' };
 export const routeForInboxItem = (workspaceId: string, itemId?: string, section?: 'unprocessed' | 'converted' | 'snoozed' | 'archived'): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'inbox', query: { item: itemId, section } });
 export const routeForSlackCapture = (workspaceId: string, captureId?: string): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'slack', query: { capture: captureId } });
-export const routeForNotification = (workspaceId: string, itemId?: string, filter?: 'active' | 'earlier'): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'notifications', query: { item: itemId, filter } });
+export const routeForNotification = (workspaceId: string, itemId?: string, filter?: 'active' | 'unread' | 'earlier'): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'notifications', query: { item: itemId, filter } });
 export const routeForSearch = (workspaceId: string, query: string): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'search', query: { q: query } });
 export const routeForNotificationTarget = (workspaceId: string, target: NotificationTarget): LedgerWorkspaceRoute => {
   switch (target.type) {
@@ -65,7 +65,7 @@ export const routeForLegacyWorkspaceState = (workspaceId: string, route: {
     case 'projects': return routeForProject(workspaceId, route.focusProjectId ?? undefined, route.focusTaskId ?? undefined);
     case 'teams': return route.focusContext?.startsWith('team:') ? routeForTeam(workspaceId, route.focusContext.slice('team:'.length)) : routeForTeam(workspaceId);
     case 'inbox': return routeForInboxItem(workspaceId, route.focusInboxId ?? (route.focusContext?.startsWith('inbox:') ? route.focusContext.slice('inbox:'.length) : undefined), route.focusSection as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined);
-    case 'notifications': return routeForNotification(workspaceId, route.focusContext ?? undefined, route.focusSection as 'active' | 'earlier' | undefined);
+    case 'notifications': return routeForNotification(workspaceId, route.focusContext ?? undefined, route.focusSection as 'active' | 'unread' | 'earlier' | undefined);
     case 'slack': return routeForSlackCapture(workspaceId, route.focusContext ?? undefined);
     case 'settings': {
       type WorkspaceSettingsSection = Extract<LedgerWorkspaceRoute, { page: 'settings' }>['section'];

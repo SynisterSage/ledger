@@ -197,10 +197,10 @@ export const PinsProvider = ({ children }: { children: React.ReactNode }) => {
       setActiveRoute(payload?.currentRoute ?? null);
     };
 
-    window.ipcRenderer?.on('workspace:navigation-state', handleNavigationState as any);
+    window.ledgerIpc?.events?.onWorkspaceNavigationState(handleNavigationState as any);
     return () => {
       cancelled = true;
-      window.ipcRenderer?.off('workspace:navigation-state', handleNavigationState as any);
+      window.ledgerIpc?.events?.offWorkspaceNavigationState(handleNavigationState as any);
     };
   }, [activeWorkspaceId, user?.id]);
 

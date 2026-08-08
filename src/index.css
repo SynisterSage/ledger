@@ -431,6 +431,13 @@ button:focus {
   outline: none;
 }
 
+/* The New Tab search field already has a single outer control border. Do not
+   draw a second rectangular focus ring around its nested input. */
+.web-new-tab-body input:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
 input:focus-visible,
 button:focus-visible,
 a:focus-visible,
@@ -601,6 +608,15 @@ textarea:focus-visible,
   [data-platform='web'] {
     --web-content-gutter: 12px;
   }
+}
+
+/* Browser focus rings are overly persistent across the web shell. Desktop
+   keeps its existing interaction treatment; web controls stay visually quiet
+   after click instead of leaving a grey outline/ring behind. */
+[data-platform='web'] :where(button, a, input, select, textarea, [tabindex], [contenteditable='true']):focus,
+[data-platform='web'] :where(button, a, input, select, textarea, [tabindex], [contenteditable='true']):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 @media (min-resolution: 1.5dppx) {

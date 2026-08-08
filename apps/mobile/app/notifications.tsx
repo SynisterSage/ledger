@@ -234,9 +234,9 @@ function NotificationsScreen() {
     mutationIdsRef.current.add(item.id);
     const previous = notifications;
     const readAt = new Date().toISOString();
-    setNotifications((current) => updateNotification(current, item.id, (candidate) => ({ ...candidate, unread: false, readAt, actionTaken: 'open' })));
+    setNotifications((current) => updateNotification(current, item.id, (candidate) => ({ ...candidate, unread: false, readAt })));
     try {
-      await performMobileNotificationAction(item.id, 'open');
+      await performMobileNotificationAction(item.id, 'read');
     } catch {
       setNotifications(previous);
       showActionMessage('Couldn’t mark notification as read');
@@ -487,6 +487,13 @@ function NotificationsScreen() {
 
       if (actionId === 'mark_read') {
         await markNotificationRead(item);
+        closeNotificationSheet();
+        return;
+      }
+
+      if (actionId === 'mark_unread') {
+        await performMobileNotificationAction(item.id, 'unread');
+        setNotifications((current) => updateNotification(current, item.id, (candidate) => ({ ...candidate, unread: true, readAt: null })));
         closeNotificationSheet();
         return;
       }

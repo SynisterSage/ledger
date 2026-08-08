@@ -40,8 +40,8 @@ export const GithubIntegrationCard = ({ workspaceId, canManage, onManage }: Prop
       if (!workspaceId) return;
       void api.getGithubIntegrationStatus(workspaceId).then((result) => setStatus(result as GithubIntegrationStatus)).catch(() => undefined);
     };
-    window.ipcRenderer?.on('settings:github-callback', handleGithubCallback as any);
-    return () => { window.ipcRenderer?.off('settings:github-callback', handleGithubCallback as any); };
+    window.ledgerIpc?.events?.onSettingsGithubCallback(handleGithubCallback as any);
+    return () => { window.ledgerIpc?.events?.offSettingsGithubCallback(handleGithubCallback as any); };
   }, [api, workspaceId]);
 
   const connect = async () => {

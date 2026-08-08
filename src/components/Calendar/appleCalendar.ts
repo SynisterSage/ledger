@@ -143,7 +143,7 @@ export const useAppleCalendar = (userId: string | undefined, start: Date, end: D
     if (requestId !== requestIdRef.current) return;
     setEvents(((response.events ?? []) as Array<Record<string, unknown>>).filter((item) => item.id).map(mapAppleEvent));
     setSyncStatus('synced');
-    if (broadcast) window.ipcRenderer?.send('calendar:items-updated');
+    if (broadcast) window.ledgerIpc?.commands?.calendarItemsUpdated();
   }, [end, start, state, supported]);
 
   useEffect(() => { if (userId) setState(readState(userId)); }, [userId]);

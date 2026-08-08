@@ -376,9 +376,9 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
       void loadIdentity();
       void loadWatches();
     };
-    window.ipcRenderer?.on?.('slack:identity-changed', handleIdentityChange as any);
+    window.ledgerIpc?.events?.onSlackIdentityChanged(handleIdentityChange as any);
     return () => {
-      window.ipcRenderer?.off?.('slack:identity-changed', handleIdentityChange as any);
+      window.ledgerIpc?.events?.offSlackIdentityChanged(handleIdentityChange as any);
     };
   }, [loadIdentity, loadWatches]);
 

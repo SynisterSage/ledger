@@ -180,11 +180,12 @@ export function buildPresentedNotifications(items: MobileNotificationCenterItem[
 }
 
 export function buildNotificationSections(items: PresentedNotification[]): NotificationSection[] {
-  const unread = items.filter((item) => item.displayState === 'unread');
-  const earlier = items.filter((item) => item.displayState !== 'unread');
+  const needsAttention = items.filter((item) => item.notification.status === 'active');
+  const history = items.filter((item) => item.notification.status !== 'active');
+  const unreadCount = needsAttention.filter((item) => item.displayState === 'unread').length;
   return [
-    unread.length ? { key: 'new' as const, title: 'New', count: unread.length, data: unread } : null,
-    earlier.length ? { key: 'earlier' as const, title: 'Earlier', data: earlier } : null,
+    needsAttention.length ? { key: 'new' as const, title: 'Needs attention', count: unreadCount, data: needsAttention } : null,
+    history.length ? { key: 'earlier' as const, title: 'History', data: history } : null,
   ].filter(Boolean) as NotificationSection[];
 }
 
@@ -237,7 +238,7 @@ export function getNotificationDetailMetaRows(item: MobileNotificationCenterItem
   const rows: AppDetailSheetMetaRow[] = [
     { label: 'Workspace', value: item.workspaceName ?? 'Unknown workspace' },
     { label: 'Type', value: getNotificationTypeLabel(item) },
-    { label: 'Status', value: item.status === 'active' ? 'Active' : 'Earlier' },
+    { label: 'Status', value: item.status === 'active' ? 'Needs attention' : 'History' },
   ];
 
   const timeLabel = formatDateTimeLabel(item.scheduledFor ?? item.deliveredInAppAt ?? item.deliveredDesktopAt);

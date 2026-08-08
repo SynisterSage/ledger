@@ -12,6 +12,7 @@ import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { UserAvatar } from '../Common/UserAvatar';
+import { usePlatform } from '../../platform';
 
 type TeamMember = {
   id: string;
@@ -51,35 +52,35 @@ const teamColors = ['#FF5F40', '#D97706', '#0F766E', '#2563EB', '#7C3AED', '#475
 
 const settingsTheme = {
   shell:
-    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none',
-  content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-6 py-7',
-  page: 'mx-auto flex min-h-full w-full max-w-4xl flex-col gap-7',
-  pageTitle: 'text-[32px] font-normal leading-tight tracking-tight text-[var(--ledger-text-primary)]',
-  subtitle: 'text-sm font-light text-[var(--ledger-text-muted)]',
+    'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]',
+  content: 'flex-1 min-h-0 overflow-auto bg-[var(--ledger-background)] px-6 py-6',
+  page: 'mx-auto flex min-h-full w-full max-w-3xl flex-col',
+  pageTitle: 'text-[24px] font-medium leading-tight tracking-[-0.01em] text-[var(--ledger-text-primary)]',
+  subtitle: 'text-[13px] text-[var(--ledger-text-muted)]',
   status: 'text-xs text-[var(--ledger-text-muted)]',
   section:
-    'rounded-[22px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]',
-  sectionHeader: 'flex items-center justify-between gap-4 px-4 pt-4',
-  sectionTitle: 'text-sm font-medium text-[var(--ledger-text-primary)]',
-  sectionHelp: 'text-xs text-[var(--ledger-text-muted)]',
-  rows: 'mt-4 divide-y divide-[color:var(--ledger-border-subtle)] border-t border-[color:var(--ledger-border-subtle)]',
-  row: 'grid gap-3 px-4 py-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-center',
-  memberRow: 'grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_148px_auto] md:items-center',
-  label: 'text-sm font-medium text-[var(--ledger-text-secondary)]',
-  value: 'text-sm text-[var(--ledger-text-primary)]',
+    'border-b border-[color:var(--ledger-border-subtle)] py-5',
+  sectionHeader: 'flex items-start justify-between gap-4 pb-3',
+  sectionTitle: 'text-[13px] font-semibold text-[var(--ledger-text-primary)]',
+  sectionHelp: 'mt-0.5 text-xs text-[var(--ledger-text-muted)]',
+  rows: 'divide-y divide-[color:var(--ledger-border-subtle)] border-t border-[color:var(--ledger-border-subtle)]',
+  row: 'grid gap-3 px-0 py-3 md:grid-cols-[200px_minmax(0,1fr)] md:items-center',
+  memberRow: 'grid gap-3 px-0 py-2.5 md:grid-cols-[minmax(0,1fr)_148px_auto] md:items-center',
+  label: 'text-[13px] font-medium text-[var(--ledger-text-secondary)]',
+  value: 'text-[13px] text-[var(--ledger-text-primary)]',
   muted: 'text-xs text-[var(--ledger-text-muted)]',
   input:
-    'h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
+    'h-8 w-full max-w-[440px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[13px] text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] hover:border-[color:var(--ledger-border-strong)] focus:border-[color:var(--ledger-border-strong)]',
   textarea:
-    'min-h-24 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
+    'min-h-20 w-full max-w-[440px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-2 text-[13px] text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] hover:border-[color:var(--ledger-border-strong)] focus:border-[color:var(--ledger-border-strong)]',
   control:
-    'inline-flex h-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
+    'inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
   primary:
-    'inline-flex h-8 items-center justify-center rounded-full border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
+    'inline-flex h-8 items-center justify-center rounded-md border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
   danger:
-    'inline-flex h-8 items-center justify-center rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-60',
+    'inline-flex h-8 items-center justify-center rounded-md border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-60',
   chip:
-    'inline-flex items-center gap-1.5 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
+    'text-[11px] text-[var(--ledger-text-muted)]',
 };
 
 const TeamBadge = ({ color }: { color: string }) => (
@@ -95,6 +96,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
   const api = useApi();
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const platform = usePlatform();
   const workspaceName = activeWorkspace?.name?.trim() || 'Workspace';
   const teamId = useMemo(() => {
     const raw = String(focusContext ?? '').trim();
@@ -384,10 +386,32 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
 
   const openWorkSurface = () => {
     if (!team) return;
+    if (platform.kind === 'web' && activeWorkspaceId) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'team',
+        teamId: team.id,
+      });
+      return;
+    }
     void window.desktopWindow?.openModule('teams', {
       kind: 'teams',
       focusContext: `team:${team.id}`,
     } as any);
+  };
+
+  const closeSettings = () => {
+    if (platform.kind === 'web' && activeWorkspaceId && teamId) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'team',
+        teamId,
+      });
+      return;
+    }
+    void window.desktopWindow?.closeModule('teams');
   };
 
   if (!activeWorkspaceId) {
@@ -398,7 +422,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
           subtitle="Select a workspace first."
           icon={<Users size={18} />}
           compact
-          onClose={() => window.desktopWindow?.closeModule('teams')}
+          onClose={closeSettings}
         />
         <div className={settingsTheme.content}>
           <div className={settingsTheme.page}>
@@ -417,7 +441,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
           subtitle={workspaceName}
           icon={<Users size={18} />}
           compact
-          onClose={() => window.desktopWindow?.closeModule('teams')}
+          onClose={closeSettings}
         />
         <div className={settingsTheme.content}>
           <div className={settingsTheme.page}>
@@ -436,7 +460,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
           subtitle={workspaceName}
           icon={<Users size={18} />}
           compact
-          onClose={() => window.desktopWindow?.closeModule('teams')}
+          onClose={closeSettings}
         />
         <div className={settingsTheme.content}>
           <div className={settingsTheme.page}>
@@ -455,7 +479,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
           subtitle={workspaceName}
           icon={<Users size={18} />}
           compact
-          onClose={() => window.desktopWindow?.closeModule('teams')}
+          onClose={closeSettings}
         />
         <div className={settingsTheme.content}>
           <div className={settingsTheme.page}>
@@ -473,7 +497,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
         subtitle={team.name}
         icon={<Users size={18} />}
         compact
-        onClose={() => window.desktopWindow?.closeModule('teams')}
+        onClose={closeSettings}
         primaryActions={
           <ModuleHeaderActionButton
             title="Open team"
@@ -527,12 +551,21 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
                 />
               </div>
               <div className={settingsTheme.row}>
+                <div className={settingsTheme.label}>Identifier</div>
+                <input
+                  value={draftIdentifier}
+                  onChange={(event) => setDraftIdentifier(event.target.value.toUpperCase())}
+                  className={settingsTheme.input}
+                  disabled={!canManageTeam}
+                />
+              </div>
+              <div className={settingsTheme.row}>
                 <div className={settingsTheme.label}>Description</div>
                 <textarea
                   value={draftDescription}
                   onChange={(event) => setDraftDescription(event.target.value)}
                   placeholder="Optional short description"
-                  className={settingsTheme.input}
+                  className={settingsTheme.textarea}
                   disabled={!canManageTeam}
                 />
               </div>
@@ -561,28 +594,6 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
                     {isSaving ? 'Saving...' : 'Save changes'}
                   </button>
                 </div>
-              </div>
-            </div>
-          </section>
-
-          <section className={settingsTheme.section} aria-labelledby="team-identifier">
-            <div className={settingsTheme.sectionHeader}>
-              <div>
-                <h2 id="team-identifier" className={settingsTheme.sectionTitle}>
-                  Identifier
-                </h2>
-                <p className={settingsTheme.sectionHelp}>Used in team views and assigned work.</p>
-              </div>
-            </div>
-            <div className={settingsTheme.rows}>
-              <div className={settingsTheme.row}>
-                <div className={settingsTheme.label}>Identifier</div>
-                <input
-                  value={draftIdentifier}
-                  onChange={(event) => setDraftIdentifier(event.target.value.toUpperCase())}
-                  className={settingsTheme.input}
-                  disabled={!canManageTeam}
-                />
               </div>
             </div>
           </section>
@@ -641,7 +652,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
             <div className={settingsTheme.sectionHeader}>
               <div>
                 <h2 id="team-defaults" className={settingsTheme.sectionTitle}>
-                  Assignment defaults
+                  Work defaults
                 </h2>
                 <p className={settingsTheme.sectionHelp}>Choose how work created from this team behaves.</p>
               </div>
@@ -733,19 +744,6 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
             </div>
           </section>
 
-          <section className={settingsTheme.section} aria-labelledby="team-work">
-            <div className={settingsTheme.sectionHeader}>
-              <div>
-                <h2 id="team-work" className={settingsTheme.sectionTitle}>
-                  Assigned work
-                </h2>
-                <p className={settingsTheme.sectionHelp}>This stays on the team work surface.</p>
-              </div>
-              <button type="button" onClick={openWorkSurface} className={settingsTheme.control}>
-                View work
-              </button>
-            </div>
-          </section>
         </div>
       </div>
 

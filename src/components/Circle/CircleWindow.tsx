@@ -816,9 +816,9 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
       void loadPeople(debouncedSearchQuery);
     };
 
-    window.ipcRenderer?.on?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+    window.ledgerIpc?.events?.onWorkspaceRouteChanged(handleWorkspaceRouteChanged as any);
     return () => {
-      window.ipcRenderer?.off?.('workspace:route-changed', handleWorkspaceRouteChanged as any);
+      window.ledgerIpc?.events?.offWorkspaceRouteChanged(handleWorkspaceRouteChanged as any);
     };
     // Circle stays mounted while other tabs are active, so reload an empty
     // people list whenever the shared workspace route returns to Circle.

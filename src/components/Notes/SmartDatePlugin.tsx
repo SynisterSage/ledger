@@ -493,9 +493,9 @@ export function SmartDatePlugin({
       if (payload?.noteId && payload.noteId !== noteId) return;
       void refreshSmartLinks();
     };
-    window.ipcRenderer?.on('notes:smart-links-updated', listener);
+    window.ledgerIpc?.events?.onNotesSmartLinksUpdated(listener);
     return () => {
-      window.ipcRenderer?.off('notes:smart-links-updated', listener);
+      window.ledgerIpc?.events?.offNotesSmartLinksUpdated(listener);
     };
   }, [noteId, refreshSmartLinks]);
 
@@ -757,7 +757,7 @@ export function SmartDatePlugin({
         dismissed_at: null,
       });
       await refreshSmartLinks();
-      window.ipcRenderer?.send('notes:smart-links-updated', { noteId: composerTarget.noteId });
+      window.ledgerIpc?.commands?.notesSmartLinksUpdated({ noteId: composerTarget.noteId });
       toast.show(composerMode === 'event' ? 'Event created' : 'Reminder created', {
         detail: composerValues.title.trim(),
         variant: 'success',

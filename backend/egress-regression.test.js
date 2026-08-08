@@ -10,12 +10,13 @@ const realtimeSource = await readFile(new URL('../src/hooks/useWorkspaceRealtime
 test('workspace note summaries do not select note bodies', () => {
   assert.match(source, /const noteSummarySelectColumns =/);
   assert.match(source, /select\(noteSummarySelectColumns\)/);
-  assert.match(source, /select\('id, workspace_id, title, preview, updated_at, created_at'\)/);
+  assert.match(source, /const noteSummarySelectColumns =/);
+  assert.match(source, /\.select\(noteSummarySelectColumns\)/);
   assert.doesNotMatch(source, /select\('id, workspace_id, title, content, content_html, updated_at, created_at'\)/);
 });
 
 test('note body is fetched when a metadata-only note is opened', () => {
-  assert.match(notesSource, /typeof note\.content !== 'string'/);
+  assert.match(notesSource, /typeof note\.content_html !== 'string'/);
   assert.match(notesSource, /api\.getNoteById\(note\.id\)/);
 });
 

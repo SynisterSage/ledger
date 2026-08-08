@@ -370,8 +370,18 @@ const pluginValueMatches = (value, hash) => {
   const expected = Buffer.from(String(hash ?? ''));
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 };
+const getFrontendRedirectBase = (names, label) => {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value.replace(/\/$/, '');
+  }
+  if (process.env.NODE_ENV === 'development' || process.env.ALLOW_DEV_FALLBACKS === 'true') {
+    return 'http://localhost:5173';
+  }
+  throw Object.assign(new Error(`${label} is not configured`), { statusCode: 500 });
+};
 const getPluginAuthorizeUrl = (sessionId, code) => {
-  const base = process.env.FIGMA_PLUGIN_AUTH_URL?.trim() || process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'http://localhost:5173';
+  const base = getFrontendRedirectBase(['FIGMA_PLUGIN_AUTH_URL', 'PUBLIC_FRONTEND_URL', 'FRONTEND_URL'], 'Figma plugin authorization URL');
   return `${base.replace(/\/$/, '')}/?figmaPluginAuth=${encodeURIComponent(sessionId)}&code=${encodeURIComponent(code)}`;
 };
 
@@ -1855,7 +1865,7 @@ const getOrCreateNotificationPreferences = async (userId) => {
   return data;
 };
 
-const notificationActionValues = new Set(['open', 'dismiss', 'complete', 'snooze']);
+const notificationActionValues = new Set(['open', 'read', 'unread', 'dismiss', 'complete', 'snooze']);
 
 const notificationScheduledBucket = (value) => {
   const date = new Date(value);
@@ -1990,6 +2000,7 @@ const mapNotificationEventRow = (row, extras = {}) => ({
   deliveredDesktopAt: row.delivered_desktop_at ?? null,
   deliveredMobileAt: row.delivered_mobile_at ?? null,
   dismissedAt: row.dismissed_at ?? null,
+  readAt: row.read_at ?? null,
   actionTaken: row.action_taken ?? null,
   metadata: safeJson(row.metadata, {}) ?? {},
   title: extras.title ?? null,
@@ -2591,7 +2602,7 @@ const buildDueNotificationCandidates = async (userId, prefs) => {
   const pendingInviteRows = await supabase
     .from('notification_events')
     .select(
-      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata, created_at, updated_at'
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata, created_at, updated_at'
     )
     .eq('user_id', userId)
     .in('workspace_id', workspaceIds)
@@ -2831,8 +2842,8 @@ const mapNotificationCenterRow = (row, maps) => {
     focusPayload,
     actions: Array.from(new Set((actions || []).map((action) => String(action).trim()).filter(Boolean))),
     scheduledFor: row.scheduled_for,
-    unread: actionTaken !== 'open',
-    readAt: actionTaken === 'open' ? row.updated_at ?? null : null,
+    unread: row.read_at == null,
+    readAt: row.read_at ?? null,
     deliveredInAppAt: row.delivered_in_app_at ?? null,
     deliveredDesktopAt: row.delivered_desktop_at ?? null,
     dismissedAt: row.dismissed_at ?? null,
@@ -2846,7 +2857,7 @@ const getNotificationCenterItems = async (userId, workspaceId = null) => {
   const { data, error } = await supabase
     .from('notification_events')
     .select(
-      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata, created_at, updated_at'
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata, created_at, updated_at'
     )
     .eq('user_id', userId)
     .not('delivered_in_app_at', 'is', null)
@@ -2869,7 +2880,7 @@ const getNotificationCenterItems = async (userId, workspaceId = null) => {
   const items = rows.map((row) => mapNotificationCenterRow(row, maps));
   const active = items.filter((item) => item.status === 'active');
   const earlier = items.filter((item) => item.status !== 'active');
-  const unread = items.filter((item) => item.unread);
+  const unread = active.filter((item) => item.unread);
 
   return {
     active,
@@ -2911,7 +2922,7 @@ const processNotificationEventsForUser = async (userId) => {
       onConflict: 'user_id,source_type,source_id,notification_type,scheduled_for',
     })
     .select(
-      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, delivered_mobile_at, dismissed_at, action_taken, metadata'
+      'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, delivered_mobile_at, dismissed_at, read_at, action_taken, metadata'
     );
 
   if (insertError) throw insertError;
@@ -3235,11 +3246,11 @@ const mcpValueMatches = (value, hash) => {
 const createMcpCredential = () => `ledger_mcp_${crypto.randomBytes(32).toString('base64url')}`;
 const createMcpCode = () => `${crypto.randomBytes(3).toString('hex').toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
 const getMcpAuthorizeUrl = (sessionId, code) => {
-  const base = process.env.MCP_AUTH_URL?.trim() || process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'http://localhost:5173';
+  const base = getFrontendRedirectBase(['MCP_AUTH_URL', 'PUBLIC_FRONTEND_URL', 'FRONTEND_URL'], 'MCP authorization URL');
   return `${base.replace(/\/$/, '')}/?mcpAuth=${encodeURIComponent(sessionId)}&code=${encodeURIComponent(code)}`;
 };
 const getMcpScopeUpgradeAuthorizeUrl = (sessionId, code) => {
-  const base = process.env.MCP_AUTH_URL?.trim() || process.env.PUBLIC_FRONTEND_URL?.trim() || process.env.FRONTEND_URL?.trim() || 'http://localhost:5173';
+  const base = getFrontendRedirectBase(['MCP_AUTH_URL', 'PUBLIC_FRONTEND_URL', 'FRONTEND_URL'], 'MCP authorization URL');
   return `${base.replace(/\/$/, '')}/?mcpScopeUpgrade=${encodeURIComponent(sessionId)}&code=${encodeURIComponent(code)}`;
 };
 
@@ -4797,15 +4808,34 @@ const getFigmaRedirectUri = () => {
 };
 
 const getGoogleDriveRedirectUri = () => process.env.GOOGLE_DRIVE_REDIRECT_URI?.trim() || (process.env.PUBLIC_BACKEND_URL?.trim() ? `${process.env.PUBLIC_BACKEND_URL.replace(/\/$/, '')}/api/integrations/google-drive/callback` : null);
-const getGoogleDriveStateSecret = () => process.env.GOOGLE_DRIVE_STATE_SECRET?.trim() || process.env.FIGMA_STATE_SECRET?.trim() || 'ledger-google-drive-dev-state';
+const ephemeralOAuthStateSecrets = {
+  googleDrive: crypto.randomBytes(32).toString('hex'),
+  figma: crypto.randomBytes(32).toString('hex'),
+  slack: crypto.randomBytes(32).toString('hex'),
+};
+const allowDevelopmentOAuthFallbacks =
+  process.env.NODE_ENV === 'development' || process.env.ALLOW_DEV_FALLBACKS === 'true';
+const getConfiguredOAuthStateSecret = (names, ephemeralSecret) => {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  return allowDevelopmentOAuthFallbacks ? ephemeralSecret : null;
+};
+const getGoogleDriveStateSecret = () =>
+  getConfiguredOAuthStateSecret(['GOOGLE_DRIVE_STATE_SECRET', 'FIGMA_STATE_SECRET'], ephemeralOAuthStateSecrets.googleDrive);
 const createGoogleDriveOAuthState = ({ userId }) => {
+  const secret = getGoogleDriveStateSecret();
+  if (!secret) throw Object.assign(new Error('Google Drive OAuth state signing is not configured'), { statusCode: 500 });
   const encoded = base64UrlEncode(JSON.stringify({ user_id: userId, nonce: crypto.randomBytes(24).toString('hex'), iat: Math.floor(Date.now() / 1000) }));
-  return `${encoded}.${crypto.createHmac('sha256', getGoogleDriveStateSecret()).update(encoded).digest('base64url')}`;
+  return `${encoded}.${crypto.createHmac('sha256', secret).update(encoded).digest('base64url')}`;
 };
 const verifyGoogleDriveOAuthState = (state) => {
+  const secret = getGoogleDriveStateSecret();
+  if (!secret) return null;
   const [encoded, signature] = String(state ?? '').split('.');
   if (!encoded || !signature) return null;
-  const expected = crypto.createHmac('sha256', getGoogleDriveStateSecret()).update(encoded).digest('base64url');
+  const expected = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
   if (expected.length !== signature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
   const payload = safeJson(Buffer.from(encoded, 'base64url').toString('utf8'), null);
   if (!payload?.user_id || !payload?.nonce || Math.floor(Date.now() / 1000) - Number(payload.iat || 0) > 10 * 60) return null;
@@ -4841,9 +4871,11 @@ const refreshGoogleDriveAccessToken = async (connection) => {
 };
 
 const getFigmaStateSecret = () =>
-  process.env.FIGMA_STATE_SECRET?.trim() || process.env.SLACK_STATE_SECRET?.trim() || 'ledger-figma-dev-state';
+  getConfiguredOAuthStateSecret(['FIGMA_STATE_SECRET', 'SLACK_STATE_SECRET'], ephemeralOAuthStateSecrets.figma);
 
 const createFigmaOAuthState = ({ workspaceId, userId }) => {
+  const secret = getFigmaStateSecret();
+  if (!secret) throw Object.assign(new Error('Figma OAuth state signing is not configured'), { statusCode: 500 });
   const payload = {
     workspace_id: workspaceId,
     user_id: userId,
@@ -4851,14 +4883,16 @@ const createFigmaOAuthState = ({ workspaceId, userId }) => {
     iat: Math.floor(Date.now() / 1000),
   };
   const encoded = base64UrlEncode(JSON.stringify(payload));
-  const signature = crypto.createHmac('sha256', getFigmaStateSecret()).update(encoded).digest('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
   return `${encoded}.${signature}`;
 };
 
 const verifyFigmaOAuthState = (state) => {
+  const secret = getFigmaStateSecret();
+  if (!secret) return null;
   const [encoded, signature] = String(state ?? '').split('.');
   if (!encoded || !signature) return null;
-  const expected = crypto.createHmac('sha256', getFigmaStateSecret()).update(encoded).digest('base64url');
+  const expected = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
   const expectedBuffer = Buffer.from(expected);
   const actualBuffer = Buffer.from(signature);
   if (expectedBuffer.length !== actualBuffer.length || !crypto.timingSafeEqual(expectedBuffer, actualBuffer)) return null;
@@ -4888,13 +4922,13 @@ const buildFigmaAuthorizeUrl = ({ workspaceId, userId, state }) => {
 };
 
 const getSlackStateSecret = () =>
-  process.env.SLACK_STATE_SECRET?.trim() ||
-  process.env.SLACK_SIGNING_SECRET?.trim() ||
-  'ledger-slack-dev-state';
+  getConfiguredOAuthStateSecret(['SLACK_STATE_SECRET', 'SLACK_SIGNING_SECRET'], ephemeralOAuthStateSecrets.slack);
 
 const base64UrlEncode = (value) => Buffer.from(value).toString('base64url');
 
 const createSlackOAuthState = ({ workspaceId, installedBy, userId, flow = 'workspace' }) => {
+  const secret = getSlackStateSecret();
+  if (!secret) throw Object.assign(new Error('Slack OAuth state signing is not configured'), { statusCode: 500 });
   const payload = {
     workspace_id: workspaceId,
     ...(installedBy ? { installed_by: installedBy } : {}),
@@ -4905,18 +4939,20 @@ const createSlackOAuthState = ({ workspaceId, installedBy, userId, flow = 'works
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
   const signature = crypto
-    .createHmac('sha256', getSlackStateSecret())
+    .createHmac('sha256', secret)
     .update(encodedPayload)
     .digest('base64url');
   return `${encodedPayload}.${signature}`;
 };
 
 const verifySlackOAuthState = (state) => {
+  const secret = getSlackStateSecret();
+  if (!secret) return null;
   const [encodedPayload, signature] = String(state ?? '').split('.');
   if (!encodedPayload || !signature) return null;
 
   const expected = crypto
-    .createHmac('sha256', getSlackStateSecret())
+    .createHmac('sha256', secret)
     .update(encodedPayload)
     .digest('base64url');
 
@@ -9012,7 +9048,7 @@ app.post('/api/figma-plugin/auth/revoke', pluginAuthMiddleware, rateLimit('auth'
 });
 
 const githubFrontendRedirect = (result) => {
-  const base = (process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const base = getFrontendRedirectBase(['PUBLIC_FRONTEND_URL', 'FRONTEND_URL'], 'GitHub authorization return URL');
   return `${base}/?settings=integrations&github=${encodeURIComponent(result)}`;
 };
 const githubManagementUrl = (installationId) => `https://github.com/settings/installations/${encodeURIComponent(installationId)}`;
@@ -12854,7 +12890,7 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
         ignoreDuplicates: true,
       })
       .select(
-        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata'
       );
 
     if (insertError) throw insertError;
@@ -12896,7 +12932,7 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
       .is('delivered_in_app_at', null)
       .is('dismissed_at', null)
       .select(
-        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata'
       );
 
     if (claimError) throw claimError;
@@ -12939,7 +12975,7 @@ app.post('/api/notifications/read-all', authMiddleware, rateLimit('write'), asyn
 
     let query = supabase
       .from('notification_events')
-      .select('id, action_taken')
+      .select('id, read_at')
       .eq('user_id', req.authUser.id)
       .not('delivered_in_app_at', 'is', null)
       .is('dismissed_at', null);
@@ -12949,14 +12985,14 @@ app.post('/api/notifications/read-all', authMiddleware, rateLimit('write'), asyn
     if (rowsError) throw rowsError;
 
     const ids = (Array.isArray(rows) ? rows : [])
-      .filter((row) => !['dismiss', 'snooze', 'complete', 'open'].includes(String(row.action_taken ?? '').trim().toLowerCase()))
+      .filter((row) => row.read_at == null)
       .map((row) => row.id)
       .filter(Boolean);
 
     if (ids.length > 0) {
       const { error: updateError } = await supabase
         .from('notification_events')
-        .update({ action_taken: 'open', updated_at: new Date().toISOString() })
+        .update({ read_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .in('id', ids)
         .eq('user_id', req.authUser.id);
       if (updateError) throw updateError;
@@ -12993,7 +13029,7 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
     const nowIso = new Date().toISOString();
     let sourceUpdateResult = null;
 
-    if (existing.source_type === 'reminder') {
+    if (['complete', 'dismiss', 'snooze'].includes(action) && existing.source_type === 'reminder') {
       const prefsRow = await getOrCreateNotificationPreferences(req.authUser.id);
       const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
       const snoozeUntil =
@@ -13083,10 +13119,11 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
       }
     }
 
-    const update = {
-      action_taken: action,
-      updated_at: nowIso,
-    };
+    const update = { updated_at: nowIso };
+    if (action === 'read' || action === 'open') update.read_at = nowIso;
+    if (action === 'unread') update.read_at = null;
+    if (action === 'complete' || action === 'dismiss') update.read_at = nowIso;
+    if (!['read', 'unread', 'open'].includes(action)) update.action_taken = action;
     if (action === 'dismiss' || action === 'snooze') {
       update.dismissed_at = nowIso;
     }
@@ -13097,7 +13134,7 @@ app.post('/api/notifications/:id/action', authMiddleware, rateLimit('write'), as
       .eq('id', existing.id)
       .eq('user_id', req.authUser.id)
       .select(
-        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, action_taken, metadata'
+        'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata'
       )
       .single();
 

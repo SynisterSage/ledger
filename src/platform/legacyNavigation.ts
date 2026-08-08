@@ -66,7 +66,7 @@ export const openLegacyModule = (
     case 'teams': route = focus.focusContext?.startsWith('team:') ? routeForTeam(workspaceId, focus.focusContext.slice(5)) : routeForTeam(workspaceId); break;
     case 'inbox': route = routeForInboxItem(workspaceId, focus.focusInboxId ?? undefined, focus.focusSection as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined); break;
     case 'slack': route = { ...base, page: 'slack' }; break;
-    case 'notifications': route = routeForNotification(workspaceId, focus.focusContext ?? undefined, focus.focusSection as 'active' | 'earlier' | undefined); break;
+    case 'notifications': route = routeForNotification(workspaceId, focus.focusContext ?? undefined, focus.focusSection as 'active' | 'unread' | 'earlier' | undefined); break;
     case 'settings': route = { ...base, page: 'settings', scope: 'workspace', section: focus.focusContext === 'integrations' ? 'integrations' : focus.focusContext === 'shortcuts' ? 'sidebar' : 'workspace' }; break;
   }
   navigation.openRoute(route);

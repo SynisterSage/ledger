@@ -1011,7 +1011,7 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
 
     const handleNotificationsSummary = (event: Event) => {
       const detail = (event as CustomEvent<{ unreadCount?: number; activeCount?: number }>).detail;
-      setNotificationCount(Number(detail?.unreadCount ?? detail?.activeCount ?? 0));
+      setNotificationCount(Number(detail?.unreadCount ?? 0));
     };
 
     const handleNotificationsUpdated = () => {
@@ -1174,13 +1174,13 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
       applyTeamFocusContext(payload.focusContext);
     };
 
-    window.ipcRenderer?.on('module:focus-context', focusContextListener);
+    window.ledgerIpc?.events?.onModuleFocusContext(focusContextListener);
 
     // `openModule` can target an already-open Intake window. The main process
     // forwards section changes through this event so the existing window still
     // lands on the requested queue.
     return () => {
-      window.ipcRenderer?.off('module:focus-context', focusContextListener);
+      window.ledgerIpc?.events?.offModuleFocusContext(focusContextListener);
     };
   }, [initialFocusContext, initialFocusSection, initialFocusInboxId]);
 
@@ -1193,9 +1193,9 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
       setSelectedItemId(payload.focusInboxId);
       setActiveStatus('unprocessed');
     };
-    window.ipcRenderer?.on('module:focus-inbox', focusInboxListener);
+    window.ledgerIpc?.events?.onModuleFocusInbox(focusInboxListener);
     return () => {
-      window.ipcRenderer?.off('module:focus-inbox', focusInboxListener);
+      window.ledgerIpc?.events?.offModuleFocusInbox(focusInboxListener);
     };
   }, []);
 
@@ -1210,9 +1210,9 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
       setSelectedItemId(null);
     };
 
-    window.ipcRenderer?.on('module:focus-section', focusSectionListener);
+    window.ledgerIpc?.events?.onModuleFocusSection(focusSectionListener);
     return () => {
-      window.ipcRenderer?.off('module:focus-section', focusSectionListener);
+      window.ledgerIpc?.events?.offModuleFocusSection(focusSectionListener);
     };
   }, []);
 
@@ -1521,10 +1521,10 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
 
   const emitInboxItemsUpdated = (delta?: number) => {
     if (typeof delta === 'number' && Number.isFinite(delta)) {
-      window.ipcRenderer?.send('inbox:items-updated', { delta });
+      window.ledgerIpc?.commands?.inboxItemsUpdated({ delta });
       return;
     }
-    window.ipcRenderer?.send('inbox:items-updated');
+    window.ledgerIpc?.commands?.inboxItemsUpdated();
   };
 
   const archiveItem = async (item: InboxItem) => {
