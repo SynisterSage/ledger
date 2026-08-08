@@ -102,7 +102,7 @@ export const VersionHistoryModal = ({
       backdropBorderRadius="inherit"
       disablePortal
       manageWindowChrome={false}
-      classNameContainer="w-full max-w-3xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+      classNameContainer="w-full max-w-3xl overflow-hidden rounded-[var(--ledger-surface-radius)] border border-gray-200 bg-white shadow-xl"
     >
       <div className="flex h-[84vh] max-h-[84vh] flex-col">
         <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-5 py-4">

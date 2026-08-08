@@ -645,7 +645,7 @@ export function FolderTemplateBuilderModal({
       disablePortal
       manageWindowChrome={false}
       classNameContent="max-h-none overflow-hidden"
-      classNameContainer="w-full max-w-4xl overflow-hidden rounded-2xl border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
+      classNameContainer="w-full max-w-4xl overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
     >
       <div className="flex h-[min(760px,calc(100vh-48px))] flex-col">
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--ledger-border-subtle)] px-5 py-4">

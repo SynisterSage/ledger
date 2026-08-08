@@ -47,7 +47,7 @@ export const ModalOverlay = ({
   classNameContainer = '',
   classNameContent = '',
   closeOnBackdropClick = true,
-  backdropBorderRadius = 'var(--modal-backdrop-radius, 28px)',
+  backdropBorderRadius = 'var(--modal-backdrop-radius, var(--ledger-window-radius, 18px))',
   backdropInset,
   manageWindowChrome = true,
   disablePortal = false,

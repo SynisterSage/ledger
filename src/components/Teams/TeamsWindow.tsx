@@ -384,7 +384,7 @@ const teamsTheme = {
   sectionTitle:
     'text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]',
   modalInput:
-    'h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]',
+    'h-9 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]',
 };
 
 const formatShortDate = (value?: string | null) => {
@@ -3345,7 +3345,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     ) : (
                       <div className="flex min-h-[240px] items-center justify-center px-4 py-8">
                         <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
-                          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
                             <Users size={15} />
                           </div>
                           <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
@@ -4129,7 +4129,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[560px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        classNameContainer="w-full max-w-[560px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <form onSubmit={handleCreateTeam}>
           <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3.5">
@@ -4269,7 +4269,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+        classNameContainer="w-full max-w-md rounded-[var(--ledger-surface-radius)] border p-5"
       >
         <form onSubmit={handleInvite} className="space-y-4">
           <div>
@@ -4329,7 +4329,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+        classNameContainer="w-full max-w-md rounded-[var(--ledger-surface-radius)] border p-5"
       >
         <div className="space-y-4">
           <div>
@@ -4337,7 +4337,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               Add member to {addMemberTeam?.name}
             </h2>
           </div>
-          <label className="flex h-9 items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
+          <label className="flex h-9 items-center gap-2 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
             <Search size={14} className="text-[var(--ledger-text-muted)]" />
             <input
               value={memberSearchDraft}
@@ -4392,7 +4392,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+        classNameContainer="w-full max-w-md rounded-[var(--ledger-surface-radius)] border p-5"
       >
         <div className="space-y-4">
           <div>
@@ -4403,7 +4403,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               Projects added here surface their notes and milestones in this team.
             </p>
           </div>
-          <label className="flex h-9 items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
+          <label className="flex h-9 items-center gap-2 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
             <Search size={14} className="text-[var(--ledger-text-muted)]" />
             <input
               value={projectLinkSearch}
@@ -4467,7 +4467,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+        classNameContainer="w-full max-w-md rounded-[var(--ledger-surface-radius)] border p-5"
       >
         <div className="space-y-4">
           <div>
@@ -4478,7 +4478,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               Notes linked here appear in this team, including notes attached to owned projects.
             </p>
           </div>
-          <label className="flex h-9 items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
+          <label className="flex h-9 items-center gap-2 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
             <Search size={14} className="text-[var(--ledger-text-muted)]" />
             <input
               value={noteLinkSearch}
@@ -4544,7 +4544,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[640px] rounded-2xl border p-0 overflow-hidden"
+        classNameContainer="w-full max-w-[640px] rounded-[var(--ledger-surface-radius)] border p-0 overflow-hidden"
       >
         {assignWorkTeam ? (
           <div className="bg-[var(--ledger-surface-card)]">
@@ -4577,7 +4577,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               <div className="space-y-4 px-5 py-5">
                 {assignWorkMode === 'search' ? (
                   <>
-                    <label className="flex h-9 items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
+                    <label className="flex h-9 items-center gap-2 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3">
                       <Search size={14} className="text-[var(--ledger-text-muted)]" />
                       <input
                         value={assignWorkSearch}

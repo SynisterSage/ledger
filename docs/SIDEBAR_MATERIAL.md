@@ -13,7 +13,7 @@ The shared engine type is:
 - `solid`: accessibility or last-resort fallback
 - `renderer`: Ledger tint, optionally with one attached `backdrop-filter`
 - `native-macos`: Electron `setVibrancy()` with development candidates
-  `under-window`, `sidebar`, or `hud`; production defaults to `under-window`
+  `under-window`, `sidebar`, or `hud`; production currently uses `renderer`
 - `native-windows-mica`: Electron `setBackgroundMaterial('mica')`
 - `native-windows-mica-alt`: development comparison using `tabbed`
 - `native-windows-acrylic`: development comparison using `acrylic`
@@ -23,11 +23,17 @@ It tracks requested and resolved engines, clears the previous native engine
 before switching, deduplicates unchanged applications, and makes native
 failures session-sticky before falling back to renderer frost.
 
+Native macOS material remains available through explicit development
+diagnostics, but normal development and packaged builds use the renderer
+material so the sidebar keeps Ledger's custom radius. A production native
+macOS surface should return only after a masked native material bridge is
+available.
+
 ## Production support matrix
 
 | Platform/configuration                                                                                    | Production engine             | Minimum support                           | Fallback             |
 | --------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------- | -------------------- |
-| macOS, Electron 30+, macOS 11+, supported transparent sidebar window, rollout enabled                     | native macOS `under-window` vibrancy | `setVibrancy()` available; `visualEffectState` is selected at window creation | renderer, then solid |
+| macOS, Electron 30+, macOS 11+, supported transparent sidebar window         | renderer material                  | exact Ledger sidebar radius and fallback behavior                         | solid                |
 | Windows, Electron 30+, Windows build 22000+, supported transparent shaped sidebar window, rollout enabled | Windows Mica                  | `setBackgroundMaterial('mica')` available | renderer, then solid |
 | Windows Mica Alt                                                                                          | development-only comparison   | `tabbed` API available                    | renderer             |
 | Windows Acrylic                                                                                           | development-only comparison   | `acrylic` API available                   | renderer             |
@@ -69,8 +75,9 @@ Native and renderer blur are mutually exclusive. Native engines receive one
 Ledger tint for brand consistency; they do not receive CSS backdrop blur,
 filters, gradients, glow, reflections, or diffusion layers.
 
-macOS native tint alpha is mapped internally from 0.30 to 0.55 across the
-shared opacity preference so the system material remains visible. Renderer
+macOS native tint alpha is mapped internally from 0.74 to 0.90 across the
+shared opacity preference so the system material remains visible without
+letting readable backing-window content bleed through. Renderer
 material keeps its existing alpha mapping. `followWindow` and `active` are
 development-testable visual effect states; Electron 30 exposes this state as
 a BrowserWindow creation option rather than a runtime setter, so changing this

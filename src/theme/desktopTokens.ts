@@ -93,9 +93,10 @@ const sharedTypography = {
 } as const;
 
 const sharedRadius = {
-  control: 12,
-  surface: 16,
-  sheet: 24,
+  // Compact controls follow the 8px radius established by the login form.
+  control: 8,
+  surface: 12,
+  sheet: 16,
   pill: 999,
   window: 18,
 } as const;

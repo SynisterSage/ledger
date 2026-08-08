@@ -39,6 +39,9 @@ const child = spawn(
     ...process.env,
     ...loadedEnv,
     VITE_LAUNCH_ELECTRON: '1',
+    // Keep desktop development same-origin with Vite. The proxy forwards API
+    // requests without asking the production backend to trust localhost.
+    VITE_API_URL: 'http://127.0.0.1:5173',
     LEDGER_DEV_TARGET: 'desktop',
   },
   }

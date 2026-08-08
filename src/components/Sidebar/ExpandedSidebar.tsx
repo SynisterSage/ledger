@@ -1367,9 +1367,9 @@ export const ExpandedSidebar = ({
       }, 80);
     };
 
-    window.ledgerIpc?.events?.onSidebarOpenCheckin(handleOpenCheckin);
+    const subscription = window.ledgerIpc?.events?.onSidebarOpenCheckin(handleOpenCheckin);
     return () => {
-      window.ledgerIpc?.events?.offSidebarOpenCheckin(handleOpenCheckin);
+      if (typeof subscription === 'string') window.ledgerIpc?.events?.offSidebarOpenCheckin(subscription);
     };
   }, []);
 
@@ -2530,7 +2530,7 @@ export const ExpandedSidebar = ({
           <button
             type="button"
             onClick={() => openSearch()}
-            className="flex h-8 w-[320px] min-w-65 max-w-85 items-center justify-between gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-left shadow-sm transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)]"
+            className="flex h-8 w-[320px] min-w-65 max-w-85 items-center justify-between gap-2 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 text-left shadow-sm transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-muted)]"
           >
             <span className="flex min-w-0 items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
               <Search size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />

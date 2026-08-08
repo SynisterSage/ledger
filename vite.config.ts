@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const isWebDevelopment = mode !== 'production' && process.env.LEDGER_DEV_TARGET === 'web';
   const isBrowserBuild = mode === 'web' || process.env.LEDGER_BUILD_TARGET === 'web';
+  const isDevelopmentServer = mode !== 'production' && !isBrowserBuild;
 
   return ({
   // Electron opens the packaged renderer from file://. Relative public asset
@@ -16,6 +17,26 @@ export default defineConfig(({ mode }) => {
   // the browser shell at /app, so one base path keeps preview and production
   // asset URLs identical. Electron retains its relative file:// asset base.
   base: isBrowserBuild ? '/app/' : mode === 'production' ? './' : '/',
+  ...(isDevelopmentServer
+    ? {
+        server: {
+          proxy: {
+            '/api': {
+              target: process.env.LEDGER_DEV_API_TARGET?.trim() || 'https://api.ledgerworkspace.com',
+              changeOrigin: true,
+              secure: true,
+              configure(proxy) {
+                proxy.on('proxyReq', (proxyRequest) => {
+                  // This is a local server-to-server hop. Do not forward the
+                  // renderer's localhost Origin to the production CORS gate.
+                  proxyRequest.removeHeader('origin');
+                });
+              },
+            },
+          },
+        },
+      }
+    : {}),
   build: {
     copyPublicDir: true,
     outDir: isBrowserBuild ? 'dist-web' : 'dist',

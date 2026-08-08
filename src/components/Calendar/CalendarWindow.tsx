@@ -4611,7 +4611,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   <ChevronLeft size={13} strokeWidth={2.25} className="-translate-x-px" />
                 </button>
               </div>
-              <div className="mb-5 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3">
+              <div className="mb-5 rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Month</p>
@@ -5940,7 +5940,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
           backdropBorderRadius="inherit"
           disablePortal
           manageWindowChrome={false}
-          classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+          classNameContainer="w-full max-w-[620px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
         >
           <div>
             <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
@@ -5961,21 +5961,21 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 value={newEventTitle}
                 onChange={(e) => setNewEventTitle(e.target.value)}
                 placeholder={composerMode === 'reminder' ? 'Reminder title' : 'Event title'}
-                className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
               <div className="grid grid-cols-2 gap-3">
                 <input
                   type="date"
                   value={newEventDate}
                   onChange={(e) => setNewEventDate(e.target.value)}
-                  className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                  className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                 />
                 <input
                   type="time"
                   value={newEventTime}
                   onChange={(e) => setNewEventTime(e.target.value)}
                   disabled={composerMode === 'event' && newEventAllDay}
-                  className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                  className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                 />
               </div>
               {composerMode === 'event' || composerMode === 'reminder' ? (
@@ -5990,8 +5990,8 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 </label>
               ) : null}
               {composerMode === 'event' && <>
-                <input value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} placeholder="Location (optional)" className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
-                <input value={newEventUrl} onChange={(e) => setNewEventUrl(e.target.value)} placeholder="URL (optional)" type="url" className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
+                <input value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} placeholder="Location (optional)" className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
+                <input value={newEventUrl} onChange={(e) => setNewEventUrl(e.target.value)} placeholder="URL (optional)" type="url" className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
               </>}
               {composerMode === 'event' && (
                 <div className="grid grid-cols-[1fr_110px] gap-3">
@@ -6001,7 +6001,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     step="1"
                     value={newEventDurationValue}
                     onChange={(e) => setNewEventDurationValue(Number(e.target.value) || 1)}
-                    className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                    className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                   />
                   <div className="relative">
                     <select
@@ -6009,7 +6009,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                       onChange={(e) =>
                         setNewEventDurationUnit(e.target.value as 'minutes' | 'hours')
                       }
-                      className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                      className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                     >
                       <option value="minutes">minutes</option>
                       <option value="hours">hours</option>
@@ -6025,7 +6025,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 <select
                   value={composerCalendarId || getDefaultCalendar()?.id || ''}
                   onChange={(e) => setComposerCalendarId(e.target.value)}
-                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                  className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                   disabled={calendars.length === 0 && appleCalendar.connectedCalendars.length === 0}
                 >
                   <optgroup label="Ledger calendars">
@@ -6054,7 +6054,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     onChange={(e) =>
                       setNewEventVisibility(e.target.value as 'private' | 'workspace')
                     }
-                    className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                    className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                   >
                     <option value="private">Private</option>
                     <option value="workspace">Workspace</option>
@@ -6069,7 +6069,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 <select
                   value={composerProjectId}
                   onChange={(e) => setComposerProjectId(e.target.value)}
-                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                  className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                 >
                   <option value="">None</option>
                   {projects.map((project) => (
@@ -6083,12 +6083,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
-              {composerMode === 'reminder' && <select value={newReminderPriority} onChange={(e) => setNewReminderPriority(Number(e.target.value))} className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm"><option value={0}>No priority</option><option value={1}>High priority</option><option value={5}>Medium priority</option><option value={9}>Low priority</option></select>}
+              {composerMode === 'reminder' && <select value={newReminderPriority} onChange={(e) => setNewReminderPriority(Number(e.target.value))} className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm"><option value={0}>No priority</option><option value={1}>High priority</option><option value={5}>Medium priority</option><option value={9}>Low priority</option></select>}
               <div className="relative">
                 <select
                   value={composerNoteId}
                   onChange={(e) => setComposerNoteId(e.target.value)}
-                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                  className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                 >
                   <option value="">None</option>
                   {notes.map((note) => (
@@ -6130,7 +6130,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     }
                     setNewEventRecurrence(nextValue);
                   }}
-                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                  className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                 >
                   <option value="none">Does not repeat</option>
                   <option value="daily">Daily</option>
@@ -6183,7 +6183,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[460px] rounded-2xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
+        classNameContainer="w-full max-w-[460px] rounded-[var(--ledger-surface-radius)] border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#E8DDD4] px-5 py-4">
           <div>
@@ -7056,7 +7056,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
           return (
             <div
-              className="fixed z-50 overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+              className="fixed z-50 overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
               style={{
                 left,
                 top,

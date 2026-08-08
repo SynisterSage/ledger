@@ -5,13 +5,15 @@ export const sidebarTheme = {
     'border border-[color:var(--ledger-border-subtle)] shadow-[0_10px_28px_rgba(17,24,39,0.12)] outline outline-[rgba(17,24,39,0.06)]',
   shellRail: 'bg-transparent',
   surface:
-    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]',
+    'rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]',
   surfaceSoft:
-    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_4px_12px_rgba(17,24,39,0.04)]',
+    'rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_4px_12px_rgba(17,24,39,0.04)]',
   popover:
-    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
+    'rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
+  selectedControl:
+    'rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]',
   menu:
-    'fixed z-50 overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-menu-background)] py-1 shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
+    'fixed z-50 overflow-hidden rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-menu-background)] py-1 shadow-[0_12px_32px_rgba(17,24,39,0.12)]',
   menuItem:
     'w-full text-left px-4 py-2 text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] flex items-center gap-2',
   menuItemAccent:

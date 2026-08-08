@@ -103,7 +103,7 @@ export const CalendarSubscriptionModal = ({
       backdropBorderRadius="inherit"
       disablePortal
       manageWindowChrome={false}
-      classNameContainer="w-full max-w-[680px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      classNameContainer="w-full max-w-[680px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
     >
       <div className="flex items-start justify-between gap-4 px-5 py-4">
         <div className="min-w-0">

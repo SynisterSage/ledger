@@ -578,10 +578,10 @@ const getSidebarOpacitySliderStyle = (value: number): CSSProperties => {
 };
 
 const compactFieldClassName =
-  'h-9 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
+  'h-9 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
 
 const compactSelectClassName =
-  'h-9 appearance-none rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
+  'h-9 appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
 
 const preferenceSelectClassName = `${compactSelectClassName} w-full sm:w-64`;
 
@@ -617,31 +617,31 @@ const settingsTheme = {
   rowHover: 'transition hover:bg-[var(--ledger-surface-hover)]',
   subtleDivider: 'border-[color:var(--ledger-border-subtle)]',
   modalShell:
-    'rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_24px_70px_rgba(15,23,42,0.12)]',
+    'rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_24px_70px_rgba(15,23,42,0.12)]',
   modalHeader: 'border-t border-[color:var(--ledger-border-subtle)]',
   modalBody: 'border-t border-[color:var(--ledger-border-subtle)]',
   modalFooter: 'border-t border-[color:var(--ledger-border-subtle)]',
   controlButton:
-    'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'h-8 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   controlButtonNeutral:
-    'h-8 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
+    'h-8 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
   primaryButton:
-    'h-9 rounded-full bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
+    'h-9 rounded-[var(--ledger-control-radius)] bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
   dangerButton:
     'h-8 rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50',
   sectionCard:
     'mt-2 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]',
   radioRow:
-    'flex cursor-pointer items-center gap-3 rounded-2xl border border-transparent px-4 py-3',
+    'flex cursor-pointer items-center gap-3 rounded-[var(--ledger-control-radius)] border border-transparent px-4 py-3',
   radioInput:
     'mt-0.5 h-4 w-4 border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)] outline-none focus:outline-none focus:ring-0 focus:ring-offset-0 focus-visible:outline-none focus-visible:ring-0',
   label: 'text-[13px] font-medium text-[var(--ledger-text-primary)]',
   help: 'mt-1 block text-xs leading-5 text-[var(--ledger-text-muted)]',
   fieldValue: 'text-sm text-[var(--ledger-text-secondary)]',
   footerButton:
-    'h-9 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'h-9 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   headerButton:
-    'h-9 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'h-9 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   navButton:
     'group flex w-full items-center gap-1.5 rounded-md border px-2 py-1 text-left transition outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ledger-surface)]',
   navButtonActive:
@@ -649,9 +649,9 @@ const settingsTheme = {
   navButtonIdle:
     'border-transparent text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   input:
-    'h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
+    'h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
   inputSecondary:
-    'h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
+    'h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
   pill: 'inline-flex rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-[11px] font-medium text-[var(--ledger-text-secondary)]',
   dangerPill:
     'inline-flex rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)]',
@@ -5165,7 +5165,13 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       >
                         <InlineSwitch
                           checked={frostedBackgroundEnabled}
-                          onToggle={() => setFrostedBackgroundEnabled(!frostedBackgroundEnabled)}
+                          onToggle={() => {
+                            const nextEnabled = !frostedBackgroundEnabled;
+                            setFrostedBackgroundEnabled(nextEnabled);
+                            void window.desktopWindow?.applySidebarPreferences({
+                              frostedBackgroundEnabled: nextEnabled,
+                            });
+                          }}
                           label="Frosted background"
                           disabled={transparencyOverrideActive || !platform.capabilities.canUseNativeMaterial}
                         />
@@ -5563,7 +5569,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 backdropBorderRadius="inherit"
                 disablePortal
                 manageWindowChrome={false}
-                classNameContainer="w-full max-w-md rounded-2xl border p-5"
+                classNameContainer="w-full max-w-md rounded-[var(--ledger-surface-radius)] border p-5"
               >
                 <form
                   onSubmit={(event) => {

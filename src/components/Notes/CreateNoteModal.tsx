@@ -261,7 +261,7 @@ export const CreateNoteModal = ({
       backdropBorderRadius="inherit"
       disablePortal
       manageWindowChrome={false}
-      classNameContainer={`w-full overflow-hidden rounded-2xl border shadow-lg ${
+      classNameContainer={`w-full overflow-hidden rounded-[var(--ledger-surface-radius)] border shadow-lg ${
         compactShell
           ? 'max-w-[420px] border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]'
           : 'max-w-[760px] border-gray-200 bg-white'

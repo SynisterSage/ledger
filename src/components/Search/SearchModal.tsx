@@ -949,15 +949,15 @@ export const SearchModal = () => {
   const isSearchIdle = !trimmedQuery;
 
   const panelClassName = isFullscreen
-    ? 'flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]'
+    ? 'flex h-full w-full flex-col overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]'
     : `flex ${isSearchIdle ? 'h-auto' : 'h-[400px]'} w-full ${
         isModuleWindow ? 'max-w-[680px]' : 'max-w-[500px]'
-      } flex-col overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]`;
+      } flex-col overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_24px_70px_rgba(17,24,39,0.12)]`;
 
   const searchPanel = (
     <div className={panelClassName} onMouseDown={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
           <Search size={16} className="shrink-0 text-[var(--ledger-text-muted)]" />
           <input
             ref={inputRef}

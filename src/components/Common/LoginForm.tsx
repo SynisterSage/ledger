@@ -314,7 +314,7 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                 }`}
               >
                 {notice && (
-                  <div className="rounded-2xl border border-[rgba(245,158,11,0.2)] bg-[rgba(245,158,11,0.08)] px-3 py-2 text-xs leading-5 text-[#FCD34D]">
+                  <div className="rounded-[var(--ledger-control-radius)] border border-[rgba(245,158,11,0.2)] bg-[rgba(245,158,11,0.08)] px-3 py-2 text-xs leading-5 text-[#FCD34D]">
                     {notice}
                   </div>
                 )}

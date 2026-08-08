@@ -505,9 +505,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       collapseSidebar();
     };
 
-    window.ledgerIpc?.events?.onModuleStateChanged(handleModuleStateChanged);
+    const subscription = window.ledgerIpc?.events?.onModuleStateChanged(handleModuleStateChanged);
     return () => {
-      window.ledgerIpc?.events?.offModuleStateChanged(handleModuleStateChanged);
+      if (typeof subscription === 'string') window.ledgerIpc?.events?.offModuleStateChanged(subscription);
     };
   }, [collapseSidebar, shellFullscreen]);
 

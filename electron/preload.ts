@@ -1,7 +1,8 @@
 import { ipcRenderer, contextBridge } from 'electron';
 import { encodePcmWav, TARGET_SAMPLE_RATE } from './audio-capture/wav';
 
-const rendererListenerWrappers = new Map<string, Map<Function, Function>>();
+const rendererListenerWrappers = new Map<string, Map<string, Function>>();
+let nextRendererListenerId = 0;
 
 type WindowsCaptureSource = 'user_microphone' | 'system_audio';
 type WindowsCaptureRuntime = {
@@ -183,14 +184,26 @@ const subscribeToLedgerEvent = (channel: string, listener: Function) => {
     channelListeners = new Map();
     rendererListenerWrappers.set(channel, channelListeners);
   }
-  channelListeners.set(listener, wrapped);
+  const subscriptionId = `${channel}:${++nextRendererListenerId}`;
+  channelListeners.set(subscriptionId, wrapped);
   ipcRenderer.on(channel, wrapped as Parameters<typeof ipcRenderer.on>[1]);
+  return subscriptionId;
 };
 
-const unsubscribeFromLedgerEvent = (channel: string, listener: Function) => {
-  const wrapped = rendererListenerWrappers.get(channel)?.get(listener);
-  ipcRenderer.off(channel, (wrapped ?? listener) as Parameters<typeof ipcRenderer.off>[1]);
-  rendererListenerWrappers.get(channel)?.delete(listener);
+const unsubscribeFromLedgerEvent = (channel: string, subscriptionId: unknown) => {
+  const channelListeners = rendererListenerWrappers.get(channel);
+  if (!channelListeners?.size) return;
+  // New callers pass the opaque token returned by `on...`. Keep a bounded
+  // compatibility path for older renderer code that still passes its
+  // callback through contextBridge (where callback identity is proxied).
+  const token = typeof subscriptionId === 'string'
+    ? subscriptionId
+    : [...channelListeners.keys()].at(-1);
+  const wrapped = token ? channelListeners.get(token) : undefined;
+  if (!wrapped) return;
+  ipcRenderer.off(channel, wrapped as Parameters<typeof ipcRenderer.off>[1]);
+  if (token) channelListeners.delete(token);
+  if (channelListeners.size === 0) rendererListenerWrappers.delete(channel);
 };
 
 const ledgerEventChannels = {
@@ -240,7 +253,7 @@ const ledgerEvents = Object.fromEntries(Object.entries(ledgerEventChannels).map(
   (listener: Function) => name.startsWith('on')
     ? subscribeToLedgerEvent(channel, listener)
     : unsubscribeFromLedgerEvent(channel, listener),
-])) as Record<string, (listener: Function) => void>;
+])) as Record<string, (listener: Function) => string | void>;
 
 const ledgerCommands = {
   calendarFollowUpCreated: (payload?: unknown) => ipcRenderer.send('calendar:follow-up-created', payload),

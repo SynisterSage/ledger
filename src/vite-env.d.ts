@@ -52,7 +52,7 @@ interface ImportMeta {
 
 interface Window {
   ledgerIpc?: {
-    events?: Record<string, (listener: (...args: any[]) => void) => void>;
+    events?: Record<string, (listenerOrSubscription: ((...args: any[]) => void) | string) => string | void>;
     commands?: Record<string, (payload?: any) => Promise<unknown> | void>;
   };
   __LEDGER_RUNTIME__?: {

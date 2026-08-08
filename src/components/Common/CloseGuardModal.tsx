@@ -54,7 +54,7 @@ export const CloseGuardModal = ({
       backdropBorderRadius={backdropBorderRadius}
       disablePortal={disablePortal}
       manageWindowChrome={manageWindowChrome}
-      classNameContainer="w-full max-w-lg overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-5 shadow-[0_24px_70px_rgba(17,24,39,0.12)]"
+      classNameContainer="w-full max-w-lg overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-5 shadow-[0_24px_70px_rgba(17,24,39,0.12)]"
     >
       <div className="flex items-start justify-between gap-4">
         <h3 className="text-base font-semibold text-(--ledger-text-primary)">{resolvedTitle}</h3>

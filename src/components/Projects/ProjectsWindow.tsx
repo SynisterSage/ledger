@@ -4078,7 +4078,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">
@@ -4110,7 +4110,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               }
             }}
             placeholder="Action title"
-            className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -4118,7 +4118,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               <select
                 value={newTaskPriority}
                 onChange={(e) => setNewTaskPriority(e.target.value as typeof newTaskPriority)}
-                className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               >
                 {Object.entries(taskPriorityLabels).map(([key, label]) => (
                   <option key={key} value={key}>
@@ -4136,7 +4136,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               type="date"
               value={newTaskDueDate}
               onChange={(e) => setNewTaskDueDate(e.target.value)}
-              className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+              className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
             />
 
             {!isPersonalWorkspace && (
@@ -4144,7 +4144,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                 <select
                   value={newTaskAssignee}
                   onChange={(e) => setNewTaskAssignee(e.target.value)}
-                  className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                  className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                 >
                   <option value="">Unassigned</option>
                   <optgroup label="People">
@@ -4173,7 +4173,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               <select
                 value={newTaskMilestoneId}
                 onChange={(e) => setNewTaskMilestoneId(e.target.value)}
-                className="h-10 w-full appearance-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
               >
                 <option value="">No milestone</option>
                 {selectedProjectMilestones.map((milestone) => (
@@ -4192,7 +4192,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               type="time"
               value={newTaskDueTime}
               onChange={(e) => setNewTaskDueTime(e.target.value)}
-              className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+              className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
             />
           </div>
 
@@ -5223,7 +5223,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
 
         {projects.length === 0 ? (
           <section className="flex flex-1 items-center justify-center p-6">
-            <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
+            <div className="w-full max-w-sm rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
               <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
                 <Folder size={15} />
               </div>
@@ -6269,7 +6269,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">
@@ -6302,7 +6302,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               }
             }}
             placeholder="Project name"
-            className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
 
           <textarea
@@ -6533,7 +6533,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search projects"
-                    className="h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] pl-9 pr-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                    className="h-9 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] pl-9 pr-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                   />
                 </div>
 
@@ -7355,7 +7355,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             setTaskNotesTaskId(null);
             setTaskNotesDraft('');
           }}
-          classNameContainer="w-full max-w-xl overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+          classNameContainer="w-full max-w-xl overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
         >
           <div>
             <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
@@ -7381,7 +7381,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                 value={taskNotesDraft}
                 onChange={(e) => setTaskNotesDraft(e.target.value)}
                 placeholder="Capture details, links, blockers, or handoff notes for this task."
-                className="h-48 w-full resize-none rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                className="h-48 w-full resize-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
               {activeWorkspaceId && taskNotesTask ? <LinkedDesignsSection target={{ workspaceId: activeWorkspaceId, targetType: 'task', targetId: taskNotesTask.id }} canEdit={activeWorkspace?.role !== 'viewer'} /> : null}
               <div className="mt-4 flex items-center justify-end gap-2">
@@ -7726,14 +7726,14 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[460px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        classNameContainer="w-full max-w-[460px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="flex items-start justify-between border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div><p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Create project note</p><p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">Start a note already linked to this project.</p></div>
           <ModalCloseButton onClick={() => setIsCreateProjectNoteModalOpen(false)} ariaLabel="Close create project note modal" />
         </div>
         <div className="space-y-4 p-5">
-          <input autoFocus value={newProjectNoteTitle} onChange={(event) => setNewProjectNoteTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createProjectNote(); }} placeholder="Note title" className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)]" />
+          <input autoFocus value={newProjectNoteTitle} onChange={(event) => setNewProjectNoteTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createProjectNote(); }} placeholder="Note title" className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)]" />
         </div>
         <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3"><button type="button" onClick={() => setIsCreateProjectNoteModalOpen(false)} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)]">Cancel</button><button type="button" disabled={isCreatingProjectContext || !newProjectNoteTitle.trim()} onClick={() => void createProjectNote()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Create note</button></div>
       </ModalOverlay>
@@ -7744,10 +7744,10 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[460px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        classNameContainer="w-full max-w-[460px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="flex items-start justify-between border-b border-[color:var(--ledger-border-subtle)] px-5 py-4"><div><p className="text-sm font-semibold text-[var(--ledger-text-primary)]">Create {newProjectCalendarKind}</p><p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">Add it directly to this project’s calendar context.</p></div><ModalCloseButton onClick={() => setIsCreateProjectCalendarModalOpen(false)} ariaLabel="Close create calendar item modal" /></div>
-        <div className="space-y-3 p-5"><div className="flex gap-1 rounded-lg bg-[var(--ledger-surface-muted)] p-1"><button type="button" onClick={() => setNewProjectCalendarKind('event')} className={`flex-1 rounded-md px-3 py-2 text-sm ${newProjectCalendarKind === 'event' ? 'bg-[var(--ledger-surface-card)] font-medium text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-muted)]'}`}>Event</button><button type="button" onClick={() => setNewProjectCalendarKind('reminder')} className={`flex-1 rounded-md px-3 py-2 text-sm ${newProjectCalendarKind === 'reminder' ? 'bg-[var(--ledger-surface-card)] font-medium text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-muted)]'}`}>Reminder</button></div><input autoFocus value={newProjectCalendarTitle} onChange={(event) => setNewProjectCalendarTitle(event.target.value)} placeholder={`${newProjectCalendarKind === 'event' ? 'Event' : 'Reminder'} title`} className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)]" /><div className="grid grid-cols-2 gap-3"><input type="date" value={newProjectCalendarDate} onChange={(event) => setNewProjectCalendarDate(event.target.value)} className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" /><input type="time" value={newProjectCalendarTime} onChange={(event) => setNewProjectCalendarTime(event.target.value)} className="h-10 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none" /></div></div>
+        <div className="space-y-3 p-5"><div className="flex gap-1 rounded-lg bg-[var(--ledger-surface-muted)] p-1"><button type="button" onClick={() => setNewProjectCalendarKind('event')} className={`flex-1 rounded-md px-3 py-2 text-sm ${newProjectCalendarKind === 'event' ? 'bg-[var(--ledger-surface-card)] font-medium text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-muted)]'}`}>Event</button><button type="button" onClick={() => setNewProjectCalendarKind('reminder')} className={`flex-1 rounded-md px-3 py-2 text-sm ${newProjectCalendarKind === 'reminder' ? 'bg-[var(--ledger-surface-card)] font-medium text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-muted)]'}`}>Reminder</button></div><input autoFocus value={newProjectCalendarTitle} onChange={(event) => setNewProjectCalendarTitle(event.target.value)} placeholder={`${newProjectCalendarKind === 'event' ? 'Event' : 'Reminder'} title`} className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-border-strong)]" /><div className="grid grid-cols-2 gap-3"><input type="date" value={newProjectCalendarDate} onChange={(event) => setNewProjectCalendarDate(event.target.value)} className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" /><input type="time" value={newProjectCalendarTime} onChange={(event) => setNewProjectCalendarTime(event.target.value)} className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none" /></div></div>
         <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3"><button type="button" onClick={() => setIsCreateProjectCalendarModalOpen(false)} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)]">Cancel</button><button type="button" disabled={isCreatingProjectContext || !newProjectCalendarTitle.trim()} onClick={() => void createProjectCalendarItem()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">Create {newProjectCalendarKind}</button></div>
       </ModalOverlay>
 
@@ -7880,7 +7880,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
           <select
             value={projectOwnerTeamDraft}
             onChange={(event) => setProjectOwnerTeamDraft(event.target.value)}
-            className="h-10 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           >
             <option value="">No owner team</option>
             {availableWorkspaceTeams.map((team) => (

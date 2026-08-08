@@ -8,6 +8,9 @@ const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port
   env: {
     ...process.env,
     VITE_LAUNCH_ELECTRON: '0',
+    // Keep browser development same-origin with Vite. The proxy forwards API
+    // requests without asking the production backend to trust localhost.
+    VITE_API_URL: 'http://127.0.0.1:5173',
     LEDGER_DEV_TARGET: 'web',
   },
 });

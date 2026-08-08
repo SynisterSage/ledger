@@ -97,7 +97,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           {toasts.map((t) => (
             <div
               key={t.id}
-              className={`pointer-events-auto flex w-[320px] max-w-[calc(100vw-2rem)] transform flex-col gap-2 rounded-2xl border px-4 py-3 shadow-[0_12px_32px_rgba(17,24,39,0.12)] transition-all duration-200 ease-out ${
+              className={`pointer-events-auto flex w-[320px] max-w-[calc(100vw-2rem)] transform flex-col gap-2 rounded-[var(--ledger-surface-radius)] border px-4 py-3 shadow-[0_12px_32px_rgba(17,24,39,0.12)] transition-all duration-200 ease-out ${
                 t.variant === 'success'
                   ? 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-primary)]'
                   : t.variant === 'error'

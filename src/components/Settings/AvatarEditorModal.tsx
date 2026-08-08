@@ -151,7 +151,7 @@ export const AvatarEditorModal = ({ isOpen, user, onClose, onSave, onRemove, ret
       backdropBorderRadius="inherit"
       disablePortal
       manageWindowChrome={false}
-      classNameContainer="w-full max-w-md overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      classNameContainer="w-full max-w-md overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
     >
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="avatar-editor-title">
         <div className="flex items-start justify-between gap-4 px-5 py-4">

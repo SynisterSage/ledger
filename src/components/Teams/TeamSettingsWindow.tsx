@@ -753,7 +753,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+        classNameContainer="w-full max-w-md rounded-[var(--ledger-surface-radius)] border p-5"
       >
         <div className="space-y-4">
           <div>
@@ -810,7 +810,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-md rounded-2xl border p-5"
+        classNameContainer="w-full max-w-md rounded-[var(--ledger-surface-radius)] border p-5"
       >
         <div className="space-y-4">
           <div>

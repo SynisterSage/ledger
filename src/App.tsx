@@ -269,7 +269,7 @@ const dashboardTheme = {
   queuePrimaryBody: 'text-xs leading-5 text-[var(--ledger-text-muted)]',
   queueSecondaryLine: 'text-xs leading-5 text-[var(--ledger-text-muted)]',
   queueCta:
-    'inline-flex items-center justify-center rounded-2xl bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
+    'inline-flex items-center justify-center rounded-[var(--ledger-control-radius)] bg-[var(--ledger-accent)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)]',
   queueLink:
     'text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]',
   sectionRow:
@@ -582,7 +582,7 @@ function InviteSuccessScreen({
           <button
             type="button"
             onClick={onOpenLedger}
-            className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ledger-accent)] px-4 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition-colors hover:bg-[var(--ledger-accent-hover)]"
+            className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--ledger-control-radius)] bg-[var(--ledger-accent)] px-4 text-sm font-semibold text-white shadow-[var(--ledger-shadow-accent)] transition-colors hover:bg-[var(--ledger-accent-hover)]"
           >
             Open Ledger
             <ArrowRight size={16} />
@@ -8708,9 +8708,9 @@ export function AppShell({
       setIsVisible(payload.isVisible);
     };
 
-    window.ledgerIpc?.events?.onSidebarVisibilityChanged(handleSidebarVisibilityChanged);
+    const subscription = window.ledgerIpc?.events?.onSidebarVisibilityChanged(handleSidebarVisibilityChanged);
     return () => {
-      window.ledgerIpc?.events?.offSidebarVisibilityChanged(handleSidebarVisibilityChanged);
+      if (typeof subscription === 'string') window.ledgerIpc?.events?.offSidebarVisibilityChanged(subscription);
     };
   }, [setIsVisible, user]);
 
@@ -8721,9 +8721,9 @@ export function AppShell({
       setState('expanded');
     };
 
-    window.ledgerIpc?.events?.onSidebarOpenCheckin(handleOpenCheckin);
+    const subscription = window.ledgerIpc?.events?.onSidebarOpenCheckin(handleOpenCheckin);
     return () => {
-      window.ledgerIpc?.events?.offSidebarOpenCheckin(handleOpenCheckin);
+      if (typeof subscription === 'string') window.ledgerIpc?.events?.offSidebarOpenCheckin(subscription);
     };
   }, [setIsExpanded, setIsVisible, setState]);
 
@@ -8763,9 +8763,9 @@ export function AppShell({
       openSearch();
     };
 
-    window.ledgerIpc?.events?.onTouchbarOpenSearch(handleTouchBarOpenSearch);
+    const subscription = window.ledgerIpc?.events?.onTouchbarOpenSearch(handleTouchBarOpenSearch);
     return () => {
-      window.ledgerIpc?.events?.offTouchbarOpenSearch(handleTouchBarOpenSearch);
+      if (typeof subscription === 'string') window.ledgerIpc?.events?.offTouchbarOpenSearch(subscription);
     };
   }, [isLoading, openSearch, setState, state, user]);
 

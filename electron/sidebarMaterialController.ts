@@ -114,13 +114,13 @@ export class SidebarMaterialController {
 
   private macVibrancyFromEnvironment(): SidebarMacVibrancy {
     const value = this.environment.LEDGER_SIDEBAR_NATIVE_MACOS_VIBRANCY;
-    return value === 'sidebar' || value === 'hud' ? value : 'under-window';
+    return value === 'under-window' || value === 'hud' ? value : 'sidebar';
   }
 
   private macVisualEffectStateFromEnvironment(): SidebarMacVisualEffectState {
-    return this.environment.LEDGER_SIDEBAR_NATIVE_MACOS_VISUAL_EFFECT_STATE === 'active'
-      ? 'active'
-      : 'followWindow';
+    return this.environment.LEDGER_SIDEBAR_NATIVE_MACOS_VISUAL_EFFECT_STATE === 'followWindow'
+      ? 'followWindow'
+      : 'active';
   }
 
   private selectedMacVibrancy() {
@@ -164,21 +164,21 @@ export class SidebarMaterialController {
     if (!this.isPackaged || this.isTruthy(this.environment.LEDGER_SIDEBAR_NATIVE_KILL_SWITCH)) {
       return null;
     }
+    // Electron's macOS vibrancy is painted at BrowserWindow level and uses a
+    // compositor corner mask that cannot match Ledger's custom sidebar radius.
+    // Keep it out of normal releases until we have a native masked material
+    // surface; the renderer material preserves the product geometry.
+    if (this.platform === 'darwin') return null;
     if (!this.isTruthy(this.environment.LEDGER_SIDEBAR_NATIVE_MATERIAL_ENABLED)) return null;
 
     const rolloutVariable =
-      this.platform === 'darwin'
-        ? 'LEDGER_SIDEBAR_NATIVE_MACOS_ROLLOUT'
-        : this.platform === 'win32'
-        ? 'LEDGER_SIDEBAR_NATIVE_WINDOWS_ROLLOUT'
-        : null;
+      this.platform === 'win32' ? 'LEDGER_SIDEBAR_NATIVE_WINDOWS_ROLLOUT' : null;
     if (
       !rolloutVariable ||
       !this.cohortIsIncluded(this.percentage(this.environment[rolloutVariable]))
     ) {
       return null;
     }
-    if (this.platform === 'darwin') return SIDEBAR_MATERIAL_SUPPORT_MATRIX.productionMacEngine;
     if (this.platform === 'win32') return SIDEBAR_MATERIAL_SUPPORT_MATRIX.productionWindowsEngine;
     return null;
   }

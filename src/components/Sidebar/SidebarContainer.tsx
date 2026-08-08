@@ -186,6 +186,7 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
       : isHorizontal
         ? 'w-auto h-[60px]'
         : 'w-14 h-14';
+  const isNativeMacMaterial = materialEngine === 'native-macos';
   const shellRadiusClass = browserMode
     ? 'rounded-none'
     : isFullscreenAttachedShell && effectivePosition === 'left'
@@ -205,19 +206,16 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
     !isFloating &&
     workspaceShellLayout.sidebarMode === 'attached' &&
     materialEngine === 'renderer';
-  const isNativeMacMaterial = materialEngine === 'native-macos';
   const materialAlpha = Math.max(
     0,
     isNativeMacMaterial
       ? getSidebarNativeMacTintAlpha(opacity)
       : getSidebarMaterialAlpha(opacity) -
-          (isAttachedRendererMaterial && effectiveFrostedBackground ? 0.05 : 0)
+          (!isNativeMacMaterial && effectiveFrostedBackground ? 0.16 : 0)
   );
   const materialClass = `sidebar-glass-material ${glassAttachmentClass}${
-    isAttachedRendererMaterial && effectiveFrostedBackground
-      ? ' sidebar-glass-material--blur'
-    : ''
-  }`;
+    effectiveFrostedBackground ? ' sidebar-glass-material--frosted' : ''
+  }${isAttachedRendererMaterial && effectiveFrostedBackground ? ' sidebar-glass-material--blur' : ''}`;
 
   useEffect(() => {
     const handleOpacityPreview = (
@@ -232,7 +230,7 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
         isNativeMacMaterial
           ? getSidebarNativeMacTintAlpha(nextOpacity)
           : getSidebarMaterialAlpha(nextOpacity) -
-              (isAttachedRendererMaterial && effectiveFrostedBackground ? 0.05 : 0)
+              (!isNativeMacMaterial && effectiveFrostedBackground ? 0.16 : 0)
       );
       materialRef.current.style.setProperty('--sidebar-material-alpha', String(nextAlpha));
     };

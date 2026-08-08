@@ -118,8 +118,11 @@ export const resolveSidebarMaterial = (
 export const SIDEBAR_MATERIAL_ALPHA_MIN = 0.84;
 export const SIDEBAR_MATERIAL_ALPHA_MAX = 1;
 
-export const SIDEBAR_NATIVE_MAC_TINT_ALPHA_MIN = 0.3;
-export const SIDEBAR_NATIVE_MAC_TINT_ALPHA_MAX = 0.55;
+// Native macOS material needs a substantially stronger tint than renderer
+// frost. Without it, Electron's transparent window can leave readable content
+// from the backing window showing through the sidebar.
+export const SIDEBAR_NATIVE_MAC_TINT_ALPHA_MIN = 0.74;
+export const SIDEBAR_NATIVE_MAC_TINT_ALPHA_MAX = 0.90;
 
 export const getSidebarMaterialAlpha = (opacity: number) => {
   const normalizedOpacity =

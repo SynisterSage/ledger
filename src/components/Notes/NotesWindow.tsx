@@ -1940,7 +1940,7 @@ const MeetingAudioSetup = ({
     backdropBorderRadius="inherit"
     disablePortal
     manageWindowChrome={false}
-    classNameContainer="w-full max-w-2xl overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+    classNameContainer="w-full max-w-2xl overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
   >
     <div role="dialog" aria-modal="true" aria-label="Set up Meeting Notes audio">
       <div className="flex items-center justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
@@ -10792,7 +10792,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         backdropBorderRadius="inherit"
         disablePortal
         manageWindowChrome={false}
-        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">
@@ -10817,7 +10817,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
             value={linkProjectSearch}
             onChange={(event) => setLinkProjectSearch(event.target.value)}
             placeholder="Search active projects..."
-            className="h-9 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+            className="h-9 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
           />
 
           <div className="max-h-[48vh] overflow-auto space-y-1 pr-1">

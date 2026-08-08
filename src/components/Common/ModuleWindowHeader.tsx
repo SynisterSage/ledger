@@ -381,7 +381,7 @@ export const ModuleHeaderSegmentedButton = ({
       aria-label={ariaLabel ?? title}
       className={`${baseClassName} ${
         active
-          ? `${sidebarTheme.surface} ${sidebarTheme.textPrimary} shadow-[0_1px_2px_rgba(15,23,42,0.08)]`
+          ? `${sidebarTheme.selectedControl} ${sidebarTheme.textPrimary} shadow-[0_1px_2px_rgba(15,23,42,0.08)]`
           : `${sidebarTheme.textSecondary} hover:${sidebarTheme.textPrimary}`
       } ${iconOnly ? (compact ? 'w-7 px-0' : 'w-8 px-0') : ''}`}
     >
