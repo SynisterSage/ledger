@@ -37,10 +37,13 @@ export function GoogleDriveIntakeCaptureButton({ onCaptured }: { onCaptured?: ()
       if (!token.access_token) throw new Error('Reconnect Google Drive to continue.');
       await loadPicker();
       await new Promise<void>((resolve, reject) => {
+        const docsView = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+          .setMode(window.google.picker.DocsViewMode.LIST);
         const pickerBuilder = new window.google.picker.PickerBuilder()
-          .addView(window.google.picker.ViewId.DOCS)
+          .addView(docsView)
           .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
-          .setOAuthToken(token.access_token);
+          .setOAuthToken(token.access_token)
+          .setOrigin(window.location.origin);
         if (token.app_id) pickerBuilder.setAppId(token.app_id);
         if (token.developer_key) pickerBuilder.setDeveloperKey(token.developer_key);
         const picker = pickerBuilder.setCallback(async (data: any) => {
