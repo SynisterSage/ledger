@@ -42,8 +42,7 @@ export function GoogleDriveIntakeCaptureButton({ onCaptured }: { onCaptured?: ()
         const pickerBuilder = new window.google.picker.PickerBuilder()
           .addView(docsView)
           .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
-          .setOAuthToken(token.access_token)
-          .setOrigin(window.location.origin);
+          .setOAuthToken(token.access_token);
         if (token.app_id) pickerBuilder.setAppId(token.app_id);
         if (token.developer_key) pickerBuilder.setDeveloperKey(token.developer_key);
         const picker = pickerBuilder.setCallback(async (data: any) => {

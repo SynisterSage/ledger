@@ -4908,19 +4908,6 @@ const refreshGoogleDriveAccessToken = async (connection) => {
   return payload.access_token;
 };
 
-const validateGoogleDriveAccessToken = async (accessToken) => {
-  if (!accessToken) return null;
-  try {
-    const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`);
-    if (!response.ok) return null;
-    const payload = await response.json();
-    const scopes = String(payload.scope || '').split(' ').filter(Boolean);
-    return { ...payload, scopes };
-  } catch {
-    return null;
-  }
-};
-
 const getFigmaStateSecret = () =>
   getConfiguredOAuthStateSecret(['FIGMA_STATE_SECRET', 'SLACK_STATE_SECRET'], ephemeralOAuthStateSecrets.figma);
 
@@ -10003,19 +9990,8 @@ app.post('/api/integrations/google-drive/disconnect', authMiddleware, rateLimit(
 
 app.post('/api/integrations/google-drive/picker-token', authMiddleware, rateLimit('google_drive_token'), async (req, res) => {
   try {
-    let connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
+    const connection = await getGoogleDriveConnectionForReference({ requestedByUserId: req.authUser.id });
     if (!connection) return res.status(409).json({ error: 'Connect Google Drive to continue.', code: 'connection_required' });
-    let tokenInfo = await validateGoogleDriveAccessToken(connection.access_token_encrypted);
-    if (!tokenInfo) {
-      const refreshedToken = await refreshGoogleDriveAccessToken(connection);
-      if (!refreshedToken) {
-        await supabase.from('google_drive_connections').update({ status: 'revoked', last_error: 'picker_token_invalid', updated_at: new Date().toISOString() }).eq('id', connection.id);
-        return res.status(409).json({ error: 'Reconnect Google Drive to continue.', code: 'connection_required' });
-      }
-      connection = { ...connection, access_token_encrypted: refreshedToken };
-      tokenInfo = await validateGoogleDriveAccessToken(refreshedToken);
-    }
-    if (!tokenInfo?.scopes.includes(DRIVE_SCOPE)) return res.status(409).json({ error: 'Reconnect Google Drive to grant file-picker access.', code: 'scope_required' });
     res.json({
       access_token: connection.access_token_encrypted,
       expires_at: connection.token_expires_at || null,

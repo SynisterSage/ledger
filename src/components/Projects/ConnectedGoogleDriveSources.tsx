@@ -46,7 +46,7 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
       const browser = window as any;
       await new Promise<void>((resolve) => {
         const pickerView = new browser.google.picker.DocsView(browser.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true);
-        const pickerBuilder = new browser.google.picker.PickerBuilder().addView(pickerView).enableFeature(browser.google.picker.Feature.NAV_HIDDEN).setOAuthToken(token.access_token).setOrigin(window.location.origin);
+        const pickerBuilder = new browser.google.picker.PickerBuilder().addView(pickerView).enableFeature(browser.google.picker.Feature.NAV_HIDDEN).setOAuthToken(token.access_token);
         if (token.app_id) pickerBuilder.setAppId(token.app_id);
         if (token.developer_key) pickerBuilder.setDeveloperKey(token.developer_key);
         const picker = pickerBuilder.setCallback(async (data: any) => {
