@@ -963,17 +963,39 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     }
   };
   const [googleDriveStatus, setGoogleDriveStatus] = useState<{ status?: string; provider_account_email?: string | null }>({ status: 'disconnected' });
+  const googleDriveOAuthTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    if (activeSection !== 'integrations') return;
-    const refreshStatus = () => api.getGoogleDriveIntegrationStatus().then((status) => setGoogleDriveStatus(status as typeof googleDriveStatus)).catch(() => setGoogleDriveStatus({ status: 'error' }));
+    if (activeSection !== 'integrations') return undefined;
+    const refreshStatus = async () => {
+      try {
+        const status = await api.getGoogleDriveIntegrationStatus();
+        setGoogleDriveStatus(status as typeof googleDriveStatus);
+        return status as typeof googleDriveStatus;
+      } catch {
+        setGoogleDriveStatus({ status: 'error' });
+        return null;
+      }
+    };
     void refreshStatus();
     const handleOAuthMessage = (event: MessageEvent) => {
       if (event.data?.type !== 'ledger-google-drive-oauth') return;
       if (event.data.success) void refreshStatus();
-      else setGoogleDriveStatus({ status: 'error' });
+      else {
+        if (googleDriveOAuthTimerRef.current !== null) {
+          window.clearInterval(googleDriveOAuthTimerRef.current);
+          googleDriveOAuthTimerRef.current = null;
+        }
+        setGoogleDriveStatus({ status: 'error' });
+      }
     };
     window.addEventListener('message', handleOAuthMessage);
-    return () => window.removeEventListener('message', handleOAuthMessage);
+    return () => {
+      window.removeEventListener('message', handleOAuthMessage);
+      if (googleDriveOAuthTimerRef.current !== null) {
+        window.clearInterval(googleDriveOAuthTimerRef.current);
+        googleDriveOAuthTimerRef.current = null;
+      }
+    };
   }, [activeSection, api]);
   const connectGoogleDrive = async () => {
     try {
@@ -981,14 +1003,43 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       if (!result.url) throw new Error('Google Drive connection is not configured.');
       setGoogleDriveStatus({ status: 'connecting' });
       const popup = window.open(result.url, '_blank', 'noopener,noreferrer');
-      if (popup) {
-        const startedAt = Date.now();
-        const timer = window.setInterval(() => {
-          if (popup.closed || Date.now() - startedAt > 5 * 60 * 1000) {
+      if (googleDriveOAuthTimerRef.current !== null) {
+        window.clearInterval(googleDriveOAuthTimerRef.current);
+      }
+      const startedAt = Date.now();
+      let checking = false;
+      const timer = window.setInterval(async () => {
+        if (checking) return;
+        checking = true;
+        try {
+          const status = await api.getGoogleDriveIntegrationStatus() as typeof googleDriveStatus;
+          if (status.status === 'connected') {
+            setGoogleDriveStatus(status);
             window.clearInterval(timer);
-            if (popup.closed) void api.getGoogleDriveIntegrationStatus().then((status) => setGoogleDriveStatus(status as typeof googleDriveStatus)).catch(() => undefined);
+            googleDriveOAuthTimerRef.current = null;
+          } else if (status.status === 'error' && Date.now() - startedAt > 3000) {
+            window.clearInterval(timer);
+            googleDriveOAuthTimerRef.current = null;
+            setGoogleDriveStatus(status);
+          } else if (popup?.closed || Date.now() - startedAt > 5 * 60 * 1000) {
+            window.clearInterval(timer);
+            googleDriveOAuthTimerRef.current = null;
+            setGoogleDriveStatus(status.status === 'error' || status.status === 'revoked' ? status : { status: 'error' });
           }
-        }, 800);
+        } catch {
+          if (popup?.closed || Date.now() - startedAt > 5 * 60 * 1000) {
+            window.clearInterval(timer);
+            googleDriveOAuthTimerRef.current = null;
+            setGoogleDriveStatus({ status: 'error' });
+          }
+        } finally {
+          checking = false;
+        }
+      }, 800);
+      googleDriveOAuthTimerRef.current = timer;
+      if (popup?.closed) {
+        window.clearInterval(timer);
+        googleDriveOAuthTimerRef.current = null;
       }
     } catch (error) { window.alert(error instanceof Error ? error.message : 'Could not connect Google Drive.'); }
   };

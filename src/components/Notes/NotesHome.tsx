@@ -1060,14 +1060,14 @@ export const NotesHome = ({
             }
           />
         </div>
-        <UpcomingMeetingsSection
-          meetings={upcomingMeetings}
-          collapsed={collapsed.has('upcoming-meetings')}
-          onToggle={toggle}
-          onStart={onStartMeetingFromEvent}
-          onOpenEvent={onOpenCalendarEvent}
-        />
         <div className="space-y-1.5">
+          <UpcomingMeetingsSection
+            meetings={upcomingMeetings}
+            collapsed={collapsed.has('upcoming-meetings')}
+            onToggle={toggle}
+            onStart={onStartMeetingFromEvent}
+            onOpenEvent={onOpenCalendarEvent}
+          />
           <HomeSection
             id="continue"
             title="Continue writing"

@@ -9912,9 +9912,11 @@ app.get('/api/integrations/google-drive/status', authMiddleware, rateLimit('read
 });
 
 app.get('/api/integrations/google-drive/callback', rateLimit('auth'), async (req, res) => {
+  let oauthUserId = null;
   try {
     const statePayload = verifyGoogleDriveOAuthState(req.query?.state);
     if (!statePayload || req.query?.error || !req.query?.code) return res.status(400).type('html').send(googleDriveCompleteHtml(false, 'This authorization attempt expired or was cancelled.'));
+    oauthUserId = statePayload.user_id;
     const attempt = await supabase.from('google_drive_oauth_attempts').select('id, user_id, consumed_at, expires_at').eq('state_hash', statePayload.state_hash).maybeSingle();
     if (attempt.error) throw attempt.error;
     if (!attempt.data || attempt.data.user_id !== statePayload.user_id || attempt.data.consumed_at || new Date(attempt.data.expires_at).getTime() < Date.now()) return res.status(400).type('html').send(googleDriveCompleteHtml(false, 'This authorization attempt is no longer valid.'));
@@ -9934,7 +9936,14 @@ app.get('/api/integrations/google-drive/callback', rateLimit('auth'), async (req
     const saved = existing.data?.id ? await supabase.from('google_drive_connections').update({ ...payload, connected_at: existing.data.connected_at || now }).eq('id', existing.data.id) : await supabase.from('google_drive_connections').insert(payload);
     if (saved.error) throw saved.error;
     return res.type('html').send(googleDriveCompleteHtml(true, `Connected as ${profile.email || 'your Google account'}.`));
-  } catch (error) { console.error('Google Drive OAuth callback failed', { message: error instanceof Error ? error.message : 'unknown_error' }); return res.status(400).type('html').send(googleDriveCompleteHtml(false)); }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Google Drive authorization failed.';
+    console.error('Google Drive OAuth callback failed', { message });
+    if (oauthUserId) {
+      await supabase.from('google_drive_connections').update({ status: 'error', last_error: message.slice(0, 500), updated_at: new Date().toISOString() }).eq('user_id', oauthUserId).catch(() => null);
+    }
+    return res.status(400).type('html').send(googleDriveCompleteHtml(false, message));
+  }
 });
 
 app.post('/api/integrations/google-drive/disconnect', authMiddleware, rateLimit('write'), async (req, res) => {

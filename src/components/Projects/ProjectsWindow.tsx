@@ -6699,7 +6699,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             {selectedProject ? (
               <div className="mx-auto w-full max-w-5xl min-w-0 px-0 py-4 lg:px-4 lg:py-8">
                 <section className="pb-3">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <div
@@ -6814,7 +6814,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                       {renderProjectProgressStrip()}
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="absolute right-0 top-0 flex shrink-0 items-center gap-2">
                       <button
                         type="button"
                         onClick={(event) => {
