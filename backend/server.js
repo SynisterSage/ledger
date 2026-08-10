@@ -4841,7 +4841,45 @@ const verifyGoogleDriveOAuthState = (state) => {
   if (!payload?.user_id || !payload?.nonce || Math.floor(Date.now() / 1000) - Number(payload.iat || 0) > 10 * 60) return null;
   return { ...payload, state_hash: crypto.createHash('sha256').update(String(state)).digest('hex') };
 };
-const googleDriveCompleteHtml = (success, message = '') => `<!doctype html><meta charset="utf-8"><title>Google Drive</title><script>window.opener?.postMessage({type:'ledger-google-drive-oauth',success:${Boolean(success)}},'*');window.close();</script><p>${String(message || (success ? 'Connected. You can return to Ledger.' : 'Connection failed. Return to Ledger and try again.')).replace(/[<>]/g, '')}</p>`;
+const escapeOAuthHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+const googleDriveCompleteHtml = (success, message = '') => {
+  const title = success ? 'Google Drive connected' : 'Google Drive connection failed';
+  const detail = message || (success ? 'Your Google Drive account is now connected to Ledger.' : 'Return to Ledger and try connecting again.');
+  const icon = success ? '✓' : '!';
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeOAuthHtml(title)} · Ledger</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fffbf7; color: #111827; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 0%, #fff7ed 0, #fffbf7 46%, #f7f3ef 100%); }
+      main { width: min(100%, 440px); padding: 34px; border: 1px solid #f0dfd0; border-radius: 18px; background: rgba(255,255,255,.9); box-shadow: 0 18px 50px rgba(17,24,39,.09); text-align: center; }
+      .brand { display: inline-flex; align-items: center; gap: 9px; color: #111827; font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
+      .mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: #ff5f40; color: white; font-size: 14px; font-weight: 800; }
+      .icon { display: grid; place-items: center; width: 48px; height: 48px; margin: 28px auto 18px; border-radius: 14px; background: ${success ? '#ecfdf3' : '#fff7ed'}; color: ${success ? '#16803c' : '#b45309'}; font-size: 24px; font-weight: 700; }
+      h1 { margin: 0; font-size: 22px; line-height: 1.2; letter-spacing: -.03em; }
+      p { margin: 10px 0 0; color: #6b7280; font-size: 14px; line-height: 1.55; }
+      button { margin-top: 25px; border: 0; border-radius: 9px; padding: 10px 16px; background: #111827; color: white; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+      button:hover { background: #263244; }
+      .hint { margin-top: 18px; color: #9ca3af; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><span class="mark">L</span>Ledger</div>
+      <div class="icon" aria-hidden="true">${icon}</div>
+      <h1>${escapeOAuthHtml(title)}</h1>
+      <p>${escapeOAuthHtml(detail)}</p>
+      <button type="button" onclick="window.close()">Return to Ledger</button>
+      <div class="hint">You can safely close this window.</div>
+    </main>
+    <script>window.opener?.postMessage({type:'ledger-google-drive-oauth',success:${Boolean(success)}},'*'); setTimeout(() => window.close(), 700);</script>
+  </body>
+</html>`;
+};
 const buildGoogleDriveAuthorizeUrl = ({ state }) => {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
   const redirectUri = getGoogleDriveRedirectUri();
@@ -9960,6 +9998,7 @@ app.post('/api/integrations/google-drive/picker-token', authMiddleware, rateLimi
       // drive.file Picker flows need the Cloud project number so Google can
       // associate selected files with this OAuth application.
       app_id: process.env.GOOGLE_DRIVE_APP_ID?.trim() || process.env.GOOGLE_CLOUD_PROJECT_NUMBER?.trim() || null,
+      developer_key: process.env.GOOGLE_DRIVE_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim() || null,
     });
   } catch (error) { return respondWithError(res, error); }
 });

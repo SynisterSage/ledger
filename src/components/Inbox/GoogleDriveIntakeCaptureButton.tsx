@@ -33,7 +33,7 @@ export function GoogleDriveIntakeCaptureButton({ onCaptured }: { onCaptured?: ()
     setBusy(true);
     try {
       installGooglePickerStyles();
-      const token = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null };
+      const token = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null; developer_key?: string | null };
       if (!token.access_token) throw new Error('Reconnect Google Drive to continue.');
       await loadPicker();
       await new Promise<void>((resolve, reject) => {
@@ -42,6 +42,7 @@ export function GoogleDriveIntakeCaptureButton({ onCaptured }: { onCaptured?: ()
           .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
           .setOAuthToken(token.access_token);
         if (token.app_id) pickerBuilder.setAppId(token.app_id);
+        if (token.developer_key) pickerBuilder.setDeveloperKey(token.developer_key);
         const picker = pickerBuilder.setCallback(async (data: any) => {
             if (data.action === window.google.picker.Action.PICKED) {
               try { await capture((data.docs || []).map((doc: any) => String(doc.id)).filter(Boolean)); resolve(); } catch (error) { reject(error); }

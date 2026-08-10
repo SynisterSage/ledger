@@ -40,7 +40,7 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
     setBusy('connect');
     try {
       installGooglePickerStyles();
-      const token = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null };
+      const token = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null; developer_key?: string | null };
       if (!token.access_token) throw new Error('Reconnect Google Drive to continue.');
       await loadPicker();
       const browser = window as any;
@@ -48,6 +48,7 @@ export function ConnectedGoogleDriveSources({ projectId, canEdit }: { projectId:
         const pickerView = new browser.google.picker.DocsView(browser.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true);
         const pickerBuilder = new browser.google.picker.PickerBuilder().addView(pickerView).enableFeature(browser.google.picker.Feature.NAV_HIDDEN).setOAuthToken(token.access_token);
         if (token.app_id) pickerBuilder.setAppId(token.app_id);
+        if (token.developer_key) pickerBuilder.setDeveloperKey(token.developer_key);
         const picker = pickerBuilder.setCallback(async (data: any) => {
           if (data.action === browser.google.picker.Action.PICKED) {
             const folder = data.docs?.[0] ?? {};

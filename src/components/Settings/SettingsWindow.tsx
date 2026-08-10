@@ -1002,7 +1002,17 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       const result = await api.connectGoogleDrive() as { url?: string };
       if (!result.url) throw new Error('Google Drive connection is not configured.');
       setGoogleDriveStatus({ status: 'connecting' });
-      const popup = window.open(result.url, '_blank', 'noopener,noreferrer');
+      let popup: Window | null = null;
+      if (window.desktopWindow?.openExternal) {
+        await window.desktopWindow.openExternal(result.url);
+      } else {
+        popup = window.open(result.url, '_blank', 'noopener,noreferrer');
+        if (!popup) {
+          setGoogleDriveStatus({ status: 'error' });
+          window.alert('Ledger could not open Google authorization. Allow pop-ups and try again.');
+          return;
+        }
+      }
       if (googleDriveOAuthTimerRef.current !== null) {
         window.clearInterval(googleDriveOAuthTimerRef.current);
       }
@@ -1024,7 +1034,11 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
           } else if (popup?.closed || Date.now() - startedAt > 5 * 60 * 1000) {
             window.clearInterval(timer);
             googleDriveOAuthTimerRef.current = null;
-            setGoogleDriveStatus(status.status === 'error' || status.status === 'revoked' ? status : { status: 'error' });
+            setGoogleDriveStatus(
+              status.status === 'error' || status.status === 'revoked'
+                ? status
+                : { status: 'error' }
+            );
           }
         } catch {
           if (popup?.closed || Date.now() - startedAt > 5 * 60 * 1000) {

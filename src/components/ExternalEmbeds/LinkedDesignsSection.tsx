@@ -183,7 +183,7 @@ export function LinkedDesignsSection({
     setBusyId('google-drive');
     try {
       installGooglePickerStyles();
-      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null };
+      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null; developer_key?: string | null };
       if (!tokenResult.access_token) throw new Error('Connect Google Drive to continue.');
       const loadPicker = () => new Promise<void>((resolve, reject) => {
         const googleWindow = window as any;
@@ -197,6 +197,7 @@ export function LinkedDesignsSection({
       await new Promise<void>((resolve) => {
         const pickerBuilder = new googleWindow.google.picker.PickerBuilder().addView(googleWindow.google.picker.ViewId.DOCS).enableFeature(googleWindow.google.picker.Feature.MULTISELECT_ENABLED).setOAuthToken(tokenResult.access_token);
         if (tokenResult.app_id) pickerBuilder.setAppId(tokenResult.app_id);
+        if (tokenResult.developer_key) pickerBuilder.setDeveloperKey(tokenResult.developer_key);
         const picker = pickerBuilder.setCallback(async (data: any) => {
           if (data.action === googleWindow.google.picker.Action.PICKED) {
             const selected = (data.docs ?? []).map((doc: any) => String(doc.id)).filter(Boolean);
@@ -233,11 +234,11 @@ export function LinkedDesignsSection({
     setBusyId('google-drive-folder');
     try {
       installGooglePickerStyles();
-      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null };
+      const tokenResult = await api.getGoogleDrivePickerToken() as { access_token?: string; app_id?: string | null; developer_key?: string | null };
       if (!tokenResult.access_token) throw new Error('Connect Google Drive to continue.');
       const googleWindow = window as any;
       if (!googleWindow.google?.picker) await new Promise<void>((resolve, reject) => { const script = document.querySelector('script[data-ledger-google-picker]') || document.createElement('script'); if (!script.parentNode) { script.setAttribute('data-ledger-google-picker', 'true'); (script as HTMLScriptElement).src = 'https://apis.google.com/js/api.js'; (script as HTMLScriptElement).async = true; script.addEventListener('load', () => googleWindow.gapi.load('picker', resolve)); script.addEventListener('error', () => reject(new Error('Google Picker could not load.'))); document.head.appendChild(script); } else { script.addEventListener('load', () => googleWindow.gapi.load('picker', resolve)); } });
-      await new Promise<void>((resolve) => { const view = new googleWindow.google.picker.DocsView(googleWindow.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true); const pickerBuilder = new googleWindow.google.picker.PickerBuilder().addView(view).enableFeature(googleWindow.google.picker.Feature.NAV_HIDDEN).setOAuthToken(tokenResult.access_token); if (tokenResult.app_id) pickerBuilder.setAppId(tokenResult.app_id); const picker = pickerBuilder.setCallback(async (data: any) => { if (data.action === googleWindow.google.picker.Action.PICKED) { const folder = data.docs?.[0] ?? {}; const folderId = String(folder.id ?? ''); const resourceKey = String(folder.resourceKey ?? '').trim() || null; try { await api.connectGoogleDriveFolderToProject(target.targetId, folderId, resourceKey); toast.show('Google Drive folder connected.', { variant: 'success' }); await load(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); } resolve(); } else if (data.action === googleWindow.google.picker.Action.CANCEL) resolve(); }).build(); picker.setVisible(true); installGooglePickerStyles(); });
+      await new Promise<void>((resolve) => { const view = new googleWindow.google.picker.DocsView(googleWindow.google.picker.ViewId.FOLDERS).setSelectFolderEnabled(true).setIncludeFolders(true); const pickerBuilder = new googleWindow.google.picker.PickerBuilder().addView(view).enableFeature(googleWindow.google.picker.Feature.NAV_HIDDEN).setOAuthToken(tokenResult.access_token); if (tokenResult.app_id) pickerBuilder.setAppId(tokenResult.app_id); if (tokenResult.developer_key) pickerBuilder.setDeveloperKey(tokenResult.developer_key); const picker = pickerBuilder.setCallback(async (data: any) => { if (data.action === googleWindow.google.picker.Action.PICKED) { const folder = data.docs?.[0] ?? {}; const folderId = String(folder.id ?? ''); const resourceKey = String(folder.resourceKey ?? '').trim() || null; try { await api.connectGoogleDriveFolderToProject(target.targetId, folderId, resourceKey); toast.show('Google Drive folder connected.', { variant: 'success' }); await load(); } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not connect this folder.', { variant: 'error' }); } resolve(); } else if (data.action === googleWindow.google.picker.Action.CANCEL) resolve(); }).build(); picker.setVisible(true); installGooglePickerStyles(); });
     } catch (error) { toast.show(error instanceof Error ? error.message : 'Could not open Google Picker.', { variant: 'error' }); } finally { setBusyId(null); }
   };
   const applyGoogleDriveTemplate = async () => {
