@@ -1334,7 +1334,7 @@ let workspaceShellFullscreenRestoreBounds: Electron.Rectangle | null = null;
 const WINDOW_MARGIN = 16;
 const RAIL_SIZE = 56;
 const COLLAPSED_SIZE = 56;
-const EXPANDED_WIDTH = 320;
+const EXPANDED_WIDTH = 256;
 const HORIZONTAL_DOCK_WIDTH = 1120;
 const HORIZONTAL_DOCK_HEIGHT = 144;
 const HORIZONTAL_COLLAPSED_WIDTH = 1120;
@@ -6825,6 +6825,18 @@ function openModuleWindow(
     try {
       const key = String(input.key ?? '').toLowerCase();
       const detachedRecord = getDetachedWindowRecord(moduleWin);
+      const isWorkspaceTabCloseShortcut =
+        !detachedRecord &&
+        moduleWin === workspaceModuleWin &&
+        isWorkspaceModuleKind(workspaceModuleKind ?? kind) &&
+        (input.meta || input.control) &&
+        key === 'w';
+      if (isWorkspaceTabCloseShortcut) {
+        event.preventDefault();
+        moduleWin.webContents.send('workspace:close-active-tab');
+        return;
+      }
+
       const isWorkspaceHistoryShortcut =
         ((moduleWin === workspaceModuleWin && isWorkspaceModuleKind(workspaceModuleKind ?? kind)) ||
           Boolean(detachedRecord)) &&

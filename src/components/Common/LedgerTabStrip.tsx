@@ -1409,6 +1409,20 @@ export const LedgerTabStrip = () => {
   }, [closeTab]);
 
   useEffect(() => {
+    const handleCloseActiveTab = () => {
+      const routeToClose = visualCurrentRouteRef.current ?? currentRouteRef.current;
+      if (!routeToClose) return;
+      if (!tabOrderRef.current.some((route) => sameRoute(route, routeToClose))) return;
+      closeTab(routeToClose);
+    };
+
+    window.ledgerIpc?.events?.onWorkspaceCloseActiveTab(handleCloseActiveTab as any);
+    return () => {
+      window.ledgerIpc?.events?.offWorkspaceCloseActiveTab(handleCloseActiveTab as any);
+    };
+  }, [closeTab]);
+
+  useEffect(() => {
     const cancelTabDrag = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       tabDragRef.current = null;

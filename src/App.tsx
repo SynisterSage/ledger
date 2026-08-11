@@ -522,11 +522,29 @@ function AuthStatusScreen({
   title,
   subtitle,
   isExiting = false,
+  simple = false,
 }: {
   title: string;
   subtitle: string;
   isExiting?: boolean;
+  simple?: boolean;
 }) {
+  if (simple) {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center bg-[var(--ledger-background)]"
+        role="status"
+        aria-label="Loading Ledger"
+      >
+        <img
+          src={`${import.meta.env.BASE_URL}logo-color.svg`}
+          alt="Ledger"
+          className="h-10 w-10 select-none"
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-transparent p-3 text-[var(--ledger-text-primary)] transition-all duration-150 ease-out ${
@@ -9487,7 +9505,7 @@ export function AppShell({
   const startupSubtitle = 'Preparing your workspace…';
 
   if (shouldShowBootLoading) {
-    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} />;
+    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} simple={browserMode} />;
   }
 
   if (authError) {
@@ -9558,7 +9576,7 @@ export function AppShell({
   }
 
   if (postAuthStage === 'idle' || postAuthStage === 'loading') {
-    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} />;
+    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} simple={browserMode} />;
   }
 
   if (postAuthStage === 'onboarding') {
@@ -9826,13 +9844,23 @@ export function AppShell({
   // Authenticated view - sidebar shell
   if (postAuthStage !== 'ready') {
     return (
-      <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} isExiting={isAuthExiting} />
+      <AuthStatusScreen
+        title={startupTitle}
+        subtitle={startupSubtitle}
+        isExiting={isAuthExiting}
+        simple={browserMode}
+      />
     );
   }
 
   if (!showAuthenticatedShell) {
     return (
-      <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} isExiting={isAuthExiting} />
+      <AuthStatusScreen
+        title={startupTitle}
+        subtitle={startupSubtitle}
+        isExiting={isAuthExiting}
+        simple={browserMode}
+      />
     );
   }
 

@@ -15,6 +15,28 @@ body {
   background-color: transparent;
 }
 
+@keyframes ledgerWebShellIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.web-ledger-shell-enter {
+  animation: ledgerWebShellIn 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-ledger-shell-enter {
+    animation: none;
+  }
+}
+
 /* Window / modal radius variables — used to keep modal backdrops
    visually consistent with the rounded Electron BrowserWindow. */
 :root {
@@ -461,8 +483,10 @@ textarea:focus-visible,
 
 [data-platform='web'] {
   --web-content-gutter: clamp(12px, 2vw, 28px);
-  --web-sidebar-width: clamp(236px, 22vw, 320px);
+  --web-sidebar-width: clamp(224px, 15vw, 256px);
   --web-sidebar-collapsed-width: 56px;
+  --web-shell-inset: 8px;
+  --web-shell-radius: 14px;
   --web-inspector-width: 280px;
   --web-header-height: 40px;
   --web-pane-gap: clamp(12px, 1.5vw, 20px);
@@ -476,9 +500,20 @@ textarea:focus-visible,
   min-height: 100dvh;
 }
 
+[data-platform='web'] .web-app-root {
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding: var(--web-shell-inset);
+  background: rgb(var(--sidebar-solid-rgb));
+}
+
 [data-platform='web'] .web-ledger-shell {
-  /* Browser content fills the viewport; Electron keeps the window radius. */
-  --ledger-window-radius: 0px;
+  /* The browser gets a Linear-style inset shell; Electron keeps its own
+     BrowserWindow radius and geometry outside this Web-only boundary. */
+  --ledger-window-radius: var(--web-shell-radius);
+  height: calc(100dvh - (var(--web-shell-inset) * 2));
+  min-height: 0;
+  border-radius: var(--web-shell-radius);
   container-type: inline-size;
   container-name: web-shell;
 }
@@ -515,7 +550,10 @@ textarea:focus-visible,
 }
 
 [data-platform='web'] .web-ledger-content {
+  box-sizing: border-box;
   min-width: 0;
+  min-height: 0;
+  padding: var(--web-shell-inset);
   overflow: hidden;
 }
 
@@ -530,8 +568,10 @@ textarea:focus-visible,
 }
 
 [data-platform='web'] .web-module-layout > * {
+  height: 100%;
   min-width: 0;
   max-width: 100%;
+  border-color: color-mix(in srgb, var(--ledger-border-subtle) 55%, transparent);
 }
 
 [data-platform='web'] .web-module-header {

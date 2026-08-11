@@ -5006,7 +5006,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         </div>
 
                         <div
-                          className={`flex items-start gap-3 px-4 py-2.5 ${activeMcpConnections.length ? `cursor-pointer transition ${isMcpConnectionsExpanded ? '' : 'hover:bg-[var(--ledger-surface-muted)]'}` : ''}`}
+                          className={`flex items-center gap-3 px-4 py-2.5 ${activeMcpConnections.length ? `cursor-pointer transition ${isMcpConnectionsExpanded ? '' : 'hover:bg-[var(--ledger-surface-muted)]'}` : ''}`}
                           onClick={() => {
                             if (!activeMcpConnections.length) return;
                             setIsMcpConnectionsExpanded((expanded) => !expanded);
@@ -5019,9 +5019,9 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             <img src="/mcp-icons/mpc.svg" alt="" className="h-5 w-5 dark:invert" />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className={settingsTheme.label}>MCP connections</p>
+                            <p className={settingsTheme.label}>MCP connections{isLoadingMcpConnections ? <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">Checking connections…</span> : activeMcpConnections.length === 0 ? <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">No active connections</span> : null}</p>
                             <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Connect AI tools to an explicitly approved Ledger workspace.</p>
-                            {isLoadingMcpConnections ? <p className={settingsTheme.sectionStatus + ' mt-1'}>Checking connections…</p> : activeMcpConnections.length === 0 ? <p className={settingsTheme.sectionStatus + ' mt-1'}>No active connections</p> : isMcpConnectionsExpanded ? (
+                            {!isLoadingMcpConnections && activeMcpConnections.length > 0 && isMcpConnectionsExpanded ? (
                               <div
                                 className="mt-2 overflow-visible rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
                                 onClick={(event) => event.stopPropagation()}

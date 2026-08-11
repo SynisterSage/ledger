@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleUserRound,
   Copy,
+  Download,
   LogOut,
   Settings,
   UserPlus,
@@ -36,8 +37,11 @@ type SidebarMenuStyle = CSSProperties & {
   '--sidebar-material-alpha'?: string;
 };
 
-const menuWidth = 284;
-const submenuWidth = 284;
+// Keep the workspace menu within the compact expanded-sidebar footprint on
+// both Electron and Web. The menu is portaled, so its width is independent of
+// the sidebar's rendered width.
+const menuWidth = 248;
+const submenuWidth = 248;
 const viewportPadding = 8;
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 
@@ -567,6 +571,21 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                       </button>
                     );
                   })}
+
+                  {platform.kind === 'web' && (
+                    <>
+                      <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />
+                      <a
+                        href="/download"
+                        data-switcher-row="true"
+                        onClick={closeAllMenus}
+                        className="flex min-h-9 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+                      >
+                        <Download size={14} className="shrink-0" />
+                        <span className="min-w-0 flex-1 truncate">Download desktop app</span>
+                      </a>
+                    </>
+                  )}
 
                   <button
                     ref={switchRowRef}

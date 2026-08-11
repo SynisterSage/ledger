@@ -48,7 +48,7 @@ export const WebShellLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div
-      className={`web-ledger-shell flex h-screen min-h-0 overflow-hidden bg-[var(--ledger-background)] ${
+      className={`web-ledger-shell web-ledger-shell-enter flex h-screen min-h-0 overflow-hidden bg-[var(--ledger-background)] ${
         isHorizontal ? 'flex-col' : 'flex-row'
       }`}
       data-sidebar-position={effectivePosition}

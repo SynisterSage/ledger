@@ -700,7 +700,10 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         !workspaceDockAutoAttachSuppressed);
     const sidebarMode: SidebarAttachmentMode =
       shellFullscreen && isSidebarVisible && canReserveWorkspaceGutter ? 'attached' : 'overlay';
-    const verticalSidebarWidth = state === 'expanded' ? 320 : 56;
+    // Keep the attached workspace gutter aligned with the actual expanded
+    // sidebar window. The compact width leaves more room for the workspace
+    // while still fitting the expanded navigation labels.
+    const verticalSidebarWidth = state === 'expanded' ? 256 : 56;
     const horizontalSidebarHeight = state === 'expanded' ? 144 : 60;
     const isVerticalPlacement = effectivePlacement === 'left' || effectivePlacement === 'right';
     const attachedWidth = isVerticalPlacement ? verticalSidebarWidth : 0;

@@ -28,6 +28,20 @@ const Status = ({ children, error = false }: { children: string; error?: boolean
   </div>
 );
 
+const LoadingScreen = () => (
+  <div
+    className="flex min-h-screen items-center justify-center bg-[var(--ledger-background)]"
+    role="status"
+    aria-label="Loading Ledger"
+  >
+    <img
+      src={`${import.meta.env.BASE_URL}logo-color.svg`}
+      alt="Ledger"
+      className="h-10 w-10 select-none"
+    />
+  </div>
+);
+
 const WorkspaceSelection = ({ requestedRoute }: { requestedRoute?: LedgerWorkspaceRoute }) => {
   const platform = usePlatform();
   const { workspaces, setActiveWorkspace } = useWorkspaceContext();
@@ -152,19 +166,20 @@ const WebAuthenticatedContent = () => {
     if (locationState.kind === 'app-page' && locationState.page === 'onboarding') {
       return <Status>Onboarding is already complete for this account.</Status>;
     }
-    if (isLoading) return <Status>Loading your workspaces…</Status>;
+    if (isLoading) return <LoadingScreen />;
     if (workspaces.length === 0)
       return <Status>No workspace found. Start onboarding to continue.</Status>;
     return <WorkspaceSelection />;
   }
   if (locationState.kind === 'invite') return <Status>Processing your invitation…</Status>;
   if (locationState.kind === 'overlay') {
+    if (isLoading) return <LoadingScreen />;
     const hasOverlayAccess = workspaces.some(
       (workspace) => workspace.id === locationState.route.workspaceId
     );
     if (!hasOverlayAccess) return <Status error>You do not have access to this workspace.</Status>;
-    if (isLoading || activeWorkspaceId !== locationState.route.workspaceId)
-      return <Status>Opening your workspace…</Status>;
+    if (activeWorkspaceId !== locationState.route.workspaceId)
+      return <LoadingScreen />;
     const backgroundState = locationState.backgroundPath
       ? parseWebLocation(new URL(locationState.backgroundPath, window.location.origin))
       : null;
@@ -209,12 +224,13 @@ const WebAuthenticatedContent = () => {
       </WebShellLayout>
     );
   }
-  if (locationState.kind === 'workspace-root') return <Status>Opening your workspace…</Status>;
+  if (locationState.kind === 'workspace-root') return <LoadingScreen />;
   if (locationState.kind === 'unknown') return <Status error>Ledger route not found.</Status>;
   if (locationState.route.kind !== 'workspace')
     return <Status error>Ledger route is not available here.</Status>;
 
   const route = locationState.route;
+  if (isLoading) return <LoadingScreen />;
   const hasAccess = workspaces.some((workspace) => workspace.id === route.workspaceId);
   if (!hasAccess) return <Status error>You do not have access to this workspace.</Status>;
   const workspace = workspaces.find((candidate) => candidate.id === route.workspaceId);
@@ -228,8 +244,8 @@ const WebAuthenticatedContent = () => {
       } is available in team workspaces only.`}</Status>
     );
   }
-  if (isLoading || activeWorkspaceId !== route.workspaceId)
-    return <Status>Opening your workspace…</Status>;
+  if (activeWorkspaceId !== route.workspaceId)
+    return <LoadingScreen />;
 
   return (
     <WebShellLayout>

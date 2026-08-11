@@ -246,6 +246,7 @@ const ledgerEventChannels = {
   onWorkspaceNavigationState: 'workspace:navigation-state', offWorkspaceNavigationState: 'workspace:navigation-state',
   onWorkspaceRouteChanged: 'workspace:route-changed', offWorkspaceRouteChanged: 'workspace:route-changed',
   onWorkspaceRouteRequested: 'workspace:route-requested', offWorkspaceRouteRequested: 'workspace:route-requested',
+  onWorkspaceCloseActiveTab: 'workspace:close-active-tab', offWorkspaceCloseActiveTab: 'workspace:close-active-tab',
 } as const;
 
 const ledgerEvents = Object.fromEntries(Object.entries(ledgerEventChannels).map(([name, channel]) => [

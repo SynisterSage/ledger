@@ -178,7 +178,7 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
     state === 'expanded'
       ? isHorizontal
         ? 'w-auto h-[144px]'
-        : 'w-80 h-full'
+        : 'w-64 h-full'
       : isExpanded
       ? isHorizontal
         ? 'w-auto h-[60px]'
