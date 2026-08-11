@@ -1,6 +1,5 @@
 import {
   ChevronLeft,
-  Hash,
   Plus,
   Search,
   Users,
@@ -50,6 +49,13 @@ type TeamPayload = {
 
 const teamColors = ['#FF5F40', '#D97706', '#0F766E', '#2563EB', '#7C3AED', '#475569'];
 
+const getTeamInitials = (name: string) => {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'T';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return words.slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+};
+
 const settingsTheme = {
   shell:
     'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)]',
@@ -58,37 +64,37 @@ const settingsTheme = {
   pageTitle: 'text-[24px] font-medium leading-tight tracking-[-0.01em] text-[var(--ledger-text-primary)]',
   subtitle: 'text-[13px] text-[var(--ledger-text-muted)]',
   status: 'text-xs text-[var(--ledger-text-muted)]',
-  section:
-    'border-b border-[color:var(--ledger-border-subtle)] py-5',
-  sectionHeader: 'flex items-start justify-between gap-4 pb-3',
+  section: 'mt-7',
+  sectionHeader: 'flex items-start justify-between gap-4',
   sectionTitle: 'text-[13px] font-semibold text-[var(--ledger-text-primary)]',
   sectionHelp: 'mt-0.5 text-xs text-[var(--ledger-text-muted)]',
-  rows: 'divide-y divide-[color:var(--ledger-border-subtle)] border-t border-[color:var(--ledger-border-subtle)]',
-  row: 'grid gap-3 px-0 py-3 md:grid-cols-[200px_minmax(0,1fr)] md:items-center',
-  memberRow: 'grid gap-3 px-0 py-2.5 md:grid-cols-[minmax(0,1fr)_148px_auto] md:items-center',
+  rows:
+    'mt-3 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] divide-y divide-[color:var(--ledger-border-subtle)] [&>div]:px-4 [&>div]:py-3',
+  row: 'grid gap-3 px-4 py-3 md:grid-cols-[200px_minmax(0,1fr)] md:items-center',
+  memberRow: 'grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_148px_auto] md:items-center',
   label: 'text-[13px] font-medium text-[var(--ledger-text-secondary)]',
   value: 'text-[13px] text-[var(--ledger-text-primary)]',
   muted: 'text-xs text-[var(--ledger-text-muted)]',
   input:
-    'h-8 w-full max-w-[440px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[13px] text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] hover:border-[color:var(--ledger-border-strong)] focus:border-[color:var(--ledger-border-strong)]',
+    'h-9 w-full max-w-[440px] rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-[13px] text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] hover:border-[color:var(--ledger-border-strong)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
   textarea:
-    'min-h-20 w-full max-w-[440px] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-2 text-[13px] text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] hover:border-[color:var(--ledger-border-strong)] focus:border-[color:var(--ledger-border-strong)]',
+    'min-h-20 w-full max-w-[440px] rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[13px] text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] hover:border-[color:var(--ledger-border-strong)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60',
   control:
-    'inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
+    'inline-flex h-8 items-center justify-center gap-1.5 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
   primary:
-    'inline-flex h-8 items-center justify-center rounded-md border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
+    'inline-flex h-9 items-center justify-center rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-accent)] bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
   danger:
-    'inline-flex h-8 items-center justify-center rounded-md border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-60',
+    'inline-flex h-8 items-center justify-center rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-60',
   chip:
     'text-[11px] text-[var(--ledger-text-muted)]',
 };
 
-const TeamBadge = ({ color }: { color: string }) => (
+const TeamBadge = ({ color, name }: { color: string; name: string }) => (
   <span
-    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold tracking-wide text-white shadow-sm"
     style={{ backgroundColor: color }}
   >
-    <Hash size={14} />
+    {getTeamInitials(name)}
   </span>
 );
 
@@ -422,6 +428,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
           subtitle="Select a workspace first."
           icon={<Users size={18} />}
           compact
+          showBodyHeader={false}
           onClose={closeSettings}
         />
         <div className={settingsTheme.content}>
@@ -441,6 +448,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
           subtitle={workspaceName}
           icon={<Users size={18} />}
           compact
+          showBodyHeader={false}
           onClose={closeSettings}
         />
         <div className={settingsTheme.content}>
@@ -460,6 +468,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
           subtitle={workspaceName}
           icon={<Users size={18} />}
           compact
+          showBodyHeader={false}
           onClose={closeSettings}
         />
         <div className={settingsTheme.content}>
@@ -497,6 +506,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
         subtitle={team.name}
         icon={<Users size={18} />}
         compact
+        showBodyHeader={false}
         onClose={closeSettings}
         primaryActions={
           <ModuleHeaderActionButton
@@ -513,9 +523,17 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
 
       <div className={settingsTheme.content}>
         <div className={settingsTheme.page}>
+          <button
+            type="button"
+            onClick={openWorkSurface}
+            className="mb-5 inline-flex items-center gap-1 text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+          >
+            ← Open team
+          </button>
+
           <header className="space-y-2">
             <div className="flex items-center gap-3">
-              <TeamBadge color={team.color ?? teamColors[0]} />
+              <TeamBadge color={team.color ?? teamColors[0]} name={team.name} />
               <div className="min-w-0">
                 <h1 className={settingsTheme.pageTitle}>{team.name}</h1>
                 <p className={settingsTheme.subtitle}>
@@ -707,7 +725,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
               </div>
             </div>
             <div className={settingsTheme.rows}>
-              <div className={settingsTheme.row}>
+              <div className="grid gap-3 px-0 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
                     {isArchived ? 'Restore team' : 'Archive team'}
@@ -718,11 +736,11 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
                       : 'Hide this team from active lists while preserving history.'}
                   </p>
                 </div>
-                <button type="button" onClick={() => void archiveTeam()} disabled={!canManageTeam || archiveBusy} className={settingsTheme.control}>
+                <button type="button" onClick={() => void archiveTeam()} disabled={!canManageTeam || archiveBusy} className={`${settingsTheme.control} min-w-[92px] md:justify-self-end`}>
                   {archiveBusy ? 'Working...' : isArchived ? 'Restore' : 'Archive'}
                 </button>
               </div>
-              <div className={settingsTheme.row}>
+              <div className="grid gap-3 border-t border-[color:var(--ledger-border-subtle)] px-0 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-[var(--ledger-danger)]">Delete team</p>
                   <p className={settingsTheme.muted}>
@@ -736,7 +754,7 @@ const TeamSettingsWindow = ({ focusContext }: { focusContext?: string }) => {
                     setIsDeleteOpen(true);
                   }}
                   disabled={!canManageTeam || archiveBusy}
-                  className={settingsTheme.danger}
+                  className={`${settingsTheme.danger} min-w-[92px] md:justify-self-end`}
                 >
                   Delete
                 </button>

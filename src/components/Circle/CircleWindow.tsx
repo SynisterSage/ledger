@@ -172,7 +172,7 @@ const circleTheme = {
     'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none',
   body: 'flex min-h-0 flex-1 overflow-hidden',
   leftPane:
-    'flex h-full w-[300px] min-w-[260px] max-w-[320px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]',
+    'flex h-full w-[250px] min-w-[220px] max-w-[280px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]',
   leftPaneHeader:
     'border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]',
   leftList: 'min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 py-2',

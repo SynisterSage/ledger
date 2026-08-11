@@ -6,7 +6,6 @@ import {
   Diamond,
   FileText,
   Filter,
-  Hash,
   Inbox,
   CalendarDays,
   Link2,
@@ -48,7 +47,6 @@ import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { usePlatform } from '../../platform';
 import { UserAvatar } from '../Common/UserAvatar';
-import { AvatarGroup } from '../Common/AvatarGroup';
 
 type TeamMember = {
   id: string;
@@ -291,6 +289,7 @@ type TeamContextMenu = {
   teamId: string;
   x: number;
   y: number;
+  source: 'list' | 'detail';
 } | null;
 
 type TeamResourceKind = 'project' | 'note' | 'task' | 'event' | 'external';
@@ -380,7 +379,8 @@ const teamsTheme = {
   title: 'text-[13px] font-medium text-[var(--ledger-text-primary)]',
   meta: 'text-[11px] leading-4 text-[var(--ledger-text-muted)]',
   chip: 'inline-flex h-5 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[10px] font-medium text-[var(--ledger-text-secondary)]',
-  rightPanel: 'space-y-4 lg:sticky lg:top-0 lg:self-start',
+  rightPanel:
+    'min-h-0 space-y-4 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 lg:self-stretch lg:border-l lg:border-t-0',
   sectionTitle:
     'text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]',
   modalInput:
@@ -423,10 +423,10 @@ const MemberAvatar = ({ member }: { member: { id: string; name: string; email?: 
 
 const TeamBadge = ({ team }: { team: Team }) => (
   <span
-    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold tracking-wide text-white shadow-sm"
     style={{ backgroundColor: team.color }}
   >
-    <Hash size={14} />
+    {makeIdentifier(team.name).slice(0, 2)}
   </span>
 );
 
@@ -452,23 +452,6 @@ const CompactButton = ({
   </button>
 );
 
-const AvatarStack = ({
-  members,
-  maxVisible = 3,
-  className = '',
-  onMemberContextMenu,
-}: {
-  members: Array<{ id: string; name: string; email?: string | null; avatar?: string | null; avatar_updated_at?: string | null }>;
-  maxVisible?: number;
-  className?: string;
-  onMemberContextMenu?: (
-    member: { id: string; name: string; email?: string | null; avatar?: string | null; avatar_updated_at?: string | null },
-    event: ReactMouseEvent<HTMLElement>
-  ) => void;
-}) => {
-  return <AvatarGroup users={members.map((member) => ({ id: member.id, displayName: member.name, email: member.email, avatarUrl: member.avatar, avatarUpdatedAt: member.avatar_updated_at }))} maxVisible={maxVisible} size="xs" className={className} onUserContextMenu={onMemberContextMenu ? (user, event) => onMemberContextMenu(members.find((member) => member.id === user.id) ?? { id: user.id ?? '', name: user.displayName ?? '', email: user.email, avatar: user.avatarUrl, avatar_updated_at: user.avatarUpdatedAt }, event) : undefined} />;
-};
-
 const formatRelativeTime = (value?: string | null) => {
   if (!value) return 'just now';
   const time = new Date(value).getTime();
@@ -481,6 +464,20 @@ const formatRelativeTime = (value?: string | null) => {
   if (deltaHours < 24) return `${deltaHours}h ago`;
   const deltaDays = Math.floor(deltaHours / 24);
   return `${deltaDays}d ago`;
+};
+
+const looksLikeUuid = (value?: string | null) =>
+  Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+
+const formatActivityVerb = (value?: string | null) => {
+  const raw = String(value ?? '').split('.').pop()?.replace(/[_-]+/g, ' ').trim() ?? '';
+  if (!raw) return 'updated';
+  return raw.toLowerCase();
+};
+
+const formatActivityObjectType = (value?: string | null) => {
+  const raw = String(value ?? '').split('.').pop()?.replace(/[_-]+/g, ' ').trim() ?? '';
+  return raw ? raw.toLowerCase() : 'item';
 };
 
 const TEAMS_CACHE_MAX_AGE = 45_000;
@@ -1271,12 +1268,22 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         title: item.title,
         meta: [
           item.status ? item.status.replace(/_/g, ' ') : null,
-          item.project?.name ?? null,
+          item.project
+            ? looksLikeUuid(item.project.name)
+              ? teamProjectById.get(item.project.id)?.title ?? null
+              : item.project.name ?? null
+            : null,
           item.due_date ? formatShortDate(item.due_date) : null,
         ]
           .filter(Boolean)
           .join(' · '),
-        right: [item.assignee ?? null, item.task_type ? item.task_type : 'Task']
+        right: [
+          item.assignee
+            ? teamMemberLabelById.get(item.assignee) ??
+              (looksLikeUuid(item.assignee) ? null : item.assignee)
+            : null,
+          item.task_type ? item.task_type : 'Task',
+        ]
           .filter(Boolean)
           .join(' · '),
         onClick: () => openTaskById(item.id.replace(/^task-/, '')),
@@ -1288,7 +1295,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         title: item.title,
         meta: [
           'Milestone',
-          item.project ?? null,
+          item.project
+            ? looksLikeUuid(item.project)
+              ? teamProjectById.get(item.project)?.title ?? null
+              : item.project
+            : null,
           item.due_date ? formatShortDate(item.due_date) : null,
         ]
           .filter(Boolean)
@@ -1311,6 +1322,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
     ];
   }, [
     openedTeam?.id,
+    teamMemberLabelById,
+    teamProjectById,
     teamOverview?.needs_attention.intake_items,
     teamOverview?.needs_attention.overdue_milestones,
     teamOverview?.needs_attention.overdue_tasks,
@@ -2115,7 +2128,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
 
   const teamRowBaseClass =
     'group grid w-full grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left transition';
-  const teamRowHoverClass = 'hover:bg-[var(--ledger-surface-hover)]';
+  const teamRowHoverClass = 'hover:bg-[var(--ledger-surface-muted)]';
   const teamRowIconClass =
     'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[12px] text-[var(--ledger-text-secondary)]';
   const teamRowTitleClass =
@@ -2153,7 +2166,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
               [sectionId]: !current[sectionId],
             }));
           }}
-          className="flex h-8 w-full items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+          className="flex h-8 w-full items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3 text-left transition hover:bg-[var(--ledger-surface-muted)]"
         >
           <div className="flex min-w-0 items-center gap-2">
             <ChevronDown
@@ -2192,20 +2205,66 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
         <div className="space-y-2">
           <div className="space-y-1">
             <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Members</span>
-            <div className="flex justify-start">
-              <AvatarStack
-                members={teamMembers}
-                maxVisible={3}
-                className="gap-1 [&>span]:!ml-0"
-                onMemberContextMenu={(member, event) =>
-                  openTeamRowContextMenu(event, {
-                    kind: 'member',
-                    memberId: member.id,
-                    x: event.clientX,
-                    y: event.clientY,
-                  })
-                }
-              />
+            <div className="flex items-center -space-x-1.5 pt-0.5">
+              {teamMembers.slice(0, 5).map((member) => (
+                <button
+                  key={member.id}
+                  type="button"
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    openTeamRowContextMenu(event, {
+                      kind: 'member',
+                      memberId: member.id,
+                      x: event.clientX,
+                      y: event.clientY,
+                    });
+                  }}
+                  className="relative inline-flex h-7 w-7 items-center justify-center rounded-full shadow-[0_0_0_2px_var(--ledger-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)]"
+                  title={member.name}
+                  aria-label={member.name}
+                >
+                  <MemberAvatar member={member} />
+                </button>
+              ))}
+              {teamMembers.length > 5 ? (
+                <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                  +{teamMembers.length - 5}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+              Team details
+            </span>
+            <div className="mt-1 divide-y divide-[color:var(--ledger-border-subtle)] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/40 px-3">
+              <div className="flex items-center justify-between gap-3 py-2 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Identifier</span>
+                <span className="truncate font-mono text-[11px] text-[var(--ledger-text-secondary)]">
+                  {teamDisplayIdentifier}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-2 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Workspace</span>
+                <span className="truncate text-right text-[var(--ledger-text-secondary)]">
+                  {workspaceName}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-2 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Created</span>
+                <span className="text-[var(--ledger-text-secondary)]">
+                  {formatShortDate(teamOverview?.team.created_at ?? null) ?? 'Unknown'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-2 text-xs">
+                <span className="text-[var(--ledger-text-muted)]">Updated</span>
+                <span className="text-[var(--ledger-text-secondary)]">
+                  {formatShortDate(teamOverview?.team.updated_at ?? null) ?? 'Unknown'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -2279,39 +2338,6 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           </div>
         </div>
 
-        <div className="space-y-2">
-          <div className="space-y-1">
-            <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-              Team details
-            </span>
-            <div className="space-y-1 pt-1">
-              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
-                <span className="text-[var(--ledger-text-muted)]">Identifier</span>
-                <span className="truncate font-mono text-[var(--ledger-text-secondary)]">
-                  {teamDisplayIdentifier}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
-                <span className="text-[var(--ledger-text-muted)]">Workspace</span>
-                <span className="truncate text-[var(--ledger-text-secondary)]">
-                  {workspaceName}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
-                <span className="text-[var(--ledger-text-muted)]">Created</span>
-                <span className="text-[var(--ledger-text-secondary)]">
-                  {formatShortDate(teamOverview?.team.created_at ?? null) ?? 'Unknown'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-none px-0 py-0 text-xs">
-                <span className="text-[var(--ledger-text-muted)]">Updated</span>
-                <span className="text-[var(--ledger-text-secondary)]">
-                  {formatShortDate(teamOverview?.team.updated_at ?? null) ?? 'Unknown'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
       </aside>
     );
   };
@@ -3297,6 +3323,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               teamId: team.id,
                               x: event.clientX,
                               y: event.clientY,
+                              source: 'list',
                             });
                           }}
                           className={`${teamsTheme.row} ${
@@ -3335,6 +3362,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                 teamId: team.id,
                                 x: event.clientX,
                                 y: event.clientY,
+                                source: 'list',
                               });
                             }}
                           >
@@ -3403,6 +3431,7 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                               teamId: openedTeam.id,
                               x: event.clientX,
                               y: event.clientY,
+                              source: 'detail',
                             });
                           }}
                           className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
@@ -3418,24 +3447,23 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                     <button
                       type="button"
                       onClick={() => openTeamSettings(openedTeam.id)}
-                      className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                       title="Open team settings"
+                      aria-label="Open team settings"
                     >
                       <Settings2 size={13} />
-                      Team settings
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        void navigator.clipboard
-                          ?.writeText(`${window.location.origin}/teams/${openedTeam.id}`)
-                          .catch(() => undefined)
-                      }
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setResourceMenu({ x: rect.right, y: rect.bottom + 8 });
+                      }}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      title="Copy team link"
-                      aria-label="Copy team link"
+                      title="Add resources"
+                      aria-label="Add resources"
                     >
-                      <Link2 size={13} />
+                      <Plus size={13} />
                     </button>
                   </div>
                 </header>
@@ -3469,17 +3497,6 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                       </label>
                     ) : null}
                   </div>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      setResourceMenu({ x: rect.right, y: rect.bottom + 8 });
-                    }}
-                    className="inline-flex h-8 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                  >
-                    <Plus size={13} />
-                    Add resources
-                  </button>
                 </div>
                 {teamOverviewLoading ? (
                   <p className="px-1 text-xs text-[var(--ledger-text-muted)]">
@@ -3490,8 +3507,8 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                   <p className="px-1 text-xs text-[color:#B42318]">{teamOverviewError}</p>
                 ) : null}
               </div>
-              <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-                <div className="min-w-0 space-y-4">
+              <section className="grid min-h-0 overflow-hidden rounded-[18px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_44px_rgba(66,42,24,0.06)] lg:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="min-w-0 space-y-4 px-3 py-3">
                   {activeTab === 'Overview' ? (
                     <>
                       {renderTeamSectionShell(
@@ -3858,17 +3875,34 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
                                     y: event.clientY,
                                   })
                                 }
-                              >
-                                <span className={teamRowIconClass}>
-                                  <Users size={12} />
-                                </span>
-                                <span className="min-w-0">
-                                  <span className={teamRowTitleClass}>
-                                    {(item.actor ? `${item.actor} ` : '') +
-                                      item.action +
-                                      (item.object_title ? ` ${item.object_title}` : '')}
+                                >
+                                  <span className={teamRowIconClass}>
+                                    <Users size={12} />
                                   </span>
-                                </span>
+                                  <span className="min-w-0">
+                                    <span className={teamRowTitleClass}>
+                                      {(() => {
+                                        const actorCandidate = item.actor_id ?? item.actor;
+                                        const actor = actorCandidate
+                                          ? teamMemberLabelById.get(actorCandidate) ??
+                                            (looksLikeUuid(actorCandidate) ? null : actorCandidate)
+                                          : null;
+                                        const objectLabel =
+                                          item.object_title ??
+                                          (looksLikeUuid(item.object_id)
+                                            ? null
+                                            : item.object_id) ??
+                                          formatActivityObjectType(item.object_type);
+                                        return [
+                                          actor,
+                                          formatActivityVerb(item.action),
+                                          objectLabel,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(' ');
+                                      })()}
+                                    </span>
+                                  </span>
                                 <span className={teamRowMetaClass}>
                                   {formatRelativeTime(item.timestamp)}
                                 </span>
@@ -4868,9 +4902,11 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
           }}
           onClick={(event) => event.stopPropagation()}
         >
-          <CompactButton onClick={() => openTeamDetail(contextMenu.teamId)}>
-            Open team
-          </CompactButton>
+          {contextMenu.source === 'detail' ? (
+            <CompactButton onClick={() => openTeamDetail(contextMenu.teamId)}>
+              Open team
+            </CompactButton>
+          ) : null}
           <CompactButton
             onClick={() => {
               openTeamSettings(contextMenu.teamId);
