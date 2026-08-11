@@ -40,8 +40,8 @@ type SidebarMenuStyle = CSSProperties & {
 // Keep the workspace menu within the compact expanded-sidebar footprint on
 // both Electron and Web. The menu is portaled, so its width is independent of
 // the sidebar's rendered width.
-const menuWidth = 248;
-const submenuWidth = 248;
+const menuWidth = 236;
+const submenuWidth = 236;
 const viewportPadding = 8;
 const noDragRegionStyle: AppRegionStyle = { WebkitAppRegion: 'no-drag' };
 

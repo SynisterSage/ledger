@@ -165,6 +165,12 @@ export const useAuth = (): UseAuthReturn => {
       setSession(null);
       setUser(null);
       setProfile(null);
+      if (typeof window !== 'undefined' && !window.desktopWindow) {
+        // The product shell is only for authenticated web work. Leave it
+        // entirely after logout so the marketing site's auth page owns the
+        // signed-out state instead of rendering the desktop login surface.
+        window.location.replace('/login');
+      }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Sign out failed');
       setError(error);

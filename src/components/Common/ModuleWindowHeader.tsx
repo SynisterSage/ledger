@@ -943,7 +943,7 @@ export const ModuleWindowHeader = ({
                 >
                   <ChevronRight size={16} />
                 </button>
-                {showHistoryControl && (
+                {showHistoryControl && !isBrowser && (
                   <button
                     ref={historyButtonRef}
                     type="button"
