@@ -541,6 +541,15 @@ textarea:focus-visible,
   --sidebar-scrollbar-color-hover: color-mix(in srgb, var(--ledger-text-primary) 28%, transparent);
 }
 
+/* The shared material layer can resolve to an opaque desktop fallback before
+   its inherited variables settle. Paint the browser sidebar directly so its
+   base surface is always the same token as the page behind it. */
+[data-platform='web'] .web-sidebar-shell .sidebar-glass-clip,
+[data-platform='web'] .web-sidebar-shell .sidebar-glass-material,
+[data-platform='web'] .web-sidebar-shell .sidebar-glass-content {
+  background-color: var(--ledger-background);
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-ledger-theme='light']) [data-platform='web'] .web-sidebar-shell {
     --sidebar-material-rgb: 15 15 15;
