@@ -6,6 +6,7 @@ import { sidebarTheme } from './sidebarTheme';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
+import { runtimeConfig } from '../../config/runtime';
 
 export const CollapsedSidebar = ({
   onDragHandleMouseDown,
@@ -33,6 +34,14 @@ export const CollapsedSidebar = ({
       return;
     }
     restoreSidebarView();
+  };
+  const handleExit = () => {
+    if (platform.kind === 'web') {
+      const publicSiteUrl = (runtimeConfig.ledgerWebUrl || 'https://ledgerworkspace.com').replace(/\/$/, '');
+      window.location.assign(`${publicSiteUrl}/`);
+      return;
+    }
+    void window.desktopWindow?.quitApp();
   };
 
   const iconButtonClass = `${sidebarTheme.railIcon} ${sidebarTheme.railIconNeutral}`;
@@ -142,7 +151,7 @@ export const CollapsedSidebar = ({
               <ExpandChevron size={18} />
             </button>
             <button
-              onClick={() => void window.desktopWindow?.quitApp()}
+              onClick={handleExit}
               onMouseDown={(e) => e.stopPropagation()}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition-colors duration-150 hover:bg-[color:rgba(255,95,64,0.08)] hover:text-[var(--ledger-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
               title="Exit Ledger"

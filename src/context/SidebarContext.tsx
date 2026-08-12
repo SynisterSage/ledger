@@ -732,9 +732,8 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
       },
       shellFullscreen,
       workspaceShellStyle: {
-        backgroundColor: shellFullscreen
-          ? 'var(--ledger-surface-muted)'
-          : 'var(--ledger-background)',
+        backgroundColor: 'var(--ledger-background)',
+        borderRadius: shellFullscreen ? 'var(--ledger-window-radius)' : undefined,
         paddingLeft:
           shellFullscreen && sidebarMode === 'attached' && effectivePlacement === 'left'
             ? `${attachedWidth}px`

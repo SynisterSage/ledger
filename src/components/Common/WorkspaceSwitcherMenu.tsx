@@ -577,6 +577,8 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                       <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />
                       <a
                         href="/download"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         data-switcher-row="true"
                         onClick={closeAllMenus}
                         className="flex min-h-9 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"

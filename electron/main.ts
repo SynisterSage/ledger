@@ -2339,7 +2339,8 @@ function getFloatingBounds(mode: SidebarWindowMode) {
     return getDockedBoundsForTarget(
       currentFloatingDockBounds,
       currentFloatingDockTarget.side,
-      mode
+      mode,
+      { allowVerticalOverflow: isWorkspaceDockTarget() }
     );
   }
 
@@ -3070,7 +3071,9 @@ function getDockedBoundsForTarget(
       ? MIN_DOCK_HEIGHT.minimized
       : MIN_DOCK_HEIGHT.expanded;
   const minHeight = Math.min(baseMinHeight, maxHeight);
-  const height = Math.max(minHeight, Math.min(targetBounds.height, maxHeight));
+  const height = isWorkspaceDockTarget()
+    ? Math.max(1, targetBounds.height)
+    : Math.max(minHeight, Math.min(targetBounds.height, maxHeight));
   const overlap = isWorkspaceDockTarget() ? getLedgerWorkspaceAttachmentOverlap() : 0;
   const x =
     side === 'left'
@@ -3101,10 +3104,12 @@ function getSidebarBoundsInsideFullscreenTarget(targetBounds: Rect): Rect | null
       : currentSidebarMode === 'minimized'
       ? MIN_DOCK_HEIGHT.minimized
       : MIN_DOCK_HEIGHT.expanded;
-  const verticalHeight = Math.max(
-    Math.min(baseVerticalHeight, maxHeight),
-    Math.min(targetBounds.height, maxHeight)
-  );
+  const verticalHeight = isWorkspaceDockTarget()
+    ? Math.max(1, targetBounds.height)
+    : Math.max(
+        Math.min(baseVerticalHeight, maxHeight),
+        Math.min(targetBounds.height, maxHeight)
+      );
   const horizontalWidth = Math.min(
     currentSidebarMode === 'minimized' ? HORIZONTAL_COLLAPSED_WIDTH : HORIZONTAL_DOCK_WIDTH,
     maxWidth
@@ -3196,8 +3201,33 @@ function getFloatingDockStatePayload(
   };
 }
 
+function normalizeWorkspaceDockTarget(
+  target: FloatingDockTarget | null,
+  bounds: Rect | null
+) {
+  if (
+    !target?.isLedgerWindow ||
+    !bounds ||
+    !workspaceModuleWin ||
+    workspaceModuleWin.isDestroyed() ||
+    !rectsMatch(bounds, workspaceModuleWin.getBounds())
+  ) {
+    return target;
+  }
+
+  // Native edge probing identifies a Ledger window by its platform window
+  // handle. The renderer's gutter contract uses the canonical workspace ID,
+  // so normalize both attach paths to the same target identity.
+  return {
+    ...target,
+    id: getWorkspaceDockTargetId(workspaceModuleWin),
+    isLedgerWindow: true,
+  };
+}
+
 function setCurrentFloatingDockTarget(target: FloatingDockTarget | null, bounds: Rect | null) {
   floatingDockGeneration += 1;
+  target = normalizeWorkspaceDockTarget(target, bounds);
   if (target) {
     workspaceDockAutoAttachSuppressed = !isWorkspaceDockTarget(target);
   }
@@ -5227,11 +5257,14 @@ async function dockFloatingSidebarToTarget() {
     return null;
   }
 
+  const normalizedTarget = normalizeWorkspaceDockTarget(target.target, target.bounds) ?? target.target;
+  target = { ...target, target: normalizedTarget };
   const side =
     target.target.side === 'left' || target.target.side === 'right'
       ? target.target.side
       : getDockSide(currentBounds, target.bounds);
   const isLedgerTarget = Boolean(target.target.isLedgerWindow);
+  setCurrentFloatingDockTarget({ ...target.target, side }, target.bounds);
   const dockBounds = getDockedBoundsForTarget(target.bounds, side, currentSidebarMode, {
     allowVerticalOverflow: isLedgerTarget,
   });
@@ -5240,7 +5273,6 @@ async function dockFloatingSidebarToTarget() {
     ? dockBounds
     : clampRectToWorkArea(dockBounds, targetDisplay.workArea);
 
-  setCurrentFloatingDockTarget({ ...target.target, side }, target.bounds);
   const setBoundsCalled = setSidebarBounds(clamped);
   writeWindowsDockTrace('manual-dock-set-bounds', {
     trackerType: 'windows-cursor-scan',

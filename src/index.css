@@ -518,6 +518,11 @@ textarea:focus-visible,
   container-name: web-shell;
 }
 
+[data-platform='web'] .web-ledger-shell[data-sidebar-position='left'] {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
 /* The browser shell shares the page surface with its sidebar. Keep the
    desktop glass-material tokens unchanged; web gets a quieter Linear-like
    boundary with the same background family on both sides. */

@@ -40,6 +40,7 @@ import { LedgerTabStrip } from './LedgerTabStrip';
 import { useSearch } from '../../context/SearchContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { usePlatform } from '../../platform';
+import { useSidebar } from '../../context/SidebarContext';
 
 type ModuleWindowHeaderProps = {
   eyebrow?: string;
@@ -554,6 +555,17 @@ export const ModuleWindowHeader = ({
   showHistoryControl = true,
   headerRef,
 }: ModuleWindowHeaderProps) => {
+  const { workspaceShellLayout } = useSidebar();
+  const isAttachedFullscreen = workspaceShellLayout.shellFullscreen && workspaceShellLayout.sidebarMode === 'attached';
+  const attachedHeaderRadiusClass = isAttachedFullscreen
+    ? workspaceShellLayout.sidebarSize.left > 0
+      ? 'rounded-tl-[var(--ledger-window-radius)] overflow-hidden'
+      : workspaceShellLayout.sidebarSize.right > 0
+        ? 'rounded-tr-[var(--ledger-window-radius)] overflow-hidden'
+        : workspaceShellLayout.sidebarSize.top > 0
+          ? 'rounded-t-[var(--ledger-window-radius)] overflow-hidden'
+          : ''
+    : '';
   const { openSearch } = useSearch();
   const platform = usePlatform();
   const isBrowser = !window.desktopWindow;
@@ -853,7 +865,7 @@ export const ModuleWindowHeader = ({
     <div
       ref={headerRef}
       data-ledger-module-header
-      className={`web-module-header w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface}`}
+      className={`web-module-header w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${attachedHeaderRadiusClass}`}
       style={dragRegionStyle}
       onDoubleClickCapture={handleStripDoubleClick}
     >
