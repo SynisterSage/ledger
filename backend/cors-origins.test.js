@@ -31,3 +31,11 @@ test('production CORS excludes local and null origins', () => {
   assert.equal(isAllowedCorsOrigin('http://127.0.0.1:4173', allowed), false);
   assert.equal(isAllowedCorsOrigin('https://ledgerworkspace.com', allowed), true);
 });
+
+test('production CORS allows the hosted Figma plugin iframe origins', () => {
+  const allowed = getAllowedCorsOrigins({ NODE_ENV: 'production' });
+
+  assert.equal(isAllowedCorsOrigin('https://www.figma.com', allowed), true);
+  assert.equal(isAllowedCorsOrigin('https://figma.com', allowed), true);
+  assert.equal(isAllowedCorsOrigin('https://evil-figma.com', allowed), false);
+});

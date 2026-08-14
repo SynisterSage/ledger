@@ -1,4 +1,11 @@
 const EXTENSION_ORIGIN_PATTERN = /^(?:chrome|moz|safari)-extension:\/\/[^/\s]+$/i;
+// Figma plugin UI requests are sent from Figma's hosted plugin iframe.
+// Keep this explicit: allowing arbitrary origins here would expose every API
+// route to any website that can obtain a Ledger credential.
+const FIGMA_PLUGIN_ORIGINS = [
+  'https://www.figma.com',
+  'https://figma.com',
+];
 
 const splitOrigins = (value) => String(value ?? '')
   .split(',')
@@ -18,6 +25,7 @@ const configuredExtensionOrigins = (env) => [
 export const getAllowedCorsOrigins = (env = process.env) => new Set([
   'https://ledgerworkspace.com',
   'https://www.ledgerworkspace.com',
+  ...FIGMA_PLUGIN_ORIGINS,
   env.FRONTEND_URL?.trim(),
   env.PUBLIC_FRONTEND_URL?.trim(),
   ...(env.NODE_ENV === 'production' ? [] : [env.DEV_FRONTEND_URL?.trim()]),
