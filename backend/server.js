@@ -32,7 +32,7 @@ import { GITHUB_CAPTURE_EVENT_TYPES, buildGithubIntakePayload, githubCaptureEven
 import { findActiveGithubTasks, githubTaskDescription, projectRepositoryRole } from './integrations/github/github-project-workflows.js';
 import { githubConnectionHealth, githubSafeErrorCode, githubSafeErrorMessage, isStaleGithubEvent } from './integrations/github/github-health.js';
 import { createSupabaseTraceFetch } from './request-instrumentation.js';
-import { getAllowedCorsOrigins, isAllowedCorsOrigin } from './cors-origins.js';
+import { getAllowedCorsOrigins, getCorsOptions } from './cors-origins.js';
 import { GOOGLE_DRIVE_MAX_UPLOAD_BYTES, assertBase64Size } from './integrations/google-drive-upload.js';
 import { createCalendarSubscriptionToken, hashCalendarSubscriptionToken } from './calendar-subscription-security.js';
 
@@ -56,14 +56,7 @@ const captureRawBody = (req, _res, buffer) => {
 };
 
 app.use(
-  cors({
-    origin(origin, callback) {
-      return isAllowedCorsOrigin(origin, allowedCorsOrigins)
-        ? callback(null, true)
-        : callback(new Error('CORS origin not allowed'));
-    },
-    credentials: true,
-  })
+  cors((req, callback) => callback(null, getCorsOptions(req, allowedCorsOrigins)))
 );
 // Notes can carry pasted images and rich HTML that exceed the old 256kb cap.
 const REQUEST_BODY_LIMIT = '5mb';

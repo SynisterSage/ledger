@@ -49,3 +49,25 @@ export const getAllowedCorsOrigins = (env = process.env) => new Set([
 export const isAllowedCorsOrigin = (origin, allowedOrigins) => (
   !origin || origin !== 'null' && allowedOrigins.has(origin)
 );
+
+/**
+ * Figma hosts plugin UIs in a null-origin iframe. That origin cannot use an
+ * echoed allowlist value; it requires `*`, and plugin requests authenticate
+ * with scoped bearer credentials rather than cookies. Keep this exception
+ * limited to the plugin API routes.
+ */
+export const getCorsOptions = (req, allowedOrigins) => {
+  const origin = req.get('origin');
+  if (req.path.startsWith('/api/figma-plugin') && origin === 'null') {
+    return { origin: '*', credentials: false };
+  }
+
+  return {
+    origin(requestOrigin, callback) {
+      return isAllowedCorsOrigin(requestOrigin, allowedOrigins)
+        ? callback(null, true)
+        : callback(new Error(`CORS origin not allowed: ${requestOrigin || '(none)'}`));
+    },
+    credentials: true,
+  };
+};

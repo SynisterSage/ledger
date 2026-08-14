@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAllowedCorsOrigins, isAllowedCorsOrigin } from './cors-origins.js';
+import { getAllowedCorsOrigins, getCorsOptions, isAllowedCorsOrigin } from './cors-origins.js';
 
 test('allows only explicitly configured browser extension origins', () => {
   const allowed = getAllowedCorsOrigins({
@@ -38,4 +38,15 @@ test('production CORS allows the hosted Figma plugin iframe origins', () => {
   assert.equal(isAllowedCorsOrigin('https://www.figma.com', allowed), true);
   assert.equal(isAllowedCorsOrigin('https://figma.com', allowed), true);
   assert.equal(isAllowedCorsOrigin('https://evil-figma.com', allowed), false);
+});
+
+test('null-origin CORS is wildcarded only for Figma plugin routes', () => {
+  const allowed = getAllowedCorsOrigins({ NODE_ENV: 'production' });
+  const pluginRequest = { path: '/api/figma-plugin/session', get: () => 'null' };
+  const otherRequest = { path: '/api/notes', get: () => 'null' };
+
+  assert.deepEqual(getCorsOptions(pluginRequest, allowed), { origin: '*', credentials: false });
+  let rejectedError;
+  getCorsOptions(otherRequest, allowed).origin('null', (error) => { rejectedError = error; });
+  assert.match(rejectedError?.message || '', /CORS origin not allowed: null/);
 });
