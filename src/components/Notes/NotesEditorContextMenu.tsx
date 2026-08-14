@@ -15,9 +15,14 @@ import {
   ExternalLink,
   SpellCheck,
   BookPlus,
+  Info,
+  StickyNote,
+  TriangleAlert,
+  CircleCheck,
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import type { CalloutType } from './editor/types/blocks';
 
 export type EditorContextMenuPosition = { x: number; y: number };
 
@@ -52,6 +57,8 @@ export type NotesEditorContextMenuProps = {
   onLinkProject: () => void;
   onLinkPerson: () => void;
   onSearch: () => void;
+  calloutType?: CalloutType | null;
+  onChangeCalloutType?: (type: CalloutType) => void;
   linkUrl?: string | null;
   onOpenLink: () => void;
   onClose: () => void;
@@ -88,6 +95,8 @@ export const NotesEditorContextMenu = ({
   onLinkProject,
   onLinkPerson,
   onSearch,
+  calloutType,
+  onChangeCalloutType,
   linkUrl,
   onOpenLink,
   onClose,
@@ -256,6 +265,36 @@ export const NotesEditorContextMenu = ({
         </>
       )}
       {editingActions.map(renderAction)}
+      {calloutType && onChangeCalloutType && (
+        <>
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+          <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+            Callout type
+          </p>
+          {([
+            ['info', 'Info', Info],
+            ['note', 'Note', StickyNote],
+            ['warning', 'Warning', TriangleAlert],
+            ['success', 'Success', CircleCheck],
+          ] as const).map(([type, label, Icon]) => (
+            <button
+              key={type}
+              type="button"
+              role="menuitemradio"
+              aria-checked={calloutType === type}
+              onClick={() => {
+                onChangeCalloutType(type);
+                onClose();
+              }}
+              className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+            >
+              <Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              {calloutType === type && <span className="text-[var(--ledger-accent)]">✓</span>}
+            </button>
+          ))}
+        </>
+      )}
       {(hasSelection || linkUrl) && (
         <>
           <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />

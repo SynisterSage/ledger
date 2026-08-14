@@ -245,11 +245,8 @@ export const linkExternalReference = async ({
     throw error;
   }
   if (reference.data.provider === 'github') {
-    if (reference.data.external_type === 'repository' && targetType !== 'project') {
-      const error = new Error('GitHub repositories can only be linked to projects'); error.statusCode = 400; throw error;
-    }
-    if (['issue', 'pullRequest'].includes(reference.data.external_type) && !['project', 'task', 'note', 'intake'].includes(targetType)) {
-      const error = new Error('GitHub work can only be linked to projects, tasks, notes, or Intake'); error.statusCode = 400; throw error;
+    if (['repository', 'issue', 'pullRequest'].includes(reference.data.external_type) && !['project', 'task', 'note', 'meetingNote', 'intake'].includes(targetType)) {
+      const error = new Error('GitHub work can only be linked to projects, tasks, notes, meeting notes, or Intake'); error.statusCode = 400; throw error;
     }
     if (linkMetadata?.role && !['primary', 'supporting'].includes(String(linkMetadata.role))) {
       const error = new Error('Unsupported GitHub repository link role'); error.statusCode = 400; throw error;
@@ -335,7 +332,7 @@ export const getExternalReferencesForTarget = async ({
   const links = await supabase
     .from('external_reference_links')
     .select(
-      'id, external_reference_id, target_type, target_id, created_by_user_id, created_at, external_references(*)'
+      'id, external_reference_id, target_type, target_id, created_by_user_id, created_at, sources, link_metadata, external_references(id, provider, external_url, normalized_url, external_type, metadata, access_status)'
     )
     .eq('workspace_id', workspaceId)
     .eq('target_type', targetType)

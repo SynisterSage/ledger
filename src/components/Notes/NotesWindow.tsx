@@ -539,11 +539,6 @@ const displayUserName = (member: WorkspaceMember | null | undefined) => {
   return member.full_name?.trim() || member.email?.trim() || 'Unknown user';
 };
 
-const displayFirstName = (value: string) => {
-  const firstName = value.trim().split(/\s+/)[0] ?? '';
-  return firstName || value.trim() || 'Unknown';
-};
-
 const InspectorInfoRow = ({ label, value }: { label: string; value: string }) => (
   <div className="py-1">
     <p className="text-[11px] text-[var(--ledger-text-muted)]">{label}</p>
@@ -2315,7 +2310,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const initialFocusNoteFromContext = initialFocusContext.startsWith('focus-note:')
     ? initialFocusContext.slice('focus-note:'.length).trim()
     : '';
-  const titleRef = useRef<HTMLInputElement | null>(null);
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const savingIndicatorTimerRef = useRef<number | null>(null);
   const isEditingRef = useRef(false);
@@ -2425,6 +2420,16 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   );
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
+  const [linkedExternalReference, setLinkedExternalReference] = useState<{
+    id: string;
+    url: string;
+  } | null>(null);
+  const [linkedResourceBadge, setLinkedResourceBadge] = useState<{
+    resourceType: 'project' | 'note' | 'task' | 'event' | 'reminder' | 'external';
+    resourceId: string;
+    title: string;
+    url: string;
+  } | null>(null);
   const [draftDate, setDraftDate] = useState(todayKey());
   const [draftMood, setDraftMood] = useState('');
   const [meetingCenterView, setMeetingCenterView] = useState<'write' | 'transcript'>('write');
@@ -3990,7 +3995,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
   const editorMember = creatorMember;
 
-  const [noteViewers, setNoteViewers] = useState<WorkspaceMember[]>([]);
+  const [, setNoteViewers] = useState<WorkspaceMember[]>([]);
 
   useEffect(() => {
     if (!selectedNoteId) {
@@ -4040,30 +4045,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       window.clearInterval(timer);
     };
   }, [selectedNoteId, api, workspaceMemberById, isDirty]);
-
-  const activeViewerNames = useMemo(() => {
-    if (!selectedNoteId) return [];
-    const membersWithoutCurrent = noteViewers.filter(
-      (m) => String(m.user_id) !== String(user?.id ?? '')
-    );
-    const names = membersWithoutCurrent
-      .map((member) => displayUserName(member).trim())
-      .filter(Boolean)
-      .map((n) => displayFirstName(n));
-
-    const unique = Array.from(new Set(names));
-    if (user?.id) {
-      return ['You', ...unique];
-    }
-    return unique;
-  }, [noteViewers, selectedNoteId, user?.id]);
-
-  const viewingSummary = useMemo(() => {
-    if (activeViewerNames.length === 0) return 'Only you';
-    if (activeViewerNames.length === 1) return activeViewerNames[0];
-    if (activeViewerNames.length === 2) return activeViewerNames.join(', ');
-    return `${activeViewerNames.slice(0, 2).join(', ')} +${activeViewerNames.length - 2}`;
-  }, [activeViewerNames]);
 
   const getNoteUpdatedByLabel = useCallback(
     (updatedById?: string | null) => {
@@ -8580,11 +8561,9 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         )}
 
         <section
-          className={`flex-1 min-w-0 ${
-            areSidePanelsCollapsed ? 'p-4' : isCompactLayout ? 'p-2' : 'p-2.5'
-          }`}
+          className="flex-1 min-w-0 min-h-0"
         >
-          <div className="flex h-full flex-col overflow-hidden rounded-3xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] shadow-none">
+          <div className="flex h-full flex-col overflow-hidden bg-[var(--ledger-surface)]">
             {isLoading ? (
               <div className="flex-1 p-5 space-y-4">
                 <SkeletonLoader />
@@ -8595,40 +8574,114 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                 </div>
               </div>
             ) : selectedNote ? (
-              <div className="flex-1 flex flex-col min-h-0">
-                <div className="border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-6 py-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="min-w-0 truncate text-[11px] text-[var(--ledger-text-muted)]">
-                      <button
-                        type="button"
-                        onClick={() => void goToNotesHome()}
-                        className={`transition hover:text-[var(--ledger-text-primary)] ${
-                          selectedNote
-                            ? 'text-[var(--ledger-text-secondary)]'
-                            : 'text-[var(--ledger-text-primary)]'
-                        }`}
-                      >
-                        Home
-                      </button>
-                      {selectedBreadcrumb.length > 0 && (
-                        <>
-                          <span className="mx-1 text-[var(--ledger-text-muted)]">›</span>
-                          <span>{selectedBreadcrumb.map((crumb) => crumb.title).join(' › ')}</span>
-                        </>
-                      )}
-                    </p>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-[var(--ledger-text-muted)]">
-                        {saveStatus}
-                      </span>
-                      <div className="relative" ref={noteActionsMenuRef}>
+              <div className="notes-document-canvas flex-1 flex flex-col min-h-0">
+                <div className="bg-[var(--ledger-surface)] px-6 pb-2 pt-6 sm:px-10 sm:pt-8">
+                  <div className="mx-auto max-w-[800px]">
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="min-w-0 truncate text-[11px] text-[var(--ledger-text-muted)]">
+                        <button
+                          type="button"
+                          onClick={() => void goToNotesHome()}
+                          className={`transition hover:text-[var(--ledger-text-primary)] ${
+                            selectedNote
+                              ? 'text-[var(--ledger-text-secondary)]'
+                              : 'text-[var(--ledger-text-primary)]'
+                          }`}
+                        >
+                          Home
+                        </button>
+                        {selectedBreadcrumb.length > 0 && (
+                          <>
+                            <span className="mx-1 text-[var(--ledger-text-muted)]">›</span>
+                            <span>{selectedBreadcrumb.map((crumb) => crumb.title).join(' › ')}</span>
+                          </>
+                        )}
+                      </p>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                          {saveStatus}
+                        </span>
+                        <div className="ml-1 flex items-center" aria-label="Note view">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isMeetingNote) setMeetingCenterView('write');
+                            if (draftMode === 'mind_map') {
+                              setDraftMode('text');
+                              isDirtyRef.current = true;
+                              setIsDirty(true);
+                            }
+                          }}
+                          className={`flex h-7 w-7 items-center justify-center rounded-md transition ${
+                            (!isMeetingNote || meetingCenterView === 'write') &&
+                            draftMode !== 'mind_map'
+                              ? 'bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-primary)]'
+                              : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                          }`}
+                          aria-label="Write"
+                          aria-pressed={
+                            (!isMeetingNote || meetingCenterView === 'write') &&
+                            draftMode !== 'mind_map'
+                          }
+                          title="Write"
+                        >
+                          <PenLine size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isMeetingNote) setMeetingCenterView('write');
+                            setDraftMode('mind_map');
+                            isDirtyRef.current = true;
+                            setIsDirty(true);
+                          }}
+                          className={`flex h-7 w-7 items-center justify-center rounded-md transition ${
+                            draftMode === 'mind_map'
+                              ? 'bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-primary)]'
+                              : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                          }`}
+                          aria-label="Mind map"
+                          aria-pressed={draftMode === 'mind_map'}
+                          title="Mind map"
+                        >
+                          <Network size={13} />
+                        </button>
+                        {isMeetingNote ? (
+                          <button
+                            type="button"
+                            onClick={() => setMeetingCenterView('transcript')}
+                            className={`flex h-7 w-7 items-center justify-center rounded-md transition ${
+                              meetingCenterView === 'transcript'
+                                ? 'bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-primary)]'
+                                : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                            }`}
+                            aria-label="Transcript"
+                            aria-pressed={meetingCenterView === 'transcript'}
+                            title="View and edit the transcript"
+                          >
+                            <Mic size={13} />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void enableMeetingMode()}
+                            disabled={Boolean(meetingBusyAction)}
+                            title="Enable meeting transcription for this note"
+                            aria-label="Enable meeting transcription"
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Mic size={13} />
+                          </button>
+                        )}
+                        </div>
+                        <div className="relative" ref={noteActionsMenuRef}>
                         <button
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
                             setIsNoteActionsOpen((current) => !current);
                           }}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
                           aria-label="Note actions"
                         >
                           <MoreHorizontal size={14} />
@@ -8726,105 +8779,34 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                             </button>
                           </div>
                         )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-4">
-                    <input
-                      ref={titleRef}
-                      value={draftTitle}
-                      onChange={(e) => {
-                        setDraftTitle(e.target.value);
-                        isDirtyRef.current = true;
-                        setIsDirty(true);
-                      }}
-                      onFocus={() => {
-                        isEditingRef.current = true;
-                      }}
-                      onBlur={() => {
-                        isEditingRef.current = false;
-                      }}
-                      placeholder="Untitled note"
-                      className="block w-full bg-transparent py-1.5 text-4xl font-semibold leading-tight tracking-tight text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] focus:outline-none"
-                    />
-                    <div
-                      className="flex shrink-0 items-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-0.5"
-                      aria-label="Note view"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isMeetingNote) setMeetingCenterView('write');
-                          if (draftMode === 'mind_map') {
-                            setDraftMode('text');
-                            isDirtyRef.current = true;
-                            setIsDirty(true);
-                          }
-                        }}
-                        className={`flex h-7 w-8 items-center justify-center rounded-md ${
-                          (!isMeetingNote || meetingCenterView === 'write') &&
-                          draftMode !== 'mind_map'
-                            ? 'bg-[var(--ledger-accent)] text-white'
-                            : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
-                        }`}
-                        aria-label="Write"
-                        aria-pressed={
-                          (!isMeetingNote || meetingCenterView === 'write') &&
-                          draftMode !== 'mind_map'
-                        }
-                        title="Write"
-                      >
-                        <PenLine size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isMeetingNote) setMeetingCenterView('write');
-                          setDraftMode('mind_map');
+                    <div className="mt-7">
+                      <textarea
+                        ref={titleRef}
+                        rows={1}
+                        value={draftTitle}
+                        onChange={(e) => {
+                          setDraftTitle(e.target.value);
                           isDirtyRef.current = true;
                           setIsDirty(true);
                         }}
-                        className={`flex h-7 w-8 items-center justify-center rounded-md ${
-                          draftMode === 'mind_map'
-                            ? 'bg-[var(--ledger-accent)] text-white'
-                            : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
-                        }`}
-                        aria-label="Mind Map"
-                        aria-pressed={draftMode === 'mind_map'}
-                        title="Mind Map"
-                      >
-                        <Network size={14} />
-                      </button>
-                      {isMeetingNote && (
-                        <button
-                          type="button"
-                          onClick={() => setMeetingCenterView('transcript')}
-                          className={`flex h-7 w-8 items-center justify-center rounded-md ${
-                            meetingCenterView === 'transcript'
-                              ? 'bg-[var(--ledger-accent)] text-white'
-                              : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'
-                          }`}
-                          aria-pressed={meetingCenterView === 'transcript'}
-                          title="View and edit the transcript"
-                        >
-                          <Mic size={14} />
-                        </button>
-                      )}
-                      {!isMeetingNote && (
-                        <button
-                          type="button"
-                          onClick={() => void enableMeetingMode()}
-                          disabled={Boolean(meetingBusyAction)}
-                          title="Enable meeting transcription for this note"
-                          className="flex h-7 w-8 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          <Mic size={14} />
-                        </button>
-                      )}
+                        onFocus={() => {
+                          isEditingRef.current = true;
+                        }}
+                        onBlur={() => {
+                          isEditingRef.current = false;
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') event.preventDefault();
+                        }}
+                        placeholder="Untitled note"
+                        className="block w-full resize-none overflow-hidden break-words bg-transparent py-1 text-[2.5rem] font-bold leading-[1.14] tracking-[-0.035em] text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] outline-none [field-sizing:content]"
+                      />
                     </div>
-                  </div>
-                  {isMeetingNote && meetingCenterView === 'transcript' && (
-                    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5">
+                    {isMeetingNote && meetingCenterView === 'transcript' && (
+                      <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5">
                       <div
                         className={`flex items-center gap-1.5 text-xs font-medium ${meetingStatusTone(
                           meetingMetadata?.transcription_status
@@ -9119,11 +9101,12 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           </div>
                         )}
                     </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-auto bg-[var(--ledger-surface-muted)] p-6">
-                  <div className="max-w-3xl mx-auto space-y-6">
+                <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto bg-[var(--ledger-surface)] px-6 pb-16 pt-2 sm:px-10 sm:pb-20">
+                  <div className="mx-auto max-w-[800px] space-y-6">
                     {isMeetingNote && meetingCenterView === 'transcript' ? (
                       <MeetingTranscriptErrorBoundary>
                         <MeetingTranscriptSection
@@ -9205,6 +9188,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         onLinkPerson={linkEditorSelectionToPerson}
                         onSearch={({ plainText }) => openSearch(plainText)}
                         onCreateExternalEmbed={createEditorExternalEmbed}
+                        linkedExternalReference={linkedExternalReference}
+                        onLinkedExternalReferenceInserted={() => setLinkedExternalReference(null)}
+                        linkedResourceBadge={linkedResourceBadge}
+                        onLinkedResourceBadgeInserted={() => setLinkedResourceBadge(null)}
+                        onOpenLinkedResources={() => {
+                          if (!selectedNote?.id) return;
+                          setIsRightPaneCollapsed(false);
+                          setLinkedContextOpenRequest((current) => current + 1);
+                        }}
                         onUploadAttachment={uploadEditorAttachment}
                         onRemoveAttachment={removeEditorAttachment}
                         onChange={(nextHtml) => {
@@ -9365,17 +9357,20 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
             />
 
             <aside
-              className={`overflow-auto border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] ${
+              className={`min-w-0 overflow-y-auto overflow-x-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] ${
                 isCompactLayout ? 'p-3 space-y-3' : 'p-4 space-y-4'
               } shrink-0`}
               style={{ width: `${rightPaneWidth}px` }}
             >
-              <div className="space-y-5">
+              <div className="min-w-0 space-y-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Inspector</p>
-                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       {selectedNote ? 'Current note' : 'Notes Home'}
+                    </p>
+                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                      {selectedNote?.title || (selectedNote ? 'Untitled note' : 'Quick actions')}
                     </p>
                     <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
                       {selectedNote
@@ -9543,18 +9538,103 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       targetId: selectedNote.id,
                     }}
                     canEdit={activeWorkspace?.role !== 'viewer'}
+                    canInsert
+                    onInsert={(reference) => {
+                      const item = {
+                        resourceType: 'external',
+                        resourceId: reference.id,
+                        title: reference.title || reference.url,
+                        url: reference.url,
+                        provider: reference.provider,
+                        externalType: reference.externalType,
+                        metadata: reference.metadata,
+                      } as const;
+                      window.dispatchEvent(new CustomEvent('ledger:insert-linked-resource', { detail: item }));
+                    }}
                     projects={linkableProjects}
                     isLoadingProjects={isLoadingLinkableProjects}
                     selectedProjectIds={selectedLinkProjectIds}
                     onToggleProject={toggleLinkProject}
-                    onLinkProjects={linkSelectedProjectsToNote}
+                    onLinkProjects={async (projectIds) => {
+                      await linkSelectedProjectsToNote(projectIds);
+                      const project = linkableProjects.find((item) => item.id === projectIds[0]);
+                      if (project) setLinkedResourceBadge({ resourceType: 'project', resourceId: project.id, title: project.name, url: `#project-${project.id}` });
+                    }}
                     onLoadProjects={loadProjectsForLinkedContext}
                     openRequest={{ source: 'projects', token: linkedContextOpenRequest }}
                   />
                 ) : null}
 
                 {isMeetingNote && (
-                  <div className="space-y-3 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                  <div className="min-w-0 space-y-3 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Meeting</p>
+                      {meetingMetadata && (
+                        <span className={`text-[11px] ${meetingStatusTone(meetingMetadata.transcription_status)}`}>
+                          {meetingMetadata.transcription_status === 'idle'
+                            ? 'Not started'
+                            : meetingStatusLabel(meetingMetadata.transcription_status)}
+                        </span>
+                      )}
+                    </div>
+                    {isLoadingMeetingMetadata ? (
+                      <p className="text-xs text-[var(--ledger-text-muted)]">Loading meeting details…</p>
+                    ) : meetingMetadata ? (
+                      <div className="space-y-2">
+                        <div className="flex min-w-0 items-baseline justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate text-[var(--ledger-text-primary)]">
+                            {meetingMetadata.transcription_status === 'idle'
+                              ? 'Not started'
+                              : meetingStatusLabel(meetingMetadata.transcription_status)}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-[var(--ledger-text-primary)]">
+                            {formatMeetingDuration(meetingElapsedSeconds)}
+                          </span>
+                        </div>
+                        <div className="flex min-w-0 items-center justify-between gap-3 text-xs">
+                          <span className="shrink-0 text-[var(--ledger-text-muted)]">Calendar event</span>
+                          <span className="min-w-0 truncate text-right text-[var(--ledger-text-primary)]">
+                            {meetingMetadata.calendar_event_id ? 'Linked' : 'No event linked'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="text-[var(--ledger-text-muted)]">Attendees</span>
+                          <span className="truncate text-right text-[var(--ledger-text-primary)]">
+                            {meetingMetadata.attendees?.length ? meetingMetadata.attendees.length : 'None'}
+                          </span>
+                        </div>
+                        {meetingMetadata.transcription_status === 'idle' && (
+                          <button type="button" onClick={() => void startMeeting()} disabled={Boolean(meetingBusyAction)} className="inline-flex max-w-full items-center rounded-md bg-[var(--ledger-accent)] px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+                            Start transcription
+                          </button>
+                        )}
+                        {meetingMetadata.transcription_status === 'recording' && (
+                          <div className="flex flex-wrap gap-1.5">
+                            <button type="button" onClick={() => void pauseMeeting()} disabled={Boolean(meetingBusyAction)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-1.5 text-xs text-[var(--ledger-text-secondary)] disabled:opacity-50">Pause</button>
+                            <button type="button" onClick={() => void stopMeeting()} disabled={Boolean(meetingBusyAction)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-1.5 text-xs text-[var(--ledger-danger)] disabled:opacity-50">Stop</button>
+                          </div>
+                        )}
+                        {meetingMetadata.transcription_status === 'paused' && (
+                          <div className="flex flex-wrap gap-1.5">
+                            <button type="button" onClick={() => void resumeMeeting()} disabled={Boolean(meetingBusyAction)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-1.5 text-xs text-[var(--ledger-text-secondary)] disabled:opacity-50">Resume</button>
+                            <button type="button" onClick={() => void stopMeeting()} disabled={Boolean(meetingBusyAction)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-1.5 text-xs text-[var(--ledger-danger)] disabled:opacity-50">Stop</button>
+                          </div>
+                        )}
+                        {meetingMetadata.transcription_status === 'processing' && <p className="text-xs text-[var(--ledger-text-muted)]">Transcribing…</p>}
+                        {meetingMetadata.transcription_status === 'complete' && (
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-[var(--ledger-text-muted)]">Transcript available</span>
+                            {transcriptSegments.length > 0 && <button type="button" onClick={() => void clearMeetingTranscript()} disabled={Boolean(meetingBusyAction)} className="shrink-0 text-[var(--ledger-danger)] disabled:opacity-50">Clear transcript</button>}
+                          </div>
+                        )}
+                        {meetingMetadata.transcription_error && <p className="text-xs text-[var(--ledger-danger)]">{meetingMetadata.transcription_error}</p>}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {meetingMetadata && isMeetingNote && (
+                  <div className="hidden space-y-3 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Meeting</p>
                       {meetingMetadata && (
@@ -10109,7 +10189,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   )}
                 </div>
 
-                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                <div className={`space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4 ${selectedNote ? 'hidden' : ''}`}>
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       {selectedNote ? 'Linked project' : 'Quick actions'}
@@ -10214,15 +10294,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                               selectedNote.updated_at
                             )}`}
                           />
-                          <div className="py-1">
-                            <p className="text-[11px] text-[var(--ledger-text-muted)]">Viewing</p>
-                            <p className="mt-0.5 text-sm font-medium text-[var(--ledger-text-primary)]">
-                              {viewingSummary}
-                            </p>
-                          </div>
                         </>
                       )}
-                      <InspectorInfoRow label="Notes" value={String(notes.length)} />
                     </div>
                   ) : (
                     <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
@@ -10231,7 +10304,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   )}
                 </div>
 
-                <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                {false && <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
                       Recent updates
@@ -10264,7 +10337,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       No recent updates yet.
                     </p>
                   )}
-                </div>
+                </div>}
               </div>
             </aside>
           </>

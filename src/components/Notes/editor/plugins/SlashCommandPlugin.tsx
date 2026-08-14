@@ -44,12 +44,15 @@ import {
   type LexicalNode,
 } from 'lexical';
 import { $createHorizontalRuleNode } from '@lexical/react/LexicalHorizontalRuleNode';
+import { $createExternalEmbedNode } from '../../../ExternalEmbeds/ExternalEmbedNode';
+import type { EditorExternalEmbedRequest, EditorExternalEmbedResult } from '../types/externalEmbed';
 import {
   INSERT_CALLOUT_COMMAND,
   INSERT_FILE_ATTACHMENT_COMMAND,
   INSERT_IMAGE_COMMAND,
   INSERT_TOGGLE_COMMAND,
 } from '../commands/blocks';
+import { OPEN_LINKED_RESOURCES_COMMAND } from '../commands/linkedResources';
 
 type CommandId =
   | 'text'
@@ -100,7 +103,7 @@ const COMMANDS: CommandItem[] = [
   { id: 'code', title: 'Code block', icon: Code2, shortcut: '```', group: 'Blocks' },
   { id: 'image', title: 'Image', icon: Image, group: 'Media' },
   { id: 'file', title: 'File attachment', aliases: ['attachment'], icon: File, group: 'Media' },
-  { id: 'link', title: 'Link or embed', icon: Link2, group: 'Media' },
+  { id: 'link', title: 'Link or embed', aliases: ['link', 'embed', 'embedd'], icon: Link2, group: 'Media' },
 ];
 
 const getCurrentBlock = (node: LexicalNode) => {
@@ -118,7 +121,16 @@ const replaceCurrentBlock = (create: () => LexicalNode) => {
   block.getNextSibling()?.selectStart();
 };
 
-const insertCommand = (editor: LexicalEditor, item: CommandItem) => {
+const insertCommand = (
+  editor: LexicalEditor,
+  item: CommandItem,
+  embedContext?: {
+    noteId?: string | null;
+    targetType?: 'note' | 'meetingNote';
+    onCreateExternalEmbed?: (request: EditorExternalEmbedRequest) => Promise<EditorExternalEmbedResult>;
+    onOpenLinkedResources?: () => void;
+  }
+) => {
   if (item.id === 'toggle') return editor.dispatchCommand(INSERT_TOGGLE_COMMAND, undefined);
   if (item.id === 'callout') return editor.dispatchCommand(INSERT_CALLOUT_COMMAND, 'info');
   if (item.id === 'bullet') return editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined);
@@ -133,12 +145,47 @@ const insertCommand = (editor: LexicalEditor, item: CommandItem) => {
   if (item.id === 'file') return editor.dispatchCommand(INSERT_FILE_ATTACHMENT_COMMAND, undefined);
   if (item.id === 'image') return editor.dispatchCommand(INSERT_IMAGE_COMMAND, undefined);
   if (item.id === 'link') {
-    const url = window.prompt('Link or embed URL');
+    if (embedContext?.onOpenLinkedResources) {
+      embedContext.onOpenLinkedResources();
+      return;
+    }
+    const url = window.prompt('Link or embed URL')?.trim();
     if (!url?.trim()) return;
+    const provider = (() => {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:') return null;
+        const host = parsed.hostname.toLowerCase();
+        const route = parsed.pathname.split('/').filter(Boolean)[0]?.toLowerCase();
+        if ((host === 'figma.com' || host === 'www.figma.com') && ['design', 'file', 'board'].includes(route ?? '')) return 'figma' as const;
+        if (['github.com', 'www.github.com'].includes(host) && parsed.pathname.split('/').filter(Boolean).length >= 2) return 'github' as const;
+        if (['drive.google.com', 'docs.google.com', 'sheets.google.com', 'slides.google.com', 'forms.google.com', 'drawings.google.com'].includes(host) && Boolean(parsed.searchParams.get('id') || parsed.pathname.match(/\/d\/[-\w]+/))) return 'google_drive' as const;
+      } catch {}
+      return null;
+    })();
+    if (provider && embedContext?.noteId && embedContext.onCreateExternalEmbed) {
+      void embedContext.onCreateExternalEmbed({
+        noteId: embedContext.noteId,
+        targetType: embedContext.targetType ?? 'note',
+        provider,
+        url,
+      }).then((result) => {
+        editor.update(() => {
+          const embedNode = $createExternalEmbedNode({
+            externalReferenceId: result.externalReferenceId,
+            externalUrl: result.externalUrl,
+          });
+          const selection = $getSelection();
+          if ($isRangeSelection(selection)) selection.insertNodes([embedNode]);
+          else $insertNodes([embedNode]);
+        });
+      });
+      return;
+    }
     editor.update(() => {
       const paragraph = $createParagraphNode();
-      const link = $createLinkNode(url.trim());
-      link.append($createTextNode(url.trim()));
+      const link = $createLinkNode(url);
+      link.append($createTextNode(url));
       paragraph.append(link);
       $insertNodes([paragraph]);
     });
@@ -173,7 +220,17 @@ const insertCommand = (editor: LexicalEditor, item: CommandItem) => {
   });
 };
 
-export const SlashCommandPlugin = () => {
+export const SlashCommandPlugin = ({
+  noteId,
+  targetType,
+  onCreateExternalEmbed,
+  onOpenLinkedResources,
+}: {
+  noteId?: string | null;
+  targetType?: 'note' | 'meetingNote';
+  onCreateExternalEmbed?: (request: EditorExternalEmbedRequest) => Promise<EditorExternalEmbedResult>;
+  onOpenLinkedResources?: () => void;
+} = {}) => {
   const [editor] = useLexicalComposerContext();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -186,8 +243,19 @@ export const SlashCommandPlugin = () => {
       if (!$isRangeSelection(selection)) return;
       const block = getCurrentBlock(selection.anchor.getNode());
       block.clear();
+      // Keep a real, empty paragraph selected before opening the picker. The
+      // picker will steal browser focus, but the insertion command can now
+      // restore this stable block instead of a deleted slash text node.
+      block.selectStart();
     });
-    insertCommand(editor, item);
+    insertCommand(editor, item, {
+      noteId,
+      targetType,
+      onCreateExternalEmbed,
+      onOpenLinkedResources: onOpenLinkedResources
+        ? () => editor.dispatchCommand(OPEN_LINKED_RESOURCES_COMMAND, undefined)
+        : undefined,
+    });
     setOpen(false);
   };
 

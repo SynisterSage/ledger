@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDays,
   Check,
@@ -15,7 +15,6 @@ import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
 import { FigmaMark } from '../Common/FigmaMark';
 import type { ExternalEmbedTargetType } from './ExternalEmbedNode';
-import { GithubResourcePicker, type GithubResourcePickerResult } from './GithubResourcePicker';
 import {
   AddLinkedContextModal,
   type LinkedContextMode,
@@ -85,6 +84,12 @@ const githubTitle = (reference: Reference) =>
         ? `PR #${reference.metadata?.number ?? ''}`
         : `Issue #${reference.metadata?.number ?? ''}`)
   );
+const referenceInsertTitle = (reference: Reference) =>
+  reference.provider === 'github'
+    ? githubTitle(reference)
+    : reference.provider === 'google_drive'
+    ? googleDriveTitle(reference)
+    : referenceTitle(reference);
 
 export function LinkedDesignsSection({
   target,
@@ -95,7 +100,6 @@ export function LinkedDesignsSection({
   fallbackFileName,
   compact = false,
   compactExternalOnly = false,
-  hideGithubResourcePicker = false,
   minimalEmptyState = false,
   notes,
   isLoadingNotes,
@@ -114,7 +118,7 @@ export function LinkedDesignsSection({
   target: LinkedDesignTarget;
   canEdit?: boolean;
   canInsert?: boolean;
-  onInsert?: (reference: { id: string; url: string }) => void;
+  onInsert?: (reference: { id: string; url: string; provider?: string; externalType?: string; title?: string; metadata?: Record<string, unknown> }) => void;
   fallbackNodeName?: string | null;
   fallbackFileName?: string | null;
   compact?: boolean;
@@ -152,6 +156,7 @@ export function LinkedDesignsSection({
   const [query, setQuery] = useState('');
   const [existing, setExisting] = useState<Reference[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [showResourceActivity, setShowResourceActivity] = useState(false);
   const [locations, setLocations] = useState<
     { target_type: string; target_id: string; title: string }[] | null
   >(null);
@@ -176,7 +181,17 @@ export function LinkedDesignsSection({
   const [slackContexts, setSlackContexts] = useState<LinkedSlackContext[]>([]);
   const [selectedSlackContextIds, setSelectedSlackContextIds] = useState<string[]>([]);
   const [isLoadingSlackContexts, setIsLoadingSlackContexts] = useState(false);
+  const optimisticUnlinkedIds = useRef(new Set<string>());
   const githubType = 'issue' as const;
+
+  useEffect(() => {
+    if (busyId) {
+      setShowResourceActivity(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowResourceActivity(false), 450);
+    return () => window.clearTimeout(timer);
+  }, [busyId]);
 
   const openGoogleDrivePicker = async () => {
     if (!canEdit) return;
@@ -309,6 +324,14 @@ export function LinkedDesignsSection({
         target.targetType,
         target.targetId
       )) as Link[];
+      const initialRows = Array.from(
+        new Map(rows.map((link) => [link.external_reference_id, link])).values()
+      ).filter((link) => !optimisticUnlinkedIds.current.has(link.external_reference_id));
+      // Paint the relationships immediately. Provider resolution and preview
+      // capture are enrichment, not prerequisites for showing a linked row.
+      setLinks(initialRows);
+      setPreviews({});
+      setLoading(false);
       const hydrated = await Promise.all(
         rows.map(async (link) => {
           let current = link;
@@ -368,7 +391,7 @@ export function LinkedDesignsSection({
       // still present one resource once, keyed by the canonical reference.
       const uniqueHydrated = Array.from(
         new Map(hydrated.map((entry) => [entry.link.external_reference_id, entry])).values()
-      );
+      ).filter((entry) => !optimisticUnlinkedIds.current.has(entry.link.external_reference_id));
       setLinks(uniqueHydrated.map((entry) => entry.link));
       if (target.targetType === 'project') {
         try {
@@ -385,6 +408,10 @@ export function LinkedDesignsSection({
           uniqueHydrated.map((entry) => [entry.link.external_reference_id, entry.preview])
         )
       );
+      // External resources are the primary content of this section. Show them
+      // as soon as they are ready instead of waiting for every secondary
+      // context query below to finish.
+      setLoading(false);
       try {
         const internalLinks = await api.getContextLinks(String(target.targetType), target.targetId);
         setContextLinks(Array.isArray(internalLinks) ? internalLinks as typeof contextLinks : []);
@@ -427,6 +454,7 @@ export function LinkedDesignsSection({
     }
   };
   useEffect(() => {
+    optimisticUnlinkedIds.current.clear();
     void load();
   }, [target.targetId, target.targetType]);
   useEffect(() => {
@@ -540,6 +568,14 @@ export function LinkedDesignsSection({
         )) as Reference;
       if (links.some((link) => link.external_reference_id === referenceToLink.id)) {
         toast.show('Already linked', { variant: 'info' });
+        onInsert?.({
+          id: referenceToLink.id,
+          url: referenceToLink.normalized_url || referenceToLink.external_url || '',
+          provider: referenceToLink.provider,
+          externalType: referenceToLink.external_type,
+          title: referenceInsertTitle(referenceToLink),
+          metadata: referenceToLink.metadata,
+        });
         setDialogOpen(false);
         return;
       }
@@ -572,6 +608,14 @@ export function LinkedDesignsSection({
           }
         }
       }
+      onInsert?.({
+        id: referenceToLink.id,
+        url: referenceToLink.normalized_url || referenceToLink.external_url || '',
+        provider: referenceToLink.provider,
+        externalType: referenceToLink.external_type,
+        title: referenceInsertTitle(referenceToLink),
+        metadata: referenceToLink.metadata,
+      });
       setDialogOpen(false);
       setUrl('');
       setQuery('');
@@ -626,6 +670,7 @@ export function LinkedDesignsSection({
         let reference = (await api.createExternalReference('github', canonicalUrl)) as Reference;
         reference = (await api.resolveExternalReference(reference.id)) as Reference;
         await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
+        onInsert?.({ id: reference.id, url: reference.normalized_url || reference.external_url || canonicalUrl, provider: reference.provider, externalType: reference.external_type, title: referenceInsertTitle(reference), metadata: reference.metadata });
       }
       setDialogOpen(false);
       await load();
@@ -662,32 +707,47 @@ export function LinkedDesignsSection({
       setBusyId(null);
     }
   };
-  const selectGithubResource = async (resource: GithubResourcePickerResult) => {
-    if (!canEdit || !resource.canonicalUrl) return;
-    const existingGithubRepositories = links.filter((link) => {
-      const reference = (Array.isArray(link.external_references) ? link.external_references[0] : link.external_references) as Reference | undefined;
-      return isGithub(reference) && reference?.external_type === 'repository';
-    });
-    if (resource.resourceType === 'repository' && target.targetType === 'project' && resource.githubRepositoryId) {
-      await api.linkProjectGithubRepository(target.targetId, String(resource.githubRepositoryId), existingGithubRepositories.length ? 'supporting' : 'primary');
-      await load();
-      return;
-    }
-    let reference = resource.referenceId ? ({ id: resource.referenceId, provider: 'github', external_type: resource.resourceType === 'pull_request' ? 'pullRequest' : resource.resourceType, normalized_url: resource.canonicalUrl, external_url: resource.canonicalUrl, metadata: resource } as Reference) : null;
-    if (!reference) reference = await api.createExternalReference('github', resource.canonicalUrl) as Reference;
-    if (reference.provider === 'github') reference = await api.resolveExternalReference(reference.id) as Reference;
-    await api.linkExternalReferenceWithMetadata(reference.id, target.targetType, target.targetId, undefined, 'manual');
-    await load();
-  };
   const unlink = async (link: Link) => {
     if (!canEdit) return;
     const reference = (Array.isArray(link.external_references) ? link.external_references[0] : link.external_references) as Reference | undefined;
-    if (!window.confirm(`Unlink this ${isGithub(reference) ? 'GitHub reference' : 'Figma design'} from this item?`)) return;
+    if (!window.confirm(`Unlink this ${isGithub(reference) ? 'GitHub reference' : isGoogleDrive(reference) ? 'Google Drive file' : 'linked resource'} from this item?`)) return;
+    const referenceId = link.external_reference_id;
+    const previousLinks = links;
+    const previousPreview = previews[referenceId];
+    optimisticUnlinkedIds.current.add(referenceId);
+    setLinks((current) => current.filter((item) => item.external_reference_id !== referenceId));
+    setPreviews((current) => {
+      const next = { ...current };
+      delete next[referenceId];
+      return next;
+    });
+    setMenuLink(null);
     setBusyId(link.id);
     try {
-      await api.unlinkExternalReference(link.external_reference_id, link.id, 'manual');
-      await load();
+      // Unlink means remove the relationship entirely. Passing `manual` only
+      // removes that source label and leaves embeds/integration sources linked.
+      await api.unlinkExternalReference(referenceId, link.id);
+      optimisticUnlinkedIds.current.delete(referenceId);
     } catch {
+      // A request can fail after the server has committed the delete (for
+      // example, if the response is interrupted by audit logging). Confirm
+      // the relationship before restoring the optimistic row.
+      try {
+        const current = (await api.getExternalReferencesForTarget(target.targetType, target.targetId)) as Link[];
+        const stillLinked = current.some((item) => item.external_reference_id === referenceId);
+        if (!stillLinked) {
+          optimisticUnlinkedIds.current.delete(referenceId);
+          return;
+        }
+      } catch {
+        // If verification is unavailable, preserve the optimistic removal and
+        // let the next refresh reconcile it rather than showing a stale row.
+        optimisticUnlinkedIds.current.delete(referenceId);
+        return;
+      }
+      optimisticUnlinkedIds.current.delete(referenceId);
+      setLinks(previousLinks);
+      if (previousPreview !== undefined) setPreviews((current) => ({ ...current, [referenceId]: previousPreview }));
       toast.show('Could not unlink this reference.', { variant: 'error' });
     } finally {
       setBusyId(null);
@@ -846,7 +906,7 @@ export function LinkedDesignsSection({
     });
     return Array.from(unique.values());
   }, [links]);
-  const sectionLabel = target.targetType === 'intake' || rows.some(({ reference }) => isGithub(reference)) ? 'Linked work' : 'Linked designs';
+  const sectionLabel = 'Linked resources';
   const hasGithubWork = rows.some(({ reference }) => isGithub(reference) && ['issue', 'pullRequest'].includes(String(reference?.external_type ?? '')));
   const githubIssues = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'issue' && String(reference?.metadata?.state ?? '').toLowerCase() === 'open').length;
   const githubPullRequests = rows.filter(({ reference }) => isGithub(reference) && reference?.external_type === 'pullRequest' && !['closed', 'merged'].includes(String(reference?.metadata?.state ?? '').toLowerCase())).length;
@@ -883,6 +943,11 @@ export function LinkedDesignsSection({
           >
             {sectionLabel}
           </p>
+          {showResourceActivity && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-[var(--ledger-text-muted)]" aria-label="Updating linked resources">
+              <Loader2 size={11} className="animate-spin" /> Updating
+            </span>
+          )}
           {(rows.length > 0 || calendarItems.length > 0 || contextLinks.length > 0 || slackContexts.length > 0) && (
             <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + calendarItems.length + contextLinks.length + slackContexts.length}</span>
           )}
@@ -900,12 +965,6 @@ export function LinkedDesignsSection({
           >
             <Link2 size={12} />
           </button>
-        )}
-        {canEdit && !isIntakeTarget && !hideGithubResourcePicker && (
-          <GithubResourcePicker
-            onSelect={selectGithubResource}
-            existingReferenceIds={links.map((link) => link.external_reference_id)}
-          />
         )}
       </div>}
       {loading ? (
@@ -936,7 +995,7 @@ export function LinkedDesignsSection({
             ? 'flex items-center gap-2 py-1 text-xs text-[var(--ledger-text-muted)]'
             : 'rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] px-3 py-3 text-xs text-[var(--ledger-text-muted)]'
         }>
-          {isIntakeTarget || minimalEmptyState ? 'No linked context' : 'Link events or reminders to keep related work and scheduling connected.'}
+          No linked resources
           {canEdit && !minimalEmptyState && (
             <button
               type="button"
@@ -1074,7 +1133,7 @@ export function LinkedDesignsSection({
                     type="button"
                     title="Insert into description"
                     aria-label="Insert into description"
-                    onClick={() => onInsert({ id: reference!.id, url: refUrl })}
+                    onClick={() => onInsert({ id: reference!.id, url: refUrl, provider: reference?.provider, externalType: reference?.external_type, title, metadata: reference?.metadata })}
                     className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
                   >
                     <Check size={13} />
@@ -1133,7 +1192,7 @@ export function LinkedDesignsSection({
                         type="button"
                         className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]"
                         onClick={() => {
-                          onInsert({ id: reference!.id, url: refUrl });
+                          onInsert({ id: reference!.id, url: refUrl, provider: reference?.provider, externalType: reference?.external_type, title, metadata: reference?.metadata });
                           setMenuLink(null);
                         }}
                       >
@@ -1165,7 +1224,7 @@ export function LinkedDesignsSection({
                           setMenuLink(null);
                         }}
                       >
-                        Remove from Ledger
+                        Unlink
                       </button>
                     )}
                   </div>
@@ -1249,6 +1308,7 @@ export function LinkedDesignsSection({
             busyId={busyId}
             onPasteLink={pasteLink}
             onLinkReference={linkReference}
+            onLinkSelectedReference={linkReference}
             onLinkRepository={linkApprovedRepository}
             resourceTitle={(reference) => reference.provider === 'github' ? githubTitle(reference as Reference) : String(reference.metadata?.name ?? referenceTitle(reference as Reference))}
             resourceMeta={(reference) => reference.provider === 'github' ? String(reference.metadata?.repositoryFullName ?? '') : `${reference.provider === 'google_drive' ? 'Google Drive' : 'Figma'} · ${String(reference.metadata?.fileType ?? resourceLabel(reference as Reference))}`}

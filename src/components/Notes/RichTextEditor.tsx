@@ -13,11 +13,14 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import {
   List,
   ListOrdered,
+  Bold,
   ChevronDown,
   CheckSquare,
+  Italic,
   MoreHorizontal,
   Redo2,
   SpellCheck,
+  Underline,
   Undo2,
 } from 'lucide-react';
 import { AutoLinkNode, LinkNode, $createLinkNode } from '@lexical/link';
@@ -42,6 +45,7 @@ import {
   $getNearestNodeFromDOMNode,
   $insertNodes,
   EditorState,
+  type LexicalNode,
   FORMAT_TEXT_COMMAND,
   $getPreviousSelection,
   $getSelection,
@@ -80,6 +84,7 @@ import {
 import { SmartPersonPlugin } from './SmartPersonPlugin';
 import { supabase } from '../../services/supabase';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useApi } from '../../hooks/useApi';
 import { useToast } from '../Common/ToastProvider';
 import { NotesEditorContextMenu, type EditorContextMenuPosition } from './NotesEditorContextMenu';
 import type {
@@ -95,10 +100,17 @@ import { BlockInsertionPlugin } from './editor/plugins/BlockInsertionPlugin';
 import { SlashCommandPlugin } from './editor/plugins/SlashCommandPlugin';
 import { BlockHandlePlugin } from './editor/plugins/BlockHandlePlugin';
 import { SelectionFormattingPlugin } from './editor/plugins/SelectionFormattingPlugin';
-import { INSERT_IMAGE_COMMAND } from './editor/commands/blocks';
-import { CalloutNode } from './editor/nodes/CalloutNode';
+import { INSERT_IMAGE_COMMAND, SET_CALLOUT_TYPE_COMMAND } from './editor/commands/blocks';
+import {
+  INSERT_LINKED_RESOURCE_BADGE_COMMAND,
+  OPEN_LINKED_RESOURCES_COMMAND,
+  type LinkedResourceBadgeRequest,
+} from './editor/commands/linkedResources';
+import { CalloutNode, $isCalloutNode } from './editor/nodes/CalloutNode';
+import type { CalloutType } from './editor/types/blocks';
 import { ToggleNode } from './editor/nodes/ToggleNode';
 import { FileAttachmentNode } from './editor/nodes/FileAttachmentNode';
+import { LinkedResourceBadgeNode, $createLinkedResourceBadgeNode, $isLinkedResourceBadgeNode } from './editor/nodes/LinkedResourceBadgeNode';
 import type {
   AttachmentRemoveRequest,
   AttachmentUploadRequest,
@@ -131,6 +143,11 @@ type Props = {
   onCreateExternalEmbed?: (
     request: EditorExternalEmbedRequest
   ) => Promise<EditorExternalEmbedResult>;
+  onOpenLinkedResources?: () => void;
+  linkedResourceBadge?: { resourceType: 'project' | 'note' | 'task' | 'event' | 'reminder' | 'external'; resourceId: string; title: string; url: string } | null;
+  onLinkedResourceBadgeInserted?: () => void;
+  linkedExternalReference?: { id: string; url: string } | null;
+  onLinkedExternalReferenceInserted?: () => void;
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
   onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
 };
@@ -181,6 +198,7 @@ const editorConfig = {
     CalloutNode,
     ToggleNode,
     FileAttachmentNode,
+    LinkedResourceBadgeNode,
   ],
   theme: {
     text: {
@@ -337,12 +355,14 @@ const ToolbarButton = ({
   children,
   isActive = false,
   onMouseDown,
+  className = '',
 }: {
   onClick: () => void;
   title: string;
   children: React.ReactNode;
   isActive?: boolean;
   onMouseDown?: React.MouseEventHandler<HTMLButtonElement>;
+  className?: string;
 }) => (
   <button
     type="button"
@@ -352,11 +372,11 @@ const ToolbarButton = ({
     }}
     onClick={onClick}
     title={title}
-    className={`inline-flex h-7 w-7 items-center justify-center rounded-md border outline-none transition focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0 ${
+    className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md outline-none transition focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0 ${
       isActive
-        ? 'border-[color:var(--ledger-border-strong)] bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-        : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-    }`}
+        ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+        : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] active:bg-[var(--ledger-surface-hover)]'
+    } ${className}`}
   >
     {children}
   </button>
@@ -367,11 +387,19 @@ type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'quote' | 'code';
 const ToolbarPlugin = ({
   onAutoCorrect,
   noteId,
+  targetType,
+  onCreateExternalEmbed,
+  onOpenLinkedResources,
   onUploadAttachment,
   onRemoveAttachment,
 }: {
   onAutoCorrect?: () => void | Promise<void>;
   noteId?: string | null;
+  targetType?: 'note' | 'meetingNote';
+  onCreateExternalEmbed?: (
+    request: EditorExternalEmbedRequest
+  ) => Promise<EditorExternalEmbedResult>;
+  onOpenLinkedResources?: () => void;
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
   onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
 }) => {
@@ -380,6 +408,9 @@ const ToolbarPlugin = ({
   const [isBlockTypeDropdownOpen, setIsBlockTypeDropdownOpen] = useState(false);
   const [isMoreDropdownOpen, setIsMoreDropdownOpen] = useState(false);
   const [isSticky, setIsSticky] = useState(false);
+  const [isBold, setIsBold] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
+  const [isUnderline, setIsUnderline] = useState(false);
   const toolbarSentinelRef = useRef<HTMLDivElement | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -420,6 +451,9 @@ const ToolbarPlugin = ({
     editor.getEditorState().read(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
+        setIsBold(selection.hasFormat('bold'));
+        setIsItalic(selection.hasFormat('italic'));
+        setIsUnderline(selection.hasFormat('underline'));
         const anchorNode = selection.anchor.getNode();
         let element = anchorNode;
         if (anchorNode.getKey() === 'root') {
@@ -438,6 +472,10 @@ const ToolbarPlugin = ({
           else if (tag === 'pre') setBlockType('code');
           else setBlockType('paragraph');
         }
+      } else {
+        setIsBold(false);
+        setIsItalic(false);
+        setIsUnderline(false);
       }
     });
   }, [editor]);
@@ -506,10 +544,10 @@ const ToolbarPlugin = ({
       <div
         ref={toolbarRef}
         style={{ top: 'var(--notes-toolbar-sticky-top, 0px)' }}
-        className={`sticky z-20 mb-2 mx-auto flex w-fit max-w-full flex-wrap items-center gap-1.5 rounded-xl px-1.5 py-1 transition-[background-color,border-color,box-shadow,opacity,transform,backdrop-filter] duration-150 ease-out ${
+        className={`sticky z-20 mb-3 flex w-full max-w-full flex-nowrap items-center gap-1 overflow-visible border-b border-[color:var(--ledger-border-subtle)] px-0 pb-2 pt-1 transition-[background-color,opacity,backdrop-filter] duration-150 ease-out ${
           isSticky
-            ? 'border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)] backdrop-blur-[14px]'
-            : 'border border-transparent bg-transparent shadow-none backdrop-blur-none'
+            ? 'bg-[color:color-mix(in_srgb,var(--ledger-surface)_92%,transparent)] backdrop-blur-sm'
+            : 'bg-transparent backdrop-blur-none'
         }`}
       >
         {/* Block type selector */}
@@ -522,7 +560,7 @@ const ToolbarPlugin = ({
               setIsMoreDropdownOpen(false);
             }}
             onBlur={() => setTimeout(() => setIsBlockTypeDropdownOpen(false), 150)}
-            className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0"
+            className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-md px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] outline-none transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] active:bg-[var(--ledger-surface-hover)] focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)] focus-visible:ring-offset-0"
           >
             {blockTypeLabels[blockType]}
             <ChevronDown size={13} />
@@ -548,8 +586,38 @@ const ToolbarPlugin = ({
           )}
         </div>
 
+        <div className="flex shrink-0 items-center gap-0.5">
+          <ToolbarButton
+            title="Bold (Ctrl+B)"
+            isActive={isBold}
+            onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}
+          >
+            <Bold size={14} />
+          </ToolbarButton>
+          <ToolbarButton
+            title="Italic (Ctrl+I)"
+            isActive={isItalic}
+            onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}
+          >
+            <Italic size={14} />
+          </ToolbarButton>
+          <ToolbarButton
+            title="Underline (Ctrl+U)"
+            isActive={isUnderline}
+            onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'underline')}
+          >
+            <Underline size={14} />
+          </ToolbarButton>
+        </div>
+        <div className="mx-0.5 h-4 w-px shrink-0 bg-[var(--ledger-border-subtle)]" />
+
         <BlockInsertionPlugin
           noteId={noteId}
+          targetType={targetType}
+          onCreateExternalEmbed={onCreateExternalEmbed}
+          onOpenLinkedResources={() => {
+            if (onOpenLinkedResources) editor.dispatchCommand(OPEN_LINKED_RESOURCES_COMMAND, undefined);
+          }}
           onUploadAttachment={onUploadAttachment}
           onRemoveAttachment={onRemoveAttachment}
           onMenuOpen={() => {
@@ -558,34 +626,25 @@ const ToolbarPlugin = ({
           }}
         />
 
-        <ToolbarButton
-          title="Undo (Ctrl+Z)"
-          onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
-        >
-          <Undo2 size={14} />
-        </ToolbarButton>
-        <ToolbarButton
-          title="Redo (Ctrl+Shift+Z)"
-          onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
-        >
-          <Redo2 size={14} />
-        </ToolbarButton>
-        <div className="mx-1 h-5 w-px bg-[var(--ledger-border-subtle)]" />
+        <div className="notes-toolbar-structure-divider mx-0.5 h-4 w-px shrink-0 bg-[var(--ledger-border-subtle)]" />
         <ToolbarButton
           title="Bulleted list"
           onClick={() => editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined)}
+          className="notes-toolbar-structure"
         >
           <List size={14} />
         </ToolbarButton>
         <ToolbarButton
           title="Numbered list"
           onClick={() => editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined)}
+          className="notes-toolbar-structure"
         >
           <ListOrdered size={14} />
         </ToolbarButton>
         <ToolbarButton
           title="Checklist"
           onClick={insertChecklist}
+          className="notes-toolbar-structure"
         >
           <CheckSquare size={14} />
         </ToolbarButton>
@@ -612,6 +671,39 @@ const ToolbarPlugin = ({
               >
                 Inline code
               </button>
+              <button
+                type="button"
+                className="notes-toolbar-more-structure w-full rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  editor.dispatchCommand(INSERT_UNORDERED_LIST_COMMAND, undefined);
+                  setIsMoreDropdownOpen(false);
+                }}
+              >
+                Bulleted list
+              </button>
+              <button
+                type="button"
+                className="notes-toolbar-more-structure w-full rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  editor.dispatchCommand(INSERT_ORDERED_LIST_COMMAND, undefined);
+                  setIsMoreDropdownOpen(false);
+                }}
+              >
+                Numbered list
+              </button>
+              <button
+                type="button"
+                className="notes-toolbar-more-structure w-full rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  insertChecklist();
+                  setIsMoreDropdownOpen(false);
+                }}
+              >
+                Checklist
+              </button>
               {onAutoCorrect && (
                 <button
                   type="button"
@@ -627,6 +719,21 @@ const ToolbarPlugin = ({
               )}
             </div>
           )}
+        </div>
+        <div className="mx-0.5 h-4 w-px shrink-0 bg-[var(--ledger-border-subtle)]" />
+        <div className="flex shrink-0 items-center gap-0.5">
+          <ToolbarButton
+            title="Undo (Ctrl+Z)"
+            onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
+          >
+            <Undo2 size={14} />
+          </ToolbarButton>
+          <ToolbarButton
+            title="Redo (Ctrl+Shift+Z)"
+            onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
+          >
+            <Redo2 size={14} />
+          </ToolbarButton>
         </div>
       </div>
     </>
@@ -1017,6 +1124,139 @@ const FigmaPastePlugin = ({
   );
 };
 
+const LinkedResourceInsertionPlugin = ({
+  reference,
+  badge,
+  onReferenceInserted,
+  onBadgeInserted,
+  onOpenLinkedResources,
+}: {
+  reference?: { id: string; url: string } | null;
+  badge?: Props['linkedResourceBadge'];
+  onReferenceInserted?: () => void;
+  onBadgeInserted?: () => void;
+  onOpenLinkedResources?: () => void;
+}) => {
+  const [editor] = useLexicalComposerContext();
+  const savedSelectionRef = useRef<ReturnType<typeof $getSelection>>(null);
+
+  const insertBadge = useCallback((item: LinkedResourceBadgeRequest) => {
+    editor.update(() => {
+      const selection = savedSelectionRef.current || $getSelection() || $getPreviousSelection();
+      savedSelectionRef.current = null;
+      const badgeNode = $createLinkedResourceBadgeNode(item);
+      const hasLivePoints = $isRangeSelection(selection)
+        && Boolean($getNodeByKey(selection.anchor.key))
+        && Boolean($getNodeByKey(selection.focus.key));
+      if (hasLivePoints && $isRangeSelection(selection)) {
+        $setSelection(selection);
+        selection.insertNodes([badgeNode]);
+      } else {
+        $getRoot().append(badgeNode, $createParagraphNode());
+      }
+    });
+  }, [editor]);
+
+  useEffect(
+    () =>
+      editor.registerCommand(
+        OPEN_LINKED_RESOURCES_COMMAND,
+        () => {
+          editor.getEditorState().read(() => {
+            const selection = $getSelection();
+            savedSelectionRef.current = $isRangeSelection(selection) ? selection.clone() : null;
+          });
+          onOpenLinkedResources?.();
+          return true;
+        },
+        COMMAND_PRIORITY_HIGH
+      ),
+    [editor, onOpenLinkedResources]
+  );
+
+  useEffect(() => editor.registerCommand(
+    INSERT_LINKED_RESOURCE_BADGE_COMMAND,
+    (item) => {
+      insertBadge(item);
+      return true;
+    },
+    COMMAND_PRIORITY_HIGH,
+  ), [editor, insertBadge]);
+
+  useEffect(() => {
+    const handleDirectInsert = (event: Event) => {
+      const item = (event as CustomEvent<LinkedResourceBadgeRequest>).detail;
+      if (item?.resourceId) {
+        editor.dispatchCommand(INSERT_LINKED_RESOURCE_BADGE_COMMAND, {
+          ...item,
+          url: item.url || `#external-resource-${item.resourceId}`,
+        });
+      }
+    };
+    window.addEventListener('ledger:insert-linked-resource', handleDirectInsert);
+    return () => window.removeEventListener('ledger:insert-linked-resource', handleDirectInsert);
+  }, [editor]);
+
+  useEffect(() => {
+    const item = badge ?? (reference?.id
+      ? { resourceType: 'external' as const, resourceId: reference.id, title: reference.url, url: reference.url }
+      : null);
+    if (!item) return;
+
+    insertBadge(item);
+    if (badge) onBadgeInserted?.();
+    else onReferenceInserted?.();
+  }, [badge, insertBadge, onBadgeInserted, onReferenceInserted, reference]);
+  return null;
+};
+
+const LinkedResourceBadgeHydrationPlugin = ({ noteId, targetType, editorKey }: { noteId?: string | null; targetType?: 'note' | 'meetingNote'; editorKey?: string }) => {
+  const [editor] = useLexicalComposerContext();
+  const api = useApi();
+
+  useEffect(() => {
+    if (!noteId) return;
+    let cancelled = false;
+    const hydrate = async () => {
+      try {
+        const rows = await api.getExternalReferencesForTarget(targetType ?? 'note', noteId) as Array<{ external_reference_id?: string; external_references?: Record<string, any> | Record<string, any>[] }>;
+        const references = new Map<string, Record<string, any>>();
+        for (const row of rows) {
+          const reference = Array.isArray(row.external_references) ? row.external_references[0] : row.external_references;
+          if (row.external_reference_id && reference) references.set(row.external_reference_id, reference);
+        }
+        if (cancelled || references.size === 0) return;
+        editor.update(() => {
+          const visit = (node: LexicalNode) => {
+            if ($isLinkedResourceBadgeNode(node)) {
+              const reference = references.get(node.getExternalReferenceId());
+              if (reference) {
+                const metadata = (reference.metadata ?? {}) as Record<string, unknown>;
+                const provider = String(reference.provider ?? 'external');
+                const title = String(provider === 'figma'
+                  ? metadata.name ?? metadata.nodeName ?? metadata.fileName ?? 'Figma design'
+                  : provider === 'github'
+                  ? metadata.title ?? metadata.repositoryFullName ?? 'GitHub resource'
+                  : provider === 'google_drive'
+                  ? metadata.name ?? metadata.fileName ?? 'Google Drive file'
+                  : metadata.name ?? metadata.title ?? 'Linked resource');
+                node.setPresentation({ title, provider, externalType: String(reference.external_type ?? metadata.nodeType ?? metadata.fileType ?? ''), metadata });
+              }
+            }
+            if ($isElementNode(node)) node.getChildren().forEach(visit);
+          };
+          $getRoot().getChildren().forEach(visit);
+        }, { tag: 'linked-resource-hydration' });
+      } catch {
+        // The inspector remains the source of truth if enrichment is unavailable.
+      }
+    };
+    void hydrate();
+    return () => { cancelled = true; };
+  }, [api, editor, editorKey, noteId, targetType]);
+  return null;
+};
+
 const ResizableImagePlugin = () => {
   const [editor] = useLexicalComposerContext();
   const observersRef = useRef(
@@ -1148,6 +1388,7 @@ const EditorContextMenuPlugin = ({
   const [position, setPosition] = useState<EditorContextMenuPosition | null>(null);
   const [selectedText, setSelectedText] = useState('');
   const [selectedBlockKey, setSelectedBlockKey] = useState<string | undefined>();
+  const [calloutType, setCalloutType] = useState<CalloutType | null>(null);
   const [hasSmartDate, setHasSmartDate] = useState(false);
   const [personId, setPersonId] = useState<string | null>(null);
   const [linkUrl, setLinkUrl] = useState<string | null>(null);
@@ -1254,10 +1495,7 @@ const EditorContextMenuPlugin = ({
   }, [editor, noteId]);
 
   useEffect(() => {
-    const root = editor.getRootElement();
-    if (!root) return;
-
-    const onContextMenu = (event: MouseEvent) => {
+    const onContextMenu = (root: HTMLElement, event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       if (
         !target ||
@@ -1276,11 +1514,25 @@ const EditorContextMenuPlugin = ({
         savedSelectionRef.current = selection?.clone?.() ?? null;
       });
       const smartDate = Boolean(target.closest('[data-ledger-smart-date-key]'));
+      const calloutElement = target.closest('[data-ledger-callout]') as HTMLElement | null;
+      let nextCalloutType: CalloutType | null = null;
+      if (calloutElement) {
+        const node = $getNearestNodeFromDOMNode(calloutElement);
+        if ($isCalloutNode(node)) {
+          nextCalloutType = node.getCalloutType();
+        } else {
+          const persistedType = calloutElement.dataset.calloutType;
+          if (persistedType === 'info' || persistedType === 'note' || persistedType === 'warning' || persistedType === 'success') {
+            nextCalloutType = persistedType;
+          }
+        }
+      }
       const person = target.closest('[data-ledger-smart-person-key]');
       const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
       setSelectedText(content?.plainText ?? '');
       setSelectedBlockKey(content?.blockKey);
       setHasSmartDate(smartDate);
+      setCalloutType(nextCalloutType);
       setPersonId(person?.getAttribute('data-ledger-smart-person-user-id') ?? null);
       setLinkUrl(
         anchor?.href && /^(?:https?:\/\/|mailto:|tel:)/i.test(anchor.href) ? anchor.href : null
@@ -1332,8 +1584,18 @@ const EditorContextMenuPlugin = ({
       }
     };
 
-    root.addEventListener('contextmenu', onContextMenu);
-    return () => root.removeEventListener('contextmenu', onContextMenu);
+    return editor.registerRootListener((root, previousRoot) => {
+      const previousListener = (previousRoot as (HTMLElement & { __ledgerContextMenuListener?: (event: MouseEvent) => void }) | null)?.__ledgerContextMenuListener;
+      if (previousRoot && previousListener) {
+        previousRoot.removeEventListener('contextmenu', previousListener);
+        delete (previousRoot as HTMLElement & { __ledgerContextMenuListener?: (event: MouseEvent) => void }).__ledgerContextMenuListener;
+      }
+      if (root) {
+        const listener = (event: MouseEvent) => onContextMenu(root, event);
+        root.addEventListener('contextmenu', listener);
+        (root as HTMLElement & { __ledgerContextMenuListener?: (event: MouseEvent) => void }).__ledgerContextMenuListener = listener;
+      }
+    });
   }, [editor, getSelectedContent]);
 
   if (!position) return null;
@@ -1433,6 +1695,11 @@ const EditorContextMenuPlugin = ({
       onSearch={() => {
         if (selectedContent) void onSearch?.(selectedContent);
       }}
+      calloutType={calloutType}
+      onChangeCalloutType={(type) => {
+        restoreSavedSelection();
+        editor.dispatchCommand(SET_CALLOUT_TYPE_COMMAND, type);
+      }}
       spellcheck={spellcheck}
       onReplaceMisspelling={(suggestion) => {
         const range = spellcheckRangeRef.current;
@@ -1507,6 +1774,11 @@ export function RichTextEditor({
   onLinkPerson,
   onSearch,
   onCreateExternalEmbed,
+  onOpenLinkedResources,
+  linkedResourceBadge,
+  onLinkedResourceBadgeInserted,
+  linkedExternalReference,
+  onLinkedExternalReferenceInserted,
   onUploadAttachment,
   onRemoveAttachment,
 }: Props) {
@@ -1524,7 +1796,8 @@ export function RichTextEditor({
       tags?.has('smart-person-load') ||
       tags?.has('smart-person-scan') ||
       tags?.has('smart-person-sync') ||
-      tags?.has('link-scan')
+      tags?.has('link-scan') ||
+      tags?.has('linked-resource-hydration')
     ) {
       return;
     }
@@ -1590,10 +1863,13 @@ export function RichTextEditor({
           <ToolbarPlugin
             onAutoCorrect={onAutoCorrect}
             noteId={noteId}
+            targetType={targetType}
+            onCreateExternalEmbed={onCreateExternalEmbed}
+            onOpenLinkedResources={onOpenLinkedResources}
             onUploadAttachment={onUploadAttachment}
             onRemoveAttachment={onRemoveAttachment}
           />
-          <div className="relative mt-2">
+          <div className="relative">
             <RichTextBehaviorPlugin />
             {/* Meeting notes use the transcript as their separate capture surface.
               The automatic text-entity scanners can repeatedly re-transform
@@ -1627,11 +1903,11 @@ export function RichTextEditor({
                 <ContentEditable
                   onFocus={onFocus}
                   onBlur={onBlur}
-                  className="notes-rich-text-editor min-h-[calc(100vh-420px)] rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                  className="notes-rich-text-editor min-h-[calc(100vh-390px)] px-0 py-2 text-[16px] font-normal text-[var(--ledger-text-primary)] outline-none"
                 />
               }
               placeholder={
-                <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-6 py-5 text-[16px] leading-8 text-[var(--ledger-text-muted)]">
+                <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-0 py-2 text-[16px] leading-[1.7] text-[var(--ledger-text-muted)]">
                   Type / for commands
                 </div>
               }
@@ -1643,13 +1919,26 @@ export function RichTextEditor({
             <LinkInteractionPlugin />
             <LinkScanPlugin editorKey={editorKey} />
             <LoadHtmlPlugin html={initialValue} editorKey={editorKey} />
+            <LinkedResourceBadgeHydrationPlugin noteId={noteId} targetType={targetType} editorKey={editorKey} />
             <MarkdownShortcutPlugin />
             <TabIndentationPlugin />
             <ListPlugin />
             <CheckListPlugin />
             <TablePlugin hasTabHandler hasHorizontalScroll />
             <HorizontalRulePlugin />
-            <SlashCommandPlugin />
+            <SlashCommandPlugin
+              noteId={noteId}
+              targetType={targetType}
+              onCreateExternalEmbed={onCreateExternalEmbed}
+              onOpenLinkedResources={onOpenLinkedResources}
+            />
+            <LinkedResourceInsertionPlugin
+              reference={linkedExternalReference}
+              badge={linkedResourceBadge}
+              onReferenceInserted={onLinkedExternalReferenceInserted}
+              onBadgeInserted={onLinkedResourceBadgeInserted}
+              onOpenLinkedResources={onOpenLinkedResources}
+            />
             <BlockHandlePlugin
               noteId={noteId}
               onCreateTask={onCreateTask}

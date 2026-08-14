@@ -4946,7 +4946,10 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
           </div>
         )}
       </>,
-      activeProjectTasks.length + completedProjectTasks.length
+      // This badge describes the actions shown by the section. Completed
+      // tasks belong in the Done group on the expanded Actions tab, not in
+      // the current Next actions count.
+      activeProjectTasks.length
     );
 
   const renderRecentNotesPreviewSection = () =>

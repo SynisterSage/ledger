@@ -11409,7 +11409,10 @@ app.delete('/api/external-references/:id/links/:linkId', authMiddleware, rateLim
     await requireExternalReferenceEdit({ userId: req.authUser.id, workspaceId, targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id });
     const source = String(req.query?.source ?? '').trim() || null;
     const result = await unlinkExternalReference({ supabase, workspaceId, referenceId: String(req.params.id), linkId: String(req.params.linkId), source });
-    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'external_reference_unlinked', targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id, metadata: { source: source || 'all' } });
+    // The relationship mutation has already committed. Audit logging is
+    // supplemental and must not make a successful unlink look like a failed
+    // request to the client.
+    await writeWorkspaceAuditLog({ workspaceId, actorUserId: req.authUser.id, action: 'external_reference_unlinked', targetType: linkLookup.data.target_type, targetId: linkLookup.data.target_id, metadata: { source: source || 'all' } }).catch(() => null);
     res.json(result);
   } catch (error) {
     return respondWithError(res, error);
@@ -11422,7 +11425,7 @@ app.get('/api/external-references', authMiddleware, rateLimit('read'), async (re
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
     const targetType = String(req.query?.targetType ?? '').trim();
     const targetId = String(req.query?.targetId ?? '').trim();
-    if (!targetType || !targetId || !(await ensureExternalTarget({ workspaceId, targetType, targetId }))) return res.status(404).json({ error: 'Target object not found' });
+    if (!targetType || !targetId) return res.status(404).json({ error: 'Target object not found' });
     res.json(await getExternalReferencesForTarget({ supabase, workspaceId, targetType, targetId }));
   } catch (error) {
     return respondWithError(res, error);

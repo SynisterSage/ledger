@@ -12,6 +12,7 @@ import {
   Table2,
 } from 'lucide-react';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
+import { useToast } from '../../../Common/ToastProvider';
 import { INSERT_CHECK_LIST_COMMAND } from '@lexical/list';
 import { $createLinkNode } from '@lexical/link';
 import {
@@ -48,6 +49,7 @@ import {
 import { $createToggleNode, $isToggleNode } from '../nodes/ToggleNode';
 import { $createCalloutNode, $isCalloutNode } from '../nodes/CalloutNode';
 import { $createFileAttachmentNode, $isFileAttachmentNode } from '../nodes/FileAttachmentNode';
+import { $createExternalEmbedNode } from '../../../ExternalEmbeds/ExternalEmbedNode';
 import {
   INSERT_CALLOUT_COMMAND,
   INSERT_DIVIDER_COMMAND,
@@ -67,6 +69,20 @@ import type {
   AttachmentUploadResult,
   CalloutType,
 } from '../types/blocks';
+import type { EditorExternalEmbedRequest, EditorExternalEmbedResult } from '../types/externalEmbed';
+
+const providerForUrl = (value: string): EditorExternalEmbedRequest['provider'] | null => {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return null;
+    const host = url.hostname.toLowerCase();
+    const route = url.pathname.split('/').filter(Boolean)[0]?.toLowerCase();
+    if ((host === 'figma.com' || host === 'www.figma.com') && ['design', 'file', 'board'].includes(route ?? '')) return 'figma';
+    if (['github.com', 'www.github.com'].includes(host) && url.pathname.split('/').filter(Boolean).length >= 2) return 'github';
+    if (['drive.google.com', 'docs.google.com', 'sheets.google.com', 'slides.google.com', 'forms.google.com', 'drawings.google.com'].includes(host) && Boolean(url.searchParams.get('id') || url.pathname.match(/\/d\/[-\w]+/))) return 'google_drive';
+  } catch {}
+  return null;
+};
 
 const findAncestor = <T extends LexicalNode>(
   selection: ReturnType<typeof $getSelection>,
@@ -127,11 +143,20 @@ const createTable = (editor: LexicalEditor) => {
 const InsertMenu = ({
   onInsertFile,
   onMenuOpen,
+  noteId,
+  targetType,
+  onCreateExternalEmbed,
+  onOpenLinkedResources,
 }: {
   onInsertFile?: () => void;
   onMenuOpen?: () => void;
+  noteId?: string | null;
+  targetType?: 'note' | 'meetingNote';
+  onCreateExternalEmbed?: (request: EditorExternalEmbedRequest) => Promise<EditorExternalEmbedResult>;
+  onOpenLinkedResources?: () => void;
 }) => {
   const [editor] = useLexicalComposerContext();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [calloutOpen, setCalloutOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -164,9 +189,9 @@ const InsertMenu = ({
           setCalloutOpen(false);
         }}
         title="Insert block"
-        className="inline-flex h-7 items-center gap-1 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+        className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] active:bg-[var(--ledger-surface-hover)]"
       >
-        <Plus size={13} /> Insert <ChevronDown size={12} />
+        <Plus size={13} /> <span className="notes-toolbar-insert-label">Insert</span> <ChevronDown size={12} />
       </button>
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
@@ -291,8 +316,34 @@ const InsertMenu = ({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() =>
               run(() => {
+                if (onOpenLinkedResources) {
+                  onOpenLinkedResources();
+                  return;
+                }
                 const url = window.prompt('Link or embed URL')?.trim();
                 if (!url) return;
+                const provider = providerForUrl(url);
+                if (provider && noteId && onCreateExternalEmbed) {
+                  void onCreateExternalEmbed({ noteId, targetType: targetType ?? 'note', provider, url })
+                    .then((result) => {
+                      editor.update(() => {
+                        const embedNode = $createExternalEmbedNode({
+                          externalReferenceId: result.externalReferenceId,
+                          externalUrl: result.externalUrl,
+                        });
+                        const selection = $getSelection() || $getPreviousSelection();
+                        if ($isRangeSelection(selection)) selection.insertNodes([embedNode]);
+                        else $insertNodes([embedNode]);
+                      });
+                    })
+                    .catch((error) => {
+                      toast.show(
+                        error instanceof Error ? error.message : 'Could not create the embed.',
+                        { variant: 'error' }
+                      );
+                    });
+                  return;
+                }
                 editor.update(() => {
                   const paragraph = $createParagraphNode();
                   const link = $createLinkNode(url);
@@ -315,11 +366,17 @@ export const BlockInsertionPlugin = ({
   onUploadAttachment,
   onRemoveAttachment,
   noteId,
+  targetType,
+  onCreateExternalEmbed,
+  onOpenLinkedResources,
   onMenuOpen,
 }: {
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
   onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
   noteId?: string | null;
+  targetType?: 'note' | 'meetingNote';
+  onCreateExternalEmbed?: (request: EditorExternalEmbedRequest) => Promise<EditorExternalEmbedResult>;
+  onOpenLinkedResources?: () => void;
   onMenuOpen?: () => void;
 }) => {
   const [editor] = useLexicalComposerContext();
@@ -805,7 +862,14 @@ export const BlockInsertionPlugin = ({
 
   return (
     <>
-      <InsertMenu onInsertFile={chooseFile} onMenuOpen={onMenuOpen} />
+      <InsertMenu
+        onInsertFile={chooseFile}
+        noteId={noteId}
+        targetType={targetType}
+        onCreateExternalEmbed={onCreateExternalEmbed}
+        onOpenLinkedResources={onOpenLinkedResources}
+        onMenuOpen={onMenuOpen}
+      />
       {(uploading || uploadError) && (
         <div className="mt-1 text-center text-[10px] text-[var(--ledger-text-muted)]">
           {uploading ? (
