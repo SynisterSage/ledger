@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarDays, Check, FileText, FolderKanban, Inbox, Search, Users } from 'lucide-react';
+import { CalendarDays, Check, Download, FileText, FolderKanban, Inbox, Search, Users, X } from 'lucide-react';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { usePlatform } from '../../platform';
 import {
@@ -12,6 +12,7 @@ import {
   routeForTeam,
 } from '../../platform';
 import { ModuleWindowHeader } from './ModuleWindowHeader';
+import { runtimeConfig } from '../../config/runtime';
 import {
   useWorkspaceSearch,
   type SearchResult,
@@ -102,6 +103,45 @@ const resultRoute = (workspaceId: string, result: SearchResult) => {
       query: { person: result.id },
     };
   return null;
+};
+
+const WEB_ASK_LEDGER_TOAST_DISMISSED = 'ledger:web-ask-ledger-toast-dismissed:v1';
+
+const WebAskLedgerToast = () => {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setDismissed(window.localStorage.getItem(WEB_ASK_LEDGER_TOAST_DISMISSED) === 'true');
+    } catch {
+      // Storage is optional; the toast can still be dismissed for this session.
+    }
+  }, []);
+
+  if (dismissed) return null;
+  const downloadUrl = `${(runtimeConfig.ledgerWebUrl || 'https://ledgerworkspace.com').replace(/\/$/, '')}/download`;
+  const dismiss = () => {
+    setDismissed(true);
+    try {
+      window.localStorage.setItem(WEB_ASK_LEDGER_TOAST_DISMISSED, 'true');
+    } catch {
+      // Ignore unavailable browser storage.
+    }
+  };
+
+  return (
+    <aside className="fixed bottom-5 right-5 z-[60] w-[min(350px,calc(100vw-2rem))] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3.5 shadow-[0_14px_36px_rgba(17,24,39,0.16)]" role="status" aria-label="Try Ask Ledger on desktop and mobile">
+      <button type="button" onClick={dismiss} aria-label="Dismiss Ask Ledger message" className="absolute right-2.5 top-2.5 rounded-md p-1 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><X size={14} /></button>
+      <div className="flex items-start gap-3 pr-5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-secondary)]"><Download size={15} /></span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Try the new Ask Ledger</p>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--ledger-text-muted)]">Available on desktop and mobile.</p>
+          <a href={downloadUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-medium text-[var(--ledger-text-secondary)] underline decoration-[var(--ledger-border-strong)] underline-offset-2 transition hover:text-[var(--ledger-text-primary)]">Download Ledger</a>
+        </div>
+      </div>
+    </aside>
+  );
 };
 
 export const WebSearchNewTab = ({ onClose }: { onClose: () => void }) => {
@@ -234,6 +274,7 @@ export const WebSearchNewTab = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
       </main>
+      <WebAskLedgerToast />
     </div>
   );
 };

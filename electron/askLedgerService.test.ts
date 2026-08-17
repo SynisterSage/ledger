@@ -44,6 +44,36 @@ test('selects only budgeted sources and sends grounded context to generation', a
   assert.match(generationPrompt, /Planning at 15% progress/);
 });
 
+test('answers conversational and capability requests without workspace retrieval', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let retrieveCalls = 0;
+  let generationPrompt = '';
+  const retrieval = {
+    indexWorkspace: async () => { throw new Error('workspace indexing should not run'); },
+    retrieve: async () => { retrieveCalls += 1; return { items: [], debug: [] }; },
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      generationPrompt = request.context;
+      callbacks.onEvent({ type: 'delta', requestId, text: 'Of course.' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'Can you read PDFs?', documents: [], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(retrieveCalls, 0);
+  assert.match(generationPrompt, /Trusted application capabilities/);
+  assert.deepEqual(events.find((event) => event.type === 'sources')?.sources, []);
+  assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'searching'), false);
+});
+
 test('expands project reviews with linked work records', async () => {
   const events: LocalAIStreamEvent[] = [];
   let generationPrompt = '';
@@ -257,10 +287,38 @@ test('expands an empty meeting follow-up request beyond duplicate events', async
   assert.match(generationPrompt, /Packanack meeting notes/);
   assert.match(generationPrompt, /Confirm Packanack handoff/);
   const answer = events.filter((streamEvent) => streamEvent.type === 'delta').map((streamEvent) => streamEvent.text).join('');
-  assert.match(answer, /Next step/);
+  assert.match(answer, /Recommended next step/);
   assert.doesNotMatch(answer, /I don't have enough Ledger context/);
   assert.equal(events.find((streamEvent) => streamEvent.type === 'sources')?.sources?.some((source) => source.resourceId === duplicateEvent.resourceId), false);
   assert.equal(events.find((streamEvent) => streamEvent.type === 'error'), undefined);
+});
+
+test('reuses the active conversation context for continuation requests', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationPrompt = '';
+  const priorNote: AskLedgerContextItem = { workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-prior', title: 'Launch review notes', content: 'The launch review is waiting on final approval.' };
+  const repeatedEvent: AskLedgerContextItem = { workspaceId: 'workspace-a', resourceType: 'event', resourceId: 'event-repeat', title: 'Alfa - Hybrid Work', content: 'Calendar event.' };
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [repeatedEvent], debug: [{ resourceType: 'event', resourceId: repeatedEvent.resourceId, title: repeatedEvent.title, score: 0.8, why: ['semantic:0.8'] }] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }) => { generationPrompt = request.context; callbacks.onEvent({ type: 'done', requestId: 'request-continue', metrics: { totalMs: 1 } }); return 'request-continue'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({
+    workspaceId: 'workspace-a', question: 'do another sweep', documents: [priorNote, repeatedEvent], lexicalResults: [],
+    conversation: { previousQuestion: 'Review the launch context', previousAnswer: 'The review is waiting on final approval.', previousSources: [{ resourceType: 'note', resourceId: priorNote.resourceId, title: priorNote.title }], recentExchanges: [] },
+  }, { onEvent: (streamEvent) => events.push(streamEvent) });
+  await waitForEvents(events);
+
+  assert.match(generationPrompt, /Launch review notes/);
+  assert.match(generationPrompt, /waiting on final approval/);
+  assert.equal(events.find((streamEvent) => streamEvent.type === 'sources')?.sources?.some((source) => source.resourceId === priorNote.resourceId), true);
 });
 
 test('falls back to a grounded weekly plan when the local model abstains', async () => {

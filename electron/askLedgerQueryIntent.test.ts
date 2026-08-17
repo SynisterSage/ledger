@@ -7,26 +7,6 @@ test('detects deadline questions', () => {
   assert.deepEqual(detectAskLedgerQueryIntent('when are my project deadliens', new Date('2026-08-16T12:00:00Z')), { kind: 'deadlines' });
 });
 
-test('detects direct greetings', () => {
-  assert.deepEqual(detectAskLedgerQueryIntent('hello'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('Hey Ledger!'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('hello mr ledger'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('Good morning, Mr. Ledger!'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('what’s up Ledger'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('hey, what’s up?'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('hello, how are you?'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('how are you mr ledger'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('thanks Ledger'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('nothing much ur whats up with u \\'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('what\'s up with you?'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('whats on ur mind'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('what can you do'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('are you there'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('can you help me'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('goodbye Ledger'), { kind: 'greeting' });
-  assert.deepEqual(detectAskLedgerQueryIntent('appreciate it'), { kind: 'greeting' });
-});
-
 test('detects authoritative team-member lookups', () => {
   assert.deepEqual(detectAskLedgerQueryIntent('who are my team members'), { kind: 'team_members' });
   assert.deepEqual(detectAskLedgerQueryIntent('show me the members of the team'), { kind: 'team_members' });

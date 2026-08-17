@@ -74,3 +74,27 @@ test('bounds follow-up context and keeps it separate from current Ledger evidenc
   assert.match(prompt, /What about the mobile side\?/);
   assert.match(prompt, /Do not invent facts/);
 });
+
+test('keeps conversational prompts free of global grounding abstention', () => {
+  const prompt = buildAskLedgerPrompt({ question: 'Thanks', responseMode: 'conversational' });
+  assert.doesNotMatch(prompt, /Use only the Ledger context below/);
+  assert.doesNotMatch(prompt, new RegExp(ASK_LEDGER_ABSTENTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('constrains capability answers to application-owned capabilities', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'Can you read PDFs?',
+    responseMode: 'conversational',
+    capabilityDescription: 'Ask Ledger can:\n- Read attached PDF files through attachment retrieval.',
+  });
+  assert.match(prompt, /Trusted application capabilities/);
+  assert.match(prompt, /Read attached PDF files through attachment retrieval/);
+});
+
+test('passes adaptive depth guidance through the shared grounded prompt', () => {
+  const brief = buildAskLedgerPrompt({ question: 'Is Task X done?', responseMode: 'workspace_grounded', answerDepth: 'brief' });
+  const detailed = buildAskLedgerPrompt({ question: 'Why is Project A blocked?', responseMode: 'workspace_grounded', answerDepth: 'detailed' });
+  assert.match(brief, /Answer directly and minimally/);
+  assert.match(detailed, /thorough explanation using the available evidence/);
+  assert.doesNotMatch(brief, /1-3 concise paragraphs/);
+});

@@ -32,9 +32,9 @@ import { MeetingAudioCaptureService, type AudioSourceName } from './audioCapture
 import { LocalTranscriptionService } from './transcriptionService';
 import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
+import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
-import { detectAskLedgerQueryIntent } from './askLedgerQueryIntent';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import { RecordingSessionStore } from './recordingSessionStore';
 import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
@@ -69,8 +69,14 @@ const recordingSessionStore = new RecordingSessionStore();
 const meetingAudioCaptureService = new MeetingAudioCaptureService(recordingSessionStore);
 const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore);
 const localAIAssets = new LocalAIAssetManager();
+const localAICapabilityService = new LocalAICapabilityService();
 const localAIService = createLocalAIService(localAIAssets);
 const askLedgerService = createAskLedgerService(localAIService, localAIAssets, path.join(app.getPath('userData'), 'ask-ledger-attachments'));
+localAIService.onGenerationRuntimeState((state) => {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) window.webContents.send('ask-ledger:generation-runtime-state', state);
+  });
+});
 localAIAssets.onChange((status) => {
   BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed()) window.webContents.send('ask-ledger:local-ai-status', status);
@@ -246,13 +252,9 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
   if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
   const documents = payload.documents.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
   if (documents.some((item) => item.workspaceId !== undefined && item.workspaceId !== payload.workspaceId)) throw new Error('Ask Ledger context workspace mismatch.');
-  // A selected skill should not hijack ordinary conversation. Greetings and
-  // other casual replies are handled by Ask Ledger's conversational path;
-  // they should not require skill context or emit an empty skill result.
-  const isCasualRequest = detectAskLedgerQueryIntent(payload.question).kind === 'greeting';
-  const builtinSkill = isCasualRequest || payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
+  const builtinSkill = payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
   const customPayload = payload.customSkill && typeof payload.customSkill === 'object' ? payload.customSkill as Record<string, unknown> : undefined;
-  const customSkill = !isCasualRequest && !builtinSkill && customPayload && typeof customPayload.id === 'string' && customPayload.id === String(payload.skillId ?? '') && typeof customPayload.name === 'string' && typeof customPayload.instructions === 'string'
+  const customSkill = !builtinSkill && customPayload && typeof customPayload.id === 'string' && customPayload.id === String(payload.skillId ?? '') && typeof customPayload.name === 'string' && typeof customPayload.instructions === 'string'
     ? { id: customPayload.id as AskLedgerSkillId, name: String(customPayload.name).slice(0, 100), description: 'A custom Ledger workflow.', icon: 'Boxes', instructions: String(customPayload.instructions).slice(0, 12000), supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedActions: [], requiresContext: false, requiresConfirmation: false } as AskLedgerSkillDefinition
     : undefined;
   const skill = builtinSkill ?? customSkill;
@@ -306,6 +308,8 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
       skillId: skill?.id,
       skillDefinition: skill,
       explicitContext: explicitContext as never,
+      attachmentIds: Array.isArray(payload.attachmentIds) ? payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5) : undefined,
+      messageId: typeof payload.messageId === 'string' ? payload.messageId.slice(0, 200) : undefined,
       conversation: safeConversation,
     },
     { onEvent: (streamEvent) => {
@@ -318,10 +322,10 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
         console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answer: answer.slice(0, 2000) });
       }
       if (!sender.isDestroyed()) {
-        const eventWithSkill = streamEvent.type === 'done' && skill && !isCasualRequest
+        const eventWithSkill = streamEvent.type === 'done' && skill
           ? { ...streamEvent, skillResult: buildSkillResult(skill, answer, explicitContext as never) }
           : streamEvent;
-        if (streamEvent.type === 'done' && skill && !isCasualRequest) {
+        if (streamEvent.type === 'done' && skill) {
           console.info('[local-ai] Ask Ledger skill diagnostics', {
             skillId: skill.id,
             explicitContext,
@@ -346,6 +350,29 @@ ipcMain.handle('ask-ledger:cancel', (_event, requestId: unknown) => {
 
 ipcMain.handle('ask-ledger:local-ai-status', () => localAIAssets.status());
 ipcMain.handle('ask-ledger:local-ai-hardware', () => localAIAssets.hardware());
+ipcMain.handle('ask-ledger:local-ai-capability', () => localAICapabilityService.getCapability());
+ipcMain.handle('ask-ledger:local-ai-acknowledge-tier', (_event, tier: unknown) => localAICapabilityService.acknowledgeTier(tier));
+ipcMain.handle('ask-ledger:generation-models', () => localAIAssets.getAvailableGenerationModels().map((model) => ({ ...model, status: localAIAssets.getGenerationModelStatus(model.id) })));
+ipcMain.handle('ask-ledger:selected-generation-tier', () => localAIAssets.getSelectedGenerationTier());
+ipcMain.handle('ask-ledger:generation-runtime-state', () => localAIService.getGenerationRuntimeState());
+ipcMain.handle('ask-ledger:switch-generation-tier', (_event, tier: unknown) => localAIService.switchGenerationTier(tier));
+ipcMain.handle('ask-ledger:set-selected-generation-tier', (_event, tier: unknown) => localAIService.switchGenerationTier(tier));
+ipcMain.handle('ask-ledger:generation-model-status', (_event, modelId: unknown) => {
+  if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
+  return localAIAssets.getGenerationModelStatus(modelId);
+});
+ipcMain.handle('ask-ledger:generation-model-download', (_event, modelId: unknown) => {
+  if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
+  return localAIAssets.downloadGeneration(modelId);
+});
+ipcMain.handle('ask-ledger:generation-model-cancel-download', (_event, modelId: unknown) => {
+  if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
+  return localAIAssets.cancelGenerationDownload(modelId);
+});
+ipcMain.handle('ask-ledger:generation-model-remove', async (_event, modelId: unknown) => {
+  if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
+  return localAIService.removeGenerationModel(modelId);
+});
 ipcMain.handle('ask-ledger:local-ai-download', (_event, role: unknown) => {
   if (role !== 'generation' && role !== 'embedding') throw new Error('Invalid Local AI model.');
   return localAIAssets.download(role);

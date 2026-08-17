@@ -1,6 +1,5 @@
 export type AskLedgerQueryIntent = {
   kind:
-    | 'greeting'
     | 'team_members'
     | 'projects'
     | 'tasks'
@@ -34,13 +33,6 @@ export type AskLedgerEntityResourceType =
   | 'intake'
   | 'external';
 
-const normalizeGreeting = (question: string) => question
-  .toLowerCase()
-  .replace(/[’']/g, '')
-  .replace(/[^a-z0-9\s]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
-
 const isoDate = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -64,19 +56,6 @@ const addDays = (date: Date, days: number) => {
 
 export const detectAskLedgerQueryIntent = (question: string, now = new Date()): AskLedgerQueryIntent => {
   const normalized = question.toLowerCase().replace(/[’']/g, '').trim();
-  const greeting = normalizeGreeting(question);
-  if (/^(hi|hello|hey|yo)(?: there| again)?(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^good (?:morning|afternoon|evening)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^(?:hi|hello|hey|yo)(?: there)?(?: (?:mr|mister) ledger| ledger)? (?:how are you|whats up|how is it going)$/.test(greeting)
-    || /^(how are you|whats up|whats up with (?:you|u)|whats on (?:your|ur) mind|how is it going|im good|im doing well|thanks|thank you|cool|nice|okay|ok)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^(?:nothing much|not much)(?: (?:ur|your|whats up|whats up with (?:you|u)))?(?: (?:ur|your|whats up|whats up with (?:you|u)))?$/.test(greeting)
-    || /^(?:how have you been|hows your day|how is your day|you good|you okay|are you there|can you hear me|good to see you|nice to see you)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^(?:who are you|what are you|what can you do|what do you do|tell me about yourself|are you ai|are you real|are you a robot)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^(?:can you help me|could you help me|i need help|i need some help|help me please|help please)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^(?:bye|goodbye|good bye|see you|talk to you later|later|catch you later)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^(?:thx|thanks a lot|thank you so much|appreciate it|much appreciated|got it|sounds good|great|awesome|perfect|alright|all right|haha|lol)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)) {
-    return { kind: 'greeting' };
-  }
   const asksAboutExistingKnowledge = /\b(what did .*\b(discuss|say|decide|mention)|where did .*\b(discuss|say|decide|mention)|what was decided|what have we discussed)\b/.test(normalized);
   if (/\b(my team|team members|members of (the )?team|who (is|are) (on|in) (the )?team|who.*team)\b/.test(normalized)) {
     return { kind: 'team_members' };

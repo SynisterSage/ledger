@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Download, X } from 'lucide-react';
 import { AppShell } from '../App';
 import { NotificationCenterProvider } from '../components/Notifications/NotificationCenterContext';
 import { NotificationMonitor } from '../components/Common/NotificationMonitor';
@@ -17,6 +18,52 @@ import {
   NotificationTray,
   NOTIFICATION_TRAY_TOGGLE_EVENT,
 } from '../components/Notifications/NotificationTray';
+import { runtimeConfig } from '../config/runtime';
+
+const WEB_DOWNLOAD_TOAST_DISMISSED = 'ledger:web-download-toast-dismissed:v1';
+
+const WebDownloadToast = () => {
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const [dismissed, setDismissed] = useState(false);
+  const isNewTabRoute = typeof window !== 'undefined' && /\/app\/w\/[^/]+\/home(?:\/|$)/.test(window.location.pathname);
+
+  useEffect(() => {
+    try {
+      setDismissed(window.localStorage.getItem(WEB_DOWNLOAD_TOAST_DISMISSED) === 'true');
+    } catch {
+      // Storage is optional; the toast can still be dismissed for this session.
+    }
+  }, []);
+
+  if (!activeWorkspaceId || dismissed || isNewTabRoute) return null;
+  const downloadUrl = `${(runtimeConfig.ledgerWebUrl || 'https://ledgerworkspace.com').replace(/\/$/, '')}/download`;
+  const dismiss = () => {
+    setDismissed(true);
+    try {
+      window.localStorage.setItem(WEB_DOWNLOAD_TOAST_DISMISSED, 'true');
+    } catch {
+      // Ignore unavailable browser storage.
+    }
+  };
+
+  return (
+    <aside className="fixed bottom-5 right-5 z-[60] w-[min(340px,calc(100vw-2rem))] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3.5 shadow-[0_14px_36px_rgba(17,24,39,0.16)]" role="status" aria-label="Download Ledger">
+      <button type="button" onClick={dismiss} aria-label="Dismiss download Ledger message" className="absolute right-2.5 top-2.5 rounded-md p-1 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+        <X size={14} />
+      </button>
+      <div className="flex items-start gap-3 pr-5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-secondary)]">
+          <Download size={15} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Download Ledger for desktop</p>
+          <p className="mt-0.5 text-xs leading-5 text-[var(--ledger-text-muted)]">Keep Ledger beside the work you’re doing.</p>
+          <a href={downloadUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-medium text-[var(--ledger-text-secondary)] underline decoration-[var(--ledger-border-strong)] underline-offset-2 transition hover:text-[var(--ledger-text-primary)]">Get the desktop app</a>
+        </div>
+      </div>
+    </aside>
+  );
+};
 
 const Status = ({ children, error = false }: { children: string; error?: boolean }) => (
   <div
@@ -274,6 +321,7 @@ export const WebAppShell = () => {
             <NotificationCenterProvider>
               <NotificationMonitor />
               <AppShell browserMode browserContent={<WebAuthenticatedContent />} />
+              <WebDownloadToast />
               <NotificationTray
                 isOpen={isNotificationTrayOpen}
                 onClose={() => setIsNotificationTrayOpen(false)}

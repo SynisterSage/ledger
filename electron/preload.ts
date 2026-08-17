@@ -399,6 +399,18 @@ contextBridge.exposeInMainWorld('askLedger', {
   removeAttachments(payload: { conversationId: string; attachmentIds: string[] }) { return ipcRenderer.invoke('ask-ledger:remove-attachments', payload) as Promise<{ ok: boolean }>; },
   localAIStatus() { return ipcRenderer.invoke('ask-ledger:local-ai-status'); },
   localAIHardware() { return ipcRenderer.invoke('ask-ledger:local-ai-hardware'); },
+  localAICapability() { return ipcRenderer.invoke('ask-ledger:local-ai-capability'); },
+  acknowledgeLocalAITier(tier: 'fast' | 'balanced' | 'powerful') { return ipcRenderer.invoke('ask-ledger:local-ai-acknowledge-tier', tier); },
+  getGenerationModels() { return ipcRenderer.invoke('ask-ledger:generation-models'); },
+  getAvailableGenerationModels() { return ipcRenderer.invoke('ask-ledger:generation-models'); },
+  getSelectedGenerationTier() { return ipcRenderer.invoke('ask-ledger:selected-generation-tier'); },
+  setSelectedGenerationTier(tier: 'fast' | 'balanced' | 'powerful') { return ipcRenderer.invoke('ask-ledger:set-selected-generation-tier', tier); },
+  switchGenerationTier(tier: 'fast' | 'balanced' | 'powerful') { return ipcRenderer.invoke('ask-ledger:switch-generation-tier', tier); },
+  getGenerationRuntimeState() { return ipcRenderer.invoke('ask-ledger:generation-runtime-state'); },
+  getGenerationModelStatus(modelId: string) { return ipcRenderer.invoke('ask-ledger:generation-model-status', modelId); },
+  downloadGenerationModel(modelId: string) { return ipcRenderer.invoke('ask-ledger:generation-model-download', modelId); },
+  cancelGenerationModelDownload(modelId: string) { return ipcRenderer.invoke('ask-ledger:generation-model-cancel-download', modelId); },
+  removeGenerationModel(modelId: string) { return ipcRenderer.invoke('ask-ledger:generation-model-remove', modelId); },
   downloadLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-download', role); },
   cancelLocalAIDownload(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-cancel-download', role); },
   removeLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-remove', role); },
@@ -420,6 +432,11 @@ contextBridge.exposeInMainWorld('askLedger', {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
     ipcRenderer.on('ask-ledger:local-ai-status', wrapped);
     return () => ipcRenderer.off('ask-ledger:local-ai-status', wrapped);
+  },
+  onGenerationRuntimeState(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('ask-ledger:generation-runtime-state', wrapped);
+    return () => ipcRenderer.off('ask-ledger:generation-runtime-state', wrapped);
   },
 });
 
