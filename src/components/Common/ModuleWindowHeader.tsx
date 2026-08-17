@@ -47,6 +47,7 @@ type ModuleWindowHeaderProps = {
   title: string;
   subtitle?: string;
   stripTitle?: string;
+  stripTitleAction?: ReactNode;
   stripLeadingActions?: ReactNode;
   icon: ReactNode;
   onClose: () => void;
@@ -550,6 +551,7 @@ export const ModuleWindowHeader = ({
   actions,
   compact = false,
   stripTitle,
+  stripTitleAction,
   showBodyHeader = true,
   showWorkspaceNavigation = true,
   showHistoryControl = true,
@@ -1066,7 +1068,7 @@ export const ModuleWindowHeader = ({
           onPointerCancel={finishHeaderPointerDrag}
           onDoubleClick={handleStripDoubleClick}
         >
-          {resolvedStripTitle ? (
+          {stripTitleAction ?? (resolvedStripTitle ? (
             <>
               <div
                 aria-hidden="true"
@@ -1078,7 +1080,7 @@ export const ModuleWindowHeader = ({
                 </p>
               </div>
             </>
-          ) : null}
+          ) : null)}
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-0" style={noDragRegionStyle}>

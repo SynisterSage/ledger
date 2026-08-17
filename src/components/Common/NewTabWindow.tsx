@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, ChevronDown, Funnel, MoreHorizontal } from 'lucide-react';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from './ModuleWindowHeader';
 import { useAuthContext } from '../../context/AuthContext';
@@ -8,9 +9,11 @@ import { useSidebar } from '../../context/SidebarContext';
 import type { AskLedgerSession } from './AskLedgerPanel';
 import { WebSearchNewTab } from './WebSearchNewTab';
 import { usePlatform } from '../../platform';
+import { sidebarTheme } from '../Sidebar/sidebarTheme';
 const DesktopAskLedgerPanel = lazy(() => import('./AskLedgerPanel').then((module) => ({ default: module.AskLedgerPanel })));
 import { decodeAskLedgerContext, readPendingAskLedgerContext } from './askLedgerContext';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
+import type { AskLedgerCustomSkill } from '../../types/askLedgerSkills';
 
 const recentSessionDate = (value: string) => {
   const date = new Date(value);
@@ -55,7 +58,50 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const [openSessionMenu, setOpenSessionMenu] = useState<string | null>(null);
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const conversationMenuRef = useRef<HTMLDivElement>(null);
+  const conversationMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const conversationMenuPopupRef = useRef<HTMLDivElement>(null);
+  const [conversationMenuPosition, setConversationMenuPosition] = useState<CSSProperties | null>(null);
   const [askInitialContext, setAskInitialContext] = useState<AskLedgerInitialContext | null>(null);
+  const [customSkills, setCustomSkills] = useState<AskLedgerCustomSkill[]>([]);
+  const [skillEditor, setSkillEditor] = useState<{ skill?: AskLedgerCustomSkill } | null>(null);
+  const [skillName, setSkillName] = useState('');
+  const [skillInstructions, setSkillInstructions] = useState('');
+  const [skillSaving, setSkillSaving] = useState(false);
+  const askRouteRestoreRef = useRef(0);
+
+  const updateAskRoute = (focusContext: string | null, historyMode: 'push' | 'replace') => {
+    void window.desktopWindow?.updateWorkspaceRoute?.({
+      kind: 'new-tab',
+      focusContext,
+      historyMode,
+    });
+  };
+
+  const restoreAskSession = async (sessionId: string) => {
+    const restoreId = ++askRouteRestoreRef.current;
+    if (!activeWorkspaceId) return;
+
+    let session = recentSessions.find((item) => item.id === sessionId) ?? null;
+    try {
+      const payload = await api.getAskLedgerSession(activeWorkspaceId, sessionId) as { session?: AskLedgerSession };
+      if (payload.session) session = payload.session;
+    } catch {
+      // A stale route should fall back to the empty state instead of leaving a broken loading view.
+    }
+    if (restoreId !== askRouteRestoreRef.current) return;
+    if (!session) {
+      setSelectedAskSession(null);
+      setAskInitialContext(null);
+      setAskConversationActive(false);
+      setAskSessionTitle('Ask Ledger');
+      setAskResetKey((key) => key + 1);
+      return;
+    }
+    setSelectedAskSession(session);
+    setAskInitialContext(session.initialContext ?? null);
+    setAskSessionTitle(session.title || 'Ask Ledger');
+    setAskConversationActive(true);
+  };
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
       setInboxCount(0);
@@ -106,6 +152,22 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     void loadRecentSessions();
   }, [activeWorkspaceId, user]);
 
+  const loadCustomSkills = async () => {
+    if (!activeWorkspaceId || !user) { setCustomSkills([]); return; }
+    try {
+      const payload = await api.getAskLedgerSkills(activeWorkspaceId) as { skills?: AskLedgerCustomSkill[] };
+      setCustomSkills(Array.isArray(payload.skills) ? payload.skills : []);
+    } catch { setCustomSkills([]); }
+  };
+
+  useEffect(() => { void loadCustomSkills(); }, [activeWorkspaceId, user]);
+
+  useEffect(() => {
+    const openEditor = () => { setSkillEditor({}); setSkillName(''); setSkillInstructions(''); };
+    window.addEventListener('ledger:ask-ledger-create-skill', openEditor);
+    return () => window.removeEventListener('ledger:ask-ledger-create-skill', openEditor);
+  }, []);
+
   useEffect(() => {
     setSelectedAskSession(null);
     setAskInitialContext(null);
@@ -114,6 +176,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     setOpenSessionMenu(null);
     setConversationMenuOpen(false);
     setAskResetKey((key) => key + 1);
+    updateAskRoute('new-tab:browser', 'replace');
   }, [activeWorkspaceId]);
 
   useEffect(() => {
@@ -133,9 +196,34 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   }, []);
 
   useEffect(() => {
+    const handleWorkspaceRouteChanged = (_event: unknown, route?: { kind?: string | null; focusContext?: string | null }) => {
+      if (route?.kind !== 'new-tab') return;
+      const focusContext = route.focusContext ?? null;
+      if (focusContext?.startsWith('ask-session:')) {
+        void restoreAskSession(focusContext.slice('ask-session:'.length));
+        return;
+      }
+      askRouteRestoreRef.current += 1;
+      setSelectedAskSession(null);
+      setAskInitialContext(null);
+      setAskConversationActive(false);
+      setAskSessionTitle('Ask Ledger');
+      setAskResetKey((key) => key + 1);
+    };
+
+    window.ledgerIpc?.events?.onWorkspaceRouteChanged(handleWorkspaceRouteChanged as any);
+    const initialFocusContext = new URLSearchParams(window.location.search).get('focusContext');
+    if (activeWorkspaceId && initialFocusContext && initialFocusContext.startsWith('ask-session:')) {
+      void restoreAskSession(initialFocusContext.slice('ask-session:'.length));
+    }
+    return () => { window.ledgerIpc?.events?.offWorkspaceRouteChanged(handleWorkspaceRouteChanged as any); };
+  }, [activeWorkspaceId, api]);
+
+  useEffect(() => {
     if (!conversationMenuOpen) return undefined;
     const closeOnOutside = (event: MouseEvent) => {
-      if (conversationMenuRef.current && !conversationMenuRef.current.contains(event.target as Node)) setConversationMenuOpen(false);
+      const target = event.target as Node;
+      if (!conversationMenuRef.current?.contains(target) && !conversationMenuPopupRef.current?.contains(target)) setConversationMenuOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setConversationMenuOpen(false);
@@ -145,6 +233,29 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     return () => {
       document.removeEventListener('mousedown', closeOnOutside);
       document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [conversationMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!conversationMenuOpen) return undefined;
+    const updatePosition = () => {
+      const button = conversationMenuButtonRef.current;
+      if (!button) return;
+      const bounds = button.getBoundingClientRect();
+      setConversationMenuPosition({
+        position: 'fixed',
+        left: Math.max(8, Math.min(bounds.left, window.innerWidth - 232)),
+        top: Math.max(8, Math.min(bounds.bottom + 6, window.innerHeight - 320)),
+        width: 224,
+        zIndex: 9999,
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
   }, [conversationMenuOpen]);
 
@@ -163,6 +274,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     setAskInitialContext(restoredSession.initialContext ?? null);
     setAskSessionTitle(restoredSession.title || 'Ask Ledger');
     setAskConversationActive(true);
+    updateAskRoute(`ask-session:${restoredSession.id}`, 'push');
   };
 
   const deleteAskSession = async (session: AskLedgerSession) => {
@@ -172,24 +284,55 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       await api.deleteAskLedgerSession(activeWorkspaceId, session.id);
       await window.askLedger?.removeAttachments({ conversationId: session.id, attachmentIds: [] });
       setRecentSessions((current) => current.filter((item) => item.id !== session.id));
+      if (selectedAskSession?.id === session.id) startNewAskChat('replace');
     } catch {
       // Keep the row visible when the delete request fails.
     }
   };
 
-  const startNewAskChat = () => {
+  const startNewAskChat = (historyMode: 'push' | 'replace' = 'push') => {
     setConversationMenuOpen(false);
     setSelectedAskSession(null);
     setAskInitialContext(null);
     setAskConversationActive(false);
     setAskSessionTitle('Ask Ledger');
     setAskResetKey((key) => key + 1);
+    updateAskRoute('new-tab:browser', historyMode);
   };
 
   const sessionGroups = [
     { label: 'Today', sessions: recentSessions.filter((session) => recentSessionDate(session.updatedAt) === 'Today') },
     { label: 'Earlier', sessions: recentSessions.filter((session) => recentSessionDate(session.updatedAt) !== 'Today') },
   ].filter((group) => group.sessions.length > 0);
+
+  const editCustomSkill = (skill: AskLedgerCustomSkill) => { setSkillEditor({ skill }); setSkillName(skill.name); setSkillInstructions(skill.instructions); };
+  const deleteCustomSkill = async (skill: AskLedgerCustomSkill) => {
+    if (!activeWorkspaceId) return;
+    await api.deleteAskLedgerSkill(activeWorkspaceId, skill.id).catch(() => undefined);
+    setCustomSkills((current) => current.filter((item) => item.id !== skill.id));
+  };
+  const saveCustomSkill = async () => {
+    if (!activeWorkspaceId || !skillName.trim() || !skillInstructions.trim() || skillSaving) return;
+    setSkillSaving(true);
+    try {
+      if (skillEditor?.skill) await api.updateAskLedgerSkill(activeWorkspaceId, skillEditor.skill.id, { name: skillName.trim(), instructions: skillInstructions.trim() });
+      else await api.createAskLedgerSkill(activeWorkspaceId, { name: skillName.trim(), instructions: skillInstructions.trim() });
+      await loadCustomSkills();
+      setSkillEditor(null);
+    } finally { setSkillSaving(false); }
+  };
+
+  if (skillEditor) return <div className={`relative flex h-screen min-h-0 flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] ${isBrowser ? 'web-new-tab-module' : ''}`} style={workspaceShellLayout.workspaceShellStyle}>
+    <ModuleWindowHeader title="Ledger" stripTitle="New Tab" icon={<img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-5 w-5" />} onClose={onClose} showBodyHeader={false} showWorkspaceNavigation />
+    <main className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-20 pt-8 sm:px-10">
+      <button type="button" onClick={() => setSkillEditor(null)} className="mb-16 inline-flex w-fit items-center gap-2 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">← <span>Skill personalization</span></button>
+      <div className="mx-auto w-full max-w-[720px]">
+        <input autoFocus value={skillName} onChange={(event) => setSkillName(event.target.value)} placeholder="Skill name" aria-label="Skill name" className="mb-10 w-full bg-transparent text-4xl font-semibold tracking-[-0.04em] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-placeholder)]" />
+        <textarea value={skillInstructions} onChange={(event) => setSkillInstructions(event.target.value)} placeholder="Add instructions…" aria-label="Skill instructions" className="min-h-[380px] w-full resize-none rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-6 text-base leading-7 text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]" />
+        <div className="mt-8 flex justify-end gap-2"><button type="button" onClick={() => setSkillEditor(null)} className="rounded-lg px-4 py-2 text-sm text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" disabled={!skillName.trim() || !skillInstructions.trim() || skillSaving} onClick={() => void saveCustomSkill()} className="rounded-lg bg-[var(--ledger-text-primary)] px-4 py-2 text-sm text-[var(--ledger-background)] disabled:opacity-40">{skillEditor.skill ? 'Save' : 'Create'}</button></div>
+      </div>
+    </main>
+  </div>;
 
   return (
     <div
@@ -201,6 +344,57 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         stripTitle="New Tab"
         icon={<img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-5 w-5" />}
         onClose={onClose}
+        stripTitleAction={
+          <div
+            ref={conversationMenuRef}
+            className="relative min-w-0"
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerMove={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
+          >
+            <button
+              ref={conversationMenuButtonRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={conversationMenuOpen}
+              onClick={() => setConversationMenuOpen((open) => !open)}
+              className={`inline-flex h-7 min-w-0 max-w-60 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${conversationMenuOpen ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'}`}
+            >
+              <span className="truncate">{askConversationActive ? askSessionTitle : 'New chat'}</span>
+              <ChevronDown size={14} className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${conversationMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {conversationMenuOpen && createPortal(
+              <div
+                className="fixed inset-0 z-[9998] pointer-events-auto"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) setConversationMenuOpen(false);
+                }}
+              >
+              <div ref={conversationMenuPopupRef} role="menu" aria-label="Ask Ledger conversations" style={conversationMenuPosition ?? undefined} className={`${sidebarTheme.menu} max-h-[calc(100vh-16px)] overflow-x-hidden overflow-y-auto p-1.5`} onMouseDown={(event) => event.stopPropagation()}>
+                <button type="button" role="menuitem" onClick={() => startNewAskChat()} className={sidebarTheme.menuItem}>
+                  New chat
+                </button>
+                {sessionGroups.map((group) => (
+                  <div key={group.label} className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
+                    <p className="px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">{group.label}</p>
+                    {group.sessions.map((session) => (
+                      <div key={session.id} className="group relative flex items-center rounded-lg transition hover:bg-[var(--ledger-surface-hover)]">
+                        <button type="button" role="menuitem" onClick={() => { setConversationMenuOpen(false); void openAskSession(session); }} className={`${sidebarTheme.menuItem} min-w-0 flex-1`}>
+                          <span className="block truncate text-sm text-[var(--ledger-text-primary)]">{session.title || 'Ask Ledger conversation'}</span>
+                          <span className="mt-0.5 block text-xs text-[var(--ledger-text-muted)]">{sessionAge(session.updatedAt)}</span>
+                        </button>
+                        <button type="button" aria-label={`More actions for ${session.title || 'conversation'}`} onClick={(event) => { event.stopPropagation(); setOpenSessionMenu((current) => current === session.id ? null : session.id); }} className="mr-1 rounded-md p-1.5 text-[var(--ledger-text-muted)] opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"><MoreHorizontal size={15} /></button>
+                        {openSessionMenu === session.id && <div className="absolute right-2 top-10 z-30 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-1 shadow-lg"><button type="button" onClick={() => void deleteAskSession(session)} className="rounded-md px-3 py-1.5 text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">Delete conversation</button></div>}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              </div>,
+              document.body
+            )}
+          </div>
+        }
         minimizeLabel="Minimize New Tab"
         onMinimize={isBrowser ? undefined : () => void window.desktopWindow?.minimizeModule('new-tab')}
         fullscreenLabel="Fullscreen New Tab"
@@ -250,41 +444,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
           </div>
         </div>
         <div className={`web-new-tab-body relative z-10 mx-auto flex w-full max-w-[700px] flex-col px-5 pb-16 sm:px-6 ${askConversationActive ? 'pt-5' : 'pt-[clamp(56px,10vh,112px)]'}`}>
-          <div ref={conversationMenuRef} className="relative z-20 flex items-center border-b border-[color:var(--ledger-border-subtle)] pb-3">
-            <button
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={conversationMenuOpen}
-              onClick={() => setConversationMenuOpen((open) => !open)}
-              className="inline-flex max-w-full items-center gap-2 rounded-full bg-[var(--ledger-surface-hover)] px-4 py-2 text-[15px] font-medium text-[var(--ledger-text-primary)] transition hover:bg-[var(--ledger-surface-card)] focus:outline-none focus:ring-2 focus:ring-[color:var(--ledger-border-subtle)]"
-            >
-              <span className="truncate">{askConversationActive ? askSessionTitle : 'New chat'}</span>
-              <ChevronDown size={16} className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${conversationMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {conversationMenuOpen && (
-              <div role="menu" aria-label="Ask Ledger conversations" className="absolute left-0 top-12 w-[min(360px,calc(100vw-40px))] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]">
-                <button type="button" role="menuitem" onClick={startNewAskChat} className="flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[var(--ledger-text-primary)] transition hover:bg-[var(--ledger-surface-hover)]">
-                  New chat
-                </button>
-                {sessionGroups.map((group) => (
-                  <div key={group.label} className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
-                    <p className="px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">{group.label}</p>
-                    {group.sessions.map((session) => (
-                      <div key={session.id} className="group relative flex items-center rounded-xl transition hover:bg-[var(--ledger-surface-hover)]">
-                        <button type="button" role="menuitem" onClick={() => { setConversationMenuOpen(false); void openAskSession(session); }} className="min-w-0 flex-1 px-3 py-2.5 text-left">
-                          <span className="block truncate text-sm text-[var(--ledger-text-primary)]">{session.title || 'Ask Ledger conversation'}</span>
-                          <span className="mt-0.5 block text-xs text-[var(--ledger-text-muted)]">{sessionAge(session.updatedAt)}</span>
-                        </button>
-                        <button type="button" aria-label={`More actions for ${session.title || 'conversation'}`} onClick={(event) => { event.stopPropagation(); setOpenSessionMenu((current) => current === session.id ? null : session.id); }} className="mr-1 rounded-md p-1.5 text-[var(--ledger-text-muted)] opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"><MoreHorizontal size={15} /></button>
-                        {openSessionMenu === session.id && <div className="absolute right-2 top-10 z-30 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-1 shadow-lg"><button type="button" onClick={() => void deleteAskSession(session)} className="rounded-md px-3 py-1.5 text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">Delete conversation</button></div>}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <Suspense fallback={<div className="min-h-[124px] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]" />}><DesktopAskLedgerPanel workspaceId={activeWorkspaceId} resetKey={askResetKey} initialSession={selectedAskSession} initialContext={askInitialContext} onConversationChange={setAskConversationActive} onSessionTitleChange={setAskSessionTitle} onSessionPersisted={() => void loadRecentSessions()} /></Suspense>
+          <Suspense fallback={<div className="min-h-[124px] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]" />}><DesktopAskLedgerPanel workspaceId={activeWorkspaceId} resetKey={askResetKey} initialSession={selectedAskSession} initialContext={askInitialContext} customSkills={customSkills} onEditCustomSkill={editCustomSkill} onDeleteCustomSkill={deleteCustomSkill} onConversationChange={setAskConversationActive} onSessionTitleChange={setAskSessionTitle} onSessionPersisted={() => void loadRecentSessions()} /></Suspense>
         </div>
       </main>
     </div>

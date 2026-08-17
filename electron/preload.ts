@@ -402,7 +402,7 @@ contextBridge.exposeInMainWorld('askLedger', {
   downloadLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-download', role); },
   cancelLocalAIDownload(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-cancel-download', role); },
   removeLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-remove', role); },
-  start(payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; explicitContext?: unknown }) {
+  start(payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; messageId?: string }) {
     return ipcRenderer.invoke('ask-ledger:start', payload) as Promise<{ requestId: string }>;
   },
   executeSkill(payload: { skillId: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; explicitContext?: unknown }) {

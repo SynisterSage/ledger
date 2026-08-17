@@ -11,8 +11,19 @@ export const ASK_LEDGER_SKILL_IDS = [
 ] as const;
 
 export type AskLedgerSkillId = typeof ASK_LEDGER_SKILL_IDS[number];
+export type AskLedgerSkillRef = string;
 
-export type AskLedgerSkillMetadata = Pick<AskLedgerSkillDefinition, 'id' | 'name' | 'description' | 'icon' | 'supportedContextTypes' | 'requiresContext' | 'allowedActions'>;
+export type AskLedgerCustomSkill = {
+  id: string;
+  name: string;
+  instructions: string;
+  description?: string;
+  icon?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type AskLedgerSkillMetadata = Omit<Pick<AskLedgerSkillDefinition, 'id' | 'name' | 'description' | 'icon' | 'supportedContextTypes' | 'requiresContext' | 'allowedActions'>, 'id'> & { id: AskLedgerSkillRef; isCustom?: boolean; instructions?: string };
 
 export const ASK_LEDGER_SKILL_METADATA: AskLedgerSkillMetadata[] = [
   { id: 'meeting_follow_up', name: 'Meeting follow-up', description: 'Turn a meeting into decisions, follow-ups, and action items.', icon: 'ListChecks', supportedContextTypes: ['transcript', 'event'], allowedActions: ['create_task', 'create_reminder'], requiresContext: true },

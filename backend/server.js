@@ -21200,12 +21200,18 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
   }
 });
 
+const escapePostgrestFilterValue = (value) => {
+  const escaped = String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `"${escaped}"`;
+};
+
 async function searchWorkspaceContent({
   workspaceId,
   rawQuery,
   workspaceName = null,
 }) {
   const like = `%${rawQuery}%`;
+  const escapedLike = escapePostgrestFilterValue(like);
   const normalizedQuery = normalizeSearchTerm(rawQuery);
 
   const [notesResult, projectsResult, tasksResult, eventsResult, remindersResult, inboxResult, teamsResult, membersResult, workspaceResult, githubReferencesResult] = await Promise.all([
@@ -21213,42 +21219,42 @@ async function searchWorkspaceContent({
       .from('notes')
       .select('id, title, preview, mode, updated_at, created_at')
       .eq('workspace_id', workspaceId)
-      .or(`title.ilike.${like},content.ilike.${like},content_html.ilike.${like}`)
+      .or(`title.ilike.${escapedLike},content.ilike.${escapedLike},content_html.ilike.${escapedLike}`)
       .order('updated_at', { ascending: false })
       .limit(25),
     supabase
       .from('projects')
       .select('id, name, description, status, completeness, start_date, end_date, created_at, updated_at')
       .eq('workspace_id', workspaceId)
-      .or(`name.ilike.${like},description.ilike.${like}`)
+      .or(`name.ilike.${escapedLike},description.ilike.${escapedLike}`)
       .order('updated_at', { ascending: false })
       .limit(25),
     supabase
       .from('tasks')
       .select('id, project_id, title, description, due_date, due_time, status, priority, created_at, updated_at')
       .eq('workspace_id', workspaceId)
-      .or(`title.ilike.${like},description.ilike.${like}`)
+      .or(`title.ilike.${escapedLike},description.ilike.${escapedLike}`)
       .order('updated_at', { ascending: false })
       .limit(25),
     supabase
       .from('events')
       .select('id, title, start_at, end_at, status, color, created_at, updated_at, notes, project_id, note_id, assigned_to_team_id')
       .eq('workspace_id', workspaceId)
-      .or(`title.ilike.${like},notes.ilike.${like}`)
+      .or(`title.ilike.${escapedLike},notes.ilike.${escapedLike}`)
       .order('start_at', { ascending: true })
       .limit(25),
     supabase
       .from('reminders')
       .select('id, title, body, remind_at, status, project_id, note_id, created_at, updated_at, assigned_to_team_id')
       .eq('workspace_id', workspaceId)
-      .or(`title.ilike.${like},body.ilike.${like}`)
+      .or(`title.ilike.${escapedLike},body.ilike.${escapedLike}`)
       .order('updated_at', { ascending: false })
       .limit(25),
     supabase
       .from('inbox_items')
       .select(inboxItemSelectColumns)
       .eq('workspace_id', workspaceId)
-      .or(`title.ilike.${like},body.ilike.${like},source.ilike.${like}`)
+      .or(`title.ilike.${escapedLike},body.ilike.${escapedLike},source.ilike.${escapedLike}`)
       .order('updated_at', { ascending: false })
       .limit(25),
     supabase
@@ -21256,7 +21262,7 @@ async function searchWorkspaceContent({
       .select('id, name, identifier, description, created_at, updated_at')
       .eq('workspace_id', workspaceId)
       .is('archived_at', null)
-      .or(`name.ilike.${like},identifier.ilike.${like},description.ilike.${like}`)
+      .or(`name.ilike.${escapedLike},identifier.ilike.${escapedLike},description.ilike.${escapedLike}`)
       .order('updated_at', { ascending: false })
       .limit(25),
     supabase
@@ -21376,7 +21382,7 @@ async function searchWorkspaceContent({
         .from('users')
         .select('id, email, full_name')
         .in('id', memberUserIds)
-        .or(`full_name.ilike.${like},email.ilike.${like}`)
+        .or(`full_name.ilike.${escapedLike},email.ilike.${escapedLike}`)
         .limit(25)
     : { data: [], error: null };
   if (usersResult.error) throw usersResult.error;
@@ -21722,6 +21728,7 @@ const askLedgerSkillAllowedActions = {
   turn_notes_into_tasks: new Set(['create_task']),
   prepare_for_meeting: new Set(),
 };
+const isAskLedgerSkillRef = (value) => askLedgerSkillIds.has(String(value ?? '')) || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value ?? ''));
 
 const sanitizeAskLedgerSessionMessages = (value) => {
   if (!Array.isArray(value)) return [];
@@ -21766,9 +21773,9 @@ const sanitizeAskLedgerSessionMessages = (value) => {
           };
         }).filter(Boolean)
       : undefined;
-    const skillId = askLedgerSkillIds.has(String(message.skillId ?? '')) ? String(message.skillId) : undefined;
-    const safeActions = skillId ? actions?.filter((action) => askLedgerSkillAllowedActions[skillId]?.has(action.type)) : actions;
-    const structured = message.structured && typeof message.structured === 'object' && askLedgerSkillIds.has(String(message.structured.skillId ?? '')) && Array.isArray(message.structured.sections)
+    const skillId = isAskLedgerSkillRef(message.skillId) ? String(message.skillId) : undefined;
+    const safeActions = skillId && askLedgerSkillAllowedActions[skillId] ? actions?.filter((action) => askLedgerSkillAllowedActions[skillId].has(action.type)) : skillId ? [] : actions;
+    const structured = message.structured && typeof message.structured === 'object' && isAskLedgerSkillRef(message.structured.skillId) && Array.isArray(message.structured.sections)
       ? {
           skillId: String(message.structured.skillId),
           sections: message.structured.sections.slice(0, 8).map((section) => ({
@@ -21798,7 +21805,7 @@ const mapAskLedgerSession = (row) => ({
   title: row.title,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
-  ...(askLedgerSkillIds.has(String(row.skill_id ?? '')) ? { skillId: String(row.skill_id) } : {}),
+  ...(isAskLedgerSkillRef(row.skill_id) ? { skillId: String(row.skill_id) } : {}),
   messages: sanitizeAskLedgerSessionMessages(row.messages),
   ...(row.initial_context && typeof row.initial_context === 'object' ? { initialContext: {
     resourceType: String(row.initial_context.resourceType ?? ''),
@@ -21826,6 +21833,76 @@ const askLedgerContextExists = async (workspaceId, context) => {
   if (result.error) throw result.error;
   return Boolean(result.data?.id);
 };
+
+const mapAskLedgerCustomSkill = (row) => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  userId: row.user_id,
+  name: row.name,
+  instructions: row.instructions,
+  description: 'A custom Ledger workflow.',
+  icon: 'Boxes',
+  isCustom: true,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const askLedgerCustomSkillQuery = (workspaceId, userId, skillId) => {
+  let query = supabase.from('ask_ledger_custom_skills').select('id, workspace_id, user_id, name, instructions, created_at, updated_at').eq('workspace_id', workspaceId).eq('user_id', userId);
+  if (skillId) query = query.eq('id', skillId);
+  return query;
+};
+
+app.get('/api/workspaces/:workspaceId/ask-ledger/skills', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    if (!workspaceId || !(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+    const result = await askLedgerCustomSkillQuery(workspaceId, req.authUser.id).order('updated_at', { ascending: false });
+    if (result.error) throw result.error;
+    res.json({ skills: (result.data ?? []).map(mapAskLedgerCustomSkill) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.post('/api/workspaces/:workspaceId/ask-ledger/skills', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const name = clampText(req.body?.name, 100);
+    const instructions = clampMultilineText(req.body?.instructions, 12000);
+    if (!workspaceId || !(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+    if (!name || !instructions) return res.status(400).json({ error: 'Skill name and instructions are required' });
+    const result = await supabase.from('ask_ledger_custom_skills').insert({ workspace_id: workspaceId, user_id: req.authUser.id, name, instructions }).select('id, workspace_id, user_id, name, instructions, created_at, updated_at').single();
+    if (result.error) throw result.error;
+    res.status(201).json({ skill: mapAskLedgerCustomSkill(result.data) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.patch('/api/workspaces/:workspaceId/ask-ledger/skills/:skillId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const skillId = String(req.params.skillId ?? '').trim();
+    if (!workspaceId || !skillId || !(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Skill not found' });
+    const updates = { updated_at: new Date().toISOString() };
+    if (req.body?.name !== undefined) updates.name = clampText(req.body.name, 100);
+    if (req.body?.instructions !== undefined) updates.instructions = clampMultilineText(req.body.instructions, 12000);
+    if (!updates.name && !updates.instructions) return res.status(400).json({ error: 'Skill name and instructions are required' });
+    const result = await supabase.from('ask_ledger_custom_skills').update(updates).eq('id', skillId).eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).select('id, workspace_id, user_id, name, instructions, created_at, updated_at').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'Skill not found' });
+    res.json({ skill: mapAskLedgerCustomSkill(result.data) });
+  } catch (error) { return respondWithError(res, error); }
+});
+
+app.delete('/api/workspaces/:workspaceId/ask-ledger/skills/:skillId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const skillId = String(req.params.skillId ?? '').trim();
+    if (!workspaceId || !skillId || !(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Skill not found' });
+    const result = await supabase.from('ask_ledger_custom_skills').delete().eq('id', skillId).eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).select('id').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'Skill not found' });
+    res.json({ deleted: true, skillId });
+  } catch (error) { return respondWithError(res, error); }
+});
 
 const askLedgerSessionQuery = (workspaceId, userId, sessionId) => {
   let query = supabase
@@ -21888,7 +21965,7 @@ app.post('/api/workspaces/:workspaceId/ask-ledger/sessions', authMiddleware, rat
         resourceId: clampText(req.body.initialContext.resourceId, 200),
         title: clampText(req.body.initialContext.title, 300),
       } : null,
-      skill_id: askLedgerSkillIds.has(String(req.body?.skillId ?? '')) ? String(req.body.skillId) : null,
+      skill_id: isAskLedgerSkillRef(req.body?.skillId) ? String(req.body.skillId) : null,
     }).select('id, workspace_id, user_id, title, messages, summary, initial_context, skill_id, created_at, updated_at').single();
     if (result.error) throw result.error;
     res.status(201).json({ session: mapAskLedgerSession(result.data) });
@@ -21916,7 +21993,7 @@ app.patch('/api/workspaces/:workspaceId/ask-ledger/sessions/:sessionId', authMid
       resourceId: clampText(req.body.initialContext.resourceId, 200),
       title: clampText(req.body.initialContext.title, 300),
     } : null;
-    if (req.body?.skillId !== undefined) updates.skill_id = askLedgerSkillIds.has(String(req.body.skillId ?? '')) ? String(req.body.skillId) : null;
+    if (req.body?.skillId !== undefined) updates.skill_id = isAskLedgerSkillRef(req.body.skillId) ? String(req.body.skillId) : null;
     const result = await supabase.from('ask_ledger_sessions').update(updates).eq('id', sessionId).eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).select('id, workspace_id, user_id, title, messages, summary, initial_context, skill_id, created_at, updated_at').maybeSingle();
     if (result.error) throw result.error;
     if (!result.data) return res.status(404).json({ error: 'Ask Ledger session not found' });

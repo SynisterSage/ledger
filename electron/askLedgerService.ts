@@ -15,7 +15,7 @@ import type { LocalAIAssetManager } from './localAIAssets.ts';
 import { detectAskLedgerQueryIntent } from './askLedgerQueryIntent.ts';
 import type { AskLedgerInitialContext } from '../src/types/askLedgerContext.ts';
 import { buildSkillPromptContext, getAskLedgerSkill, validateSkillContext } from './askLedgerSkills.ts';
-import type { AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
+import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import { AskLedgerAttachmentService, attachmentBlocksToContext } from './askLedgerAttachmentService.ts';
 import os from 'node:os';
 import path from 'node:path';
@@ -96,6 +96,7 @@ export type AskLedgerRetrievalRequest = {
   documents: AskLedgerContextItem[];
   lexicalResults: LexicalCandidate[];
   skillId?: AskLedgerSkillId;
+  skillDefinition?: AskLedgerSkillDefinition;
   explicitContext?: AskLedgerInitialContext;
   conversation?: {
     id?: string;
@@ -164,7 +165,7 @@ export class AskLedgerService {
   }
 
   executeSkill(request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
-    const skill = getAskLedgerSkill(request.skillId);
+    const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
     if (!skill) {
       const requestId = randomUUID();
       queueMicrotask(() => callbacks.onEvent({ type: 'error', requestId, error: { code: 'retrieval_failed', message: 'Unknown Ask Ledger skill.' } }));
@@ -200,7 +201,7 @@ export class AskLedgerService {
 
   private async run(requestId: string, request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
     try {
-      const skill = getAskLedgerSkill(request.skillId);
+      const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
       if (detectAskLedgerQueryIntent(request.question).kind === 'greeting') {
         callbacks.onEvent({ type: 'sources', requestId, sources: [] });
         callbacks.onEvent({ type: 'delta', requestId, text: 'Hi — what would you like to find in Ledger?' });

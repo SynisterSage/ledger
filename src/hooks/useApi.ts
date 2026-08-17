@@ -1322,6 +1322,10 @@ export const useApi = () => {
         const query = params.toString();
         return request(`/api/workspaces/${workspaceId}/ai-documents${query ? `?${query}` : ''}`);
       },
+      getAskLedgerSkills: (workspaceId: string) => request(`/api/workspaces/${workspaceId}/ask-ledger/skills`),
+      createAskLedgerSkill: (workspaceId: string, payload: { name: string; instructions: string }) => request(`/api/workspaces/${workspaceId}/ask-ledger/skills`, { method: 'POST', body: JSON.stringify(payload) }),
+      updateAskLedgerSkill: (workspaceId: string, skillId: string, payload: { name: string; instructions: string }) => request(`/api/workspaces/${workspaceId}/ask-ledger/skills/${skillId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+      deleteAskLedgerSkill: (workspaceId: string, skillId: string) => request(`/api/workspaces/${workspaceId}/ask-ledger/skills/${skillId}`, { method: 'DELETE' }),
       getAskLedgerSessions: (workspaceId: string, limit = 5) =>
         request(`/api/workspaces/${workspaceId}/ask-ledger/sessions?limit=${Math.max(1, Math.min(20, limit))}`),
       getAskLedgerSession: (workspaceId: string, sessionId: string) =>

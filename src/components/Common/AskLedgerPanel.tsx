@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   Boxes,
@@ -11,6 +12,7 @@ import {
   ListChecks,
   LoaderCircle,
   Mic,
+  Paperclip,
   Send,
   Square,
   UserRound,
@@ -31,7 +33,7 @@ import { ModalCloseButton } from './ModalCloseButton';
 import { ModalOverlay } from './ModalOverlay';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import type { AskLedgerAttachment } from '../../types/askLedgerAttachments';
-import { ASK_LEDGER_SKILL_METADATA, isAskLedgerSkillId, type AskLedgerSkillId, type AskLedgerSkillMetadata } from '../../types/askLedgerSkills';
+import { ASK_LEDGER_SKILL_METADATA, type AskLedgerCustomSkill, type AskLedgerSkillRef, type AskLedgerSkillMetadata } from '../../types/askLedgerSkills';
 import {
   proposeAskLedgerActions,
   type AskLedgerActionProposal,
@@ -55,8 +57,10 @@ export type AskLedgerSourceType =
 export interface AskLedgerRequest {
   question: string;
   workspaceId?: string | null;
-  skillId?: AskLedgerSkillId;
+  skillId?: AskLedgerSkillRef;
   explicitContext?: AskLedgerInitialContext;
+  customSkill?: AskLedgerCustomSkill;
+  attachmentIds?: string[];
 }
 
 export interface AskLedgerSource {
@@ -89,8 +93,8 @@ export interface AskLedgerMessage {
   interrupted?: boolean;
   actions?: AskLedgerActionProposal[];
   attachments?: AskLedgerMessageAttachment[];
-  structured?: { skillId: AskLedgerSkillId; sections: Array<{ title: string; content: string }> };
-  skillId?: AskLedgerSkillId;
+  structured?: { skillId: AskLedgerSkillRef; sections: Array<{ title: string; content: string }> };
+  skillId?: AskLedgerSkillRef;
 }
 
 export interface AskLedgerSession {
@@ -103,7 +107,7 @@ export interface AskLedgerSession {
   messages: AskLedgerMessage[];
   summary?: string;
   initialContext?: AskLedgerInitialContext;
-  skillId?: AskLedgerSkillId;
+  skillId?: AskLedgerSkillRef;
 }
 
 type AskLedgerConversationTurn = {
@@ -358,16 +362,16 @@ const skillPlaceholder = (skill?: AskLedgerSkillMetadata) => {
 
 const skillRequirementLabel = (skill: AskLedgerSkillMetadata) => {
   if (!skill.requiresContext) return null;
-  if (skill.supportedContextTypes.includes('project')) return 'Requires a project';
-  if (skill.supportedContextTypes.includes('note')) return 'Requires a note';
-  return 'Requires a meeting context';
+  if (skill.supportedContextTypes.includes('project')) return 'Choose a project';
+  if (skill.supportedContextTypes.includes('note')) return 'Choose a note';
+  return 'Choose a meeting';
 };
 
 const normalizeSkillMetadata = (value: unknown): AskLedgerSkillMetadata | null => {
   if (!value || typeof value !== 'object') return null;
   const item = value as Record<string, unknown>;
-  if (!isAskLedgerSkillId(item.id) || typeof item.name !== 'string' || typeof item.description !== 'string' || typeof item.icon !== 'string' || typeof item.requiresContext !== 'boolean' || !Array.isArray(item.supportedContextTypes) || !Array.isArray(item.allowedActions)) return null;
-  return { id: item.id, name: item.name, description: item.description, icon: item.icon, requiresContext: item.requiresContext, supportedContextTypes: item.supportedContextTypes as AskLedgerSkillMetadata['supportedContextTypes'], allowedActions: item.allowedActions as AskLedgerSkillMetadata['allowedActions'] };
+  if (typeof item.id !== 'string' || !item.id.trim() || typeof item.name !== 'string' || typeof item.description !== 'string' || typeof item.icon !== 'string' || typeof item.requiresContext !== 'boolean' || !Array.isArray(item.supportedContextTypes) || !Array.isArray(item.allowedActions)) return null;
+  return { id: item.id, name: item.name, description: item.description, icon: item.icon, requiresContext: item.requiresContext, supportedContextTypes: item.supportedContextTypes as AskLedgerSkillMetadata['supportedContextTypes'], allowedActions: item.allowedActions as AskLedgerSkillMetadata['allowedActions'], ...(item.isCustom === true ? { isCustom: true, instructions: typeof item.instructions === 'string' ? item.instructions : undefined } : {}) };
 };
 
 const newAskLedgerConversationId = () => `ask-ledger-${crypto.randomUUID()}`;
@@ -376,7 +380,7 @@ const attachmentKindLabel = (attachment: AskLedgerAttachment) => attachment.exte
 
 const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}` : name;
 
-export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, onConversationChange, onSessionTitleChange, onSessionPersisted }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillId; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void }) => {
+export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onDeleteCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onDeleteCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void }) => {
   const api = useApi();
   const platform = usePlatform();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -418,10 +422,24 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   } | null>(null);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
-  const [selectedSkillId, setSelectedSkillId] = useState<AskLedgerSkillId | null>(skillId ?? null);
+  const [contextPickerSkill, setContextPickerSkill] = useState<AskLedgerSkillMetadata | null>(null);
+  const [contextPickerOptions, setContextPickerOptions] = useState<AskLedgerInitialContext[]>([]);
+  const [contextPickerLoading, setContextPickerLoading] = useState(false);
+  const [contextPickerSearch, setContextPickerSearch] = useState('');
+  const [composerAttachments, setComposerAttachments] = useState<AskLedgerMessageAttachment[]>([]);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
+  const [resourcePickerLoading, setResourcePickerLoading] = useState(false);
+  const [resourcePickerOptions, setResourcePickerOptions] = useState<AskLedgerSource[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const [selectedSkillId, setSelectedSkillId] = useState<AskLedgerSkillRef | null>(skillId ?? null);
   const [skillCatalog, setSkillCatalog] = useState<AskLedgerSkillMetadata[]>(ASK_LEDGER_SKILL_METADATA);
   const setupCancelRequestedRef = useRef(false);
   const skillPickerRef = useRef<HTMLDivElement | null>(null);
+  const skillButtonRef = useRef<HTMLButtonElement | null>(null);
+  const skillPopupRef = useRef<HTMLDivElement | null>(null);
+  const [skillPopupPosition, setSkillPopupPosition] = useState<{ left: number; top: number; maxHeight?: number } | null>(null);
   const skillOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const requestIdRef = useRef(0);
   const messageIdRef = useRef(0);
@@ -434,8 +452,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const sessionIdRef = useRef<string | null>(null);
   const conversationIdRef = useRef(initialSession?.id ?? newAskLedgerConversationId());
   const sessionTitleRef = useRef('Ask Ledger');
-  const sessionSkillIdRef = useRef<AskLedgerSkillId | undefined>(initialSession?.skillId ?? skillId);
-  const pendingSkillIdRef = useRef<AskLedgerSkillId | undefined>(skillId);
+  const sessionSkillIdRef = useRef<AskLedgerSkillRef | undefined>(initialSession?.skillId ?? skillId);
+  const pendingSkillIdRef = useRef<AskLedgerSkillRef | undefined>(skillId);
   const initialContextRef = useRef<AskLedgerInitialContext | null>(initialContext ?? null);
   const sessionSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const questionRef = useRef(question);
@@ -445,6 +463,125 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   const conversationActive = messages.length > 0;
   const selectedSkill = selectedSkillId ? skillCatalog.find((skill) => skill.id === selectedSkillId) : undefined;
+
+  const selectSkill = (skill: AskLedgerSkillMetadata) => {
+    const hasValidContext = Boolean(activeInitialContext && skill.supportedContextTypes.includes(activeInitialContext.resourceType));
+    if (skill.requiresContext && !hasValidContext) {
+      setContextPickerSkill(skill);
+      setContextPickerSearch('');
+      setContextPickerLoading(true);
+      if (!workspaceId) {
+        setContextPickerOptions([]);
+        setContextPickerLoading(false);
+      } else {
+        void api.getAskLedgerDocuments(workspaceId).then((payload) => {
+          const documents = Array.isArray((payload as { documents?: unknown[] })?.documents) ? (payload as { documents: unknown[] }).documents : [];
+          setContextPickerOptions(documents.map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const record = item as Record<string, unknown>;
+            const resourceType = String(record.resourceType ?? '') as AskLedgerInitialContext['resourceType'];
+            const resourceId = String(record.resourceId ?? '');
+            if (!skill.supportedContextTypes.includes(resourceType) || !resourceId) return null;
+            return { resourceType, resourceId, title: String(record.title ?? 'Untitled') };
+          }).filter((item): item is AskLedgerInitialContext => Boolean(item)));
+        }).catch(() => setContextPickerOptions([])).finally(() => setContextPickerLoading(false));
+      }
+      return;
+    }
+    setSelectedSkillId(skill.id);
+    pendingSkillIdRef.current = skill.id;
+    sessionSkillIdRef.current = skill.id;
+    setSkillPickerOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const selectSkillContext = (context: AskLedgerInitialContext) => {
+    initialContextRef.current = context;
+    setActiveInitialContext(context);
+    if (contextPickerSkill) {
+      setSelectedSkillId(contextPickerSkill.id);
+      pendingSkillIdRef.current = contextPickerSkill.id;
+      sessionSkillIdRef.current = contextPickerSkill.id;
+    }
+    setContextPickerSkill(null);
+    setContextPickerOptions([]);
+    setSkillPickerOpen(false);
+    inputRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!attachmentMenuOpen) return undefined;
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!attachmentMenuRef.current?.contains(event.target as Node)) setAttachmentMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', closeOnOutside);
+    return () => window.removeEventListener('pointerdown', closeOnOutside);
+  }, [attachmentMenuOpen]);
+
+  const uploadAttachments = async () => {
+    if (!workspaceId || !window.askLedger?.selectAttachments) return;
+    const files = composerAttachments.filter((item): item is Extract<AskLedgerMessageAttachment, { kind: 'file' }> => item.kind === 'file');
+    const existingSizeBytes = files.reduce((total, item) => total + item.attachment.sizeBytes, 0);
+    setAttachmentError(null);
+    try {
+      const result = await window.askLedger.selectAttachments({ workspaceId, conversationId: conversationIdRef.current, existingCount: files.length, existingSizeBytes }) as { attachments?: AskLedgerAttachment[] };
+      const attachments = Array.isArray(result?.attachments) ? result.attachments.filter((attachment) => attachment?.id) : [];
+      const failed = attachments.find((attachment) => attachment.status === 'failed' || attachment.status === 'unsupported');
+      if (failed) setAttachmentError(failed.error || `Couldn't read ${failed.name}.`);
+      const usable = attachments.filter((attachment) => attachment.status === 'ready' || attachment.status === 'processing');
+      setComposerAttachments((current) => [...current, ...usable.map((attachment) => ({ kind: 'file' as const, attachment }))]);
+      setAttachmentMenuOpen(false);
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : 'Could not add that attachment.');
+    }
+  };
+
+  const openResourcePicker = async () => {
+    if (!workspaceId) return;
+    setAttachmentError(null);
+    setResourcePickerOpen(true);
+    setResourcePickerLoading(true);
+    try {
+      const payload = await api.getAskLedgerDocuments(workspaceId) as { documents?: Array<Record<string, unknown>> };
+      const resources = (payload.documents ?? []).map((item) => {
+        const type = sourceType(item.resourceType);
+        if (!type) return null;
+        return { id: String(item.resourceId ?? ''), resourceId: String(item.resourceId ?? ''), title: String(item.title ?? 'Untitled'), type, sourceLabel: sourceTypeLabels[type], projectId: item.projectId ? String(item.projectId) : undefined } as AskLedgerSource;
+      }).filter((item): item is AskLedgerSource => Boolean(item?.resourceId));
+      setResourcePickerOptions(resources.slice(0, 50));
+    } catch {
+      setResourcePickerOptions([]);
+      setAttachmentError('Could not load Ledger resources.');
+    } finally {
+      setResourcePickerLoading(false);
+    }
+  };
+
+  const addResourceAttachment = (resource: AskLedgerSource) => {
+    setComposerAttachments((current) => current.some((item) => item.kind === 'resource' && item.resource.resourceId === resource.resourceId) ? current : [...current, { kind: 'resource', resource }]);
+    setResourcePickerOpen(false);
+    setAttachmentMenuOpen(false);
+  };
+
+  const removeComposerAttachment = (attachment: AskLedgerMessageAttachment) => {
+    if (attachment.kind === 'file') void window.askLedger?.removeAttachments({ conversationId: conversationIdRef.current, attachmentIds: [attachment.attachment.id] });
+    setComposerAttachments((current) => current.filter((item) => item !== attachment));
+  };
+
+  useEffect(() => {
+    const customMetadata: AskLedgerSkillMetadata[] = customSkills.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description ?? 'A custom Ledger workflow.',
+      icon: skill.icon ?? 'Boxes',
+      requiresContext: false,
+      supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'],
+      allowedActions: [],
+      isCustom: true,
+      instructions: skill.instructions,
+    }));
+    setSkillCatalog((current) => [...current.filter((skill) => !skill.isCustom), ...customMetadata]);
+  }, [customSkills]);
 
   useEffect(() => {
     if (!actionReview?.actions.some((action) => action.type === 'create_task') || !workspaceId) return;
@@ -461,7 +598,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     if (!window.askLedger?.listSkills) return;
     void window.askLedger.listSkills().then((skills) => {
       const normalized = skills.map(normalizeSkillMetadata).filter((skill): skill is AskLedgerSkillMetadata => Boolean(skill));
-      if (normalized.length) setSkillCatalog(normalized);
+      if (normalized.length) setSkillCatalog((current) => [...normalized, ...current.filter((skill) => skill.isCustom)]);
     }).catch(() => {
       // Keep the shared safe metadata fallback available in the browser/runtime.
     });
@@ -470,10 +607,36 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   useEffect(() => {
     if (!skillPickerOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
-      if (!skillPickerRef.current?.contains(event.target as Node)) setSkillPickerOpen(false);
+      const target = event.target as Node;
+      if (!skillPickerRef.current?.contains(target) && !skillPopupRef.current?.contains(target)) setSkillPickerOpen(false);
     };
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [skillPickerOpen]);
+
+  useEffect(() => {
+    if (!skillPickerOpen) {
+      setSkillPopupPosition(null);
+      return undefined;
+    }
+    const updatePosition = () => {
+      const button = skillButtonRef.current;
+      if (!button) return;
+      const bounds = button.getBoundingClientRect();
+      const maxHeight = Math.max(180, Math.min(420, window.innerHeight - bounds.bottom - 16));
+      setSkillPopupPosition({
+        left: Math.max(8, Math.min(bounds.left, window.innerWidth - 296)),
+        top: bounds.bottom + 6,
+        maxHeight,
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
   }, [skillPickerOpen]);
 
   useEffect(() => {
@@ -622,7 +785,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               content: answer,
               createdAt: new Date().toISOString(),
               sources: current.response.sources,
-              ...(value.skillResult?.sections?.length && value.skillResult.skillId ? { structured: { skillId: value.skillResult.skillId as AskLedgerSkillId, sections: value.skillResult.sections } } : {}),
+            ...(value.skillResult?.sections?.length && value.skillResult.skillId ? { structured: { skillId: value.skillResult.skillId, sections: value.skillResult.sections } } : {}),
             };
             const previousTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
             const skillDefinition = value.skillResult?.skillId ? skillCatalog.find((skill) => skill.id === value.skillResult?.skillId) : undefined;
@@ -724,9 +887,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const selectedSkillForRequest = pendingSkillIdRef.current;
     if ((!trimmedQuestion && !selectedSkillForRequest) || !localAIReady || requestInitializingRef.current || activeRequestIdRef.current) return;
 
-    const effectiveQuestion = trimmedQuestion;
+    const effectiveQuestion = trimmedQuestion || (composerAttachments.length ? 'Review this attachment.' : '');
+    const submittedAttachments = composerAttachments;
+    const attachmentIds = submittedAttachments.flatMap((item) => item.kind === 'file' ? [item.attachment.id] : []);
 
-    const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, explicitContext: initialContextRef.current ?? undefined };
+    const customSkill = customSkills.find((skill) => skill.id === selectedSkillForRequest);
+    const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, customSkill, explicitContext: initialContextRef.current ?? undefined, attachmentIds };
     pendingSkillIdRef.current = undefined;
     setSelectedSkillId(null);
     setSkillPickerOpen(false);
@@ -746,6 +912,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         content: trimmedQuestion,
         createdAt: new Date().toISOString(),
         skillId: selectedSkillForRequest,
+        attachments: submittedAttachments,
       };
       nextMessages = [...messagesRef.current, userMessage];
       messagesRef.current = nextMessages;
@@ -753,6 +920,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       queueSessionSave(nextMessages, nextTitle);
     }
     setQuestion('');
+    setComposerAttachments([]);
+    setAttachmentMenuOpen(false);
+    setResourcePickerOpen(false);
     setActivity(null);
     setState({ status: 'submitting', request });
 
@@ -798,7 +968,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           lexicalResults,
           conversation: conversationRef.current ?? { id: conversationIdRef.current, previousQuestion: '', previousAnswer: '', previousSources: [], recentExchanges: [] },
           skillId: request.skillId,
+          customSkill: request.customSkill,
           explicitContext: request.explicitContext,
+          attachmentIds: request.attachmentIds,
+          messageId: nextMessages[nextMessages.length - 1]?.id,
         });
       })
       .then(({ requestId: localRequestId }) => {
@@ -1133,15 +1306,6 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           {state.status === 'error' && <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert"><p>Ledger couldn’t answer this question.</p><button type="button" onClick={retryLastQuestion} className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline">Try again</button></article>}
         </section>
       )}
-      {activeInitialContext && (
-        <div className="mb-2 flex items-center gap-2 px-1 text-xs text-[var(--ledger-text-muted)]">
-          <span>Context</span>
-          <span className="inline-flex max-w-[220px] items-center gap-1 rounded-md bg-[var(--ledger-surface-muted)] px-2 py-1 text-[var(--ledger-text-secondary)]">
-            <span className="truncate">{activeInitialContext.title}</span>
-            <button type="button" onClick={removeInitialContext} aria-label="Remove Ask Ledger context" className="rounded p-0.5 hover:bg-[var(--ledger-surface-hover)]">×</button>
-          </span>
-        </div>
-      )}
       <div
         ref={skillPickerRef}
         className={`${conversationActive ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'min-h-[124px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${localAIUnavailable ? 'cursor-pointer' : ''}`}
@@ -1149,20 +1313,36 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           if (localAIUnavailable) setSetupModalOpen(true);
         }}
       >
-        {selectedSkill && (
-          <div className="mb-2 flex items-center">
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 py-1 text-xs text-[var(--ledger-text-secondary)]">
-              <Boxes size={12} className="text-[var(--ledger-text-muted)]" />
-              <span>{selectedSkill.name}</span>
-              <button
-                type="button"
-                aria-label={`Remove ${selectedSkill.name}`}
-                onClick={(event) => { event.stopPropagation(); setSelectedSkillId(null); pendingSkillIdRef.current = undefined; sessionSkillIdRef.current = undefined; inputRef.current?.focus(); }}
-                className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"
-              >
-                <X size={12} />
-              </button>
-            </span>
+        {(activeInitialContext || selectedSkill) && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+            {composerAttachments.map((attachment) => (
+              <span key={`${attachment.kind}-${attachment.kind === 'file' ? attachment.attachment.id : attachment.resource.resourceId}`} className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
+                {attachment.kind === 'file' ? <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /> : (() => { const Icon = sourceIconMap[attachment.resource.type]; return <Icon size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />; })()}
+                <span className="min-w-0 truncate">{attachment.kind === 'file' ? attachmentDisplayName(attachment.attachment.name) : attachment.resource.title}</span>
+                <button type="button" onClick={(event) => { event.stopPropagation(); removeComposerAttachment(attachment); }} aria-label={`Remove ${attachment.kind === 'file' ? attachment.attachment.name : attachment.resource.title}`} className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"><X size={12} /></button>
+              </span>
+            ))}
+            {activeInitialContext && (
+              <span className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
+                <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="min-w-0 truncate">{activeInitialContext.title}</span>
+                <button type="button" onClick={(event) => { event.stopPropagation(); removeInitialContext(); }} aria-label="Remove Ask Ledger context" className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]">×</button>
+              </span>
+            )}
+            {selectedSkill && (
+              <span className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
+                <Boxes size={12} className="text-[var(--ledger-text-muted)]" />
+                <span className="min-w-0 truncate">{selectedSkill.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${selectedSkill.name}`}
+                  onClick={(event) => { event.stopPropagation(); setSelectedSkillId(null); pendingSkillIdRef.current = undefined; sessionSkillIdRef.current = undefined; inputRef.current?.focus(); }}
+                  className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
           </div>
         )}
         <textarea
@@ -1197,9 +1377,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           className={`max-h-32 ${conversationActive ? 'min-h-[44px]' : 'min-h-[68px]'} min-w-0 flex-1 resize-none self-stretch bg-transparent text-sm leading-6 placeholder:text-[var(--ledger-placeholder)] focus:outline-none ${localAIUnavailable ? 'cursor-pointer text-[var(--ledger-text-secondary)]' : 'text-[var(--ledger-text-primary)]'}`}
         />
         {localAIUnavailable && <span id="ask-ledger-setup-help" className="sr-only">Set up Local AI to ask your workspace.</span>}
+        {attachmentError && <p role="alert" className="mt-1 truncate text-[11px] text-[var(--ledger-danger)]">{attachmentError}</p>}
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="relative">
             <button
+              ref={skillButtonRef}
               type="button"
               aria-haspopup="listbox"
               aria-expanded={skillPickerOpen}
@@ -1216,8 +1398,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               <span>Skills</span>
               <ChevronDown size={12} className={`transition-transform ${skillPickerOpen ? 'rotate-180' : ''}`} />
             </button>
-            {skillPickerOpen && (
+            {skillPickerOpen && skillPopupPosition && createPortal(
               <div
+                ref={skillPopupRef}
                 role="listbox"
                 aria-label="Ledger Skills"
                 tabIndex={-1}
@@ -1230,14 +1413,24 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                     skillOptionRefs.current[nextIndex]?.focus();
                   }
                 }}
-                className="absolute bottom-9 left-0 z-30 w-[280px] overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]"
+                style={{ left: skillPopupPosition.left, top: skillPopupPosition.top, maxHeight: skillPopupPosition.maxHeight }}
+                className="fixed z-[2147483647] w-[280px] overflow-y-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]"
               >
-                {skillCatalog.map((skill, index) => {
+                {contextPickerSkill ? (
+                  <div role="dialog" aria-label={`Choose context for ${contextPickerSkill.name}`}>
+                    <div className="flex items-center gap-2 border-b border-[color:var(--ledger-border-subtle)] px-2.5 py-2">
+                      <button type="button" onClick={() => setContextPickerSkill(null)} className="text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">Back</button>
+                      <span className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{skillRequirementLabel(contextPickerSkill)}</span>
+                    </div>
+                    <input autoFocus value={contextPickerSearch} onChange={(event) => setContextPickerSearch(event.target.value)} placeholder="Search Ledger" aria-label="Search Ledger context" className="mx-1 my-1 h-8 w-[calc(100%-8px)] rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 text-xs text-[var(--ledger-text-primary)] outline-none" />
+                    <div className="max-h-56 overflow-y-auto">
+                      {contextPickerLoading ? <p className="px-2.5 py-3 text-xs text-[var(--ledger-text-muted)]">Loading Ledger resources…</p> : contextPickerOptions.filter((item) => item.title.toLowerCase().includes(contextPickerSearch.toLowerCase())).slice(0, 30).map((context) => <button key={`${context.resourceType}:${context.resourceId}`} type="button" onClick={() => selectSkillContext(context)} className="flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"><span className="min-w-0 flex-1 truncate">{context.title}</span><span className="ml-2 text-[10px] text-[var(--ledger-text-muted)]">{context.resourceType}</span></button>)}
+                      {!contextPickerLoading && !contextPickerOptions.length && <p className="px-2.5 py-3 text-xs text-[var(--ledger-text-muted)]">No matching Ledger resources.</p>}
+                    </div>
+                  </div>
+                ) : skillCatalog.map((skill, index) => {
                   const Icon = skillIconMap[skill.icon as keyof typeof skillIconMap] ?? Boxes;
                   const requirement = skillRequirementLabel(skill);
-                  const available = !skill.requiresContext
-                    || Boolean(activeInitialContext && skill.supportedContextTypes.includes(activeInitialContext.resourceType));
-                  const reason = available ? null : activeInitialContext ? requirement : requirement;
                   return (
                     <button
                       key={skill.id}
@@ -1245,27 +1438,46 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                       type="button"
                       role="option"
                       aria-selected={selectedSkillId === skill.id}
-                      aria-disabled={!available}
-                      disabled={!available}
-                      onClick={() => { setSelectedSkillId(skill.id); pendingSkillIdRef.current = skill.id; sessionSkillIdRef.current = skill.id; setSkillPickerOpen(false); inputRef.current?.focus(); }}
-                      className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition enabled:hover:bg-[var(--ledger-surface-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+                      onClick={() => selectSkill(skill)}
+                      className="flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                     >
                       <Icon size={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
                       <span className="min-w-0 flex-1">
                         <span className="block text-xs font-medium text-[var(--ledger-text-primary)]">{skill.name}</span>
-                        <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">{reason ?? skill.description}</span>
+                        <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">{requirement ?? skill.description}</span>
                       </span>
+                      {skill.isCustom && <span role="button" tabIndex={0} aria-label={`Edit ${skill.name}`} onClick={(event) => { event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onDeleteCustomSkill?.(custom); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); } }} className="px-1 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">⋯</span>}
                     </button>
                   );
                 })}
-              </div>
+                <div className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
+                  <button type="button" onClick={() => { setSkillPickerOpen(false); window.dispatchEvent(new CustomEvent('ledger:ask-ledger-create-skill')); }} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"><span className="text-base leading-none text-[var(--ledger-text-muted)]">+</span><span>Create skill</span></button>
+                </div>
+              </div>,
+              document.documentElement
             )}
           </div>
           <div className="flex items-center gap-1">
             {localAIUnavailable && (
               <button type="button" onClick={(event) => { event.stopPropagation(); setSetupModalOpen(true); }} aria-label="Set up Local AI" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><AlertCircle size={15} /></button>
             )}
-            <button type="button" onClick={() => submit()} disabled={(!question.trim() && !selectedSkillId) || !localAIReady || isSubmitting} aria-label="Submit question" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)] disabled:opacity-35">
+            <div ref={attachmentMenuRef} className="relative">
+              <button type="button" onClick={(event) => { event.stopPropagation(); setAttachmentMenuOpen((open) => !open); setResourcePickerOpen(false); }} aria-label="Add attachment" aria-expanded={attachmentMenuOpen} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+                <Paperclip size={15} />
+              </button>
+              {attachmentMenuOpen && (
+                <div role="menu" aria-label="Add Ask Ledger context" className="absolute bottom-9 right-0 z-40 w-56 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]">
+                  {!resourcePickerOpen ? <>
+                    <button type="button" role="menuitem" onClick={() => void uploadAttachments()} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Paperclip size={14} />Upload file</button>
+                    <button type="button" role="menuitem" onClick={() => void openResourcePicker()} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><FolderKanban size={14} />Add Ledger resource</button>
+                  </> : <>
+                    <button type="button" onClick={() => setResourcePickerOpen(false)} className="w-full px-3 py-2 text-left text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">← Back</button>
+                    <div className="max-h-56 overflow-y-auto border-t border-[color:var(--ledger-border-subtle)] pt-1">{resourcePickerLoading ? <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">Loading Ledger resources…</p> : resourcePickerOptions.map((resource) => <button key={`${resource.type}:${resource.resourceId}`} type="button" onClick={() => addResourceAttachment(resource)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><span className="min-w-0 flex-1 truncate">{resource.title}</span><span className="text-[10px] text-[var(--ledger-text-muted)]">{sourceTypeLabels[resource.type]}</span></button>)}{!resourcePickerLoading && !resourcePickerOptions.length && <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">No Ledger resources available.</p>}</div>
+                  </>}
+                </div>
+              )}
+            </div>
+            <button type="button" onClick={() => submit()} disabled={(!question.trim() && !selectedSkillId && !composerAttachments.length) || !localAIReady || isSubmitting} aria-label="Submit question" className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)] disabled:opacity-35">
               {isSubmitting ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
             {isSubmitting && <button type="button" onClick={cancel} aria-label="Cancel generation" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Square size={12} /></button>}

@@ -34,6 +34,7 @@ import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { createAskLedgerService } from './askLedgerService';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
+import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import { RecordingSessionStore } from './recordingSessionStore';
 import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
 import {
@@ -238,13 +239,18 @@ ipcMain.handle('ask-ledger:remove-attachments', async (_event, payload: { conver
   return { ok: true };
 });
 
-ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown }) => {
+ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown }) => {
   if (typeof payload?.question !== 'string' || (!payload.question.trim() && payload.skillId === undefined)) throw new Error('Ask Ledger question is required.');
   if (typeof payload.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
   if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
   const documents = payload.documents.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
   if (documents.some((item) => item.workspaceId !== undefined && item.workspaceId !== payload.workspaceId)) throw new Error('Ask Ledger context workspace mismatch.');
-  const skill = payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
+  const builtinSkill = payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
+  const customPayload = payload.customSkill && typeof payload.customSkill === 'object' ? payload.customSkill as Record<string, unknown> : undefined;
+  const customSkill = !builtinSkill && customPayload && typeof customPayload.id === 'string' && customPayload.id === String(payload.skillId ?? '') && typeof customPayload.name === 'string' && typeof customPayload.instructions === 'string'
+    ? { id: customPayload.id as AskLedgerSkillId, name: String(customPayload.name).slice(0, 100), description: 'A custom Ledger workflow.', icon: 'Boxes', instructions: String(customPayload.instructions).slice(0, 12000), supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedActions: [], requiresContext: false, requiresConfirmation: false } as AskLedgerSkillDefinition
+    : undefined;
+  const skill = builtinSkill ?? customSkill;
   if (payload.skillId !== undefined && !skill) throw new Error('Unknown Ask Ledger skill.');
   const explicitContext = payload.explicitContext && typeof payload.explicitContext === 'object' ? {
     resourceType: String((payload.explicitContext as Record<string, unknown>).resourceType ?? ''),
@@ -293,6 +299,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
       documents: documents as never,
       lexicalResults: payload.lexicalResults as never,
       skillId: skill?.id,
+      skillDefinition: skill,
       explicitContext: explicitContext as never,
       conversation: safeConversation,
     },
