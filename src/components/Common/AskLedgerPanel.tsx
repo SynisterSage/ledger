@@ -97,6 +97,7 @@ export interface AskLedgerMessage {
   attachments?: AskLedgerMessageAttachment[];
   structured?: { skillId: AskLedgerSkillRef; sections: Array<{ title: string; content: string }> };
   skillId?: AskLedgerSkillRef;
+  activity?: { durationMs?: number; steps: Array<{ type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> }> };
 }
 
 export interface AskLedgerSession {
@@ -192,6 +193,7 @@ type AskLedgerStreamEvent = {
   text?: string;
   sources?: Array<Record<string, unknown>>;
   error?: { code?: string; message?: string };
+  metrics?: { totalMs?: number };
   skillResult?: {
     skillId: string;
     sections?: Array<{ title: string; content: string }>;
@@ -206,6 +208,7 @@ const askLedgerDocumentScope = (question: string) => {
   if (/\b(github|git hub|slack|figma|circle|integration|integrations|intake|pull requests?|issues?)\b/.test(value)) return 'integration';
   if (/\b(projects?|portfolio)\b/.test(value) && !/\b(discuss|discussed|decide|decided|mention|mentioned|say|said)\b/.test(value)) return 'projects';
   if (/\b(reminders?|remind me)\b/.test(value)) return 'reminders';
+  if (/\b(prepare|prep|get ready|brief)\b/.test(value) && /\b(meeting|meetings|call|calls)\b/.test(value)) return 'meeting_prep';
   if (/\b(meetings?|events?)\b/.test(value) || /\b(calendar|schedule)\b.*\b(upcoming|today|this week|next week|event|meeting)\b/.test(value)) return 'events';
   if (/\b(open tasks?|todos?|to dos?|to-do|actions?|things to do|what do i need to do)\b/.test(value)) return 'open_actions';
   if (/\b(tasks?)\b/.test(value)) return 'tasks';
@@ -351,7 +354,66 @@ const askLedgerActivityLabel = (value?: AskLedgerStreamEvent['activity']) => {
   if (value.type === 'sources_found') return `Found ${value.count ?? 0} relevant sources`;
   if (value.type === 'reading_context') return `Reading ${value.count ?? 0} relevant sources…`;
   if (value.type === 'preparing_answer') return 'Preparing answer…';
-  return 'Generating…';
+  return 'Preparing answer…';
+};
+
+const GENERATION_PHRASES = [
+  'Thinking through this…',
+  'Reading your workspace…',
+  'Connecting the relevant pieces…',
+  'Checking project context…',
+  'Looking for recent changes…',
+  'Comparing what moved…',
+  'Tracing open threads…',
+  'Checking due dates…',
+  'Reviewing next actions…',
+  'Looking for blockers…',
+  'Sorting the signal…',
+  'Pulling together the context…',
+  'Cross-checking details…',
+  'Mapping what comes next…',
+  'Looking for dependencies…',
+  'Reviewing recent activity…',
+  'Checking calendar context…',
+  'Grouping related work…',
+  'Identifying gaps…',
+  'Weighing priorities…',
+  'Building a grounded answer…',
+  'Turning context into a plan…',
+  'Writing the useful parts…',
+  'Making the summary concise…',
+  'Almost there…',
+] as const;
+
+const askLedgerActivityDescription = (value: AskLedgerStreamEvent['activity']) => {
+  if (!value) return '';
+  if (value.type === 'starting_runtime') return 'Getting Ledger ready on this device.';
+  if (value.type === 'searching') return 'Searching your workspace for relevant context.';
+  if (value.type === 'sources_found') return `Found ${value.count ?? 0} relevant sources.`;
+  if (value.type === 'reading_context') return `Reviewed ${value.count ?? 0} sources relevant to this question.`;
+  if (value.type === 'preparing_answer') return 'Organizing the selected context into an answer.';
+  return 'Answering from the selected Ledger context.';
+};
+
+const formatAskLedgerDuration = (durationMs: number) => Math.max(0, Math.round(durationMs / 1000));
+
+const AskLedgerActivityTrace = ({ steps, durationMs, active, expanded, onToggle, generationPhrase }: { steps: NonNullable<AskLedgerStreamEvent['activity']>[]; durationMs?: number | null; active?: boolean; expanded: boolean; onToggle: () => void; generationPhrase?: string }) => {
+  const current = steps[steps.length - 1];
+  const label = active ? generationPhrase ?? 'Working…' : `Worked for ${formatAskLedgerDuration(durationMs ?? 0)} seconds`;
+  if (active && !steps.length) return <div className="ask-ledger-activity" aria-live="polite"><p className="px-1 text-xs text-[var(--ledger-text-muted)] ledger-ask-generating">{label}</p></div>;
+  return <div className="ask-ledger-activity" aria-live={active ? 'polite' : undefined}>
+    <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)]">
+      <span className={active ? 'ledger-ask-generating' : undefined}>{label}</span><ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+    </button>
+    {active && current && !expanded ? <p className="mt-2 pl-1 text-xs text-[var(--ledger-text-secondary)]">{askLedgerActivityLabel(current)}</p> : null}
+    {expanded && <div className="mt-2 space-y-3 pl-3">
+      {steps.map((step, index) => <div key={`${step.type}-${index}`} className="relative border-l border-[color:var(--ledger-border-subtle)] pl-3">
+        <p className="text-xs text-[var(--ledger-text-secondary)]">{askLedgerActivityLabel(step)}</p>
+        <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">{askLedgerActivityDescription(step)}</p>
+        {step.sources?.length ? <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--ledger-text-muted)]">{step.sources.slice(0, 3).map((source) => <span key={`${String(source.resourceType)}:${String(source.resourceId)}`} className="max-w-[190px] truncate">{String(source.title ?? 'Untitled')}</span>)}{(step.count ?? 0) > step.sources.length ? <span>+{(step.count ?? 0) - step.sources.length} more</span> : null}</div> : null}
+      </div>)}
+    </div>}
+  </div>;
 };
 
 const skillIconMap = { ListChecks, FolderKanban, CalendarDays, FileText };
@@ -390,11 +452,18 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const latestMessageRef = useRef<HTMLElement | null>(null);
   const [question, setQuestion] = useState('');
   const [state, setState] = useState<AskLedgerState>({ status: 'idle' });
+  const [generationPhrase, setGenerationPhrase] = useState<string>(GENERATION_PHRASES[0]);
   const stateRef = useRef<AskLedgerState>({ status: 'idle' });
   const completedRequestIdRef = useRef<string | null>(null);
-  const [activity, setActivity] = useState<AskLedgerStreamEvent['activity'] | null>(null);
+  const [activitySteps, setActivitySteps] = useState<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
+  const [activityExpanded, setActivityExpanded] = useState(true);
+  const [activityDurationMs, setActivityDurationMs] = useState<number | null>(null);
+  const activityStartedAtRef = useRef<number | null>(null);
+  const activityStepsRef = useRef<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
+  const [activityNow, setActivityNow] = useState(() => Date.now());
   const [messages, setMessages] = useState<AskLedgerMessage[]>([]);
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
+  const [expandedActivity, setExpandedActivity] = useState<Record<string, boolean>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [activeInitialContext, setActiveInitialContext] = useState<AskLedgerInitialContext | null>(initialContext ?? null);
   const [actionReview, setActionReview] = useState<{ actions: AskLedgerActionProposal[]; title: string } | null>(null);
@@ -674,7 +743,6 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     onSessionTitleChange?.('Ask Ledger');
     sourceItemsRef.current = [];
     setQuestion('');
-    setActivity(null);
     setMessages([]);
     setExpandedSources({});
     setCopiedMessageId(null);
@@ -712,7 +780,6 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       : null;
     onSessionTitleChange?.(sessionTitleRef.current);
     setQuestion('');
-    setActivity(null);
     setMessages(restoredMessages);
     setExpandedSources({});
     setState({ status: restoredMessages.length ? 'focused' : 'idle' });
@@ -743,7 +810,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           else return;
         }
         if (value.type === 'activity') {
-          setActivity(value.activity ?? null);
+          const nextActivity = value.activity ?? null;
+          if (nextActivity) {
+            setActivitySteps((current) => {
+              const next = current.some((step) => step.type === nextActivity.type && step.count === nextActivity.count) ? current : [...current, nextActivity];
+              activityStepsRef.current = next;
+              return next;
+            });
+          }
           return;
         }
         if (value.type === 'sources') {
@@ -771,7 +845,6 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           return;
         }
         if (value.type === 'delta' && typeof value.text === 'string') {
-          setActivity(null);
           setState((current) => {
             if (current.status !== 'submitting' && current.status !== 'streaming') return current;
             const request = current.request;
@@ -789,7 +862,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           const completedState = stateRef.current;
           if (completedState.status !== 'streaming') return;
           completedRequestIdRef.current = value.requestId;
-          setActivity(null);
+          const durationMs = value.metrics?.totalMs ?? (activityStartedAtRef.current ? Date.now() - activityStartedAtRef.current : 0);
+          const completedActivity = activityStepsRef.current;
+          setActivityDurationMs(durationMs);
           const isAbstention = /(?:couldn['’]t find enough information|don't have enough Ledger context)/i.test(completedState.response.answer);
           const answer = isAbstention || !completedState.response.answer.trim()
             ? "I don't have enough Ledger context to answer that."
@@ -800,6 +875,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             content: answer,
             createdAt: new Date().toISOString(),
             sources: completedState.response.sources,
+            ...(completedActivity.length ? { activity: { durationMs, steps: completedActivity } } : {}),
             ...(value.skillResult?.sections?.length && value.skillResult.skillId ? { structured: { skillId: value.skillResult.skillId, sections: value.skillResult.sections } } : {}),
           };
           const previousTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
@@ -837,7 +913,6 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           return;
         }
         if (value.type === 'error') {
-          setActivity(null);
           setState((current) => {
             const request =
               current.status === 'streaming' || current.status === 'submitting'
@@ -931,7 +1006,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setComposerAttachments([]);
     setAttachmentMenuOpen(false);
     setResourcePickerOpen(false);
-    setActivity(null);
+    activityStartedAtRef.current = Date.now();
+    activityStepsRef.current = [];
+    setActivitySteps([]);
+    setActivityDurationMs(null);
+    setActivityExpanded(true);
     setState({ status: 'submitting', request });
 
     if (!window.askLedger) {
@@ -1012,6 +1091,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         createdAt: new Date().toISOString(),
         sources: state.response.sources,
         interrupted: true,
+        activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
       };
       const nextMessages = [...messagesRef.current, interruptedMessage];
       messagesRef.current = nextMessages;
@@ -1203,6 +1283,22 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   };
 
   const isSubmitting = state.status === 'submitting' || state.status === 'streaming';
+  const generationActive = state.status === 'submitting' || (state.status === 'streaming' && !state.response.answer);
+
+  useEffect(() => {
+    if (!generationActive) {
+      setGenerationPhrase(GENERATION_PHRASES[0]);
+      return undefined;
+    }
+    let index = 0;
+    setGenerationPhrase(GENERATION_PHRASES[index]);
+    const timer = window.setInterval(() => {
+      index = (index + 1) % GENERATION_PHRASES.length;
+      setGenerationPhrase(GENERATION_PHRASES[index]);
+    }, 950);
+    return () => window.clearInterval(timer);
+  }, [generationActive]);
+
   const generation = localAIStatus?.generation;
   const embedding = localAIStatus?.embedding;
   const localAIReady = Boolean(generation?.installed && embedding?.installed);
@@ -1232,6 +1328,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   }, [localAIReady]);
 
   useEffect(() => {
+    if (!isSubmitting || !activityStartedAtRef.current) return;
+    const timer = window.setInterval(() => setActivityNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isSubmitting]);
+
+  const liveActivityDurationMs = activityDurationMs ?? (activityStartedAtRef.current ? activityNow - activityStartedAtRef.current : 0);
+
+  useEffect(() => {
     if (!conversationActive || !['answer', 'no-answer', 'error'].includes(state.status)) return;
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(focusTimer);
@@ -1258,6 +1362,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 </div>
               ) : (
                 <div>
+                  {message.activity?.steps?.length ? <AskLedgerActivityTrace steps={message.activity.steps} durationMs={message.activity.durationMs} expanded={Boolean(expandedActivity[message.id])} onToggle={() => setExpandedActivity((current) => ({ ...current, [message.id]: !current[message.id] }))} /> : null}
                   {message.structured?.sections?.length ? (
                     <div className="space-y-6 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">
                       {message.structured.sections.map((section) => (
@@ -1291,15 +1396,25 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                     </div>
                   )}
                   {message.sources && message.sources.length > 0 && (
-                    <div className="mt-6">
-                      <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--ledger-text-muted)]">Sources · {message.sources.length}</p>
-                      <div className="space-y-1">
-                        {(expandedSources[message.id] ? message.sources : message.sources.slice(0, 3)).map((source) => {
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        aria-expanded={Boolean(expandedSources[message.id])}
+                        aria-controls={`ask-ledger-sources-${message.id}`}
+                        onClick={() => setExpandedSources((current) => ({ ...current, [message.id]: !current[message.id] }))}
+                        className="inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      >
+                        <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-4 w-4 shrink-0" />
+                        <span>Ledger sources</span>
+                        <span className="text-[11px] text-[var(--ledger-text-muted)]">{message.sources.length}</span>
+                        <ChevronDown size={13} className={`transition-transform ${expandedSources[message.id] ? 'rotate-180' : ''}`} />
+                      </button>
+                      {expandedSources[message.id] && <div id={`ask-ledger-sources-${message.id}`} className="mt-1.5 max-h-64 space-y-1 overflow-y-auto pl-1">
+                        {message.sources.map((source) => {
                           const Icon = sourceIconMap[source.type];
-                          return <button key={source.id} type="button" onClick={() => openSource(source)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"><Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">{source.title}</span><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{source.sourceLabel ?? sourceTypeLabels[source.type]}</span></button>;
+                          return <button key={source.id} type="button" onClick={() => openSource(source)} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"><Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">{source.title}</span><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{source.sourceLabel ?? sourceTypeLabels[source.type]}</span></button>;
                         })}
-                      </div>
-                      {message.sources.length > 3 && <button type="button" onClick={() => setExpandedSources((current) => ({ ...current, [message.id]: !current[message.id] }))} className="mt-2 text-xs text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]">{expandedSources[message.id] ? 'Show less' : `Show all · ${message.sources.length}`}</button>}
+                      </div>}
                     </div>
                   )}
                   <div className="mt-4 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
@@ -1311,7 +1426,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           ))}
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
-              {state.status === 'streaming' && state.response.answer ? <div className="space-y-4 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">{renderAnswerContent(state.response.answer)}</div> : <p className="ledger-ask-generating text-sm text-[var(--ledger-text-muted)]">{askLedgerActivityLabel(activity ?? undefined) || 'Searching your workspace…'}</p>}
+              <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={generationPhrase} />
+              {state.status === 'streaming' && state.response.answer ? <div className="mt-4 space-y-4 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">{renderAnswerContent(state.response.answer)}</div> : null}
             </article>
           )}
           {state.status === 'error' && <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert"><p>Ledger couldn’t answer this question.</p><button type="button" onClick={retryLastQuestion} className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline">Try again</button></article>}
@@ -1595,33 +1711,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         </div>
       </ModalOverlay>
 
-      {!conversationActive && (state.status === 'submitting' || (state.status === 'streaming' && activity)) && activity && (
-        <div className="mt-8 px-1 text-sm text-[var(--ledger-text-muted)]" aria-live="polite">
-          <p>{askLedgerActivityLabel(activity)}</p>
-          {(activity.type === 'sources_found' || activity.type === 'reading_context') && activity.sources?.length ? (
-            <div className="mt-2 flex max-w-[620px] flex-wrap gap-x-4 gap-y-1.5">
-              {activity.sources.map((source) => {
-                const type = sourceType(source.resourceType);
-                return (
-                  <span key={`${String(source.resourceType)}:${String(source.resourceId)}`} className="inline-flex max-w-[190px] items-center gap-1.5 truncate text-xs text-[var(--ledger-text-secondary)]">
-                    {type && (() => { const Icon = sourceIconMap[type]; return <Icon size={13} className="shrink-0 text-[var(--ledger-text-muted)]" />; })()}
-                    <span className="truncate">{String(source.title ?? 'Untitled')}</span>
-                  </span>
-                );
-              })}
-              {(activity.count ?? 0) > (activity.sources?.length ?? 0) && <span className="text-xs text-[var(--ledger-text-muted)]">+{(activity.count ?? 0) - (activity.sources?.length ?? 0)} more</span>}
-            </div>
-          ) : null}
-        </div>
-      )}
-
       {!conversationActive && (state.status === 'streaming' || state.status === 'answer') && (
         <section className="mt-10" aria-live="polite">
           <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
             {displayedRequest}
           </p>
+          {activitySteps.length ? <AskLedgerActivityTrace steps={activitySteps} durationMs={state.status === 'answer' ? activityDurationMs : liveActivityDurationMs} active={state.status !== 'answer'} expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={generationPhrase} /> : null}
           <p className={`mt-5 max-w-[620px] whitespace-pre-wrap text-[15px] leading-7 text-[var(--ledger-text-secondary)] ${!state.response.answer ? 'ledger-ask-generating' : ''}`}>
-            {state.response.answer || 'Generating…'}
+            {state.response.answer || generationPhrase}
           </p>
           {state.status === 'answer' && (
             <div className="mt-8">

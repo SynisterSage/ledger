@@ -13,6 +13,12 @@ test('detects direct greetings', () => {
   assert.deepEqual(detectAskLedgerQueryIntent('hello mr ledger'), { kind: 'greeting' });
   assert.deepEqual(detectAskLedgerQueryIntent('Good morning, Mr. Ledger!'), { kind: 'greeting' });
   assert.deepEqual(detectAskLedgerQueryIntent('what’s up Ledger'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('hey, what’s up?'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('hello, how are you?'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('thanks Ledger'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('nothing much ur whats up with u \\'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('what\'s up with you?'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('whats on ur mind'), { kind: 'greeting' });
 });
 
 test('detects authoritative team-member lookups', () => {

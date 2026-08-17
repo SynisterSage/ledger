@@ -67,7 +67,9 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   const greeting = normalizeGreeting(question);
   if (/^(hi|hello|hey|yo)(?: there| again)?(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
     || /^good (?:morning|afternoon|evening)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
-    || /^(how are you|whats up)(?: ledger)?$/.test(greeting)) {
+    || /^(?:hi|hello|hey|yo)(?: there)?(?: (?:mr|mister) ledger| ledger)? (?:how are you|whats up|how is it going)$/.test(greeting)
+    || /^(how are you|whats up|whats up with (?:you|u)|whats on (?:your|ur) mind|how is it going|im good|im doing well|thanks|thank you|cool|nice|okay|ok)(?: ledger)?$/.test(greeting)
+    || /^(?:nothing much|not much)(?: (?:ur|your|whats up|whats up with (?:you|u)))?(?: (?:ur|your|whats up|whats up with (?:you|u)))?$/.test(greeting)) {
     return { kind: 'greeting' };
   }
   const asksAboutExistingKnowledge = /\b(what did .*\b(discuss|say|decide|mention)|where did .*\b(discuss|say|decide|mention)|what was decided|what have we discussed)\b/.test(normalized);

@@ -220,3 +220,31 @@ test('executes a skill with boosted explicit context and skill instructions', as
   assert.match(generationPrompt, /Decide launch owner/);
   assert.match(generationPrompt, /Review the launch draft/);
 });
+
+test('falls back to a grounded weekly plan when the local model abstains', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  const task: AskLedgerContextItem = { ...resource, resourceType: 'task', resourceId: 'task-plan', title: 'Upload weekly logs', status: 'Not started', dueAt: '2026-08-19' };
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [task], debug: [{ resourceType: 'task', resourceId: task.resourceId, title: task.title, score: 0.8, why: ['semantic:0.8'] }] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (_request: unknown, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      callbacks.onEvent({ type: 'delta', requestId, text: ASK_LEDGER_ABSTENTION });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'help me out', documents: [task], lexicalResults: [], skillId: 'plan_my_week' }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  const answer = events.filter((event) => event.type === 'delta').map((event) => event.text).join('');
+  assert.match(answer, /Focus this week/);
+  assert.match(answer, /Upload weekly logs/);
+  assert.doesNotMatch(answer, /I don't have enough Ledger context/);
+});

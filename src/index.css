@@ -29,7 +29,7 @@ body {
 @keyframes ledgerAskGenerating {
   0%,
   100% {
-    opacity: 0.48;
+    opacity: 0.82;
     background-position: 140% 0;
   }
   50% {
@@ -39,7 +39,7 @@ body {
 }
 
 .ledger-ask-generating {
-  background: linear-gradient(100deg, currentColor 35%, var(--ledger-text-primary) 50%, currentColor 65%);
+  background: linear-gradient(100deg, var(--ledger-text-muted) 0%, var(--ledger-text-muted) 42%, var(--ledger-text-primary) 50%, var(--ledger-text-muted) 58%, var(--ledger-text-muted) 100%);
   background-size: 220% 100%;
   background-clip: text;
   -webkit-background-clip: text;

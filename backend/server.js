@@ -21047,6 +21047,7 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
       status_context: new Set(['projects', 'tasks']),
       deadlines: new Set(['projects', 'tasks', 'milestones', 'events', 'reminders']),
       time_window: new Set(['tasks', 'events', 'reminders']),
+      meeting_prep: new Set(['notes', 'projects', 'tasks', 'milestones', 'events', 'reminders', 'transcriptSegments', 'inbox']),
       integration: new Set(['external', 'inbox', 'tasks', 'notes']),
       all: new Set(['notes', 'projects', 'tasks', 'milestones', 'events', 'reminders', 'inbox', 'teams', 'teamMembers', 'transcriptSegments', 'external']),
     };

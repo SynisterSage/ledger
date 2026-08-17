@@ -72,12 +72,44 @@ const emptyStructuredAnswer = (kind: string) => {
   return `I couldn't find any matching ${label} in this workspace.`;
 };
 
+const formatPlanMyWeekFallback = (items: AskLedgerContextItem[]) => {
+  const uniqueItems = [...new Map(items.map((item) => [`${item.resourceType}:${item.resourceId}`, item])).values()];
+  const actionable = uniqueItems.filter((item) => ['task', 'milestone', 'reminder', 'event'].includes(item.resourceType));
+  const dated = actionable.filter((item) => item.dueAt || item.timestamp).slice(0, 6);
+  const blocked = actionable.filter((item) => /blocked|stuck|overdue|urgent|at risk/i.test(`${item.status ?? ''} ${item.content}`)).slice(0, 5);
+  const focus = actionable.filter((item) => !['completed', 'complete', 'done', 'cancelled', 'canceled'].includes(String(item.status ?? '').toLowerCase())).slice(0, 5);
+  const lines = [
+    'Focus this week:',
+    ...(focus.length ? focus.map((item) => `- ${item.title}${item.projectName ? ` · ${item.projectName}` : ''}`) : ['- No open work was supplied.']),
+    '',
+    'Deadlines and commitments:',
+    ...(dated.length ? dated.map((item) => `- ${item.title} — ${item.dueAt ? `Due ${formatLedgerDate(item.dueAt)}` : `At ${formatLedgerDate(item.timestamp)}`}`) : ['- No dated commitments were supplied.']),
+    '',
+    'Risks or blockers:',
+    ...(blocked.length ? blocked.map((item) => `- ${item.title}${item.status ? ` — ${item.status}` : ''}`) : ['- No explicit blockers were found in the supplied context.']),
+    '',
+    'Next steps:',
+    ...(focus.slice(0, 3).map((item) => `- Start with ${item.title}.`)),
+  ];
+  return lines.join('\n');
+};
+
 const askLedgerGreetings = [
   'Hey — good to see you. What would you like to work through in Ledger?',
   'Hello! I’m here and ready to help you find what matters next.',
   'Hi there — what’s on your mind?',
   'Good to see you. What should we look at together?',
 ];
+
+const casualResponseFor = (question: string) => {
+  const normalized = question.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (/how are you|how is it going/.test(normalized)) return 'I’m doing well and ready to help. What are we working on?';
+  if (/whats up|nothing much|not much/.test(normalized)) return 'Not much — I’m here and ready when you are. What’s on your mind?';
+  if (/whats on (your|ur) mind/.test(normalized)) return 'Mostly helping you make sense of what’s in Ledger. What’s on your mind?';
+  if (/thanks|thank you/.test(normalized)) return 'You’re welcome. Want to keep going?';
+  if (/im good|im doing well|cool|nice|okay|ok/.test(normalized)) return 'Good to hear it. What should we tackle next?';
+  return askLedgerGreetings[Math.floor(Math.random() * askLedgerGreetings.length)];
+};
 
 const expandRelatedProjectContext = (items: AskLedgerContextItem[], documents: AskLedgerContextItem[]) => {
   const projectIds = new Set(
@@ -207,18 +239,22 @@ export class AskLedgerService {
   }
 
   private async run(requestId: string, request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
+    const startedAt = Date.now();
+    const emit = (event: LocalAIStreamEvent) => callbacks.onEvent(event.type === 'done'
+      ? { ...event, metrics: { ...event.metrics, totalMs: Date.now() - startedAt } }
+      : event);
     try {
       const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
       if (detectAskLedgerQueryIntent(request.question).kind === 'greeting') {
-        callbacks.onEvent({ type: 'sources', requestId, sources: [] });
-        const greeting = askLedgerGreetings[Math.floor(Math.random() * askLedgerGreetings.length)];
-        callbacks.onEvent({ type: 'delta', requestId, text: greeting });
-        callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        emit({ type: 'sources', requestId, sources: [] });
+        const greeting = casualResponseFor(request.question);
+        emit({ type: 'delta', requestId, text: greeting });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
       if (request.conversation?.id) await this.restoreAttachments(request.workspaceId, request.conversation.id);
       await this.retrieval.indexWorkspace(request.workspaceId, request.documents);
-      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'searching' } });
+      emit({ type: 'activity', requestId, activity: { type: 'searching' } });
       const retrievalQuestion = [
         request.question,
         skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
@@ -248,6 +284,12 @@ export class AskLedgerService {
       const skillItems = explicitItem && !allowedSkillItems.some((item) => item.resourceId === explicitItem.resourceId && item.resourceType === explicitItem.resourceType)
         ? [explicitItem, ...allowedSkillItems]
         : allowedSkillItems;
+      const meetingNotes = intent.kind === 'meeting_prep'
+        ? request.documents
+          .filter((item) => item.resourceType === 'note')
+          .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
+          .slice(0, 3)
+        : [];
       const selectedRetrievalItems = (intent.kind === 'blockers' || intent.kind === 'status')
         ? expandRelatedProjectContext(skillItems.slice(0, 8), request.documents)
         : intent.kind === 'project_review'
@@ -255,14 +297,14 @@ export class AskLedgerService {
         : intent.kind === 'recent_updates'
           ? skillItems.slice(0, 16)
         : intent.kind === 'meeting_prep'
-          ? skillItems.slice(0, 16)
+          ? [...meetingNotes, ...skillItems.filter((item) => item.resourceType !== 'note').slice(0, 13)]
         : intent.kind === 'integration'
           ? skillItems.slice(0, 16)
         : skillItems.slice(0, skill ? 10 : 8);
       const previewSources = (items: AskLedgerContextItem[]) => items.slice(0, 3).map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, route: item.route, projectId: item.projectId, projectName: item.projectName, sourceLabel: item.sourceLabel, updatedAt: item.updatedAt, parentResourceId: item.parentResourceId, attachmentSource: item.attachmentSource }));
-      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'sources_found', count: retrieval.items.length, sources: previewSources(retrieval.items) } });
       const normalized = new LedgerContextBuilder().normalize(selectedRetrievalItems, { maxContextTokens: skill ? 2800 : 2400, maxItemTokens: 700, sortByFreshness: intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' });
-      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
+      emit({ type: 'activity', requestId, activity: { type: 'sources_found', count: normalized.items.length, sources: previewSources(normalized.items) } });
+      emit({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
       normalized.items.forEach((item) => sourceByKey.set(`${item.resourceType}:${item.resourceId}`, {
           resourceType: item.resourceType,
@@ -287,29 +329,47 @@ export class AskLedgerService {
         droppedContext: Math.max(0, retrieval.items.length - normalized.items.length),
         promptTokens: normalized.estimatedTokens,
       });
-      callbacks.onEvent({ type: 'sources', requestId, sources });
+      emit({ type: 'sources', requestId, sources });
       if (!skill && structuredAnswerFor.has(intent.kind)) {
-        callbacks.onEvent({ type: 'delta', requestId, text: normalized.items.length ? formatStructuredAnswer(intent.kind, normalized.items) : emptyStructuredAnswer(intent.kind) });
-        callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        emit({ type: 'delta', requestId, text: normalized.items.length ? formatStructuredAnswer(intent.kind, normalized.items) : emptyStructuredAnswer(intent.kind) });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
-      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'preparing_answer' } });
+      emit({ type: 'activity', requestId, activity: { type: 'preparing_answer' } });
       const topScore = retrieval.debug[0]?.score ?? 0;
       const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title')
         || (intent.kind === 'recent_updates' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('recent:')))
         || (intent.kind === 'meeting_prep' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('meeting-prep-')));
       if (!normalized.items.length || (!skill && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
-        callbacks.onEvent({ type: 'delta', requestId, text: ASK_LEDGER_ABSTENTION });
-        callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        emit({ type: 'delta', requestId, text: ASK_LEDGER_ABSTENTION });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
+      const generatedSkillAnswer: string[] = [];
+      const generationCallbacks = skill?.id === 'plan_my_week'
+        ? {
+            onEvent: (event: LocalAIStreamEvent) => {
+              if (event.type === 'delta' && typeof event.text === 'string') generatedSkillAnswer.push(event.text);
+              if (event.type === 'done') {
+                const generatedAnswer = generatedSkillAnswer.join('').trim();
+                if (generatedAnswer === ASK_LEDGER_ABSTENTION && normalized.items.length) {
+                  emit({ type: 'delta', requestId, text: formatPlanMyWeekFallback(normalized.items) });
+                } else if (generatedAnswer) {
+                  emit({ type: 'delta', requestId, text: generatedAnswer });
+                }
+                emit(event);
+                return;
+              }
+            },
+          }
+        : { onEvent: emit };
       this.localAI.start(
         { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined }) },
-        callbacks,
+        generationCallbacks,
         requestId,
       );
     } catch (error) {
-      callbacks.onEvent({
+      emit({
         type: 'error',
         requestId,
         error: {
