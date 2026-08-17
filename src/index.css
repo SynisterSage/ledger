@@ -707,6 +707,12 @@ button:focus {
   outline-offset: 0;
 }
 
+.ask-ledger-composer textarea:focus-visible {
+  outline: none !important;
+  outline-offset: 0;
+  box-shadow: none !important;
+}
+
 input:focus-visible,
 button:focus-visible,
 a:focus-visible,

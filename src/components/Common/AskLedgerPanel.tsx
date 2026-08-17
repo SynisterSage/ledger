@@ -445,7 +445,7 @@ const attachmentKindLabel = (attachment: AskLedgerAttachment) => attachment.exte
 
 const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}` : name;
 
-export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onDeleteCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onDeleteCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void }) => {
+export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void }) => {
   const api = useApi();
   const platform = usePlatform();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1435,12 +1435,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       )}
       <div
         ref={skillPickerRef}
-        className={`${conversationActive ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'min-h-[124px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${localAIUnavailable ? 'cursor-pointer' : ''}`}
+        className={`ask-ledger-composer ${conversationActive ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'mx-auto min-h-[104px] max-w-[620px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${localAIUnavailable ? 'cursor-pointer' : ''}`}
         onClick={() => {
           if (localAIUnavailable) setSetupModalOpen(true);
         }}
       >
-        {(activeInitialContext || selectedSkill) && (
+        {(activeInitialContext || selectedSkill || composerAttachments.length > 0) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
             {composerAttachments.map((attachment) => (
               <span key={`${attachment.kind}-${attachment.kind === 'file' ? attachment.attachment.id : attachment.resource.resourceId}`} className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
@@ -1501,7 +1501,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           aria-label="Ask Ledger"
           aria-disabled={localAIUnavailable}
           aria-describedby={localAIUnavailable ? 'ask-ledger-setup-help' : undefined}
-          className={`max-h-32 ${conversationActive ? 'min-h-[44px]' : 'min-h-[68px]'} min-w-0 flex-1 resize-none self-stretch border-0 bg-transparent p-0 text-sm leading-6 shadow-none outline-none ring-0 placeholder:text-[var(--ledger-placeholder)] focus:border-0 focus:outline-none focus:ring-0 ${localAIUnavailable ? 'cursor-pointer text-[var(--ledger-text-secondary)]' : 'text-[var(--ledger-text-primary)]'}`}
+          className={`max-h-32 ${conversationActive ? 'min-h-[44px]' : 'min-h-[52px]'} min-w-0 flex-1 resize-none self-stretch border-0 bg-transparent p-0 text-sm leading-6 shadow-none outline-none ring-0 placeholder:text-[var(--ledger-placeholder)] focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 ${localAIUnavailable ? 'cursor-pointer text-[var(--ledger-text-secondary)]' : 'text-[var(--ledger-text-primary)]'}`}
         />
         {localAIUnavailable && <span id="ask-ledger-setup-help" className="sr-only">Set up Local AI to ask your workspace.</span>}
         {attachmentError && <p role="alert" className="mt-1 truncate text-[11px] text-[var(--ledger-danger)]">{attachmentError}</p>}
@@ -1573,7 +1573,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                         <span className="block text-xs font-medium text-[var(--ledger-text-primary)]">{skill.name}</span>
                         <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">{requirement ?? skill.description}</span>
                       </span>
-                      {skill.isCustom && <span role="button" tabIndex={0} aria-label={`Edit ${skill.name}`} onClick={(event) => { event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onDeleteCustomSkill?.(custom); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); } }} className="px-1 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">⋯</span>}
+                      {skill.isCustom && <span role="button" tabIndex={0} aria-label={`Edit ${skill.name}`} title={`Edit ${skill.name}`} onClick={(event) => { event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); } }} className="px-1 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">⋯</span>}
                     </button>
                   );
                 })}

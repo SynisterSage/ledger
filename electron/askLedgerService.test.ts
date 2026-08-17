@@ -221,6 +221,48 @@ test('executes a skill with boosted explicit context and skill instructions', as
   assert.match(generationPrompt, /Review the launch draft/);
 });
 
+test('expands an empty meeting follow-up request beyond duplicate events', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationPrompt = '';
+  const event: AskLedgerContextItem = {
+    workspaceId: 'workspace-a', resourceType: 'event', resourceId: 'event-1', title: 'Packanack Golf Work', content: 'Meeting notes are linked.', parentResourceId: 'note-1', projectId: 'project-1',
+  };
+  const note: AskLedgerContextItem = {
+    workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-1', title: 'Packanack meeting notes', content: 'Discussed the next work session and an unresolved handoff.',
+  };
+  const task: AskLedgerContextItem = {
+    workspaceId: 'workspace-a', resourceType: 'task', resourceId: 'task-1', title: 'Confirm Packanack handoff', content: 'Follow up on the Packanack meeting.', projectId: 'project-1',
+  };
+  const duplicateEvent: AskLedgerContextItem = { ...event, resourceId: 'event-2', title: 'Packanack Work', parentResourceId: undefined };
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [event, duplicateEvent], debug: [
+      { resourceType: 'event', resourceId: event.resourceId, title: event.title, score: 1.6, why: ['explicit-context'] },
+      { resourceType: 'event', resourceId: duplicateEvent.resourceId, title: duplicateEvent.title, score: 0.8, why: ['semantic:0.8'] },
+    ] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }) => { generationPrompt = request.context; callbacks.onEvent({ type: 'delta', requestId: 'request-meeting', text: ASK_LEDGER_ABSTENTION }); callbacks.onEvent({ type: 'done', requestId: 'request-meeting', metrics: { totalMs: 1 } }); return 'request-meeting'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({
+    workspaceId: 'workspace-a', question: '', documents: [event, note, task, duplicateEvent], lexicalResults: [], skillId: 'meeting_follow_up', explicitContext: { resourceType: 'event', resourceId: event.resourceId, title: event.title },
+  }, { onEvent: (streamEvent) => events.push(streamEvent) });
+  await waitForEvents(events);
+
+  assert.match(generationPrompt, /Packanack meeting notes/);
+  assert.match(generationPrompt, /Confirm Packanack handoff/);
+  const answer = events.filter((streamEvent) => streamEvent.type === 'delta').map((streamEvent) => streamEvent.text).join('');
+  assert.match(answer, /Next step/);
+  assert.doesNotMatch(answer, /I don't have enough Ledger context/);
+  assert.equal(events.find((streamEvent) => streamEvent.type === 'sources')?.sources?.some((source) => source.resourceId === duplicateEvent.resourceId), false);
+  assert.equal(events.find((streamEvent) => streamEvent.type === 'error'), undefined);
+});
+
 test('falls back to a grounded weekly plan when the local model abstains', async () => {
   const events: LocalAIStreamEvent[] = [];
   const task: AskLedgerContextItem = { ...resource, resourceType: 'task', resourceId: 'task-plan', title: 'Upload weekly logs', status: 'Not started', dueAt: '2026-08-19' };

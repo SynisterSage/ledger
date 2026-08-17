@@ -94,6 +94,27 @@ const formatPlanMyWeekFallback = (items: AskLedgerContextItem[]) => {
   return lines.join('\n');
 };
 
+const formatMeetingFollowUpFallback = (items: AskLedgerContextItem[], skillId: string) => {
+  const anchor = items.find((item) => ['event', 'transcript', 'note'].includes(item.resourceType));
+  const notes = items.filter((item) => ['note', 'transcript'].includes(item.resourceType));
+  const actions = items.filter((item) => ['task', 'reminder', 'milestone'].includes(item.resourceType)).slice(0, 6);
+  const label = skillId === 'prepare_for_meeting' ? 'Meeting preparation' : 'Meeting follow-up';
+  const lines = [
+    `${label}: ${anchor?.title ?? 'Selected meeting'}`,
+    '',
+    notes.length ? `Context found:\n${notes.slice(0, 3).map((item) => `- ${item.title}`).join('\n')}` : 'Context found: No meeting note or transcript was linked.',
+    '',
+    actions.length
+      ? `Possible related work:\n${actions.map((item) => `- ${item.title}`).join('\n')}`
+      : 'Follow-ups: No explicit tasks, reminders, or milestones were linked to this meeting.',
+    '',
+    notes.length || actions.length
+      ? 'Next step: Review the supplied context and confirm which items belong to this meeting.'
+      : 'Next step: Add meeting notes or a transcript so Ledger can identify decisions and follow-ups.',
+  ];
+  return lines.join('\n');
+};
+
 const askLedgerGreetings = [
   'Hey — good to see you. What would you like to work through in Ledger?',
   'Hello! I’m here and ready to help you find what matters next.',
@@ -104,10 +125,16 @@ const askLedgerGreetings = [
 const casualResponseFor = (question: string) => {
   const normalized = question.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if (/how are you|how is it going/.test(normalized)) return 'I’m doing well and ready to help. What are we working on?';
+  if (/how have you been|hows your day|how is your day|you good|you okay/.test(normalized)) return 'I’m doing well — thanks for asking. What would you like to work through?';
   if (/whats up|nothing much|not much/.test(normalized)) return 'Not much — I’m here and ready when you are. What’s on your mind?';
   if (/whats on (your|ur) mind/.test(normalized)) return 'Mostly helping you make sense of what’s in Ledger. What’s on your mind?';
-  if (/thanks|thank you/.test(normalized)) return 'You’re welcome. Want to keep going?';
-  if (/im good|im doing well|cool|nice|okay|ok/.test(normalized)) return 'Good to hear it. What should we tackle next?';
+  if (/are you there|can you hear me/.test(normalized)) return 'I’m here. What do you need?';
+  if (/who are you|what are you|tell me about yourself|are you ai|are you real|are you a robot/.test(normalized)) return 'I’m Ledger — your local workspace companion. I can help you find context, plan work, and figure out what comes next.';
+  if (/what can you do|what do you do/.test(normalized)) return 'I can search your Ledger context, connect notes with tasks and projects, review what changed, and help you plan what comes next.';
+  if (/can you help me|could you help me|i need help|help me please|help please/.test(normalized)) return 'Absolutely. Tell me what you’re trying to figure out, and I’ll help you work through it.';
+  if (/bye|goodbye|good bye|see you|talk to you later|later|catch you later/.test(normalized)) return 'See you later. I’ll be here when you’re ready to pick things back up.';
+  if (/thanks|thank you|thx|appreciate it|much appreciated/.test(normalized)) return 'You’re welcome. Want to keep going?';
+  if (/im good|im doing well|cool|nice|okay|ok|got it|sounds good|great|awesome|perfect|alright|all right|haha|lol/.test(normalized)) return 'Good to hear it. What should we tackle next?';
   return askLedgerGreetings[Math.floor(Math.random() * askLedgerGreetings.length)];
 };
 
@@ -127,6 +154,45 @@ const expandRelatedProjectContext = (items: AskLedgerContextItem[], documents: A
     return ['project', 'milestone', 'task', 'note', 'event', 'reminder'].includes(item.resourceType);
   });
   return [...items, ...related].slice(0, 32);
+};
+
+const meetingContextTokens = (value: string) => new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2));
+
+const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefined, candidates: AskLedgerContextItem[], documents: AskLedgerContextItem[]) => {
+  if (!explicitItem) return candidates.slice(0, 10);
+  const selected = new Map<string, AskLedgerContextItem>();
+  const add = (item: AskLedgerContextItem | undefined) => {
+    if (!item) return;
+    selected.set(`${item.resourceType}:${item.resourceId}`, item);
+  };
+  add(explicitItem);
+
+  const noteId = explicitItem.resourceType === 'event' || explicitItem.resourceType === 'transcript'
+    ? explicitItem.parentResourceId
+    : explicitItem.resourceType === 'note' ? explicitItem.resourceId : undefined;
+  const projectId = explicitItem.projectId;
+  const titleTokens = meetingContextTokens(`${explicitItem.title} ${explicitItem.content}`);
+  const titleRelated = (item: AskLedgerContextItem) => {
+    const overlap = [...meetingContextTokens(`${item.title} ${item.content}`)].filter((token) => titleTokens.has(token));
+    const distinctiveAnchorTokens = [...titleTokens].filter((token) => !['meeting', 'work', 'golf', 'call', 'event'].includes(token));
+    return overlap.length >= 2 || overlap.some((token) => distinctiveAnchorTokens.includes(token));
+  };
+
+  // The selected meeting is the anchor. Pull its note/transcript first, then
+  // work records that explicitly point to the same meeting or project.
+  documents
+    .filter((item) => (noteId && (item.resourceId === noteId || item.parentResourceId === noteId)) || (projectId && item.projectId === projectId && ['note', 'transcript'].includes(item.resourceType)) || (['note', 'transcript'].includes(item.resourceType) && titleRelated(item)))
+    .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
+    .forEach(add);
+  documents
+    .filter((item) => ['task', 'reminder', 'milestone'].includes(item.resourceType))
+    .filter((item) => (projectId && item.projectId === projectId) || titleRelated(item) || (explicitItem.title && `${item.provenance ?? ''} ${item.content}`.toLowerCase().includes(explicitItem.title.toLowerCase())))
+    .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
+    .forEach(add);
+  // If the event has no linked note or project, a few recent notes/tasks make
+  // the absence of meeting history visible and still give the skill something
+  // grounded to compare against instead of returning an empty-context error.
+  return [...selected.values()].slice(0, 16);
 };
 
 export type AskLedgerRetrievalRequest = {
@@ -290,7 +356,9 @@ export class AskLedgerService {
           .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
           .slice(0, 3)
         : [];
-      const selectedRetrievalItems = (intent.kind === 'blockers' || intent.kind === 'status')
+      const selectedRetrievalItems = (skill?.id === 'meeting_follow_up' || skill?.id === 'prepare_for_meeting') && explicitContext
+        ? expandMeetingContext(explicitItem, skillItems, request.documents)
+        : (intent.kind === 'blockers' || intent.kind === 'status')
         ? expandRelatedProjectContext(skillItems.slice(0, 8), request.documents)
         : intent.kind === 'project_review'
           ? expandRelatedProjectContext(skillItems.filter((item) => item.resourceType === 'project').slice(0, 8), request.documents)
@@ -346,14 +414,14 @@ export class AskLedgerService {
         return;
       }
       const generatedSkillAnswer: string[] = [];
-      const generationCallbacks = skill?.id === 'plan_my_week'
+      const generationCallbacks = skill && ['plan_my_week', 'meeting_follow_up', 'prepare_for_meeting'].includes(skill.id)
         ? {
             onEvent: (event: LocalAIStreamEvent) => {
               if (event.type === 'delta' && typeof event.text === 'string') generatedSkillAnswer.push(event.text);
               if (event.type === 'done') {
                 const generatedAnswer = generatedSkillAnswer.join('').trim();
                 if (generatedAnswer === ASK_LEDGER_ABSTENTION && normalized.items.length) {
-                  emit({ type: 'delta', requestId, text: formatPlanMyWeekFallback(normalized.items) });
+                  emit({ type: 'delta', requestId, text: skill.id === 'plan_my_week' ? formatPlanMyWeekFallback(normalized.items) : formatMeetingFollowUpFallback(normalized.items, skill.id) });
                 } else if (generatedAnswer) {
                   emit({ type: 'delta', requestId, text: generatedAnswer });
                 }

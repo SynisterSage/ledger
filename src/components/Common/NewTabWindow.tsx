@@ -67,6 +67,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const [skillName, setSkillName] = useState('');
   const [skillInstructions, setSkillInstructions] = useState('');
   const [skillSaving, setSkillSaving] = useState(false);
+  const [skillDeleting, setSkillDeleting] = useState(false);
   const askRouteRestoreRef = useRef(0);
 
   const updateAskRoute = (focusContext: string | null, historyMode: 'push' | 'replace') => {
@@ -280,11 +281,20 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const deleteAskSession = async (session: AskLedgerSession) => {
     if (!activeWorkspaceId) return;
     setOpenSessionMenu(null);
+    const routeSessionId = new URLSearchParams(window.location.search).get('focusContext')?.startsWith('ask-session:')
+      ? new URLSearchParams(window.location.search).get('focusContext')?.slice('ask-session:'.length)
+      : null;
+    const deletingActiveSession = selectedAskSession?.id === session.id || routeSessionId === session.id;
     try {
       await api.deleteAskLedgerSession(activeWorkspaceId, session.id);
       await window.askLedger?.removeAttachments({ conversationId: session.id, attachmentIds: [] });
       setRecentSessions((current) => current.filter((item) => item.id !== session.id));
-      if (selectedAskSession?.id === session.id) startNewAskChat('replace');
+      if (deletingActiveSession) {
+        // Prevent a pending route restore from putting the deleted session
+        // back on screen after we have moved to a fresh conversation.
+        askRouteRestoreRef.current += 1;
+        startNewAskChat('replace');
+      }
     } catch {
       // Keep the row visible when the delete request fails.
     }
@@ -307,9 +317,25 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
 
   const editCustomSkill = (skill: AskLedgerCustomSkill) => { setSkillEditor({ skill }); setSkillName(skill.name); setSkillInstructions(skill.instructions); };
   const deleteCustomSkill = async (skill: AskLedgerCustomSkill) => {
-    if (!activeWorkspaceId) return;
-    await api.deleteAskLedgerSkill(activeWorkspaceId, skill.id).catch(() => undefined);
-    setCustomSkills((current) => current.filter((item) => item.id !== skill.id));
+    if (!activeWorkspaceId) return false;
+    try {
+      await api.deleteAskLedgerSkill(activeWorkspaceId, skill.id);
+      setCustomSkills((current) => current.filter((item) => item.id !== skill.id));
+      return true;
+    } catch {
+      // Keep the skill visible when the delete request fails.
+      return false;
+    }
+  };
+  const deleteEditedSkill = async () => {
+    const skill = skillEditor?.skill;
+    if (!skill || skillDeleting || !window.confirm(`Delete ${skill.name}?`)) return;
+    setSkillDeleting(true);
+    try {
+      if (await deleteCustomSkill(skill)) setSkillEditor(null);
+    } finally {
+      setSkillDeleting(false);
+    }
   };
   const saveCustomSkill = async () => {
     if (!activeWorkspaceId || !skillName.trim() || !skillInstructions.trim() || skillSaving) return;
@@ -329,7 +355,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       <div className="mx-auto w-full max-w-[720px]">
         <input autoFocus value={skillName} onChange={(event) => setSkillName(event.target.value)} placeholder="Skill name" aria-label="Skill name" className="mb-10 w-full bg-transparent text-4xl font-semibold tracking-[-0.04em] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-placeholder)]" />
         <textarea value={skillInstructions} onChange={(event) => setSkillInstructions(event.target.value)} placeholder="Add instructions…" aria-label="Skill instructions" className="min-h-[380px] w-full resize-none rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-6 text-base leading-7 text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)]" />
-        <div className="mt-8 flex justify-end gap-2"><button type="button" onClick={() => setSkillEditor(null)} className="rounded-lg px-4 py-2 text-sm text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" disabled={!skillName.trim() || !skillInstructions.trim() || skillSaving} onClick={() => void saveCustomSkill()} className="rounded-lg bg-[var(--ledger-text-primary)] px-4 py-2 text-sm text-[var(--ledger-background)] disabled:opacity-40">{skillEditor.skill ? 'Save' : 'Create'}</button></div>
+        <div className="mt-8 flex items-center justify-between gap-2"><div>{skillEditor.skill && <button type="button" onClick={() => void deleteEditedSkill()} disabled={skillDeleting || skillSaving} className="rounded-lg px-4 py-2 text-sm text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-40">{skillDeleting ? 'Deleting…' : 'Delete skill'}</button>}</div><div className="flex gap-2"><button type="button" onClick={() => setSkillEditor(null)} className="rounded-lg px-4 py-2 text-sm text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" disabled={!skillName.trim() || !skillInstructions.trim() || skillSaving || skillDeleting} onClick={() => void saveCustomSkill()} className="rounded-lg bg-[var(--ledger-text-primary)] px-4 py-2 text-sm text-[var(--ledger-background)] disabled:opacity-40">{skillEditor.skill ? 'Save' : 'Create'}</button></div></div>
       </div>
     </main>
   </div>;
@@ -443,8 +469,8 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
             />
           </div>
         </div>
-        <div className={`web-new-tab-body relative z-10 mx-auto flex w-full max-w-[700px] flex-col px-5 pb-16 sm:px-6 ${askConversationActive ? 'pt-5' : 'pt-[clamp(56px,10vh,112px)]'}`}>
-          <Suspense fallback={<div className="min-h-[124px] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]" />}><DesktopAskLedgerPanel workspaceId={activeWorkspaceId} resetKey={askResetKey} initialSession={selectedAskSession} initialContext={askInitialContext} customSkills={customSkills} onEditCustomSkill={editCustomSkill} onDeleteCustomSkill={deleteCustomSkill} onConversationChange={setAskConversationActive} onSessionTitleChange={setAskSessionTitle} onSessionPersisted={() => void loadRecentSessions()} /></Suspense>
+        <div className={`web-new-tab-body relative z-10 mx-auto flex min-h-full w-full max-w-[700px] flex-col px-5 pb-16 sm:px-6 ${askConversationActive ? 'pt-5' : 'justify-center'}`}>
+          <Suspense fallback={<div className="min-h-[124px] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]" />}><DesktopAskLedgerPanel workspaceId={activeWorkspaceId} resetKey={askResetKey} initialSession={selectedAskSession} initialContext={askInitialContext} customSkills={customSkills} onEditCustomSkill={editCustomSkill} onConversationChange={setAskConversationActive} onSessionTitleChange={setAskSessionTitle} onSessionPersisted={() => void loadRecentSessions()} /></Suspense>
         </div>
       </main>
     </div>

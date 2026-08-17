@@ -34,6 +34,7 @@ import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { createAskLedgerService } from './askLedgerService';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
+import { detectAskLedgerQueryIntent } from './askLedgerQueryIntent';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import { RecordingSessionStore } from './recordingSessionStore';
 import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
@@ -245,9 +246,13 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
   if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
   const documents = payload.documents.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
   if (documents.some((item) => item.workspaceId !== undefined && item.workspaceId !== payload.workspaceId)) throw new Error('Ask Ledger context workspace mismatch.');
-  const builtinSkill = payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
+  // A selected skill should not hijack ordinary conversation. Greetings and
+  // other casual replies are handled by Ask Ledger's conversational path;
+  // they should not require skill context or emit an empty skill result.
+  const isCasualRequest = detectAskLedgerQueryIntent(payload.question).kind === 'greeting';
+  const builtinSkill = isCasualRequest || payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
   const customPayload = payload.customSkill && typeof payload.customSkill === 'object' ? payload.customSkill as Record<string, unknown> : undefined;
-  const customSkill = !builtinSkill && customPayload && typeof customPayload.id === 'string' && customPayload.id === String(payload.skillId ?? '') && typeof customPayload.name === 'string' && typeof customPayload.instructions === 'string'
+  const customSkill = !isCasualRequest && !builtinSkill && customPayload && typeof customPayload.id === 'string' && customPayload.id === String(payload.skillId ?? '') && typeof customPayload.name === 'string' && typeof customPayload.instructions === 'string'
     ? { id: customPayload.id as AskLedgerSkillId, name: String(customPayload.name).slice(0, 100), description: 'A custom Ledger workflow.', icon: 'Boxes', instructions: String(customPayload.instructions).slice(0, 12000), supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedActions: [], requiresContext: false, requiresConfirmation: false } as AskLedgerSkillDefinition
     : undefined;
   const skill = builtinSkill ?? customSkill;
@@ -313,10 +318,10 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
         console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answer: answer.slice(0, 2000) });
       }
       if (!sender.isDestroyed()) {
-        const eventWithSkill = streamEvent.type === 'done' && skill
+        const eventWithSkill = streamEvent.type === 'done' && skill && !isCasualRequest
           ? { ...streamEvent, skillResult: buildSkillResult(skill, answer, explicitContext as never) }
           : streamEvent;
-        if (streamEvent.type === 'done' && skill) {
+        if (streamEvent.type === 'done' && skill && !isCasualRequest) {
           console.info('[local-ai] Ask Ledger skill diagnostics', {
             skillId: skill.id,
             explicitContext,
