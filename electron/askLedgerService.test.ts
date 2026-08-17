@@ -44,6 +44,41 @@ test('selects only budgeted sources and sends grounded context to generation', a
   assert.match(generationPrompt, /Planning at 15% progress/);
 });
 
+test('expands project reviews with linked work records', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationPrompt = '';
+  const reviewProject: AskLedgerContextItem = { ...resource, resourceId: 'project-1', title: 'Alfa 2026 Catalog', projectId: 'project-1', projectName: 'Alfa 2026 Catalog' };
+  const linkedTask: AskLedgerContextItem = {
+    workspaceId: 'workspace-a', resourceType: 'task', resourceId: 'task-1', title: 'Finish catalog proofs', content: 'Waiting on final proof approval.', projectId: 'project-1', projectName: 'Alfa 2026 Catalog', status: 'Blocked',
+  };
+  const linkedNote: AskLedgerContextItem = {
+    workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-1', title: 'Catalog review notes', content: 'Printer feedback is still outstanding.', projectId: 'project-1', projectName: 'Alfa 2026 Catalog',
+  };
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [reviewProject], debug: [{ resourceType: 'project', resourceId: reviewProject.resourceId, title: reviewProject.title, score: 0.8, why: ['lexical:title', 'entity-resource'] }] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }) => { generationPrompt = request.context; callbacks.onEvent({ type: 'done', requestId: 'request-review', metrics: { totalMs: 1 } }); return 'request-review'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({
+    workspaceId: 'workspace-a',
+    question: 'Review my projects. See what is moving, blocked, or needs attention.',
+    documents: [reviewProject, linkedTask, linkedNote],
+    lexicalResults: [],
+  }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.match(generationPrompt, /Finish catalog proofs/);
+  assert.match(generationPrompt, /Catalog review notes/);
+  assert.match(generationPrompt, /blocked or stalled/);
+});
+
 test('abstains before generation when retrieval evidence is insufficient', async () => {
   const events: LocalAIStreamEvent[] = [];
   let generationCalled = false;
@@ -114,6 +149,39 @@ test('returns an entity-specific empty state without invoking Qwen', async () =>
 
   assert.equal(generationCalled, false);
   assert.equal(events.find((event) => event.type === 'delta')?.text, "I couldn't find any matching reminders in this workspace.");
+});
+
+test('formats weekly dated work without asking generation to summarize it', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationCalled = false;
+  const task: AskLedgerContextItem = {
+    ...resource, resourceType: 'task', resourceId: 'task-week', title: 'Upload weekly logs', status: 'Not started', dueAt: '2026-08-19',
+  };
+  const meeting: AskLedgerContextItem = {
+    ...resource, resourceType: 'event', resourceId: 'event-week', title: 'Packanack Work', timestamp: '2026-08-20T11:00:00.000Z',
+  };
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [task, meeting], debug: [
+      { resourceType: 'task', resourceId: task.resourceId, title: task.title, score: 0.8, why: ['in-time-window'] },
+      { resourceType: 'event', resourceId: meeting.resourceId, title: meeting.title, score: 0.7, why: ['in-time-window'] },
+    ] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: () => { generationCalled = true; return 'request-week'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'what do i go this week', documents: [task, meeting], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  const answer = events.find((event) => event.type === 'delta')?.text ?? '';
+  assert.equal(generationCalled, false);
+  assert.match(answer, /Upload weekly logs/);
+  assert.match(answer, /Packanack Work/);
 });
 
 test('executes a skill with boosted explicit context and skill instructions', async () => {

@@ -10,6 +10,9 @@ test('detects deadline questions', () => {
 test('detects direct greetings', () => {
   assert.deepEqual(detectAskLedgerQueryIntent('hello'), { kind: 'greeting' });
   assert.deepEqual(detectAskLedgerQueryIntent('Hey Ledger!'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('hello mr ledger'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('Good morning, Mr. Ledger!'), { kind: 'greeting' });
+  assert.deepEqual(detectAskLedgerQueryIntent('what’s up Ledger'), { kind: 'greeting' });
 });
 
 test('detects authoritative team-member lookups', () => {
@@ -24,6 +27,21 @@ test('routes entity questions to their authoritative resource types', () => {
   assert.deepEqual(detectAskLedgerQueryIntent('what are my open tasks'), { kind: 'open_actions' });
   assert.deepEqual(detectAskLedgerQueryIntent('what are my todos'), { kind: 'open_actions' });
   assert.deepEqual(detectAskLedgerQueryIntent('what milestones do I have'), { kind: 'milestones' });
+});
+
+test('detects project review questions as mixed project context', () => {
+  assert.deepEqual(detectAskLedgerQueryIntent('Review my projects. See what is moving, blocked, or needs attention.'), { kind: 'project_review' });
+  assert.deepEqual(resourceTypesForAskLedgerIntent(detectAskLedgerQueryIntent('Review my projects. See what is moving, blocked, or needs attention.')), ['project', 'task', 'milestone', 'note', 'event', 'reminder']);
+});
+
+test('detects recent workspace updates', () => {
+  assert.deepEqual(detectAskLedgerQueryIntent('What changed recently? Find important updates across my workspace.'), { kind: 'recent_updates' });
+  assert.deepEqual(resourceTypesForAskLedgerIntent(detectAskLedgerQueryIntent('What changed recently? Find important updates across my workspace.')), ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake']);
+});
+
+test('detects meeting preparation as mixed context', () => {
+  assert.deepEqual(detectAskLedgerQueryIntent('Prepare me for a meeting. Pull together relevant notes, tasks, and context.'), { kind: 'meeting_prep' });
+  assert.deepEqual(resourceTypesForAskLedgerIntent(detectAskLedgerQueryIntent('Prepare me for a meeting. Pull together relevant notes, tasks, and context.')), ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake']);
 });
 
 test('maps entity intents to narrow resource policies', () => {

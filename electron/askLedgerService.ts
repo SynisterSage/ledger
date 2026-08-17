@@ -20,7 +20,7 @@ import { AskLedgerAttachmentService, attachmentBlocksToContext } from './askLedg
 import os from 'node:os';
 import path from 'node:path';
 
-const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines']);
+const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines', 'time_window', 'integration']);
 
 const formatLedgerDate = (value?: string) => {
   if (!value) return undefined;
@@ -47,7 +47,7 @@ const structuredGroupLabel = (resourceType: string) => ({
 
 const formatStructuredAnswer = (kind: string, items: AskLedgerContextItem[]) => {
   const lines: string[] = [];
-  const title = kind === 'team_members' ? 'Team members' : kind === 'projects' ? 'Projects' : kind === 'milestones' ? 'Milestones' : kind === 'events' ? 'Events' : kind === 'reminders' ? 'Reminders' : kind === 'deadlines' ? 'Deadlines' : 'Open actions';
+  const title = kind === 'team_members' ? 'Team members' : kind === 'projects' ? 'Projects' : kind === 'milestones' ? 'Milestones' : kind === 'events' ? 'Events' : kind === 'reminders' ? 'Reminders' : kind === 'deadlines' ? 'Deadlines' : kind === 'time_window' ? 'This week' : kind === 'integration' ? 'Integration context' : 'Open actions';
   lines.push(`${title}:`);
   const seen = new Set<string>();
   for (const item of items) {
@@ -68,9 +68,16 @@ const formatStructuredAnswer = (kind: string, items: AskLedgerContextItem[]) => 
 };
 
 const emptyStructuredAnswer = (kind: string) => {
-  const label = kind === 'team_members' ? 'team members' : kind === 'projects' ? 'projects' : kind === 'milestones' ? 'milestones' : kind === 'events' ? 'events' : kind === 'reminders' ? 'reminders' : kind === 'deadlines' ? 'deadlines' : 'open actions';
+  const label = kind === 'team_members' ? 'team members' : kind === 'projects' ? 'projects' : kind === 'milestones' ? 'milestones' : kind === 'events' ? 'events' : kind === 'reminders' ? 'reminders' : kind === 'deadlines' ? 'deadlines' : kind === 'time_window' ? 'dated items' : kind === 'integration' ? 'integration records' : 'open actions';
   return `I couldn't find any matching ${label} in this workspace.`;
 };
+
+const askLedgerGreetings = [
+  'Hey — good to see you. What would you like to work through in Ledger?',
+  'Hello! I’m here and ready to help you find what matters next.',
+  'Hi there — what’s on your mind?',
+  'Good to see you. What should we look at together?',
+];
 
 const expandRelatedProjectContext = (items: AskLedgerContextItem[], documents: AskLedgerContextItem[]) => {
   const projectIds = new Set(
@@ -87,7 +94,7 @@ const expandRelatedProjectContext = (items: AskLedgerContextItem[], documents: A
     seen.add(key);
     return ['project', 'milestone', 'task', 'note', 'event', 'reminder'].includes(item.resourceType);
   });
-  return [...items, ...related].slice(0, 12);
+  return [...items, ...related].slice(0, 32);
 };
 
 export type AskLedgerRetrievalRequest = {
@@ -204,7 +211,8 @@ export class AskLedgerService {
       const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
       if (detectAskLedgerQueryIntent(request.question).kind === 'greeting') {
         callbacks.onEvent({ type: 'sources', requestId, sources: [] });
-        callbacks.onEvent({ type: 'delta', requestId, text: 'Hi — what would you like to find in Ledger?' });
+        const greeting = askLedgerGreetings[Math.floor(Math.random() * askLedgerGreetings.length)];
+        callbacks.onEvent({ type: 'delta', requestId, text: greeting });
         callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
@@ -242,10 +250,18 @@ export class AskLedgerService {
         : allowedSkillItems;
       const selectedRetrievalItems = (intent.kind === 'blockers' || intent.kind === 'status')
         ? expandRelatedProjectContext(skillItems.slice(0, 8), request.documents)
+        : intent.kind === 'project_review'
+          ? expandRelatedProjectContext(skillItems.filter((item) => item.resourceType === 'project').slice(0, 8), request.documents)
+        : intent.kind === 'recent_updates'
+          ? skillItems.slice(0, 16)
+        : intent.kind === 'meeting_prep'
+          ? skillItems.slice(0, 16)
+        : intent.kind === 'integration'
+          ? skillItems.slice(0, 16)
         : skillItems.slice(0, skill ? 10 : 8);
       const previewSources = (items: AskLedgerContextItem[]) => items.slice(0, 3).map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, route: item.route, projectId: item.projectId, projectName: item.projectName, sourceLabel: item.sourceLabel, updatedAt: item.updatedAt, parentResourceId: item.parentResourceId, attachmentSource: item.attachmentSource }));
       callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'sources_found', count: retrieval.items.length, sources: previewSources(retrieval.items) } });
-      const normalized = new LedgerContextBuilder().normalize(selectedRetrievalItems, { maxContextTokens: skill ? 2800 : 2400, maxItemTokens: 700, sortByFreshness: false });
+      const normalized = new LedgerContextBuilder().normalize(selectedRetrievalItems, { maxContextTokens: skill ? 2800 : 2400, maxItemTokens: 700, sortByFreshness: intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' });
       callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
       normalized.items.forEach((item) => sourceByKey.set(`${item.resourceType}:${item.resourceId}`, {
@@ -279,7 +295,9 @@ export class AskLedgerService {
       }
       callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'preparing_answer' } });
       const topScore = retrieval.debug[0]?.score ?? 0;
-      const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title');
+      const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title')
+        || (intent.kind === 'recent_updates' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('recent:')))
+        || (intent.kind === 'meeting_prep' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('meeting-prep-')));
       if (!normalized.items.length || (!skill && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
         callbacks.onEvent({ type: 'delta', requestId, text: ASK_LEDGER_ABSTENTION });
         callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });

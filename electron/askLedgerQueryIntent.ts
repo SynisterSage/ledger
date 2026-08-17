@@ -13,6 +13,10 @@ export type AskLedgerQueryIntent = {
     | 'deadlines'
     | 'time_window'
     | 'status'
+    | 'project_review'
+    | 'recent_updates'
+    | 'meeting_prep'
+    | 'integration'
     | 'general';
   window?: { start: string; end: string };
 };
@@ -26,7 +30,16 @@ export type AskLedgerEntityResourceType =
   | 'person'
   | 'team'
   | 'note'
-  | 'transcript';
+  | 'transcript'
+  | 'intake'
+  | 'external';
+
+const normalizeGreeting = (question: string) => question
+  .toLowerCase()
+  .replace(/[’']/g, '')
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
 
 const isoDate = (date: Date) => {
   const year = date.getFullYear();
@@ -51,7 +64,10 @@ const addDays = (date: Date, days: number) => {
 
 export const detectAskLedgerQueryIntent = (question: string, now = new Date()): AskLedgerQueryIntent => {
   const normalized = question.toLowerCase().replace(/[’']/g, '').trim();
-  if (/^(hi|hello|hey|hey ledger|hi ledger|good morning|good afternoon|good evening)[!.?\s]*$/.test(normalized)) {
+  const greeting = normalizeGreeting(question);
+  if (/^(hi|hello|hey|yo)(?: there| again)?(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
+    || /^good (?:morning|afternoon|evening)(?: (?:mr|mister) ledger| ledger)?$/.test(greeting)
+    || /^(how are you|whats up)(?: ledger)?$/.test(greeting)) {
     return { kind: 'greeting' };
   }
   const asksAboutExistingKnowledge = /\b(what did .*\b(discuss|say|decide|mention)|where did .*\b(discuss|say|decide|mention)|what was decided|what have we discussed)\b/.test(normalized);
@@ -60,6 +76,20 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   }
   if (/\b(deadline|deadlines|deadliens|due date|due dates|when is .* due|when are .* due)\b/.test(normalized)) {
     return { kind: 'deadlines' };
+  }
+  if (/\b(recent(?:ly)?|lately|latest|newest|what changed|changed recently|important updates?)\b/.test(normalized)
+    && /\b(changed|change|updated?|updates?|happened|important|workspace|activity)\b/.test(normalized)) {
+    return { kind: 'recent_updates' };
+  }
+  if (/\b(github|git hub|slack|figma|circle|integration|integrations|intake|pull requests?|issues?)\b/.test(normalized)) {
+    return { kind: 'integration' };
+  }
+  if (/\b(prepare|prep|get ready|brief)\b/.test(normalized) && /\b(meeting|meetings|call|calls)\b/.test(normalized)) {
+    return { kind: 'meeting_prep' };
+  }
+  if (/\b(review|assess|check|audit)\b/.test(normalized) && /\bprojects?\b/.test(normalized)
+    || (/\b(projects?|portfolio)\b/.test(normalized) && /\b(moving|blocked|stuck|needs? attention|at risk|health)\b/.test(normalized))) {
+    return { kind: 'project_review' };
   }
   if (!asksAboutExistingKnowledge && (/\b(what|which|show|list|my|have|active|current)\b.*\b(projects?|portfolio)\b/.test(normalized) || /\b(projects?|portfolio)\b.*\b(do i have|show|list|status|active|current)\b/.test(normalized))) {
     return { kind: 'projects' };
@@ -130,6 +160,14 @@ export const resourceTypesForAskLedgerIntent = (
       return ['task', 'event', 'reminder'];
     case 'status':
       return ['project', 'task'];
+    case 'project_review':
+      return ['project', 'task', 'milestone', 'note', 'event', 'reminder'];
+    case 'recent_updates':
+      return ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake'];
+    case 'meeting_prep':
+      return ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake'];
+    case 'integration':
+      return ['project', 'task', 'note', 'event', 'reminder', 'intake', 'external'];
     default:
       return null;
   }

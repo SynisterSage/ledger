@@ -369,6 +369,60 @@ export class LedgerRetrievalService {
           why.push('supporting-context');
         }
       }
+      if (intent.kind === 'project_review') {
+        if (document.resourceType === 'project') {
+          score += 0.35;
+          why.push('project-review-root');
+        } else if (document.projectId) {
+          score += 0.08;
+          why.push('project-review-linked');
+        }
+      }
+      if (intent.kind === 'recent_updates') {
+        const updatedAt = document.updatedAt ? Date.parse(document.updatedAt) : NaN;
+        const ageDays = Number.isFinite(updatedAt) ? Math.max(0, (Date.now() - updatedAt) / 86_400_000) : Infinity;
+        if (Number.isFinite(updatedAt)) {
+          score += Math.max(0, 0.42 - Math.min(0.42, ageDays * 0.014));
+          why.push(`recent:${Math.round(ageDays)}d`);
+        } else {
+          score -= 0.12;
+          why.push('missing-updated-at');
+        }
+        if (['project', 'milestone', 'event', 'reminder'].includes(document.resourceType)) {
+          score += 0.04;
+          why.push('workspace-update-resource');
+        }
+      }
+      if (intent.kind === 'meeting_prep') {
+        if (['note', 'transcript'].includes(document.resourceType)) {
+          score += 0.2;
+          why.push('meeting-prep-context');
+        } else if (['task', 'reminder', 'event', 'milestone'].includes(document.resourceType)) {
+          score += 0.12;
+          why.push('meeting-prep-work');
+        }
+        const updatedAt = document.updatedAt ? Date.parse(document.updatedAt) : NaN;
+        if (Number.isFinite(updatedAt)) {
+          const ageDays = Math.max(0, (Date.now() - updatedAt) / 86_400_000);
+          score += Math.max(0, 0.28 - Math.min(0.28, ageDays * 0.009));
+          why.push(`meeting-prep-recent:${Math.round(ageDays)}d`);
+        }
+      }
+      if (intent.kind === 'integration') {
+        if (document.resourceType === 'external') {
+          score += 0.5;
+          why.push('integration-resource');
+        } else if (document.resourceType === 'intake') {
+          score += 0.22;
+          why.push('integration-capture');
+        }
+        const providerTokens = tokenize(`${document.sourceLabel ?? ''} ${document.provenance ?? ''} ${document.content}`);
+        const providerOverlap = [...providerTokens].filter((token) => questionTokens.has(token)).length;
+        if (providerOverlap) {
+          score += Math.min(0.24, providerOverlap * 0.08);
+          why.push('integration-provider');
+        }
+      }
       if (intent.kind === 'followups') {
         if (['task', 'reminder', 'event'].includes(document.resourceType)) {
           score += 0.12;

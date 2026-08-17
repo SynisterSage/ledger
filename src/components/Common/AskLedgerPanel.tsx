@@ -4,7 +4,9 @@ import {
   AlertCircle,
   Boxes,
   CalendarDays,
+  Check,
   ChevronDown,
+  Copy as CopyIcon,
   ExternalLink,
   FileText,
   FolderKanban,
@@ -201,6 +203,7 @@ const askLedgerDocumentScope = (question: string) => {
   const value = question.toLowerCase().replace(/[’']/g, '').trim();
   if (/\b(my team|team members|members of (the )?team|who.*team)\b/.test(value)) return 'team_members';
   if (/\b(deadline|deadlines|deadliens|due date|due dates)\b/.test(value)) return 'deadlines';
+  if (/\b(github|git hub|slack|figma|circle|integration|integrations|intake|pull requests?|issues?)\b/.test(value)) return 'integration';
   if (/\b(projects?|portfolio)\b/.test(value) && !/\b(discuss|discussed|decide|decided|mention|mentioned|say|said)\b/.test(value)) return 'projects';
   if (/\b(reminders?|remind me)\b/.test(value)) return 'reminders';
   if (/\b(meetings?|events?)\b/.test(value) || /\b(calendar|schedule)\b.*\b(upcoming|today|this week|next week|event|meeting)\b/.test(value)) return 'events';
@@ -387,6 +390,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const latestMessageRef = useRef<HTMLElement | null>(null);
   const [question, setQuestion] = useState('');
   const [state, setState] = useState<AskLedgerState>({ status: 'idle' });
+  const stateRef = useRef<AskLedgerState>({ status: 'idle' });
+  const completedRequestIdRef = useRef<string | null>(null);
   const [activity, setActivity] = useState<AskLedgerStreamEvent['activity'] | null>(null);
   const [messages, setMessages] = useState<AskLedgerMessage[]>([]);
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
@@ -439,7 +444,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const skillPickerRef = useRef<HTMLDivElement | null>(null);
   const skillButtonRef = useRef<HTMLButtonElement | null>(null);
   const skillPopupRef = useRef<HTMLDivElement | null>(null);
-  const [skillPopupPosition, setSkillPopupPosition] = useState<{ left: number; top: number; maxHeight?: number } | null>(null);
+  const [skillPopupPosition, setSkillPopupPosition] = useState<{ left: number; top: number; maxHeight?: number; transform?: string } | null>(null);
   const skillOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const requestIdRef = useRef(0);
   const messageIdRef = useRef(0);
@@ -458,6 +463,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const sessionSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const questionRef = useRef(question);
   const workspaceIdRef = useRef(workspaceId);
+  stateRef.current = state;
   questionRef.current = question;
   workspaceIdRef.current = workspaceId;
 
@@ -623,11 +629,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       const button = skillButtonRef.current;
       if (!button) return;
       const bounds = button.getBoundingClientRect();
-      const maxHeight = Math.max(180, Math.min(420, window.innerHeight - bounds.bottom - 16));
+      const openAbove = conversationActive && bounds.top > 160;
+      const availableHeight = openAbove ? bounds.top - 16 : window.innerHeight - bounds.bottom - 16;
+      const maxHeight = Math.max(140, Math.min(420, availableHeight));
       setSkillPopupPosition({
         left: Math.max(8, Math.min(bounds.left, window.innerWidth - 296)),
-        top: bounds.bottom + 6,
+        top: openAbove ? bounds.top : bounds.bottom + 6,
         maxHeight,
+        transform: openAbove ? 'translateY(calc(-100% - 6px))' : undefined,
       });
     };
     updatePosition();
@@ -637,7 +646,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [skillPickerOpen]);
+  }, [conversationActive, skillPickerOpen]);
 
   useEffect(() => {
     onConversationChange?.(conversationActive);
@@ -724,8 +733,15 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     inputRef.current?.focus();
     const unsubscribe =
       window.askLedger?.onStream((value) => {
-        if (!isAskLedgerStreamEvent(value) || value.requestId !== activeRequestIdRef.current)
+        if (!isAskLedgerStreamEvent(value))
           return;
+        // Fast responses such as greetings can arrive before the IPC promise
+        // resolves with the request id. Adopt that id while this request is
+        // still initializing so the delta and done events are not discarded.
+        if (value.requestId !== activeRequestIdRef.current) {
+          if (requestInitializingRef.current && !activeRequestIdRef.current) activeRequestIdRef.current = value.requestId;
+          else return;
+        }
         if (value.type === 'activity') {
           setActivity(value.activity ?? null);
           return;
@@ -769,62 +785,54 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           return;
         }
         if (value.type === 'done') {
+          if (completedRequestIdRef.current === value.requestId) return;
+          const completedState = stateRef.current;
+          if (completedState.status !== 'streaming') return;
+          completedRequestIdRef.current = value.requestId;
           setActivity(null);
-          setState((current) => {
-            if (current.status !== 'streaming') return current;
-            const isAbstention =
-              /(?:couldn['’]t find enough information|don't have enough Ledger context)/i.test(
-                current.response.answer
-              );
-            const answer = isAbstention || !current.response.answer.trim()
-              ? "I don't have enough Ledger context to answer that."
-              : current.response.answer;
-            const assistantMessage: AskLedgerMessage = {
-              id: `ask-${++messageIdRef.current}`,
-              role: 'assistant',
-              content: answer,
-              createdAt: new Date().toISOString(),
-              sources: current.response.sources,
+          const isAbstention = /(?:couldn['’]t find enough information|don't have enough Ledger context)/i.test(completedState.response.answer);
+          const answer = isAbstention || !completedState.response.answer.trim()
+            ? "I don't have enough Ledger context to answer that."
+            : completedState.response.answer;
+          const assistantMessage: AskLedgerMessage = {
+            id: `ask-${++messageIdRef.current}`,
+            role: 'assistant',
+            content: answer,
+            createdAt: new Date().toISOString(),
+            sources: completedState.response.sources,
             ...(value.skillResult?.sections?.length && value.skillResult.skillId ? { structured: { skillId: value.skillResult.skillId, sections: value.skillResult.sections } } : {}),
-            };
-            const previousTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
-            const skillDefinition = value.skillResult?.skillId ? skillCatalog.find((skill) => skill.id === value.skillResult?.skillId) : undefined;
-            const proposedActions = value.skillResult?.actionProposals?.filter((action) => skillDefinition?.allowedActions.includes(action.type)).map((action, index) => ({
-              id: `${assistantMessage.id}-skill-action-${index}`,
-              type: action.type,
-              payload: action.payload,
-              sourceMessageId: assistantMessage.id,
-              status: 'pending' as const,
-            })) ?? proposeAskLedgerActions({
-              question: current.request.question,
-              answer,
-              previousAnswer: previousTurn?.answer,
-              initialContext: initialContextRef.current,
-              sourceMessageId: assistantMessage.id,
-            });
-            if (proposedActions.length) assistantMessage.actions = proposedActions;
-            const nextMessages = [...messagesRef.current, assistantMessage];
-            messagesRef.current = nextMessages;
-            setMessages(nextMessages);
-            queueSessionSave(nextMessages);
-            const completedTurn: AskLedgerConversationTurn = {
-              question: current.request.question,
-              answer,
-              sources: current.response.sources,
-            };
-            recentTurnsRef.current = [...recentTurnsRef.current, completedTurn].slice(-2);
-            conversationRef.current = {
-              id: conversationIdRef.current,
-              previousQuestion: current.request.question,
-              previousAnswer: answer,
-              previousSources: current.response.sources,
-              recentExchanges: recentTurnsRef.current,
-              initialContext: initialContextRef.current ?? undefined,
-            };
-            if (isAbstention || !current.response.answer.trim())
-              return { status: 'no-answer', request: current.request };
-            return { ...current, status: 'answer' };
+          };
+          const previousTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
+          const skillDefinition = value.skillResult?.skillId ? skillCatalog.find((skill) => skill.id === value.skillResult?.skillId) : undefined;
+          const proposedActions = value.skillResult?.actionProposals?.filter((action) => skillDefinition?.allowedActions.includes(action.type)).map((action, index) => ({
+            id: `${assistantMessage.id}-skill-action-${index}`,
+            type: action.type,
+            payload: action.payload,
+            sourceMessageId: assistantMessage.id,
+            status: 'pending' as const,
+          })) ?? proposeAskLedgerActions({
+            question: completedState.request.question,
+            answer,
+            previousAnswer: previousTurn?.answer,
+            initialContext: initialContextRef.current,
+            sourceMessageId: assistantMessage.id,
           });
+          if (proposedActions.length) assistantMessage.actions = proposedActions;
+          const nextMessages = [...messagesRef.current, assistantMessage];
+          messagesRef.current = nextMessages;
+          setMessages(nextMessages);
+          queueSessionSave(nextMessages);
+          const completedTurn: AskLedgerConversationTurn = { question: completedState.request.question, answer, sources: completedState.response.sources };
+          recentTurnsRef.current = [...recentTurnsRef.current, completedTurn].slice(-2);
+          conversationRef.current = {
+            id: conversationIdRef.current,
+            previousQuestion: completedState.request.question,
+            previousAnswer: answer,
+            previousSources: completedState.response.sources,
+            recentExchanges: recentTurnsRef.current,
+            initialContext: initialContextRef.current ?? undefined,
+          };
+          setState(isAbstention || !completedState.response.answer.trim() ? { status: 'no-answer', request: completedState.request } : { ...completedState, status: 'answer' });
           activeRequestIdRef.current = null;
           return;
         }
@@ -977,6 +985,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       .then(({ requestId: localRequestId }) => {
         requestInitializingRef.current = false;
         if (requestId !== requestIdRef.current) return;
+        if (completedRequestIdRef.current === localRequestId) {
+          activeRequestIdRef.current = null;
+          return;
+        }
         activeRequestIdRef.current = localRequestId;
       })
       .catch(() => {
@@ -1281,17 +1293,17 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                   {message.sources && message.sources.length > 0 && (
                     <div className="mt-6">
                       <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--ledger-text-muted)]">Sources · {message.sources.length}</p>
-                      <div className="divide-y divide-[color:var(--ledger-border-subtle)]">
+                      <div className="space-y-1">
                         {(expandedSources[message.id] ? message.sources : message.sources.slice(0, 3)).map((source) => {
                           const Icon = sourceIconMap[source.type];
-                          return <button key={source.id} type="button" onClick={() => openSource(source)} className="flex min-h-10 w-full items-center gap-2.5 rounded-md px-1 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"><Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">{source.title}</span><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{source.sourceLabel ?? sourceTypeLabels[source.type]}</span></button>;
+                          return <button key={source.id} type="button" onClick={() => openSource(source)} className="flex min-h-10 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"><Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">{source.title}</span><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{source.sourceLabel ?? sourceTypeLabels[source.type]}</span></button>;
                         })}
                       </div>
                       {message.sources.length > 3 && <button type="button" onClick={() => setExpandedSources((current) => ({ ...current, [message.id]: !current[message.id] }))} className="mt-2 text-xs text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]">{expandedSources[message.id] ? 'Show less' : `Show all · ${message.sources.length}`}</button>}
                     </div>
                   )}
                   <div className="mt-4 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
-                    <button type="button" onClick={() => void copyAnswer(message)} className="text-xs text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]">{copiedMessageId === message.id ? 'Copied' : 'Copy'}</button>
+                    <button type="button" onClick={() => void copyAnswer(message)} aria-label={copiedMessageId === message.id ? 'Copied answer' : 'Copy answer'} title={copiedMessageId === message.id ? 'Copied' : 'Copy answer'} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">{copiedMessageId === message.id ? <Check size={14} /> : <CopyIcon size={14} />}</button>
                   </div>
                 </div>
               )}
@@ -1299,8 +1311,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           ))}
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
-              {state.request.skillId && <div className="mb-3 inline-flex items-center gap-1.5 text-xs text-[var(--ledger-text-muted)]"><Boxes size={13} />{skillCatalog.find((skill) => skill.id === state.request.skillId)?.name}</div>}
-              {state.status === 'streaming' && state.response.answer ? <div className="space-y-4 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">{renderAnswerContent(state.response.answer)}</div> : <p className="text-sm text-[var(--ledger-text-muted)]">{askLedgerActivityLabel(activity ?? undefined) || 'Searching your workspace…'}</p>}
+              {state.status === 'streaming' && state.response.answer ? <div className="space-y-4 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">{renderAnswerContent(state.response.answer)}</div> : <p className="ledger-ask-generating text-sm text-[var(--ledger-text-muted)]">{askLedgerActivityLabel(activity ?? undefined) || 'Searching your workspace…'}</p>}
             </article>
           )}
           {state.status === 'error' && <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert"><p>Ledger couldn’t answer this question.</p><button type="button" onClick={retryLastQuestion} className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline">Try again</button></article>}
@@ -1374,7 +1385,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           aria-label="Ask Ledger"
           aria-disabled={localAIUnavailable}
           aria-describedby={localAIUnavailable ? 'ask-ledger-setup-help' : undefined}
-          className={`max-h-32 ${conversationActive ? 'min-h-[44px]' : 'min-h-[68px]'} min-w-0 flex-1 resize-none self-stretch bg-transparent text-sm leading-6 placeholder:text-[var(--ledger-placeholder)] focus:outline-none ${localAIUnavailable ? 'cursor-pointer text-[var(--ledger-text-secondary)]' : 'text-[var(--ledger-text-primary)]'}`}
+          className={`max-h-32 ${conversationActive ? 'min-h-[44px]' : 'min-h-[68px]'} min-w-0 flex-1 resize-none self-stretch border-0 bg-transparent p-0 text-sm leading-6 shadow-none outline-none ring-0 placeholder:text-[var(--ledger-placeholder)] focus:border-0 focus:outline-none focus:ring-0 ${localAIUnavailable ? 'cursor-pointer text-[var(--ledger-text-secondary)]' : 'text-[var(--ledger-text-primary)]'}`}
         />
         {localAIUnavailable && <span id="ask-ledger-setup-help" className="sr-only">Set up Local AI to ask your workspace.</span>}
         {attachmentError && <p role="alert" className="mt-1 truncate text-[11px] text-[var(--ledger-danger)]">{attachmentError}</p>}
@@ -1413,7 +1424,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                     skillOptionRefs.current[nextIndex]?.focus();
                   }
                 }}
-                style={{ left: skillPopupPosition.left, top: skillPopupPosition.top, maxHeight: skillPopupPosition.maxHeight }}
+                style={{ left: skillPopupPosition.left, top: skillPopupPosition.top, maxHeight: skillPopupPosition.maxHeight, transform: skillPopupPosition.transform }}
                 className="fixed z-[2147483647] w-[280px] overflow-y-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]"
               >
                 {contextPickerSkill ? (
@@ -1609,7 +1620,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
             {displayedRequest}
           </p>
-          <p className="mt-5 max-w-[620px] whitespace-pre-wrap text-[15px] leading-7 text-[var(--ledger-text-secondary)]">
+          <p className={`mt-5 max-w-[620px] whitespace-pre-wrap text-[15px] leading-7 text-[var(--ledger-text-secondary)] ${!state.response.answer ? 'ledger-ask-generating' : ''}`}>
             {state.response.answer || 'Generating…'}
           </p>
           {state.status === 'answer' && (

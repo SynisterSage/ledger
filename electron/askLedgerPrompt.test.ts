@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ASK_LEDGER_ABSTENTION, buildAskLedgerPrompt } from './askLedgerPrompt.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
+import { getAskLedgerSkill } from './askLedgerSkills.ts';
 
 const context: AskLedgerContextItem[] = [
   {
@@ -47,6 +48,15 @@ test('uses the stable abstention instruction for unsupported questions', () => {
 
   assert.match(prompt, new RegExp(ASK_LEDGER_ABSTENTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(prompt, /Do not invent facts, status, dates, deadlines, owners, or decisions/);
+});
+
+test('lets a selected skill interpret a brief follow-up as the skill request', () => {
+  const skill = getAskLedgerSkill('plan_my_week');
+  assert.ok(skill);
+  const prompt = buildAskLedgerPrompt({ question: 'Help me out', contextItems: context, skill, skillContext: 'Selected skill: Plan my week' });
+
+  assert.match(prompt, /treat the selected skill's purpose as the request/);
+  assert.match(prompt, /Do not abstain merely because the message says something like/);
 });
 
 test('bounds follow-up context and keeps it separate from current Ledger evidence', () => {
