@@ -12,16 +12,102 @@ import {
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerSource } from '../src/types/askLedgerContext.ts';
 import type { LocalAIAssetManager } from './localAIAssets.ts';
+import { detectAskLedgerQueryIntent } from './askLedgerQueryIntent.ts';
+import type { AskLedgerInitialContext } from '../src/types/askLedgerContext.ts';
+import { buildSkillPromptContext, getAskLedgerSkill, validateSkillContext } from './askLedgerSkills.ts';
+import type { AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
+import { AskLedgerAttachmentService, attachmentBlocksToContext } from './askLedgerAttachmentService.ts';
+import os from 'node:os';
+import path from 'node:path';
+
+const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines']);
+
+const formatLedgerDate = (value?: string) => {
+  if (!value) return undefined;
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const parsed = new Date(dateOnly ? `${value}T12:00:00` : value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const hasTime = /T\d{2}:\d{2}|\d{2}:\d{2}/.test(value);
+  return hasTime
+    ? parsed.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const structuredGroupLabel = (resourceType: string) => ({
+  project: 'Projects',
+  task: 'Tasks',
+  milestone: 'Milestones',
+  reminder: 'Reminders',
+  event: 'Events',
+  person: 'People',
+  team: 'Teams',
+  note: 'Notes',
+  transcript: 'Transcripts',
+}[resourceType] ?? 'Resources');
+
+const formatStructuredAnswer = (kind: string, items: AskLedgerContextItem[]) => {
+  const lines: string[] = [];
+  const title = kind === 'team_members' ? 'Team members' : kind === 'projects' ? 'Projects' : kind === 'milestones' ? 'Milestones' : kind === 'events' ? 'Events' : kind === 'reminders' ? 'Reminders' : kind === 'deadlines' ? 'Deadlines' : 'Open actions';
+  lines.push(`${title}:`);
+  const seen = new Set<string>();
+  for (const item of items) {
+    const key = `${item.resourceType}:${item.resourceId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const details = [
+      item.status,
+      item.taskHorizon ? `Horizon ${item.taskHorizon === 'long_term' ? 'long term' : item.taskHorizon}` : undefined,
+      item.projectName,
+      item.dueAt ? `Due ${formatLedgerDate(item.dueAt)}` : item.timestamp ? `At ${formatLedgerDate(item.timestamp)}` : undefined,
+    ].filter(Boolean);
+    const group = structuredGroupLabel(item.resourceType);
+    if (!lines.includes(group)) lines.push(`\n${group}`);
+    lines.push(`- ${item.title}${details.length ? ` — ${details.join(' · ')}` : ''}`);
+  }
+  return lines.join('\n');
+};
+
+const emptyStructuredAnswer = (kind: string) => {
+  const label = kind === 'team_members' ? 'team members' : kind === 'projects' ? 'projects' : kind === 'milestones' ? 'milestones' : kind === 'events' ? 'events' : kind === 'reminders' ? 'reminders' : kind === 'deadlines' ? 'deadlines' : 'open actions';
+  return `I couldn't find any matching ${label} in this workspace.`;
+};
+
+const expandRelatedProjectContext = (items: AskLedgerContextItem[], documents: AskLedgerContextItem[]) => {
+  const projectIds = new Set(
+    items
+      .map((item) => item.resourceType === 'project' ? item.resourceId : item.projectId)
+      .filter((id): id is string => Boolean(id))
+  );
+  if (!projectIds.size) return items;
+  const seen = new Set(items.map((item) => `${item.resourceType}:${item.resourceId}`));
+  const related = documents.filter((item) => {
+    if (!item.projectId || !projectIds.has(String(item.projectId))) return false;
+    const key = `${item.resourceType}:${item.resourceId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return ['project', 'milestone', 'task', 'note', 'event', 'reminder'].includes(item.resourceType);
+  });
+  return [...items, ...related].slice(0, 12);
+};
 
 export type AskLedgerRetrievalRequest = {
   workspaceId: string;
   question: string;
   documents: AskLedgerContextItem[];
   lexicalResults: LexicalCandidate[];
+  skillId?: AskLedgerSkillId;
+  explicitContext?: AskLedgerInitialContext;
   conversation?: {
+    id?: string;
+    initialContext?: AskLedgerInitialContext;
     previousQuestion?: string;
     previousAnswer?: string;
     previousSources?: AskLedgerSource[];
+    recentExchanges?: Array<{
+      question?: string;
+      answer?: string;
+      sources?: AskLedgerSource[];
+    }>;
   };
 };
 
@@ -32,20 +118,67 @@ type AskLedgerStreamCallbacks = {
 export class AskLedgerService {
   private readonly retrieval: LedgerRetrievalService;
   private readonly localAI: LocalAIService;
+  private readonly attachments: AskLedgerAttachmentService;
 
   constructor(
     retrieval: LedgerRetrievalService,
     localAI: LocalAIService,
+    attachments = new AskLedgerAttachmentService(path.join(os.tmpdir(), 'ledger-ask-ledger-attachments')),
   ) {
     this.retrieval = retrieval;
     this.localAI = localAI;
+    this.attachments = attachments;
+  }
+
+  async ingestAttachments(workspaceId: string, conversationId: string, paths: string[], existing?: { count?: number; sizeBytes?: number }) {
+    const documents = await this.attachments.ingest(paths, conversationId, workspaceId, existing);
+    await this.retrieval.indexAttachments(conversationId, workspaceId, documents.flatMap(attachmentBlocksToContext));
+    return documents.map(({ attachment }) => attachment);
+  }
+
+  async restoreAttachments(workspaceId: string, conversationId: string) {
+    const documents = await this.attachments.restoreConversation(conversationId);
+    if (documents.length) await this.retrieval.indexAttachments(conversationId, workspaceId, documents.flatMap(attachmentBlocksToContext));
+    return documents.map(({ attachment }) => attachment);
+  }
+
+  async persistAttachments(conversationId: string, messageId: string, attachmentIds: string[]) {
+    await this.attachments.persist(conversationId, messageId, attachmentIds);
+  }
+
+  attachmentPath(id: string) { return this.attachments.pathFor(id); }
+
+  async removeAttachments(conversationId: string, attachmentIds: string[]) {
+    await this.retrieval.deleteAttachments(conversationId, attachmentIds.length ? attachmentIds : undefined);
+    if (attachmentIds.length) await this.attachments.cleanup(attachmentIds);
+    else await this.attachments.cleanupConversation(conversationId);
   }
 
   start(request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
+    if (request.skillId) return this.executeSkill(request, callbacks);
     const requestId = randomUUID();
     queueMicrotask(() => {
       void this.run(requestId, request, callbacks);
     });
+    return requestId;
+  }
+
+  executeSkill(request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
+    const skill = getAskLedgerSkill(request.skillId);
+    if (!skill) {
+      const requestId = randomUUID();
+      queueMicrotask(() => callbacks.onEvent({ type: 'error', requestId, error: { code: 'retrieval_failed', message: 'Unknown Ask Ledger skill.' } }));
+      return requestId;
+    }
+    const context = request.explicitContext ?? request.conversation?.initialContext;
+    const validationError = validateSkillContext(skill, context);
+    if (validationError) {
+      const requestId = randomUUID();
+      queueMicrotask(() => callbacks.onEvent({ type: 'error', requestId, error: { code: 'retrieval_failed', message: validationError } }));
+      return requestId;
+    }
+    const requestId = randomUUID();
+    queueMicrotask(() => void this.run(requestId, { ...request, explicitContext: context }, callbacks));
     return requestId;
   }
 
@@ -56,24 +189,63 @@ export class AskLedgerService {
   async shutdown() {
     await this.retrieval.shutdown();
     await this.localAI.shutdown();
+    await this.attachments.cleanupAll();
   }
 
   async shutdownRuntimes() {
     await this.retrieval.shutdown();
     await this.localAI.shutdown();
+    await this.attachments.cleanupAll();
   }
 
   private async run(requestId: string, request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
     try {
+      const skill = getAskLedgerSkill(request.skillId);
+      if (detectAskLedgerQueryIntent(request.question).kind === 'greeting') {
+        callbacks.onEvent({ type: 'sources', requestId, sources: [] });
+        callbacks.onEvent({ type: 'delta', requestId, text: 'Hi — what would you like to find in Ledger?' });
+        callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        return;
+      }
+      if (request.conversation?.id) await this.restoreAttachments(request.workspaceId, request.conversation.id);
       await this.retrieval.indexWorkspace(request.workspaceId, request.documents);
+      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'searching' } });
       const retrievalQuestion = [
         request.question,
-        request.conversation?.previousQuestion ? `Previous question: ${request.conversation.previousQuestion}` : '',
-        request.conversation?.previousAnswer ? `Previous grounded answer: ${request.conversation.previousAnswer.slice(0, 1200)}` : '',
-        request.conversation?.previousSources?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
+        skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
+        request.conversation?.initialContext ? `Current Ledger context: ${request.conversation.initialContext.title}` : '',
+        ...(request.conversation?.recentExchanges ?? []).slice(-2).flatMap((exchange) => [
+          exchange.question ? `Recent question: ${exchange.question.slice(0, 600)}` : '',
+          exchange.sources?.length ? `Recent sources: ${exchange.sources.slice(0, 6).map((source) => source.title).join('; ')}` : '',
+        ]),
+        request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length ? `Previous question: ${request.conversation.previousQuestion}` : '',
+        request.conversation?.previousAnswer && !request.conversation?.recentExchanges?.length ? `Previous grounded answer: ${request.conversation.previousAnswer.slice(0, 1200)}` : '',
+        request.conversation?.previousSources?.length && !request.conversation?.recentExchanges?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
       ].filter(Boolean).join('\n');
-      const retrieval = await this.retrieval.retrieve(request.workspaceId, retrievalQuestion, request.lexicalResults, 20);
-      const normalized = new LedgerContextBuilder().normalize(retrieval.items, { maxContextTokens: 2400, maxItemTokens: 700 });
+      const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
+      const retrieval = await this.retrieval.retrieve(request.workspaceId, retrievalQuestion, request.lexicalResults, skill?.id === 'plan_my_week' ? 32 : 20, {
+        conversationId: request.conversation?.id,
+        boostResourceKeys: explicitContext
+          ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`]
+          : [],
+      });
+      const intent = detectAskLedgerQueryIntent(request.question);
+      const allowedSkillItems = skill
+        ? retrieval.items.filter((item) => skill.allowedContextTypes.includes(item.resourceType))
+        : retrieval.items;
+      const explicitItem = explicitContext
+        ? request.documents.find((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId)
+        : undefined;
+      const skillItems = explicitItem && !allowedSkillItems.some((item) => item.resourceId === explicitItem.resourceId && item.resourceType === explicitItem.resourceType)
+        ? [explicitItem, ...allowedSkillItems]
+        : allowedSkillItems;
+      const selectedRetrievalItems = (intent.kind === 'blockers' || intent.kind === 'status')
+        ? expandRelatedProjectContext(skillItems.slice(0, 8), request.documents)
+        : skillItems.slice(0, skill ? 10 : 8);
+      const previewSources = (items: AskLedgerContextItem[]) => items.slice(0, 3).map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, route: item.route, projectId: item.projectId, projectName: item.projectName, sourceLabel: item.sourceLabel, updatedAt: item.updatedAt, parentResourceId: item.parentResourceId, attachmentSource: item.attachmentSource }));
+      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'sources_found', count: retrieval.items.length, sources: previewSources(retrieval.items) } });
+      const normalized = new LedgerContextBuilder().normalize(selectedRetrievalItems, { maxContextTokens: skill ? 2800 : 2400, maxItemTokens: 700, sortByFreshness: false });
+      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
       normalized.items.forEach((item) => sourceByKey.set(`${item.resourceType}:${item.resourceId}`, {
           resourceType: item.resourceType,
@@ -85,10 +257,13 @@ export class AskLedgerService {
           sourceLabel: item.sourceLabel,
           updatedAt: item.updatedAt,
           parentResourceId: item.parentResourceId,
+          attachmentSource: item.attachmentSource,
         }));
       const sources = [...sourceByKey.values()];
       console.info('[local-ai] Ask Ledger retrieval', {
         workspaceId: request.workspaceId,
+        skillId: skill?.id,
+        explicitContext: explicitContext ? { resourceType: explicitContext.resourceType, resourceId: explicitContext.resourceId } : undefined,
         question: request.question,
         candidates: retrieval.debug,
         selectedContext: normalized.items.map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title })),
@@ -96,15 +271,21 @@ export class AskLedgerService {
         promptTokens: normalized.estimatedTokens,
       });
       callbacks.onEvent({ type: 'sources', requestId, sources });
+      if (!skill && structuredAnswerFor.has(intent.kind)) {
+        callbacks.onEvent({ type: 'delta', requestId, text: normalized.items.length ? formatStructuredAnswer(intent.kind, normalized.items) : emptyStructuredAnswer(intent.kind) });
+        callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        return;
+      }
+      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'preparing_answer' } });
       const topScore = retrieval.debug[0]?.score ?? 0;
       const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title');
-      if (!retrieval.items.length || !hasSignal || topScore < 0.18 || !normalized.items.length) {
+      if (!normalized.items.length || (!skill && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
         callbacks.onEvent({ type: 'delta', requestId, text: ASK_LEDGER_ABSTENTION });
         callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, recentConversation: request.conversation }) },
+        { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined }) },
         callbacks,
         requestId,
       );
@@ -121,11 +302,11 @@ export class AskLedgerService {
   }
 }
 
-export const createAskLedgerService = (localAI: LocalAIService, assets?: LocalAIAssetManager) => {
+export const createAskLedgerService = (localAI: LocalAIService, assets?: LocalAIAssetManager, attachmentRoot?: string) => {
   const provider = (assets || process.env.LEDGER_LOCAL_AI_EMBEDDING_URL?.trim() || process.env.LEDGER_LOCAL_AI_EMBEDDING_MODEL_PATH?.trim())
     ? new LocalEmbeddingProvider(assets)
     : undefined;
   const index = new EmbeddingIndexService(provider);
   const retrieval = new LedgerRetrievalService(index, provider);
-  return new AskLedgerService(retrieval, localAI);
+  return new AskLedgerService(retrieval, localAI, new AskLedgerAttachmentService(attachmentRoot ?? path.join(os.tmpdir(), 'ledger-ask-ledger-attachments')));
 };

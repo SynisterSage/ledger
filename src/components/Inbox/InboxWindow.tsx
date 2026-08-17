@@ -44,7 +44,8 @@ import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
 import { FigmaMark } from '../Common/FigmaMark';
-import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForHome, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
+import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 
 type InboxStatus = 'unprocessed' | 'converted' | 'snoozed' | 'archived';
@@ -2026,6 +2027,17 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
               Open
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              if (activeWorkspaceId) openAskLedgerWithContext({ resourceType: 'intake', resourceId: contextMenu.item.id, title: contextMenu.item.title || 'Intake item' }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--ledger-surface-hover)]"
+          >
+            <Search size={14} className="text-[var(--ledger-text-muted)]" />
+            Ask Ledger
+          </button>
           {contextMenu.item.status === 'unprocessed' && (
             <button
               type="button"

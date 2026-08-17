@@ -38,13 +38,29 @@ export interface LocalAIMetrics {
   tokensPerSecond?: number;
 }
 
+export type AskLedgerActivity =
+  | { type: 'starting_runtime' }
+  | { type: 'searching' }
+  | { type: 'sources_found'; count: number; sources: AskLedgerSource[] }
+  | { type: 'reading_context'; count: number; sources: AskLedgerSource[] }
+  | { type: 'preparing_answer' }
+  | { type: 'generating' };
+
+export type AskLedgerSkillResult = {
+  skillId: string;
+  sections: Array<{ title: string; content: string }>;
+  actionProposals: Array<{ id: string; type: string; payload: Record<string, unknown>; sourceMessageId: string }>;
+};
+
 export interface LocalAIStreamEvent {
-  type: 'start' | 'sources' | 'delta' | 'done' | 'error';
+  type: 'start' | 'activity' | 'sources' | 'delta' | 'done' | 'error';
   requestId: string;
+  activity?: AskLedgerActivity;
   text?: string;
   sources?: AskLedgerSource[];
   error?: { code: LocalAIErrorCode; message: string };
   metrics?: LocalAIMetrics;
+  skillResult?: AskLedgerSkillResult;
 }
 
 type StreamCallbacks = {
@@ -170,7 +186,9 @@ export class LocalModelRuntime {
   }
 
   async stream(request: LocalAIRequest, callbacks: StreamCallbacks, signal: AbortSignal, requestId: string) {
+    if (!(await this.healthCheck())) callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'starting_runtime' } });
     const runtime = await this.ensureReady();
+    callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'generating' } });
     const startedAt = Date.now();
     let firstTokenMs: number | undefined;
     let generatedTokens = 0;

@@ -23,6 +23,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   SlidersHorizontal,
+  Search,
   Mic,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
@@ -55,7 +56,8 @@ import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
-import { routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
+import { routeForHome, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
+import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
 import {
@@ -7108,6 +7110,20 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 </div>
               </div>
               <div className="px-1.5 py-1.5">
+                <button
+                  onClick={() => {
+                    const resource = listContextMenu.kind === 'event'
+                      ? events.find((item) => item.id === baseEventId(listContextMenu.id))
+                      : reminders.find((item) => item.id === listContextMenu.id);
+                    if (resource && activeWorkspaceId) openAskLedgerWithContext({ resourceType: listContextMenu.kind, resourceId: listContextMenu.id, title: resource.title }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+                    setListContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  <Search size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                  <span className="min-w-0 truncate text-[14px] font-medium">Ask Ledger</span>
+                </button>
+                <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />
                 {listContextMenu.kind === 'event' ? (
                   (() => {
                     const event = events.find(

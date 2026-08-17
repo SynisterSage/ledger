@@ -1310,8 +1310,34 @@ export const useApi = () => {
         request(`/api/workspaces/${workspaceId}/search?q=${encodeURIComponent(query)}`, {
           method: 'POST',
         }),
-      getAskLedgerDocuments: (workspaceId: string) =>
-        request(`/api/workspaces/${workspaceId}/ai-documents`),
+      getAskLedgerDocuments: (workspaceId: string, options?: { scope?: string; from?: string; to?: string; openOnly?: boolean; project?: string; taskHorizon?: string; assignedToMe?: boolean }) => {
+        const params = new URLSearchParams();
+        if (options?.scope) params.set('scope', options.scope);
+        if (options?.from) params.set('from', options.from);
+        if (options?.to) params.set('to', options.to);
+        if (options?.openOnly) params.set('open_only', 'true');
+        if (options?.project) params.set('project', options.project);
+        if (options?.taskHorizon) params.set('task_horizon', options.taskHorizon);
+        if (options?.assignedToMe) params.set('assigned_to_me', 'true');
+        const query = params.toString();
+        return request(`/api/workspaces/${workspaceId}/ai-documents${query ? `?${query}` : ''}`);
+      },
+      getAskLedgerSessions: (workspaceId: string, limit = 5) =>
+        request(`/api/workspaces/${workspaceId}/ask-ledger/sessions?limit=${Math.max(1, Math.min(20, limit))}`),
+      getAskLedgerSession: (workspaceId: string, sessionId: string) =>
+        request(`/api/workspaces/${workspaceId}/ask-ledger/sessions/${sessionId}`),
+      createAskLedgerSession: (workspaceId: string, payload: Record<string, unknown>) =>
+        request(`/api/workspaces/${workspaceId}/ask-ledger/sessions`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      updateAskLedgerSession: (workspaceId: string, sessionId: string, payload: Record<string, unknown>) =>
+        request(`/api/workspaces/${workspaceId}/ask-ledger/sessions/${sessionId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      deleteAskLedgerSession: (workspaceId: string, sessionId: string) =>
+        request(`/api/workspaces/${workspaceId}/ask-ledger/sessions/${sessionId}`, { method: 'DELETE' }),
 
       // Notes
       getNotes: () => request('/api/notes'),

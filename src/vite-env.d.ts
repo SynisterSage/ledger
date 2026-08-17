@@ -106,13 +106,18 @@ interface Window {
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
   askLedger?: {
+    listSkills: () => Promise<unknown[]>;
+    selectAttachments: (payload: { workspaceId: string; conversationId: string; existingCount?: number; existingSizeBytes?: number }) => Promise<unknown>;
+    openAttachment: (attachmentId: string) => Promise<{ ok: boolean; error?: string }>;
+    removeAttachments: (payload: { conversationId: string; attachmentIds: string[] }) => Promise<{ ok: boolean }>;
     localAIStatus: () => Promise<unknown>;
     localAIHardware: () => Promise<unknown>;
     downloadLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
     cancelLocalAIDownload: (role: 'generation' | 'embedding') => Promise<unknown>;
     removeLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
     onLocalAIStatus: (listener: (event: unknown) => void) => () => void;
-    start: (payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown }) => Promise<{ requestId: string }>;
+    start: (payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; explicitContext?: unknown }) => Promise<{ requestId: string }>;
+    executeSkill: (payload: { skillId: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; explicitContext?: unknown }) => Promise<{ requestId: string }>;
     cancel: (requestId: string) => Promise<{ ok: boolean }>;
     onStream: (listener: (event: unknown) => void) => () => void;
   };

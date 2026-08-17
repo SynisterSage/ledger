@@ -33,6 +33,7 @@ import { LocalTranscriptionService } from './transcriptionService';
 import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { createAskLedgerService } from './askLedgerService';
+import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
 import { RecordingSessionStore } from './recordingSessionStore';
 import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
 import {
@@ -67,7 +68,7 @@ const meetingAudioCaptureService = new MeetingAudioCaptureService(recordingSessi
 const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore);
 const localAIAssets = new LocalAIAssetManager();
 const localAIService = createLocalAIService(localAIAssets);
-const askLedgerService = createAskLedgerService(localAIService, localAIAssets);
+const askLedgerService = createAskLedgerService(localAIService, localAIAssets, path.join(app.getPath('userData'), 'ask-ledger-attachments'));
 localAIAssets.onChange((status) => {
   BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed()) window.webContents.send('ask-ledger:local-ai-status', status);
@@ -212,14 +213,56 @@ ipcMain.handle('meeting-transcription:fail', (_event, payload: { jobId?: unknown
   return localTranscriptionService.fail(payload.jobId, payload.error);
 });
 
-ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown }) => {
-  if (typeof payload?.question !== 'string' || !payload.question.trim()) throw new Error('Ask Ledger question is required.');
+ipcMain.handle('ask-ledger:list-skills', () => listAskLedgerSkills());
+
+ipcMain.handle('ask-ledger:select-attachments', async (_event, payload: { workspaceId?: unknown; conversationId?: unknown; existingCount?: unknown; existingSizeBytes?: unknown }) => {
+  if (typeof payload?.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
+  if (typeof payload?.conversationId !== 'string' || !payload.conversationId.trim()) throw new Error('Ask Ledger conversation is required.');
+  const selection = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'Ask Ledger attachments', extensions: ['pdf', 'docx', 'txt', 'md', 'csv'] }] });
+  if (selection.canceled || !selection.filePaths.length) return { canceled: true, attachments: [] };
+  return { canceled: false, attachments: await askLedgerService.ingestAttachments(payload.workspaceId, payload.conversationId, selection.filePaths, { count: typeof payload.existingCount === 'number' ? payload.existingCount : 0, sizeBytes: typeof payload.existingSizeBytes === 'number' ? payload.existingSizeBytes : 0 }) };
+});
+
+ipcMain.handle('ask-ledger:open-attachment', async (_event, attachmentId: unknown) => {
+  if (typeof attachmentId !== 'string' || !attachmentId.trim()) throw new Error('Invalid Ask Ledger attachment.');
+  const filePath = askLedgerService.attachmentPath(attachmentId);
+  if (!filePath) return { ok: false, error: 'This temporary attachment is no longer available.' };
+  const error = await shell.openPath(filePath);
+  return error ? { ok: false, error } : { ok: true };
+});
+
+ipcMain.handle('ask-ledger:remove-attachments', async (_event, payload: { conversationId?: unknown; attachmentIds?: unknown }) => {
+  if (typeof payload?.conversationId !== 'string' || !payload.conversationId.trim() || !Array.isArray(payload.attachmentIds)) throw new Error('Invalid Ask Ledger attachment cleanup request.');
+  const ids = payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5);
+  await askLedgerService.removeAttachments(payload.conversationId, ids);
+  return { ok: true };
+});
+
+ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown }) => {
+  if (typeof payload?.question !== 'string' || (!payload.question.trim() && payload.skillId === undefined)) throw new Error('Ask Ledger question is required.');
   if (typeof payload.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
   if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
   const documents = payload.documents.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
   if (documents.some((item) => item.workspaceId !== undefined && item.workspaceId !== payload.workspaceId)) throw new Error('Ask Ledger context workspace mismatch.');
+  const skill = payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
+  if (payload.skillId !== undefined && !skill) throw new Error('Unknown Ask Ledger skill.');
+  const explicitContext = payload.explicitContext && typeof payload.explicitContext === 'object' ? {
+    resourceType: String((payload.explicitContext as Record<string, unknown>).resourceType ?? ''),
+    resourceId: String((payload.explicitContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
+    title: String((payload.explicitContext as Record<string, unknown>).title ?? '').slice(0, 300),
+  } : undefined;
+  if (skill && skill.requiresContext && !explicitContext) throw new Error(`${skill.name} needs explicit Ledger context.`);
+  if (explicitContext && (!explicitContext.resourceType || !explicitContext.resourceId || !explicitContext.title)) throw new Error('Skill context is incomplete.');
+  if (skill && explicitContext && !skill.supportedContextTypes.includes(explicitContext.resourceType as never)) throw new Error(`${skill.name} does not support this context.`);
+  if (skill && explicitContext && !documents.some((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId)) throw new Error('Skill context was not found in the current workspace context.');
   const conversation = payload.conversation && typeof payload.conversation === 'object' ? payload.conversation as Record<string, unknown> : undefined;
   const safeConversation = conversation ? {
+    id: typeof conversation.id === 'string' ? conversation.id.slice(0, 200) : undefined,
+    initialContext: conversation.initialContext && typeof conversation.initialContext === 'object' ? {
+      resourceType: String((conversation.initialContext as Record<string, unknown>).resourceType ?? 'external') as never,
+      resourceId: String((conversation.initialContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
+      title: String((conversation.initialContext as Record<string, unknown>).title ?? 'Ledger context').slice(0, 300),
+    } : undefined,
     previousQuestion: typeof conversation.previousQuestion === 'string' ? conversation.previousQuestion.slice(0, 800) : undefined,
     previousAnswer: typeof conversation.previousAnswer === 'string' ? conversation.previousAnswer.slice(0, 1200) : undefined,
     previousSources: Array.isArray(conversation.previousSources) ? conversation.previousSources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 8).map((source) => ({
@@ -228,25 +271,59 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
       title: String(source.title ?? 'Untitled'),
       route: source.route as never,
     })) : undefined,
+    recentExchanges: Array.isArray(conversation.recentExchanges) ? conversation.recentExchanges.filter((exchange): exchange is Record<string, unknown> => Boolean(exchange) && typeof exchange === 'object').slice(-2).map((exchange) => ({
+      question: typeof exchange.question === 'string' ? exchange.question.slice(0, 600) : undefined,
+      answer: typeof exchange.answer === 'string' ? exchange.answer.slice(0, 900) : undefined,
+      sources: Array.isArray(exchange.sources) ? exchange.sources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 6).map((source) => ({
+        resourceType: String(source.resourceType ?? 'external') as never,
+        resourceId: String(source.resourceId ?? source.id ?? ''),
+        title: String(source.title ?? 'Untitled'),
+        route: source.route as never,
+      })) : [],
+    })) : undefined,
   } : undefined;
   const sender = event.sender;
   let answer = '';
+  let skillSourceCount = 0;
+  let skillSelectedSources: string[] = [];
   const requestId = askLedgerService.start(
     {
       question: payload.question,
       workspaceId: payload.workspaceId,
       documents: documents as never,
       lexicalResults: payload.lexicalResults as never,
+      skillId: skill?.id,
+      explicitContext: explicitContext as never,
       conversation: safeConversation,
     },
     { onEvent: (streamEvent) => {
       if (streamEvent.type === 'delta') answer += streamEvent.text ?? '';
+      if (streamEvent.type === 'sources') {
+        skillSourceCount = streamEvent.sources?.length ?? 0;
+        skillSelectedSources = (streamEvent.sources ?? []).map((source) => `${source.resourceType}:${source.resourceId}`);
+      }
       if (streamEvent.type === 'done' && streamEvent.metrics) {
         console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answer: answer.slice(0, 2000) });
       }
-      if (!sender.isDestroyed()) sender.send('ask-ledger:stream', streamEvent);
+      if (!sender.isDestroyed()) {
+        const eventWithSkill = streamEvent.type === 'done' && skill
+          ? { ...streamEvent, skillResult: buildSkillResult(skill, answer, explicitContext as never) }
+          : streamEvent;
+        if (streamEvent.type === 'done' && skill) {
+          console.info('[local-ai] Ask Ledger skill diagnostics', {
+            skillId: skill.id,
+            explicitContext,
+            retrievalSourceCount: skillSourceCount,
+            selectedSources: skillSelectedSources,
+            durationMs: streamEvent.metrics?.totalMs,
+            proposedActionTypes: eventWithSkill.skillResult?.actionProposals.map((action) => action.type) ?? [],
+          });
+        }
+        sender.send('ask-ledger:stream', eventWithSkill);
+      }
     } },
   );
+  if (typeof conversation?.id === 'string' && typeof payload.messageId === 'string' && Array.isArray(payload.attachmentIds)) void askLedgerService.persistAttachments(conversation.id, payload.messageId, payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5));
   return { requestId };
 });
 

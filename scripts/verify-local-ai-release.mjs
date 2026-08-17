@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const platform = process.env.LEDGER_RELEASE_PLATFORM || process.platform;
@@ -10,6 +11,14 @@ const runtime = path.join(root, 'native', 'local-ai-runtime', `${platform}-${arc
 if (platform !== 'darwin' && platform !== 'win32') throw new Error(`Local AI release verification does not support ${platform}.`);
 if (!fs.existsSync(runtime)) throw new Error(`Missing pinned llama-server runtime: ${runtime}`);
 if (platform !== 'win32' && (fs.statSync(runtime).mode & 0o111) === 0) throw new Error(`Runtime is not executable: ${runtime}`);
+if (platform === 'darwin') {
+  const linkedLibraries = execFileSync('otool', ['-L', runtime], { encoding: 'utf8' })
+    .split('\n')
+    .map((line) => line.match(/@rpath\/(lib[^\s]+\.dylib)/)?.[1])
+    .filter(Boolean);
+  const missingLibraries = linkedLibraries.filter((library) => !fs.existsSync(path.join(path.dirname(runtime), library)));
+  if (missingLibraries.length) throw new Error(`Runtime is missing companion macOS libraries: ${missingLibraries.join(', ')}`);
+}
 
 const required = [
   'LEDGER_LOCAL_AI_GENERATION_URL',

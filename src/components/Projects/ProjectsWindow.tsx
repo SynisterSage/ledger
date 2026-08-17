@@ -69,7 +69,8 @@ import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
 import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
-import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, routeForTask, usePlatform, type LedgerRoute } from '../../platform';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForHome, routeForNote, routeForProject, routeForTask, usePlatform, type LedgerRoute } from '../../platform';
+import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import type { RelatedContextResponse } from '../../types/relatedContext';
 
 const parseProjectsSection = (
@@ -8064,6 +8065,18 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         >
           <button
             onClick={() => {
+              const project = projects.find((item) => item.id === projectContextMenu.projectId);
+              if (project && activeWorkspaceId) openAskLedgerWithContext({ resourceType: 'project', resourceId: project.id, title: project.name }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+              setProjectContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            <Search size={14} />
+            Ask Ledger
+          </button>
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+          <button
+            onClick={() => {
               void updateProjectStatus(projectContextMenu.projectId, 'in_progress');
               setProjectContextMenu(null);
             }}
@@ -8563,6 +8576,18 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
           style={{ left: `${taskMenuPosition.x}px`, top: `${taskMenuPosition.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            onClick={() => {
+              const task = tasks.find((item) => item.id === taskContextMenu.taskId);
+              if (task && activeWorkspaceId) openAskLedgerWithContext({ resourceType: 'task', resourceId: task.id, title: task.title }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+              setTaskContextMenu(null);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            <Search size={14} />
+            Ask Ledger
+          </button>
+          <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
           <PinActionButton
             objectType="task"
             objectId={taskContextMenu.taskId}

@@ -65,3 +65,90 @@ test('abstains before generation when retrieval evidence is insufficient', async
   assert.equal(generationCalled, false);
   assert.equal(events.find((event) => event.type === 'delta')?.text, ASK_LEDGER_ABSTENTION);
 });
+
+test('formats direct entity lookups without invoking Qwen', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationCalled = false;
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({
+      items: [
+        { ...resource, resourceType: 'task', resourceId: 'task-1', title: 'Finish thumbnails', status: 'In Progress', dueAt: '2026-08-18' },
+      ],
+      debug: [{ resourceType: 'task', resourceId: 'task-1', title: 'Finish thumbnails', score: 0.4, why: ['entity-resource'] }],
+    }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: () => { generationCalled = true; return 'request-1'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'what are my open tasks', documents: [], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(generationCalled, false);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Finish thumbnails/);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Aug 18, 2026/);
+});
+
+test('returns an entity-specific empty state without invoking Qwen', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationCalled = false;
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [], debug: [] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: () => { generationCalled = true; return 'request-1'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'what reminders do I have', documents: [], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(generationCalled, false);
+  assert.equal(events.find((event) => event.type === 'delta')?.text, "I couldn't find any matching reminders in this workspace.");
+});
+
+test('executes a skill with boosted explicit context and skill instructions', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationPrompt = '';
+  const transcript: AskLedgerContextItem = {
+    workspaceId: 'workspace-a', resourceType: 'transcript', resourceId: 'transcript-1', title: 'Weekly sync', content: 'Decide launch owner and follow up on the draft.',
+  };
+  const task: AskLedgerContextItem = {
+    workspaceId: 'workspace-a', resourceType: 'task', resourceId: 'task-1', title: 'Review draft', content: 'Review the launch draft.', projectId: 'project-1',
+  };
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [task], debug: [{ resourceType: 'task', resourceId: task.resourceId, title: task.title, score: 0.7, why: ['lexical:title'] }] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }) => { generationPrompt = request.context; callbacks.onEvent({ type: 'done', requestId: 'request-skill', metrics: { totalMs: 1 } }); return 'request-skill'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({
+    workspaceId: 'workspace-a',
+    question: 'Prepare follow-up from this meeting',
+    documents: [transcript, task],
+    lexicalResults: [],
+    skillId: 'meeting_follow_up',
+    explicitContext: { resourceType: 'transcript', resourceId: 'transcript-1', title: 'Weekly sync' },
+  }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.match(generationPrompt, /Meeting follow-up/);
+  assert.match(generationPrompt, /Weekly sync/);
+  assert.match(generationPrompt, /Decide launch owner/);
+  assert.match(generationPrompt, /Review the launch draft/);
+});

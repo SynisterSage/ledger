@@ -1,12 +1,17 @@
 # Ledger local AI runtime
 
-Package the signed, pinned `llama-server` executable for each target that is
+Package the signed, pinned `llama-server` executable and every companion
+runtime library for each target that is
 actually enabled by Ledger's release configuration under a
 platform/architecture directory:
 
 ```text
 native/local-ai-runtime/darwin-arm64/llama-server
+native/local-ai-runtime/darwin-arm64/libllama-server-impl.dylib
+native/local-ai-runtime/darwin-arm64/libllama.0.dylib
+native/local-ai-runtime/darwin-arm64/libggml.0.dylib
 native/local-ai-runtime/win32-x64/llama-server.exe
+native/local-ai-runtime/win32-x64/*.dll
 ```
 
 The current repository explicitly targets Windows x64. The macOS builder does

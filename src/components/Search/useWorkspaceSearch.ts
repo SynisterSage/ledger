@@ -26,6 +26,8 @@ export type SearchResult = {
   preview: string;
   icon: string;
   project_id?: string | null;
+  project_name?: string | null;
+  note_id?: string | null;
   focusDate?: string | null;
   actionId?: string;
   provider?: string | null;

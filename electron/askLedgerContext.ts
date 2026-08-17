@@ -10,6 +10,7 @@ export type NormalizedAskLedgerContext = {
 export type AskLedgerContextBudget = {
   maxContextTokens?: number;
   maxItemTokens?: number;
+  sortByFreshness?: boolean;
 };
 
 const DEFAULT_MAX_CONTEXT_TOKENS = 2400;
@@ -50,6 +51,14 @@ const renderItem = (item: AskLedgerContextItem, maxItemTokens: number) => {
   if (item.status) lines.push(`Status: ${cleanText(item.status)}`);
   if (item.projectName) lines.push(`Project: ${cleanText(item.projectName)}`);
   if (item.timestamp) lines.push(`Time: ${cleanText(item.timestamp)}`);
+  if (item.dueAt) lines.push(`Due: ${cleanText(item.dueAt)}`);
+  if (item.endAt) lines.push(`Ends: ${cleanText(item.endAt)}`);
+  if (item.priority) lines.push(`Priority: ${cleanText(item.priority)}`);
+  if (item.taskHorizon) lines.push(`Horizon: ${cleanText(item.taskHorizon)}`);
+  if (item.provenance) lines.push(`Origin: ${cleanText(item.provenance)}`);
+  if (item.attachmentSource?.pageNumber) lines.push(`Page: ${item.attachmentSource.pageNumber}`);
+  if (item.attachmentSource?.section) lines.push(`Section: ${cleanText(item.attachmentSource.section)}`);
+  if (item.attachmentSource?.rowStart) lines.push(`Rows: ${item.attachmentSource.rowStart}–${item.attachmentSource.rowEnd ?? item.attachmentSource.rowStart}`);
   if (item.updatedAt) lines.push(`Updated: ${cleanText(item.updatedAt)}`);
   if (content.value) lines.push(content.value);
   return { text: lines.join('\n'), truncated: content.truncated };
@@ -61,7 +70,7 @@ export class LedgerContextBuilder {
     const maxItemTokens = Math.max(1, budget.maxItemTokens ?? DEFAULT_MAX_ITEM_TOKENS);
     const ordered = [...items]
       .filter((item) => item && typeof item.resourceId === 'string' && typeof item.title === 'string')
-      .sort((left, right) => dateValue(right) - dateValue(left));
+      .sort((left, right) => budget.sortByFreshness === false ? 0 : dateValue(right) - dateValue(left));
 
     const selected: AskLedgerContextItem[] = [];
     const rendered: string[] = [];

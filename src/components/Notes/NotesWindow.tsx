@@ -83,7 +83,8 @@ import type {
 import { htmlToPlainText, normalizeEditorHtml } from './editor/utils/html';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
-import { routeForCalendarEvent, routeForNote, usePlatform } from '../../platform';
+import { routeForCalendarEvent, routeForHome, routeForNote, usePlatform } from '../../platform';
+import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { CreateNoteModal } from './CreateNoteModal';
 import { BulkExportModal } from './BulkExportModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
@@ -10694,6 +10695,17 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
               >
                 <StickyNote size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
                 <span className="font-medium">Open</span>
+              </button>
+              <button
+                onClick={() => {
+                  const note = notes.find((item) => item.id === noteContextMenu.noteId);
+                  if (note && activeWorkspaceId) openAskLedgerWithContext({ resourceType: 'note', resourceId: note.id, title: note.title || 'Untitled note' }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+                  setNoteContextMenu(null);
+                }}
+                className="flex h-9 w-full items-center gap-3 rounded-none px-3 text-left text-sm transition hover:bg-[var(--ledger-surface-hover)]"
+              >
+                <Search size={14} className="shrink-0 text-[var(--ledger-text-secondary)]" />
+                <span className="font-medium">Ask Ledger</span>
               </button>
               <button
                 onClick={() => {

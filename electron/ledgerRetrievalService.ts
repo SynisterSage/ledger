@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 import { LocalAIAssetManager, resolveLocalAIRuntime } from './localAIAssets.ts';
+import { detectAskLedgerQueryIntent, resourceTypesForAskLedgerIntent } from './askLedgerQueryIntent.ts';
 
 export type LedgerIndexDocument = AskLedgerContextItem & {
   workspaceId: string;
   chunkId: string;
+  conversationId?: string;
   contentHash: string;
   embeddingModel?: string;
   embeddingVersion?: string;
@@ -48,6 +50,11 @@ export interface EmbeddingProvider {
   shutdown?(): Promise<void>;
 }
 
+export const formatEmbeddingInput = (text: string, mode: 'query' | 'document', model = '') =>
+  /nomic[-_ ]?embed/i.test(model)
+    ? `${mode === 'query' ? 'search_query' : 'search_document'}: ${text}`
+    : text;
+
 export class EmbeddingUnavailableError extends Error {
   constructor(message = 'A local embedding provider is not configured.') {
     super(message);
@@ -56,9 +63,12 @@ export class EmbeddingUnavailableError extends Error {
 }
 
 export class LocalEmbeddingProvider implements EmbeddingProvider {
-  readonly model = process.env.LEDGER_LOCAL_AI_EMBEDDING_MODEL?.trim() || 'configured-local-embedding-model';
+  readonly model = process.env.LEDGER_LOCAL_AI_EMBEDDING_MODEL?.trim()
+    || (process.env.LEDGER_LOCAL_AI_EMBEDDING_URL?.match(/nomic[-_a-z0-9.]*embed[-_a-z0-9.]*/i)?.[0] ?? 'configured-local-embedding-model');
   readonly version = process.env.LEDGER_LOCAL_AI_EMBEDDING_VERSION?.trim() || '1';
-  private readonly endpoint = process.env.LEDGER_LOCAL_AI_EMBEDDING_URL?.trim() || '';
+  // The manifest URL is a model download source, not an embeddings API.
+  // An API endpoint is only useful for an explicit development override.
+  private readonly endpoint = process.env.LEDGER_LOCAL_AI_EMBEDDING_ENDPOINT?.trim() || '';
   private readonly modelPath = process.env.LEDGER_LOCAL_AI_EMBEDDING_MODEL_PATH?.trim() || '';
   private readonly port = Number(process.env.LEDGER_LOCAL_AI_EMBEDDING_PORT || 39282);
   private child: ChildProcess | null = null;
@@ -157,6 +167,7 @@ const chunkContent = (item: AskLedgerContextItem) => {
 
 export class EmbeddingIndexService {
   private readonly workspaces = new Map<string, Map<string, LedgerIndexDocument>>();
+  private readonly conversations = new Map<string, Map<string, LedgerIndexDocument>>();
   private readonly provider?: EmbeddingProvider;
 
   constructor(provider?: EmbeddingProvider) {
@@ -169,7 +180,7 @@ export class EmbeddingIndexService {
     const pending: Array<{ key: string; document: LedgerIndexDocument }> = [];
 
     for (const item of items) {
-      if (item.workspaceId && item.workspaceId !== workspaceId) continue;
+      if (item.resourceType === 'attachment' || (item.workspaceId && item.workspaceId !== workspaceId)) continue;
       for (const [chunkIndex, content] of chunkContent(item).entries()) {
         const chunkId = `${item.resourceType}:${item.resourceId}:${chunkIndex}`;
         const contentHash = hash(`${item.title}\n${content}\n${item.updatedAt ?? ''}`);
@@ -189,7 +200,7 @@ export class EmbeddingIndexService {
 
     if (this.provider && pending.length) {
       try {
-        const vectors = await this.provider.embed(pending.map(({ document }) => `${document.title}\n${document.content}`));
+        const vectors = await this.provider.embed(pending.map(({ document }) => formatEmbeddingInput(`${document.title}\n${document.content}`, 'document', this.provider?.model)));
         pending.forEach(({ key, document }, index) => {
           document.embedding = vectors[index];
           document.embeddingModel = this.provider?.model;
@@ -204,12 +215,49 @@ export class EmbeddingIndexService {
     return { indexed: next.size, embedded: pending.length, removed: Math.max(0, existing.size - next.size) };
   }
 
+  async replaceConversation(conversationId: string, workspaceId: string, items: AskLedgerContextItem[]) {
+    const existing = this.conversations.get(conversationId) ?? new Map<string, LedgerIndexDocument>();
+    const next = new Map(existing);
+    const pending: Array<{ key: string; document: LedgerIndexDocument }> = [];
+    for (const item of items) {
+      if (item.resourceType !== 'attachment') continue;
+      const chunkId = `${item.resourceType}:${item.resourceId}`;
+      const contentHash = hash(`${item.title}\n${item.content}`);
+      const key = `${conversationId}:${chunkId}`;
+      const previous = existing.get(key);
+      const document: LedgerIndexDocument = { ...item, workspaceId, conversationId, chunkId, contentHash };
+      if (previous?.contentHash === contentHash && previous.embedding && previous.embeddingModel === this.provider?.model && previous.embeddingVersion === this.provider?.version) {
+        document.embedding = previous.embedding;
+        document.embeddingModel = previous.embeddingModel;
+        document.embeddingVersion = previous.embeddingVersion;
+      } else if (this.provider) pending.push({ key, document });
+      next.set(key, document);
+    }
+    if (this.provider && pending.length) {
+      try {
+        const vectors = await this.provider.embed(pending.map(({ document }) => formatEmbeddingInput(`${document.title}\n${document.content}`, 'document', this.provider?.model)));
+        pending.forEach(({ key, document }, index) => { document.embedding = vectors[index]; document.embeddingModel = this.provider?.model; document.embeddingVersion = this.provider?.version; next.set(key, document); });
+      } catch (error) {
+        console.warn('[local-embedding] Attachment semantic index unavailable; continuing with lexical retrieval.', error instanceof Error ? error.message : error);
+      }
+    }
+    this.conversations.set(conversationId, next);
+    return { indexed: next.size, embedded: pending.length, removed: Math.max(0, existing.size - next.size) };
+  }
+
   deleteWorkspace(workspaceId: string) {
     this.workspaces.delete(workspaceId);
   }
 
-  documents(workspaceId: string) {
-    return [...(this.workspaces.get(workspaceId)?.values() ?? [])];
+  deleteConversation(conversationId: string, attachmentIds?: string[]) {
+    if (!attachmentIds?.length) { this.conversations.delete(conversationId); return; }
+    const current = this.conversations.get(conversationId);
+    if (!current) return;
+    for (const key of [...current.keys()]) if (attachmentIds.some((id) => key.includes(`attachment:${id}:`))) current.delete(key);
+  }
+
+  documents(workspaceId: string, conversationId?: string) {
+    return [...(this.workspaces.get(workspaceId)?.values() ?? []), ...(conversationId ? [...(this.conversations.get(conversationId)?.values() ?? [])].filter((document) => document.workspaceId === workspaceId) : [])];
   }
 
   async shutdown() {
@@ -244,32 +292,108 @@ export class LedgerRetrievalService {
     return this.index.replaceWorkspace(workspaceId, items);
   }
 
+  indexAttachments(conversationId: string, workspaceId: string, items: AskLedgerContextItem[]) {
+    return this.index.replaceConversation(conversationId, workspaceId, items);
+  }
+
+  deleteAttachments(conversationId: string, attachmentIds?: string[]) { this.index.deleteConversation(conversationId, attachmentIds); }
+
   async shutdown() {
     await this.index.shutdown();
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8): Promise<LedgerRetrievalResult> {
-    const documents = this.index.documents(workspaceId).filter((document) => document.workspaceId === workspaceId);
+  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string }): Promise<LedgerRetrievalResult> {
+    const documents = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
     const lexicalByResource = new Map(lexicalResults.map((result, position) => [`${result.type}:${result.id}`, { result, position }]));
     let queryVector: number[] | undefined;
     if (this.provider && documents.some((document) => document.embedding)) {
-      try { queryVector = (await this.provider.embed([question]))[0]; } catch { queryVector = undefined; }
+      try { queryVector = (await this.provider.embed([formatEmbeddingInput(question, 'query', this.provider.model)]))[0]; } catch { queryVector = undefined; }
     }
     const questionTokens = tokenize(question);
-    const ranked = documents.map((document) => {
+    const intent = detectAskLedgerQueryIntent(question);
+    const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);
+    const rankedByResource = new Map<string, { document: LedgerIndexDocument; score: number; why: string[] }>();
+    documents.forEach((document) => {
+      if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never)) return;
       const key = `${document.resourceType}:${document.resourceId}`;
       const lexical = lexicalByResource.get(key);
       const titleOverlap = [...tokenize(document.title)].filter((token) => questionTokens.has(token)).length;
       const semantic = queryVector && document.embedding ? cosineSimilarity(queryVector, document.embedding) : 0;
       const lexicalScore = lexical ? 1 - Math.min(0.8, lexical.position / 25) : 0;
-      const score = semantic * 0.62 + lexicalScore * 0.28 + Math.min(0.1, titleOverlap * 0.04);
+      let score = semantic * 0.62 + lexicalScore * 0.28 + Math.min(0.1, titleOverlap * 0.04);
       const why = [
         ...(lexical ? [`lexical:${lexical.result.match_source ?? 'match'}`] : []),
         ...(semantic > 0 ? [`semantic:${semantic.toFixed(3)}`] : []),
         ...(titleOverlap ? ['title'] : []),
       ];
-      return { document, score, why };
-    }).filter(({ score, why }) => score > 0 || why.length > 0)
+      if (options?.boostResourceKeys?.includes(key)) {
+        score += 0.8;
+        why.push('explicit-context');
+      }
+      if (document.resourceType === 'attachment' && options?.conversationId) {
+        score += 0.12;
+        why.push('conversation-attachment');
+      }
+      if (allowedResourceTypes && !['deadlines', 'time_window', 'team_members'].includes(intent.kind)) {
+        score += 0.25;
+        why.push('entity-resource');
+      }
+      const scheduledAt = document.dueAt ?? document.timestamp;
+      const scheduledDate = scheduledAt ? Date.parse(scheduledAt) : NaN;
+      const hasScheduledDate = Number.isFinite(scheduledDate);
+      if (intent.kind === 'deadlines') {
+        if (['task', 'milestone', 'project', 'event', 'reminder'].includes(document.resourceType)) {
+          score += 0.16;
+          why.push('deadline-resource');
+        }
+        if (document.dueAt) { score += 0.14; why.push('due-date'); }
+        if (['note', 'transcript'].includes(document.resourceType) && !document.dueAt) score -= 0.08;
+      }
+      if (intent.kind === 'team_members') {
+        if (document.resourceType === 'person' || document.resourceType === 'team') {
+          score += 0.42;
+          why.push('team-members-resource');
+        }
+        if (['task', 'note', 'transcript', 'event', 'reminder'].includes(document.resourceType)) {
+          score -= 0.18;
+          why.push('non-team-resource');
+        }
+      }
+      if (intent.kind === 'blockers') {
+        if (['project', 'task'].includes(document.resourceType)) {
+          score += 0.18;
+          why.push('blocker-resource');
+        }
+        if (['note', 'transcript'].includes(document.resourceType)) {
+          score += 0.04;
+          why.push('supporting-context');
+        }
+      }
+      if (intent.kind === 'followups') {
+        if (['task', 'reminder', 'event'].includes(document.resourceType)) {
+          score += 0.12;
+          why.push('follow-up-resource');
+        }
+        if (['note', 'transcript'].includes(document.resourceType)) {
+          score += 0.04;
+          why.push('follow-up-context');
+        }
+      }
+      if (intent.kind === 'time_window') {
+        if (['task', 'event', 'reminder'].includes(document.resourceType)) { score += 0.1; why.push('schedule-resource'); }
+        if (intent.window && hasScheduledDate) {
+          const start = Date.parse(`${intent.window.start}T00:00:00`);
+          const end = Date.parse(`${intent.window.end}T23:59:59.999`);
+          if (scheduledDate >= start && scheduledDate <= end) { score += 0.35; why.push('in-time-window'); }
+          else if (scheduledDate < start || scheduledDate > end) { score -= 0.14; why.push('outside-time-window'); }
+        } else if (['note', 'transcript'].includes(document.resourceType)) {
+          score -= 0.06;
+        }
+      }
+      const existing = rankedByResource.get(key);
+      if (!existing || score > existing.score) rankedByResource.set(key, { document, score, why });
+    });
+    const ranked = [...rankedByResource.values()].filter(({ score, why }) => score > 0 || why.length > 0)
       .sort((left, right) => right.score - left.score)
       .slice(0, limit);
 

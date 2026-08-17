@@ -21033,22 +21033,126 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
     if (!workspaceId) return res.status(400).json({ error: 'Workspace id required' });
     if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
 
-    const [notes, projects, tasks, events, reminders, inbox, teams, transcriptSegments] = await Promise.all([
-      supabase.from('notes').select('id, title, content, content_html, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
-      supabase.from('projects').select('id, name, description, status, completeness, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(500),
-      supabase.from('tasks').select('id, project_id, title, description, status, priority, due_date, due_time, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
-      supabase.from('events').select('id, title, notes, status, start_at, end_at, project_id, note_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
-      supabase.from('reminders').select('id, title, body, status, remind_at, project_id, note_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
-      supabase.from('inbox_items').select(inboxItemSelectColumns).eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
-      supabase.from('workspace_teams').select('id, name, identifier, description, updated_at, created_at').eq('workspace_id', workspaceId).is('archived_at', null).order('updated_at', { ascending: false }).limit(500),
-      supabase.from('meeting_note_transcript_segments').select('id, note_id, transcript_text, speaker_label, start_ms, updated_at').eq('workspace_id', workspaceId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(2000),
+    const scope = String(req.query?.scope ?? 'all').trim().toLowerCase();
+    const scopeResources = {
+      team_members: new Set(['teams', 'teamMembers']),
+      projects: new Set(['projects']),
+      tasks: new Set(['tasks']),
+      milestones: new Set(['milestones']),
+      followups: new Set(['notes', 'tasks', 'events', 'reminders', 'transcriptSegments']),
+      reminders: new Set(['reminders']),
+      events: new Set(['events']),
+      open_actions: new Set(['tasks', 'reminders']),
+      blockers: new Set(['notes', 'projects', 'tasks', 'transcriptSegments']),
+      status_context: new Set(['projects', 'tasks']),
+      deadlines: new Set(['projects', 'tasks', 'milestones', 'events', 'reminders']),
+      time_window: new Set(['tasks', 'events', 'reminders']),
+      all: new Set(['notes', 'projects', 'tasks', 'milestones', 'events', 'reminders', 'inbox', 'teams', 'teamMembers', 'transcriptSegments']),
+    };
+    const selectedResources = scopeResources[scope] ?? scopeResources.all;
+    const include = (resource) => selectedResources.has(resource);
+    const emptyResult = () => Promise.resolve({ data: [], error: null });
+    const rangeStart = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query?.from ?? '')) ? String(req.query.from) : null;
+    const rangeEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query?.to ?? '')) ? String(req.query.to) : null;
+    const projectReference = String(req.query?.project ?? '').trim().slice(0, 120);
+    const requestedTaskHorizon = ['today', 'long_term'].includes(String(req.query?.task_horizon ?? '').trim())
+      ? String(req.query.task_horizon).trim()
+      : null;
+    const assignedToMe = String(req.query?.assigned_to_me ?? '').toLowerCase() === 'true';
+    const projectReferenceResult = projectReference
+      ? await supabase.from('projects').select('id, name').eq('workspace_id', workspaceId).ilike('name', `%${projectReference}%`).limit(50)
+      : { data: [], error: null };
+    if (projectReferenceResult.error) throw projectReferenceResult.error;
+    const scopedProjectIds = (projectReferenceResult.data ?? []).map((row) => String(row.id));
+    const followupLinksResult = scope === 'followups'
+      ? await supabase.from('meeting_transcript_links').select('ledger_item_id, ledger_item_type, meeting_note_id').eq('workspace_id', workspaceId).eq('ledger_item_type', 'task')
+      : { data: [], error: null };
+    if (followupLinksResult.error) throw followupLinksResult.error;
+    const followupLinksByTaskId = new Map((followupLinksResult.data ?? []).map((row) => [String(row.ledger_item_id), row]));
+    const followupMeetingIds = [...new Set((followupLinksResult.data ?? []).map((row) => row.meeting_note_id).filter(Boolean).map(String))];
+    const followupNotesResult = followupMeetingIds.length
+      ? await supabase.from('notes').select('id, title').eq('workspace_id', workspaceId).in('id', followupMeetingIds)
+      : { data: [], error: null };
+    if (followupNotesResult.error) throw followupNotesResult.error;
+    const followupMeetingNames = new Map((followupNotesResult.data ?? []).map((row) => [String(row.id), String(row.title ?? 'Meeting note')]));
+    const applyDateRange = (query, column) => {
+      let next = query;
+      if (rangeStart) next = next.gte(column, rangeStart);
+      if (rangeEnd) next = next.lte(column, `${rangeEnd}T23:59:59.999Z`);
+      return next;
+    };
+    let taskQuery = supabase.from('tasks').select('id, project_id, title, description, status, priority, task_horizon, due_date, due_time, assigned_to, assigned_to_user_id, source, source_platform, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000);
+    let milestoneQuery = supabase.from('project_milestones').select('id, project_id, title, note, milestone_date, type, completed, assigned_to_user_id, updated_at, created_at').eq('workspace_id', workspaceId).order('milestone_date', { ascending: true }).limit(1000);
+    let eventQuery = supabase.from('events').select('id, title, notes, status, start_at, end_at, project_id, note_id, assigned_to_user_id, source, source_platform, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000);
+    let reminderQuery = supabase.from('reminders').select('id, title, body, status, remind_at, project_id, note_id, user_id, assigned_to_user_id, source, source_platform, linked_type, linked_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000);
+    if (projectReference) {
+      const ids = scopedProjectIds.length ? scopedProjectIds : ['00000000-0000-0000-0000-000000000000'];
+      taskQuery = taskQuery.in('project_id', ids);
+      milestoneQuery = milestoneQuery.in('project_id', ids);
+      eventQuery = eventQuery.in('project_id', ids);
+      reminderQuery = reminderQuery.in('project_id', ids);
+    }
+    if (requestedTaskHorizon) taskQuery = taskQuery.eq('task_horizon', requestedTaskHorizon);
+    if (assignedToMe) taskQuery = taskQuery.or(`assigned_to_user_id.eq.${req.authUser.id},assigned_to.eq.${req.authUser.id}`);
+    if (assignedToMe) milestoneQuery = milestoneQuery.eq('assigned_to_user_id', req.authUser.id);
+    if (assignedToMe) eventQuery = eventQuery.eq('assigned_to_user_id', req.authUser.id);
+    if (assignedToMe) reminderQuery = reminderQuery.or(`user_id.eq.${req.authUser.id},assigned_to_user_id.eq.${req.authUser.id}`);
+    if (rangeStart || rangeEnd) {
+      taskQuery = applyDateRange(taskQuery, 'due_date');
+      eventQuery = applyDateRange(eventQuery, 'start_at');
+      reminderQuery = applyDateRange(reminderQuery, 'remind_at');
+    }
+
+    const [notes, projects, tasks, milestones, events, reminders, inbox, teams, teamMembers, transcriptSegments] = await Promise.all([
+      include('notes') ? supabase.from('notes').select('id, title, content, content_html, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000) : emptyResult(),
+      include('projects') ? (() => { let query = supabase.from('projects').select('id, name, description, status, completeness, start_date, end_date, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(500); if (projectReference) query = query.in('id', scopedProjectIds.length ? scopedProjectIds : ['00000000-0000-0000-0000-000000000000']); return query; })() : emptyResult(),
+      include('tasks') ? taskQuery : emptyResult(),
+      include('milestones') ? milestoneQuery : emptyResult(),
+      include('events') ? eventQuery : emptyResult(),
+      include('reminders') ? reminderQuery : emptyResult(),
+      include('inbox') ? supabase.from('inbox_items').select(inboxItemSelectColumns).eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000) : emptyResult(),
+      include('teams') ? supabase.from('workspace_teams').select('id, name, identifier, description, updated_at, created_at').eq('workspace_id', workspaceId).is('archived_at', null).order('updated_at', { ascending: false }).limit(500) : emptyResult(),
+      include('teamMembers') ? supabase.from('workspace_team_members').select('team_id, user_id, role, created_at').eq('workspace_id', workspaceId).order('created_at', { ascending: true }).limit(5000) : emptyResult(),
+      include('transcriptSegments') ? supabase.from('meeting_note_transcript_segments').select('id, note_id, transcript_text, speaker_label, start_ms, updated_at').eq('workspace_id', workspaceId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(2000) : emptyResult(),
     ]);
-    for (const result of [notes, projects, tasks, events, reminders, inbox, teams, transcriptSegments]) {
+    for (const result of [notes, projects, tasks, milestones, events, reminders, inbox, teams, teamMembers, transcriptSegments]) {
       if (result.error) throw result.error;
+    }
+    if (String(req.query?.open_only ?? '').toLowerCase() === 'true') {
+      const closed = new Set(['completed', 'complete', 'done', 'cancelled', 'canceled', 'dismissed']);
+      tasks.data = (tasks.data ?? []).filter((row) => !closed.has(String(row.status ?? '').toLowerCase()));
+      reminders.data = (reminders.data ?? []).filter((row) => !closed.has(String(row.status ?? '').toLowerCase()) && !row.completed_at && !row.dismissed_at);
+    }
+    if (scope === 'followups') {
+      tasks.data = (tasks.data ?? []).filter((row) => row.source || row.source_platform || followupLinksByTaskId.has(String(row.id)));
+      reminders.data = (reminders.data ?? []).filter((row) => row.source || row.source_platform || row.linked_type || row.linked_id);
+      events.data = (events.data ?? []).filter((row) => row.source || row.source_platform || row.note_id);
+    }
+
+    const teamRows = teams.data ?? [];
+    const memberRows = teamMembers.data ?? [];
+    const teamIds = new Set(teamRows.map((row) => String(row.id)));
+    const workspaceUserIds = [...new Set(memberRows.filter((row) => teamIds.has(String(row.team_id))).map((row) => row.user_id).filter(Boolean).map(String))];
+    const teamUsers = workspaceUserIds.length
+      ? await supabase.from('users').select('id, email, full_name').in('id', workspaceUserIds)
+      : { data: [], error: null };
+    if (teamUsers.error) throw teamUsers.error;
+    const teamUserById = new Map((teamUsers.data ?? []).map((row) => [String(row.id), row]));
+    const membersByTeamId = new Map();
+    for (const row of memberRows) {
+      const teamId = String(row.team_id ?? '');
+      if (!teamIds.has(teamId)) continue;
+      const user = teamUserById.get(String(row.user_id));
+      const name = String(user?.full_name ?? user?.email?.split('@')[0] ?? 'Team member').trim();
+      const member = { userId: String(row.user_id), name, email: user?.email ?? null, role: row.role ?? 'member' };
+      const members = membersByTeamId.get(teamId) ?? [];
+      members.push(member);
+      membersByTeamId.set(teamId, members);
     }
 
     const projectIds = [...new Set([
       ...(tasks.data ?? []).map((row) => row.project_id),
+      ...(milestones.data ?? []).map((row) => row.project_id),
       ...(events.data ?? []).map((row) => row.project_id),
       ...(reminders.data ?? []).map((row) => row.project_id),
     ].filter(Boolean).map(String))];
@@ -21056,15 +21160,37 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
       ? await supabase.from('projects').select('id, name').eq('workspace_id', workspaceId).in('id', projectIds)
       : { data: [], error: null };
     if (projectRows.error) throw projectRows.error;
-    const projectNames = new Map((projectRows.data ?? []).map((row) => [String(row.id), row.name]));
+    const projectNames = new Map([
+      ...(projects.data ?? []).map((row) => [String(row.id), row.name]),
+      ...(projectRows.data ?? []).map((row) => [String(row.id), row.name]),
+    ]);
+    const projectNoteLinksResult = include('notes')
+      ? await supabase.from('project_note_links').select('project_id, note_id').eq('workspace_id', workspaceId)
+      : { data: [], error: null };
+    if (projectNoteLinksResult.error) throw projectNoteLinksResult.error;
+    const projectByNoteId = new Map();
+    for (const link of projectNoteLinksResult.data ?? []) {
+      if (!projectByNoteId.has(String(link.note_id))) projectByNoteId.set(String(link.note_id), String(link.project_id));
+    }
     const documents = [
-      ...(projects.data ?? []).map((row) => ({ resourceType: 'project', resourceId: String(row.id), title: String(row.name ?? 'Untitled project'), content: aiDocumentText([row.description, `Status: ${row.status ?? 'Not started'}`, `Progress: ${Math.max(0, Math.min(100, Number(row.completeness) || 0))}%`].filter(Boolean).join(' ')), status: row.status ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Project', route: searchRouteFor(workspaceId, 'project', row.id) })),
-      ...(tasks.data ?? []).map((row) => ({ resourceType: 'task', resourceId: String(row.id), title: String(row.title ?? 'Untitled task'), content: aiDocumentText([row.description, row.priority ? `Priority: ${row.priority}` : null, row.due_date ? `Due: ${row.due_date}${row.due_time ? ` ${row.due_time}` : ''}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Task', route: row.project_id ? searchRouteFor(workspaceId, 'project', row.project_id, { taskId: row.id }) : searchRouteFor(workspaceId, 'task', row.id) })),
-      ...(notes.data ?? []).map((row) => ({ resourceType: 'note', resourceId: String(row.id), title: String(row.title ?? 'Untitled note'), content: aiDocumentText(row.content_html ?? row.content), updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Note', route: searchRouteFor(workspaceId, 'note', row.id) })),
-      ...(events.data ?? []).map((row) => ({ resourceType: 'event', resourceId: String(row.id), title: String(row.title ?? 'Untitled event'), content: aiDocumentText([row.notes, row.start_at ? `Starts: ${row.start_at}` : null, row.end_at ? `Ends: ${row.end_at}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, timestamp: row.start_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Event', route: searchRouteFor(workspaceId, 'event', row.id) })),
-      ...(reminders.data ?? []).map((row) => ({ resourceType: 'reminder', resourceId: String(row.id), title: String(row.title ?? 'Untitled reminder'), content: aiDocumentText(row.body), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, timestamp: row.remind_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Reminder', route: searchRouteFor(workspaceId, 'reminder', row.id) })),
+      ...(projects.data ?? []).map((row) => ({ resourceType: 'project', resourceId: String(row.id), title: String(row.name ?? 'Untitled project'), content: aiDocumentText([row.description, `Status: ${row.status ?? 'Not started'}`, `Progress: ${Math.max(0, Math.min(100, Number(row.completeness) || 0))}%`, row.start_date ? `Starts: ${row.start_date}` : null, row.end_date ? `Ends: ${row.end_date}` : null].filter(Boolean).join(' ')), status: row.status ?? undefined, timestamp: row.start_date ?? undefined, dueAt: row.end_date ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Project', route: searchRouteFor(workspaceId, 'project', row.id) })),
+      ...(tasks.data ?? []).map((row) => { const meetingLink = followupLinksByTaskId.get(String(row.id)); const meetingName = meetingLink?.meeting_note_id ? followupMeetingNames.get(String(meetingLink.meeting_note_id)) : undefined; const provenance = row.source ? `${row.source_platform ? `${row.source_platform} ` : ''}${row.source}` : meetingName ? `Meeting: ${meetingName}` : undefined; return { resourceType: 'task', resourceId: String(row.id), title: String(row.title ?? 'Untitled task'), content: aiDocumentText([row.description, row.task_horizon ? `Horizon: ${row.task_horizon}` : null, row.priority ? `Priority: ${row.priority}` : null, provenance ? `Origin: ${provenance}` : null, row.due_date ? `Due: ${row.due_date}${row.due_time ? ` ${row.due_time}` : ''}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, taskHorizon: row.task_horizon ?? undefined, provenance, dueAt: row.due_date ? `${row.due_date}${row.due_time ? `T${row.due_time}` : ''}` : undefined, priority: row.priority ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Task', route: row.project_id ? searchRouteFor(workspaceId, 'project', row.project_id, { taskId: row.id }) : searchRouteFor(workspaceId, 'task', row.id) }; }),
+      ...(milestones.data ?? []).map((row) => ({ resourceType: 'milestone', resourceId: String(row.id), title: String(row.title ?? 'Untitled milestone'), content: aiDocumentText([row.note, row.type ? `Type: ${row.type}` : null, row.completed ? 'Completed' : 'Not completed', row.milestone_date ? `Date: ${row.milestone_date}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.completed ? 'Completed' : 'Not completed', dueAt: row.milestone_date ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Milestone', route: row.project_id ? searchRouteFor(workspaceId, 'project', row.project_id, { milestoneId: row.id }) : undefined })),
+      ...(notes.data ?? []).map((row) => ({ resourceType: 'note', resourceId: String(row.id), title: String(row.title ?? 'Untitled note'), content: aiDocumentText(row.content_html ?? row.content), projectId: projectByNoteId.get(String(row.id)) ?? undefined, projectName: projectNames.get(String(projectByNoteId.get(String(row.id)) ?? '')) ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Note', route: searchRouteFor(workspaceId, 'note', row.id) })),
+      ...(events.data ?? []).map((row) => ({ resourceType: 'event', resourceId: String(row.id), title: String(row.title ?? 'Untitled event'), content: aiDocumentText([row.notes, row.source ? `Origin: ${row.source_platform ? `${row.source_platform} ` : ''}${row.source}` : null, row.note_id ? 'Linked to meeting notes' : null, row.start_at ? `Starts: ${row.start_at}` : null, row.end_at ? `Ends: ${row.end_at}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, provenance: row.source ? `${row.source_platform ? `${row.source_platform} ` : ''}${row.source}` : row.note_id ? 'Linked meeting note' : undefined, timestamp: row.start_at ?? undefined, endAt: row.end_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Event', route: searchRouteFor(workspaceId, 'event', row.id) })),
+      ...(reminders.data ?? []).map((row) => ({ resourceType: 'reminder', resourceId: String(row.id), title: String(row.title ?? 'Untitled reminder'), content: aiDocumentText([row.body, row.source ? `Origin: ${row.source_platform ? `${row.source_platform} ` : ''}${row.source}` : null, row.linked_type ? `Linked ${row.linked_type}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, provenance: row.source ? `${row.source_platform ? `${row.source_platform} ` : ''}${row.source}` : row.linked_type ? `Linked ${row.linked_type}` : undefined, timestamp: row.remind_at ?? undefined, dueAt: row.remind_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Reminder', route: searchRouteFor(workspaceId, 'reminder', row.id) })),
       ...(inbox.data ?? []).map((row) => ({ resourceType: 'intake', resourceId: String(row.id), title: String(row.title ?? 'Untitled capture'), content: aiDocumentText([row.body, row.source].filter(Boolean).join(' ')), updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Intake', route: searchRouteFor(workspaceId, 'intake', row.id) })),
-      ...(teams.data ?? []).map((row) => ({ resourceType: 'team', resourceId: String(row.id), title: String(row.name ?? row.identifier ?? 'Untitled team'), content: aiDocumentText(row.description), updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Team', route: searchRouteFor(workspaceId, 'team', row.id) })),
+      ...teamRows.flatMap((row) => {
+        const teamId = String(row.id);
+        const members = membersByTeamId.get(teamId) ?? [];
+        const teamTitle = String(row.name ?? row.identifier ?? 'Untitled team');
+        const memberSummary = members.length
+          ? `Members: ${members.map((member) => `${member.name}${member.role ? ` (${member.role})` : ''}`).join(', ')}`
+          : 'Members: none listed';
+        const teamDocument = { resourceType: 'team', resourceId: teamId, title: teamTitle, content: aiDocumentText([row.description, memberSummary].filter(Boolean).join(' ')), updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Team', route: searchRouteFor(workspaceId, 'team', row.id) };
+        const memberDocuments = members.map((member) => ({ resourceType: 'person', resourceId: member.userId, title: member.name, content: aiDocumentText(`Name: ${member.name}. Team: ${teamTitle}. Role: ${member.role ?? 'member'}.${member.email ? ` Email: ${member.email}.` : ''}`), projectName: teamTitle, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Team member', route: searchRouteFor(workspaceId, 'team', row.id) }));
+        return [teamDocument, ...memberDocuments];
+      }),
       ...(transcriptSegments.data ?? []).map((row) => ({ resourceType: 'transcript', resourceId: String(row.id), parentResourceId: String(row.note_id), title: 'Meeting transcript', content: aiDocumentText([row.speaker_label, row.transcript_text].filter(Boolean).join(': ')), timestamp: row.start_ms == null ? undefined : `${row.start_ms}ms`, updatedAt: row.updated_at ?? undefined, sourceLabel: 'Transcript', route: searchRouteFor(workspaceId, 'note', row.note_id) })),
     ].filter((document) => document.content || document.title);
 
@@ -21583,6 +21709,237 @@ async function searchWorkspaceContent({
     })
     .slice(0, 20);
 }
+
+const askLedgerSessionSourceTypes = new Set([
+  'project', 'task', 'milestone', 'note', 'event', 'reminder', 'intake', 'transcript', 'person', 'team', 'external',
+]);
+const askLedgerActionTypes = new Set(['create_task', 'create_note', 'create_reminder', 'update_task_status']);
+const askLedgerSkillIds = new Set(['meeting_follow_up', 'project_health_check', 'plan_my_week', 'turn_notes_into_tasks', 'prepare_for_meeting']);
+const askLedgerSkillAllowedActions = {
+  meeting_follow_up: new Set(['create_task', 'create_reminder']),
+  project_health_check: new Set(),
+  plan_my_week: new Set(),
+  turn_notes_into_tasks: new Set(['create_task']),
+  prepare_for_meeting: new Set(),
+};
+
+const sanitizeAskLedgerSessionMessages = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-100).map((message, index) => {
+    const role = message?.role === 'assistant' ? 'assistant' : message?.role === 'user' ? 'user' : null;
+    if (!role) return null;
+    const sources = Array.isArray(message.sources)
+      ? message.sources.slice(0, 8).map((source) => {
+          const type = String(source?.type ?? '');
+          if (!askLedgerSessionSourceTypes.has(type)) return null;
+          return {
+            id: clampText(source.id, 200),
+            title: clampText(source.title, 300) || 'Untitled',
+            type,
+            ...(source.resourceId ? { resourceId: clampText(source.resourceId, 200) } : {}),
+            ...(source.projectId ? { projectId: clampText(source.projectId, 200) } : {}),
+            ...(source.parentResourceId ? { parentResourceId: clampText(source.parentResourceId, 200) } : {}),
+            ...(source.route ? { route: source.route } : {}),
+            ...(source.sourceLabel ? { sourceLabel: clampText(source.sourceLabel, 200) } : {}),
+            ...(source.updatedAt ? { updatedAt: clampText(source.updatedAt, 80) } : {}),
+          };
+        }).filter((source) => source?.id)
+      : undefined;
+    const actions = Array.isArray(message.actions)
+      ? message.actions.slice(0, 8).map((action, actionIndex) => {
+          const type = String(action?.type ?? '');
+          if (!askLedgerActionTypes.has(type)) return null;
+          const rawPayload = action?.payload && typeof action.payload === 'object' ? action.payload : {};
+          const payload = {};
+          for (const key of ['title', 'content', 'project_id', 'task_id', 'status', 'priority', 'due_date', 'remind_at']) {
+            if (rawPayload[key] !== undefined && rawPayload[key] !== null) payload[key] = clampText(rawPayload[key], key === 'content' ? 20000 : 300);
+          }
+          return {
+            id: clampText(action.id, 200) || `action-${index}-${actionIndex}`,
+            type,
+            payload,
+            sourceMessageId: clampText(action.sourceMessageId, 200),
+            status: ['pending', 'created', 'failed', 'rejected'].includes(String(action.status)) ? String(action.status) : 'pending',
+            ...(action.resultResourceId ? { resultResourceId: clampText(action.resultResourceId, 200) } : {}),
+            ...(action.resultTitle ? { resultTitle: clampText(action.resultTitle, 300) } : {}),
+            ...(action.error ? { error: clampText(action.error, 500) } : {}),
+          };
+        }).filter(Boolean)
+      : undefined;
+    const skillId = askLedgerSkillIds.has(String(message.skillId ?? '')) ? String(message.skillId) : undefined;
+    const safeActions = skillId ? actions?.filter((action) => askLedgerSkillAllowedActions[skillId]?.has(action.type)) : actions;
+    const structured = message.structured && typeof message.structured === 'object' && askLedgerSkillIds.has(String(message.structured.skillId ?? '')) && Array.isArray(message.structured.sections)
+      ? {
+          skillId: String(message.structured.skillId),
+          sections: message.structured.sections.slice(0, 8).map((section) => ({
+            title: clampText(section?.title, 120),
+            content: clampMultilineText(section?.content, 8000),
+          })).filter((section) => section.title && section.content),
+        }
+      : undefined;
+    return {
+      id: clampText(message.id, 200) || `message-${index}`,
+      role,
+      content: clampMultilineText(message.content, 20000) || '',
+      createdAt: clampText(message.createdAt, 80) || new Date().toISOString(),
+      ...(sources?.length ? { sources } : {}),
+      ...(safeActions?.length ? { actions: safeActions } : {}),
+      ...(structured?.sections?.length ? { structured } : {}),
+      ...(skillId ? { skillId } : {}),
+      ...(message.interrupted === true ? { interrupted: true } : {}),
+    };
+  }).filter((message) => message && (message.content || message.skillId));
+};
+
+const mapAskLedgerSession = (row) => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  userId: row.user_id,
+  title: row.title,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  ...(askLedgerSkillIds.has(String(row.skill_id ?? '')) ? { skillId: String(row.skill_id) } : {}),
+  messages: sanitizeAskLedgerSessionMessages(row.messages),
+  ...(row.initial_context && typeof row.initial_context === 'object' ? { initialContext: {
+    resourceType: String(row.initial_context.resourceType ?? ''),
+    resourceId: clampText(row.initial_context.resourceId, 200),
+    title: clampText(row.initial_context.title, 300),
+  } } : {}),
+  ...(row.summary ? { summary: row.summary } : {}),
+});
+
+const askLedgerContextExists = async (workspaceId, context) => {
+  if (!context?.resourceType || !context?.resourceId) return false;
+  const tableByType = {
+    project: 'projects',
+    task: 'tasks',
+    milestone: 'project_milestones',
+    note: 'notes',
+    event: 'events',
+    reminder: 'reminders',
+    transcript: 'meeting_note_transcript_segments',
+    intake: 'inbox_items',
+  };
+  const table = tableByType[String(context.resourceType)];
+  if (!table) return true;
+  const result = await supabase.from(table).select('id').eq('id', context.resourceId).eq('workspace_id', workspaceId).maybeSingle();
+  if (result.error) throw result.error;
+  return Boolean(result.data?.id);
+};
+
+const askLedgerSessionQuery = (workspaceId, userId, sessionId) => {
+  let query = supabase
+    .from('ask_ledger_sessions')
+    .select('id, workspace_id, user_id, title, messages, summary, initial_context, skill_id, created_at, updated_at')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', userId);
+  if (sessionId) query = query.eq('id', sessionId);
+  return query;
+};
+
+app.get('/api/workspaces/:workspaceId/ask-ledger/sessions', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    if (!workspaceId) return res.status(400).json({ error: 'Workspace id required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+    const limit = Math.min(20, Math.max(1, Number.parseInt(String(req.query?.limit ?? '5'), 10) || 5));
+    const result = await askLedgerSessionQuery(workspaceId, req.authUser.id)
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+    if (result.error) throw result.error;
+    res.json({ sessions: (result.data ?? []).map(mapAskLedgerSession) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/workspaces/:workspaceId/ask-ledger/sessions/:sessionId', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const sessionId = String(req.params.sessionId ?? '').trim();
+    if (!workspaceId || !sessionId) return res.status(400).json({ error: 'Workspace and session ids are required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+    const result = await askLedgerSessionQuery(workspaceId, req.authUser.id, sessionId).maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'Ask Ledger session not found' });
+    const session = mapAskLedgerSession(result.data);
+    if (session.initialContext && !(await askLedgerContextExists(workspaceId, session.initialContext))) delete session.initialContext;
+    res.json({ session });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/workspaces/:workspaceId/ask-ledger/sessions', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    if (!workspaceId) return res.status(400).json({ error: 'Workspace id required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+    const messages = sanitizeAskLedgerSessionMessages(req.body?.messages);
+    if (!messages.length) return res.status(400).json({ error: 'A session needs at least one message' });
+    const result = await supabase.from('ask_ledger_sessions').insert({
+      workspace_id: workspaceId,
+      user_id: req.authUser.id,
+      title: clampText(req.body?.title, 160) || 'Ask Ledger',
+      messages,
+      summary: clampMultilineText(req.body?.summary, 4000),
+      initial_context: req.body?.initialContext && typeof req.body.initialContext === 'object' ? {
+        resourceType: clampText(req.body.initialContext.resourceType, 40),
+        resourceId: clampText(req.body.initialContext.resourceId, 200),
+        title: clampText(req.body.initialContext.title, 300),
+      } : null,
+      skill_id: askLedgerSkillIds.has(String(req.body?.skillId ?? '')) ? String(req.body.skillId) : null,
+    }).select('id, workspace_id, user_id, title, messages, summary, initial_context, skill_id, created_at, updated_at').single();
+    if (result.error) throw result.error;
+    res.status(201).json({ session: mapAskLedgerSession(result.data) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.patch('/api/workspaces/:workspaceId/ask-ledger/sessions/:sessionId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const sessionId = String(req.params.sessionId ?? '').trim();
+    if (!workspaceId || !sessionId) return res.status(400).json({ error: 'Workspace and session ids are required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+    const updates = { updated_at: new Date().toISOString() };
+    if (req.body?.title !== undefined) updates.title = clampText(req.body.title, 160) || 'Ask Ledger';
+    if (req.body?.messages !== undefined) {
+      const messages = sanitizeAskLedgerSessionMessages(req.body.messages);
+      if (!messages.length) return res.status(400).json({ error: 'A session needs at least one message' });
+      updates.messages = messages;
+    }
+    if (req.body?.summary !== undefined) updates.summary = clampMultilineText(req.body.summary, 4000);
+    if (req.body?.initialContext !== undefined) updates.initial_context = req.body.initialContext && typeof req.body.initialContext === 'object' ? {
+      resourceType: clampText(req.body.initialContext.resourceType, 40),
+      resourceId: clampText(req.body.initialContext.resourceId, 200),
+      title: clampText(req.body.initialContext.title, 300),
+    } : null;
+    if (req.body?.skillId !== undefined) updates.skill_id = askLedgerSkillIds.has(String(req.body.skillId ?? '')) ? String(req.body.skillId) : null;
+    const result = await supabase.from('ask_ledger_sessions').update(updates).eq('id', sessionId).eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).select('id, workspace_id, user_id, title, messages, summary, initial_context, skill_id, created_at, updated_at').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'Ask Ledger session not found' });
+    res.json({ session: mapAskLedgerSession(result.data) });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/ask-ledger/sessions/:sessionId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const sessionId = String(req.params.sessionId ?? '').trim();
+    if (!workspaceId || !sessionId) return res.status(400).json({ error: 'Workspace and session ids are required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+    const result = await supabase.from('ask_ledger_sessions').delete().eq('id', sessionId).eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).select('id').maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return res.status(404).json({ error: 'Ask Ledger session not found' });
+    res.json({ deleted: true, sessionId });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
 
 app.get('/api/mobile/search', async (req, res) => {
   try {

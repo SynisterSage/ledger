@@ -393,12 +393,19 @@ contextBridge.exposeInMainWorld('meetingTranscription', {
 });
 
 contextBridge.exposeInMainWorld('askLedger', {
+  listSkills() { return ipcRenderer.invoke('ask-ledger:list-skills') as Promise<unknown[]>; },
+  selectAttachments(payload: { workspaceId: string; conversationId: string; existingCount?: number; existingSizeBytes?: number }) { return ipcRenderer.invoke('ask-ledger:select-attachments', payload); },
+  openAttachment(attachmentId: string) { return ipcRenderer.invoke('ask-ledger:open-attachment', attachmentId) as Promise<{ ok: boolean; error?: string }>; },
+  removeAttachments(payload: { conversationId: string; attachmentIds: string[] }) { return ipcRenderer.invoke('ask-ledger:remove-attachments', payload) as Promise<{ ok: boolean }>; },
   localAIStatus() { return ipcRenderer.invoke('ask-ledger:local-ai-status'); },
   localAIHardware() { return ipcRenderer.invoke('ask-ledger:local-ai-hardware'); },
   downloadLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-download', role); },
   cancelLocalAIDownload(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-cancel-download', role); },
   removeLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-remove', role); },
-  start(payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown }) {
+  start(payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; explicitContext?: unknown }) {
+    return ipcRenderer.invoke('ask-ledger:start', payload) as Promise<{ requestId: string }>;
+  },
+  executeSkill(payload: { skillId: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; explicitContext?: unknown }) {
     return ipcRenderer.invoke('ask-ledger:start', payload) as Promise<{ requestId: string }>;
   },
   cancel(requestId: string) {
