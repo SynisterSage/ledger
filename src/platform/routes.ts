@@ -1,4 +1,5 @@
 import type { LedgerWorkspaceRoute, NoteView, CalendarView, DashboardSection } from './types/routes';
+import type { WorkspaceSettingsSection } from './types/routes';
 
 export type NotificationTarget =
   | { type: 'note'; id: string; view?: NoteView }
@@ -30,6 +31,7 @@ export const routeForInboxItem = (workspaceId: string, itemId?: string, section?
 export const routeForSlackCapture = (workspaceId: string, captureId?: string): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'slack', query: { capture: captureId } });
 export const routeForNotification = (workspaceId: string, itemId?: string, filter?: 'active' | 'unread' | 'earlier'): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'notifications', query: { item: itemId, filter } });
 export const routeForSearch = (workspaceId: string, query: string): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'search', query: { q: query } });
+export const routeForWorkspaceSettings = (workspaceId: string, section: WorkspaceSettingsSection = 'workspace'): LedgerWorkspaceRoute => ({ kind: 'workspace', workspaceId, page: 'settings', scope: 'workspace', section });
 export const routeForNotificationTarget = (workspaceId: string, target: NotificationTarget): LedgerWorkspaceRoute => {
   switch (target.type) {
     case 'note': return routeForNote(workspaceId, target.id, target.view);

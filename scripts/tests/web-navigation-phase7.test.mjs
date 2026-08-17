@@ -10,12 +10,15 @@ test('canonical resource route helpers serialize durable URLs', () => {
   assert.equal(serializeLedgerRoute(routes.routeForProject('ws', 'project-1', 'task-1')), '/app/w/ws/projects/project-1?task=task-1');
   assert.equal(serializeLedgerRoute(routes.routeForTask('ws', 'task-1')), '/app/w/ws/tasks/task-1');
   assert.equal(serializeLedgerRoute(routes.routeForCalendarEvent('ws', 'event-1')), '/app/w/ws/calendar?event=event-1');
+  assert.equal(serializeLedgerRoute(routes.routeForCalendarReminder('ws', 'reminder-1', '2026-08-16')), '/app/w/ws/calendar?reminder=reminder-1&date=2026-08-16');
   assert.equal(serializeLedgerRoute(routes.routeForInboxItem('ws', 'item-1')), '/app/w/ws/inbox?item=item-1');
+  assert.equal(serializeLedgerRoute(routes.routeForWorkspaceSettings('ws', 'integrations')), '/app/w/ws/settings/workspace/integrations');
 });
 
 test('notification targets resolve to canonical resource routes', () => {
   assert.deepEqual(routes.routeForNotificationTarget('ws', { type: 'project', id: 'p', taskId: 't' }), routes.routeForProject('ws', 'p', 't'));
   assert.deepEqual(routes.routeForNotificationTarget('ws', { type: 'event', id: 'e' }), routes.routeForCalendarEvent('ws', 'e'));
+  assert.deepEqual(routes.routeForNotificationTarget('ws', { type: 'task', id: 't' }), routes.routeForTask('ws', 't'));
   assert.deepEqual(routes.routeForNotificationTarget('ws', { type: 'inbox', id: 'i' }), routes.routeForInboxItem('ws', 'i'));
 });
 

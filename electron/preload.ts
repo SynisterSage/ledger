@@ -392,6 +392,30 @@ contextBridge.exposeInMainWorld('meetingTranscription', {
   },
 });
 
+contextBridge.exposeInMainWorld('askLedger', {
+  localAIStatus() { return ipcRenderer.invoke('ask-ledger:local-ai-status'); },
+  localAIHardware() { return ipcRenderer.invoke('ask-ledger:local-ai-hardware'); },
+  downloadLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-download', role); },
+  cancelLocalAIDownload(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-cancel-download', role); },
+  removeLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-remove', role); },
+  start(payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown }) {
+    return ipcRenderer.invoke('ask-ledger:start', payload) as Promise<{ requestId: string }>;
+  },
+  cancel(requestId: string) {
+    return ipcRenderer.invoke('ask-ledger:cancel', requestId) as Promise<{ ok: boolean }>;
+  },
+  onStream(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('ask-ledger:stream', wrapped);
+    return () => ipcRenderer.off('ask-ledger:stream', wrapped);
+  },
+  onLocalAIStatus(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('ask-ledger:local-ai-status', wrapped);
+    return () => ipcRenderer.off('ask-ledger:local-ai-status', wrapped);
+  },
+});
+
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen';
 type ModuleWindowKind =
   | 'new-tab'

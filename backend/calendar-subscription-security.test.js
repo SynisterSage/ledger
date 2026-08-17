@@ -13,7 +13,10 @@ test('subscription tokens are random, high-entropy values and only hashes are st
 });
 
 test('subscription management migration preserves lifecycle fields', async () => {
-  const migration = await (await import('node:fs/promises')).readFile('../migrations/117_calendar_subscription_management.sql', 'utf8');
+  const migration = await (await import('node:fs/promises')).readFile(
+    new URL('../migrations/117_calendar_subscription_management.sql', import.meta.url),
+    'utf8'
+  );
   assert.match(migration, /last_accessed_at/);
   assert.match(migration, /last_generated_at/);
   assert.match(migration, /last_error_at/);

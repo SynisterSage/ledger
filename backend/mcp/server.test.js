@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_DATE_RANGE_DAYS, MAX_LIMIT, MAX_NOTE_CONTENT, decodeCursor, encodeCursor, plainText } from './server.js';
+import { MAX_DATE_RANGE_DAYS, MAX_LIMIT, MAX_NOTE_CONTENT, decodeCursor, encodeCursor, plainText, workspaceRoute } from './server.js';
 
 test('MCP output helpers strip unsafe markup and cap constants', () => {
   assert.equal(plainText('<script>alert(1)</script><p>Hello&nbsp;<strong>Ledger</strong></p>'), 'Hello Ledger');
@@ -13,4 +13,13 @@ test('MCP output helpers strip unsafe markup and cap constants', () => {
 test('invalid MCP cursors are rejected before database queries', () => {
   assert.equal(decodeCursor('not-a-cursor'), null);
   assert.equal(decodeCursor('-1'), null);
+});
+
+test('MCP writes can return the same platform-neutral route shape as Ledger consumers', () => {
+  assert.deepEqual(workspaceRoute('workspace-1', 'task', 'task-1'), {
+    kind: 'workspace-resource',
+    workspaceId: 'workspace-1',
+    resourceType: 'task',
+    resourceId: 'task-1',
+  });
 });

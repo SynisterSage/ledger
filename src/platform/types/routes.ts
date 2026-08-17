@@ -36,6 +36,18 @@ export type NotificationsQuery = {
 };
 export type SlackQuery = { capture?: string };
 export type SearchQuery = { q: string };
+export type WorkspaceSettingsSection =
+  | 'workspace'
+  | 'members'
+  | 'calendar'
+  | 'notifications'
+  | 'sidebar'
+  | 'meeting-notes'
+  | 'integrations'
+  | 'google-drive'
+  | 'github'
+  | 'slack'
+  | 'figma';
 
 export type LedgerWorkspaceRoute =
   | { kind: 'workspace'; workspaceId: string; page: 'home' }
@@ -60,18 +72,7 @@ export type LedgerWorkspaceRoute =
       workspaceId: string;
       page: 'settings';
       scope: 'workspace';
-      section:
-        | 'workspace'
-        | 'members'
-        | 'calendar'
-        | 'notifications'
-        | 'sidebar'
-        | 'meeting-notes'
-        | 'integrations'
-        | 'google-drive'
-        | 'github'
-        | 'slack'
-        | 'figma';
+      section: WorkspaceSettingsSection;
     };
 
 export type LedgerAppRoute =

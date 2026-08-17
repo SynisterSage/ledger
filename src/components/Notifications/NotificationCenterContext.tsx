@@ -12,7 +12,7 @@ import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useToast } from '../Common/ToastProvider';
-import { openLegacyModule, usePlatform } from '../../platform';
+import { openLegacyModule, routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForProject, routeForTask, usePlatform } from '../../platform';
 
 export type NotificationAction = 'open' | 'dismiss' | 'complete' | 'snooze';
 export type NotificationFilter = 'active' | 'unread' | 'dismissed';
@@ -214,6 +214,28 @@ export const NotificationCenterProvider = ({ children }: { children: ReactNode }
   const openTarget = useCallback(async (item: NotificationCenterItem) => {
     const focus = item.focusPayload ?? undefined;
     const kind = item.moduleKind ?? 'dashboard';
+    if (activeWorkspaceId) {
+      if (item.sourceType === 'project') {
+        platform.navigation.openRoute(routeForProject(activeWorkspaceId, item.sourceId, typeof focus?.focusTaskId === 'string' ? focus.focusTaskId : undefined));
+        return;
+      }
+      if (item.sourceType === 'task') {
+        platform.navigation.openRoute(routeForTask(activeWorkspaceId, item.sourceId));
+        return;
+      }
+      if (item.sourceType === 'event') {
+        platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, item.sourceId, typeof focus?.focusDate === 'string' ? focus.focusDate : undefined));
+        return;
+      }
+      if (item.sourceType === 'reminder') {
+        platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId, item.sourceId, typeof focus?.focusDate === 'string' ? focus.focusDate : undefined));
+        return;
+      }
+      if (item.sourceType === 'inbox') {
+        platform.navigation.openRoute(routeForInboxItem(activeWorkspaceId, item.sourceId));
+        return;
+      }
+    }
     if (platform.kind === 'web') {
       openLegacyModule(platform.navigation, activeWorkspaceId, kind, {
         focusDate: typeof focus?.focusDate === 'string' ? focus.focusDate : undefined,

@@ -83,7 +83,7 @@ import type {
 import { htmlToPlainText, normalizeEditorHtml } from './editor/utils/html';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
-import { usePlatform } from '../../platform';
+import { routeForCalendarEvent, routeForNote, usePlatform } from '../../platform';
 import { CreateNoteModal } from './CreateNoteModal';
 import { BulkExportModal } from './BulkExportModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
@@ -97,6 +97,7 @@ import { isTeamOrientedTemplate, QUICK_TEMPLATE_DEFINITIONS } from './templateDe
 import NotesHome from './NotesHome';
 import type { NotesHomeTemplate, NotesHomeUpcomingMeeting } from './NotesHome';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import { RelatedContextList } from '../Common/RelatedContextList';
 import type {
   MeetingNoteMetadata,
   MeetingTranscriptionStatus,
@@ -7158,13 +7159,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
   const openUpcomingCalendarEvent = useCallback((event: NotesHomeUpcomingMeeting) => {
     if (event.note_id) {
-      void window.desktopWindow?.toggleModule('notes', { focusNoteId: event.note_id });
-    } else {
-      void window.desktopWindow?.toggleModule('calendar', {
-        focusContext: `focus-event:${event.id}`,
-      });
+      if (activeWorkspaceId) platform.navigation.openRoute(routeForNote(activeWorkspaceId, event.note_id));
+    } else if (activeWorkspaceId) {
+      platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, event.id));
     }
-  }, []);
+  }, [activeWorkspaceId, platform]);
 
   // Load sections from database when workspace changes
   useEffect(() => {
@@ -9565,6 +9564,18 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   />
                 ) : null}
 
+                {selectedNote && activeWorkspaceId ? (
+                  <RelatedContextList
+                    workspaceId={activeWorkspaceId}
+                    resourceType="note"
+                    resourceId={selectedNote.id}
+                    title={isMeetingNote ? 'Meeting context' : 'Related context'}
+                    emptyMessage={isMeetingNote ? 'No linked meeting context yet.' : 'No linked context yet.'}
+                    maxItems={10}
+                    className="border-t border-[color:var(--ledger-border-subtle)] pt-4"
+                  />
+                ) : null}
+
                 {isMeetingNote && (
                   <div className="min-w-0 space-y-3 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                     <div className="flex items-center justify-between gap-3">
@@ -9710,11 +9721,12 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           {meetingMetadata.calendar_event_id ? (
                             <button
                               type="button"
-                              onClick={() =>
-                                void window.desktopWindow?.toggleModule('calendar', {
-                                  focusContext: `focus-event:${meetingMetadata.calendar_event_id}`,
-                                })
-                              }
+                              onClick={() => {
+                                if (!activeWorkspaceId || !meetingMetadata.calendar_event_id) return;
+                                platform.navigation.openRoute(
+                                  routeForCalendarEvent(activeWorkspaceId, meetingMetadata.calendar_event_id)
+                                );
+                              }}
                               className="max-w-44 truncate text-right text-[var(--ledger-accent)] hover:underline"
                               title={
                                 meetingMetadata.calendar_event_title ??

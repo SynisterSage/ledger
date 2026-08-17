@@ -42,6 +42,7 @@ import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import { RelatedContextList } from '../Common/RelatedContextList';
 import { FigmaMark } from '../Common/FigmaMark';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
@@ -3414,6 +3415,17 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                               for (const projectId of projectIds) await api.createContextLink('intake', selectedItem.id, 'project', projectId);
                               setSelectedLinkedProjectIds([]);
                             }}
+                          />
+                        ) : null}
+                        {activeWorkspaceId ? (
+                          <RelatedContextList
+                            workspaceId={activeWorkspaceId}
+                            resourceType="intake"
+                            resourceId={selectedItem.id}
+                            title="Context and destination"
+                            emptyMessage="No destination or linked context yet."
+                            maxItems={8}
+                            className="border-t border-[color:var(--ledger-border-subtle)] pt-4"
                           />
                         ) : null}
                       </div>

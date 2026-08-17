@@ -23,7 +23,10 @@
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
     binaries: ['native/LedgerAudioCaptureBridge'],
-    extraResources: [{ from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli'] }],
+    extraResources: [
+      { from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli'] },
+      { from: 'native/local-ai-runtime', to: 'local-ai-runtime' },
+    ],
     artifactName: '${productName}-Mac-${version}-Installer.${ext}',
     extendInfo: {
       NSCalendarsUsageDescription: 'Ledger uses calendar access to show events from calendars you choose alongside your Ledger work.',
@@ -42,7 +45,10 @@
       },
     ],
     artifactName: '${productName}-Windows-${version}-Setup.${ext}',
-    extraResources: [{ from: 'native/whisper-cli.exe', to: 'whisper-cli.exe' }],
+    extraResources: [
+      { from: 'native/whisper-cli.exe', to: 'whisper-cli.exe' },
+      { from: 'native/local-ai-runtime', to: 'local-ai-runtime' },
+    ],
     // Windows capture is renderer/Electron based; no macOS native helpers are shipped.
     // The Windows Whisper executable is staged by build:whisper-windows before packaging.
     signAndEditExecutable: true,

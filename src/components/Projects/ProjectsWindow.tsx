@@ -66,8 +66,11 @@ import {
   type ProjectTypeKind,
 } from '../../utils/projectTypes';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import { RelatedContextList } from '../Common/RelatedContextList';
 import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, routeForTask, usePlatform, type LedgerRoute } from '../../platform';
+import type { RelatedContextResponse } from '../../types/relatedContext';
 
 const parseProjectsSection = (
   value: string
@@ -211,6 +214,7 @@ type NoteOption = {
   title: string;
   preview: string;
   updated_at?: string | null;
+  mode?: string | null;
 };
 
 type ProjectNoteLink = {
@@ -218,6 +222,16 @@ type ProjectNoteLink = {
   note_id: string;
   created_at: string;
   note: NoteOption;
+};
+
+type ProjectActivityItem = {
+  id: string;
+  label: string;
+  at: string | null;
+  route?: LedgerRoute | null;
+  type?: string;
+  source?: string | null;
+  provider?: string | null;
 };
 
 type ProjectMilestoneType =
@@ -568,6 +582,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
+  const platform = usePlatform();
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -750,6 +765,8 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   const [isCreatingProjectContext, setIsCreatingProjectContext] = useState(false);
   const [projectEvents, setProjectEvents] = useState<ProjectCalendarEvent[]>([]);
   const [projectReminders, setProjectReminders] = useState<ProjectCalendarReminder[]>([]);
+  const [projectActivity, setProjectActivity] = useState<ProjectActivityItem[]>([]);
+  const [isLoadingProjectActivity, setIsLoadingProjectActivity] = useState(false);
   const [isLoadingProjectCalendarItems, setIsLoadingProjectCalendarItems] = useState(false);
   const [isLinkCalendarModalOpen, setIsLinkCalendarModalOpen] = useState(false);
   const [calendarLinkKind, setCalendarLinkKind] = useState<CalendarLinkKind>('event');
@@ -992,40 +1009,64 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     [selectedProjectTasks]
   );
 
-  const fullProjectActivity = useMemo(() => {
-    const events: Array<{ id: string; label: string; at: string | null }> = [];
-    if (selectedProject?.updated_at) {
-      events.push({
-        id: 'project-updated',
-        label: 'Project updated',
-        at: selectedProject.updated_at,
-      });
-    }
-    for (const event of projectEvents.slice(0, 3)) {
-      events.push({
-        id: `event-${event.id}`,
-        label: `Event linked: ${event.title}`,
-        at: event.updated_at ?? event.created_at ?? null,
-      });
-    }
-    for (const reminder of projectReminders.slice(0, 3)) {
-      events.push({
-        id: `reminder-${reminder.id}`,
-        label: `Reminder linked: ${reminder.title}`,
-        at: reminder.updated_at ?? reminder.created_at ?? null,
-      });
-    }
-    for (const task of completedProjectTasks.slice(0, 4)) {
-      events.push({
-        id: `task-${task.id}`,
-        label: `Task completed: ${task.title}`,
+  const fullProjectActivity = useMemo<ProjectActivityItem[]>(() => {
+    const events: ProjectActivityItem[] = [...projectActivity];
+    const addLocal = (item: ProjectActivityItem) => {
+      if (item.at) events.push(item);
+    };
+    for (const task of completedProjectTasks) {
+      addLocal({
+        id: `task-completed:${task.id}`,
+        type: 'task_completed',
+        label: `Completed “${task.title}”`,
         at: task.updated_at ?? null,
+        route: selectedProject && activeWorkspaceId ? routeForProject(activeWorkspaceId, selectedProject.id, task.id) : null,
       });
     }
-    return events
-      .filter((event) => event.at)
-      .sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  }, [completedProjectTasks, projectEvents, projectReminders, selectedProject?.updated_at]);
+    for (const task of activeProjectTasks) {
+      const createdAt = new Date(task.created_at).getTime();
+      const updatedAt = new Date(task.updated_at).getTime();
+      if (!Number.isNaN(createdAt) && !Number.isNaN(updatedAt) && Math.abs(updatedAt - createdAt) < 1500) {
+        addLocal({
+          id: `task-created:${task.id}`,
+          type: 'task_created',
+          label: `Added next action · ${task.title}`,
+          at: task.created_at,
+          route: selectedProject && activeWorkspaceId ? routeForProject(activeWorkspaceId, selectedProject.id, task.id) : null,
+        });
+      }
+    }
+    for (const milestone of selectedProjectMilestones) {
+      addLocal({
+        id: `milestone:${milestone.id}:${milestone.updated_at ?? milestone.created_at ?? ''}`,
+        type: milestone.completed ? 'milestone_reached' : 'milestone_updated',
+        label: milestone.completed ? `Milestone reached · ${milestone.title}` : `Milestone updated · ${milestone.title}`,
+        at: milestone.updated_at ?? milestone.created_at ?? null,
+        route: selectedProject && activeWorkspaceId ? routeForProject(activeWorkspaceId, selectedProject.id) : null,
+      });
+    }
+    for (const note of linkedNotes) {
+      addLocal({
+        id: `note:${note.note_id}:${note.note.updated_at ?? note.created_at}`,
+        type: note.note.mode === 'meeting_note' ? 'meeting_note_updated' : 'note_updated',
+        label: note.note.mode === 'meeting_note' ? `Meeting note updated · ${note.note.title}` : `Note updated · ${note.note.title}`,
+        at: note.note.updated_at ?? note.created_at ?? null,
+        route: activeWorkspaceId ? routeForNote(activeWorkspaceId, note.note_id) : null,
+      });
+    }
+    for (const event of projectEvents) {
+      addLocal({ id: `event:${event.id}`, type: 'event_updated', label: `Calendar item · ${event.title}`, at: event.updated_at ?? event.created_at ?? null, route: activeWorkspaceId ? routeForCalendarEvent(activeWorkspaceId, event.id) : null });
+    }
+    for (const reminder of projectReminders) {
+      addLocal({ id: `reminder:${reminder.id}`, type: 'reminder_updated', label: `Reminder · ${reminder.title}`, at: reminder.updated_at ?? reminder.created_at ?? null, route: activeWorkspaceId ? routeForCalendarReminder(activeWorkspaceId, reminder.id) : null });
+    }
+    const deduped = new Map<string, ProjectActivityItem>();
+    for (const item of events) {
+      const key = `${item.type ?? 'activity'}:${item.id}:${item.at}`;
+      if (!deduped.has(key)) deduped.set(key, item);
+    }
+    return [...deduped.values()].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  }, [activeProjectTasks, activeWorkspaceId, completedProjectTasks, linkedNotes, projectActivity, projectEvents, projectReminders, selectedProject, selectedProjectMilestones]);
 
   const recentProjectActivity = useMemo(
     () => fullProjectActivity.slice(0, 5),
@@ -1042,7 +1083,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       return 'Earlier';
     };
 
-    const groups = new Map<string, Array<{ id: string; label: string; at: string | null }>>();
+    const groups = new Map<string, ProjectActivityItem[]>();
     for (const item of fullProjectActivity) {
       const bucket = toBucket(item.at);
       const current = groups.get(bucket) ?? [];
@@ -1100,6 +1141,29 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     },
     [workspaceMemberById, workspaceTeamById]
   );
+
+  const projectPeople = useMemo(() => {
+    if (!selectedProject) return [];
+    const people = new Map<string, { id: string; label: string; role: string }>();
+    const add = (id: string | null | undefined, label: string, role: string) => {
+      if (!id) return;
+      people.set(id, { id, label, role });
+    };
+
+    if (projectDraft.leadId) {
+      add(`user:${projectDraft.leadId}`, getAssigneeLabel(`user:${projectDraft.leadId}`), 'Project lead');
+    }
+    if (selectedProject.owner_team_id) {
+      add(`team:${selectedProject.owner_team_id}`, getAssigneeLabel(`team:${selectedProject.owner_team_id}`), 'Owner team');
+    }
+    for (const task of activeProjectTasks) {
+      const assignment = getAssignmentValue(task);
+      if (!assignment) continue;
+      add(assignment, getAssigneeLabel(assignment), 'Next action owner');
+      if (people.size >= 6) break;
+    }
+    return [...people.values()];
+  }, [activeProjectTasks, getAssigneeLabel, getAssignmentValue, projectDraft.leadId, selectedProject]);
 
   const getMilestoneAssignmentValue = useCallback(
     (
@@ -1270,35 +1334,31 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   const milestoneDetailIsOpenProject =
     Boolean(selectedProjectId) && milestoneDetailRow?.project_id === selectedProjectId;
   const overviewActivity = useMemo(() => {
-    const events: Array<{ id: string; label: string; at: string | null }> = [
+    const events: Array<{ id: string; label: string; at: string | null; route: LedgerRoute | null }> = [
       ...projects.map((project) => ({
         id: `project-${project.id}`,
         label: `${project.name} updated`,
         at: project.updated_at ?? project.created_at ?? null,
+        route: activeWorkspaceId ? routeForProject(activeWorkspaceId, project.id) : null,
       })),
       ...workspaceEvents.map((event) => ({
         id: `event-${event.id}`,
         label: `${event.title} linked`,
         at: event.updated_at ?? event.created_at ?? null,
+        route: activeWorkspaceId ? routeForCalendarEvent(activeWorkspaceId, event.id) : null,
       })),
       ...workspaceReminders.map((reminder) => ({
         id: `reminder-${reminder.id}`,
         label: `${reminder.title} linked`,
         at: reminder.updated_at ?? reminder.created_at ?? null,
+        route: activeWorkspaceId ? routeForCalendarReminder(activeWorkspaceId, reminder.id) : null,
       })),
     ];
     return events
       .filter((event) => event.at)
       .sort((left, right) => String(right.at).localeCompare(String(left.at)))
       .slice(0, 4);
-  }, [projects, workspaceEvents, workspaceReminders]);
-  const linkedObjectCounts = {
-    notes: linkedNotes.length,
-    events: projectEvents.length,
-    reminders: projectReminders.length,
-    captures: 0,
-  };
-
+  }, [activeWorkspaceId, projects, workspaceEvents, workspaceReminders]);
   const projectCalendarAgenda = useMemo(() => {
     if (!selectedProject) return { upcoming: [], past: [] };
 
@@ -1488,8 +1548,6 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   );
 
   const isCompactLayout = viewportWidth < modulePaneSizing.projects.right.compactBreakpoint;
-  const isLoadingProjectActivity =
-    isLoadingProjects || isLoadingTasks || isLoadingLinkedNotes || isLoadingProjectCalendarItems;
   const isLoadingProjectResources =
     isLoadingProjects || isLoadingTasks || isLoadingLinkedNotes || isLoadingProjectCalendarItems;
   const taskNotesTask = useMemo(
@@ -2296,9 +2354,22 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     async (projectId: string) => {
       setIsLoadingLinkedNotes(true);
       try {
-        const payload = (await api.getProjectNoteLinks(projectId)) as { links?: ProjectNoteLink[] };
-        const links = Array.isArray(payload?.links)
-          ? payload.links.filter((item) => item?.note?.id)
+        const payload = (await api.getRelatedContext('project', projectId)) as RelatedContextResponse;
+        const links = Array.isArray(payload?.items)
+          ? payload.items
+              .filter((item) => item?.target?.type === 'note' && item.source === 'join')
+              .map((item) => ({
+                id: `${projectId}:${item.target.id}`,
+                note_id: item.target.id,
+                created_at: item.created_at ?? '',
+                note: {
+                  id: item.target.id,
+                  title: item.target.title || 'Untitled note',
+                  preview: String(item.target.preview ?? ''),
+                  updated_at: item.target.updated_at ?? null,
+                  mode: String(item.target.mode ?? '') || null,
+                },
+              }))
           : [];
         setLinkedNotes(links);
       } catch (error) {
@@ -2332,6 +2403,22 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         setProjectReminders([]);
       } finally {
         setIsLoadingProjectCalendarItems(false);
+      }
+    },
+    [api]
+  );
+
+  const loadProjectActivity = useCallback(
+    async (projectId: string) => {
+      setIsLoadingProjectActivity(true);
+      try {
+        const payload = (await api.getProjectActivity(projectId)) as { activity?: ProjectActivityItem[] };
+        setProjectActivity(Array.isArray(payload?.activity) ? payload.activity : []);
+      } catch (error) {
+        console.warn('Could not load project activity:', error);
+        setProjectActivity([]);
+      } finally {
+        setIsLoadingProjectActivity(false);
       }
     },
     [api]
@@ -3027,8 +3114,9 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   );
 
   const openLinkedNoteInNotesModule = useCallback((noteId: string) => {
-    void window.desktopWindow?.toggleModule('notes', { focusNoteId: noteId });
-  }, []);
+    if (!activeWorkspaceId) return;
+    platform.navigation.openRoute(routeForNote(activeWorkspaceId, noteId));
+  }, [activeWorkspaceId, platform]);
 
   const saveTaskNotes = useCallback(async () => {
     if (!taskNotesTaskId) return;
@@ -3175,14 +3263,18 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       setIsLoadingLinkedNotes(false);
       setProjectEvents([]);
       setProjectReminders([]);
+      setProjectActivity([]);
+      setIsLoadingProjectActivity(false);
       setIsLoadingProjectCalendarItems(false);
       return;
     }
     setProjectEvents([]);
     setProjectReminders([]);
+    setProjectActivity([]);
     void loadLinkedNotes(selectedProjectId);
     void loadProjectCalendarItems(selectedProjectId);
-  }, [loadLinkedNotes, loadProjectCalendarItems, selectedProjectId, workspaceRefreshToken]);
+    void loadProjectActivity(selectedProjectId);
+  }, [loadLinkedNotes, loadProjectActivity, loadProjectCalendarItems, selectedProjectId, workspaceRefreshToken]);
 
   useEffect(() => {
     setIsRightPaneCollapsed(true);
@@ -4477,7 +4569,11 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                   {link.note.title}
                 </p>
                 <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
-                  {link.note.updated_at ? formatShortDate(link.note.updated_at) : 'Linked'}
+                  {link.note.mode === 'meeting_note'
+                    ? 'Meeting note'
+                    : link.note.updated_at
+                    ? formatShortDate(link.note.updated_at)
+                    : 'Linked'}
                 </span>
               </button>
             ))}
@@ -4486,6 +4582,21 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       </>,
       linkedNotes.length
     );
+
+  const openProjectAgendaItem = useCallback(
+    (item: (typeof projectCalendarAgenda.upcoming)[number]) => {
+      if (!activeWorkspaceId) return;
+      const route = item.kind === 'event'
+        ? routeForCalendarEvent(activeWorkspaceId, item.id.replace(/^event-/, ''), String(item.date).slice(0, 10))
+        : item.kind === 'reminder'
+        ? routeForCalendarReminder(activeWorkspaceId, item.id.replace(/^reminder-/, ''), String(item.date).slice(0, 10))
+        : item.kind === 'task'
+        ? routeForTask(activeWorkspaceId, item.id.replace(/^task-/, ''))
+        : null;
+      if (route) platform.navigation.openRoute(route);
+    },
+    [activeWorkspaceId, platform]
+  );
 
   const renderCalendarSection = () => (
     <div className="space-y-2">
@@ -4501,8 +4612,11 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.upcoming.map((item) => (
-                  <div
+                  <button
                     key={item.id}
+                    type="button"
+                    disabled={item.kind === 'deadline' || item.kind === 'milestone'}
+                    onClick={() => openProjectAgendaItem(item)}
                     className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}
                   >
                     <span className={compactIconClass}>
@@ -4514,7 +4628,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                     <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
                       {item.meta}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             ),
@@ -4529,8 +4643,11 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             ) : (
               <div className="space-y-1">
                 {projectCalendarAgenda.past.map((item) => (
-                  <div
+                  <button
                     key={item.id}
+                    type="button"
+                    disabled={item.kind === 'deadline' || item.kind === 'milestone'}
+                    onClick={() => openProjectAgendaItem(item)}
                     className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[44px]`}
                   >
                     <span className={compactIconClass}>
@@ -4540,7 +4657,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                     <span className="shrink-0 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">
                       {item.meta}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             ),
@@ -4568,9 +4685,12 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               ) : (
                 <div className="space-y-1">
                   {items.map((item) => (
-                    <div
+                    <button
+                      type="button"
+                      disabled={!item.route}
+                      onClick={() => item.route && platform.navigation.openRoute(item.route)}
                       key={item.id}
-                      className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}
+                      className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px] text-left disabled:cursor-default`}
                     >
                       <span className={compactIconClass}>
                         <Clock3 size={12} />
@@ -4581,7 +4701,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                       <span className="shrink-0 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
                         {formatRelativeFromNow(item.at)}
                       </span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               ),
@@ -4836,7 +4956,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     return (
       <section className="mt-8 space-y-3">
         <div className="flex items-center gap-4">
-          <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Linked context</p>
+          <p className="text-[13px] font-medium text-[var(--ledger-text-secondary)]">Related context</p>
         </div>
         {isLoadingProjectResources ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -5022,9 +5142,12 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       ) : (
         <div className="space-y-1">
           {recentProjectActivity.map((item) => (
-            <div
+            <button
+              type="button"
+              disabled={!item.route}
+              onClick={() => item.route && platform.navigation.openRoute(item.route)}
               key={item.id}
-              className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px]`}
+              className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[40px] text-left disabled:cursor-default`}
             >
               <span className={compactIconClass}>
                 <Clock3 size={12} />
@@ -5035,7 +5158,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               <span className="shrink-0 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
                 {formatRelativeFromNow(item.at)}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       ),
@@ -5074,10 +5197,14 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             <button
               key={`${item.kind}-${item.id}`}
               type="button"
-              onClick={() => void window.desktopWindow?.toggleModule('calendar', {
-                focusContext: `focus-${item.kind}:${item.id}`,
-                focusDate: String(item.date).slice(0, 10),
-              } as any)}
+              onClick={() => {
+                if (!activeWorkspaceId) return;
+                platform.navigation.openRoute(
+                  item.kind === 'event'
+                    ? routeForCalendarEvent(activeWorkspaceId, item.id, String(item.date).slice(0, 10))
+                    : routeForCalendarReminder(activeWorkspaceId, item.id, String(item.date).slice(0, 10))
+                );
+              }}
               className={`${compactRowBaseClass} ${compactRowHoverClass} min-h-[38px]`}
             >
               <span className={compactIconClass}>
@@ -5099,10 +5226,10 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
 
   const renderProjectOverviewDocument = () => (
     <div className="space-y-3">
-      {renderMilestonesDocumentSection()}
       {renderNextActionsPreviewSection()}
-      {renderRecentNotesPreviewSection()}
+      {renderMilestonesDocumentSection()}
       {renderCalendarPreviewSection()}
+      {renderRecentNotesPreviewSection()}
       {renderActivityPreviewSection()}
     </div>
   );
@@ -6998,6 +7125,19 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                   </div>
                 </div>
 
+                {selectedProject && activeWorkspaceId ? (
+                  <RelatedContextList
+                    workspaceId={activeWorkspaceId}
+                    resourceType="project"
+                    resourceId={selectedProject.id}
+                    title="Supporting resources"
+                    emptyMessage="No linked resources yet."
+                    maxItems={10}
+                    targetTypes={['external_reference']}
+                    className="mt-5 border-t border-[color:var(--ledger-border-subtle)] pt-4"
+                  />
+                ) : null}
+
                 {!selectedProject ? (
                   <div className="mt-5 space-y-5">
                     <section className="space-y-2">
@@ -7092,9 +7232,12 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                       ) : (
                         <div className="space-y-1">
                           {overviewActivity.map((item) => (
-                            <div
+                            <button
+                              type="button"
+                              disabled={!item.route}
+                              onClick={() => item.route && platform.navigation.openRoute(item.route)}
                               key={item.id}
-                              className="flex items-center gap-2 rounded-md px-1 py-1.5"
+                              className="flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-left disabled:cursor-default"
                             >
                               <Clock3
                                 size={13}
@@ -7108,7 +7251,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                                   {formatRelativeFromNow(item.at)}
                                 </p>
                               </div>
-                            </div>
+                            </button>
                           ))}
                         </div>
                       )}
@@ -7160,6 +7303,40 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
 
                     <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                       <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
+                        People involved
+                      </p>
+                      {projectPeople.length === 0 ? (
+                        <p className="text-sm text-[var(--ledger-text-muted)]">
+                          Add a lead or assign a next action to show who is involved.
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {projectPeople.map((person) => (
+                            <div key={person.id} className="flex items-center gap-2">
+                              {person.id.startsWith('user:') ? (
+                                <UserAvatar
+                                  user={{ id: person.id.slice(5), displayName: person.label }}
+                                  size="xs"
+                                />
+                              ) : (
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[10px] font-semibold text-[var(--ledger-text-muted)]">
+                                  T
+                                </span>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                                  {person.label}
+                                </p>
+                                <p className="text-xs text-[var(--ledger-text-muted)]">{person.role}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
                         Details
                       </p>
                       <div className="space-y-2 text-sm">
@@ -7192,146 +7369,6 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                       </div>
                     </section>
 
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
-                          Linked
-                        </p>
-                        <button
-                          type="button"
-                          className="text-xs font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
-                          onClick={() => {
-                            void openLinkNoteModal();
-                          }}
-                        >
-                          Link note
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        {[
-                          ['Notes', linkedObjectCounts.notes],
-                          ['Events', linkedObjectCounts.events],
-                          ['Reminders', linkedObjectCounts.reminders],
-                          ['Captures', linkedObjectCounts.captures],
-                        ].map(([label, count]) => (
-                          <div
-                            key={label}
-                            className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-1.5"
-                          >
-                            <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                              {count}
-                            </p>
-                            <p className="text-xs text-[var(--ledger-text-muted)]">{label}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="space-y-2">
-                        {projectEvents.length > 0 && (
-                          <div>
-                            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                              Events
-                            </p>
-                            {projectEvents.slice(0, 2).map((event) => (
-                              <div
-                                key={event.id}
-                                className="mt-1 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
-                              >
-                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                  {event.title}
-                                </p>
-                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                  {formatEventDateLabel(event)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {projectReminders.length > 0 && (
-                          <div>
-                            <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                              Reminders
-                            </p>
-                            {projectReminders.slice(0, 2).map((reminder) => (
-                              <div
-                                key={reminder.id}
-                                className="mt-1 rounded-md px-1 py-1 transition hover:bg-[var(--ledger-surface-hover)]"
-                              >
-                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                  {reminder.title}
-                                </p>
-                                <p className="truncate text-xs text-[var(--ledger-text-muted)]">
-                                  {formatReminderDateLabel(reminder)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {linkedNotes.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          {linkedNotes.slice(0, 3).map((link) => (
-                            <button
-                              key={link.id}
-                              type="button"
-                              onContextMenu={(event) => {
-                                event.preventDefault();
-                                setLinkedNoteContextMenu({
-                                  x: event.clientX,
-                                  y: event.clientY,
-                                  noteId: link.note_id,
-                                  source: 'right',
-                                });
-                              }}
-                              onDoubleClick={() => openLinkedNoteInNotesModule(link.note_id)}
-                              className="flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-                            >
-                              <FileText
-                                size={13}
-                                className="shrink-0 text-[var(--ledger-text-muted)]"
-                              />
-                              <span className="min-w-0 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                {link.note.title}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </section>
-
-                    <section className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                      <p className="text-xs font-semibold text-[var(--ledger-text-primary)]">
-                        Recent activity
-                      </p>
-                      {isLoadingProjectActivity ? (
-                        <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
-                      ) : recentProjectActivity.length === 0 ? (
-                        <p className="text-sm text-[var(--ledger-text-muted)]">
-                          No recent activity.
-                        </p>
-                      ) : (
-                        <div className="space-y-1">
-                          {recentProjectActivity.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex items-center gap-2 rounded-md px-1 py-1.5"
-                            >
-                              <Clock3
-                                size={13}
-                                className="shrink-0 text-[var(--ledger-text-muted)]"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                                  {item.label}
-                                </p>
-                                <p className="text-xs text-[var(--ledger-text-muted)]">
-                                  {formatRelativeFromNow(item.at)}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </section>
                   </div>
                 )}
               </div>
@@ -7387,6 +7424,16 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                 className="h-48 w-full resize-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
               />
               {activeWorkspaceId && taskNotesTask ? <LinkedDesignsSection target={{ workspaceId: activeWorkspaceId, targetType: 'task', targetId: taskNotesTask.id }} canEdit={activeWorkspace?.role !== 'viewer'} /> : null}
+              {activeWorkspaceId && taskNotesTask ? (
+                <RelatedContextList
+                  workspaceId={activeWorkspaceId}
+                  resourceType="task"
+                  resourceId={taskNotesTask.id}
+                  title="Related context"
+                  emptyMessage="No project or source context yet."
+                  className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-4"
+                />
+              ) : null}
               <div className="mt-4 flex items-center justify-end gap-2">
                 <button
                   onClick={() => {

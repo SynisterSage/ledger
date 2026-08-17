@@ -9,6 +9,7 @@ import {
   Check,
   CircleAlert,
   FileText,
+  ExternalLink,
   Inbox,
   Keyboard,
   LayoutDashboard,
@@ -47,6 +48,7 @@ import {
   routeForProject,
   routeForTask,
   routeForTeam,
+  routeForWorkspaceSettings,
   usePlatform,
 } from '../../platform';
 
@@ -62,6 +64,7 @@ type SearchResultType =
   | 'transcript'
   | 'meeting_metadata'
   | 'github'
+  | 'external_reference'
   | 'command';
 type SearchCategory = 'navigate' | 'action' | 'resource' | 'settings';
 
@@ -80,6 +83,12 @@ type SearchResult = {
   note_id?: string | null;
   segment_id?: string | null;
   start_ms?: number;
+  context_label?: string | null;
+  source_label?: string | null;
+  project_name?: string | null;
+  match_source?: string | null;
+  external_url?: string | null;
+  route?: Record<string, unknown> | null;
 };
 
 const settingsSearchEntries: Array<{
@@ -222,6 +231,7 @@ const iconMap: Record<SearchResultType, typeof FileText> = {
   transcript: FileText,
   meeting_metadata: CalendarDays,
   github: Plug2,
+  external_reference: ExternalLink,
   command: Search,
 };
 
@@ -311,6 +321,21 @@ const getSearchResultIcon = (result: SearchResult) => {
     return settingsPageIconMap[actionId.slice('settings-page:'.length)] ?? Settings;
   }
   return commandIconMap[actionId] ?? Search;
+};
+
+const searchResultTypeLabel: Partial<Record<SearchResultType, string>> = {
+  note: 'Note',
+  project: 'Project',
+  task: 'Task',
+  event: 'Event',
+  reminder: 'Reminder',
+  person: 'Person',
+  team: 'Team',
+  intake: 'Intake',
+  transcript: 'Transcript',
+  meeting_metadata: 'Meeting note',
+  github: 'Linked resource',
+  external_reference: 'Linked resource',
 };
 
 const ledgerSearchCommands: Array<SearchResult & { keywords: string[]; personal?: boolean }> = [
@@ -612,6 +637,7 @@ export const SearchModal = () => {
                   'transcript',
                   'meeting_metadata',
                   'github',
+                  'external_reference',
                 ].includes(rawType)
                   ? (rawType as SearchResultType)
                   : 'note';
@@ -700,6 +726,8 @@ export const SearchModal = () => {
             page: 'circle',
             query: { person: result.id },
           });
+        } else if (result.type === 'external_reference') {
+          if (result.external_url) void platform.externalLinks.open(result.external_url, { newTab: true });
         } else if (result.type === 'command') {
           const action = result.actionId ?? '';
           if (action === 'new-note' || action === 'new-task') {
@@ -749,21 +777,14 @@ export const SearchModal = () => {
       if (result.type === 'command') {
         if (result.actionId?.startsWith('settings-page:')) {
           const pageId = result.actionId.slice('settings-page:'.length);
-          void window.desktopWindow?.openModule('settings', {
-            kind: 'settings',
-            focusSection: pageId,
-          });
+          if (activeWorkspaceId) platform.navigation.openRoute(routeForWorkspaceSettings(activeWorkspaceId, pageId as Parameters<typeof routeForWorkspaceSettings>[1]));
           closeSearch();
           return;
         }
 
         if (result.actionId?.startsWith('settings-section:')) {
-          const [, pageId, anchorId] = result.actionId.split(':');
-          void window.desktopWindow?.openModule('settings', {
-            kind: 'settings',
-            focusSection: pageId,
-            focusContext: `settings-anchor:${anchorId}`,
-          });
+          const [, pageId] = result.actionId.split(':');
+          if (activeWorkspaceId) platform.navigation.openRoute(routeForWorkspaceSettings(activeWorkspaceId, pageId as Parameters<typeof routeForWorkspaceSettings>[1]));
           closeSearch();
           return;
         }
@@ -867,30 +888,21 @@ export const SearchModal = () => {
             break;
         }
       } else if (result.type === 'note') {
-        void window.desktopWindow?.toggleModule('notes', { focusNoteId: result.id });
+        if (activeWorkspaceId) platform.navigation.openRoute(routeForNote(activeWorkspaceId, result.id));
       } else if (result.type === 'transcript' || result.type === 'meeting_metadata') {
-        void window.desktopWindow?.toggleModule('notes', {
-          focusNoteId: result.note_id ?? result.id,
-          focusContext:
-            result.type === 'transcript' && result.segment_id
-              ? `transcript-segment:${result.segment_id}`
-              : undefined,
-        });
+        if (activeWorkspaceId) platform.navigation.openRoute(routeForNote(activeWorkspaceId, result.note_id ?? result.id));
       } else if (result.type === 'project') {
-        void window.desktopWindow?.toggleModule('projects', { focusProjectId: result.id });
+        if (activeWorkspaceId) platform.navigation.openRoute(routeForProject(activeWorkspaceId, result.id));
       } else if (result.type === 'task') {
-        void window.desktopWindow?.toggleModule('projects', {
-          focusProjectId: result.project_id ?? undefined,
-          focusTaskId: result.id,
-        });
+        if (activeWorkspaceId) platform.navigation.openRoute(result.project_id ? routeForProject(activeWorkspaceId, result.project_id, result.id) : routeForTask(activeWorkspaceId, result.id));
       } else if (result.type === 'event') {
-        const focusDate = result.focusDate ?? undefined;
-        void window.desktopWindow?.openModule('calendar', focusDate ? { focusDate } : undefined);
-      } else if (result.type === 'reminder' || result.type === 'intake') {
-        void window.desktopWindow?.openModule('inbox', { focusSection: 'unprocessed' });
-      } else if (result.type === 'github') {
-        const url = (result as SearchResult & { external_url?: string }).external_url;
-        if (url) void window.desktopWindow?.openExternal(url);
+        if (activeWorkspaceId) platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, result.id, result.focusDate ?? undefined));
+      } else if (result.type === 'reminder') {
+        if (activeWorkspaceId) platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId, result.id, result.focusDate ?? undefined));
+      } else if (result.type === 'intake') {
+        if (activeWorkspaceId) platform.navigation.openRoute(routeForInboxItem(activeWorkspaceId, result.id));
+      } else if (result.type === 'github' || result.type === 'external_reference') {
+        if (result.external_url) void platform.externalLinks.open(result.external_url, { newTab: true });
       } else if (result.type === 'person' || result.type === 'team') {
         void window.desktopWindow?.openModule('teams');
       }
@@ -1004,6 +1016,7 @@ export const SearchModal = () => {
             <div className="space-y-0.5">
               {results.map((result, index) => {
                 const Icon = getSearchResultIcon(result);
+                const contextLabel = result.context_label || result.project_name || result.source_label || result.preview;
                 const selected = index === selectedIndex;
                 const showCategory =
                   index === 0 || results[index - 1]?.category !== result.category;
@@ -1026,7 +1039,7 @@ export const SearchModal = () => {
                       type="button"
                       onMouseEnter={() => setSelectedIndex(index)}
                       onClick={() => jumpToResult(result)}
-                      className={`flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition ${
+                      className={`flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition ${
                         selected
                           ? 'bg-[var(--ledger-surface-hover)]'
                           : 'hover:bg-[var(--ledger-surface-hover)]'
@@ -1041,9 +1054,17 @@ export const SearchModal = () => {
                       >
                         <Icon size={13} />
                       </span>
-                      <p className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
-                        {result.title}
-                      </p>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                          {result.title}
+                        </span>
+                        {contextLabel ? (
+                          <span className="block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                            {contextLabel}
+                            {result.match_source ? ` · ${result.match_source}` : ''}
+                          </span>
+                        ) : null}
+                      </span>
                       {normalizeIntegrationProvider(
                         result.provider,
                         result.source_provider,
@@ -1061,11 +1082,7 @@ export const SearchModal = () => {
                       )}
                       {result.type !== 'command' && (
                         <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">
-                          {result.type === 'meeting_metadata'
-                            ? 'Meeting metadata'
-                            : result.type === 'transcript'
-                            ? 'Transcript'
-                            : result.type}
+                          {searchResultTypeLabel[result.type] ?? result.type}
                         </span>
                       )}
                     </button>

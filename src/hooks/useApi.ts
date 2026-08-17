@@ -507,6 +507,8 @@ export const useApi = () => {
         request(`/api/external-references/search?${new URLSearchParams({ ...(provider ? { provider } : {}), query })}`),
       getExternalReferenceLinkedTargets: (referenceId: string) =>
         request(`/api/external-references/${encodeURIComponent(referenceId)}/linked-targets`),
+      getRelatedContext: (resourceType: string, resourceId: string) =>
+        request(`/api/related-context?${new URLSearchParams({ resource_type: resourceType, resource_id: resourceId })}`),
       deleteExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
         request(`/api/external-references/${encodeURIComponent(referenceId)}/preview`, { method: 'DELETE', body: JSON.stringify({ target_type: targetType, target_id: targetId }) }),
       createExternalReferencePreview: (referenceId: string, targetType: string, targetId: string) =>
@@ -667,6 +669,7 @@ export const useApi = () => {
           return dedupeProjects(data);
         });
       },
+      getProjectActivity: (projectId: string) => request(`/api/projects/${encodeURIComponent(projectId)}/activity`),
       createProject: (
         input:
           | string
@@ -1307,6 +1310,8 @@ export const useApi = () => {
         request(`/api/workspaces/${workspaceId}/search?q=${encodeURIComponent(query)}`, {
           method: 'POST',
         }),
+      getAskLedgerDocuments: (workspaceId: string) =>
+        request(`/api/workspaces/${workspaceId}/ai-documents`),
 
       // Notes
       getNotes: () => request('/api/notes'),

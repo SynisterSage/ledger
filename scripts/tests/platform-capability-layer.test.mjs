@@ -52,7 +52,7 @@ test('browser adapter is history-backed, safe for external links, and persists d
   assert.match(web, /localStorage\.setItem\(DEVICE_ID_KEY, id\)/);
   assert.match(web, /canMinimizeWindow: false/);
   assert.match(web, /canOpenNativePopout: false/);
-  assert.match(web, /async toggleFullscreen\(\) \{ return false; \}/);
+  assert.match(web, /async toggleFullscreen\(\)\s*\{\s*return false;\s*\}/);
 });
 
 test('platform provider exposes one capability boundary', () => {

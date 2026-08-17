@@ -15,6 +15,7 @@ export type SearchResultType =
   | 'intake'
   | 'transcript'
   | 'meeting_metadata'
+  | 'external_reference'
   | 'command';
 export type SearchCategory = 'navigate' | 'action' | 'resource' | 'settings';
 export type SearchResult = {
@@ -29,6 +30,10 @@ export type SearchResult = {
   actionId?: string;
   provider?: string | null;
   source_provider?: string | null;
+  context_label?: string | null;
+  source_label?: string | null;
+  external_url?: string | null;
+  match_source?: string | null;
 };
 
 export const searchIconMap: Record<SearchResultType, typeof FileText> = {
@@ -42,6 +47,7 @@ export const searchIconMap: Record<SearchResultType, typeof FileText> = {
   intake: FileText,
   transcript: FileText,
   meeting_metadata: CalendarDays,
+  external_reference: FileText,
   command: Search,
 };
 
@@ -108,7 +114,7 @@ export const useWorkspaceSearch = (query: string, enabled = true) => {
         if (cancelled) return;
         const resources = Array.isArray(data) ? (data as Array<Record<string, unknown>>).map((result) => {
           const rawType = String(result.type ?? 'note').toLowerCase();
-          const type = ['note', 'project', 'task', 'event', 'reminder', 'person', 'team', 'intake', 'transcript', 'meeting_metadata'].includes(rawType)
+          const type = ['note', 'project', 'task', 'event', 'reminder', 'person', 'team', 'intake', 'transcript', 'meeting_metadata', 'external_reference'].includes(rawType)
             ? (rawType as SearchResultType)
             : 'note';
           return { ...(result as unknown as SearchResult), type, category: 'resource' as const, id: String(result.id ?? ''), title: String(result.title ?? 'Untitled'), preview: String(result.preview ?? ''), icon: String(result.icon ?? '') };

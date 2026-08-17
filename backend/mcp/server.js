@@ -20,6 +20,13 @@ const decodeCursor = (cursor) => {
 };
 
 const encodeCursor = (offset) => Buffer.from(String(offset), 'utf8').toString('base64url');
+export const workspaceRoute = (workspaceId, resourceType, resourceId, extra = {}) => ({
+  kind: 'workspace-resource',
+  workspaceId,
+  resourceType,
+  resourceId: String(resourceId),
+  ...extra,
+});
 const limitSchema = z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT);
 const uuidSchema = z.string().uuid();
 
@@ -221,9 +228,10 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
     linkedNoteCount: metadata.linkedNoteCount ?? 0,
     descriptionPreview: row.description ? plainText(row.description).slice(0, 320) : undefined,
     url: `ledger://projects/${encodeURIComponent(row.id)}`,
+    route: workspaceRoute(workspaceId, 'project', row.id),
   });
 
-  const taskSummary = (row) => ({ id: row.id, title: row.title, status: row.status, priority: row.priority ?? undefined, dueDate: row.due_date ?? undefined, dueTime: row.due_time ?? undefined, updatedAt: row.updated_at, url: `ledger://tasks/${encodeURIComponent(row.id)}` });
+  const taskSummary = (row) => ({ id: row.id, title: row.title, status: row.status, priority: row.priority ?? undefined, dueDate: row.due_date ?? undefined, dueTime: row.due_time ?? undefined, updatedAt: row.updated_at, url: `ledger://tasks/${encodeURIComponent(row.id)}`, route: workspaceRoute(workspaceId, 'task', row.id) });
 
   const fetchWorkspace = async () => {
     const result = await supabase.from('workspaces').select('id, name, is_personal').eq('id', workspaceId).maybeSingle();
@@ -572,7 +580,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
       const now = new Date().toISOString();
       const inserted = await supabase.from('inbox_items').insert({ workspace_id: workspaceId, user_id: userId, updated_by: userId, source: 'mcp', source_provider: 'mcp', source_url: sourceUrl, title, body, raw_payload: { source: 'mcp', source_label: args.sourceLabel ?? null, connection_id: context.connection.id, client_name: context.connection.client_name, tool_name: 'send_to_intake' }, suggested_type: 'unknown', status: 'unprocessed', updated_at: now }).select('id, title, created_at').single();
       if (inserted.error) throw safeError('Could not create Intake item.');
-      return { resultType: 'inbox_item', resultId: inserted.data.id, targetType: 'intake', payload: { intakeItem: { id: inserted.data.id, title: inserted.data.title, createdAt: inserted.data.created_at, url: `ledger://intake/${encodeURIComponent(inserted.data.id)}` } } };
+      return { resultType: 'inbox_item', resultId: inserted.data.id, targetType: 'intake', payload: { intakeItem: { id: inserted.data.id, title: inserted.data.title, createdAt: inserted.data.created_at, url: `ledger://intake/${encodeURIComponent(inserted.data.id)}`, route: workspaceRoute(workspaceId, 'intake', inserted.data.id) } } };
     }));
     return textResult({ ...result.payload, ...(result.replayed ? { message: 'This request was already completed.' } : {}) });
   });
@@ -645,7 +653,7 @@ export const createMcpServer = ({ context, supabase, requireWorkspaceAccess, aud
       const note = await supabase.from('notes').insert({ workspace_id: workspaceId, user_id: userId, updated_by: userId, title, content, content_html: contentHtml, date: now.slice(0, 10), source: 'mcp', source_platform: 'mcp', mode: 'text', section_id: args.sectionId ?? null, parent_id: null, sort_order: 0, depth: 0 }).select('id, title, date, created_at, updated_at').single();
       if (note.error) throw safeError('Could not create note.');
       if (args.projectId) { const link = await supabase.from('project_note_links').insert({ workspace_id: workspaceId, project_id: args.projectId, note_id: note.data.id, created_by: userId }).select('id').single(); if (link.error) throw safeError('Could not link note to project.'); }
-      return { resultType: 'note', resultId: note.data.id, targetType: 'note', payload: { note: { id: note.data.id, title: note.data.title, date: note.data.date, createdAt: note.data.created_at, updatedAt: note.data.updated_at, url: `ledger://notes/${encodeURIComponent(note.data.id)}` }, message: 'Note created.' } };
+      return { resultType: 'note', resultId: note.data.id, targetType: 'note', payload: { note: { id: note.data.id, title: note.data.title, date: note.data.date, createdAt: note.data.created_at, updatedAt: note.data.updated_at, url: `ledger://notes/${encodeURIComponent(note.data.id)}`, route: workspaceRoute(workspaceId, 'note', note.data.id) }, message: 'Note created.' } };
     }));
     return textResult(result.payload);
   });

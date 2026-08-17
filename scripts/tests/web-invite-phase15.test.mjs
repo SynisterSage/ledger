@@ -10,7 +10,7 @@ test('browser invite continuation is scoped to session storage and desktop deep 
   assert.match(continuation, /ledger:browser-invite:v1/);
   assert.match(continuation, /sessionStorage/);
   assert.match(app, /readBrowserInviteContinuation/);
-  assert.match(app, /ledger:open-invite/);
+  assert.match(app, /getInviteTokenFromLocation/);
   assert.doesNotMatch(app, /returnTo.*invite/);
 });
 

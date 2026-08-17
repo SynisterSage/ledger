@@ -26,6 +26,15 @@ import {
 import { SlackContextCard } from '../Slack/SlackContextCard';
 import { GoogleDriveResourceActionModal, type GoogleDriveAction } from './GoogleDriveResourceActionModal';
 import { installGooglePickerStyles } from '../Common/googlePickerStyles';
+import {
+  routeForCalendarEvent,
+  routeForCalendarReminder,
+  routeForNote,
+  routeForProject,
+  routeForTask,
+  routeForWorkspaceSettings,
+  usePlatform,
+} from '../../platform';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
@@ -51,10 +60,6 @@ type Link = {
 type Preview = { url?: string | null; capturedAt?: string | null };
 type ConnectedFolder = { id: string; name: string; provider_source_id?: string | null; canonical_url?: string | null; status?: string; external_metadata?: Record<string, unknown> };
 
-const openExternal = (url: string) =>
-  window.desktopWindow?.openExternal
-    ? void window.desktopWindow.openExternal(url)
-    : window.open(url, '_blank', 'noopener,noreferrer');
 const connectedFolderUrl = (folder: ConnectedFolder) =>
   folder.canonical_url || (folder.provider_source_id ? `https://drive.google.com/drive/folders/${encodeURIComponent(folder.provider_source_id)}` : '');
 const formatDate = (value?: string | null) =>
@@ -147,6 +152,10 @@ export function LinkedDesignsSection({
 }) {
   const api = useApi();
   const toast = useToast();
+  const platform = usePlatform();
+  const openExternal = (url: string) => {
+    void platform.externalLinks.open(url, { newTab: true });
+  };
   const [links, setLinks] = useState<Link[]>([]);
   const [previews, setPreviews] = useState<Record<string, Preview | null>>({});
   const [loading, setLoading] = useState(true);
@@ -1011,27 +1020,27 @@ export function LinkedDesignsSection({
         )
       ) : (
         <div className={compact ? 'contents' : 'space-y-1'}>
-          {connectedFolders.map((folder) => <div data-drive-folder-row="true" key={`drive-folder-${folder.id}`} className={compact ? 'relative z-10 flex h-8 max-w-56 items-center gap-1.5 overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}><span className="flex h-5 w-5 shrink-0 items-center justify-center"><img src="/drive.svg" alt="" className="h-4 w-4 object-contain" /></span><button type="button" className="min-w-0 flex-1 text-left" onClick={() => openExternal(connectedFolderUrl(folder))}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{folder.name}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Google Drive · Connected folder{folder.external_metadata?.monitorChanges === false ? '' : ' · Monitoring on'}</p>}</button><button type="button" aria-label="Folder actions" onClick={() => setMenuFolderId(menuFolderId === folder.id ? null : folder.id)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>{menuFolderId === folder.id && <div data-drive-folder-menu="true" className="absolute bottom-9 right-1 z-50 w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { openExternal(connectedFolderUrl(folder)); setMenuFolderId(null); }}>Open in Google Drive</button><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { window.history.pushState({}, '', '/settings/integrations/google-drive'); setMenuFolderId(null); }}>Folder settings</button><button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50" onClick={() => { void api.disconnectConnectedSource(folder.id, target.targetId).then(load); setMenuFolderId(null); }}>Disconnect from project</button></div>}</div>)}
+          {connectedFolders.map((folder) => <div data-drive-folder-row="true" key={`drive-folder-${folder.id}`} className={compact ? 'relative z-10 flex h-8 max-w-56 items-center gap-1.5 overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}><span className="flex h-5 w-5 shrink-0 items-center justify-center"><img src="/drive.svg" alt="" className="h-4 w-4 object-contain" /></span><button type="button" className="min-w-0 flex-1 text-left" onClick={() => openExternal(connectedFolderUrl(folder))}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{folder.name}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Google Drive · Connected folder{folder.external_metadata?.monitorChanges === false ? '' : ' · Monitoring on'}</p>}</button><button type="button" aria-label="Folder actions" onClick={() => setMenuFolderId(menuFolderId === folder.id ? null : folder.id)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>{menuFolderId === folder.id && <div data-drive-folder-menu="true" className="absolute bottom-9 right-1 z-50 w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { openExternal(connectedFolderUrl(folder)); setMenuFolderId(null); }}>Open in Google Drive</button><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { platform.navigation.openRoute(routeForWorkspaceSettings(target.workspaceId, 'google-drive')); setMenuFolderId(null); }}>Folder settings</button><button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50" onClick={() => { void api.disconnectConnectedSource(folder.id, target.targetId).then(load); setMenuFolderId(null); }}>Disconnect from project</button></div>}</div>)}
           {slackContexts.map((context) => <SlackContextCard key={`slack-context-${context.id}`} context={context} compact={compact} />)}
           {visibleContextLinks.filter((link) => ['note', 'project'].includes(link.resource.type)).map((link) => {
             const isNote = link.resource.type === 'note';
             return <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : isIntakeTarget ? 'relative flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]">{isNote ? <FileText size={14} /> : <Folder size={14} />}</span>
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => window.desktopWindow?.openModule(isNote ? 'notes' : 'projects', isNote ? { kind: 'notes', focusNoteId: link.resource.id } as any : { kind: 'projects', focusProjectId: link.resource.id } as any)}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{isNote ? 'Note' : 'Project'}</p>}</button>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => platform.navigation.openRoute(isNote ? routeForNote(target.workspaceId, link.resource.id) : routeForProject(target.workspaceId, link.resource.id))}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{isNote ? 'Note' : 'Project'}</p>}</button>
               {canEdit && <button type="button" aria-label={`Unlink ${isNote ? 'note' : 'project'}`} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" onClick={() => void unlinkContextLink(link.id)}><MoreHorizontal size={14} /></button>}
             </div>;
           })}
           {visibleContextLinks.filter((link) => link.resource.type === 'task').map((link) => (
             <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
               <ListChecks size={compact ? 13 : 15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => window.desktopWindow?.openModule('projects', { kind: 'projects', focusTaskId: link.resource.id } as any)}><p className={`truncate text-xs font-medium text-[var(--ledger-text-primary)] ${link.resource.status === 'completed' ? 'line-through opacity-70' : ''}`}>{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Task{link.resource.dueDate ? ` · Due ${link.resource.dueDate}` : ''}{link.resource.assignee ? ` · ${link.resource.assignee}` : ''}{link.resource.status === 'completed' ? ' · Completed' : ''}</p>}</button>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => platform.navigation.openRoute(routeForTask(target.workspaceId, link.resource.id))}><p className={`truncate text-xs font-medium text-[var(--ledger-text-primary)] ${link.resource.status === 'completed' ? 'line-through opacity-70' : ''}`}>{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Task{link.resource.dueDate ? ` · Due ${link.resource.dueDate}` : ''}{link.resource.assignee ? ` · ${link.resource.assignee}` : ''}{link.resource.status === 'completed' ? ' · Completed' : ''}</p>}</button>
               {canEdit && <button type="button" aria-label="Unlink task" className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" onClick={() => void unlinkContextLink(link.id)}><MoreHorizontal size={14} /></button>}
             </div>
           ))}
           {visibleCalendarItems.map((item) => (
             <div key={`calendar-${item.kind}-${item.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]"><CalendarDays size={14} /></div>
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => void window.desktopWindow?.openModule('calendar', { kind: 'calendar', focusContext: `${item.kind === 'event' ? 'focus-event' : 'focus-reminder'}:${item.id}`, focusDate: item.startsAt.slice(0, 10) } as any)}>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => platform.navigation.openRoute(item.kind === 'event' ? routeForCalendarEvent(target.workspaceId, item.id, item.startsAt.slice(0, 10)) : routeForCalendarReminder(target.workspaceId, item.id, item.startsAt.slice(0, 10)))}>
                 <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{item.title}</p>
                 {!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{new Date(item.startsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {item.kind === 'event' ? 'Event' : 'Reminder'}{item.status ? ` · ${item.status}` : ''}{item.projectName ? ` · ${item.projectName}` : ''}</p>}
               </button>

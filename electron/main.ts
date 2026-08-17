@@ -30,6 +30,9 @@ import {
 import { desktopTokens } from '../src/theme/desktopTokens';
 import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
 import { LocalTranscriptionService } from './transcriptionService';
+import { createLocalAIService } from './localAIService';
+import { LocalAIAssetManager } from './localAIAssets';
+import { createAskLedgerService } from './askLedgerService';
 import { RecordingSessionStore } from './recordingSessionStore';
 import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
 import {
@@ -62,6 +65,14 @@ let appleCalendarWatcher: ReturnType<typeof spawn> | null = null;
 const recordingSessionStore = new RecordingSessionStore();
 const meetingAudioCaptureService = new MeetingAudioCaptureService(recordingSessionStore);
 const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore);
+const localAIAssets = new LocalAIAssetManager();
+const localAIService = createLocalAIService(localAIAssets);
+const askLedgerService = createAskLedgerService(localAIService, localAIAssets);
+localAIAssets.onChange((status) => {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) window.webContents.send('ask-ledger:local-ai-status', status);
+  });
+});
 
 const desktopDeviceIdPath = () => path.join(app.getPath('userData'), 'ledger-device-id');
 
@@ -199,6 +210,64 @@ ipcMain.handle('meeting-transcription:complete', (_event, payload: { jobId?: unk
 ipcMain.handle('meeting-transcription:fail', (_event, payload: { jobId?: unknown; error?: unknown }) => {
   if (typeof payload?.jobId !== 'string' || typeof payload.error !== 'string') throw new Error('Invalid transcription failure request.');
   return localTranscriptionService.fail(payload.jobId, payload.error);
+});
+
+ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown }) => {
+  if (typeof payload?.question !== 'string' || !payload.question.trim()) throw new Error('Ask Ledger question is required.');
+  if (typeof payload.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
+  if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
+  const documents = payload.documents.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
+  if (documents.some((item) => item.workspaceId !== undefined && item.workspaceId !== payload.workspaceId)) throw new Error('Ask Ledger context workspace mismatch.');
+  const conversation = payload.conversation && typeof payload.conversation === 'object' ? payload.conversation as Record<string, unknown> : undefined;
+  const safeConversation = conversation ? {
+    previousQuestion: typeof conversation.previousQuestion === 'string' ? conversation.previousQuestion.slice(0, 800) : undefined,
+    previousAnswer: typeof conversation.previousAnswer === 'string' ? conversation.previousAnswer.slice(0, 1200) : undefined,
+    previousSources: Array.isArray(conversation.previousSources) ? conversation.previousSources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 8).map((source) => ({
+      resourceType: String(source.resourceType ?? 'external') as never,
+      resourceId: String(source.resourceId ?? source.id ?? ''),
+      title: String(source.title ?? 'Untitled'),
+      route: source.route as never,
+    })) : undefined,
+  } : undefined;
+  const sender = event.sender;
+  let answer = '';
+  const requestId = askLedgerService.start(
+    {
+      question: payload.question,
+      workspaceId: payload.workspaceId,
+      documents: documents as never,
+      lexicalResults: payload.lexicalResults as never,
+      conversation: safeConversation,
+    },
+    { onEvent: (streamEvent) => {
+      if (streamEvent.type === 'delta') answer += streamEvent.text ?? '';
+      if (streamEvent.type === 'done' && streamEvent.metrics) {
+        console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answer: answer.slice(0, 2000) });
+      }
+      if (!sender.isDestroyed()) sender.send('ask-ledger:stream', streamEvent);
+    } },
+  );
+  return { requestId };
+});
+
+ipcMain.handle('ask-ledger:cancel', (_event, requestId: unknown) => {
+  if (typeof requestId !== 'string' || !requestId) throw new Error('Invalid Ask Ledger request.');
+  return askLedgerService.cancel(requestId);
+});
+
+ipcMain.handle('ask-ledger:local-ai-status', () => localAIAssets.status());
+ipcMain.handle('ask-ledger:local-ai-hardware', () => localAIAssets.hardware());
+ipcMain.handle('ask-ledger:local-ai-download', (_event, role: unknown) => {
+  if (role !== 'generation' && role !== 'embedding') throw new Error('Invalid Local AI model.');
+  return localAIAssets.download(role);
+});
+ipcMain.handle('ask-ledger:local-ai-cancel-download', (_event, role: unknown) => {
+  if (role !== 'generation' && role !== 'embedding') throw new Error('Invalid Local AI model.');
+  return localAIAssets.cancel(role);
+});
+ipcMain.handle('ask-ledger:local-ai-remove', (_event, role: unknown) => {
+  if (role !== 'generation' && role !== 'embedding') throw new Error('Invalid Local AI model.');
+  return askLedgerService.shutdownRuntimes().then(() => localAIAssets.remove(role));
 });
 
 function appleCalendarBridgePath() {
@@ -7089,7 +7158,11 @@ app.on('before-quit', (event) => {
   }
   audioShutdownInProgress = true;
   event.preventDefault();
-  void Promise.all([meetingAudioCaptureService.shutdown(), localTranscriptionService.shutdown()]).finally(() => app.quit());
+  void Promise.all([
+    meetingAudioCaptureService.shutdown(),
+    localTranscriptionService.shutdown(),
+    askLedgerService.shutdown(),
+  ]).finally(() => app.quit());
 });
 
 powerMonitor.on('suspend', () => {

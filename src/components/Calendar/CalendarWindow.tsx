@@ -55,8 +55,9 @@ import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
-import { usePlatform } from '../../platform';
+import { routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
+import { RelatedContextList } from '../Common/RelatedContextList';
 import {
   CalendarSubscriptionModal,
   type CalendarSubscriptionCalendar,
@@ -1801,6 +1802,16 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   }, [dueDateItems, viewConfig.dates]);
 
   const openDueDateItem = useCallback((item: DueDateItem) => {
+    if (activeWorkspaceId) {
+      if (item.kind === 'project') {
+        platform.navigation.openRoute(routeForProject(activeWorkspaceId, item.sourceId));
+        return;
+      }
+      if (item.kind === 'task') {
+        platform.navigation.openRoute(routeForTask(activeWorkspaceId, item.sourceId));
+        return;
+      }
+    }
     if (item.kind === 'project') {
       void window.desktopWindow?.openModule('projects', {
         kind: 'projects',
@@ -1823,7 +1834,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       kind: 'inbox',
       focusSection: 'unprocessed',
     });
-  }, []);
+  }, [activeWorkspaceId, platform]);
 
   const renderDueDateRow = (item: DueDateItem, className = '') => (
     <CenterInlineItemRow
@@ -3616,7 +3627,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         setSelectedEvent((current) => current && current.id === event.id ? { ...current, note_id: note.id } : current);
       }
       if (result.existing) setError('This event already has Meeting Notes. Opening the existing note.');
-      void window.desktopWindow?.toggleModule('notes', { focusNoteId: note.id });
+      if (activeWorkspaceId) platform.navigation.openRoute(routeForNote(activeWorkspaceId, note.id));
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not create Meeting Notes for this event.');
     } finally {
@@ -5734,6 +5745,17 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     onLinkProjects={async (projectIds) => { for (const projectId of projectIds) await linkEventToProject(projectId); }}
                   />
                 )}
+
+                {(selectedEventPreview || selectedReminder) && activeWorkspaceId ? (
+                  <RelatedContextList
+                    workspaceId={activeWorkspaceId}
+                    resourceType={selectedEventPreview ? 'event' : 'reminder'}
+                    resourceId={selectedEventPreview ? (baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id) : (baseReminderId(selectedReminder!.id) ?? selectedReminder!.id)}
+                    title="Related context"
+                    emptyMessage="No project, note, or follow-up context yet."
+                    className="border-t border-[color:var(--ledger-border-subtle)] pt-4"
+                  />
+                ) : null}
 
                 {selectedEventPreview && !selectedEventPreview.provider && calendarPreferences.eventNotesBehavior !== 'disabled' && (
                   <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">

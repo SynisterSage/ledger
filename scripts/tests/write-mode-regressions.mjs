@@ -21,6 +21,7 @@ const blockHandlePlugin = await readFile(
   'src/components/Notes/editor/plugins/BlockHandlePlugin.tsx',
   'utf8'
 );
+const editorPluginSources = [blockPlugin, slashPlugin, blockHandlePlugin].join('\n');
 const selectionFormattingPlugin = await readFile(
   'src/components/Notes/editor/plugins/SelectionFormattingPlugin.tsx',
   'utf8'
@@ -57,7 +58,7 @@ test('selected Ledger actions cross the editor boundary as serializable payloads
 });
 
 test('editor plugins do not own external-reference API mutations', () => {
-  assert.doesNotMatch(editor, /useApi/);
+  assert.doesNotMatch(editorPluginSources, /useApi/);
   assert.match(editor, /onCreateExternalEmbed/);
   assert.match(notesWindow, /createEditorExternalEmbed/);
 });

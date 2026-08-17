@@ -33,6 +33,7 @@ import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
+import { routeForProject, routeForTask, usePlatform } from '../../platform';
 import { UserAvatar } from '../Common/UserAvatar';
 
 type CirclePersonTeam = {
@@ -1071,18 +1072,14 @@ export const CircleWindow = ({ focusContext }: { focusContext?: string | null } 
 
   const sharedProjectFromWork = selectedProjectsRows[0] ?? null;
 
+  const platform = usePlatform();
+
   const openSharedProject = (projectId: string) => {
-    void window.desktopWindow?.toggleModule('projects', {
-      kind: 'projects',
-      focusProjectId: projectId,
-    } as any);
+    if (activeWorkspaceId) platform.navigation.openRoute(routeForProject(activeWorkspaceId, projectId));
   };
 
   const openTask = (taskId: string) => {
-    void window.desktopWindow?.toggleModule('projects', {
-      kind: 'projects',
-      focusTaskId: taskId,
-    } as any);
+    if (activeWorkspaceId) platform.navigation.openRoute(routeForTask(activeWorkspaceId, taskId));
   };
 
   const openActivity = () => setActiveTab('activity');

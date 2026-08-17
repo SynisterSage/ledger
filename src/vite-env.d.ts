@@ -105,6 +105,17 @@ interface Window {
     onProgress: (listener: (event: unknown) => void) => () => void;
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
+  askLedger?: {
+    localAIStatus: () => Promise<unknown>;
+    localAIHardware: () => Promise<unknown>;
+    downloadLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
+    cancelLocalAIDownload: (role: 'generation' | 'embedding') => Promise<unknown>;
+    removeLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
+    onLocalAIStatus: (listener: (event: unknown) => void) => () => void;
+    start: (payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown }) => Promise<{ requestId: string }>;
+    cancel: (requestId: string) => Promise<{ ok: boolean }>;
+    onStream: (listener: (event: unknown) => void) => () => void;
+  };
   desktopWindow?: {
     platform?: string;
     getDeviceSessionId: (legacyDeviceId?: string) => string;

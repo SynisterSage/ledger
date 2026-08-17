@@ -25,6 +25,8 @@ import { createMcpServer } from './mcp/server.js';
 import { OPENAI_APPS_CHALLENGE_PATH, getOpenAiAppsChallengeToken } from './mcp/openai-challenge.js';
 import { createGithubAppJwt, createGithubState, exchangeGithubCode, getAccessibleInstallations, getCanonicalInstallation, getGithubUser, createInstallationToken, listInstallationRepositories, normalizeGithubRepository, revokeGithubUserToken, hashGithubState, verifyGithubWebhookSignature } from './integrations/github/github-app.js';
 import { findGithubPullRequestsForCommit, resolveGithubMetadata, searchGithubWork, githubSafeMessage, GithubProviderError } from './integrations/github/github-adapter.js';
+import { normalizeSearchTerm, truncateSearchPreview, scoreSearchResult, dedupeSearchResults } from './search-contract.js';
+const truncatePreview = truncateSearchPreview;
 import { parseGithubUrl } from './integrations/github/github-url-parser.js';
 import { parseGoogleDriveUrl, DRIVE_SCOPE, GOOGLE_DRIVE_OAUTH_SCOPE, resolveGoogleDriveFolder, listGoogleDriveChildren, googleDriveItemIsWithinRoot, resolveGoogleDriveMetadata, getGoogleDriveStartPageToken, listGoogleDriveChanges, watchGoogleDriveChanges, stopGoogleDriveChanges, createGoogleDriveFolder, createGoogleDriveNativeFile, updateGoogleDriveItem, copyGoogleDriveFile, uploadGoogleDriveBytes } from './integrations/google-drive.js';
 import { findLinkedGithubReferences, listGithubAttention, reconcileGithubAttention } from './integrations/github/github-live-awareness.js';
@@ -35,6 +37,8 @@ import { createSupabaseTraceFetch } from './request-instrumentation.js';
 import { getAllowedCorsOrigins, getCorsOptions } from './cors-origins.js';
 import { GOOGLE_DRIVE_MAX_UPLOAD_BYTES, assertBase64Size } from './integrations/google-drive-upload.js';
 import { createCalendarSubscriptionToken, hashCalendarSubscriptionToken } from './calendar-subscription-security.js';
+import { createRelatedContextReader } from './related-context.js';
+import { dedupeActivityItems, isMeaningfulActivityAction } from './activity-contract.js';
 
 dotenv.config();
 
@@ -1308,32 +1312,34 @@ const ensureDefaultNoteSections = async (workspaceId, userId) => {
   if (insertError) throw insertError;
 };
 
-const normalizeSearchTerm = (value) =>
-  String(value ?? '')
-    .trim()
-    .toLowerCase();
 
-const truncatePreview = (value, length = 80) => {
-  const text = String(value ?? '')
-    .trim()
-    .replace(/\s+/g, ' ');
-  if (!text) return '';
-  if (text.length <= length) return text;
-  return `${text.slice(0, length - 1).trimEnd()}…`;
+const searchRouteFor = (workspaceId, type, id, extra = {}) => {
+  const base = { kind: 'workspace-resource', workspaceId, resourceType: type, resourceId: String(id), ...extra };
+  switch (type) {
+    case 'note': return base;
+    case 'project': return base;
+    case 'task': return base;
+    case 'event': return { ...base, resourceType: 'event' };
+    case 'reminder': return { ...base, resourceType: 'reminder' };
+    case 'intake': return base;
+    case 'person': return base;
+    case 'team': return base;
+    default: return null;
+  }
 };
 
-const scoreSearchResult = (title, query, preview = '', contentMatched = false) => {
-  const normalizedTitle = normalizeSearchTerm(title);
-  const normalizedPreview = normalizeSearchTerm(preview);
-  const normalizedQuery = normalizeSearchTerm(query);
+const searchExternalRouteFor = (provider, url) => ({
+  kind: 'external-resource',
+  provider: String(provider ?? 'external'),
+  url: url || null,
+});
 
-  if (!normalizedQuery) return Number.MAX_SAFE_INTEGER;
-  if (normalizedTitle === normalizedQuery) return 0;
-  if (normalizedTitle.startsWith(normalizedQuery)) return 1;
-  if (normalizedTitle.includes(normalizedQuery)) return 2;
-  if (contentMatched) return 3;
-  if (normalizedPreview.includes(normalizedQuery)) return 4;
-  return 5;
+const searchContextLabel = ({ projectName, sourceLabel, sourceType, noteMode }) => {
+  if (sourceLabel) return sourceLabel;
+  if (projectName) return projectName;
+  if (noteMode === 'meeting_note') return 'Meeting note';
+  if (sourceType === 'transcript') return 'Meeting transcript';
+  return null;
 };
 
 const isValidWorkspaceMemberRole = (role) =>
@@ -11898,6 +11904,18 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
     const convertedAt = new Date().toISOString();
     const convertedBy = req.authUser.id;
     let createdId = null;
+    const destinationDescriptor = (destinationType, destinationId) => destinationId
+      ? {
+          type: destinationType,
+          id: String(destinationId),
+          route: {
+            kind: 'workspace-resource',
+            workspaceId,
+            resourceType: destinationType,
+            resourceId: String(destinationId),
+          },
+        }
+      : null;
 
     if (assignedToUserId) {
       const targetAllowed = await ensureWorkspaceMemberTarget(workspaceId, assignedToUserId);
@@ -11932,7 +11950,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         .select(inboxItemSelectColumns)
         .single();
       if (error) throw error;
-      return res.json({ inbox_item: mapInboxItemResponse(data), created: null });
+        return res.json({ inbox_item: mapInboxItemResponse(data), created: null, destination: null });
     }
 
     if (type === 'task') {
@@ -12038,6 +12056,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: createdTask,
+        destination: destinationDescriptor('task', createdId),
       });
     }
 
@@ -12106,6 +12125,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
+        destination: destinationDescriptor('note', createdId),
       });
     }
 
@@ -12200,6 +12220,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
+        destination: destinationDescriptor('reminder', createdId),
       });
     }
 
@@ -12276,6 +12297,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
+        destination: destinationDescriptor('event', createdId),
       });
     }
 
@@ -12341,6 +12363,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
         return res.json({
           inbox_item: mapInboxItemResponse(inboxUpdate.data),
           created: existingProject,
+          destination: destinationDescriptor('project', existingProject.id),
         });
       }
 
@@ -12390,6 +12413,7 @@ app.post('/api/inbox/:id/convert', authMiddleware, rateLimit('write'), async (re
       return res.json({
         inbox_item: mapInboxItemResponse(inboxUpdate.data),
         created: data,
+        destination: destinationDescriptor('project', createdId),
       });
     }
 
@@ -17270,6 +17294,70 @@ app.get('/api/projects', authMiddleware, rateLimit('read'), async (req, res) => 
   }
 });
 
+const projectActivityRoute = (workspaceId, targetType, targetId) => {
+  const type = String(targetType ?? '').trim();
+  const id = String(targetId ?? '').trim();
+  if (!id) return null;
+  if (['project', 'task', 'note', 'event', 'reminder', 'intake'].includes(type)) {
+    return { kind: 'workspace-resource', workspaceId, resourceType: type, resourceId: id };
+  }
+  return null;
+};
+
+const projectActivityLabel = (action, metadata = {}) => {
+  const value = String(action ?? '').trim();
+  const fileName = metadata.file_name || metadata.fileName;
+  if (value === 'github_repository_linked_to_project') return 'GitHub resource linked';
+  if (value === 'github_project_repository_role_changed') return 'GitHub resource role changed';
+  if (value === 'github_intake_attached_to_project') return 'GitHub capture added to project';
+  if (value.startsWith('google_drive_')) return fileName ? `Drive change · ${fileName}` : 'Drive context changed';
+  if (value.startsWith('figma_')) return 'Figma context changed';
+  if (value === 'external_reference_linked') return 'Linked resource added';
+  if (value === 'external_reference_unlinked') return 'Linked resource removed';
+  if (value.includes('intake') || value.includes('capture')) return 'Capture added to project';
+  return value.replace(/[_-]+/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase()) || 'Project activity';
+};
+
+app.get('/api/projects/:id/activity', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const projectId = String(req.params.id ?? '').trim();
+    const allowed = await ensureWorkspaceResource('projects', projectId, workspaceId);
+    if (!allowed) return res.status(404).json({ error: 'Project not found' });
+    const auditResult = await supabase
+      .from('workspace_audit_logs')
+      .select('id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('target_type', 'project')
+      .eq('target_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(60);
+    if (auditResult.error) {
+      if (isMissingTableError(auditResult.error)) return res.json({ activity: [] });
+      throw auditResult.error;
+    }
+    const activity = dedupeActivityItems((auditResult.data ?? [])
+      .filter((row) => isMeaningfulActivityAction(row.action))
+      .map((row) => ({
+        id: `audit:${row.id}`,
+        type: String(row.action ?? 'project_change'),
+        label: projectActivityLabel(row.action, row.metadata ?? {}),
+        actor_id: row.actor_user_id ?? null,
+        source: String(row.action ?? '').startsWith('google_drive_') ? 'google_drive' : String(row.action ?? '').startsWith('figma_') ? 'figma' : String(row.action ?? '').startsWith('github_') ? 'github' : null,
+        provider: String(row.action ?? '').startsWith('google_drive_') ? 'google_drive' : String(row.action ?? '').startsWith('figma_') ? 'figma' : String(row.action ?? '').startsWith('github_') ? 'github' : null,
+        primary: { type: 'project', id: projectId },
+        project_id: projectId,
+        route: projectActivityRoute(workspaceId, 'project', projectId),
+        metadata: row.metadata ?? null,
+        at: row.created_at ?? null,
+      }))
+      .filter((row) => row.at));
+    res.json({ activity });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.post(
   '/api/projects',
   authMiddleware,
@@ -19288,6 +19376,24 @@ const loadContextLinkResource = async (type, id, workspaceId) => {
   return data ? { type, id: String(data.id), title: String(data[titleColumn] ?? 'Untitled'), ...(type === 'task' ? { status: data.status ?? null, dueDate: data.due_date ?? null, dueTime: data.due_time ?? null, assignee: data.assigned_to ?? null, projectId: data.project_id ?? null } : {}) } : null;
 };
 
+const relatedContextReader = createRelatedContextReader({
+  supabase,
+  ensureWorkspaceResource,
+});
+
+app.get('/api/related-context', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+    const resourceType = String(req.query?.resource_type ?? '').trim();
+    const resourceId = String(req.query?.resource_id ?? '').trim();
+    const result = await relatedContextReader({ workspaceId, resourceType, resourceId });
+    res.json(result);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.get('/api/context-links', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -20916,6 +21022,58 @@ app.post(
   }
 );
 
+const aiDocumentText = (value) => String(value ?? '')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    if (!workspaceId) return res.status(400).json({ error: 'Workspace id required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
+
+    const [notes, projects, tasks, events, reminders, inbox, teams, transcriptSegments] = await Promise.all([
+      supabase.from('notes').select('id, title, content, content_html, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
+      supabase.from('projects').select('id, name, description, status, completeness, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(500),
+      supabase.from('tasks').select('id, project_id, title, description, status, priority, due_date, due_time, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
+      supabase.from('events').select('id, title, notes, status, start_at, end_at, project_id, note_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
+      supabase.from('reminders').select('id, title, body, status, remind_at, project_id, note_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
+      supabase.from('inbox_items').select(inboxItemSelectColumns).eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000),
+      supabase.from('workspace_teams').select('id, name, identifier, description, updated_at, created_at').eq('workspace_id', workspaceId).is('archived_at', null).order('updated_at', { ascending: false }).limit(500),
+      supabase.from('meeting_note_transcript_segments').select('id, note_id, transcript_text, speaker_label, start_ms, updated_at').eq('workspace_id', workspaceId).is('deleted_at', null).order('updated_at', { ascending: false }).limit(2000),
+    ]);
+    for (const result of [notes, projects, tasks, events, reminders, inbox, teams, transcriptSegments]) {
+      if (result.error) throw result.error;
+    }
+
+    const projectIds = [...new Set([
+      ...(tasks.data ?? []).map((row) => row.project_id),
+      ...(events.data ?? []).map((row) => row.project_id),
+      ...(reminders.data ?? []).map((row) => row.project_id),
+    ].filter(Boolean).map(String))];
+    const projectRows = projectIds.length
+      ? await supabase.from('projects').select('id, name').eq('workspace_id', workspaceId).in('id', projectIds)
+      : { data: [], error: null };
+    if (projectRows.error) throw projectRows.error;
+    const projectNames = new Map((projectRows.data ?? []).map((row) => [String(row.id), row.name]));
+    const documents = [
+      ...(projects.data ?? []).map((row) => ({ resourceType: 'project', resourceId: String(row.id), title: String(row.name ?? 'Untitled project'), content: aiDocumentText([row.description, `Status: ${row.status ?? 'Not started'}`, `Progress: ${Math.max(0, Math.min(100, Number(row.completeness) || 0))}%`].filter(Boolean).join(' ')), status: row.status ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Project', route: searchRouteFor(workspaceId, 'project', row.id) })),
+      ...(tasks.data ?? []).map((row) => ({ resourceType: 'task', resourceId: String(row.id), title: String(row.title ?? 'Untitled task'), content: aiDocumentText([row.description, row.priority ? `Priority: ${row.priority}` : null, row.due_date ? `Due: ${row.due_date}${row.due_time ? ` ${row.due_time}` : ''}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Task', route: row.project_id ? searchRouteFor(workspaceId, 'project', row.project_id, { taskId: row.id }) : searchRouteFor(workspaceId, 'task', row.id) })),
+      ...(notes.data ?? []).map((row) => ({ resourceType: 'note', resourceId: String(row.id), title: String(row.title ?? 'Untitled note'), content: aiDocumentText(row.content_html ?? row.content), updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Note', route: searchRouteFor(workspaceId, 'note', row.id) })),
+      ...(events.data ?? []).map((row) => ({ resourceType: 'event', resourceId: String(row.id), title: String(row.title ?? 'Untitled event'), content: aiDocumentText([row.notes, row.start_at ? `Starts: ${row.start_at}` : null, row.end_at ? `Ends: ${row.end_at}` : null].filter(Boolean).join(' ')), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, timestamp: row.start_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Event', route: searchRouteFor(workspaceId, 'event', row.id) })),
+      ...(reminders.data ?? []).map((row) => ({ resourceType: 'reminder', resourceId: String(row.id), title: String(row.title ?? 'Untitled reminder'), content: aiDocumentText(row.body), projectId: row.project_id ?? undefined, projectName: projectNames.get(String(row.project_id ?? '')) ?? undefined, status: row.status ?? undefined, timestamp: row.remind_at ?? undefined, updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Reminder', route: searchRouteFor(workspaceId, 'reminder', row.id) })),
+      ...(inbox.data ?? []).map((row) => ({ resourceType: 'intake', resourceId: String(row.id), title: String(row.title ?? 'Untitled capture'), content: aiDocumentText([row.body, row.source].filter(Boolean).join(' ')), updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Intake', route: searchRouteFor(workspaceId, 'intake', row.id) })),
+      ...(teams.data ?? []).map((row) => ({ resourceType: 'team', resourceId: String(row.id), title: String(row.name ?? row.identifier ?? 'Untitled team'), content: aiDocumentText(row.description), updatedAt: row.updated_at ?? row.created_at ?? undefined, sourceLabel: 'Team', route: searchRouteFor(workspaceId, 'team', row.id) })),
+      ...(transcriptSegments.data ?? []).map((row) => ({ resourceType: 'transcript', resourceId: String(row.id), parentResourceId: String(row.note_id), title: 'Meeting transcript', content: aiDocumentText([row.speaker_label, row.transcript_text].filter(Boolean).join(': ')), timestamp: row.start_ms == null ? undefined : `${row.start_ms}ms`, updatedAt: row.updated_at ?? undefined, sourceLabel: 'Transcript', route: searchRouteFor(workspaceId, 'note', row.note_id) })),
+    ].filter((document) => document.content || document.title);
+
+    res.json({ workspaceId, documents });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 async function searchWorkspaceContent({
   workspaceId,
   rawQuery,
@@ -20988,7 +21146,6 @@ async function searchWorkspaceContent({
       .from('external_references')
       .select('id, external_type, external_url, normalized_url, metadata, access_status, updated_at')
       .eq('workspace_id', workspaceId)
-      .eq('provider', 'github')
       .order('updated_at', { ascending: false })
       .limit(100),
   ]);
@@ -21004,7 +21161,17 @@ async function searchWorkspaceContent({
   if (workspaceResult.error) throw workspaceResult.error;
   if (githubReferencesResult.error) throw githubReferencesResult.error;
 
-  const [meetingMetadataResult, transcriptResult] = await Promise.all([
+  const projectIds = [...new Set([
+    ...(tasksResult.data ?? []).map((row) => row.project_id),
+    ...(eventsResult.data ?? []).map((row) => row.project_id),
+    ...(remindersResult.data ?? []).map((row) => row.project_id),
+  ].filter(Boolean).map(String))];
+  const noteIds = [...new Set([
+    ...(eventsResult.data ?? []).map((row) => row.note_id),
+    ...(remindersResult.data ?? []).map((row) => row.note_id),
+  ].filter(Boolean).map(String))];
+  const taskIds = [...new Set((tasksResult.data ?? []).map((row) => row.id).filter(Boolean).map(String))];
+  const [meetingMetadataResult, transcriptResult, projectContextResult, noteContextResult, intakeProvenanceResult, transcriptLinksResult] = await Promise.all([
     supabase
       .from('meeting_note_metadata')
       .select('note_id, calendar_event_title, calendar_source_name, attendees, calendar_series_key')
@@ -21018,15 +21185,59 @@ async function searchWorkspaceContent({
       .ilike('transcript_text', like)
       .order('updated_at', { ascending: false })
       .limit(50),
+    projectIds.length
+      ? supabase.from('projects').select('id, name, workspace_id').eq('workspace_id', workspaceId).in('id', projectIds)
+      : Promise.resolve({ data: [], error: null }),
+    noteIds.length
+      ? supabase.from('notes').select('id, title, mode, workspace_id').eq('workspace_id', workspaceId).in('id', noteIds)
+      : Promise.resolve({ data: [], error: null }),
+    taskIds.length
+      ? supabase.from('inbox_items').select('id, title, converted_type, converted_id, source, source_provider, source_url, converted_at').eq('workspace_id', workspaceId).eq('converted_type', 'task').in('converted_id', taskIds)
+      : Promise.resolve({ data: [], error: null }),
+    taskIds.length
+      ? supabase.from('meeting_transcript_links').select('meeting_note_id, ledger_item_id, ledger_item_type, transcript_segment_id, timestamp_ms, speaker_label').eq('workspace_id', workspaceId).eq('ledger_item_type', 'task').in('ledger_item_id', taskIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (meetingMetadataResult.error) throw meetingMetadataResult.error;
   if (transcriptResult.error) throw transcriptResult.error;
+  if (projectContextResult.error) throw projectContextResult.error;
+  if (noteContextResult.error) throw noteContextResult.error;
+  if (intakeProvenanceResult.error) throw intakeProvenanceResult.error;
+  if (transcriptLinksResult.error) throw transcriptLinksResult.error;
   const transcriptNoteIds = [...new Set((transcriptResult.data ?? []).map((row) => row.note_id).filter(Boolean))];
   const transcriptNotesResult = transcriptNoteIds.length
     ? await supabase.from('notes').select('id, title, mode').eq('workspace_id', workspaceId).in('id', transcriptNoteIds)
     : { data: [], error: null };
   if (transcriptNotesResult.error) throw transcriptNotesResult.error;
   const transcriptNoteById = new Map((transcriptNotesResult.data ?? []).map((row) => [row.id, row]));
+  const projectById = new Map((projectContextResult.data ?? []).map((row) => [String(row.id), row]));
+  const noteById = new Map((noteContextResult.data ?? []).map((row) => [String(row.id), row]));
+  const intakeByTaskId = new Map((intakeProvenanceResult.data ?? []).map((row) => [String(row.converted_id), row]));
+  const transcriptLinkByTaskId = new Map((transcriptLinksResult.data ?? []).map((row) => [String(row.ledger_item_id), row]));
+  const meetingNoteIds = [...new Set((transcriptLinksResult.data ?? []).map((row) => row.meeting_note_id).filter(Boolean).map(String))];
+  const meetingNotesResult = meetingNoteIds.length
+    ? await supabase.from('notes').select('id, title, workspace_id').eq('workspace_id', workspaceId).in('id', meetingNoteIds)
+    : { data: [], error: null };
+  if (meetingNotesResult.error) throw meetingNotesResult.error;
+  const meetingNoteById = new Map((meetingNotesResult.data ?? []).map((row) => [String(row.id), row]));
+  const externalReferenceIds = (githubReferencesResult.data ?? []).map((row) => row.id).filter(Boolean).map(String);
+  const externalLinksResult = externalReferenceIds.length
+    ? await supabase.from('external_reference_links').select('external_reference_id, target_type, target_id, sources, link_metadata').eq('workspace_id', workspaceId).in('external_reference_id', externalReferenceIds)
+    : { data: [], error: null };
+  if (externalLinksResult.error) throw externalLinksResult.error;
+  const externalLinksByReferenceId = new Map();
+  for (const link of externalLinksResult.data ?? []) {
+    const key = String(link.external_reference_id);
+    const links = externalLinksByReferenceId.get(key) ?? [];
+    links.push(link);
+    externalLinksByReferenceId.set(key, links);
+  }
+  const externalProjectIds = [...new Set((externalLinksResult.data ?? []).filter((link) => link.target_type === 'project').map((link) => link.target_id).filter(Boolean).map(String))];
+  if (externalProjectIds.length) {
+    const linkedProjectsResult = await supabase.from('projects').select('id, name, workspace_id').eq('workspace_id', workspaceId).in('id', externalProjectIds);
+    if (linkedProjectsResult.error) throw linkedProjectsResult.error;
+    for (const project of linkedProjectsResult.data ?? []) projectById.set(String(project.id), project);
+  }
 
   const memberUserIds = [
     ...new Set([
@@ -21056,6 +21267,9 @@ async function searchWorkspaceContent({
       workspace_name: workspaceName,
       source_type: 'note',
       source_id: row.id,
+      context_label: searchContextLabel({ noteMode: row.mode }),
+      match_source: normalizeSearchTerm(row.title).includes(normalizedQuery) ? 'title' : 'content',
+      route: searchRouteFor(workspaceId, 'note', row.id),
       updated_at: row.updated_at ?? row.created_at ?? null,
       icon: 'FileText',
       score: scoreSearchResult(
@@ -21082,6 +21296,10 @@ async function searchWorkspaceContent({
       workspace_name: workspaceName,
       source_type: 'transcript',
       source_id: row.id,
+      context_label: meetingNoteById.get(String(row.note_id))?.title ? `Created from ${meetingNoteById.get(String(row.note_id)).title}` : 'Meeting transcript',
+      source_label: meetingNoteById.get(String(row.note_id))?.title ?? 'Meeting transcript',
+      match_source: 'transcript',
+      route: searchRouteFor(workspaceId, 'note', row.note_id),
       start_ms: row.start_ms ?? 0,
       speaker_label: row.speaker_label ?? (row.audio_source === 'user_microphone' ? 'You' : 'Meeting'),
       updated_at: row.updated_at ?? null,
@@ -21104,6 +21322,9 @@ async function searchWorkspaceContent({
     workspace_name: workspaceName,
     source_type: 'meeting_metadata',
     source_id: row.note_id,
+    context_label: 'Meeting note',
+    match_source: 'meeting',
+    route: searchRouteFor(workspaceId, 'note', row.note_id),
     updated_at: null,
     icon: 'Calendar',
     score: scoreSearchResult(row.calendar_event_title ?? '', normalizedQuery, row.calendar_source_name ?? '', true),
@@ -21124,6 +21345,8 @@ async function searchWorkspaceContent({
       workspace_name: workspaceName,
       source_type: 'project',
       source_id: row.id,
+      match_source: normalizeSearchTerm(row.name).includes(normalizedQuery) ? 'title' : 'description',
+      route: searchRouteFor(workspaceId, 'project', row.id),
       updated_at: row.updated_at ?? row.created_at ?? null,
       icon: 'Briefcase',
       score: scoreSearchResult(row.name, normalizedQuery, preview, false),
@@ -21146,6 +21369,22 @@ async function searchWorkspaceContent({
       source_type: 'task',
       source_id: row.id,
       project_id: row.project_id ?? null,
+      project_name: projectById.get(String(row.project_id ?? ''))?.name ?? null,
+      source_label: intakeByTaskId.get(String(row.id))?.title
+        ? `Converted from ${intakeByTaskId.get(String(row.id)).title}`
+        : transcriptLinkByTaskId.get(String(row.id))?.meeting_note_id
+        ? `Created from ${meetingNoteById.get(String(transcriptLinkByTaskId.get(String(row.id)).meeting_note_id))?.title ?? 'Meeting note'}`
+        : null,
+      context_label: searchContextLabel({
+        projectName: projectById.get(String(row.project_id ?? ''))?.name,
+        sourceLabel: intakeByTaskId.get(String(row.id))?.title
+          ? `Converted from ${intakeByTaskId.get(String(row.id)).title}`
+          : transcriptLinkByTaskId.get(String(row.id))?.meeting_note_id
+          ? `Created from ${meetingNoteById.get(String(transcriptLinkByTaskId.get(String(row.id)).meeting_note_id))?.title ?? 'Meeting note'}`
+          : null,
+      }),
+      match_source: normalizeSearchTerm(row.title).includes(normalizedQuery) ? 'title' : 'description',
+      route: row.project_id ? searchRouteFor(workspaceId, 'project', row.project_id, { taskId: row.id }) : searchRouteFor(workspaceId, 'task', row.id),
       updated_at: row.updated_at ?? row.created_at ?? null,
       icon: 'Check',
       score: scoreSearchResult(
@@ -21183,6 +21422,10 @@ async function searchWorkspaceContent({
       source_id: row.id,
       project_id: row.project_id ?? null,
       note_id: row.note_id ?? null,
+      project_name: projectById.get(String(row.project_id ?? ''))?.name ?? null,
+      context_label: searchContextLabel({ projectName: projectById.get(String(row.project_id ?? ''))?.name, noteMode: noteById.get(String(row.note_id ?? ''))?.mode }),
+      match_source: normalizeSearchTerm(row.title).includes(normalizedQuery) ? 'title' : 'notes',
+      route: searchRouteFor(workspaceId, 'event', row.id),
       starts_at: row.start_at ?? null,
       ends_at: row.end_at ?? null,
       updated_at: row.updated_at ?? row.created_at ?? null,
@@ -21215,6 +21458,10 @@ async function searchWorkspaceContent({
       source_id: row.id,
       project_id: row.project_id ?? null,
       note_id: row.note_id ?? null,
+      project_name: projectById.get(String(row.project_id ?? ''))?.name ?? null,
+      context_label: searchContextLabel({ projectName: projectById.get(String(row.project_id ?? ''))?.name, noteMode: noteById.get(String(row.note_id ?? ''))?.mode }),
+      match_source: normalizeSearchTerm(row.title).includes(normalizedQuery) ? 'title' : 'body',
+      route: searchRouteFor(workspaceId, 'reminder', row.id),
       remind_at: row.remind_at ?? null,
       updated_at: row.updated_at ?? row.created_at ?? null,
       icon: 'Bell',
@@ -21237,6 +21484,8 @@ async function searchWorkspaceContent({
     workspace_name: workspaceName,
     source_type: 'person',
     source_id: row.id,
+    match_source: normalizeSearchTerm(row.full_name ?? row.email ?? '').includes(normalizedQuery) ? 'title' : 'email',
+    route: searchRouteFor(workspaceId, 'person', row.id),
     updated_at: null,
     icon: 'Briefcase',
     score: scoreSearchResult(row.full_name ?? row.email ?? '', normalizedQuery, row.email ?? '', false),
@@ -21254,6 +21503,8 @@ async function searchWorkspaceContent({
       workspace_name: workspaceName,
       source_type: 'team',
       source_id: row.id,
+      match_source: normalizeSearchTerm(row.name).includes(normalizedQuery) ? 'title' : 'description',
+      route: searchRouteFor(workspaceId, 'team', row.id),
       updated_at: row.updated_at ?? row.created_at ?? null,
       icon: 'Briefcase',
       score: scoreSearchResult(row.name, normalizedQuery, `${row.identifier ?? ''} ${row.description ?? ''}`, false),
@@ -21276,38 +21527,56 @@ async function searchWorkspaceContent({
       source_type: 'intake',
       source_id: row.id,
       provider: row.source_provider ?? row.source ?? null,
+      source_label: row.source_provider || row.source ? `Captured from ${row.source_provider ?? row.source}` : null,
+      context_label: row.source_provider || row.source
+        ? `Captured from ${row.source_provider ?? row.source}`
+        : row.converted_type
+        ? `Converted to ${row.converted_type}`
+        : null,
+      match_source: normalizeSearchTerm(row.title).includes(normalizedQuery) ? 'title' : 'body',
+      route: searchRouteFor(workspaceId, 'intake', row.id),
       updated_at: row.updated_at ?? row.created_at ?? null,
       icon: 'FileText',
       score: scoreSearchResult(row.title, normalizedQuery, `${row.body ?? ''} ${row.source ?? ''}`, false),
     };
   });
 
-  const githubExternal = (githubReferencesResult.data ?? []).filter((row) => {
+  const externalReferences = (githubReferencesResult.data ?? []).filter((row) => {
     const metadata = row.metadata ?? {};
-    return [metadata.title, metadata.repositoryFullName, metadata.ownerLogin, metadata.number, row.normalized_url].some((value) => normalizeSearchTerm(value).includes(normalizedQuery));
-  }).slice(0, 20).map((row) => {
+    return [metadata.title, metadata.name, metadata.repositoryFullName, metadata.ownerLogin, metadata.number, metadata.fileName, metadata.projectName, row.provider, row.external_type, row.normalized_url, row.external_url].some((value) => normalizeSearchTerm(value).includes(normalizedQuery));
+  }).slice(0, 30).map((row) => {
     const metadata = row.metadata ?? {};
-    const kind = row.external_type === 'pullRequest' ? 'Pull request' : row.external_type === 'issue' ? 'Issue' : 'Repository';
-    const title = String(metadata.title ?? (row.external_type === 'repository' ? metadata.repositoryFullName ?? metadata.fullName ?? metadata.name ?? 'GitHub repository' : `${kind} #${metadata.number ?? ''}`));
+    const provider = String(row.provider ?? 'external');
+    const kind = row.external_type === 'pullRequest' ? 'Pull request' : row.external_type === 'issue' ? 'Issue' : row.external_type === 'file' ? 'File' : row.external_type === 'design' ? 'Design' : 'Resource';
+    const title = String(metadata.title ?? metadata.name ?? (row.external_type === 'repository' ? metadata.repositoryFullName ?? metadata.fullName ?? 'GitHub repository' : `${kind}${metadata.number ? ` #${metadata.number}` : ''}`));
+    const links = externalLinksByReferenceId.get(String(row.id)) ?? [];
+    const projectLink = links.find((link) => link.target_type === 'project');
+    const projectName = projectLink ? projectById.get(String(projectLink.target_id))?.name ?? null : null;
+    const contextLabel = projectName ? `Linked to ${projectName}` : links.length ? `Linked ${links[0].target_type}` : null;
     return {
-      type: 'github',
+      type: 'external_reference',
       id: row.id,
       title,
-      preview: `${kind} · ${metadata.repositoryFullName ?? ''}${metadata.number ? ` · #${metadata.number}` : ''}`,
-      snippet: `${kind} · ${metadata.repositoryFullName ?? ''}`,
+      preview: `${kind} · ${metadata.repositoryFullName ?? metadata.fileName ?? metadata.projectName ?? ''}`.replace(/ · $/, ''),
+      snippet: `${kind} · ${metadata.repositoryFullName ?? metadata.fileName ?? metadata.projectName ?? ''}`.replace(/ · $/, ''),
       workspace_id: workspaceId,
       workspace_name: workspaceName,
       source_type: 'external_reference',
       source_id: row.id,
-      provider: 'github',
+      context_label: contextLabel,
+      linked_target_type: projectLink?.target_type ?? links[0]?.target_type ?? null,
+      linked_target_id: projectLink?.target_id ?? links[0]?.target_id ?? null,
+      match_source: 'resource',
+      provider,
       external_url: row.normalized_url ?? row.external_url,
       external_type: row.external_type,
-      icon: 'Github',
-      score: scoreSearchResult(title, normalizedQuery, `${metadata.repositoryFullName ?? ''} ${metadata.number ?? ''}`, false),
+      route: searchExternalRouteFor(provider, row.normalized_url ?? row.external_url),
+      icon: provider === 'github' ? 'Github' : 'ExternalLink',
+      score: scoreSearchResult(title, normalizedQuery, `${metadata.repositoryFullName ?? metadata.fileName ?? metadata.projectName ?? ''} ${metadata.number ?? ''}`, false),
     };
   });
 
-  return [...notes, ...transcriptMatches, ...meetingMetadataMatches, ...projects, ...tasks, ...events, ...reminders, ...people, ...teams, ...intake, ...githubExternal]
+  return dedupeSearchResults([...notes, ...transcriptMatches, ...meetingMetadataMatches, ...projects, ...tasks, ...events, ...reminders, ...people, ...teams, ...intake, ...externalReferences])
     .sort((left, right) => {
       if (left.score !== right.score) return left.score - right.score;
       return String(left.title).localeCompare(String(right.title));

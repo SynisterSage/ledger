@@ -34,7 +34,7 @@ test('browser Vite target is separate from Electron production', async () => {
   const packageJson = JSON.parse(await fs.readFile(new URL('package.json', root), 'utf8'));
   assert.match(vite, /mode === 'web'/);
   assert.match(vite, /outDir: isBrowserBuild \? 'dist-web' : 'dist'/);
-  assert.match(vite, /isBrowserBuild \? '\/' :/);
+  assert.match(vite, /base: isBrowserBuild \? '\/app\/' :/);
   assert.equal(packageJson.scripts['build:web'], 'tsc -p tsconfig.json --noEmit && vite build --mode web');
   assert.match(vite, /isWebDevelopment \|\| isBrowserBuild \? \[\] : \[electron\(/);
 });

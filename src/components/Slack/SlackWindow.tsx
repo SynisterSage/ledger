@@ -37,7 +37,7 @@ import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { UserAvatar } from '../Common/UserAvatar';
-import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, usePlatform } from '../../platform';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
 
 type SlackWindowProps = { routeWorkspaceId?: string | null };
 type CaptureFilter = 'all' | 'in_intake' | 'converted' | 'failed';
@@ -412,7 +412,7 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
     if (item.type === 'note') {
       platform.navigation.openRoute(routeForNote(workspaceId ?? activeWorkspaceId ?? '', item.id));
     } else if (item.type === 'task' || item.type === 'project') {
-      platform.navigation.openRoute(item.type === 'task' ? { kind: 'workspace', workspaceId: workspaceId ?? activeWorkspaceId ?? '', page: 'task', taskId: item.id } : routeForProject(workspaceId ?? activeWorkspaceId ?? '', item.id));
+      platform.navigation.openRoute(item.type === 'task' ? routeForTask(workspaceId ?? activeWorkspaceId ?? '', item.id) : routeForProject(workspaceId ?? activeWorkspaceId ?? '', item.id));
     } else {
       platform.navigation.openRoute(item.type === 'event' ? routeForCalendarEvent(workspaceId ?? activeWorkspaceId ?? '', item.id) : routeForCalendarReminder(workspaceId ?? activeWorkspaceId ?? '', item.id));
     }
@@ -698,9 +698,11 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
             const convertedType = activity.intake_item?.converted_type;
             const convertedId = activity.intake_item?.converted_id;
             if (!convertedType || !convertedId) return openIntake(activity.intake_item?.id);
-            if (convertedType === 'note') return void window.desktopWindow?.openModule('notes', { kind: 'notes', focusNoteId: convertedId });
-            if (convertedType === 'task' || convertedType === 'project') return void window.desktopWindow?.openModule('projects', { kind: 'projects', ...(convertedType === 'task' ? { focusTaskId: convertedId } : { focusProjectId: convertedId }) });
-            return void window.desktopWindow?.openModule('calendar', { kind: 'calendar', focusContext: `focus-${convertedType}:${convertedId}` });
+            const workspace = workspaceId ?? activeWorkspaceId ?? '';
+            if (convertedType === 'note') return platform.navigation.openRoute(routeForNote(workspace, convertedId));
+            if (convertedType === 'task') return platform.navigation.openRoute(routeForTask(workspace, convertedId));
+            if (convertedType === 'project') return platform.navigation.openRoute(routeForProject(workspace, convertedId));
+            return platform.navigation.openRoute(convertedType === 'event' ? routeForCalendarEvent(workspace, convertedId) : routeForCalendarReminder(workspace, convertedId));
           },
           onLinkContext: (activity) => void openActivityLinker(activity),
           onToggleFollow: (activity) => void toggleActivityFollow(activity),

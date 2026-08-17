@@ -45,7 +45,7 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
-import { usePlatform } from '../../platform';
+import { routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
 import { UserAvatar } from '../Common/UserAvatar';
 
 type TeamMember = {
@@ -1709,15 +1709,15 @@ export const TeamsWindow = ({ focusContext }: { focusContext?: string } = {}) =>
   };
 
   const openNoteById = (noteId: string) => {
-    void window.desktopWindow?.toggleModule('notes', { focusNoteId: noteId });
+    if (activeWorkspaceId) platform.navigation.openRoute(routeForNote(activeWorkspaceId, noteId));
   };
 
   const openProjectById = (projectId: string) => {
-    void window.desktopWindow?.toggleModule('projects', { focusProjectId: projectId });
+    if (activeWorkspaceId) platform.navigation.openRoute(routeForProject(activeWorkspaceId, projectId));
   };
 
   const openTaskById = (taskId: string) => {
-    void window.desktopWindow?.toggleModule('projects', { focusTaskId: taskId });
+    if (activeWorkspaceId) platform.navigation.openRoute(routeForTask(activeWorkspaceId, taskId));
   };
 
   const openMemberInCircle = (memberId: string, memberName?: string | null) => {

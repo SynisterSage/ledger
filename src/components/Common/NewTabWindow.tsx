@@ -15,7 +15,11 @@ import {
 } from '../Search/useWorkspaceSearch';
 import { IntegrationProviderMark, normalizeIntegrationProvider } from './IntegrationProviderMark';
 import { usePlatform } from '../../platform';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, routeForTask } from '../../platform';
 import type { LedgerWorkspaceRoute } from '../../platform';
+import { AskLedgerPanel } from './AskLedgerPanel';
+
+type NewTabMode = 'search' | 'ask';
 
 const destinations: Array<{
   label: string;
@@ -45,6 +49,7 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const isWindows = window.desktopWindow?.platform === 'win32';
   const quickNavRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<NewTabMode>('search');
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [isSlackEnabled, setIsSlackEnabled] = useState(false);
@@ -266,11 +271,13 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       if (destination) openDestination(destination.kind, destination.focus);
       return;
     }
-    if (result.type === 'note') return openDestination('notes', { focusNoteId: result.id });
-    if (result.type === 'project') return openDestination('projects', { focusProjectId: result.id });
-    if (result.type === 'task') return openDestination('projects', { focusProjectId: result.project_id, focusTaskId: result.id });
-    if (result.type === 'event') return openDestination('calendar', { focusDate: result.focusDate });
-    if (result.type === 'reminder' || result.type === 'intake') return openDestination('inbox', { focusSection: 'unprocessed' });
+    if (result.type === 'note' && activeWorkspaceId) return platform.navigation.openRoute(routeForNote(activeWorkspaceId, result.id));
+    if (result.type === 'project' && activeWorkspaceId) return platform.navigation.openRoute(routeForProject(activeWorkspaceId, result.id));
+    if (result.type === 'task' && activeWorkspaceId) return platform.navigation.openRoute(result.project_id ? routeForProject(activeWorkspaceId, result.project_id, result.id) : routeForTask(activeWorkspaceId, result.id));
+    if (result.type === 'event' && activeWorkspaceId) return platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, result.id, result.focusDate ?? undefined));
+    if (result.type === 'reminder' && activeWorkspaceId) return platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId, result.id, result.focusDate ?? undefined));
+    if (result.type === 'intake' && activeWorkspaceId) return platform.navigation.openRoute(routeForInboxItem(activeWorkspaceId, result.id));
+    if (result.type === 'external_reference' && result.external_url) return void platform.externalLinks.open(result.external_url, { newTab: true });
     if (result.type === 'person' || result.type === 'team') openDestination('teams');
   };
 
@@ -335,25 +342,51 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         <div className="web-new-tab-body relative z-10 mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
           <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="mb-8 h-8 w-8" />
           <h1 className="text-[28px] font-regular tracking-[-0.03em] text-[var(--ledger-text-primary)]">
-            {openSomethingExpression}
+            {mode === 'ask' ? 'Ask Ledger' : openSomethingExpression}
           </h1>
+          {mode === 'ask' && (
+            <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Search your workspace or ask about your work.</p>
+          )}
 
-          <button
-            type="button"
-            onClick={() => inputRef.current?.focus()}
-            className="mt-5 flex h-12 w-full items-center gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 text-left shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition hover:border-[color:var(--ledger-border-strong)] focus-visible:outline-none focus-visible:ring-0"
-          >
-            <Search size={17} className="shrink-0 text-[var(--ledger-text-muted)]" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              placeholder="Search pages, features, notes, projects…"
-              className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-              aria-label="Search Ledger"
-            />
-          </button>
+          <div className="mt-5 flex items-center gap-1" role="tablist" aria-label="New Tab mode">
+            {(['search', 'ask'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={mode === tab}
+                onClick={() => setMode(tab)}
+                className={`rounded-md px-2 py-1 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
+                  mode === tab
+                    ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
+                    : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
+                }`}
+              >
+                {tab === 'search' ? 'Search' : 'Ask Ledger'}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'search' ? (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.focus()}
+              className="mt-2 flex h-12 w-full items-center gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 text-left shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition hover:border-[color:var(--ledger-border-strong)] focus-visible:outline-none focus-visible:ring-0"
+            >
+              <Search size={17} className="shrink-0 text-[var(--ledger-text-muted)]" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+                placeholder="Search pages, features, notes, projects…"
+                className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
+                aria-label="Search Ledger"
+              />
+            </button>
+          ) : (
+            <AskLedgerPanel workspaceId={activeWorkspaceId} />
+          )}
 
           <div className="relative mt-5 min-w-0">
             <div
@@ -396,7 +429,7 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
             <div className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-[var(--ledger-background)] to-transparent opacity-0" />
           </div>
 
-          {trimmedQuery && (
+          {mode === 'search' && trimmedQuery && (
             <div className="mt-8 space-y-0.5">
               {isLoading ? (
                 <p className="px-2.5 py-3 text-sm text-[var(--ledger-text-muted)]">Searching…</p>
