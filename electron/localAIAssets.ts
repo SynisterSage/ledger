@@ -61,6 +61,7 @@ export type LocalAIStatus = {
 
 const assetRoot = () => path.join(appDataPath(), 'ai');
 const modelPath = (asset: LocalAIAssetManifest) => path.join(assetRoot(), 'models', asset.role, asset.fileName);
+const temporaryModelPath = (asset: LocalAIAssetManifest) => `${modelPath(asset)}.${process.pid}.part`;
 
 export const localAIRuntimeCandidates = () => {
   const name = process.platform === 'win32' ? 'llama-server.exe' : 'llama-server';
@@ -93,11 +94,14 @@ export class LocalAIAssetManager {
   }
   status(): LocalAIStatus {
     const read = (asset: LocalAIAssetManifest): LocalAIAssetStatus => {
+      const downloading = this.downloads.has(asset.id);
       const file = this.pathFor(asset.role);
+      const progressFile = downloading ? temporaryModelPath(asset) : file;
       let installed = false; let bytesDownloaded = 0; let error: string | null = null;
-      try { const stat = fs.statSync(file); bytesDownloaded = stat.size; installed = stat.isFile() && (!asset.expectedSize || stat.size === asset.expectedSize); } catch { installed = false; }
+      try { const stat = fs.statSync(progressFile); bytesDownloaded = stat.size; } catch { bytesDownloaded = 0; }
+      try { const stat = fs.statSync(file); installed = stat.isFile() && (!asset.expectedSize || stat.size === asset.expectedSize); } catch { installed = false; }
       if (!installed && fs.existsSync(file) && !process.env[`LEDGER_LOCAL_AI_${asset.role === 'generation' ? 'MODEL' : 'EMBEDDING_MODEL'}_PATH`]) error = 'The installed model failed its manifest validation.';
-      return { ...asset, installed, downloading: this.downloads.has(asset.id), bytesDownloaded, error };
+      return { ...asset, installed, downloading, bytesDownloaded, error };
     };
     return { generation: read(this.manifest('generation')), embedding: read(this.manifest('embedding')), platform: process.platform, arch: process.arch, totalRam: os.totalmem(), runtimeAvailable: Boolean(resolveLocalAIRuntime()), runtimePath: resolveLocalAIRuntime() };
   }

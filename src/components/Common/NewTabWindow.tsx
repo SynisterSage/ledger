@@ -1,155 +1,41 @@
-import { useEffect, useRef, useState } from 'react';
-import { Bell, CalendarDays, CircleUserRound, FileText, FolderKanban, Funnel, Inbox, LayoutList, Pin, Search, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bell, Funnel } from 'lucide-react';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from './ModuleWindowHeader';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
-import { usePins } from '../../context/PinsContext';
-import { getPinNavigationTarget } from '../../utils/pins';
 import { useSidebar } from '../../context/SidebarContext';
-import {
-  searchCategoryLabels,
-  searchIconMap,
-  type SearchResult,
-  useWorkspaceSearch,
-} from '../Search/useWorkspaceSearch';
-import { IntegrationProviderMark, normalizeIntegrationProvider } from './IntegrationProviderMark';
-import { usePlatform } from '../../platform';
-import { routeForCalendarEvent, routeForCalendarReminder, routeForInboxItem, routeForNote, routeForProject, routeForTask } from '../../platform';
-import type { LedgerWorkspaceRoute } from '../../platform';
 import { AskLedgerPanel } from './AskLedgerPanel';
-
-type NewTabMode = 'search' | 'ask';
-
-const destinations: Array<{
-  label: string;
-  kind: ModuleWindowKind;
-  icon: typeof LayoutList;
-  provider?: 'slack';
-  teamOnly?: boolean;
-}> = [
-  { label: 'Overview', kind: 'dashboard', icon: LayoutList },
-  { label: 'Projects', kind: 'projects', icon: FolderKanban },
-  { label: 'Notes', kind: 'notes', icon: FileText },
-  { label: 'Calendar', kind: 'calendar', icon: CalendarDays },
-  { label: 'Circle', kind: 'circle', icon: CircleUserRound, teamOnly: true },
-  { label: 'Teams', kind: 'teams', icon: Users, teamOnly: true },
-  { label: 'Intake', kind: 'inbox', icon: Inbox },
-  { label: 'Notifications', kind: 'notifications', icon: Bell },
-];
 
 export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => void; isBrowser?: boolean }) => {
   const { user } = useAuthContext();
-  const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
+  const { activeWorkspaceId } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
-  const platform = usePlatform();
   const api = useApi();
-  const { pins } = usePins();
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const isWindows = window.desktopWindow?.platform === 'win32';
-  const quickNavRef = useRef<HTMLDivElement | null>(null);
-  const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<NewTabMode>('search');
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [isSlackEnabled, setIsSlackEnabled] = useState(false);
-  const [pinnedPersonNames, setPinnedPersonNames] = useState<Record<string, string>>({});
-  const { results, isLoading, trimmedQuery } = useWorkspaceSearch(query);
-
-  const displayName = user?.user_metadata?.full_name?.trim() || user?.email?.split('@')[0] || '';
-  const firstName = displayName.split(/\s+/)[0] || '';
-  const genericExpressions = [
-    'Open something',
-    'What’s on your mind?',
-    'What’s up today?',
-    'Where should we start?',
-    'What are you working on?',
-    'What’s next?',
-    'Let’s get into it',
-    'Pick up where you left off',
-    'Find your next move',
-    'Start somewhere',
-    'Make something happen',
-    'Back to work',
-    'Ready when you are',
-    'What needs your attention?',
-    'Where were we?',
-    'Let’s begin',
-    'Open the next thing',
-    'Find what you need',
-    'Jump back in',
-    'See what’s happening',
-  ];
-  const personalizedExpressions = firstName
-    ? [
-        `${firstName} returns`,
-        `Welcome back, ${firstName}`,
-        `What’s next, ${firstName}?`,
-        `Where to, ${firstName}?`,
-        `Your move, ${firstName}`,
-        `Let’s go, ${firstName}`,
-      ]
-    : ['Welcome back!'];
-  const openSomethingExpressions = [...genericExpressions, ...personalizedExpressions];
-  const [openSomethingExpression] = useState(
-    () => openSomethingExpressions[Math.floor(Math.random() * openSomethingExpressions.length)]
-  );
-
-  useEffect(() => {
-    const personPins = pins.filter((pin) => pin.object_type === 'person');
-    if (personPins.length === 0) {
-      setPinnedPersonNames({});
-      return;
-    }
-
-    let cancelled = false;
-    void Promise.all(
-      personPins.map(async (pin) => {
-        try {
-          const payload = (await api.getPerson(pin.object_id)) as {
-            person?: { name?: string | null };
-          };
-          const name = payload?.person?.name?.trim();
-          return name ? [pin.object_id, name] as const : null;
-        } catch {
-          return null;
-        }
-      })
-    ).then((entries) => {
-      if (cancelled) return;
-      setPinnedPersonNames(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry))));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [api, pins]);
-
   useEffect(() => {
     if (!user || !activeWorkspaceId) {
       setInboxCount(0);
       setNotificationCount(0);
-      setIsSlackEnabled(false);
       return;
     }
 
     let cancelled = false;
     const loadCounts = async () => {
       try {
-        const [inbox, notifications, slack] = await Promise.all([
+        const [inbox, notifications] = await Promise.all([
           api.getInboxCount() as Promise<{ count?: number }>,
           api.getNotificationCenterSummary() as Promise<{ counts?: { unread?: number } }>,
-          api.getSlackIntegrationStatus(activeWorkspaceId) as Promise<{ connected?: boolean }>,
         ]);
         if (cancelled) return;
         setInboxCount(Math.max(0, Number(inbox?.count ?? 0)));
-          setNotificationCount(Math.max(0, Number(notifications?.counts?.unread ?? 0)));
-        setIsSlackEnabled(slack?.connected === true);
+        setNotificationCount(Math.max(0, Number(notifications?.counts?.unread ?? 0)));
       } catch {
         if (!cancelled) {
           setInboxCount(0);
           setNotificationCount(0);
-          setIsSlackEnabled(false);
         }
       }
     };
@@ -161,125 +47,6 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       window.clearInterval(timer);
     };
   }, [activeWorkspaceId, api, user]);
-
-  const isTeamWorkspace = activeWorkspace?.is_personal === false;
-  const workspaceDestinations = destinations.filter(({ teamOnly }) => !teamOnly || isTeamWorkspace);
-  const quickNavDestinations = workspaceDestinations.flatMap((destination) =>
-    destination.label === 'Intake' && isSlackEnabled
-      ? [
-          destination,
-          { label: 'Slack', kind: 'slack' as ModuleWindowKind, icon: LayoutList, provider: 'slack' as const },
-        ]
-      : [destination]
-  );
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const openDestination = (kind: ModuleWindowKind, route?: ModuleFocusPayload) => {
-    if (!activeWorkspaceId) return;
-    if (kind === 'quick-follow-up') {
-      platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'follow-up', entityId: route?.focusContext ?? undefined });
-      return;
-    }
-    if (kind.startsWith('quick-')) {
-      const action = kind.replace('quick-', '') as 'note' | 'task' | 'event' | 'reminder';
-      if (action === 'note' || action === 'task' || action === 'event' || action === 'reminder') {
-        platform.navigation.openOverlay({
-          kind: 'overlay',
-          workspaceId: activeWorkspaceId,
-          page: 'capture',
-          action,
-          projectId: route?.focusProjectId ?? undefined,
-          date: route?.focusDate ?? undefined,
-        });
-      }
-      return;
-    }
-
-    const base = { kind: 'workspace' as const, workspaceId: activeWorkspaceId };
-    let destination: LedgerWorkspaceRoute;
-    switch (kind) {
-      case 'new-tab': destination = { ...base, page: 'home' }; break;
-      case 'dashboard': destination = { ...base, page: 'dashboard', query: route?.focusSection ? { section: route.focusSection as 'today' | 'assigned' | 'focus' | 'review' } : undefined }; break;
-      case 'circle': destination = { ...base, page: 'circle', query: route?.focusContext ? { context: route.focusContext } : undefined }; break;
-      case 'calendar': destination = { ...base, page: 'calendar', query: { date: route?.focusDate ?? undefined, event: route?.focusContext?.startsWith('focus-event:') ? route.focusContext.slice(12) : undefined, reminder: route?.focusContext?.startsWith('focus-reminder:') ? route.focusContext.slice(15) : undefined } }; break;
-      case 'notes': destination = route?.focusNoteId ? { ...base, page: 'note', noteId: route.focusNoteId } : { ...base, page: 'notes' }; break;
-      case 'projects': destination = route?.focusProjectId ? { ...base, page: 'project', projectId: route.focusProjectId, taskId: route.focusTaskId ?? undefined } : { ...base, page: 'projects' }; break;
-      case 'teams': destination = route?.focusContext?.startsWith('team:') ? { ...base, page: 'team', teamId: route.focusContext.slice(5) } : { ...base, page: 'teams' }; break;
-      case 'inbox': destination = { ...base, page: 'inbox', query: { item: route?.focusInboxId ?? undefined, section: route?.focusSection as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined } }; break;
-      case 'slack': destination = { ...base, page: 'slack' }; break;
-      case 'notifications': destination = { ...base, page: 'notifications', query: { item: route?.focusContext ?? undefined, filter: route?.focusSection as 'active' | 'unread' | 'earlier' | undefined } }; break;
-      case 'settings': destination = { ...base, page: 'settings', scope: 'workspace', section: route?.focusContext === 'integrations' ? 'integrations' : route?.focusContext === 'shortcuts' ? 'sidebar' : 'workspace' }; break;
-      default: return;
-    }
-    platform.navigation.openRoute(destination);
-  };
-
-  const openPinnedItem = (pin: (typeof pins)[number]) => {
-    const target = getPinNavigationTarget(pin);
-    if (!target) return;
-    openDestination(target.module as ModuleWindowKind, target.focus as ModuleFocusPayload);
-  };
-
-  const getPinnedLabel = (pin: (typeof pins)[number]) => {
-    const resolvedName = pinnedPersonNames[pin.object_id];
-    if (pin.object_type === 'person' && resolvedName) return resolvedName;
-    if (pin.object_type !== 'person' || !pin.title.includes('@')) return pin.title;
-    const context = pin.destination.focusContext ?? '';
-    const encodedName = context.startsWith('ledger-person|') ? context.split('|')[2] : '';
-    if (!encodedName) return pin.title;
-    try {
-      const name = decodeURIComponent(encodedName);
-      return name && !name.includes('@') ? name : pin.title;
-    } catch {
-      return pin.title;
-    }
-  };
-
-  const openSearchResult = (result: SearchResult) => {
-    if (result.type === 'command') {
-      if (result.actionId === 'switch-workspace') {
-        const detail: { handled?: boolean; preferredVariant?: 'header' | 'sidebar' } = {
-          preferredVariant: 'header',
-        };
-        window.dispatchEvent(new CustomEvent('ledger:open-workspace-switcher', { detail }));
-        return;
-      }
-      const routeByAction: Record<string, { kind: ModuleWindowKind; focus?: ModuleFocusPayload }> = {
-        overview: { kind: 'dashboard' },
-        projects: { kind: 'projects' },
-        notes: { kind: 'notes' },
-        calendar: { kind: 'calendar' },
-        settings: { kind: 'settings' },
-        intake: { kind: 'inbox', focus: { focusSection: 'unprocessed' } },
-        today: { kind: 'dashboard', focus: { focusSection: 'today' } },
-        checkin: { kind: 'dashboard', focus: { focusSection: 'today' } },
-        tasks: { kind: 'dashboard', focus: { focusSection: 'assigned' } },
-        templates: { kind: 'notes', focus: { focusContext: 'try:template' } },
-        notifications: { kind: 'notifications', focus: { kind: 'notifications' } },
-        integrations: { kind: 'settings', focus: { focusContext: 'integrations' } },
-        shortcuts: { kind: 'settings', focus: { focusContext: 'shortcuts' } },
-        workspace: { kind: 'settings', focus: { focusContext: 'workspace' } },
-        appearance: { kind: 'settings', focus: { focusContext: 'workspace' } },
-        'new-note': { kind: 'quick-note' },
-        'new-task': { kind: 'quick-task' },
-        'create-project': { kind: 'projects' },
-      };
-      const destination = result.actionId ? routeByAction[result.actionId] : undefined;
-      if (destination) openDestination(destination.kind, destination.focus);
-      return;
-    }
-    if (result.type === 'note' && activeWorkspaceId) return platform.navigation.openRoute(routeForNote(activeWorkspaceId, result.id));
-    if (result.type === 'project' && activeWorkspaceId) return platform.navigation.openRoute(routeForProject(activeWorkspaceId, result.id));
-    if (result.type === 'task' && activeWorkspaceId) return platform.navigation.openRoute(result.project_id ? routeForProject(activeWorkspaceId, result.project_id, result.id) : routeForTask(activeWorkspaceId, result.id));
-    if (result.type === 'event' && activeWorkspaceId) return platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, result.id, result.focusDate ?? undefined));
-    if (result.type === 'reminder' && activeWorkspaceId) return platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId, result.id, result.focusDate ?? undefined));
-    if (result.type === 'intake' && activeWorkspaceId) return platform.navigation.openRoute(routeForInboxItem(activeWorkspaceId, result.id));
-    if (result.type === 'external_reference' && result.external_url) return void platform.externalLinks.open(result.external_url, { newTab: true });
-    if (result.type === 'person' || result.type === 'team') openDestination('teams');
-  };
 
   return (
     <div
@@ -341,137 +108,9 @@ export const NewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         </div>
         <div className="web-new-tab-body relative z-10 mx-auto flex w-full max-w-[680px] flex-col px-6 pb-16 pt-24">
           <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="Ledger" className="mb-8 h-8 w-8" />
-          <h1 className="text-[28px] font-regular tracking-[-0.03em] text-[var(--ledger-text-primary)]">
-            {mode === 'ask' ? 'Ask Ledger' : openSomethingExpression}
-          </h1>
-          {mode === 'ask' && (
-            <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Search your workspace or ask about your work.</p>
-          )}
-
-          <div className="mt-5 flex items-center gap-1" role="tablist" aria-label="New Tab mode">
-            {(['search', 'ask'] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={mode === tab}
-                onClick={() => setMode(tab)}
-                className={`rounded-md px-2 py-1 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 ${
-                  mode === tab
-                    ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                    : 'text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]'
-                }`}
-              >
-                {tab === 'search' ? 'Search' : 'Ask Ledger'}
-              </button>
-            ))}
-          </div>
-
-          {mode === 'search' ? (
-            <button
-              type="button"
-              onClick={() => inputRef.current?.focus()}
-              className="mt-2 flex h-12 w-full items-center gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 text-left shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition hover:border-[color:var(--ledger-border-strong)] focus-visible:outline-none focus-visible:ring-0"
-            >
-              <Search size={17} className="shrink-0 text-[var(--ledger-text-muted)]" />
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onClick={(event) => event.stopPropagation()}
-                placeholder="Search pages, features, notes, projects…"
-                className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] focus:outline-none"
-                aria-label="Search Ledger"
-              />
-            </button>
-          ) : (
-            <AskLedgerPanel workspaceId={activeWorkspaceId} />
-          )}
-
-          <div className="relative mt-5 min-w-0">
-            <div
-              ref={quickNavRef}
-              onWheel={(event) => {
-                if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-                event.preventDefault();
-                quickNavRef.current?.scrollBy({ left: event.deltaY, behavior: 'auto' });
-              }}
-              className="flex min-w-0 items-center gap-x-5 overflow-x-auto whitespace-nowrap pr-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {quickNavDestinations.map(({ label, kind, icon: Icon, provider }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => openDestination(kind)}
-                  className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-                >
-                  {provider ? (
-                    <IntegrationProviderMark provider={provider} size={13} />
-                  ) : (
-                    <Icon size={13} />
-                  )}
-                  {label}
-                </button>
-              ))}
-              {pins.map((pin) => (
-                <button
-                  key={pin.id}
-                  type="button"
-                  onClick={() => openPinnedItem(pin)}
-                  className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
-                  title={pin.subtitle ? `${getPinnedLabel(pin)} · ${pin.subtitle}` : getPinnedLabel(pin)}
-                >
-                  <Pin size={13} />
-                  {getPinnedLabel(pin)}
-                </button>
-              ))}
-            </div>
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-5 bg-gradient-to-r from-[var(--ledger-background)] to-transparent opacity-0" />
-          </div>
-
-          {mode === 'search' && trimmedQuery && (
-            <div className="mt-8 space-y-0.5">
-              {isLoading ? (
-                <p className="px-2.5 py-3 text-sm text-[var(--ledger-text-muted)]">Searching…</p>
-              ) : results.length === 0 ? (
-                <p className="px-2.5 py-3 text-sm text-[var(--ledger-text-muted)]">
-                  No results for “{trimmedQuery}”
-                </p>
-              ) : (
-                results.map((result, index) => {
-                  const Icon = searchIconMap[result.type];
-                  const showCategory = index === 0 || results[index - 1]?.category !== result.category;
-                  return (
-                    <div key={`${result.type}-${result.id}`}>
-                      {showCategory && (
-                        <p className={`${index === 0 ? 'pt-0' : 'pt-3'} px-2 pb-1 text-[11px] font-medium text-[var(--ledger-text-muted)]`}>
-                          {searchCategoryLabels[result.category]}
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => openSearchResult(result)}
-                        className="flex h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-                      >
-                        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
-                          <Icon size={13} />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--ledger-text-primary)]">{result.title}</span>
-                        {normalizeIntegrationProvider(result.provider, result.source_provider) && (
-                          <IntegrationProviderMark
-                            provider={normalizeIntegrationProvider(result.provider, result.source_provider)}
-                            size={13}
-                            className="shrink-0"
-                          />
-                        )}
-                        {result.type !== 'command' && <span className="shrink-0 text-[10px] font-medium capitalize text-[var(--ledger-text-muted)]">{result.type}</span>}
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
+          <h1 className="text-[28px] font-regular tracking-[-0.03em] text-[var(--ledger-text-primary)]">Ask Ledger</h1>
+          <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Ask questions about your workspace.</p>
+          <AskLedgerPanel workspaceId={activeWorkspaceId} />
 
         </div>
       </main>
