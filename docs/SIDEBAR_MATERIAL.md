@@ -25,16 +25,18 @@ failures session-sticky before falling back to renderer frost.
 
 Native macOS material remains available through explicit development
 diagnostics, but normal development and packaged builds use the renderer
-material so the sidebar keeps Ledger's custom radius. A production native
-macOS surface should return only after a masked native material bridge is
-available.
+material so the sidebar keeps Ledger's custom radius. Windows development
+starts with native Mica so local QA exercises the same native path as the
+packaged rollout; the diagnostics selector can switch to renderer, Mica Alt,
+or Acrylic for comparison. A production native macOS surface should return
+only after a masked native material bridge is available.
 
 ## Production support matrix
 
 | Platform/configuration                                                                                    | Production engine             | Minimum support                           | Fallback             |
 | --------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------- | -------------------- |
 | macOS, Electron 30+, macOS 11+, supported transparent sidebar window         | renderer material                  | exact Ledger sidebar radius and fallback behavior                         | solid                |
-| Windows, Electron 30+, Windows build 22000+, supported transparent shaped sidebar window, rollout enabled | Windows Mica                  | `setBackgroundMaterial('mica')` available | renderer, then solid |
+| Windows, Electron 30+, Windows build 22621+ (11 22H2), supported transparent shaped sidebar window, rollout enabled | Windows Mica                  | `setBackgroundMaterial('mica')` available | renderer, then solid |
 | Windows Mica Alt                                                                                          | development-only comparison   | `tabbed` API available                    | renderer             |
 | Windows Acrylic                                                                                           | development-only comparison   | `acrylic` API available                   | renderer             |
 | unsupported OS, Electron, window configuration, platform, or accessibility state                          | renderer or solid             | no speculative native API call            | renderer, then solid |

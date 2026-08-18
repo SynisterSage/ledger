@@ -68,7 +68,7 @@ export class SidebarMaterialController {
   private readonly platform: NodeJS.Platform;
   private readonly isPackaged: boolean;
   private readonly environment: NodeJS.ProcessEnv;
-  private developmentOverride: SidebarMaterialEngine | null = null;
+  private developmentOverride: SidebarMaterialEngine | null;
   private activeNativeEngine: SidebarMaterialEngine = 'renderer';
   private activeWindow: BrowserWindow | null = null;
   private nativeMaterialApplyCount = 0;
@@ -92,6 +92,10 @@ export class SidebarMaterialController {
     this.platform = platform;
     this.isPackaged = isPackaged;
     this.environment = environment;
+    // Keep Windows development visually representative of the packaged native
+    // path. The explicit diagnostics selector can still switch to renderer,
+    // Mica Alt, or Acrylic for comparison.
+    this.developmentOverride = platform === 'win32' ? 'native-windows-mica' : null;
     this.snapshot = {
       requestedEngine: 'renderer',
       resolvedEngine: 'renderer',

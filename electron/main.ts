@@ -1881,6 +1881,10 @@ const syncTray = () => {
       click: () => focusSidebarWindow(),
     },
     {
+      label: 'Ask Ledger',
+      click: () => openModuleWindow('new-tab', null, null, null, null, 'new-tab:ask-ledger'),
+    },
+    {
       label: 'Quick Capture',
       click: () => openModuleWindow('quick-task'),
     },

@@ -27,7 +27,8 @@ export type SidebarMaterialFallbackReason =
 export const SIDEBAR_MATERIAL_SUPPORT_MATRIX = {
   electronMajor: 30,
   macOSMajor: 11,
-  windowsBuild: 22000,
+  // Electron's setBackgroundMaterial support starts on Windows 11 22H2.
+  windowsBuild: 22621,
   productionMacEngine: 'native-macos' as const,
   productionMacVibrancy: 'under-window' as const,
   productionWindowsEngine: 'native-windows-mica' as const,
