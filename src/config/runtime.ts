@@ -15,13 +15,19 @@ const runtimeFromEnv = {
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY?.trim(),
 };
 
+// Vite development must retain the local proxy target supplied by
+// dev-desktop/dev-web. The public runtime-config.js is production-safe and is
+// intentionally used by packaged/browser production builds instead.
+const preferEnvironmentConfig = Boolean(import.meta.env.DEV);
+const resolvedRuntimeValue = (environmentValue?: string, windowValue?: string) =>
+  (preferEnvironmentConfig ? environmentValue || windowValue : windowValue || environmentValue)?.trim();
+
 export const runtimeConfig: LedgerRuntimeConfig = {
-  apiUrl: runtimeFromWindow?.apiUrl?.trim() || runtimeFromEnv.apiUrl,
-  ledgerWebUrl: runtimeFromWindow?.ledgerWebUrl?.trim() || runtimeFromEnv.ledgerWebUrl,
-  supabaseUrl: runtimeFromWindow?.supabaseUrl?.trim() || runtimeFromEnv.supabaseUrl,
+  apiUrl: resolvedRuntimeValue(runtimeFromEnv.apiUrl, runtimeFromWindow?.apiUrl),
+  ledgerWebUrl: resolvedRuntimeValue(runtimeFromEnv.ledgerWebUrl, runtimeFromWindow?.ledgerWebUrl),
+  supabaseUrl: resolvedRuntimeValue(runtimeFromEnv.supabaseUrl, runtimeFromWindow?.supabaseUrl),
   supabasePublishableKey:
-    runtimeFromWindow?.supabasePublishableKey?.trim() ||
-    runtimeFromEnv.supabasePublishableKey ||
+    resolvedRuntimeValue(runtimeFromEnv.supabasePublishableKey, runtimeFromWindow?.supabasePublishableKey) ||
     runtimeFromEnv.supabaseAnonKey,
 };
 

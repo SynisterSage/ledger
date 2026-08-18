@@ -98,3 +98,28 @@ test('passes adaptive depth guidance through the shared grounded prompt', () => 
   assert.match(detailed, /thorough explanation using the available evidence/);
   assert.doesNotMatch(brief, /1-3 concise paragraphs/);
 });
+
+test('uses the primary event time for last-workday lookups', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'When was my last day working at Alfa Art Gallery?',
+    primaryContext: [{
+      resourceType: 'event',
+      resourceId: 'event-alfa',
+      title: 'Alfa - Hybrid Work',
+      timestamp: '2026-08-13T15:00:00Z',
+      content: 'Workday event.',
+    }],
+  });
+  assert.match(prompt, /newest primary workplace Event and its Time/);
+  assert.match(prompt, /2026-08-13T15:00:00Z/);
+});
+
+test('asks project-specific answers to include linked work context', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'What is my Pigmented Perceptions project?',
+    primaryContext: [{ resourceType: 'project', resourceId: 'project-1', title: 'Pigmented Perceptions', content: 'In progress.' }],
+    supportingContext: [{ resourceType: 'milestone', resourceId: 'milestone-1', title: 'Posters & Banners', content: 'In progress.', projectId: 'project-1' }],
+  });
+  assert.match(prompt, /scan its linked milestones, tasks or next actions, reminders, events, notes/);
+  assert.match(prompt, /Posters &amp; Banners|Posters & Banners/);
+});

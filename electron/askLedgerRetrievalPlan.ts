@@ -17,6 +17,7 @@ export type RetrievalPlan = {
 
 const normalize = (value: string) => value.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const countWords = /\b(?:last|latest|newest|recent|first|oldest|past)\s+(\d+|few|several)\b/i;
+const lastWorkdaySignals = /\b(?:last|final)\s+(?:day|workday)\b|\blast\s+day\s+(?:working|at work)\b/i;
 
 const requestedCountFor = (question: string) => {
   const match = question.match(countWords);
@@ -28,6 +29,7 @@ const requestedCountFor = (question: string) => {
 
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  if (lastWorkdaySignals.test(normalized)) return ['event'];
   if (/\bmeeting notes?\b|\bnotes?\b/.test(normalized)) return ['note'];
   if (/\bevents?\b/.test(normalized) || ( /\bmeetings?\b/.test(normalized) && /\b(last|latest|newest|recent|what happened|what did|look through|look at|summari[sz]e|review|compare|linked|with)\b/.test(normalized))) return ['event'];
   if (/\btasks?\b/.test(normalized)) return ['task'];
@@ -47,7 +49,13 @@ const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerReso
 };
 
 const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourceType[]) => {
+  if (primaryResourceTypes.includes('event') && lastWorkdaySignals.test(question)) {
+    const match = question.match(/\b(?:at|for|with)\s+(?:my\s+)?([A-Z][\w-]*)/);
+    return match?.[1]?.trim();
+  }
   if (primaryResourceTypes.includes('project')) {
+    const namedProject = question.match(/\b(?:my|the)\s+(.+?)\s+projects?\b/i);
+    if (namedProject?.[1]) return namedProject[1].trim();
     const match = question.match(/\bproject\s+(.+?)(?=\s+(?:and|to|that|where|what|is|has)\b|[,?.]|$)/i);
     return match?.[1]?.trim();
   }
@@ -57,7 +65,9 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
 
 export const buildRetrievalPlan = (question: string): RetrievalPlan => {
   const primaryResourceTypes = resourceTypesFor(question);
-  const ordering: RetrievalOrdering = /\b(oldest|first)\b/i.test(question) ? 'oldest' : /\b(last|latest|newest|recent|past)\b/i.test(question) ? 'newest' : 'relevance';
+  const isLastWorkday = lastWorkdaySignals.test(question);
+  const entityQuery = entityQueryFor(question, primaryResourceTypes);
+  const ordering: RetrievalOrdering = /\b(oldest|first)\b/i.test(question) ? 'oldest' : /\b(last|latest|newest|recent|past)\b/i.test(question) || isLastWorkday ? 'newest' : 'relevance';
   const operation: RetrievalOperation = /\b(compare|versus|vs\.?|difference)\b/i.test(question)
     ? 'compare'
     : /\b(summarize|summary|recap|look through|review)\b/i.test(question)
@@ -69,12 +79,12 @@ export const buildRetrievalPlan = (question: string): RetrievalPlan => {
   return {
     operation,
     primaryResourceTypes,
-    entityQuery: entityQueryFor(question, primaryResourceTypes),
+    entityQuery,
     containerQuery,
     ordering,
-    requestedCount: requestedCountFor(question),
+    requestedCount: isLastWorkday ? 1 : requestedCountFor(question),
     semanticQuery: question.trim(),
-    expandRelatedContext: Boolean(primaryResourceTypes.length && (operation !== 'lookup' || containerQuery || requestedCountFor(question))),
+    expandRelatedContext: Boolean(primaryResourceTypes.length && (operation !== 'lookup' || containerQuery || requestedCountFor(question) || (primaryResourceTypes.includes('project') && entityQuery)) && !isLastWorkday),
   };
 };
 

@@ -36,7 +36,9 @@ type WorkspaceContextType = {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
-const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
+// Keep workspace bootstrap on the runtime-config URL used by the packaged
+// Electron process. Compile-time Vite env values can drift between builds.
+const API_URL = DEFAULT_API_URL;
 const WORKSPACE_STORAGE_KEY = 'ledger:active-workspace-id';
 const WORKSPACE_NAME_STORAGE_KEY = 'ledger:active-workspace-name';
 

@@ -26,6 +26,11 @@ export const useAuth = (): UseAuthReturn => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const hasEmittedSessionRef = useRef(false);
+  // Supabase can finish INITIAL_SESSION/getSession after a login request has
+  // already completed. Do not let that stale initialization result erase a
+  // valid session, which is especially visible on slower Windows installs.
+  const authMutationInFlightRef = useRef(false);
+  const hasExplicitSessionRef = useRef(false);
 
   const refreshProfile = useCallback(async () => {
     const next = user?.id ? await userProfileService.get(user.id) : null;
@@ -76,8 +81,17 @@ export const useAuth = (): UseAuthReturn => {
     const subscription = authService.onAuthStateChange((event, newSession) => {
       if (!isMounted) return;
 
+      if (
+        !newSession &&
+        (authMutationInFlightRef.current ||
+          (event === 'INITIAL_SESSION' && hasExplicitSessionRef.current))
+      ) {
+        return;
+      }
+
       setSession(newSession);
       setUser(newSession?.user ?? null);
+      if (newSession) hasExplicitSessionRef.current = true;
       if (newSession?.user?.id) {
         userProfileService.get(newSession.user.id).then(setProfile).catch(() => undefined);
       } else {
@@ -95,20 +109,25 @@ export const useAuth = (): UseAuthReturn => {
         if (!isMounted) return;
 
         if (currentSession) {
+          hasExplicitSessionRef.current = true;
           setSession(currentSession);
           setUser(currentSession.user);
           userProfileService.get(currentSession.user.id).then(setProfile).catch(() => undefined);
           return;
         }
 
-        setSession(null);
-        setUser(null);
-        setProfile(null);
+        if (!authMutationInFlightRef.current && !hasExplicitSessionRef.current) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+        }
       } catch (err) {
         if (!isMounted) return;
         setError(err instanceof Error ? err : new Error('Auth initialization failed'));
-        setSession(null);
-        setUser(null);
+        if (!authMutationInFlightRef.current && !hasExplicitSessionRef.current) {
+          setSession(null);
+          setUser(null);
+        }
       } finally {
         if (!isMounted) return;
         setIsLoading(false);
@@ -124,11 +143,13 @@ export const useAuth = (): UseAuthReturn => {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    authMutationInFlightRef.current = true;
     try {
       setError(null);
       const { data, error } = await authService.signIn(email, password);
       if (error) throw error;
       if (data?.session) {
+        hasExplicitSessionRef.current = true;
         setSession(data.session);
         setUser(data.session.user);
         userProfileService.get(data.session.user.id).then(setProfile).catch(() => undefined);
@@ -137,15 +158,19 @@ export const useAuth = (): UseAuthReturn => {
       const error = err instanceof Error ? err : new Error('Sign in failed');
       setError(error);
       throw error;
+    } finally {
+      authMutationInFlightRef.current = false;
     }
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, fullName?: string) => {
+    authMutationInFlightRef.current = true;
     try {
       setError(null);
       const { data, error } = await authService.signUp(email, password, fullName);
       if (error) throw error;
       if (data?.session) {
+        hasExplicitSessionRef.current = true;
         setSession(data.session);
         setUser(data.session.user);
         userProfileService.get(data.session.user.id).then(setProfile).catch(() => undefined);
@@ -154,6 +179,8 @@ export const useAuth = (): UseAuthReturn => {
       const error = err instanceof Error ? err : new Error('Sign up failed');
       setError(error);
       throw error;
+    } finally {
+      authMutationInFlightRef.current = false;
     }
   }, []);
 
@@ -162,6 +189,7 @@ export const useAuth = (): UseAuthReturn => {
       setError(null);
       const { error } = await authService.signOut();
       if (error) throw error;
+      hasExplicitSessionRef.current = false;
       setSession(null);
       setUser(null);
       setProfile(null);

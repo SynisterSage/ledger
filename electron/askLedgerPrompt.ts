@@ -57,11 +57,17 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
   const projectReviewInstructions = /\b(review|assess|check|audit)\b.*\bprojects?\b|\bprojects?\b.*\b(moving|blocked|stuck|needs? attention|at risk|health)\b/i.test(question)
     ? '\nFor this project review, synthesize each project from its linked Ledger records. Separate what is moving, what is blocked or stalled, and what needs attention next. Use linked tasks, milestones, notes, events, and reminders as evidence; do not treat the project row alone as evidence.\n'
     : '';
+  const projectContextInstructions = /\b(?:my|the)\s+[^?.!,]+\s+projects?\b|\bproject\s+[A-Za-z0-9]/i.test(question)
+    ? '\nFor a project-specific request, treat the named Project as the anchor and scan its linked milestones, tasks or next actions, reminders, events, notes, and other directly linked context. Summarize the project state together with those records; do not answer from the Project row alone.\n'
+    : '';
   const recentUpdatesInstructions = /\b(recent(?:ly)?|lately|latest|what changed|important updates?)\b/i.test(question)
     ? '\nFor this workspace update review, prioritize records with the newest Updated timestamps. Summarize the most important changes, group related records when the evidence supports it, and distinguish concrete updates from merely open or old work.\n'
     : '';
   const meetingPrepInstructions = /\b(prepare|prep|get ready|brief)\b.*\b(meeting|meetings|call|calls)\b/i.test(question)
     ? '\nFor meeting preparation, use the most relevant recent notes or transcripts as the history, then compare them with open tasks, task horizons, projects, milestones, events, and reminders. Call out decisions, open follow-ups, risks, and what to ask next. If there is no matching event, still prepare from the available workspace context; do not return an events-only empty result.\n'
+    : '';
+  const lastWorkdayInstructions = /\b(?:last|final)\s+(?:day|workday)\b|\blast\s+day\s+(?:working|at work)\b/i.test(question)
+    ? '\nFor a last-workday question, use the newest primary workplace Event and its Time as the latest recorded work-related date. State it as the latest recorded event/workday date unless the supplied context explicitly confirms an employment end date; do not abstain merely because the records do not contain a formal employment-status field.\n'
     : '';
   const depthInstruction = answerDepth === 'brief'
     ? 'Answer directly and minimally. Do not restate the question or add headings unless they are necessary.'
@@ -100,8 +106,10 @@ Rules:
 - Do not output <think> tags or reasoning traces.
 ${skillInstructions}
 ${projectReviewInstructions}
+${projectContextInstructions}
 ${recentUpdatesInstructions}
 ${meetingPrepInstructions}
+${lastWorkdayInstructions}
 
 Ledger context:
 ${contextText}

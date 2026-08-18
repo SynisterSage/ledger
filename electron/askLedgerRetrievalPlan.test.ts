@@ -27,6 +27,22 @@ test('builds resource-aware plans for common constrained requests', () => {
   assert.equal(buildRetrievalPlan('Look at my newest reminders for Project X').entityQuery, 'Project X');
 });
 
+test('treats last workday questions as newest event lookups', () => {
+  const plan = buildRetrievalPlan('When was my last day working at Alfa Art Gallery?');
+  assert.deepEqual(plan.primaryResourceTypes, ['event']);
+  assert.equal(plan.entityQuery, 'Alfa');
+  assert.equal(plan.ordering, 'newest');
+  assert.equal(plan.requestedCount, 1);
+  assert.equal(plan.expandRelatedContext, false);
+});
+
+test('anchors named project requests and expands linked work context', () => {
+  const plan = buildRetrievalPlan('What is my Pigmented Perceptions project?');
+  assert.deepEqual(plan.primaryResourceTypes, ['project']);
+  assert.equal(plan.entityQuery, 'Pigmented Perceptions');
+  assert.equal(plan.expandRelatedContext, true);
+});
+
 test('selects scoped newest notes before unrelated semantic candidates', async () => {
   const index = new EmbeddingIndexService();
   const retrieval = new LedgerRetrievalService(index);

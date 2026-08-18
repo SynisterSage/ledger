@@ -1642,12 +1642,17 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       {conversationActive && (
         <section className="order-1 min-h-0 flex-1 space-y-10 pb-32 pt-8" aria-live="polite">
           {messages.map((message, messageIndex) => (
-            <article key={message.id} ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined} className={message.role === 'user' ? 'flex justify-end' : 'group max-w-[640px]'}>
+            <article key={message.id} ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined} className={message.role === 'user' ? 'group flex justify-end' : 'group max-w-[640px]'}>
               {message.role === 'user' ? (
                 <div className="flex max-w-[78%] flex-col items-end gap-1">
                   {message.skillId && <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)]"><Boxes size={12} />{skillCatalog.find((skill) => skill.id === message.skillId)?.name}</span>}
                   {message.attachments?.length ? <div className="flex max-w-full flex-wrap justify-end gap-1.5">{message.attachments.map((attachment, index) => attachment.kind === 'file' ? <button key={`${message.id}-file-${attachment.attachment.id}`} type="button" onClick={() => void window.askLedger?.openAttachment(attachment.attachment.id)} className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.attachment.name}`}><FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{attachmentKindLabel(attachment.attachment)}</span><span className="truncate">{attachmentDisplayName(attachment.attachment.name)}</span></button> : <button key={`${message.id}-resource-${index}`} type="button" onClick={() => openSource(attachment.resource)} className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.resource.title}`}><span className="truncate">{attachment.resource.title}</span></button>)}</div> : null}
-                  {message.content && <p className="w-fit rounded-lg bg-[var(--ledger-surface-hover)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)]">{message.content}</p>}
+                  {message.content && <>
+                    <p className="w-fit rounded-lg bg-[var(--ledger-surface-hover)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)]">{message.content}</p>
+                    <div className="mt-1 flex justify-end opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+                      <button type="button" onClick={() => void copyAnswer(message)} aria-label={copiedMessageId === message.id ? 'Copied message' : 'Copy message'} title={copiedMessageId === message.id ? 'Copied' : 'Copy message'} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">{copiedMessageId === message.id ? <Check size={14} /> : <CopyIcon size={14} />}</button>
+                    </div>
+                  </>}
                 </div>
               ) : (
                 <div>

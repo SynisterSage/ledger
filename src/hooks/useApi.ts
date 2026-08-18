@@ -13,7 +13,10 @@ import type {
   TranscriptSegmentInput,
 } from '../types/notes';
 
-const API_URL = import.meta.env.VITE_API_URL?.trim() || DEFAULT_API_URL;
+// Use the same runtime configuration as Electron's main process. Reading
+// import.meta.env here can leave a packaged Windows build with a different
+// backend URL than the notification scheduler/runtime-config.js.
+const API_URL = DEFAULT_API_URL;
 
 type ApiRequestOptions = RequestInit & {
   skipJson?: boolean;
