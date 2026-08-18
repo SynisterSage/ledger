@@ -215,6 +215,7 @@ const ledgerEventChannels = {
   onInboxItemsUpdated: 'inbox:items-updated', offInboxItemsUpdated: 'inbox:items-updated',
   onLedgerNotificationsBatch: 'ledger:notifications-batch', offLedgerNotificationsBatch: 'ledger:notifications-batch',
   onLedgerNotificationsSummary: 'ledger:notifications-summary', offLedgerNotificationsSummary: 'ledger:notifications-summary',
+  onLedgerNotificationsSessionInvalid: 'ledger:notifications-session-invalid', offLedgerNotificationsSessionInvalid: 'ledger:notifications-session-invalid',
   onLedgerOpenInvite: 'ledger:open-invite', offLedgerOpenInvite: 'ledger:open-invite',
   onLedgerSetActiveWorkspace: 'ledger:set-active-workspace', offLedgerSetActiveWorkspace: 'ledger:set-active-workspace',
   onLedgerThemeUpdated: 'ledger:theme-updated', offLedgerThemeUpdated: 'ledger:theme-updated',

@@ -143,6 +143,15 @@ const getBearerToken = (req) => {
   return match?.[1]?.trim() || null;
 };
 
+const getTokenIssuerForDiagnostics = (token) => {
+  try {
+    const payload = JSON.parse(Buffer.from(String(token).split('.')[1] || '', 'base64url').toString('utf8'));
+    return typeof payload?.iss === 'string' ? payload.iss : null;
+  } catch {
+    return null;
+  }
+};
+
 const hashExtensionToken = (token) =>
   crypto.createHash('sha256').update(String(token ?? '')).digest('hex');
 
@@ -307,6 +316,12 @@ const authMiddleware = async (req, res, next) => {
   try {
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data.user) {
+      console.warn('[auth] Supabase token rejected', {
+        path: req.path,
+        configuredSupabaseUrl: supabaseUrl,
+        tokenIssuer: getTokenIssuerForDiagnostics(token),
+        error: error?.message || 'missing user',
+      });
       return res.status(401).json({ error: 'Invalid token' });
     }
 

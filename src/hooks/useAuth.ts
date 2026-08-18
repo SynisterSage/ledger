@@ -63,6 +63,28 @@ export const useAuth = (): UseAuthReturn => {
     });
   }, [session?.access_token, session?.user?.id]);
 
+  // The Electron notification scheduler only has a copy of the access token.
+  // If that token expires or is rejected, let the renderer refresh the
+  // Supabase session and send the replacement back over IPC.
+  useEffect(() => {
+    const onInvalidNotificationSession = () => {
+      void authService.refreshSession().then((nextSession) => {
+        if (!nextSession) return;
+        hasExplicitSessionRef.current = true;
+        setSession(nextSession);
+        setUser(nextSession.user);
+      });
+    };
+    const subscription = window.ledgerIpc?.events?.onLedgerNotificationsSessionInvalid(
+      onInvalidNotificationSession
+    );
+    return () => {
+      if (subscription) {
+        window.ledgerIpc?.events?.offLedgerNotificationsSessionInvalid(subscription);
+      }
+    };
+  }, []);
+
   // Initialize auth state
   useEffect(() => {
     let isMounted = true;

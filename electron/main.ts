@@ -2224,9 +2224,22 @@ const runNotificationScheduler = async () => {
     );
     notificationScheduler429Streak = 0;
   } catch (error) {
+    const errorStatus = Number((error as { status?: number } | null)?.status ?? 0);
+    if (errorStatus === 401 || /invalid token|missing token/i.test(String((error as Error)?.message ?? ''))) {
+      // Do not keep retrying the same expired/rejected token. The renderer
+      // owns Supabase refresh tokens, so ask it for a fresh access token.
+      notificationAccessToken = null;
+      cachedNotificationPreferences = null;
+      cachedNotificationPreferencesAt = 0;
+      console.warn('[electron] Notification scheduler token rejected; requesting session refresh');
+      for (const win of getNotificationWindows()) {
+        if (win.isDestroyed()) continue;
+        win.webContents.send('ledger:notifications-session-invalid');
+      }
+      return;
+    }
     if (
-      typeof (error as { status?: number } | null)?.status === 'number' &&
-      (error as { status?: number }).status === 429
+      errorStatus === 429
     ) {
       const retryAfterMs = Number((error as { retryAfterMs?: number } | null)?.retryAfterMs ?? 0);
       notificationScheduler429Streak = Math.min(notificationScheduler429Streak + 1, 6);
@@ -2262,6 +2275,7 @@ const syncNotificationSession = (
   notificationSessionUserId = payload?.userId?.trim() || null;
   const accessToken = payload?.accessToken ?? null;
   const nextAccessToken = accessToken && accessToken.trim() ? accessToken.trim() : null;
+  const tokenWasMissing = !notificationAccessToken;
   const nextNamespace = getNotificationNamespace(notificationApiUrl, notificationSessionUserId);
   const sessionChanged = nextNamespace !== notificationSeenNamespace;
 
@@ -2275,6 +2289,7 @@ const syncNotificationSession = (
   notificationAccessToken = nextAccessToken;
   if (
     sessionChanged ||
+    (tokenWasMissing && Boolean(nextAccessToken)) ||
     Date.now() - notificationSchedulerLastRunAt > NOTIFICATION_SCHEDULER_INTERVAL_MS
   ) {
     queueNotificationSchedulerRun(0);
