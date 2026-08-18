@@ -27,8 +27,8 @@ export const runtimeConfig: LedgerRuntimeConfig = {
   ledgerWebUrl: resolvedRuntimeValue(runtimeFromEnv.ledgerWebUrl, runtimeFromWindow?.ledgerWebUrl),
   supabaseUrl: resolvedRuntimeValue(runtimeFromEnv.supabaseUrl, runtimeFromWindow?.supabaseUrl),
   supabasePublishableKey:
-    resolvedRuntimeValue(runtimeFromEnv.supabasePublishableKey, runtimeFromWindow?.supabasePublishableKey) ||
-    runtimeFromEnv.supabaseAnonKey,
+    runtimeFromEnv.supabaseAnonKey ||
+    resolvedRuntimeValue(runtimeFromEnv.supabasePublishableKey, runtimeFromWindow?.supabasePublishableKey),
 };
 
 export const DEFAULT_API_URL = runtimeConfig.apiUrl || 'https://api.ledgerworkspace.com';
