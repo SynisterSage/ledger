@@ -93,9 +93,9 @@ export class SidebarMaterialController {
     this.isPackaged = isPackaged;
     this.environment = environment;
     // Keep Windows development visually representative of the packaged native
-    // path. The explicit diagnostics selector can still switch to renderer,
-    // Mica Alt, or Acrylic for comparison.
-    this.developmentOverride = platform === 'win32' ? 'native-windows-mica' : null;
+    // path. The explicit diagnostics selector can still switch to renderer or
+    // Mica for comparison.
+    this.developmentOverride = platform === 'win32' ? 'native-windows-acrylic' : null;
     this.snapshot = {
       requestedEngine: 'renderer',
       resolvedEngine: 'renderer',
@@ -173,7 +173,7 @@ export class SidebarMaterialController {
     // Keep it out of normal releases until we have a native masked material
     // surface; the renderer material preserves the product geometry.
     if (this.platform === 'darwin') return null;
-    // Windows Mica is the supported packaged default. The environment flag
+    // Windows Acrylic is the supported packaged default. The environment flag
     // remains an explicit opt-out/rollout control for staged releases, while
     // a normal local build must not silently fall back to renderer glass.
     if (

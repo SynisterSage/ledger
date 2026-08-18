@@ -115,7 +115,7 @@ test('native renderer state deterministically disables CSS blur', () => {
   assert.match(css, /data-material-engine='native-macos'[\s\S]*backdrop-filter: none/);
 });
 
-test('Windows native material prefers Mica and supports Acrylic comparison mode', () => {
+test('Windows native material prefers Acrylic and supports Mica comparison modes', () => {
   assert.match(controller, /LEDGER_SIDEBAR_NATIVE_WINDOWS_ROLLOUT/);
   assert.match(materialTypes, /native-windows-mica-alt/);
   assert.match(controller, /native-windows-mica/);
@@ -152,14 +152,14 @@ test('phase 7 diagnostics track native lifecycle and tint updates without changi
   assert.match(css, /native-windows-mica-alt/);
 });
 
-test('phase 8 production rollout only selects macOS native or Windows Mica', () => {
+test('phase 8 production rollout selects macOS native or Windows Acrylic', () => {
   assert.match(controller, /LEDGER_SIDEBAR_NATIVE_MATERIAL_ENABLED/);
   assert.match(controller, /LEDGER_SIDEBAR_NATIVE_KILL_SWITCH/);
   assert.match(controller, /LEDGER_SIDEBAR_NATIVE_COHORT/);
   assert.match(materialTypes, /productionMacEngine: 'native-macos'/);
-  assert.match(materialTypes, /productionWindowsEngine: 'native-windows-mica'/);
+  assert.match(materialTypes, /productionWindowsEngine: 'native-windows-acrylic'/);
   assert.doesNotMatch(materialTypes, /productionWindowsEngine: 'native-windows-mica-alt'/);
-  assert.doesNotMatch(materialTypes, /productionWindowsEngine: 'native-windows-acrylic'/);
+  assert.doesNotMatch(materialTypes, /productionWindowsEngine: 'native-windows-mica'/);
 });
 
 test('native failure is session-sticky and does not retry on ordinary lifecycle sync', () => {

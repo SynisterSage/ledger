@@ -31,8 +31,8 @@ export const SIDEBAR_MATERIAL_SUPPORT_MATRIX = {
   windowsBuild: 22621,
   productionMacEngine: 'native-macos' as const,
   productionMacVibrancy: 'under-window' as const,
-  productionWindowsEngine: 'native-windows-mica' as const,
-  developmentWindowsEngines: ['native-windows-mica-alt', 'native-windows-acrylic'] as const,
+  productionWindowsEngine: 'native-windows-acrylic' as const,
+  developmentWindowsEngines: ['native-windows-mica', 'native-windows-mica-alt'] as const,
 };
 
 export type SidebarMaterialResolution = {

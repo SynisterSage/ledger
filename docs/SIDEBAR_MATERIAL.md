@@ -14,9 +14,9 @@ The shared engine type is:
 - `renderer`: Ledger tint, optionally with one attached `backdrop-filter`
 - `native-macos`: Electron `setVibrancy()` with development candidates
   `under-window`, `sidebar`, or `hud`; production currently uses `renderer`
-- `native-windows-mica`: Electron `setBackgroundMaterial('mica')`
+- `native-windows-mica`: development comparison using `setBackgroundMaterial('mica')`
 - `native-windows-mica-alt`: development comparison using `tabbed`
-- `native-windows-acrylic`: development comparison using `acrylic`
+- `native-windows-acrylic`: Electron `setBackgroundMaterial('acrylic')`
 
 `SidebarMaterialController` is the only owner of native material lifecycle.
 It tracks requested and resolved engines, clears the previous native engine
@@ -26,19 +26,19 @@ failures session-sticky before falling back to renderer frost.
 Native macOS material remains available through explicit development
 diagnostics, but normal development and packaged builds use the renderer
 material so the sidebar keeps Ledger's custom radius. Windows development
-starts with native Mica so local QA exercises the same native path as the
-packaged rollout; the diagnostics selector can switch to renderer, Mica Alt,
-or Acrylic for comparison. A production native macOS surface should return
-only after a masked native material bridge is available.
+starts with native Acrylic so local QA exercises the same native path as the
+packaged rollout; the diagnostics selector can switch to renderer or Mica for
+comparison. A production native macOS surface should return only after a
+masked native material bridge is available.
 
 ## Production support matrix
 
 | Platform/configuration                                                                                    | Production engine             | Minimum support                           | Fallback             |
 | --------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------- | -------------------- |
 | macOS, Electron 30+, macOS 11+, supported transparent sidebar window         | renderer material                  | exact Ledger sidebar radius and fallback behavior                         | solid                |
-| Windows, Electron 30+, Windows build 22621+ (11 22H2), supported transparent shaped sidebar window, rollout enabled | Windows Mica                  | `setBackgroundMaterial('mica')` available | renderer, then solid |
+| Windows, Electron 30+, Windows build 22621+ (11 22H2), supported transparent shaped sidebar window, rollout enabled | Windows Acrylic               | `setBackgroundMaterial('acrylic')` available | renderer, then solid |
+| Windows Mica                                                                                               | development-only comparison   | `mica` API available                      | renderer             |
 | Windows Mica Alt                                                                                          | development-only comparison   | `tabbed` API available                    | renderer             |
-| Windows Acrylic                                                                                           | development-only comparison   | `acrylic` API available                   | renderer             |
 | unsupported OS, Electron, window configuration, platform, or accessibility state                          | renderer or solid             | no speculative native API call            | renderer, then solid |
 
 Reduce Transparency and native high-contrast state always resolve to `solid`.
@@ -48,7 +48,7 @@ fallback.
 
 ## Rollout and kill switch
 
-Windows Mica is enabled by default in supported packaged builds. Release
+Windows Acrylic is enabled by default in supported packaged builds. Release
 environments can still stage or disable it with the following controls:
 
 - `LEDGER_SIDEBAR_NATIVE_MATERIAL_ENABLED=true`
@@ -57,12 +57,12 @@ environments can still stage or disable it with the following controls:
   - `LEDGER_SIDEBAR_NATIVE_MACOS_ROLLOUT=0..100`
   - `LEDGER_SIDEBAR_NATIVE_WINDOWS_ROLLOUT=0..100`
 
-If the rollout controls are absent, supported packaged Windows builds use Mica
+If the rollout controls are absent, supported packaged Windows builds use Acrylic
 directly. `LEDGER_SIDEBAR_NATIVE_KILL_SWITCH=true` immediately disables
 production native selection without resetting user preferences. The cohort
 hash is deterministic and does not use wallpaper, window content, or user data.
 
-Mica is the only Windows production candidate. Mica Alt and Acrylic remain
+Acrylic is the only Windows production candidate. Mica and Mica Alt remain
 available only through development diagnostics and are never selected by the
 production rollout path.
 
