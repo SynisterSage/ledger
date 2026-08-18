@@ -31,6 +31,16 @@ export const useAuth = (): UseAuthReturn => {
   // valid session, which is especially visible on slower Windows installs.
   const authMutationInFlightRef = useRef(false);
   const hasExplicitSessionRef = useRef(false);
+  const isSessionUsable = (candidate: Session | null) =>
+    Boolean(candidate?.access_token) &&
+    Number(candidate?.expires_at ?? 0) > Math.floor(Date.now() / 1000) + 60;
+
+  const getUsableSession = async () => {
+    const currentSession = await authService.getSession();
+    if (!currentSession) return null;
+    if (isSessionUsable(currentSession)) return currentSession;
+    return authService.refreshSession();
+  };
 
   const refreshProfile = useCallback(async () => {
     const next = user?.id ? await userProfileService.get(user.id) : null;
@@ -68,7 +78,7 @@ export const useAuth = (): UseAuthReturn => {
   // Supabase session and send the replacement back over IPC.
   useEffect(() => {
     const onInvalidNotificationSession = () => {
-      void authService.refreshSession().then((nextSession) => {
+      void getUsableSession().then((nextSession) => {
         if (!nextSession) return;
         hasExplicitSessionRef.current = true;
         setSession(nextSession);
@@ -103,6 +113,13 @@ export const useAuth = (): UseAuthReturn => {
     const subscription = authService.onAuthStateChange((event, newSession) => {
       if (!isMounted) return;
 
+      // INITIAL_SESSION can contain an expired persisted token before
+      // Supabase finishes its refresh. Keep the auth gate closed until
+      // initAuth resolves a usable session.
+      if (event === 'INITIAL_SESSION' && newSession && !isSessionUsable(newSession)) {
+        return;
+      }
+
       if (
         !newSession &&
         (authMutationInFlightRef.current ||
@@ -127,7 +144,7 @@ export const useAuth = (): UseAuthReturn => {
 
     const initAuth = async () => {
       try {
-        const currentSession = await authService.getSession();
+        const currentSession = await getUsableSession();
         if (!isMounted) return;
 
         if (currentSession) {
