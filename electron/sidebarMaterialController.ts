@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron';
+import { createRequire } from 'node:module';
 import {
   resolveSidebarMaterial,
   SIDEBAR_MATERIAL_SUPPORT_MATRIX,
@@ -10,6 +11,24 @@ type NativeWindowsEngine = Extract<
   SidebarMaterialEngine,
   'native-windows-mica' | 'native-windows-mica-alt' | 'native-windows-acrylic'
 >;
+
+type Windows10AcrylicBridge = {
+  setVibrancy: (win: BrowserWindow, options?: unknown) => void;
+};
+
+const require = createRequire(import.meta.url);
+let windows10AcrylicBridge: Windows10AcrylicBridge | null | undefined;
+
+const getWindows10AcrylicBridge = () => {
+  if (windows10AcrylicBridge !== undefined) return windows10AcrylicBridge;
+  try {
+    const bridge = require('electron-acrylic-window') as Partial<Windows10AcrylicBridge>;
+    windows10AcrylicBridge = typeof bridge.setVibrancy === 'function' ? bridge as Windows10AcrylicBridge : null;
+  } catch {
+    windows10AcrylicBridge = null;
+  }
+  return windows10AcrylicBridge;
+};
 
 export type SidebarMacVibrancy = 'under-window' | 'sidebar' | 'hud';
 export type SidebarMacVisualEffectState = 'followWindow' | 'active';
@@ -133,6 +152,13 @@ export class SidebarMaterialController {
 
   private selectedMacVisualEffectState() {
     return this.visualEffectStateOverride ?? this.macVisualEffectStateFromEnvironment();
+  }
+
+  private isWindows10AcrylicPath() {
+    if (this.platform !== 'win32' || getWindows10AcrylicBridge() === null) return false;
+    const version = process.getSystemVersion().split('.');
+    const build = Number(version[2]);
+    return Number.isFinite(build) && build >= 16299 && build < SIDEBAR_MATERIAL_SUPPORT_MATRIX.windowsBuild;
   }
 
   private macDiagnostics() {
@@ -260,6 +286,13 @@ export class SidebarMaterialController {
       macVersion[0] > SIDEBAR_MATERIAL_SUPPORT_MATRIX.macOSMajor ||
       (macVersion[0] === SIDEBAR_MATERIAL_SUPPORT_MATRIX.macOSMajor && macVersion[1] >= 0);
     const electronSupported = electronMajor >= SIDEBAR_MATERIAL_SUPPORT_MATRIX.electronMajor;
+    const nativeWindowsApiSupported =
+      this.platform === 'win32' &&
+      Number.isFinite(windowsBuild) &&
+      windowsBuild >= SIDEBAR_MATERIAL_SUPPORT_MATRIX.windowsBuild &&
+      electronSupported &&
+      typeof win?.setBackgroundMaterial === 'function';
+    const windows10AcrylicSupported = this.isWindows10AcrylicPath();
     return {
       nativeMacSupported:
         this.platform === 'darwin' &&
@@ -267,11 +300,7 @@ export class SidebarMaterialController {
         macVersionSupported &&
         typeof win?.setVibrancy === 'function',
       windowsNativeSupported:
-        this.platform === 'win32' &&
-        Number.isFinite(windowsBuild) &&
-        windowsBuild >= SIDEBAR_MATERIAL_SUPPORT_MATRIX.windowsBuild &&
-        electronSupported &&
-        typeof win?.setBackgroundMaterial === 'function',
+        nativeWindowsApiSupported || windows10AcrylicSupported,
     };
   }
 
@@ -369,7 +398,20 @@ export class SidebarMaterialController {
       } else if (resolution.resolvedEngine === 'native-windows-mica-alt') {
         win.setBackgroundMaterial('tabbed');
       } else if (resolution.resolvedEngine === 'native-windows-acrylic') {
-        win.setBackgroundMaterial('acrylic');
+        if (
+          this.platform === 'win32' &&
+          this.isWindows10AcrylicPath()
+        ) {
+          getWindows10AcrylicBridge()?.setVibrancy(win, {
+            theme: '#161618dd',
+            effect: 'acrylic',
+            disableOnBlur: false,
+            useCustomWindowRefreshMethod: false,
+            debug: false,
+          });
+        } else {
+          win.setBackgroundMaterial('acrylic');
+        }
       }
 
       if (nextIsNative) {
@@ -433,8 +475,11 @@ export class SidebarMaterialController {
       win.setVibrancy(null);
       this.nativeMaterialClearCount += 1;
       this.lastApplicationTimestamp = Date.now();
-    } else if (this.platform === 'win32' && typeof win.setBackgroundMaterial === 'function') {
-      win.setBackgroundMaterial('none');
+    } else if (this.platform === 'win32') {
+      try {
+        getWindows10AcrylicBridge()?.setVibrancy(win, null);
+      } catch {}
+      if (typeof win.setBackgroundMaterial === 'function') win.setBackgroundMaterial('none');
       this.nativeMaterialClearCount += 1;
       this.lastApplicationTimestamp = Date.now();
     }

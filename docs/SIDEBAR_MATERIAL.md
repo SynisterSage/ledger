@@ -16,7 +16,8 @@ The shared engine type is:
   `under-window`, `sidebar`, or `hud`; production currently uses `renderer`
 - `native-windows-mica`: development comparison using `setBackgroundMaterial('mica')`
 - `native-windows-mica-alt`: development comparison using `tabbed`
-- `native-windows-acrylic`: Electron `setBackgroundMaterial('acrylic')`
+- `native-windows-acrylic`: Electron `setBackgroundMaterial('acrylic')` on
+  Windows 11; optional `electron-acrylic-window` bridge on Windows 10
 
 `SidebarMaterialController` is the only owner of native material lifecycle.
 It tracks requested and resolved engines, clears the previous native engine
@@ -37,6 +38,7 @@ masked native material bridge is available.
 | --------------------------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------- | -------------------- |
 | macOS, Electron 30+, macOS 11+, supported transparent sidebar window         | renderer material                  | exact Ledger sidebar radius and fallback behavior                         | solid                |
 | Windows, Electron 30+, Windows build 22621+ (11 22H2), supported transparent shaped sidebar window, rollout enabled | Windows Acrylic               | `setBackgroundMaterial('acrylic')` available | renderer, then solid |
+| Windows 10 RS3+ with optional native bridge                                                            | Windows Acrylic               | `SetWindowCompositionAttribute` via `electron-acrylic-window` | renderer, then solid |
 | Windows Mica                                                                                               | development-only comparison   | `mica` API available                      | renderer             |
 | Windows Mica Alt                                                                                          | development-only comparison   | `tabbed` API available                    | renderer             |
 | unsupported OS, Electron, window configuration, platform, or accessibility state                          | renderer or solid             | no speculative native API call            | renderer, then solid |
@@ -64,7 +66,9 @@ hash is deterministic and does not use wallpaper, window content, or user data.
 
 Acrylic is the only Windows production candidate. Mica and Mica Alt remain
 available only through development diagnostics and are never selected by the
-production rollout path.
+production rollout path. The Windows 10 bridge is optional because its
+upstream package is archived and must be rebuilt with the target Windows
+Electron runtime.
 
 ## Resolution priority
 

@@ -7,6 +7,7 @@
     'node_modules/extract-file-icon/**/*',
     'node_modules/node-gyp-build/**/*',
     'node_modules/node-window-manager/**/*',
+    'node_modules/electron-acrylic-window/**/*',
   ],
   productName: 'Ledger',
   // Never ship a macOS build with ad-hoc signing. The audio helper must be
