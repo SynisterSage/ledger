@@ -34,6 +34,7 @@ test('detects recent workspace updates', () => {
 test('detects meeting preparation as mixed context', () => {
   assert.deepEqual(detectAskLedgerQueryIntent('Prepare me for a meeting. Pull together relevant notes, tasks, and context.'), { kind: 'meeting_prep' });
   assert.deepEqual(resourceTypesForAskLedgerIntent(detectAskLedgerQueryIntent('Prepare me for a meeting. Pull together relevant notes, tasks, and context.')), ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake']);
+  assert.deepEqual(detectAskLedgerQueryIntent('Help me plan a meeting coming up. Look through my recent notes.'), { kind: 'meeting_prep' });
 });
 
 test('maps entity intents to narrow resource policies', () => {
@@ -49,6 +50,12 @@ test('keeps blocker questions as mixed project context', () => {
 
 test('resolves current and next week as Sunday-based windows', () => {
   const now = new Date('2026-08-16T12:00:00Z');
-  assert.deepEqual(detectAskLedgerQueryIntent('what do I have this week', now), { kind: 'time_window', window: { start: '2026-08-16', end: '2026-08-22' } });
+  assert.deepEqual(detectAskLedgerQueryIntent('what do I have this week', now), { kind: 'weekly_overview', window: { start: '2026-08-16', end: '2026-08-22' } });
   assert.deepEqual(detectAskLedgerQueryIntent('what is planned next week', now), { kind: 'time_window', window: { start: '2026-08-23', end: '2026-08-29' } });
+});
+
+test('broad weekly overview includes workspace context beyond schedule items', () => {
+  const intent = detectAskLedgerQueryIntent('what do i got goin on this week', new Date('2026-08-16T12:00:00Z'));
+  assert.equal(intent.kind, 'weekly_overview');
+  assert.deepEqual(resourceTypesForAskLedgerIntent(intent), ['project', 'task', 'milestone', 'reminder', 'event', 'person', 'team', 'note', 'transcript', 'intake', 'external']);
 });

@@ -98,10 +98,10 @@ export const parseWebLocation = (location: Pick<Location, 'pathname' | 'search'>
       }
       // Workspace settings serialize as settings/workspace/<section>, while
       // older links may still use the flat settings/<section> form.
-      const settings = remainder.match(/^settings\/(?:(workspace)\/)?(workspace|members|calendar|notifications|sidebar|meeting-notes|integrations)(?:\/(google-drive|github|slack|figma))?$/);
+      const settings = remainder.match(/^settings\/(?:(workspace)\/)?(workspace|members|calendar|notifications|sidebar|local-ai|meeting-notes|integrations)(?:\/(google-drive|github|slack|figma))?$/);
       if (settings) {
         const section = settings[3] ?? settings[2];
-        return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'settings', scope: 'workspace', section: section === 'meeting-notes' ? 'meeting-notes' : section as 'workspace' | 'members' | 'calendar' | 'notifications' | 'sidebar' | 'integrations' | 'google-drive' | 'github' | 'slack' | 'figma' } };
+        return { kind: 'route', route: { kind: 'workspace', workspaceId, page: 'settings', scope: 'workspace', section: section === 'meeting-notes' ? 'meeting-notes' : section as 'workspace' | 'members' | 'calendar' | 'notifications' | 'sidebar' | 'local-ai' | 'integrations' | 'google-drive' | 'github' | 'slack' | 'figma' } };
       }
       return { kind: 'unknown' };
     }

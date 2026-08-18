@@ -78,6 +78,7 @@ export const routeForLegacyWorkspaceState = (workspaceId: string, route: {
         'calendar',
         'notifications',
         'sidebar',
+        'local-ai',
         'meeting-notes',
         'integrations',
         'google-drive',

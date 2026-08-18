@@ -3,8 +3,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
-import { LocalAIAssetManager, resolveLocalAIRuntime } from './localAIAssets.ts';
+import { LocalAIAssetManager, resolveLocalAIRuntime, resolveLocalAIRuntimeVersion } from './localAIAssets.ts';
 import { detectAskLedgerQueryIntent, resourceTypesForAskLedgerIntent } from './askLedgerQueryIntent.ts';
+import { matchesRetrievalScope, resourceDate, type RetrievalPlan } from './askLedgerRetrievalPlan.ts';
 
 export type LedgerIndexDocument = AskLedgerContextItem & {
   workspaceId: string;
@@ -41,6 +42,10 @@ export type RetrievalDebugCandidate = {
 export type LedgerRetrievalResult = {
   items: AskLedgerContextItem[];
   debug: RetrievalDebugCandidate[];
+  primaryItems?: AskLedgerContextItem[];
+  relatedItems?: AskLedgerContextItem[];
+  relatedCandidateCount?: number;
+  plan?: RetrievalPlan;
 };
 
 export interface EmbeddingProvider {
@@ -94,6 +99,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
       const serverPath = resolveLocalAIRuntime() || process.env.LEDGER_LLAMA_SERVER_PATH?.trim() || '';
       if (!modelPath || !fs.existsSync(modelPath)) throw new EmbeddingUnavailableError('The Ledger semantic-search model is not installed.');
       if (!serverPath || !fs.existsSync(serverPath)) throw new EmbeddingUnavailableError('The Ledger local AI runtime is not installed.');
+      console.info('[local-embedding] starting runtime', { runtimeVersion: resolveLocalAIRuntimeVersion(serverPath), modelPath, model: this.model, version: this.version });
       this.child = spawn(serverPath, [
         '--model', path.resolve(modelPath),
         '--host', '127.0.0.1',
@@ -302,8 +308,26 @@ export class LedgerRetrievalService {
     await this.index.shutdown();
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string }): Promise<LedgerRetrievalResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan }): Promise<LedgerRetrievalResult> {
     const documents = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
+    const plan = options?.plan;
+    const scopedPrimary = plan?.primaryResourceTypes.length
+      ? documents.filter((document) => matchesRetrievalScope(document, plan))
+      : [];
+    const resolvedContainer = plan?.containerQuery
+      ? (() => {
+        const query = plan.containerQuery.toLowerCase();
+        const names = scopedPrimary.flatMap((document) => {
+          if (document.containerName) return [document.containerName];
+          const match = document.content.match(/\bFolder:\s*([^\n.]+?)(?:\.|$)/i);
+          return match?.[1] ? [match[1].trim()] : [];
+        });
+        const title = names.find((name) => name.toLowerCase().includes(query)) ?? names[0];
+        return { query: plan.containerQuery, title, confidence: title ? title.toLowerCase() === query ? 1 : 0.82 : 0 };
+      })()
+      : undefined;
+    const resolvedPlan = plan && resolvedContainer ? { ...plan, resolvedContainer } : plan;
+    const scopedPrimaryKeys = new Set(scopedPrimary.map((document) => `${document.resourceType}:${document.resourceId}`));
     const lexicalByResource = new Map(lexicalResults.map((result, position) => [`${result.type}:${result.id}`, { result, position }]));
     let queryVector: number[] | undefined;
     if (this.provider && documents.some((document) => document.embedding)) {
@@ -314,7 +338,7 @@ export class LedgerRetrievalService {
     const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);
     const rankedByResource = new Map<string, { document: LedgerIndexDocument; score: number; why: string[] }>();
     documents.forEach((document) => {
-      if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never)) return;
+      if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never) && !plan) return;
       const key = `${document.resourceType}:${document.resourceId}`;
       const lexical = lexicalByResource.get(key);
       const titleOverlap = [...tokenize(document.title)].filter((token) => questionTokens.has(token)).length;
@@ -329,6 +353,18 @@ export class LedgerRetrievalService {
       if (options?.boostResourceKeys?.includes(key)) {
         score += 0.8;
         why.push('explicit-context');
+      }
+      if (plan && scopedPrimaryKeys.has(key)) {
+        score += 1;
+        why.push('planned-primary-scope');
+      } else if (plan?.expandRelatedContext && scopedPrimary.some((primary) =>
+        (document.projectId && primary.projectId && document.projectId === primary.projectId)
+        || (document.parentResourceId && document.parentResourceId === primary.resourceId)
+        || (primary.parentResourceId && primary.parentResourceId === document.resourceId)
+        || (primary.resourceType === 'project' && document.projectId === primary.resourceId)
+      )) {
+        score += 0.2;
+        why.push('planned-related-context');
       }
       if (document.resourceType === 'attachment' && options?.conversationId) {
         score += 0.12;
@@ -444,16 +480,62 @@ export class LedgerRetrievalService {
           score -= 0.06;
         }
       }
+      if (intent.kind === 'weekly_overview') {
+        if (['task', 'milestone', 'event', 'reminder'].includes(document.resourceType)) {
+          score += 0.12;
+          why.push('weekly-work-resource');
+        } else if (['project', 'person', 'team', 'external', 'intake'].includes(document.resourceType)) {
+          score += 0.08;
+          why.push('weekly-workspace-resource');
+        }
+        if (intent.window && hasScheduledDate) {
+          const start = Date.parse(`${intent.window.start}T00:00:00`);
+          const end = Date.parse(`${intent.window.end}T23:59:59.999`);
+          if (scheduledDate >= start && scheduledDate <= end) { score += 0.35; why.push('in-time-window'); }
+          else if (scheduledDate < start || scheduledDate > end) { score -= 0.1; why.push('outside-time-window'); }
+        }
+      }
       const existing = rankedByResource.get(key);
       if (!existing || score > existing.score) rankedByResource.set(key, { document, score, why });
     });
-    const ranked = [...rankedByResource.values()].filter(({ score, why }) => score > 0 || why.length > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, limit);
+    const rankedAll = [...rankedByResource.values()].filter(({ score, why }) => score > 0 || why.length > 0)
+      .sort((left, right) => right.score - left.score);
+    const dateSorted = (left: { document: LedgerIndexDocument }, right: { document: LedgerIndexDocument }) => plan?.ordering === 'oldest'
+      ? resourceDate(left.document) - resourceDate(right.document)
+      : resourceDate(right.document) - resourceDate(left.document);
+    const primaryRanked = plan?.primaryResourceTypes.length && scopedPrimaryKeys.size
+      ? rankedAll.filter(({ document }) => scopedPrimaryKeys.has(`${document.resourceType}:${document.resourceId}`))
+      : [];
+    const orderedPrimary = primaryRanked.length && plan?.ordering !== 'relevance' ? [...primaryRanked].sort(dateSorted) : primaryRanked;
+    const selectedPrimary = plan?.primaryResourceTypes.length && scopedPrimaryKeys.size
+      ? orderedPrimary.slice(0, Math.min(plan.requestedCount ?? limit, limit))
+      : [];
+    const selectedPrimaryKeys = new Set(selectedPrimary.map(({ document }) => `${document.resourceType}:${document.resourceId}`));
+    const relatedCandidates = plan?.expandRelatedContext && selectedPrimary.length
+      ? rankedAll.filter(({ document }) => {
+        const key = `${document.resourceType}:${document.resourceId}`;
+        if (selectedPrimaryKeys.has(key)) return false;
+        const directlyRelated = selectedPrimary.some(({ document: primary }) =>
+          (document.projectId && primary.projectId && document.projectId === primary.projectId)
+          || (document.parentResourceId && document.parentResourceId === primary.resourceId)
+          || (primary.parentResourceId && primary.parentResourceId === document.resourceId)
+          || (primary.resourceType === 'project' && document.projectId === primary.resourceId)
+        );
+        return directlyRelated;
+      })
+      : [];
+    const relatedRanked = relatedCandidates.slice(0, Math.max(0, limit - selectedPrimary.length));
+    const ranked = selectedPrimary.length
+      ? [...selectedPrimary, ...relatedRanked]
+      : rankedAll.slice(0, limit);
 
     return {
       items: ranked.map(({ document }) => ({ ...document, content: document.content })),
       debug: ranked.map(({ document, score, why }) => ({ resourceType: document.resourceType, resourceId: document.resourceId, title: document.title, score, why })),
+      primaryItems: selectedPrimary.map(({ document }) => ({ ...document, content: document.content })),
+      relatedItems: relatedRanked.map(({ document }) => ({ ...document, content: document.content })),
+      relatedCandidateCount: relatedCandidates.length,
+      plan: resolvedPlan,
     };
   }
 }

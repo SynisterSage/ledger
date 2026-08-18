@@ -11,6 +11,8 @@ export type AskLedgerPromptInput = {
   question: string;
   contextItems?: AskLedgerContextItem[];
   context?: NormalizedAskLedgerContext;
+  primaryContext?: AskLedgerContextItem[];
+  supportingContext?: AskLedgerContextItem[];
   recentConversation?: {
     previousQuestion?: string;
     previousAnswer?: string;
@@ -28,9 +30,17 @@ export type AskLedgerPromptInput = {
   answerDepth?: AskLedgerAnswerDepth;
 };
 
-export const buildAskLedgerPrompt = ({ question, contextItems = [], context, recentConversation, skill, skillContext, responseMode = 'workspace_grounded', capabilityDescription, answerDepth = 'standard' }: AskLedgerPromptInput) => {
+export const buildAskLedgerPrompt = ({ question, contextItems = [], context, primaryContext, supportingContext, recentConversation, skill, skillContext, responseMode = 'workspace_grounded', capabilityDescription, answerDepth = 'standard' }: AskLedgerPromptInput) => {
   const normalized = context ?? new LedgerContextBuilder().normalize(contextItems);
-  const contextText = normalized.text || '(No Ledger context was supplied.)';
+  const contextText = primaryContext?.length
+    ? [
+      'PRIMARY CONTEXT — answer the user’s request from these resources first:',
+      new LedgerContextBuilder().normalize(primaryContext, { maxContextTokens: 3200, maxItemTokens: 1000, sortByFreshness: false }).text,
+      supportingContext?.length
+        ? `SUPPORTING CONTEXT — use only when directly relevant to the primary resources:\n${new LedgerContextBuilder().normalize(supportingContext, { maxContextTokens: 1000, maxItemTokens: 500, sortByFreshness: false }).text}`
+        : '',
+    ].filter(Boolean).join('\n\n')
+    : normalized.text || '(No Ledger context was supplied.)';
   const truncationNote = normalized.truncated
     ? '\nSome lower-priority context was omitted to stay within the context budget. Do not assume omitted information.\n'
     : '';

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 // `electron` resolves to a harmless executable path when these model-layer
@@ -14,7 +15,9 @@ const resourcesPath = () => process.resourcesPath;
 
 export type LocalAIAssetRole = 'generation' | 'embedding';
 export type GenerationTier = 'fast' | 'balanced' | 'powerful';
-export type GenerationModelId = 'qwen3-1.7b-q4-k-m' | 'qwen3-4b-q4-k-m' | 'qwen3-8b-q4-k-m';
+export type GenerationModelId = 'qwen3-1.7b-q4-k-m' | 'qwen3-4b-q4-k-m' | 'qwen3-4b-thinking-2507-q6-k';
+export const LEGACY_POWERFUL_MODEL_ID = 'qwen3-8b-q4-k-m' as const;
+export const LEGACY_MINISTRAL_MODEL_ID = 'ministral-3-8b-instruct-q4-k-m' as const;
 export type LocalAIAssetManifest = {
   id: string;
   displayName: string;
@@ -31,6 +34,8 @@ export type LocalAIAssetManifest = {
   recommendedRam: number;
   contextSize?: number;
   runtimeArgs?: string[];
+  maxTokens?: number;
+  reasoningMode?: 'off' | 'adaptive' | 'on';
 };
 
 export type GenerationModelManifest = LocalAIAssetManifest & {
@@ -41,27 +46,72 @@ export type GenerationModelManifest = LocalAIAssetManifest & {
 
 // Artifact URLs/checksums intentionally come from release configuration. A
 // build must not silently ship an unverified or developer-specific model.
+// These optional artifacts are pinned to immutable Hugging Face revisions. The
+// environment variables remain supported for development/release overrides,
+// but production no longer depends on an external .env file to verify them.
+const VERIFIED_OPTIONAL_GENERATION_ARTIFACTS = {
+  balanced: {
+    url: 'https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/2f3b082b1356a6123f7ed71e65aea340da25d53c/Qwen3-4B-Q4_K_M.gguf?download=true',
+    size: 2497280640,
+    sha256: 'ab27b9bfa375a178d6cba48f3ad892b94b7739659dcc7aae8058ce0ffed6b328',
+  },
+  powerful: {
+    url: 'https://huggingface.co/bartowski/Qwen_Qwen3-4B-Thinking-2507-GGUF/resolve/ba7f9bc071caf4788e3d7a5963543cff0149e483/Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf?download=true',
+    size: 3306261216,
+    sha256: 'f3f0b80140e7e41d965339fdefd9c98fb1453095cf4077fa587ab9266b627488',
+  },
+} as const;
+
+const LEGACY_POWERFUL_ARTIFACT = {
+  urlFragment: '/Qwen/Qwen3-8B-GGUF/',
+  size: 5027783488,
+  sha256: 'd98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785',
+} as const;
+const LEGACY_MINISTRAL_ARTIFACT = {
+  urlFragment: '/mistralai/Ministral-3-8B-Instruct-2512-GGUF/',
+  size: 5198911904,
+  sha256: '33e7a72cf5e6e2cfc2f2847075acc013d68bba023e35310cef86b5cf8fdca761',
+} as const;
+const powerfulUrlOverride = process.env.LEDGER_LOCAL_AI_POWERFUL_URL?.trim();
+const powerfulSizeOverride = Number(process.env.LEDGER_LOCAL_AI_POWERFUL_SIZE) || undefined;
+const powerfulShaOverride = process.env.LEDGER_LOCAL_AI_POWERFUL_SHA256?.trim().toLowerCase();
+const hasLegacyPowerfulOverride = Boolean(
+  powerfulUrlOverride?.includes(LEGACY_POWERFUL_ARTIFACT.urlFragment)
+  || powerfulSizeOverride === LEGACY_POWERFUL_ARTIFACT.size
+  || powerfulShaOverride === LEGACY_POWERFUL_ARTIFACT.sha256
+  || powerfulUrlOverride?.includes(LEGACY_MINISTRAL_ARTIFACT.urlFragment)
+  || powerfulSizeOverride === LEGACY_MINISTRAL_ARTIFACT.size
+  || powerfulShaOverride === LEGACY_MINISTRAL_ARTIFACT.sha256
+);
+const powerfulArtifact = hasLegacyPowerfulOverride
+  ? VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful
+  : {
+      url: powerfulUrlOverride || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful.url,
+      size: powerfulSizeOverride || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful.size,
+      sha256: powerfulShaOverride || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful.sha256,
+    };
+
 export const GENERATION_MODEL_REGISTRY: GenerationModelManifest[] = [
   {
     id: 'qwen3-1.7b-q4-k-m', tier: 'fast', displayName: 'Qwen3 1.7B', description: 'Fast everyday answers', modelFamily: 'Qwen3', role: 'generation', version: '1',
     fileName: 'qwen3-1.7b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_GENERATION_URL,
     expectedSize: Number(process.env.LEDGER_LOCAL_AI_GENERATION_SIZE) || undefined,
     sha256: process.env.LEDGER_LOCAL_AI_GENERATION_SHA256?.trim().toLowerCase() || undefined,
-    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096,
+    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, runtimeArgs: ['--reasoning', 'off'], reasoningMode: 'off',
   },
   {
     id: 'qwen3-4b-q4-k-m', tier: 'balanced', displayName: 'Qwen3 4B', description: 'Stronger answers for more complex work', modelFamily: 'Qwen3', role: 'generation', version: '1',
-    fileName: 'qwen3-4b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_BALANCED_URL,
-    expectedSize: Number(process.env.LEDGER_LOCAL_AI_BALANCED_SIZE) || undefined,
-    sha256: process.env.LEDGER_LOCAL_AI_BALANCED_SHA256?.trim().toLowerCase() || undefined,
-    minimumRam: 12 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096,
+    fileName: 'qwen3-4b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_BALANCED_URL || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.url,
+    expectedSize: Number(process.env.LEDGER_LOCAL_AI_BALANCED_SIZE) || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.size,
+    sha256: process.env.LEDGER_LOCAL_AI_BALANCED_SHA256?.trim().toLowerCase() || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.sha256,
+    minimumRam: 12 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, maxTokens: 512, reasoningMode: 'adaptive',
   },
   {
-    id: 'qwen3-8b-q4-k-m', tier: 'powerful', displayName: 'Qwen3 8B', description: 'Highest local quality for demanding work', modelFamily: 'Qwen3', role: 'generation', version: '1',
-    fileName: 'qwen3-8b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_POWERFUL_URL,
-    expectedSize: Number(process.env.LEDGER_LOCAL_AI_POWERFUL_SIZE) || undefined,
-    sha256: process.env.LEDGER_LOCAL_AI_POWERFUL_SHA256?.trim().toLowerCase() || undefined,
-    minimumRam: 16 * 1024 ** 3, recommendedRam: 24 * 1024 ** 3, contextSize: 4096,
+    id: 'qwen3-4b-thinking-2507-q6-k', tier: 'powerful', displayName: 'Qwen3 4B Thinking', description: 'Takes more time to reason through complex work', modelFamily: 'Qwen3', role: 'generation', version: '2507',
+    fileName: 'Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf', downloadUrl: powerfulArtifact.url,
+    expectedSize: powerfulArtifact.size,
+    sha256: powerfulArtifact.sha256,
+    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 8192, maxTokens: 4096, runtimeArgs: ['--reasoning', 'on', '--reasoning-format', 'deepseek'], reasoningMode: 'on',
   },
 ];
 
@@ -76,6 +126,11 @@ const EMBEDDING_MODEL: LocalAIAssetManifest = {
 export const LOCAL_AI_MANIFEST: LocalAIAssetManifest[] = [...GENERATION_MODEL_REGISTRY, EMBEDDING_MODEL];
 export const DEFAULT_GENERATION_TIER: GenerationTier = 'fast';
 const DEFAULT_GENERATION_MODEL_ID: GenerationModelId = 'qwen3-1.7b-q4-k-m';
+const legacyPowerfulModelPaths = (modelId: string) => modelId === LEGACY_POWERFUL_MODEL_ID
+  ? [path.join(assetRoot(), 'models', 'generation', LEGACY_POWERFUL_MODEL_ID, 'qwen3-8b-q4_k_m.gguf')]
+  : modelId === LEGACY_MINISTRAL_MODEL_ID
+    ? [path.join(assetRoot(), 'models', 'generation', LEGACY_MINISTRAL_MODEL_ID, 'Ministral-3-8B-Instruct-2512-Q4_K_M.gguf')]
+    : [];
 
 export type LocalAIAssetStatus = LocalAIAssetManifest & {
   installed: boolean;
@@ -118,6 +173,13 @@ export const localAIRuntimeCandidates = () => {
 };
 
 export const resolveLocalAIRuntime = () => localAIRuntimeCandidates().find((candidate) => fs.existsSync(candidate)) ?? null;
+export const resolveLocalAIRuntimeVersion = (runtimePath: string) => {
+  try {
+    const result = spawnSync(runtimePath, ['--version'], { encoding: 'utf8', timeout: 3000 });
+    return `${result.stdout ?? ''}${result.stderr ?? ''}`.split('\n')[0]?.trim() || null;
+  }
+  catch { return null; }
+};
 
 export class LocalAIAssetManager {
   private readonly downloads = new Map<string, AbortController>();
@@ -145,8 +207,20 @@ export class LocalAIAssetManager {
       return value.tier === 'fast' || value.tier === 'balanced' || value.tier === 'powerful' ? value.tier : DEFAULT_GENERATION_TIER;
     } catch { return DEFAULT_GENERATION_TIER; }
   }
-  getSelectedGenerationTier() { return this.selectedTier(); }
-  getSelectedGenerationModel() { return GENERATION_MODEL_REGISTRY.find((model) => model.tier === this.selectedTier()) ?? GENERATION_MODEL_REGISTRY[0]; }
+  getSelectedGenerationTier() {
+    const selected = this.selectedTier();
+    if (selected !== 'powerful') return selected;
+    const powerful = GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'powerful')!;
+    if (this.statusFor(powerful).installed) return selected;
+    const balanced = GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')!;
+    const fallback: GenerationTier = this.statusFor(balanced).installed ? 'balanced' : 'fast';
+    try { fs.writeFileSync(selectionPath(), JSON.stringify({ tier: fallback, migratedFrom: selected, updatedAt: new Date().toISOString() }), { mode: 0o600 }); } catch {}
+    return fallback;
+  }
+  getSelectedGenerationModel() {
+    const selectedTier = this.getSelectedGenerationTier();
+    return GENERATION_MODEL_REGISTRY.find((model) => model.tier === selectedTier) ?? GENERATION_MODEL_REGISTRY[0];
+  }
   getGenerationModelPath(modelId: string) {
     const model = this.generationModel(modelId);
     if (!model) throw new Error('Invalid generation model.');
@@ -206,7 +280,7 @@ export class LocalAIAssetManager {
   }
   status(): LocalAIStatus {
     const generationModels = Object.fromEntries(GENERATION_MODEL_REGISTRY.map((model) => [model.id, this.statusFor(model)])) as Record<GenerationModelId, LocalAIAssetStatus>;
-    return { generation: generationModels[DEFAULT_GENERATION_MODEL_ID], generationModels, selectedGenerationTier: this.selectedTier(), embedding: this.statusFor(this.manifest('embedding')), platform: process.platform, arch: process.arch, totalRam: os.totalmem(), runtimeAvailable: Boolean(resolveLocalAIRuntime()), runtimePath: resolveLocalAIRuntime() };
+    return { generation: generationModels[DEFAULT_GENERATION_MODEL_ID], generationModels, selectedGenerationTier: this.getSelectedGenerationTier(), embedding: this.statusFor(this.manifest('embedding')), platform: process.platform, arch: process.arch, totalRam: os.totalmem(), runtimeAvailable: Boolean(resolveLocalAIRuntime()), runtimePath: resolveLocalAIRuntime() };
   }
   hardware() { const totalRam = os.totalmem(); return { totalRam, platform: process.platform, arch: process.arch, supported: process.platform === 'darwin' || process.platform === 'win32', recommended: totalRam >= this.manifest('generation').recommendedRam }; }
 
@@ -273,6 +347,13 @@ export class LocalAIAssetManager {
   }
   cancel(role: LocalAIAssetRole) { const asset = this.manifest(role); this.downloads.get(asset.id)?.abort(); return this.status(); }
   cancelGenerationDownload(modelId: string) { const asset = this.generationModel(modelId); if (!asset) throw new Error('Invalid generation model.'); this.downloads.get(asset.id)?.abort(); return this.status(); }
+  removeLegacyGenerationModel(modelId: string) {
+    const paths = legacyPowerfulModelPaths(modelId);
+    if (!paths.length) throw new Error('Invalid legacy generation model.');
+    paths.forEach((legacyPath) => fs.rmSync(legacyPath, { force: true }));
+    fs.rmSync(path.join(assetRoot(), 'metadata', `${modelId}.json`), { force: true });
+    return this.status();
+  }
   remove(role: LocalAIAssetRole) { const asset = this.manifest(role); if (role === 'generation') throw new Error('The Fast generation model is protected.'); if (this.downloads.has(asset.id)) throw new Error('Cancel the Local AI download before removing it.'); const target = this.pathFor(role); fs.rmSync(target, { force: true }); fs.rmSync(path.join(assetRoot(), 'metadata', `${asset.id}.json`), { force: true }); this.emit(); return this.status(); }
   async removeGeneration(modelId: string) { const asset = this.generationModel(modelId); if (!asset) throw new Error('Invalid generation model.'); if (asset.tier === 'fast') throw new Error('The Fast generation model is protected.'); if (this.downloads.has(asset.id)) { this.downloads.get(asset.id)?.abort(); await this.downloadPromises.get(asset.id)?.catch(() => undefined); } fs.rmSync(this.getGenerationModelPath(modelId), { force: true }); fs.rmSync(path.join(assetRoot(), 'metadata', `${asset.id}.json`), { force: true }); this.downloadErrors.delete(asset.id); this.emit(); return this.status(); }
   private emit() { const value = this.status(); this.listeners.forEach((listener) => listener(value)); }

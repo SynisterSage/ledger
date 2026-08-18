@@ -38,6 +38,15 @@ body {
   }
 }
 
+@keyframes ledgerAskAdvancedViewIn {
+  from { opacity: 0; transform: translateX(5px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.ledger-ask-advanced-view {
+  animation: ledgerAskAdvancedViewIn 160ms ease-out both;
+}
+
 .ledger-ask-generating {
   background: linear-gradient(100deg, var(--ledger-text-muted) 0%, var(--ledger-text-muted) 42%, var(--ledger-text-primary) 50%, var(--ledger-text-muted) 58%, var(--ledger-text-muted) 100%);
   background-size: 220% 100%;

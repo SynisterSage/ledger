@@ -14,12 +14,16 @@ import {
   Check,
   CirclePause,
   CirclePlay,
+  Download,
+  HardDrive,
   Loader2,
+  Minimize2,
   PanelLeft,
   Plug2,
   Settings,
   SlidersHorizontal,
   Shield,
+  Trash2,
   UserRound,
   Keyboard,
   ListTree,
@@ -273,7 +277,8 @@ type SettingsSectionId =
   | 'sidebar'
   | 'shortcuts'
   | 'accessibility'
-  | 'meeting_notes';
+  | 'meeting_notes'
+  | 'local_ai';
 type SettingsNavGroupId = 'account' | 'workspace' | 'preferences';
 
 type SettingsNavSection = {
@@ -281,6 +286,32 @@ type SettingsNavSection = {
   label: string;
   description: string;
   icon: typeof UserRound;
+};
+
+type LocalAIModelSettingsRow = {
+  id: string;
+  tier: 'fast' | 'balanced' | 'powerful';
+  displayName: string;
+  description?: string;
+  expectedSize?: number;
+  installed?: boolean;
+  state?: string;
+  available?: boolean;
+  downloading?: boolean;
+  verifying?: boolean;
+  progressPercent?: number | null;
+};
+
+const localAISettingsTierLabels: Record<LocalAIModelSettingsRow['tier'], string> = {
+  fast: 'Fast',
+  balanced: 'Balanced',
+  powerful: 'Powerful',
+};
+
+const formatLocalAIModelSize = (bytes?: number) => {
+  if (!bytes || !Number.isFinite(bytes)) return 'Size unavailable';
+  const gigabytes = bytes / (1024 ** 3);
+  return `${gigabytes >= 1 ? gigabytes.toFixed(1) : (bytes / (1024 ** 2)).toFixed(0)} ${gigabytes >= 1 ? 'GB' : 'MB'}`;
 };
 
 const settingsNavGroups: Array<{
@@ -346,6 +377,12 @@ const settingsNavGroups: Array<{
         icon: Plug2,
       },
       {
+        id: 'local_ai',
+        label: 'Local AI',
+        description: 'Manage generation models on this device',
+        icon: HardDrive,
+      },
+      {
         id: 'sidebar',
         label: 'Sidebar',
         description: 'Docking, visibility, and placement',
@@ -388,7 +425,8 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
     section === 'sidebar' ||
     section === 'shortcuts' ||
     section === 'accessibility' ||
-    section === 'meeting_notes'
+    section === 'meeting_notes' ||
+    section === 'local_ai'
   );
 };
 
@@ -872,6 +910,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     error: workspaceError,
   } = useWorkspaceContext();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? getInitialSettingsSection());
+  const [localAIModels, setLocalAIModels] = useState<LocalAIModelSettingsRow[]>([]);
+  const [localAISelectedTier, setLocalAISelectedTier] = useState<LocalAIModelSettingsRow['tier']>('fast');
+  const [localAIModelAction, setLocalAIModelAction] = useState<string | null>(null);
+  const [localAIModelError, setLocalAIModelError] = useState<string | null>(null);
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -893,8 +935,54 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       workspaceId: activeWorkspaceId,
       page: 'settings',
       scope: 'workspace',
-      section: section === 'meeting_notes' ? 'meeting-notes' : section,
+      section: section === 'meeting_notes' ? 'meeting-notes' : section === 'local_ai' ? 'local-ai' : section,
     });
+  };
+
+  const loadLocalAIModels = async () => {
+    if (!window.askLedger) return;
+    try {
+      const [modelsResult, selectedTier] = await Promise.all([
+        window.askLedger.getAvailableGenerationModels(),
+        window.askLedger.getSelectedGenerationTier(),
+      ]);
+      const rows = Array.isArray(modelsResult)
+        ? modelsResult.map((entry) => {
+            const item = entry as LocalAIModelSettingsRow & { status?: LocalAIModelSettingsRow };
+            return { ...item, ...(item.status ?? {}) };
+          })
+        : [];
+      setLocalAIModels(rows);
+      if (selectedTier === 'fast' || selectedTier === 'balanced' || selectedTier === 'powerful') setLocalAISelectedTier(selectedTier);
+    } catch (error) {
+      setLocalAIModelError(error instanceof Error ? error.message : 'Could not load Local AI models.');
+    }
+  };
+
+  useEffect(() => {
+    if (activeSection !== 'local_ai') return;
+    void loadLocalAIModels();
+    const unsubscribe = window.askLedger?.onLocalAIStatus(() => { void loadLocalAIModels(); });
+    return () => unsubscribe?.();
+  }, [activeSection]);
+
+  const manageLocalAIModel = async (model: LocalAIModelSettingsRow, action: 'download' | 'remove' | 'select') => {
+    if (!window.askLedger || localAIModelAction) return;
+    setLocalAIModelAction(`${action}:${model.id}`);
+    setLocalAIModelError(null);
+    try {
+      if (action === 'download') await window.askLedger.downloadGenerationModel(model.id);
+      if (action === 'remove') await window.askLedger.removeGenerationModel(model.id);
+      if (action === 'select') {
+        const result = await window.askLedger.switchGenerationTier(model.tier) as { ok?: boolean; state?: string; error?: string };
+        if (result?.ok === false || (result?.state && !['ready', 'noop'].includes(result.state))) throw new Error(result.error || `Could not switch to ${localAISettingsTierLabels[model.tier]}.`);
+      }
+      await loadLocalAIModels();
+    } catch (error) {
+      setLocalAIModelError(error instanceof Error ? error.message : `Could not update ${localAISettingsTierLabels[model.tier]}.`);
+    } finally {
+      setLocalAIModelAction(null);
+    }
   };
 
   const commitSidebarOpacity = (value: number) => {
@@ -914,7 +1002,16 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [meetingConsentReminder, setMeetingConsentReminder] = useState(true);
   const [meetingDefaultTimestamps, setMeetingDefaultTimestamps] = useState(true);
   const [meetingRecordingPath, setMeetingRecordingPath] = useState<string | null>(null);
-  const [meetingModelStatus, setMeetingModelStatus] = useState<{ installed?: boolean; downloading?: boolean; label?: string; approximateBytes?: number } | null>(null);
+  const [meetingModelStatus, setMeetingModelStatus] = useState<{
+    installed?: boolean;
+    downloading?: boolean;
+    label?: string;
+    approximateBytes?: number;
+    bytesDownloaded?: number;
+    error?: string | null;
+  } | null>(null);
+  const [isMeetingModelDownloadOpen, setIsMeetingModelDownloadOpen] = useState(false);
+  const [isMeetingModelDownloadMinimized, setIsMeetingModelDownloadMinimized] = useState(false);
   const [isMeetingModelDeleteModalOpen, setIsMeetingModelDeleteModalOpen] = useState(false);
   const [isDeletingMeetingModel, setIsDeletingMeetingModel] = useState(false);
   useEffect(() => {
@@ -942,14 +1039,51 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   }, [meetingDefaultRetention]);
   useEffect(() => {
     if (activeSection !== 'meeting_notes' || !window.meetingTranscription) return;
-    void window.meetingTranscription.modelStatus().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus)).catch(() => setMeetingModelStatus(null));
+    void window.meetingTranscription.modelStatus().then((status) => {
+      const next = status as typeof meetingModelStatus;
+      setMeetingModelStatus(next);
+      if (next?.downloading) setIsMeetingModelDownloadMinimized(true);
+    }).catch(() => setMeetingModelStatus(null));
   }, [activeSection]);
+  useEffect(() => {
+    if (!window.meetingTranscription?.onModelChange) return undefined;
+    return window.meetingTranscription.onModelChange((event) => {
+      const next = event as typeof meetingModelStatus;
+      setMeetingModelStatus(next);
+      if (next?.installed && !next.downloading) {
+        setIsMeetingModelDownloadOpen(false);
+        setIsMeetingModelDownloadMinimized(false);
+      }
+    });
+  }, []);
   useEffect(() => {
     if (activeSection !== 'meeting_notes' || !window.meetingAudio?.storagePath) return;
     void window.meetingAudio.storagePath().then((path) => setMeetingRecordingPath(path || null)).catch(() => setMeetingRecordingPath(null));
   }, [activeSection]);
   const closeMeetingModelDeleteModal = () => {
     if (!isDeletingMeetingModel) setIsMeetingModelDeleteModalOpen(false);
+  };
+  const startMeetingModelDownload = async () => {
+    if (!window.meetingTranscription) return;
+    setIsMeetingModelDownloadOpen(true);
+    setIsMeetingModelDownloadMinimized(false);
+    try {
+      const status = await window.meetingTranscription.downloadModel();
+      const next = status as typeof meetingModelStatus;
+      setMeetingModelStatus(next);
+      if (next?.installed) setIsMeetingModelDownloadOpen(false);
+    } catch {
+      const status = await window.meetingTranscription.modelStatus().catch(() => null);
+      setMeetingModelStatus(status as typeof meetingModelStatus);
+      setIsMeetingModelDownloadMinimized(false);
+    }
+  };
+  const cancelMeetingModelDownload = async () => {
+    if (!window.meetingTranscription) return;
+    const status = await window.meetingTranscription.cancelModelDownload();
+    setMeetingModelStatus(status as typeof meetingModelStatus);
+    setIsMeetingModelDownloadOpen(false);
+    setIsMeetingModelDownloadMinimized(false);
   };
   const handleDeleteMeetingModel = async () => {
     if (!window.meetingTranscription) return;
@@ -5110,6 +5244,55 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 </section>
               )}
 
+              {activeSection === 'local_ai' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-local-ai">
+                  <h2 id="settings-local-ai" className={settingsTheme.pageTitle}>Local AI</h2>
+                  <p className={settingsTheme.pageSubtitle + ' mt-1'}>Manage the generation models Ledger uses on this device.</p>
+                  <p className={settingsTheme.pageStatus + ' mt-2'}>Fast is the required baseline. Balanced and Powerful are optional downloads.</p>
+
+                  <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="settings-generation-models">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 id="settings-generation-models" className={settingsTheme.sectionTitle}>Generation models</h3>
+                        <p className={settingsTheme.sectionStatus + ' mt-1'}>Changing the generation model does not affect workspace search or embeddings.</p>
+                      </div>
+                      <HardDrive size={16} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" aria-hidden="true" />
+                    </div>
+                    <div className={settingsTheme.sectionRows + ' mt-4'}>
+                      {localAIModels.length === 0 ? <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">Loading model information…</div> : localAIModels.map((model) => {
+                        const installed = Boolean(model.installed || model.state === 'installed');
+                        const busy = localAIModelAction?.endsWith(`:${model.id}`);
+                        const active = localAISelectedTier === model.tier;
+                        const protectedModel = model.tier === 'fast';
+                        return (
+                          <div key={model.id} className="flex items-center gap-3 px-4 py-4">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-muted)]"><HardDrive size={14} aria-hidden="true" /></span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <p className={settingsTheme.rowLabel}>{localAISettingsTierLabels[model.tier]}</p>
+                                {active && <span className="text-[10px] text-[var(--ledger-text-muted)]">In use</span>}
+                                {protectedModel && <span className="text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
+                              </div>
+                              <p className={settingsTheme.rowMuted}>{model.description || 'Local generation model'} · {formatLocalAIModelSize(model.expectedSize)}</p>
+                              {model.downloading || model.verifying ? <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{model.verifying ? 'Verifying…' : `Downloading ${model.progressPercent ?? 0}%`}</p> : null}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {installed ? (
+                                <>
+                                  {!active && <button type="button" onClick={() => void manageLocalAIModel(model, 'select')} disabled={Boolean(localAIModelAction)} className={settingsTheme.footerButton + ' h-8 rounded-lg px-3 text-xs'}>{busy ? 'Switching…' : 'Use model'}</button>}
+                                  {!protectedModel && <button type="button" onClick={() => void manageLocalAIModel(model, 'remove')} disabled={Boolean(localAIModelAction)} aria-label={`Remove ${localAISettingsTierLabels[model.tier]} download`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-danger)] disabled:opacity-50"><Trash2 size={14} /></button>}
+                                </>
+                              ) : <button type="button" onClick={() => void manageLocalAIModel(model, 'download')} disabled={Boolean(localAIModelAction) || model.available === false || model.state === 'unavailable'} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50">{busy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}{busy ? 'Downloading…' : 'Download'}</button>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                  {localAIModelError && <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">{localAIModelError}</p>}
+                </section>
+              )}
+
               {activeSection === 'sidebar' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-sidebar">
                   <h2 id="settings-sidebar" className={settingsTheme.pageTitle}>
@@ -5317,10 +5500,14 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       <div className="flex items-center justify-between gap-4 px-4 py-4">
                         <div className="min-w-0">
                           <p className={settingsTheme.label}>{meetingModelStatus?.installed ? meetingModelStatus.label || 'Whisper model installed' : 'Model not installed'}</p>
-                          <p className={settingsTheme.help}>Stored locally in Ledger application data and preserved across app updates.</p>
+                          <p className={settingsTheme.help}>{meetingModelStatus?.downloading ? 'Downloading in the background. You can keep using Ledger.' : meetingModelStatus?.error ? 'The last download did not finish. You can try again.' : 'Stored locally in Ledger application data and preserved across app updates.'}</p>
                         </div>
                         {window.meetingTranscription && !meetingModelStatus?.installed && (
-                          <button type="button" onClick={() => void window.meetingTranscription!.downloadModel().then((status) => setMeetingModelStatus(status as typeof meetingModelStatus))} className="shrink-0 rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]">Install model</button>
+                          meetingModelStatus?.downloading ? (
+                            <button type="button" onClick={() => { setIsMeetingModelDownloadOpen(true); setIsMeetingModelDownloadMinimized(false); }} className="shrink-0 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)] transition hover:bg-[var(--ledger-surface-hover)]">{`Downloading ${Math.min(100, Math.round(((meetingModelStatus.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus.approximateBytes ?? 1)) * 100))}%`}</button>
+                          ) : (
+                            <button type="button" onClick={() => void startMeetingModelDownload()} className="shrink-0 rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]">Install model</button>
+                          )
                         )}
                         {window.meetingTranscription && meetingModelStatus?.installed && (
                           <button type="button" onClick={() => setIsMeetingModelDeleteModalOpen(true)} className="shrink-0 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-danger)] transition hover:border-[color:var(--ledger-danger)]/35 hover:bg-[color:var(--ledger-danger)]/5">Delete model</button>
@@ -5512,6 +5699,48 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
               )}
 
               </SettingsPage>
+              <ModalOverlay
+                isOpen={isMeetingModelDownloadOpen && !isMeetingModelDownloadMinimized}
+                onClose={() => { if (!meetingModelStatus?.downloading) setIsMeetingModelDownloadOpen(false); }}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-md ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <p className={settingsTheme.rowMuted + ' font-medium'}>Local transcription</p>
+                    <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
+                      {meetingModelStatus?.error && !meetingModelStatus.downloading ? 'Transcription model download failed' : 'Downloading transcription model'}
+                    </h3>
+                  </div>
+                  {meetingModelStatus?.downloading ? (
+                    <button type="button" onClick={() => { setIsMeetingModelDownloadMinimized(true); }} aria-label="Minimize transcription model download" title="Minimize" className="rounded-md p-1.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Minimize2 size={16} strokeWidth={1.8} /></button>
+                  ) : <ModalCloseButton onClick={() => setIsMeetingModelDownloadOpen(false)} ariaLabel="Close transcription model download" />}
+                </div>
+                <div className="border-t border-[color:var(--ledger-border-subtle)] px-5 py-4 text-sm leading-5 text-[var(--ledger-text-secondary)]">
+                  {meetingModelStatus?.error && !meetingModelStatus.downloading ? (
+                    <p>The model was not installed. You can try the download again.</p>
+                  ) : (
+                    <>
+                      <p>This can continue while you use Ledger. Transcription stays on this computer.</p>
+                      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(((meetingModelStatus?.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus?.approximateBytes ?? 1)) * 100))}>
+                        <div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.round(((meetingModelStatus?.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus?.approximateBytes ?? 1)) * 100))}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs tabular-nums text-[var(--ledger-text-muted)]">{Math.round((meetingModelStatus?.bytesDownloaded ?? 0) / 1024 ** 2)} MB of {Math.round((meetingModelStatus?.approximateBytes ?? 0) / 1024 ** 2)} MB</p>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  {meetingModelStatus?.downloading ? <button type="button" onClick={() => void cancelMeetingModelDownload()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Cancel</button> : <button type="button" onClick={() => void startMeetingModelDownload()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]">Try again</button>}
+                </div>
+              </ModalOverlay>
+              {isMeetingModelDownloadMinimized && meetingModelStatus?.downloading ? (
+                <button type="button" onClick={() => { setIsMeetingModelDownloadOpen(true); setIsMeetingModelDownloadMinimized(false); }} className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-3 text-left shadow-lg transition hover:border-[color:var(--ledger-accent)]" aria-label="Show transcription model download progress">
+                  <Loader2 size={15} className="animate-spin text-[var(--ledger-accent)]" />
+                  <span className="text-xs font-medium text-[var(--ledger-text-primary)]">Downloading transcription model · {Math.min(100, Math.round(((meetingModelStatus.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus.approximateBytes ?? 1)) * 100))}%</span>
+                </button>
+              ) : null}
               {isAvatarEditorOpen && user?.id ? (
                 <AvatarEditorModal
                   isOpen={isAvatarEditorOpen}

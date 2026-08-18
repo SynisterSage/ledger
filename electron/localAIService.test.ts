@@ -90,7 +90,7 @@ test('cold runtime starts the selected installed tier directly and uninstalled t
   assert.equal(result.state, 'ready');
   assert.equal(runtimes.length, 2); // constructor creates Fast; switch starts Balanced without starting Fast
   const missing = await service.switchGenerationTier('powerful');
-  assert.deepEqual(missing, { ok: false, state: 'requires_download', tier: 'powerful', modelId: 'qwen3-8b-q4-k-m', expectedSize: undefined });
+  assert.deepEqual(missing, { ok: false, state: 'requires_download', tier: 'powerful', modelId: 'qwen3-4b-thinking-2507-q6-k', expectedSize: 3306261216 });
 });
 
 test('active generation is cancelled before the runtime is switched', async () => {
@@ -139,8 +139,8 @@ test('only one switch operation runs at a time and invalid tiers are rejected', 
   const { service } = switchService();
   const first = service.switchGenerationTier('balanced');
   const second = service.switchGenerationTier('powerful');
-  assert.equal(first, second);
   assert.equal((await first).tier, 'balanced');
+  assert.equal((await second).tier, 'powerful');
   await assert.rejects(service.switchGenerationTier('invalid'), /Invalid generation tier/);
 });
 

@@ -1,5 +1,11 @@
 # Ledger local AI runtime
 
+The macOS arm64 bundle is pinned to llama.cpp `b10472` (commit
+`60eeeb6082c1126bb8bc72902c83123cd056811b`). Its source archive and SHA-256
+are recorded in `darwin-arm64/runtime-manifest.json`. Replace the complete
+platform directory from one release; do not mix `llama-server` or companion
+libraries from different builds.
+
 Package the signed, pinned `llama-server` executable and every companion
 runtime library for each target that is
 actually enabled by Ledger's release configuration under a

@@ -39,7 +39,7 @@ const normalize = (value: string) =>
 const workspaceSignals =
   /\b(?:ledger|workspace|project|task|todo|to do|action item|milestone|reminder|meeting|event|calendar|note|transcript|deadline|overdue|blocked|blocking|stuck|status|progress|activity|decision|decided|discussed|changed|updates?|follow[- ]?up|team members?|integration|slack|github|figma)\b/i;
 const capabilitySignals =
-  /\b(?:what can you help me with|what can you do|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
+  /\b(?:what can you help me with|what can you do|what do you do|what do u do|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
 const casualSignals =
   /^(?:hi|hello|hey|yo|thanks?|thank you|thx|good morning|good afternoon|good evening|how are you|whats up|what is up|bye|goodbye|okay|ok|great|nice|cool|got it)[.!?\s]*$/i;
 const factualQuestionSignals =
@@ -51,6 +51,8 @@ const referenceSignals =
 const continuationSignals =
   /^(?:continue|keep going|try again|another pass|another sweep|do another pass|do another sweep|tell me more|go deeper|what else|anything else)\b/i;
 const reasoningFollowUpSignals = /^(?:why|how)\b/i;
+const contextReuseSignals = /\b(?:with|using|based on|from)\s+(?:this|that|these|those)\s+(?:context|notes?|summary|answer)\b|\bnot really searching\b|\bwithout (?:search|searching|looking)\b/i;
+const explicitExistingResourceSignals = /\b(?:last|latest|newest|recent|what happened|what did|look through|look at|summari[sz]e|review|compare|linked)\b[\s\S]{0,80}\b(?:notes?|meetings?|events?|tasks?|reminders?|projects?|transcripts?)\b/i;
 
 const priorTurns = (context: AskLedgerRoutingContext) =>
   Boolean(
@@ -100,7 +102,10 @@ export const routeAskLedgerMessage = (
       },
       { conversational: true }
     );
-  if (capabilitySignals.test(normalized))
+  // Workspace-aware requests such as “can you help me plan a meeting?” must
+  // not be treated as generic capability questions just because they contain
+  // the phrase “can you help”.
+  if (capabilitySignals.test(normalized) && !workspaceSignals.test(normalized))
     return withDepth(
       {
         mode: 'conversational',
@@ -111,6 +116,14 @@ export const routeAskLedgerMessage = (
       { conversational: true }
     );
   if (priorTurns(context)) {
+    if (contextReuseSignals.test(normalized) && !explicitExistingResourceSignals.test(normalized)) {
+      return withDepth({
+        mode: 'follow_up',
+        retrievalRequired: false,
+        reusePreviousGroundedContext: true,
+        reason: 'grounded_context_reuse',
+      });
+    }
     if (transformationSignals.test(normalized) && referenceSignals.test(normalized)) {
       return withDepth({
         mode: 'follow_up',
@@ -141,6 +154,7 @@ export const routeAskLedgerMessage = (
   }
   if (
     workspaceSignals.test(normalized) ||
+    explicitExistingResourceSignals.test(normalized) ||
     (factualQuestionSignals.test(normalized) && !casualSignals.test(normalized))
   ) {
     return withDepth({

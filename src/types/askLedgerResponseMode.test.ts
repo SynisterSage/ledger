@@ -40,6 +40,12 @@ test('routes workspace facts through grounding', () => {
   }
 });
 
+test('keeps meeting-planning requests grounded despite capability wording', () => {
+  const route = routeAskLedgerMessage('Can you help me plan a meeting I have soon? Look through my recent notes and help me be detailed.');
+  assert.equal(route.mode, 'workspace_grounded');
+  assert.equal(route.retrievalRequired, true);
+});
+
 test('distinguishes factual and transformation follow-ups', () => {
   const factual = routeAskLedgerMessage('What about the mobile side?', groundedSession);
   assert.equal(factual.mode, 'follow_up');
@@ -49,6 +55,23 @@ test('distinguishes factual and transformation follow-ups', () => {
   assert.equal(transformation.mode, 'follow_up');
   assert.equal(transformation.retrievalRequired, false);
   assert.equal(transformation.reusePreviousGroundedContext, true);
+});
+
+test('reuses grounded context when the user explicitly asks not to search again', () => {
+  const route = routeAskLedgerMessage(
+    'with this context and not really searching can you give me structure for my next workday meeting',
+    groundedSession
+  );
+  assert.equal(route.mode, 'follow_up');
+  assert.equal(route.retrievalRequired, false);
+  assert.equal(route.reusePreviousGroundedContext, true);
+  assert.equal(route.reason, 'grounded_context_reuse');
+});
+
+test('keeps explicit existing-resource requests as fresh retrieval', () => {
+  const route = routeAskLedgerMessage('look through my last 3 notes in Workday meetings', groundedSession);
+  assert.equal(route.retrievalRequired, true);
+  assert.equal(route.reusePreviousGroundedContext, false);
 });
 
 test('prefers grounding for ambiguous references', () => {
@@ -80,6 +103,13 @@ test('routes capability questions as trusted conversational requests', () => {
     assert.equal(route.retrievalRequired, false);
     assert.equal(route.reason, 'capability_question');
   }
+});
+
+test('routes informal capability questions conversationally', () => {
+  const route = routeAskLedgerMessage('what do u do');
+  assert.equal(route.mode, 'conversational');
+  assert.equal(route.retrievalRequired, false);
+  assert.equal(route.reason, 'capability_question');
 });
 
 test('infers adaptive depth independently of the response route', () => {

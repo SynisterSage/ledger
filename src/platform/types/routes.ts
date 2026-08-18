@@ -42,6 +42,7 @@ export type WorkspaceSettingsSection =
   | 'calendar'
   | 'notifications'
   | 'sidebar'
+  | 'local-ai'
   | 'meeting-notes'
   | 'integrations'
   | 'google-drive'

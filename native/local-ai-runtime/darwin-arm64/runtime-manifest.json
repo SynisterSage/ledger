@@ -1,0 +1,22 @@
+{
+  "runtime": "llama.cpp",
+  "release": "b10472",
+  "commit": "60eeeb6082c1126bb8bc72902c83123cd056811b",
+  "platform": "darwin",
+  "arch": "arm64",
+  "sourceUrl": "https://github.com/ggml-org/llama.cpp/releases/download/b10472/llama-b10472-bin-macos-arm64.tar.gz",
+  "archiveSha256": "194a3e7008cc8c4e7a8d201012f4a32102333664c2eb7d0511d091589c48a13c",
+  "executable": "llama-server",
+  "requiredLibraries": [
+    "libllama-server-impl.dylib",
+    "libllama-common.0.dylib",
+    "libmtmd.0.dylib",
+    "libllama.0.dylib",
+    "libggml.0.dylib",
+    "libggml-cpu.0.dylib",
+    "libggml-blas.0.dylib",
+    "libggml-metal.0.dylib",
+    "libggml-rpc.0.dylib",
+    "libggml-base.0.dylib"
+  ]
+}

@@ -11,6 +11,7 @@ export type AskLedgerQueryIntent = {
     | 'blockers'
     | 'deadlines'
     | 'time_window'
+    | 'weekly_overview'
     | 'status'
     | 'project_review'
     | 'recent_updates'
@@ -70,7 +71,7 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   if (/\b(github|git hub|slack|figma|circle|integration|integrations|intake|pull requests?|issues?)\b/.test(normalized)) {
     return { kind: 'integration' };
   }
-  if (/\b(prepare|prep|get ready|brief)\b/.test(normalized) && /\b(meeting|meetings|call|calls)\b/.test(normalized)) {
+  if (/\b(prepare|prep|get ready|brief|plan|planning|plan it out)\b/.test(normalized) && /\b(meeting|meetings|call|calls)\b/.test(normalized)) {
     return { kind: 'meeting_prep' };
   }
   if (/\b(review|assess|check|audit)\b/.test(normalized) && /\bprojects?\b/.test(normalized)
@@ -102,6 +103,15 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
     return { kind: 'blockers' };
   }
   const week = startOfWeek(now);
+  const asksForBroadWeeklyOverview = /\b(what do i have|what do i got|what(?:s| is) going on|what(?:s| is) happening|give me an overview|show me everything|show me all|across my workspace)\b/.test(normalized)
+    && /\b(this week|this weeks|this week s|next week|next weeks|next week s)\b/.test(normalized);
+  if (asksForBroadWeeklyOverview && /\b(this week|this weeks|this week s)\b/.test(normalized)) {
+    return { kind: 'weekly_overview', window: { start: isoDate(week), end: isoDate(addDays(week, 6)) } };
+  }
+  if (asksForBroadWeeklyOverview && /\b(next week|next weeks|next week s)\b/.test(normalized)) {
+    const next = addDays(week, 7);
+    return { kind: 'weekly_overview', window: { start: isoDate(next), end: isoDate(addDays(next, 6)) } };
+  }
   if (/\b(this week|this weeks|this week s)\b/.test(normalized)) {
     return { kind: 'time_window', window: { start: isoDate(week), end: isoDate(addDays(week, 6)) } };
   }
@@ -144,6 +154,8 @@ export const resourceTypesForAskLedgerIntent = (
       return ['task', 'milestone', 'project', 'event', 'reminder'];
     case 'time_window':
       return ['task', 'event', 'reminder'];
+    case 'weekly_overview':
+      return ['project', 'task', 'milestone', 'reminder', 'event', 'person', 'team', 'note', 'transcript', 'intake', 'external'];
     case 'status':
       return ['project', 'task'];
     case 'project_review':

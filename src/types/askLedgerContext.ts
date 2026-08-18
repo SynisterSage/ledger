@@ -35,6 +35,7 @@ export type AskLedgerContextItem = {
   provenance?: string;
   updatedAt?: string;
   sourceLabel?: string;
+  containerName?: string;
   route?: string | Record<string, unknown>;
   parentResourceId?: string;
   attachmentSource?: import('./askLedgerAttachments').AskLedgerAttachmentSource;

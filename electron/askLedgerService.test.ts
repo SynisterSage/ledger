@@ -56,6 +56,7 @@ test('answers conversational and capability requests without workspace retrieval
   const localAI = {
     start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
       generationPrompt = request.context;
+      callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'generating' } });
       callbacks.onEvent({ type: 'delta', requestId, text: 'Of course.' });
       callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
       return requestId;
@@ -72,6 +73,7 @@ test('answers conversational and capability requests without workspace retrieval
   assert.match(generationPrompt, /Trusted application capabilities/);
   assert.deepEqual(events.find((event) => event.type === 'sources')?.sources, []);
   assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'searching'), false);
+  assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'generating'), true);
 });
 
 test('expands project reviews with linked work records', async () => {
@@ -157,6 +159,39 @@ test('formats direct entity lookups without invoking Qwen', async () => {
   assert.equal(generationCalled, false);
   assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Finish thumbnails/);
   assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Aug 18, 2026/);
+});
+
+test('generates from planned meeting notes instead of formatting the event intent', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationPrompt = '';
+  const notes: AskLedgerContextItem[] = [
+    { ...resource, resourceType: 'note', resourceId: 'note-workday-1', title: 'Jul 9, Workday Meeting', content: 'Folder: Workday Meetings. Discussed the launch sequence.', updatedAt: '2026-07-09T12:00:00Z' },
+    { ...resource, resourceType: 'note', resourceId: 'note-workday-2', title: 'Jul 8, Workday Meeting', content: 'Folder: Workday Meetings. Reviewed open follow-ups.', updatedAt: '2026-07-08T12:00:00Z' },
+    { ...resource, resourceType: 'note', resourceId: 'note-workday-3', title: 'Jul 7, Workday Meeting', content: 'Folder: Workday Meetings. Agreed on next steps.', updatedAt: '2026-07-07T12:00:00Z' },
+  ];
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: notes, primaryItems: notes, relatedItems: [], relatedCandidateCount: 0, debug: notes.map((item) => ({ resourceType: 'note', resourceId: item.resourceId, title: item.title, score: 1, why: ['planned-primary-scope'] })) }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      generationPrompt = request.context;
+      callbacks.onEvent({ type: 'delta', requestId, text: 'Summary of the Workday notes.' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({ workspaceId: 'workspace-a', question: 'Can you look through my Workday meeting notes folder, last 3 notes or so, and summarize them?', documents: notes, lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.match(generationPrompt, /PRIMARY CONTEXT/);
+  assert.match(generationPrompt, /launch sequence/);
+  assert.equal(events.find((event) => event.type === 'delta')?.text, 'Summary of the Workday notes.');
 });
 
 test('returns an entity-specific empty state without invoking Qwen', async () => {
