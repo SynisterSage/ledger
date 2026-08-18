@@ -331,6 +331,11 @@ const authMiddleware = async (req, res, next) => {
     // remain valid after a device is removed, so enforce our revocation state
     // on requests that identify a Ledger device.
     const metadata = readSessionMetadataFromRequest(req);
+    // A valid Supabase login must be able to re-register this installation.
+    // The heartbeat upsert explicitly clears revoked_at, but enforcing the
+    // old revoked row here would prevent that upsert from ever running.
+    const isSessionHeartbeat =
+      req.method === 'POST' && /\/account\/sessions\/heartbeat$/.test(req.path);
     if (metadata?.device_id) {
       try {
         const sessionResult = await supabase
@@ -343,7 +348,7 @@ const authMiddleware = async (req, res, next) => {
         if (sessionResult.error && !isMissingRelationError(sessionResult.error, 'app_sessions')) {
           throw sessionResult.error;
         }
-        if (sessionResult.data?.revoked_at) {
+        if (sessionResult.data?.revoked_at && !isSessionHeartbeat) {
           return res.status(401).json({ error: 'SESSION_REVOKED' });
         }
       } catch (sessionError) {
