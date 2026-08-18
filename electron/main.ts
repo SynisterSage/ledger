@@ -2322,6 +2322,12 @@ function lockWindowZoom(win: BrowserWindow) {
 
   webContents.on('before-input-event', (event, input) => {
     const key = input.key?.toLowerCase() ?? '';
+    if (!app.isPackaged && input.control && input.shift && key === 'i') {
+      event.preventDefault();
+      webContents.openDevTools({ mode: 'detach' });
+      return;
+    }
+
     const hasZoomModifier = input.control || input.meta;
     const isZoomShortcut =
       hasZoomModifier && (key === '+' || key === '=' || key === '-' || key === '_' || key === '0');
