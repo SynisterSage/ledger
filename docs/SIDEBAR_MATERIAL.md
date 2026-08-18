@@ -48,8 +48,8 @@ fallback.
 
 ## Rollout and kill switch
 
-Native production rollout is disabled unless all of the following are set by
-the release/configuration environment:
+Windows Mica is enabled by default in supported packaged builds. Release
+environments can still stage or disable it with the following controls:
 
 - `LEDGER_SIDEBAR_NATIVE_MATERIAL_ENABLED=true`
 - `LEDGER_SIDEBAR_NATIVE_COHORT` is present
@@ -57,9 +57,10 @@ the release/configuration environment:
   - `LEDGER_SIDEBAR_NATIVE_MACOS_ROLLOUT=0..100`
   - `LEDGER_SIDEBAR_NATIVE_WINDOWS_ROLLOUT=0..100`
 
-`LEDGER_SIDEBAR_NATIVE_KILL_SWITCH=true` immediately disables production
-native selection without resetting user preferences. The cohort hash is
-deterministic and does not use wallpaper, window content, or user data.
+If the rollout controls are absent, supported packaged Windows builds use Mica
+directly. `LEDGER_SIDEBAR_NATIVE_KILL_SWITCH=true` immediately disables
+production native selection without resetting user preferences. The cohort
+hash is deterministic and does not use wallpaper, window content, or user data.
 
 Mica is the only Windows production candidate. Mica Alt and Acrylic remain
 available only through development diagnostics and are never selected by the

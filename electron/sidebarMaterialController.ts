@@ -173,14 +173,23 @@ export class SidebarMaterialController {
     // Keep it out of normal releases until we have a native masked material
     // surface; the renderer material preserves the product geometry.
     if (this.platform === 'darwin') return null;
-    if (!this.isTruthy(this.environment.LEDGER_SIDEBAR_NATIVE_MATERIAL_ENABLED)) return null;
+    // Windows Mica is the supported packaged default. The environment flag
+    // remains an explicit opt-out/rollout control for staged releases, while
+    // a normal local build must not silently fall back to renderer glass.
+    if (
+      this.environment.LEDGER_SIDEBAR_NATIVE_MATERIAL_ENABLED !== undefined &&
+      !this.isTruthy(this.environment.LEDGER_SIDEBAR_NATIVE_MATERIAL_ENABLED)
+    ) {
+      return null;
+    }
 
     const rolloutVariable =
       this.platform === 'win32' ? 'LEDGER_SIDEBAR_NATIVE_WINDOWS_ROLLOUT' : null;
-    if (
-      !rolloutVariable ||
-      !this.cohortIsIncluded(this.percentage(this.environment[rolloutVariable]))
-    ) {
+    const rolloutConfigured =
+      rolloutVariable !== null &&
+      (this.environment[rolloutVariable] !== undefined ||
+        this.environment.LEDGER_SIDEBAR_NATIVE_COHORT !== undefined);
+    if (rolloutConfigured && !this.cohortIsIncluded(this.percentage(this.environment[rolloutVariable!]))) {
       return null;
     }
     if (this.platform === 'win32') return SIDEBAR_MATERIAL_SUPPORT_MATRIX.productionWindowsEngine;
