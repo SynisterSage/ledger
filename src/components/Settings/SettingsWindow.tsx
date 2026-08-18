@@ -914,6 +914,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [localAISelectedTier, setLocalAISelectedTier] = useState<LocalAIModelSettingsRow['tier']>('fast');
   const [localAIModelAction, setLocalAIModelAction] = useState<string | null>(null);
   const [localAIModelError, setLocalAIModelError] = useState<string | null>(null);
+  const cancelledLocalAIDownloadsRef = useRef(new Set<string>());
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -966,11 +967,17 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     return () => unsubscribe?.();
   }, [activeSection]);
 
-  const manageLocalAIModel = async (model: LocalAIModelSettingsRow, action: 'download' | 'remove' | 'select') => {
-    if (!window.askLedger || localAIModelAction) return;
+  const manageLocalAIModel = async (model: LocalAIModelSettingsRow, action: 'download' | 'remove' | 'select' | 'cancel') => {
+    if (!window.askLedger || (localAIModelAction && action !== 'cancel')) return;
     setLocalAIModelAction(`${action}:${model.id}`);
     setLocalAIModelError(null);
     try {
+      if (action === 'cancel') {
+        cancelledLocalAIDownloadsRef.current.add(model.id);
+        await window.askLedger.cancelGenerationModelDownload(model.id);
+        await loadLocalAIModels();
+        return;
+      }
       if (action === 'download') await window.askLedger.downloadGenerationModel(model.id);
       if (action === 'remove') await window.askLedger.removeGenerationModel(model.id);
       if (action === 'select') {
@@ -979,6 +986,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       }
       await loadLocalAIModels();
     } catch (error) {
+      if (action === 'download' && cancelledLocalAIDownloadsRef.current.delete(model.id)) return;
       setLocalAIModelError(error instanceof Error ? error.message : `Could not update ${localAISettingsTierLabels[model.tier]}.`);
     } finally {
       setLocalAIModelAction(null);
@@ -5262,6 +5270,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       {localAIModels.length === 0 ? <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">Loading model information…</div> : localAIModels.map((model) => {
                         const installed = Boolean(model.installed || model.state === 'installed');
                         const busy = localAIModelAction?.endsWith(`:${model.id}`);
+                        const cancelling = localAIModelAction === `cancel:${model.id}`;
                         const active = localAISelectedTier === model.tier;
                         const protectedModel = model.tier === 'fast';
                         return (
@@ -5277,7 +5286,9 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                               {model.downloading || model.verifying ? <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{model.verifying ? 'Verifying…' : `Downloading ${model.progressPercent ?? 0}%`}</p> : null}
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
-                              {installed ? (
+                              {model.downloading ? (
+                                <button type="button" onClick={() => void manageLocalAIModel(model, 'cancel')} disabled={cancelling} className={settingsTheme.footerButton + ' h-8 rounded-lg px-3 text-xs'}>{cancelling ? 'Cancelling…' : 'Cancel'}</button>
+                              ) : installed ? (
                                 <>
                                   {!active && <button type="button" onClick={() => void manageLocalAIModel(model, 'select')} disabled={Boolean(localAIModelAction)} className={settingsTheme.footerButton + ' h-8 rounded-lg px-3 text-xs'}>{busy ? 'Switching…' : 'Use model'}</button>}
                                   {!protectedModel && <button type="button" onClick={() => void manageLocalAIModel(model, 'remove')} disabled={Boolean(localAIModelAction)} aria-label={`Remove ${localAISettingsTierLabels[model.tier]} download`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-danger)] disabled:opacity-50"><Trash2 size={14} /></button>}

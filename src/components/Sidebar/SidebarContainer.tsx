@@ -187,6 +187,7 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
         ? 'w-auto h-[60px]'
         : 'w-14 h-14';
   const isNativeMacMaterial = materialEngine === 'native-macos';
+  const isRendererMaterial = materialEngine === 'renderer';
   const shellRadiusClass = browserMode
     ? 'rounded-none'
     : isFullscreenAttachedShell && effectivePosition === 'left'
@@ -211,7 +212,7 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
     isNativeMacMaterial
       ? getSidebarNativeMacTintAlpha(opacity)
       : getSidebarMaterialAlpha(opacity) -
-          (!isNativeMacMaterial && effectiveFrostedBackground ? 0.16 : 0)
+          (isRendererMaterial && effectiveFrostedBackground ? 0.16 : 0)
   );
   const materialClass = `sidebar-glass-material ${glassAttachmentClass}${
     effectiveFrostedBackground ? ' sidebar-glass-material--frosted' : ''
@@ -230,7 +231,7 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
         isNativeMacMaterial
           ? getSidebarNativeMacTintAlpha(nextOpacity)
           : getSidebarMaterialAlpha(nextOpacity) -
-              (!isNativeMacMaterial && effectiveFrostedBackground ? 0.16 : 0)
+              (isRendererMaterial && effectiveFrostedBackground ? 0.16 : 0)
       );
       materialRef.current.style.setProperty('--sidebar-material-alpha', String(nextAlpha));
     };
@@ -239,7 +240,13 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
     return () => {
       window.ledgerIpc?.events?.offSidebarOpacityPreview(handleOpacityPreview);
     };
-  }, [effectiveFrostedBackground, isAttachedRendererMaterial, isNativeMacMaterial, transparencyOverrideActive]);
+  }, [
+    effectiveFrostedBackground,
+    isAttachedRendererMaterial,
+    isNativeMacMaterial,
+    isRendererMaterial,
+    transparencyOverrideActive,
+  ]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || !materialRef.current) return;

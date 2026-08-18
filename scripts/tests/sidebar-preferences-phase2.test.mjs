@@ -171,7 +171,7 @@ test('native failure is session-sticky and does not retry on ordinary lifecycle 
 test('attached renderer frost changes only tint alpha and blur, never floating or native modes', () => {
   assert.match(container, /isAttachedRendererMaterial/);
   assert.match(container, /getSidebarMaterialAlpha\(opacity\) -/);
-  assert.match(container, /\? 0\.05 : 0/);
+  assert.match(container, /isRendererMaterial && effectiveFrostedBackground \? 0\.16 : 0/);
   assert.match(container, /sidebar-glass-material--blur/);
   assert.match(container, /materialEngine === 'renderer'/);
   assert.match(container, /__LEDGER_SIDEBAR_MATERIAL_DIAGNOSTICS__/);
