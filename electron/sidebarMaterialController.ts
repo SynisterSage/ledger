@@ -24,7 +24,8 @@ const getWindows10AcrylicBridge = () => {
   try {
     const bridge = require('electron-acrylic-window') as Partial<Windows10AcrylicBridge>;
     windows10AcrylicBridge = typeof bridge.setVibrancy === 'function' ? bridge as Windows10AcrylicBridge : null;
-  } catch {
+  } catch (error) {
+    console.warn('[electron][sidebar][material] Windows 10 Acrylic bridge unavailable', error);
     windows10AcrylicBridge = null;
   }
   return windows10AcrylicBridge;
@@ -154,8 +155,8 @@ export class SidebarMaterialController {
     return this.visualEffectStateOverride ?? this.macVisualEffectStateFromEnvironment();
   }
 
-  private isWindows10AcrylicPath() {
-    if (this.platform !== 'win32' || getWindows10AcrylicBridge() === null) return false;
+  private isWindows10AcrylicOsSupported() {
+    if (this.platform !== 'win32') return false;
     const version = process.getSystemVersion().split('.');
     const build = Number(version[2]);
     return Number.isFinite(build) && build >= 16299 && build < SIDEBAR_MATERIAL_SUPPORT_MATRIX.windowsBuild;
@@ -292,7 +293,7 @@ export class SidebarMaterialController {
       windowsBuild >= SIDEBAR_MATERIAL_SUPPORT_MATRIX.windowsBuild &&
       electronSupported &&
       typeof win?.setBackgroundMaterial === 'function';
-    const windows10AcrylicSupported = this.isWindows10AcrylicPath();
+    const windows10AcrylicSupported = this.isWindows10AcrylicOsSupported();
     return {
       nativeMacSupported:
         this.platform === 'darwin' &&
@@ -398,11 +399,10 @@ export class SidebarMaterialController {
       } else if (resolution.resolvedEngine === 'native-windows-mica-alt') {
         win.setBackgroundMaterial('tabbed');
       } else if (resolution.resolvedEngine === 'native-windows-acrylic') {
-        if (
-          this.platform === 'win32' &&
-          this.isWindows10AcrylicPath()
-        ) {
-          getWindows10AcrylicBridge()?.setVibrancy(win, {
+        if (this.isWindows10AcrylicOsSupported()) {
+          const bridge = getWindows10AcrylicBridge();
+          if (!bridge) throw new Error('windows10-acrylic-bridge-unavailable');
+          bridge.setVibrancy(win, {
             theme: '#161618dd',
             effect: 'acrylic',
             disableOnBlur: false,
@@ -441,7 +441,8 @@ export class SidebarMaterialController {
         ...this.macDiagnostics(),
       };
       return this.snapshot;
-    } catch {
+    } catch (error) {
+      console.warn('[electron][sidebar][material] native material apply failed', error);
       this.failedNativeEngines.add(resolution.requestedEngine);
       try {
         this.clearNativeMaterial(win);
