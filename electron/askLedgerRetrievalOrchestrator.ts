@@ -3,6 +3,7 @@ import type { AskLedgerGraphExpansionDiagnostics, AskLedgerIntegrationDiagnostic
 import { buildRetrievalPlan, type RetrievalPlan } from './askLedgerRetrievalPlan.ts';
 import { LedgerRetrievalService, type LedgerRetrievalResult } from './ledgerRetrievalService.ts';
 import { CachedAskLedgerIntegrationRetriever } from './askLedgerIntegrationRetrieval.ts';
+import type { AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 
 export type AskLedgerRetrievalMode = 'quick' | 'research';
 
@@ -60,6 +61,17 @@ export const classifyAskLedgerRetrievalMode = (question: string): AskLedgerRetri
 const addObjective = (objectives: RetrievalObjective[], objective: RetrievalObjective) => {
   if (!objectives.some((candidate) => candidate.id === objective.id)) objectives.push(objective);
 };
+
+type PlanMyWeekQuery = { id: string; label: string; query: string; resourceTypes: AskLedgerResourceType[]; constraints: RetrievalPlan['structuredConstraints'] };
+const planMyWeekQueries: PlanMyWeekQuery[] = [
+  { id: 'week-open-tasks', label: 'Open tasks due this week', query: 'tasks this week', resourceTypes: ['task'] as AskLedgerResourceType[], constraints: { openOnly: true } },
+  { id: 'week-completed-tasks', label: 'Completed tasks due this week', query: 'completed tasks this week', resourceTypes: ['task'] as AskLedgerResourceType[], constraints: { statuses: ['completed', 'complete', 'done', 'finished'] } },
+  { id: 'overdue-tasks', label: 'Overdue open tasks', query: 'overdue open tasks', resourceTypes: ['task'] as AskLedgerResourceType[], constraints: { overdue: true, openOnly: true } },
+  { id: 'today-tasks', label: 'Today tasks', query: 'today tasks', resourceTypes: ['task'] as AskLedgerResourceType[], constraints: { horizon: 'today' as const, openOnly: true } },
+  { id: 'week-milestones', label: 'Milestones due this week', query: 'milestones this week', resourceTypes: ['milestone'] as AskLedgerResourceType[], constraints: {} },
+  { id: 'week-events', label: 'Events this week', query: 'events this week', resourceTypes: ['event'] as AskLedgerResourceType[], constraints: {} },
+  { id: 'week-reminders', label: 'Reminders this week', query: 'reminders this week', resourceTypes: ['reminder'] as AskLedgerResourceType[], constraints: {} },
+];
 
 export const decomposeRetrievalObjectives = (question: string): RetrievalObjective[] => {
   const normalized = normalize(question);
@@ -156,9 +168,67 @@ export class AskLedgerRetrievalOrchestrator {
     this.limits = limits;
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string }): Promise<AskLedgerOrchestrationResult> {
-    const mode = classifyAskLedgerRetrievalMode(question);
-    const searchQuestion = options?.retrievalQuestion?.trim() || question;
+  private async retrievePlanMyWeek(workspaceId: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2], limit: number, options?: { conversationId?: string; boostResourceKeys?: string[]; documents?: AskLedgerContextItem[] }) {
+    const collected = new Map<string, AskLedgerContextItem>();
+    const debug: LedgerRetrievalResult['debug'] = [];
+    const objectives: AskLedgerOrchestrationDiagnostics['objectives'] = [];
+    let retrievalRounds = 0;
+    for (const query of planMyWeekQueries) {
+      if (collected.size >= Math.min(DEFAULT_LIMITS.maxEvidenceResources, limit)) break;
+      retrievalRounds += 1;
+      const basePlan = buildRetrievalPlan(query.query);
+      const plan: RetrievalPlan = {
+        ...basePlan,
+        primaryResourceTypes: [...query.resourceTypes],
+        structuredConstraints: { ...basePlan.structuredConstraints, ...query.constraints, ...(query.constraints.statuses ? { statuses: [...query.constraints.statuses] } : {}) },
+        semanticQuery: query.query,
+        expandRelatedContext: false,
+        retrievalStrategies: { semantic: false, lexical: true, exactEntity: false, structured: true },
+      };
+      const result = await this.retrieval.retrieve(workspaceId, query.query, lexicalResults, Math.min(20, limit), { conversationId: options?.conversationId, boostResourceKeys: options?.boostResourceKeys, plan, skipSemantic: true });
+      const items = [...(result.primaryItems ?? result.items)].filter((item) => item.resourceType === query.resourceTypes[0]);
+      items.forEach((item) => { if (!collected.has(keyFor(item)) && collected.size < Math.min(DEFAULT_LIMITS.maxEvidenceResources, limit)) collected.set(keyFor(item), item); });
+      debug.push(...result.debug.map((candidate) => ({ ...candidate, why: [`objective:${query.id}`, ...candidate.why] })));
+      objectives.push({ id: query.id, resourceTypes: [...query.resourceTypes], dependsOn: [], strategy: 'structured', graphExpansion: false, status: items.length ? 'found' : 'not_found', resourcesCollected: items.length });
+    }
+    const items = [...collected.values()].sort((left, right) => {
+      const leftClosed = ['completed', 'complete', 'done', 'finished', 'cancelled', 'canceled'].includes(String(left.status ?? '').toLowerCase()) ? 1 : 0;
+      const rightClosed = ['completed', 'complete', 'done', 'finished', 'cancelled', 'canceled'].includes(String(right.status ?? '').toLowerCase()) ? 1 : 0;
+      if (leftClosed !== rightClosed) return leftClosed - rightClosed;
+      return Date.parse(left.dueAt ?? left.timestamp ?? left.updatedAt ?? '') - Date.parse(right.dueAt ?? right.timestamp ?? right.updatedAt ?? '');
+    });
+    const provenance = items.map((item) => ({ resourceKey: keyFor(item), objectiveId: planMyWeekQueries.find((query) => query.resourceTypes.includes(item.resourceType))?.id ?? 'plan-my-week', path: [keyFor(item)] }));
+    return {
+      items,
+      debug: debug.slice(0, limit),
+      primaryItems: items,
+      relatedItems: [],
+      relatedCandidateCount: 0,
+      mode: 'research' as const,
+      orchestration: {
+        mode: 'research' as const,
+        objectives,
+        retrievalRounds,
+        discoveredEntities: [],
+        coverage: Object.fromEntries([...new Set(planMyWeekQueries.map((query) => resourceCategory(query.resourceTypes[0])))].map((category) => [category, items.some((item) => resourceCategory(item.resourceType) === category) ? 'found' : 'not_found'])) as AskLedgerOrchestrationDiagnostics['coverage'],
+        resourcesCollected: items.length,
+        resourcesDiscarded: Math.max(0, debug.length - items.length),
+        stopReason: 'objectives_satisfied' as const,
+        provenance,
+      },
+    };
+  }
+
+  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId }): Promise<AskLedgerOrchestrationResult> {
+    if (options?.skillId === 'plan_my_week') return this.retrievePlanMyWeek(workspaceId, lexicalResults, limit, options) as Promise<AskLedgerOrchestrationResult>;
+    const skillSeedQuestion = options?.skillId === 'project_health_check'
+      ? 'Look through the project work and tell me what is happening, blocked, and what still needs to happen.'
+      : options?.skillId === 'meeting_follow_up' || options?.skillId === 'prepare_for_meeting'
+        ? 'Look through the meetings and connected context, decisions, follow-ups, projects, tasks, and reminders.'
+        : undefined;
+    const orchestrationQuestion = skillSeedQuestion ?? question;
+    const mode = classifyAskLedgerRetrievalMode(orchestrationQuestion);
+    const searchQuestion = skillSeedQuestion || options?.retrievalQuestion?.trim() || orchestrationQuestion;
     if (mode === 'quick') {
       const plan = buildRetrievalPlan(question);
       const resolvedProjectIds = (options?.resolvedResourceKeys ?? []).filter((key) => key.startsWith('project:')).map((key) => key.slice('project:'.length));
@@ -174,7 +244,12 @@ export class AskLedgerRetrievalOrchestrator {
     }
 
     const limits = { ...DEFAULT_LIMITS, ...this.limits };
-    const objectives = decomposeRetrievalObjectives(question).slice(0, limits.maxObjectives);
+    const objectives = decomposeRetrievalObjectives(orchestrationQuestion).slice(0, limits.maxObjectives);
+    if (options?.skillId === 'project_health_check' || options?.skillId === 'meeting_follow_up' || options?.skillId === 'prepare_for_meeting') {
+      // The selected resource ID is the authoritative seed. Synthetic skill
+      // wording must not turn words such as "project work" into a title filter.
+      objectives.forEach((objective) => { objective.entityQuery = undefined; });
+    }
     const corpus = options?.documents ?? (typeof this.retrieval.indexedResources === 'function' ? this.retrieval.indexedResources(workspaceId, options?.conversationId) : []);
     const collected = new Map<string, AskLedgerContextItem>();
     const provenance = new Map<string, { objectiveId: string; path: string[] }>();

@@ -332,7 +332,7 @@ export class LedgerRetrievalService {
     await this.index.shutdown();
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[] }): Promise<LedgerRetrievalResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[]; skipSemantic?: boolean }): Promise<LedgerRetrievalResult> {
     const documents = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
     const resourceDocuments = this.index.resourceDocuments(workspaceId, options?.conversationId);
     const plan = options?.plan;
@@ -400,7 +400,7 @@ export class LedgerRetrievalService {
     const scopedPrimaryKeys = new Set(scopedPrimary.map((document) => `${document.resourceType}:${document.resourceId}`));
     const lexicalByResource = new Map(lexicalResults.map((result, position) => [`${result.type}:${result.id}`, { result, position }]));
     let queryVector: number[] | undefined;
-    if (this.provider && documents.some((document) => document.embedding)) {
+    if (!options?.skipSemantic && this.provider && documents.some((document) => document.embedding)) {
       try { queryVector = (await this.provider.embed([formatEmbeddingInput(question, 'query', this.provider.model)]))[0]; } catch { queryVector = undefined; }
     }
     const questionTokens = tokenize(question);

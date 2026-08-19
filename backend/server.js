@@ -21938,6 +21938,15 @@ const sanitizeAskLedgerSessionMessages = (value) => {
   }).filter((message) => message && (message.content || message.skillId));
 };
 
+const sanitizeAskLedgerHandoff = (value) => {
+  if (!value || typeof value !== 'object' || value.kind !== 'overview_focus') return null;
+  const insights = Array.isArray(value.insights) ? value.insights.slice(0, 3).filter((item) => item && typeof item.title === 'string' && typeof item.summary === 'string').map((item) => ({ title: clampText(item.title, 120), summary: clampText(item.summary, 300) })) : [];
+  const resourceRefs = Array.isArray(value.resourceRefs) ? value.resourceRefs.slice(0, 16).filter((item) => item && typeof item.resourceType === 'string' && typeof item.resourceId === 'string').map((item) => ({ resourceType: clampText(item.resourceType, 40), resourceId: clampText(item.resourceId, 200), title: clampText(item.title, 200) || 'Ledger resource' })) : [];
+  const workspaceId = clampText(value.workspaceId, 200);
+  const overviewDate = clampText(value.overviewDate, 80);
+  return workspaceId && overviewDate ? { kind: 'overview_focus', workspaceId, overviewDate, insights, resourceRefs } : null;
+};
+
 const mapAskLedgerSession = (row) => ({
   id: row.id,
   workspaceId: row.workspace_id,
@@ -21951,6 +21960,7 @@ const mapAskLedgerSession = (row) => ({
     resourceType: String(row.initial_context.resourceType ?? ''),
     resourceId: clampText(row.initial_context.resourceId, 200),
     title: clampText(row.initial_context.title, 300),
+    ...(sanitizeAskLedgerHandoff(row.initial_context.handoff) ? { handoff: sanitizeAskLedgerHandoff(row.initial_context.handoff) } : {}),
   } } : {}),
   ...(row.summary ? { summary: row.summary } : {}),
 });
@@ -22104,6 +22114,7 @@ app.post('/api/workspaces/:workspaceId/ask-ledger/sessions', authMiddleware, rat
         resourceType: clampText(req.body.initialContext.resourceType, 40),
         resourceId: clampText(req.body.initialContext.resourceId, 200),
         title: clampText(req.body.initialContext.title, 300),
+        ...(sanitizeAskLedgerHandoff(req.body.initialContext.handoff) ? { handoff: sanitizeAskLedgerHandoff(req.body.initialContext.handoff) } : {}),
       } : null,
       skill_id: isAskLedgerSkillRef(req.body?.skillId) ? String(req.body.skillId) : null,
     }).select('id, workspace_id, user_id, title, messages, summary, initial_context, skill_id, created_at, updated_at').single();
@@ -22132,6 +22143,7 @@ app.patch('/api/workspaces/:workspaceId/ask-ledger/sessions/:sessionId', authMid
       resourceType: clampText(req.body.initialContext.resourceType, 40),
       resourceId: clampText(req.body.initialContext.resourceId, 200),
       title: clampText(req.body.initialContext.title, 300),
+      ...(sanitizeAskLedgerHandoff(req.body.initialContext.handoff) ? { handoff: sanitizeAskLedgerHandoff(req.body.initialContext.handoff) } : {}),
     } : null;
     if (req.body?.skillId !== undefined) updates.skill_id = isAskLedgerSkillRef(req.body.skillId) ? String(req.body.skillId) : null;
     const result = await supabase.from('ask_ledger_sessions').update(updates).eq('id', sessionId).eq('workspace_id', workspaceId).eq('user_id', req.authUser.id).select('id, workspace_id, user_id, title, messages, summary, initial_context, skill_id, created_at, updated_at').maybeSingle();

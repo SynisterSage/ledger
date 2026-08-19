@@ -53,6 +53,44 @@ test('keeps narrow questions on the quick retrieval path', async () => {
   ]);
 });
 
+test('plan my week uses structured weekly, overdue, and completion task scopes', async () => {
+  const now = new Date();
+  const day = new Date(now); day.setHours(0, 0, 0, 0);
+  const start = new Date(day); start.setDate(start.getDate() - start.getDay());
+  const date = (offset: number) => { const value = new Date(start); value.setDate(value.getDate() + offset); return value.toISOString().slice(0, 10); };
+  const openThisWeek = item({ resourceType: 'task', resourceId: 'task-open-week', title: 'Prepare presentation', content: '', dueAt: date(3), status: 'todo' });
+  const completedThisWeek = item({ resourceType: 'task', resourceId: 'task-done-week', title: 'Finish outline', content: '', dueAt: date(1), status: 'completed' });
+  const overdue = item({ resourceType: 'task', resourceId: 'task-overdue', title: 'Resolve overdue issue', content: '', dueAt: date(-4), status: 'todo' });
+  const longPast = item({ resourceType: 'task', resourceId: 'task-old', title: 'Old completed work', content: '', dueAt: date(-30), status: 'completed' });
+  const { orchestrator, index } = await buildOrchestrator([openThisWeek, completedThisWeek, overdue, longPast]);
+  const result = await orchestrator.retrieve('workspace-a', '', [], 32, { documents: [openThisWeek, completedThisWeek, overdue, longPast], skillId: 'plan_my_week' });
+  assert.equal(result.mode, 'research');
+  assert.ok(result.items.some((entry) => entry.resourceId === 'task-open-week'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'task-done-week'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'task-overdue'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-old'), false);
+  assert.equal(result.orchestration.objectives.find((objective) => objective.id === 'week-open-tasks')?.strategy, 'structured');
+  await index.shutdown();
+});
+
+test('context-bound health and meeting skills expand their selected seeds', async () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-health', title: 'Alfa', content: 'In progress.', relationships: [{ relationshipType: 'has_task', resourceType: 'task', resourceId: 'task-health' }] });
+  const task = item({ resourceType: 'task', resourceId: 'task-health', title: 'Resolve final proof', content: 'Blocked by review.', projectId: 'project-health', status: 'Open' });
+  const event = item({ resourceType: 'event', resourceId: 'event-health', title: 'Alfa review meeting', content: 'Review open work.', relationships: [{ relationshipType: 'linked_note', resourceType: 'note', resourceId: 'note-health' }] });
+  const note = item({ resourceType: 'note', resourceId: 'note-health', title: 'Alfa review notes', content: 'Follow up on final proof.', relationships: [{ relationshipType: 'linked_event', resourceType: 'event', resourceId: 'event-health' }] });
+  const documents = [project, task, event, note];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const health = await orchestrator.retrieve('workspace-a', '', [], 20, { documents, skillId: 'project_health_check', boostResourceKeys: ['project:project-health'] });
+  assert.equal(health.mode, 'research');
+  assert.ok(health.items.some((entry) => entry.resourceId === 'project-health'));
+  assert.ok(health.items.some((entry) => entry.resourceId === 'task-health'));
+  const meeting = await orchestrator.retrieve('workspace-a', '', [], 20, { documents, skillId: 'meeting_follow_up', boostResourceKeys: ['event:event-health'] });
+  assert.equal(meeting.mode, 'research');
+  assert.ok(meeting.items.some((entry) => entry.resourceId === 'event-health'));
+  assert.ok(meeting.items.some((entry) => entry.resourceId === 'note-health'));
+  await index.shutdown();
+});
+
 test('records missing categories while preserving found evidence', async () => {
   const project = item({ resourceType: 'project', resourceId: 'project-alfa', title: 'Alfa', content: 'Project status.' });
   const { orchestrator, index } = await buildOrchestrator([project]);

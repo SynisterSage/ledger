@@ -85,6 +85,15 @@ const emptyStructuredAnswer = (kind: string) => {
   return `I couldn't find any matching ${label} in this workspace.`;
 };
 
+const overviewFocusHandoff = (context?: AskLedgerInitialContext) => context?.handoff?.kind === 'overview_focus' ? context.handoff : undefined;
+const overviewFocusHandoffText = (context?: AskLedgerInitialContext) => {
+  const handoff = overviewFocusHandoff(context);
+  if (!handoff) return '';
+  const insights = handoff.insights.map((insight) => `- ${insight.title}: ${insight.summary}`).join('\n');
+  const resources = handoff.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId} (${resource.title})`).join(', ');
+  return `Overview Focus handoff for ${handoff.overviewDate}.\nSurfaced insights:\n${insights || '- none'}\nRelated Ledger resources: ${resources || 'none'}`;
+};
+
 const formatPlanMyWeekFallback = (items: AskLedgerContextItem[]) => {
   const uniqueItems = [...new Map(items.map((item) => [`${item.resourceType}:${item.resourceId}`, item])).values()];
   const actionable = uniqueItems.filter((item) => ['task', 'milestone', 'reminder', 'event'].includes(item.resourceType));
@@ -316,6 +325,7 @@ export class AskLedgerService {
       request.question,
       skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
       request.conversation?.initialContext ? `Current Ledger context: ${request.conversation.initialContext.title}` : '',
+      overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext),
       ...(request.conversation?.recentExchanges ?? []).slice(-2).flatMap((exchange) => [
         exchange.question ? `Recent question: ${exchange.question.slice(0, 600)}` : '',
         exchange.sources?.length ? `Recent sources: ${exchange.sources.slice(0, 6).map((source) => source.title).join('; ')}` : '',
@@ -328,7 +338,8 @@ export class AskLedgerService {
       conversationId: request.conversation?.id,
       documents: request.documents,
       retrievalQuestion,
-      boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...conversationResolution.resourceKeys],
+      skillId: skill?.id,
+      boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys],
       resolvedResourceKeys: conversationResolution.resourceKeys,
     });
     const allowedItems = skill ? retrieval.items.filter((item) => skill.allowedContextTypes.includes(item.resourceType)) : retrieval.items;
@@ -364,7 +375,7 @@ export class AskLedgerService {
     return {
       caseId: request.caseId,
       prompt: buildAskLedgerPrompt({
-        question: request.question,
+        question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'),
         context: normalized,
         primaryContext: retrieval.primaryItems,
         supportingContext: retrieval.relatedItems,
@@ -498,7 +509,7 @@ export class AskLedgerService {
         const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: 'quick' });
         activeGenerationDepth = generationDepth;
         this.localAI.start(
-          { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, recentConversation: request.conversation, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
+          { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, recentConversation: request.conversation, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
           { onEvent: emit },
           requestId,
         );
@@ -513,6 +524,7 @@ export class AskLedgerService {
         request.question,
         skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
         request.conversation?.initialContext ? `Current Ledger context: ${request.conversation.initialContext.title}` : '',
+        overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext),
         ...(request.conversation?.recentExchanges ?? []).slice(-2).flatMap((exchange) => [
           exchange.question ? `Recent question: ${exchange.question.slice(0, 600)}` : '',
           exchange.sources?.length ? `Recent sources: ${exchange.sources.slice(0, 6).map((source) => source.title).join('; ')}` : '',
@@ -528,7 +540,8 @@ export class AskLedgerService {
         conversationId: request.conversation?.id,
         documents: request.documents,
         retrievalQuestion,
-        boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...conversationResolution.resourceKeys],
+        skillId: skill?.id,
+        boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys],
         resolvedResourceKeys: conversationResolution.resourceKeys,
       });
       retrievalMs = Date.now() - retrievalStartedAt;
@@ -556,7 +569,11 @@ export class AskLedgerService {
           .slice(0, 3)
         : [];
       const selectedRetrievalItems = retrieval.mode === 'research'
-        ? skillItems
+        ? skill?.id === 'meeting_follow_up' || skill?.id === 'prepare_for_meeting'
+          ? expandMeetingContext(explicitItem, skillItems, request.documents)
+          : skill?.id === 'project_health_check'
+            ? expandRelatedProjectContext(skillItems, request.documents)
+            : skillItems
         : retrieval.primaryItems?.length
         ? [...retrieval.primaryItems, ...(retrieval.relatedItems ?? [])]
         : continuationItems.length
@@ -789,7 +806,7 @@ export class AskLedgerService {
             },
           };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
+        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
         generationCallbacks,
         requestId,
       );

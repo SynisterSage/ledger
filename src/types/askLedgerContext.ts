@@ -54,6 +54,13 @@ export type AskLedgerInitialContext = {
   resourceType: AskLedgerResourceType;
   resourceId: string;
   title: string;
+  handoff?: {
+    kind: 'overview_focus';
+    workspaceId: string;
+    overviewDate: string;
+    insights: Array<{ title: string; summary: string }>;
+    resourceRefs: Array<{ resourceType: AskLedgerResourceType; resourceId: string; title: string }>;
+  };
 };
 
 export type AskLedgerContextItem = {

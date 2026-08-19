@@ -35,6 +35,7 @@ import {
   Zap,
   UserRound,
   UserCheck,
+  RefreshCw,
   X,
   Users,
 } from 'lucide-react';
@@ -97,6 +98,9 @@ import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { NewTabWindow } from './components/Common/NewTabWindow';
 import { PageFindBar } from './components/Common/PageFindBar';
+import { buildOverviewFocusSnapshot, getOverviewFocusPrimaryResource, type OverviewFocusResult, type OverviewFocusSnapshot } from './types/overviewFocus';
+import { openAskLedgerWithContext } from './components/Common/askLedgerContext';
+import type { AskLedgerInitialContext } from './types/askLedgerContext';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
 import { McpAuthorizationPage } from './components/Integrations/McpAuthorizationPage';
 import { McpScopeUpgradeAuthorizationPage } from './components/Integrations/McpScopeUpgradeAuthorizationPage';
@@ -1366,10 +1370,12 @@ const dashboardCache = new Map<
 export function DashboardContent({
   browserMode = false,
   initialSection,
+  initialFocusTaskId,
   onBrowserClose,
 }: {
   browserMode?: boolean;
   initialSection?: 'all' | 'assigned' | 'today' | 'projects' | 'notes';
+  initialFocusTaskId?: string | null;
   onBrowserClose?: () => void;
 } = {}) {
   const { user } = useAuthContext();
@@ -1526,6 +1532,13 @@ export function DashboardContent({
     }>
   >([]);
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
+  const [overviewFocusStatus, setOverviewFocusStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable' | 'error'>('idle');
+  const [overviewFocusResult, setOverviewFocusResult] = useState<OverviewFocusResult | null>(null);
+  const [overviewFocusRefreshToken, setOverviewFocusRefreshToken] = useState(0);
+  const overviewFocusRequestRef = useRef(0);
+  const overviewFocusInFlightRef = useRef(false);
+  const overviewFocusQueuedKeyRef = useRef<string | null>(null);
+  const overviewFocusSnapshotKeyRef = useRef('');
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [githubAttention, setGithubAttention] = useState<
@@ -1887,6 +1900,92 @@ export function DashboardContent({
     setNoteProjectLinks(cached.state.noteProjectLinks as typeof noteProjectLinks);
     setFollowUpTasks(cached.state.followUpTasks as typeof followUpTasks);
   };
+
+  const overviewFocusSnapshot = useMemo<OverviewFocusSnapshot | null>(() => {
+    if (!activeWorkspaceId) return null;
+    return buildOverviewFocusSnapshot(activeWorkspaceId, {
+      todayTasks: todayTasks as Array<Record<string, unknown>>,
+      workspaceTasks: workspaceTasks as Array<Record<string, unknown>>,
+      projects: projects as Array<Record<string, unknown>>,
+      events: upcoming as Array<Record<string, unknown>>,
+      reminders: upcomingReminders as Array<Record<string, unknown>>,
+      notes: notes as Array<Record<string, unknown>>,
+      currentUserId: user?.id,
+    });
+  }, [activeWorkspaceId, notes, projects, todayTasks, upcoming, upcomingReminders, user?.id, workspaceTasks]);
+
+  const overviewFocusSnapshotKey = useMemo(() => {
+    if (!overviewFocusSnapshot) return '';
+    return JSON.stringify({ ...overviewFocusSnapshot, generatedAt: '' });
+  }, [overviewFocusSnapshot]);
+  overviewFocusSnapshotKeyRef.current = overviewFocusSnapshotKey;
+
+  const refreshOverviewFocus = useCallback(() => {
+    setOverviewFocusRefreshToken((current) => current + 1);
+  }, []);
+
+  useEffect(() => {
+    overviewFocusRequestRef.current += 1;
+    overviewFocusQueuedKeyRef.current = null;
+    setOverviewFocusResult(null);
+    setOverviewFocusStatus('idle');
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (browserMode || !activeWorkspaceId || isLoadingDashboard || !overviewFocusSnapshot || !overviewFocusSnapshotKey) {
+      if (browserMode || !activeWorkspaceId) {
+        setOverviewFocusResult(null);
+        setOverviewFocusStatus('idle');
+      }
+      return;
+    }
+
+    if (overviewFocusInFlightRef.current) {
+      overviewFocusQueuedKeyRef.current = overviewFocusSnapshotKey;
+      setOverviewFocusStatus('loading');
+      return;
+    }
+
+    const requestGeneration = overviewFocusRequestRef.current + 1;
+    overviewFocusRequestRef.current = requestGeneration;
+    overviewFocusInFlightRef.current = true;
+    let cancelled = false;
+    setOverviewFocusStatus('loading');
+
+    const generate = async () => {
+      try {
+        const localAIStatus = await window.askLedger?.localAIStatus();
+        if (cancelled || requestGeneration !== overviewFocusRequestRef.current) return;
+        const generation = (localAIStatus as { generation?: { installed?: boolean; state?: string } } | undefined)?.generation;
+        if (generation && generation.installed === false && generation.state !== 'downloading' && generation.state !== 'verifying') {
+          setOverviewFocusStatus('unavailable');
+          return;
+        }
+        if (!window.askLedger?.generateOverviewFocus) {
+          setOverviewFocusStatus('unavailable');
+          return;
+        }
+        const result = await window.askLedger.generateOverviewFocus(overviewFocusSnapshot);
+        if (cancelled || requestGeneration !== overviewFocusRequestRef.current) return;
+        const insights = Array.isArray(result?.insights) ? result.insights : [];
+        setOverviewFocusResult({ insights: insights as OverviewFocusResult['insights'] });
+        setOverviewFocusStatus('ready');
+      } catch {
+        if (!cancelled && requestGeneration === overviewFocusRequestRef.current) setOverviewFocusStatus('error');
+      } finally {
+        overviewFocusInFlightRef.current = false;
+        if (overviewFocusQueuedKeyRef.current && overviewFocusQueuedKeyRef.current !== overviewFocusSnapshotKeyRef.current) {
+          overviewFocusQueuedKeyRef.current = null;
+          setOverviewFocusRefreshToken((current) => current + 1);
+        }
+      }
+    };
+
+    void generate();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, browserMode, isLoadingDashboard, overviewFocusRefreshToken, overviewFocusSnapshotKey]);
 
   useEffect(() => {
     if (!activeWorkspaceId || !hasLoadedDashboardRef.current || isLoadingDashboard) return;
@@ -4226,6 +4325,42 @@ export function DashboardContent({
     void window.desktopWindow?.openModule(kind, focus);
   };
 
+  const openOverviewFocusResource = (resource: { type: 'task' | 'project' | 'event' | 'note'; id: string }) => {
+    if (!overviewFocusSnapshot) return;
+    const primary = getOverviewFocusPrimaryResource({ id: 'focus', title: '', summary: '', importance: 'normal', resourceRefs: [resource] }, overviewFocusSnapshot);
+    if (!primary) return;
+    if (primary.type === 'project') openModule('projects', { kind: 'projects', focusProjectId: primary.id });
+    else if (primary.type === 'note') openModule('notes', { kind: 'notes', focusNoteId: primary.id });
+    else if (primary.type === 'event') openModule('calendar', { kind: 'calendar', focusContext: `focus-event:${primary.id}` });
+    else void window.desktopWindow?.openModule('dashboard', { kind: 'dashboard', focusTaskId: primary.id });
+  };
+
+  const askLedgerAboutToday = () => {
+    if (!activeWorkspaceId) return;
+    const insightRefs = overviewFocusResult?.insights.flatMap((insight) => insight.resourceRefs).filter((ref, index, refs) => refs.findIndex((candidate) => candidate.type === ref.type && candidate.id === ref.id) === index) ?? [];
+    const snapshotResources = [
+      ...((overviewFocusSnapshot?.tasks ?? []).map((item) => ({ resourceType: 'task' as const, resourceId: item.id, title: item.title }))),
+      ...((overviewFocusSnapshot?.projects ?? []).map((item) => ({ resourceType: 'project' as const, resourceId: item.id, title: item.title }))),
+      ...((overviewFocusSnapshot?.events ?? []).map((item) => ({ resourceType: 'event' as const, resourceId: item.id, title: item.title }))),
+      ...((overviewFocusSnapshot?.recentNotes ?? []).map((item) => ({ resourceType: 'note' as const, resourceId: item.id, title: item.title }))),
+    ];
+    const refs = insightRefs.map((ref) => snapshotResources.find((resource) => resource.resourceType === ref.type && resource.resourceId === ref.id)).filter((resource): resource is typeof snapshotResources[number] => Boolean(resource));
+    const primary = refs[0] ?? snapshotResources[0];
+    const context: AskLedgerInitialContext = {
+      resourceType: primary?.resourceType ?? 'external',
+      resourceId: primary?.resourceId ?? `overview:${activeWorkspaceId}`,
+      title: primary?.title ?? 'Today\'s Overview',
+      handoff: {
+        kind: 'overview_focus',
+        workspaceId: activeWorkspaceId,
+        overviewDate: todayKey(),
+        insights: (overviewFocusResult?.insights ?? []).slice(0, 3).map((insight) => ({ title: insight.title, summary: insight.summary })),
+        resourceRefs: refs.slice(0, 16),
+      },
+    };
+    openAskLedgerWithContext(context);
+  };
+
   const openContextMenu = (
     event: { preventDefault: () => void; clientX: number; clientY: number },
     menu:
@@ -5335,6 +5470,12 @@ export function DashboardContent({
         .map((row) => [row.id, row])
     ).values()
   );
+
+  useEffect(() => {
+    if (!initialFocusTaskId) return;
+    const target = visibleOverviewRows.find((row) => row.kind === 'task' && row.sourceId === initialFocusTaskId);
+    if (target) setSelectedOverviewRowId(target.id);
+  }, [initialFocusTaskId, visibleOverviewRows]);
 
   const getOverviewCustomGroup = (row: OverviewRow) => {
     const groupBy = overviewLayoutPreferences.groupBy;
@@ -7174,6 +7315,68 @@ export function DashboardContent({
                           ))}
                       </div>
                     </div>
+                    {!browserMode ? <section className="border-t border-[color:var(--ledger-border-subtle)] pt-3" aria-labelledby="overview-focus-heading">
+                      <div className="flex items-center justify-between gap-2">
+                        <p id="overview-focus-heading" className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                          Focus
+                        </p>
+                        <button
+                          type="button"
+                          onClick={refreshOverviewFocus}
+                          disabled={overviewFocusStatus === 'loading'}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)] disabled:cursor-wait disabled:opacity-60"
+                          aria-label="Refresh Focus"
+                          title="Refresh Focus"
+                        >
+                          <RefreshCw size={12} className={overviewFocusStatus === 'loading' ? 'animate-spin' : ''} />
+                        </button>
+                      </div>
+                      {overviewFocusStatus === 'loading' && !overviewFocusResult ? (
+                        <div className="mt-2 space-y-2" aria-label="Loading Focus">
+                          <div className="h-3 w-4/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+                          <div className="h-2.5 w-full animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+                          <div className="h-3 w-3/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+                        </div>
+                      ) : overviewFocusStatus === 'unavailable' ? (
+                        <div className="mt-1.5">
+                          <p className="text-[12px] leading-5 text-[var(--ledger-text-muted)]">Set up local AI to enable Focus.</p>
+                          <button
+                            type="button"
+                            className="mt-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] underline decoration-[color:var(--ledger-border-subtle)] underline-offset-2 hover:text-[var(--ledger-text-primary)]"
+                            onClick={() => {
+                              void window.askLedger?.downloadLocalAI('generation');
+                            }}
+                          >
+                            Set up AI →
+                          </button>
+                        </div>
+                      ) : overviewFocusStatus === 'error' ? (
+                        <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">Focus is unavailable right now.</p>
+                      ) : overviewFocusResult?.insights.length ? (
+                        <div className="mt-2 space-y-3">
+                          {overviewFocusResult.insights.map((insight) => {
+                            const primaryResource = getOverviewFocusPrimaryResource(insight, overviewFocusSnapshot);
+                            const content = (
+                              <>
+                                <p className="break-words text-left text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]">{insight.title}</p>
+                                <p className="mt-0.5 break-words text-left text-[11px] leading-4 text-[var(--ledger-text-muted)]">{insight.summary}</p>
+                              </>
+                            );
+                            const className = `min-w-0 ${insight.importance === 'attention' ? 'border-l-2 border-[color:var(--ledger-accent)] pl-2' : ''} ${primaryResource ? 'cursor-pointer rounded-md pr-1 transition hover:bg-[var(--ledger-surface-hover)]' : ''}`;
+                            return primaryResource ? (
+                              <button key={insight.id} type="button" className={`block w-full ${className}`} onClick={() => openOverviewFocusResource(primaryResource)} aria-label={`Open ${insight.title}`}>
+                                {content}
+                              </button>
+                            ) : <div key={insight.id} className={className}>{content}</div>;
+                          })}
+                        </div>
+                      ) : (
+                        <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">Nothing currently stands out.</p>
+                      )}
+                      <button type="button" onClick={askLedgerAboutToday} className="mt-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]">
+                        Ask Ledger about today →
+                      </button>
+                    </section> : null}
                     <div className="mt-auto space-y-2 pt-3">
                       {recentNotes[0] && (
                         <div className="border-t border-[color:var(--ledger-border-subtle)] pt-2.5">
@@ -8921,7 +9124,7 @@ export function AppShell({
         case 'team-settings':
           return <TeamSettingsWindow focusContext={activeModuleFocusContext || undefined} />;
         case 'dashboard':
-          return <DashboardContent />;
+          return <DashboardContent initialFocusTaskId={workspaceShellRoute.focusTaskId ?? null} />;
         case 'notifications':
           return <NotificationCenterWindow />;
         case 'inbox':

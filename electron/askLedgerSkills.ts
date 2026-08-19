@@ -36,7 +36,7 @@ const registry: AskLedgerSkillDefinition[] = [
     name: 'Plan my week',
     description: 'Build a grounded plan from current work, deadlines, and calendar context.',
     icon: 'CalendarDays',
-    instructions: 'Review active projects, relevant tasks, deadlines, reminders, calendar context, and recent work. Return a prioritized plan at the requested response depth based only on evidence in Ledger. Do not invent priorities, deadlines, or available time.',
+    instructions: 'Review the structured weekly work, overdue open tasks, completed work in the week, milestones, reminders, and calendar commitments supplied by Ledger. Separate immediate/open work from overdue work, completed work, and upcoming commitments. Return a prioritized plan at the requested response depth based only on the supplied evidence. Do not claim that all workspace tasks were reviewed when the evidence is truncated, do not invent priorities, deadlines, blockers, or available time, and say when a category has no matching records.',
     supportedContextTypes: allWorkspaceContext,
     allowedContextTypes: allWorkspaceContext,
     allowedActions: [],

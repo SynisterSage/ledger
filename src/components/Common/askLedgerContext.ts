@@ -11,7 +11,16 @@ export const decodeAskLedgerContext = (value: string | null | undefined): AskLed
   try {
     const parsed = JSON.parse(decodeURIComponent(value.slice(CONTEXT_PREFIX.length))) as Partial<AskLedgerInitialContext>;
     if (!parsed.resourceType || !parsed.resourceId || !parsed.title) return null;
-    return { resourceType: parsed.resourceType, resourceId: parsed.resourceId, title: parsed.title };
+    const handoff = parsed.handoff && typeof parsed.handoff === 'object' && parsed.handoff.kind === 'overview_focus'
+      ? {
+          kind: 'overview_focus' as const,
+          workspaceId: typeof parsed.handoff.workspaceId === 'string' ? parsed.handoff.workspaceId.slice(0, 200) : '',
+          overviewDate: typeof parsed.handoff.overviewDate === 'string' ? parsed.handoff.overviewDate.slice(0, 80) : '',
+          insights: Array.isArray(parsed.handoff.insights) ? parsed.handoff.insights.slice(0, 3).flatMap((item) => item && typeof item === 'object' && typeof item.title === 'string' && typeof item.summary === 'string' ? [{ title: item.title.slice(0, 120), summary: item.summary.slice(0, 300) }] : []) : [],
+          resourceRefs: Array.isArray(parsed.handoff.resourceRefs) ? parsed.handoff.resourceRefs.slice(0, 16).flatMap((item) => item && typeof item === 'object' && typeof item.resourceType === 'string' && typeof item.resourceId === 'string' && typeof item.title === 'string' ? [{ resourceType: item.resourceType as AskLedgerInitialContext['resourceType'], resourceId: item.resourceId.slice(0, 200), title: item.title.slice(0, 200) }] : []) : [],
+        }
+      : undefined;
+    return { resourceType: parsed.resourceType, resourceId: parsed.resourceId, title: parsed.title, ...(handoff?.workspaceId && handoff.overviewDate ? { handoff } : {}) };
   } catch {
     return null;
   }
@@ -48,4 +57,3 @@ export const openAskLedgerWithContext = (
     window.dispatchEvent(new CustomEvent('ledger:ask-ledger-context', { detail: context }));
   }, 0);
 };
-
