@@ -1313,7 +1313,7 @@ export const useApi = () => {
         request(`/api/workspaces/${workspaceId}/search?q=${encodeURIComponent(query)}`, {
           method: 'POST',
         }),
-      getAskLedgerDocuments: (workspaceId: string, options?: { scope?: string; from?: string; to?: string; openOnly?: boolean; project?: string; taskHorizon?: string; assignedToMe?: boolean }) => {
+      getAskLedgerDocuments: (workspaceId: string, options?: { scope?: string; from?: string; to?: string; openOnly?: boolean; project?: string; taskHorizon?: string; assignedToMe?: boolean; integrationQuery?: string }) => {
         const params = new URLSearchParams();
         if (options?.scope) params.set('scope', options.scope);
         if (options?.from) params.set('from', options.from);
@@ -1322,6 +1322,7 @@ export const useApi = () => {
         if (options?.project) params.set('project', options.project);
         if (options?.taskHorizon) params.set('task_horizon', options.taskHorizon);
         if (options?.assignedToMe) params.set('assigned_to_me', 'true');
+        if (options?.integrationQuery) params.set('integration_query', options.integrationQuery);
         const query = params.toString();
         return request(`/api/workspaces/${workspaceId}/ai-documents${query ? `?${query}` : ''}`);
       },

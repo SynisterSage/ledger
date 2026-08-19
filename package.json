@@ -14,6 +14,7 @@
     "build:windows": "npm run build:apple-calendar && tsc -p tsconfig.json && vite build && electron-builder --win",
     "verify:local-ai-release": "node --env-file=.env.local scripts/verify-local-ai-release.mjs",
     "benchmark:local-ai": "node --experimental-strip-types scripts/run-local-ai-benchmark.mjs",
+    "evaluate:ask-ledger": "node --experimental-strip-types scripts/run-ask-ledger-evaluation.mjs",
     "build:whisper-windows": "powershell -ExecutionPolicy Bypass -File scripts/build-whisper-windows.ps1",
     "build:apple-calendar": "node scripts/build-apple-calendar-bridge.mjs",
     "build:extension": "npm --prefix apps/browser-extension run build",
@@ -94,5 +95,11 @@
   "main": "dist-electron/main.js",
   "optionalDependencies": {
     "electron-acrylic-window": "^0.5.11"
+  },
+  "overrides": {
+    "node-gyp": "^11.2.0",
+    "electron-acrylic-window": {
+      "node-gyp": "^11.2.0"
+    }
   }
 }

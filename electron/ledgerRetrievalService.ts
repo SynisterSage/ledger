@@ -2,10 +2,14 @@ import { createHash } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
+import type { AskLedgerContextItem, AskLedgerRelationshipType } from '../src/types/askLedgerContext.ts';
 import { LocalAIAssetManager, resolveLocalAIRuntime, resolveLocalAIRuntimeVersion } from './localAIAssets.ts';
 import { detectAskLedgerQueryIntent, resourceTypesForAskLedgerIntent } from './askLedgerQueryIntent.ts';
 import { matchesRetrievalScope, resourceDate, type RetrievalPlan } from './askLedgerRetrievalPlan.ts';
+import { expandRelatedContext, type AskLedgerRelationshipLimits } from './askLedgerRelationshipService.ts';
+import type { AskLedgerGraphExpansionDiagnostics } from '../src/types/askLedgerResourceContract.ts';
+import type { AskLedgerHybridRetrievalDiagnostics } from '../src/types/askLedgerResourceContract.ts';
+import { entityMatch, lexicalMatch, scoreHybridCandidate } from './askLedgerHybridScoring.ts';
 
 export type LedgerIndexDocument = AskLedgerContextItem & {
   workspaceId: string;
@@ -37,6 +41,10 @@ export type RetrievalDebugCandidate = {
   title: string;
   why: string[];
   score: number;
+  semanticScore?: number;
+  lexicalScore?: number;
+  exactEntityMatch?: boolean;
+  structuredMatch?: boolean;
 };
 
 export type LedgerRetrievalResult = {
@@ -45,6 +53,8 @@ export type LedgerRetrievalResult = {
   primaryItems?: AskLedgerContextItem[];
   relatedItems?: AskLedgerContextItem[];
   relatedCandidateCount?: number;
+  graphExpansion?: AskLedgerGraphExpansionDiagnostics;
+  hybridRetrieval?: AskLedgerHybridRetrievalDiagnostics;
   plan?: RetrievalPlan;
 };
 
@@ -266,6 +276,16 @@ export class EmbeddingIndexService {
     return [...(this.workspaces.get(workspaceId)?.values() ?? []), ...(conversationId ? [...(this.conversations.get(conversationId)?.values() ?? [])].filter((document) => document.workspaceId === workspaceId) : [])];
   }
 
+  resourceDocuments(workspaceId: string, conversationId?: string) {
+    const seen = new Set<string>();
+    return this.documents(workspaceId, conversationId).filter((document) => {
+      const key = `${document.resourceType}:${document.resourceId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   async shutdown() {
     await this.provider?.shutdown?.();
   }
@@ -302,17 +322,67 @@ export class LedgerRetrievalService {
     return this.index.replaceConversation(conversationId, workspaceId, items);
   }
 
+  indexedResources(workspaceId: string, conversationId?: string) {
+    return this.index.resourceDocuments(workspaceId, conversationId);
+  }
+
   deleteAttachments(conversationId: string, attachmentIds?: string[]) { this.index.deleteConversation(conversationId, attachmentIds); }
 
   async shutdown() {
     await this.index.shutdown();
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan }): Promise<LedgerRetrievalResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[] }): Promise<LedgerRetrievalResult> {
     const documents = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
+    const resourceDocuments = this.index.resourceDocuments(workspaceId, options?.conversationId);
     const plan = options?.plan;
+    const intent = detectAskLedgerQueryIntent(question);
+    const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);
+    const entityProjectIds = new Set(resourceDocuments
+      .filter((document) => document.resourceType === 'project' && plan?.entityQuery && entityMatch(plan.entityQuery, document))
+      .map((document) => document.resourceId));
+    const dateValueFor = (document: AskLedgerContextItem) => document.dueAt ?? document.timestamp ?? document.updatedAt ?? '';
+    const dateOnlyValue = (value: string) => {
+      const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+      return match?.[0] ?? value.slice(0, 10);
+    };
+    const matchesStructuredConstraints = (document: AskLedgerContextItem) => {
+      if (!plan) return true;
+      if (plan.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType)) return false;
+      if (plan.entityQuery) {
+        const directEntityMatch = entityMatch(plan.entityQuery, document);
+        const projectEntityMatch = Boolean(document.projectId && entityProjectIds.has(String(document.projectId)));
+        if (!directEntityMatch && !projectEntityMatch) return false;
+      }
+      if (plan.structuredConstraints.projectIds?.length && document.resourceType !== 'project' && (!document.projectId || !plan.structuredConstraints.projectIds.includes(String(document.projectId)))) return false;
+      if (plan.structuredConstraints.projectIds?.length && document.resourceType === 'project' && !plan.structuredConstraints.projectIds.includes(document.resourceId)) return false;
+      const constraints = plan.structuredConstraints;
+      const closedStatuses = new Set(['completed', 'complete', 'done', 'finished', 'cancelled', 'canceled', 'dismissed']);
+      if (constraints.read !== undefined && document.resourceType === 'notification' && document.read !== constraints.read) return false;
+      if (constraints.teamId && document.teamId !== constraints.teamId && !document.relationships?.some((relationship) => relationship.resourceType === 'team' && relationship.resourceId === constraints.teamId)) return false;
+      if (constraints.sourceLabel && String(document.sourceLabel ?? '').toLowerCase() !== constraints.sourceLabel.toLowerCase()) return false;
+      if (plan.integrationProviders?.length && document.resourceType === 'external' && !plan.integrationProviders.includes(String(document.integrationProvider ?? document.metadata?.provider ?? '').toLowerCase() as never)) return false;
+      if (constraints.attentionOnly) {
+        const priority = String(document.priority ?? document.severity ?? '').toLowerCase();
+        const status = String(document.status ?? '').toLowerCase();
+        const attention = document.resourceType === 'notification' ? document.read === false : Boolean(document.dueAt && Date.parse(document.dueAt) < Date.now() && !closedStatuses.has(status)) || ['high', 'urgent', 'critical', 'blocked'].includes(priority) || ['blocked', 'overdue'].includes(status);
+        if (!attention) return false;
+      }
+      if (constraints.horizon && document.resourceType === 'task' && (document.horizon ?? document.taskHorizon) !== constraints.horizon) return false;
+      const normalizedStatus = String(document.status ?? '').toLowerCase().replace(/[_-]/g, ' ').trim();
+      if (constraints.statuses?.length && !constraints.statuses.includes(normalizedStatus) && !constraints.statuses.includes(normalizedStatus.replace(/ /g, ''))) return false;
+      if (constraints.openOnly && closedStatuses.has(normalizedStatus)) return false;
+      const dueDate = dateValueFor(document);
+      const dueDay = dateOnlyValue(dueDate);
+      if (constraints.overdue) {
+        if (!document.dueAt || !Number.isFinite(Date.parse(document.dueAt)) || Date.parse(document.dueAt) >= Date.now()) return false;
+      }
+      if (constraints.dueAfter && (!dueDay || dueDay < constraints.dueAfter)) return false;
+      if (constraints.dueBefore && (!dueDay || dueDay > constraints.dueBefore)) return false;
+      return true;
+    };
     const scopedPrimary = plan?.primaryResourceTypes.length
-      ? documents.filter((document) => matchesRetrievalScope(document, plan))
+      ? documents.filter((document) => matchesRetrievalScope(document, plan) && matchesStructuredConstraints(document))
       : [];
     const resolvedContainer = plan?.containerQuery
       ? (() => {
@@ -334,46 +404,54 @@ export class LedgerRetrievalService {
       try { queryVector = (await this.provider.embed([formatEmbeddingInput(question, 'query', this.provider.model)]))[0]; } catch { queryVector = undefined; }
     }
     const questionTokens = tokenize(question);
-    const intent = detectAskLedgerQueryIntent(question);
-    const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);
-    const rankedByResource = new Map<string, { document: LedgerIndexDocument; score: number; why: string[] }>();
+    const rankedByResource = new Map<string, { document: LedgerIndexDocument; score: number; why: string[]; semanticScore: number; lexicalScore: number; exactEntityMatch: boolean; structuredMatch: boolean }>();
+    const semanticCandidateKeys = new Set<string>();
+    const lexicalCandidateKeys = new Set<string>();
+    const exactCandidateKeys = new Set<string>();
+    const structuredCandidateKeys = new Set<string>();
+    let candidatesRemovedByResourceType = 0;
+    let candidatesRemovedByStructured = 0;
     documents.forEach((document) => {
-      if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never) && !plan) return;
+      if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never) && !plan) { candidatesRemovedByResourceType += 1; return; }
+      if (plan?.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType)) { candidatesRemovedByResourceType += 1; return; }
       const key = `${document.resourceType}:${document.resourceId}`;
       const lexical = lexicalByResource.get(key);
-      const titleOverlap = [...tokenize(document.title)].filter((token) => questionTokens.has(token)).length;
       const semantic = queryVector && document.embedding ? cosineSimilarity(queryVector, document.embedding) : 0;
-      const lexicalScore = lexical ? 1 - Math.min(0.8, lexical.position / 25) : 0;
-      let score = semantic * 0.62 + lexicalScore * 0.28 + Math.min(0.1, titleOverlap * 0.04);
+      const localLexical = lexicalMatch(question, document);
+      const backendLexicalScore = lexical ? 1 - Math.min(0.8, lexical.position / 25) : 0;
+      const lexicalScore = Math.max(localLexical.score, backendLexicalScore);
+      const exactEntityMatch = Boolean(plan?.retrievalStrategies.exactEntity && entityMatch(plan.entityQuery, document));
+      const structuredMatch = Boolean(plan?.primaryResourceTypes.length && matchesStructuredConstraints(document));
+      if (semantic > 0) semanticCandidateKeys.add(key);
+      if (lexicalScore > 0) lexicalCandidateKeys.add(key);
+      if (exactEntityMatch) exactCandidateKeys.add(key);
+      if (structuredMatch) structuredCandidateKeys.add(key);
+      if (plan?.primaryResourceTypes.length && !matchesStructuredConstraints(document)) candidatesRemovedByStructured += 1;
+      const hybrid = scoreHybridCandidate({
+        semanticScore: semantic,
+        lexicalScore,
+        exactEntityMatch,
+        structuredMatch,
+        explicitContext: options?.boostResourceKeys?.includes(key),
+        authoritativeResource: Boolean((plan?.primaryResourceTypes.includes(document.resourceType)) || (allowedResourceTypes?.includes(document.resourceType as never))),
+      });
+      let score = hybrid.score;
       const why = [
-        ...(lexical ? [`lexical:${lexical.result.match_source ?? 'match'}`] : []),
-        ...(semantic > 0 ? [`semantic:${semantic.toFixed(3)}`] : []),
-        ...(titleOverlap ? ['title'] : []),
+        ...hybrid.reasons,
+        ...(lexical ? [`backend-lexical:${lexical.result.match_source ?? 'match'}`] : []),
+        ...(localLexical.phraseMatch ? ['lexical-phrase-match'] : []),
       ];
       if (options?.boostResourceKeys?.includes(key)) {
-        score += 0.8;
-        why.push('explicit-context');
+        // The centralized scorer owns the explicit-context weight.
       }
       if (plan && scopedPrimaryKeys.has(key)) {
-        score += 1;
         why.push('planned-primary-scope');
-      } else if (plan?.expandRelatedContext && scopedPrimary.some((primary) =>
-        (document.projectId && primary.projectId && document.projectId === primary.projectId)
-        || (document.parentResourceId && document.parentResourceId === primary.resourceId)
-        || (primary.parentResourceId && primary.parentResourceId === document.resourceId)
-        || (primary.resourceType === 'project' && document.projectId === primary.resourceId)
-      )) {
-        score += 0.2;
-        why.push('planned-related-context');
       }
       if (document.resourceType === 'attachment' && options?.conversationId) {
         score += 0.12;
         why.push('conversation-attachment');
       }
-      if (allowedResourceTypes && !['deadlines', 'time_window', 'team_members'].includes(intent.kind)) {
-        score += 0.25;
-        why.push('entity-resource');
-      }
+      if (allowedResourceTypes?.includes(document.resourceType as never)) why.push('resource-type-authority');
       const scheduledAt = document.dueAt ?? document.timestamp;
       const scheduledDate = scheduledAt ? Date.parse(scheduledAt) : NaN;
       const hasScheduledDate = Number.isFinite(scheduledDate);
@@ -496,7 +574,7 @@ export class LedgerRetrievalService {
         }
       }
       const existing = rankedByResource.get(key);
-      if (!existing || score > existing.score) rankedByResource.set(key, { document, score, why });
+      if (!existing || score > existing.score) rankedByResource.set(key, { document, score, why, semanticScore: semantic, lexicalScore, exactEntityMatch, structuredMatch });
     });
     const rankedAll = [...rankedByResource.values()].filter(({ score, why }) => score > 0 || why.length > 0)
       .sort((left, right) => right.score - left.score);
@@ -510,31 +588,48 @@ export class LedgerRetrievalService {
     const selectedPrimary = plan?.primaryResourceTypes.length && scopedPrimaryKeys.size
       ? orderedPrimary.slice(0, Math.min(plan.requestedCount ?? limit, limit))
       : [];
-    const selectedPrimaryKeys = new Set(selectedPrimary.map(({ document }) => `${document.resourceType}:${document.resourceId}`));
-    const relatedCandidates = plan?.expandRelatedContext && selectedPrimary.length
-      ? rankedAll.filter(({ document }) => {
-        const key = `${document.resourceType}:${document.resourceId}`;
-        if (selectedPrimaryKeys.has(key)) return false;
-        const directlyRelated = selectedPrimary.some(({ document: primary }) =>
-          (document.projectId && primary.projectId && document.projectId === primary.projectId)
-          || (document.parentResourceId && document.parentResourceId === primary.resourceId)
-          || (primary.parentResourceId && primary.parentResourceId === document.resourceId)
-          || (primary.resourceType === 'project' && document.projectId === primary.resourceId)
-        );
-        return directlyRelated;
+    const graphExpansion = plan?.expandRelatedContext && selectedPrimary.length
+      ? expandRelatedContext({
+        workspaceId,
+        seeds: selectedPrimary.map(({ document }) => document),
+        corpus: this.index.resourceDocuments(workspaceId, options?.conversationId),
+        maxDepth: 2,
+        allowedRelationshipTypes: options?.graphRelationshipTypes,
+        limits: { maxTotal: Math.max(0, limit - selectedPrimary.length), ...options?.graphLimits },
       })
-      : [];
+      : { items: [], diagnostics: { seedResources: selectedPrimary.map(({ document }) => `${document.resourceType}:${document.resourceId}`), depthCounts: {}, deduplicated: 0, cyclePrevented: 0, truncated: 0, paths: [] } satisfies AskLedgerGraphExpansionDiagnostics };
+    const relatedCandidates = graphExpansion.items.map((document) => {
+      const path = graphExpansion.diagnostics.paths.find((entry) => entry.resourceType === document.resourceType && entry.resourceId === document.resourceId);
+      const edge = path?.path.length && path.path.length > 1 ? path.path[path.path.length - 2] : undefined;
+      return { document, score: 0, why: [`graph-depth:${path?.depth ?? 1}`, edge ? `graph-path:${edge}->${document.resourceType}:${document.resourceId}` : 'graph-related-context'], semanticScore: 0, lexicalScore: 0, exactEntityMatch: false, structuredMatch: false };
+    });
     const relatedRanked = relatedCandidates.slice(0, Math.max(0, limit - selectedPrimary.length));
-    const ranked = selectedPrimary.length
-      ? [...selectedPrimary, ...relatedRanked]
+    // A constrained plan has an authoritative primary type. If that source
+    // is absent, do not silently answer from whatever semantic candidates
+    // happened to score highest (for example, projects for a meeting query).
+    // The caller can then abstain truthfully or use an explicit fallback
+    // policy for the relevant intent.
+    const ranked = plan?.primaryResourceTypes.length
+      ? (selectedPrimary.length ? [...selectedPrimary, ...relatedRanked] : [])
       : rankedAll.slice(0, limit);
 
     return {
       items: ranked.map(({ document }) => ({ ...document, content: document.content })),
-      debug: ranked.map(({ document, score, why }) => ({ resourceType: document.resourceType, resourceId: document.resourceId, title: document.title, score, why })),
+      debug: ranked.map(({ document, score, why, semanticScore, lexicalScore, exactEntityMatch, structuredMatch }) => ({ resourceType: document.resourceType, resourceId: document.resourceId, title: document.title, score, why, semanticScore, lexicalScore, exactEntityMatch, structuredMatch })),
       primaryItems: selectedPrimary.map(({ document }) => ({ ...document, content: document.content })),
       relatedItems: relatedRanked.map(({ document }) => ({ ...document, content: document.content })),
       relatedCandidateCount: relatedCandidates.length,
+      graphExpansion: plan?.expandRelatedContext && selectedPrimary.length ? graphExpansion.diagnostics : undefined,
+      hybridRetrieval: {
+        retrievalStrategies: plan?.retrievalStrategies ?? { semantic: true, lexical: true, exactEntity: true, structured: Boolean(plan?.primaryResourceTypes.length) },
+        candidateCounts: { semantic: semanticCandidateKeys.size, lexical: lexicalCandidateKeys.size, exact: exactCandidateKeys.size, structured: structuredCandidateKeys.size },
+        candidatesRemoved: { resourceType: candidatesRemovedByResourceType, structured: candidatesRemovedByStructured },
+        duplicateCandidateMerges: Math.max(0, documents.length - rankedByResource.size),
+        authoritativeZeroMatches: Boolean(plan?.primaryResourceTypes.length && scopedPrimary.length === 0),
+        finalSeedCount: selectedPrimary.length || (plan?.primaryResourceTypes.length ? 0 : rankedAll.slice(0, limit).length),
+        selectedSeeds: (selectedPrimary.length ? selectedPrimary : rankedAll.slice(0, limit)).map(({ document }) => `${document.resourceType}:${document.resourceId}`),
+        selectionReasons: (selectedPrimary.length ? selectedPrimary : rankedAll.slice(0, limit)).flatMap(({ why }) => why.slice(0, 4)).slice(0, 12),
+      },
       plan: resolvedPlan,
     };
   }

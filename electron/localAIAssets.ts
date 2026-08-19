@@ -16,6 +16,11 @@ const resourcesPath = () => process.resourcesPath;
 export type LocalAIAssetRole = 'generation' | 'embedding';
 export type GenerationTier = 'fast' | 'balanced' | 'powerful';
 export type GenerationModelId = 'qwen3-1.7b-q4-k-m' | 'qwen3-4b-q4-k-m' | 'qwen3-4b-thinking-2507-q6-k';
+export type GenerationTierResolution = {
+  requestedTier: GenerationTier;
+  resolvedTier: GenerationTier;
+  fallbackReason?: 'requested_uninstalled' | 'no_installed_generation_tier';
+};
 export const LEGACY_POWERFUL_MODEL_ID = 'qwen3-8b-q4-k-m' as const;
 export const LEGACY_MINISTRAL_MODEL_ID = 'ministral-3-8b-instruct-q4-k-m' as const;
 export type LocalAIAssetManifest = {
@@ -208,14 +213,21 @@ export class LocalAIAssetManager {
     } catch { return DEFAULT_GENERATION_TIER; }
   }
   getSelectedGenerationTier() {
-    const selected = this.selectedTier();
-    if (selected !== 'powerful') return selected;
-    const powerful = GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'powerful')!;
-    if (this.statusFor(powerful).installed) return selected;
-    const balanced = GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')!;
-    const fallback: GenerationTier = this.statusFor(balanced).installed ? 'balanced' : 'fast';
-    try { fs.writeFileSync(selectionPath(), JSON.stringify({ tier: fallback, migratedFrom: selected, updatedAt: new Date().toISOString() }), { mode: 0o600 }); } catch {}
-    return fallback;
+    return this.getGenerationTierResolution().resolvedTier;
+  }
+  getGenerationTierResolution(): GenerationTierResolution {
+    const requestedTier = this.selectedTier();
+    const requestedModel = GENERATION_MODEL_REGISTRY.find((model) => model.tier === requestedTier)!;
+    if (this.statusFor(requestedModel).installed) return { requestedTier, resolvedTier: requestedTier };
+    const preference: GenerationTier[] = requestedTier === 'powerful'
+      ? ['balanced', 'fast']
+      : requestedTier === 'balanced'
+        ? ['fast']
+        : [];
+    const fallback = preference.find((tier) => this.statusFor(GENERATION_MODEL_REGISTRY.find((model) => model.tier === tier)!).installed);
+    if (!fallback) return { requestedTier, resolvedTier: 'fast', fallbackReason: 'no_installed_generation_tier' };
+    try { fs.writeFileSync(selectionPath(), JSON.stringify({ tier: fallback, migratedFrom: requestedTier, updatedAt: new Date().toISOString() }), { mode: 0o600 }); } catch {}
+    return { requestedTier, resolvedTier: fallback, fallbackReason: 'requested_uninstalled' };
   }
   getSelectedGenerationModel() {
     const selectedTier = this.getSelectedGenerationTier();

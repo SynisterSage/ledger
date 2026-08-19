@@ -22,6 +22,7 @@ export type ReasoningRequestSignals = {
   attachmentCount?: number;
   hasSkill?: boolean;
   routeReason?: string;
+  generationDepth?: 'quick' | 'standard' | 'deep';
 };
 
 export type ReasoningDecision = {
@@ -37,14 +38,15 @@ export type GenerationBudgets = {
 };
 
 export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxTokens: number | undefined, contextSize: number, signals?: ReasoningRequestSignals): GenerationBudgets => {
+  const deepAnswer = signals?.generationDepth === 'deep' || signals?.answerDepth === 'detailed';
   const reasoning = tier === 'powerful'
-    ? ((signals?.hasSkill || (signals?.sourceCount ?? 0) >= 3 || signals?.answerDepth === 'detailed') ? 2048 : 768)
+    ? ((signals?.hasSkill || (signals?.sourceCount ?? 0) >= 3 || deepAnswer) ? 2048 : 768)
     : tier === 'balanced' && signals?.retrievalRequired && signals.answerDepth !== 'brief' ? 1024 : 0;
   const initial = tier === 'powerful'
     ? Math.max(configuredMaxTokens ?? 4096, reasoning + 512, 4096)
     : tier === 'balanced' && reasoning > 0
-      ? Math.max(configuredMaxTokens ?? 512, reasoning + 512)
-      : configuredMaxTokens ?? 256;
+      ? Math.max(configuredMaxTokens ?? 512, reasoning + 512, deepAnswer ? 1536 : 0)
+      : Math.max(configuredMaxTokens ?? 256, tier === 'fast' && deepAnswer ? 768 : 0);
   return { initial, retry: tier === 'fast' ? initial : Math.max(initial, Math.max(256, contextSize - 256)), reasoning };
 };
 
@@ -65,7 +67,7 @@ const adaptiveDecision = (signals: ReasoningRequestSignals): ReasoningDecision =
   if (dependency.test(question)) return { mode: 'adaptive', enabled: true, reason: 'dependency_reasoning' };
   if ((signals.sourceCount ?? 0) >= 3 && signals.retrievalRequired) return { mode: 'adaptive', enabled: true, reason: 'multi_source_synthesis' };
   if (signals.hasSkill || (signals.attachmentCount ?? 0) > 0 && analysis.test(question)) return { mode: 'adaptive', enabled: true, reason: 'complex_analysis' };
-  if (signals.answerDepth === 'detailed' && analysis.test(question)) return { mode: 'adaptive', enabled: true, reason: 'detailed_analytical_request' };
+  if ((signals.answerDepth === 'detailed' || signals.generationDepth === 'deep') && analysis.test(question)) return { mode: 'adaptive', enabled: true, reason: 'detailed_analytical_request' };
   if (analysis.test(question)) return { mode: 'adaptive', enabled: true, reason: 'complex_analysis' };
   if (directLookup.test(question) || signals.routeReason === 'non_workspace_request' || signals.routeReason === 'direct_lookup') {
     return { mode: 'adaptive', enabled: false, reason: 'direct_lookup' };

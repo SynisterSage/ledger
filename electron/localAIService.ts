@@ -2,8 +2,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { AskLedgerSource } from '../src/types/askLedgerContext.ts';
+import type { AskLedgerAnswerValidationDiagnostics, AskLedgerDocumentDiagnostics } from '../src/types/askLedgerResourceContract.ts';
 import { LEGACY_MINISTRAL_MODEL_ID, LEGACY_POWERFUL_MODEL_ID, LocalAIAssetManager, resolveLocalAIRuntime, resolveLocalAIRuntimeVersion, type GenerationTier } from './localAIAssets.ts';
 import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision, type ReasoningRequestSignals } from './localAIReasoningPolicy.ts';
+import { resolveAskLedgerModelRoute, type AskLedgerModelRoutingSignals, type AskLedgerModelRoute } from './askLedgerModelRouting.ts';
 
 export type LocalAIErrorCode =
   | 'model_missing'
@@ -49,6 +51,7 @@ export interface LocalAIMetrics {
   reasoningTokens?: number;
   predictedTokens?: number;
   serverTimings?: Record<string, unknown>;
+  performance?: Record<string, unknown>;
 }
 
 export type AskLedgerActivity =
@@ -71,6 +74,8 @@ export interface LocalAIStreamEvent {
   activity?: AskLedgerActivity;
   text?: string;
   sources?: AskLedgerSource[];
+  diagnostics?: AskLedgerDocumentDiagnostics;
+  validation?: AskLedgerAnswerValidationDiagnostics;
   error?: { code: LocalAIErrorCode; message: string };
   metrics?: LocalAIMetrics;
   skillResult?: AskLedgerSkillResult;
@@ -515,6 +520,14 @@ export class LocalAIService {
       selectedTier: this.assets.getSelectedGenerationTier(),
       ready: this.switchState.ready && runtimeReady,
     };
+  }
+
+  getModelRouting(signals: AskLedgerModelRoutingSignals): AskLedgerModelRoute {
+    const requestedTier = this.assets.getGenerationTierResolution?.().requestedTier ?? this.assets.getSelectedGenerationTier();
+    const installedTiers = this.assets.getAvailableGenerationModels()
+      .filter((model) => this.assets.getGenerationModelStatus(model.id).installed)
+      .map((model) => model.tier);
+    return resolveAskLedgerModelRoute({ requestedTier, installedTiers, signals });
   }
 
   onGenerationRuntimeState(listener: (state: GenerationRuntimeState) => void) {

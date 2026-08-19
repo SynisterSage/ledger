@@ -1,7 +1,29 @@
 import type { AskLedgerContextItem, AskLedgerResourceType } from '../src/types/askLedgerContext.ts';
+import type { AskLedgerIntegrationSource } from './askLedgerIntegrationRetrieval.ts';
 
 export type RetrievalOperation = 'lookup' | 'summarize' | 'compare' | 'analyze' | 'plan';
 export type RetrievalOrdering = 'relevance' | 'newest' | 'oldest';
+
+export type RetrievalStrategies = {
+  semantic: boolean;
+  lexical: boolean;
+  exactEntity: boolean;
+  structured: boolean;
+};
+
+export type RetrievalStructuredConstraints = {
+  horizon?: 'today' | 'long_term';
+  statuses?: string[];
+  openOnly?: boolean;
+  overdue?: boolean;
+  dueAfter?: string;
+  dueBefore?: string;
+  projectIds?: string[];
+  read?: boolean;
+  teamId?: string;
+  sourceLabel?: string;
+  attentionOnly?: boolean;
+};
 
 export type RetrievalPlan = {
   operation: RetrievalOperation;
@@ -12,12 +34,37 @@ export type RetrievalPlan = {
   requestedCount?: number;
   semanticQuery: string;
   expandRelatedContext: boolean;
+  retrievalStrategies: RetrievalStrategies;
+  structuredConstraints: RetrievalStructuredConstraints;
   resolvedContainer?: { query: string; title?: string; confidence: number };
+  integrationProviders?: AskLedgerIntegrationSource[];
+  integrationRequested?: boolean;
 };
 
 const normalize = (value: string) => value.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const countWords = /\b(?:last|latest|newest|recent|first|oldest|past)\s+(\d+|few|several)\b/i;
 const lastWorkdaySignals = /\b(?:last|final)\s+(?:day|workday)\b|\blast\s+day\s+(?:working|at work)\b/i;
+
+const startOfDay = (date: Date) => {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
+};
+
+const isoDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const addDays = (date: Date, days: number) => {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+};
+
+const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0);
 
 const requestedCountFor = (question: string) => {
   const match = question.match(countWords);
@@ -27,9 +74,34 @@ const requestedCountFor = (question: string) => {
   return Number.isFinite(count) ? Math.max(1, Math.min(20, count)) : undefined;
 };
 
+const integrationProvidersFor = (question: string): AskLedgerIntegrationSource[] => {
+  const normalized = normalize(question);
+  const providers: AskLedgerIntegrationSource[] = [];
+  if (/\bslack\b/.test(normalized)) providers.push('slack');
+  if (/\bgithub\b|\bgithub work\b|\bprs?\b|\bpull requests?\b/.test(normalized)) providers.push('github');
+  if (/\bfigma\b/.test(normalized)) providers.push('figma');
+  if (/\b(?:google )?drive\b|\bdocs?\b/.test(normalized)) providers.push('google_drive');
+  if (/\bgoogle calendar\b/.test(normalized)) providers.push('google_calendar');
+  if (/\bapple calendar\b|\bcaldav\b/.test(normalized)) providers.push('apple_calendar');
+  if (/\bapple reminders?\b/.test(normalized)) providers.push('apple_reminders');
+  if (/\bmcp\b/.test(normalized)) providers.push('mcp');
+  return [...new Set(providers)];
+};
+
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  if (/\bacross\s+ledger\b/.test(normalized) && /\b(?:slack|github|figma|drive|calendar)\b/.test(normalized)) return ['project', 'external'];
+  if (/\b(?:slack|github|figma|google drive|drive docs?|google calendar|apple calendar|apple reminders?|mcp)\b/.test(normalized)) return ['external'];
+  if (/\bunread\s+(?:notifications?|alerts?)\b/.test(normalized)) return ['notification'];
+  if (/\bnotifications?\b/.test(normalized)) return ['notification'];
+  if (/\b(?:activity|what changed|changes|happening|circle alerts?|teamspace alerts?)\b/.test(normalized)) return ['activity'];
+  if (/\bwhat needs my attention\b/.test(normalized)) return ['notification', 'activity', 'task', 'milestone', 'reminder'];
   if (lastWorkdaySignals.test(normalized)) return ['event'];
+  const broadMeetingSearch = /\bmeetings?\b/.test(normalized)
+    && !/\bmeeting notes?\b/.test(normalized)
+    && !/\b(?:last|latest|newest|recent|first|oldest)\s+(?:\d+\s+)?meetings?\b/.test(normalized)
+    && !/\bwhat happened in\b/.test(normalized);
+  if (broadMeetingSearch) return ['event', 'note'];
   if (/\bmeeting notes?\b|\bnotes?\b/.test(normalized)) return ['note'];
   if (/\bevents?\b/.test(normalized) || ( /\bmeetings?\b/.test(normalized) && /\b(last|latest|newest|recent|what happened|what did|look through|look at|summari[sz]e|review|compare|linked|with)\b/.test(normalized))) return ['event'];
   if (/\btasks?\b/.test(normalized)) return ['task'];
@@ -41,7 +113,7 @@ const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
 };
 
 const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerResourceType[]) => {
-  if (!primaryResourceTypes.includes('note')) return undefined;
+  if (!primaryResourceTypes.includes('note') || !/\bnotes?\b|\bfolder\b|\bcollection\b/i.test(question)) return undefined;
   const match = question.match(/\b(?:in|from|within|inside|through)\s+(?:my\s+)?(.+?)(?=\s*,?\s*(?:last|latest|newest|recent|first|oldest|past)\b|\s+and\s+(?:summarize|review|compare)|\s+to\s+(?:summarize|review)|$)/i);
   if (!match) return undefined;
   const candidate = match[1].replace(/\bfolder\b|\bcollection\b/gi, '').replace(/\s+/g, ' ').trim();
@@ -53,20 +125,67 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
     const match = question.match(/\b(?:at|for|with)\s+(?:my\s+)?([A-Z][\w-]*)/);
     return match?.[1]?.trim();
   }
+  if (primaryResourceTypes.includes('event') && /\bmeetings?\b/i.test(question)) {
+    const match = question.match(/\b(?:my\s+(?:latest|recent|last)|my|the|latest|recent|last|yesterday'?s)\s+([a-z0-9][\w-]*(?:\s+[a-z0-9][\w-]*)?)\s+meetings?\b/i);
+    const candidate = match?.[1]?.trim();
+    if (candidate && !/^(?:last|latest|newest|recent|upcoming|calendar|work)(?:\s+\d+)?$/i.test(candidate) && !/^\d+$/.test(candidate)) return candidate;
+  }
   if (primaryResourceTypes.includes('project')) {
     const namedProject = question.match(/\b(?:my|the)\s+(.+?)\s+projects?\b/i);
     if (namedProject?.[1]) return namedProject[1].trim();
     const match = question.match(/\bproject\s+(.+?)(?=\s+(?:and|to|that|where|what|is|has)\b|[,?.]|$)/i);
     return match?.[1]?.trim();
   }
+  if (primaryResourceTypes.some((type) => ['task', 'milestone', 'reminder', 'event', 'note'].includes(type))) {
+    const typedEntity = question.match(/\b([A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+(?:tasks?|milestones?|reminders?|events?|meetings?|notes?)\b/);
+    if (typedEntity?.[1]) return typedEntity[1].trim();
+  }
   const withMatch = question.match(/\b(?:with|about|for)\s+([A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)/);
   return withMatch?.[1]?.trim();
 };
 
-export const buildRetrievalPlan = (question: string): RetrievalPlan => {
+export const buildRetrievalPlan = (question: string, now = new Date()): RetrievalPlan => {
   const primaryResourceTypes = resourceTypesFor(question);
   const isLastWorkday = lastWorkdaySignals.test(question);
   const entityQuery = entityQueryFor(question, primaryResourceTypes);
+  const normalizedQuestion = normalize(question);
+  const integrationProviders = integrationProvidersFor(question);
+  const taskQuery = primaryResourceTypes.includes('task') || /\btasks?\b/.test(normalizedQuestion);
+  const structuredConstraints: RetrievalStructuredConstraints = {};
+  if (/\bunread\b/.test(normalizedQuestion) && primaryResourceTypes.includes('notification')) structuredConstraints.read = false;
+  if (/\bread\b/.test(normalizedQuestion) && primaryResourceTypes.includes('notification') && !/unread/.test(normalizedQuestion)) structuredConstraints.read = true;
+  if (/\b(?:attention|important|high priority|urgent)\b/.test(normalizedQuestion)) structuredConstraints.attentionOnly = true;
+  if (/\bcircle\b/.test(normalizedQuestion)) structuredConstraints.sourceLabel = 'Circle';
+  if (taskQuery && /\btoday\b/.test(normalizedQuestion)) structuredConstraints.horizon = 'today';
+  if (taskQuery && /\blong[- ]term\b|\blong term work\b/.test(normalizedQuestion)) structuredConstraints.horizon = 'long_term';
+  if (/\boverdue\b|\bover due\b/.test(normalizedQuestion)) {
+    structuredConstraints.overdue = true;
+    structuredConstraints.openOnly = true;
+  }
+  if (/\b(?:open|active|incomplete|unfinished|outstanding)\b/.test(normalizedQuestion)) structuredConstraints.openOnly = true;
+  if (/\b(?:completed|complete|done|finished)\b/.test(normalizedQuestion)) structuredConstraints.statuses = ['completed', 'complete', 'done', 'finished'];
+  if (/\btoday\b/.test(normalizedQuestion) && !taskQuery) {
+    structuredConstraints.dueAfter = isoDate(startOfDay(now));
+    structuredConstraints.dueBefore = isoDate(startOfDay(now));
+  } else if (/\byesterday\b/.test(normalizedQuestion)) {
+    const yesterday = addDays(startOfDay(now), -1);
+    structuredConstraints.dueAfter = isoDate(yesterday);
+    structuredConstraints.dueBefore = isoDate(yesterday);
+  } else if (/\blast week\b/.test(normalizedQuestion)) {
+    const start = startOfDay(now);
+    const day = start.getDay();
+    const thisWeek = addDays(start, -day);
+    structuredConstraints.dueAfter = isoDate(addDays(thisWeek, -7));
+    structuredConstraints.dueBefore = isoDate(addDays(thisWeek, -1));
+  } else if (/\bthis week\b/.test(normalizedQuestion)) {
+    const start = startOfDay(now);
+    const thisWeek = addDays(start, -start.getDay());
+    structuredConstraints.dueAfter = isoDate(thisWeek);
+    structuredConstraints.dueBefore = isoDate(addDays(thisWeek, 6));
+  } else if (/\bthis month\b/.test(normalizedQuestion)) {
+    structuredConstraints.dueAfter = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    structuredConstraints.dueBefore = isoDate(endOfMonth(now));
+  }
   const ordering: RetrievalOrdering = /\b(oldest|first)\b/i.test(question) ? 'oldest' : /\b(last|latest|newest|recent|past)\b/i.test(question) || isLastWorkday ? 'newest' : 'relevance';
   const operation: RetrievalOperation = /\b(compare|versus|vs\.?|difference)\b/i.test(question)
     ? 'compare'
@@ -85,6 +204,15 @@ export const buildRetrievalPlan = (question: string): RetrievalPlan => {
     requestedCount: isLastWorkday ? 1 : requestedCountFor(question),
     semanticQuery: question.trim(),
     expandRelatedContext: Boolean(primaryResourceTypes.length && (operation !== 'lookup' || containerQuery || requestedCountFor(question) || (primaryResourceTypes.includes('project') && entityQuery)) && !isLastWorkday),
+    retrievalStrategies: {
+      semantic: true,
+      lexical: true,
+      exactEntity: true,
+    structured: Object.keys(structuredConstraints).length > 0 || primaryResourceTypes.length > 0,
+    },
+    structuredConstraints,
+    integrationProviders,
+    integrationRequested: integrationProviders.length > 0,
   };
 };
 

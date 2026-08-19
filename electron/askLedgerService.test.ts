@@ -383,3 +383,37 @@ test('falls back to a grounded weekly plan when the local model abstains', async
   assert.match(answer, /Upload weekly logs/);
   assert.doesNotMatch(answer, /I don't have enough Ledger context/);
 });
+
+test('performs one targeted answer repair without repeating retrieval', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let starts = 0;
+  let retrievalCalls = 0;
+  const project: AskLedgerContextItem = { ...resource, resourceId: 'project-alfa', title: 'Alfa 2026 Catalog', content: 'Catalog closeout.', status: 'In Progress' };
+  const milestone: AskLedgerContextItem = { ...resource, resourceType: 'milestone', resourceId: 'milestone-final', title: 'Final Production', content: 'Final production milestone.', projectId: project.resourceId, status: 'In Progress' };
+  const task: AskLedgerContextItem = { ...resource, resourceType: 'task', resourceId: 'task-proof', title: 'Review Final Proof', content: 'Review the final proof.', projectId: project.resourceId, status: 'In Progress', dueAt: '2026-08-20' };
+  const documents = [project, milestone, task];
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => { retrievalCalls += 1; return { items: documents, primaryItems: documents, relatedItems: [], relatedCandidateCount: 0, debug: documents.map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, score: 1, why: ['structured-match'] })) }; },
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (_request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      starts += 1;
+      callbacks.onEvent({ type: 'delta', requestId, text: starts === 1 ? 'Alfa is due Aug 22.' : 'Alfa includes the Final Production milestone and Review Final Proof task, due Aug 20.' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+  service.start({ workspaceId: 'workspace-a', question: 'Look through my projects, milestones, and tasks and tell me where everything stands.', documents, lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(starts, 2);
+  assert.equal(events.filter((event) => event.type === 'done').length, 1);
+  assert.match(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), /Final Production/);
+  assert.doesNotMatch(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), /Aug 22/);
+  assert.ok(retrievalCalls > 0);
+});

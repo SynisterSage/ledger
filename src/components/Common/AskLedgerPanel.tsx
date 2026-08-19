@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertCircle,
+  Bell,
   Boxes,
   CalendarDays,
   Check,
@@ -13,6 +14,7 @@ import {
   FileText,
   FolderKanban,
   Inbox,
+  Link2,
   ListChecks,
   LoaderCircle,
   Minimize2,
@@ -38,6 +40,7 @@ import {
 import { ModalCloseButton } from './ModalCloseButton';
 import { ModalOverlay } from './ModalOverlay';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
+import { deriveAskLedgerConversationState, type AskLedgerConversationState } from '../../types/askLedgerConversationState';
 import type { AskLedgerAttachment } from '../../types/askLedgerAttachments';
 import { ASK_LEDGER_SKILL_METADATA, type AskLedgerCustomSkill, type AskLedgerSkillRef, type AskLedgerSkillMetadata } from '../../types/askLedgerSkills';
 import { routeAskLedgerMessage } from '../../types/askLedgerResponseMode';
@@ -61,7 +64,10 @@ export type AskLedgerSourceType =
   | 'person'
   | 'team'
   | 'external'
-  | 'attachment';
+  | 'attachment'
+  | 'activity'
+  | 'notification'
+  | 'linked_resource';
 
 export interface AskLedgerRequest {
   question: string;
@@ -84,6 +90,10 @@ export interface AskLedgerSource {
   parentResourceId?: string;
   route?: string | Record<string, unknown>;
   sourceLabel?: string;
+  integrationProvider?: string;
+  integrationResourceType?: string;
+  externalId?: string;
+  explicitIntegrationLink?: boolean;
   updatedAt?: string;
   attachmentSource?: { attachmentId: string; fileName: string; pageNumber?: number; section?: string; paragraph?: number; rowStart?: number; rowEnd?: number };
 }
@@ -136,7 +146,17 @@ type AskLedgerConversationContext = {
   previousSources: AskLedgerSource[];
   recentExchanges: AskLedgerConversationTurn[];
   initialContext?: AskLedgerInitialContext;
+  state?: AskLedgerConversationState;
 };
+
+const conversationStateSources = (sources: AskLedgerSource[]) => sources.map((source) => ({
+  resourceType: source.type,
+  resourceId: source.resourceId ?? source.id,
+  title: source.title,
+  projectId: source.projectId,
+  integrationProvider: source.integrationProvider,
+  updatedAt: source.updatedAt,
+}));
 
 export type AskLedgerState =
   | { status: 'idle' | 'focused' }
@@ -196,6 +216,9 @@ const sourceType = (value: unknown): AskLedgerSourceType | null =>
     'team',
     'external',
     'attachment',
+    'activity',
+    'notification',
+    'linked_resource',
   ].includes(String(value))
     ? (value as AskLedgerSourceType)
     : null;
@@ -213,6 +236,9 @@ const sourceIconMap: Record<AskLedgerSourceType, typeof FileText> = {
   team: Users,
   external: ExternalLink,
   attachment: FileText,
+  activity: ListChecks,
+  notification: Bell,
+  linked_resource: Link2,
 };
 
 const sourceTypeLabels: Record<AskLedgerSourceType, string> = {
@@ -228,6 +254,9 @@ const sourceTypeLabels: Record<AskLedgerSourceType, string> = {
   team: 'Team',
   external: 'Resource',
   attachment: 'Attachment',
+  activity: 'Activity',
+  notification: 'Notification',
+  linked_resource: 'Linked resource',
 };
 
 type AskLedgerStreamEvent = {
@@ -252,9 +281,12 @@ const askLedgerDocumentScope = (question: string) => {
   // directly related events/tasks afterward; an events-only scope would make
   // explicit note constraints impossible to satisfy.
   if (/\bnotes?\b/.test(value)) return undefined;
+  if (/\bunread\s+(?:notifications?|alerts?)\b|\bnotifications?\b/.test(value)) return 'notifications';
+  if (/\bwhat needs my attention\b/.test(value)) return 'attention';
+  if (/\b(?:what changed|changes|activity|happening|teamspace alerts?)\b/.test(value)) return 'activity';
   if (/\b(my team|team members|members of (the )?team|who.*team)\b/.test(value)) return 'team_members';
   if (/\b(deadline|deadlines|deadliens|due date|due dates)\b/.test(value)) return 'deadlines';
-  if (/\b(github|git hub|slack|figma|circle|integration|integrations|intake|pull requests?|issues?)\b/.test(value)) return 'integration';
+  if (/\b(github|git hub|slack|figma|integration|integrations|intake|pull requests?|issues?)\b/.test(value)) return 'integration';
   if (/\b(projects?|portfolio)\b/.test(value) && !/\b(discuss|discussed|decide|decided|mention|mentioned|say|said)\b/.test(value)) return 'projects';
   if (/\b(reminders?|remind me)\b/.test(value)) return 'reminders';
   if (/\b(prepare|prep|get ready|brief|plan|planning|plan it out)\b/.test(value) && /\b(meeting|meetings|call|calls)\b/.test(value)) return 'meeting_prep';
@@ -870,8 +902,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       }, [])
       .slice(-2);
     const lastTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
+    const restoredState = lastTurn ? deriveAskLedgerConversationState(workspaceIdRef.current ?? '', lastTurn.question, conversationStateSources(lastTurn.sources) as never) : undefined;
     conversationRef.current = lastTurn
-      ? { id: conversationIdRef.current, previousQuestion: lastTurn.question, previousAnswer: lastTurn.answer, previousSources: lastTurn.sources, recentExchanges: recentTurnsRef.current, initialContext: initialContextRef.current ?? undefined }
+      ? { id: conversationIdRef.current, previousQuestion: lastTurn.question, previousAnswer: lastTurn.answer, previousSources: lastTurn.sources, recentExchanges: recentTurnsRef.current, initialContext: initialContextRef.current ?? undefined, state: restoredState }
       : null;
     onSessionTitleChange?.(sessionTitleRef.current);
     setQuestion('');
@@ -933,6 +966,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                     type,
                     route: source.route as string | Record<string, unknown> | undefined,
                     sourceLabel: source.sourceLabel ? String(source.sourceLabel) : undefined,
+                    integrationProvider: source.integrationProvider ? String(source.integrationProvider) : undefined,
+                    integrationResourceType: source.integrationResourceType ? String(source.integrationResourceType) : undefined,
+                    externalId: source.externalId ? String(source.externalId) : undefined,
+                    explicitIntegrationLink: source.explicitIntegrationLink === true,
                     updatedAt: source.updatedAt ? String(source.updatedAt) : undefined,
                     attachmentSource: source.attachmentSource as AskLedgerSource['attachmentSource'],
                   }
@@ -1003,6 +1040,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           queueSessionSave(nextMessages);
           const completedTurn: AskLedgerConversationTurn = { question: completedState.request.question, answer, sources: completedResponse.sources };
           recentTurnsRef.current = [...recentTurnsRef.current, completedTurn].slice(-2);
+          const conversationState = deriveAskLedgerConversationState(workspaceIdRef.current ?? '', completedState.request.question, conversationStateSources(completedResponse.sources) as never, conversationRef.current?.state);
           conversationRef.current = {
             id: conversationIdRef.current,
             previousQuestion: completedState.request.question,
@@ -1010,6 +1048,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             previousSources: completedResponse.sources,
             recentExchanges: recentTurnsRef.current,
             initialContext: initialContextRef.current ?? undefined,
+            state: conversationState,
           };
           setState(isAbstention ? { status: 'no-answer', request: completedState.request } : { status: 'answer', request: completedState.request, response: { answer, sources: completedResponse.sources } });
           activeRequestIdRef.current = null;
@@ -1168,7 +1207,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     }
     requestInitializingRef.current = true;
     void Promise.all(route.retrievalRequired ? [
-      api.getAskLedgerDocuments(workspaceId, { scope: askLedgerDocumentScope(effectiveQuestion), ...askLedgerDateWindow(effectiveQuestion), openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion), project: askLedgerProjectReference(effectiveQuestion), taskHorizon: askLedgerTaskHorizon(effectiveQuestion), assignedToMe: askLedgerAssignedToMe(effectiveQuestion, askLedgerDocumentScope(effectiveQuestion)) }) as Promise<{
+      api.getAskLedgerDocuments(workspaceId, { scope: askLedgerDocumentScope(effectiveQuestion), ...askLedgerDateWindow(effectiveQuestion), openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion), project: askLedgerProjectReference(effectiveQuestion), taskHorizon: askLedgerTaskHorizon(effectiveQuestion), assignedToMe: askLedgerAssignedToMe(effectiveQuestion, askLedgerDocumentScope(effectiveQuestion)), integrationQuery: effectiveQuestion }) as Promise<{
         workspaceId?: string;
         documents?: Array<Record<string, unknown>>;
       }>,

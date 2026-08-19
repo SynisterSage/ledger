@@ -60,6 +60,7 @@ const renderItem = (item: AskLedgerContextItem, maxItemTokens: number) => {
   if (item.attachmentSource?.section) lines.push(`Section: ${cleanText(item.attachmentSource.section)}`);
   if (item.attachmentSource?.rowStart) lines.push(`Rows: ${item.attachmentSource.rowStart}–${item.attachmentSource.rowEnd ?? item.attachmentSource.rowStart}`);
   if (item.updatedAt) lines.push(`Updated: ${cleanText(item.updatedAt)}`);
+  if (item.relationships?.length) lines.push(`Relationships: ${item.relationships.map((relationship) => `${cleanText(relationship.relationshipType)} (${cleanText(relationship.resourceType)})`).join(', ')}`);
   if (content.value) lines.push(content.value);
   return { text: lines.join('\n'), truncated: content.truncated };
 };

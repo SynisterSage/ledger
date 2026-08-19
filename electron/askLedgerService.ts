@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { buildAskLedgerPrompt } from './askLedgerPrompt.ts';
+import { buildAskLedgerPrompt, buildAskLedgerRepairPrompt } from './askLedgerPrompt.ts';
 import { ASK_LEDGER_ABSTENTION } from './askLedgerPrompt.ts';
 import { LedgerContextBuilder } from './askLedgerContext.ts';
 import { LocalAIService, type LocalAIStreamEvent } from './localAIService.ts';
@@ -14,16 +14,26 @@ import type { AskLedgerSource } from '../src/types/askLedgerContext.ts';
 import type { LocalAIAssetManager } from './localAIAssets.ts';
 import { detectAskLedgerQueryIntent } from './askLedgerQueryIntent.ts';
 import type { AskLedgerInitialContext } from '../src/types/askLedgerContext.ts';
+import type { AskLedgerConversationState } from '../src/types/askLedgerConversationState.ts';
+import { resolveAskLedgerConversation } from '../src/types/askLedgerConversationState.ts';
+import { buildAskLedgerDocumentDiagnostics } from '../src/types/askLedgerResourceContract.ts';
 import { buildSkillPromptContext, getAskLedgerSkill, validateSkillContext } from './askLedgerSkills.ts';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import { routeAskLedgerMessage } from '../src/types/askLedgerResponseMode.ts';
 import { ASK_LEDGER_CAPABILITY_DESCRIPTION } from '../src/types/askLedgerCapabilities.ts';
 import { AskLedgerAttachmentService, attachmentBlocksToContext } from './askLedgerAttachmentService.ts';
 import { buildRetrievalPlan } from './askLedgerRetrievalPlan.ts';
+import { AskLedgerRetrievalOrchestrator } from './askLedgerRetrievalOrchestrator.ts';
+import { compileAskLedgerEvidence } from './askLedgerEvidencePipeline.ts';
+import { inferAskLedgerGenerationDepth } from '../src/types/askLedgerGenerationDepth.ts';
+import { AskLedgerAnswerValidator, formatAskLedgerEvidenceLimitations, formatAskLedgerValidationFailures } from './askLedgerAnswerValidator.ts';
 import os from 'node:os';
 import path from 'node:path';
 
 const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines', 'time_window', 'integration']);
+const askLedgerDiagnostic = (...args: unknown[]) => {
+  if (process.env.NODE_ENV !== 'production') console.info(...args);
+};
 
 const formatLedgerDate = (value?: string) => {
   if (!value) return undefined;
@@ -221,6 +231,7 @@ export type AskLedgerRetrievalRequest = {
       answer?: string;
       sources?: AskLedgerSource[];
     }>;
+    state?: AskLedgerConversationState;
   };
 };
 
@@ -242,7 +253,10 @@ type AskLedgerStreamCallbacks = {
 
 export class AskLedgerService {
   private readonly retrieval: LedgerRetrievalService;
+  private readonly orchestrator: AskLedgerRetrievalOrchestrator;
   private readonly localAI: LocalAIService;
+  private readonly answerValidator = new AskLedgerAnswerValidator();
+  private readonly repairRequestIds = new Map<string, string>();
   private readonly attachments: AskLedgerAttachmentService;
 
   constructor(
@@ -251,6 +265,7 @@ export class AskLedgerService {
     attachments = new AskLedgerAttachmentService(path.join(os.tmpdir(), 'ledger-ask-ledger-attachments')),
   ) {
     this.retrieval = retrieval;
+    this.orchestrator = new AskLedgerRetrievalOrchestrator(retrieval);
     this.localAI = localAI;
     this.attachments = attachments;
   }
@@ -285,6 +300,7 @@ export class AskLedgerService {
    */
   async prepareBenchmarkCase(request: AskLedgerBenchmarkCaseRequest): Promise<PreparedAskLedgerBenchmarkCase> {
     const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
+    const conversationResolution = resolveAskLedgerConversation(request.question, request.conversation?.state, request.workspaceId);
     const route = routeAskLedgerMessage(request.question, {
       previousQuestion: request.conversation?.previousQuestion,
       previousAnswer: request.conversation?.previousAnswer,
@@ -294,7 +310,6 @@ export class AskLedgerService {
       hasSelectedSkill: Boolean(skill),
       attachmentCount: request.attachmentIds?.length,
     });
-    const retrievalPlan = buildRetrievalPlan(request.question);
     if (request.conversation?.id) await this.restoreAttachments(request.workspaceId, request.conversation.id);
     await this.retrieval.indexWorkspace(request.workspaceId, request.documents);
     const retrievalQuestion = [
@@ -306,21 +321,24 @@ export class AskLedgerService {
         exchange.sources?.length ? `Recent sources: ${exchange.sources.slice(0, 6).map((source) => source.title).join('; ')}` : '',
       ]),
       request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length ? `Previous question: ${request.conversation.previousQuestion}` : '',
-      request.conversation?.previousAnswer && !request.conversation?.recentExchanges?.length ? `Previous grounded answer: ${request.conversation.previousAnswer.slice(0, 1200)}` : '',
       request.conversation?.previousSources?.length && !request.conversation?.recentExchanges?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
     ].filter(Boolean).join('\n');
     const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
-    const retrieval = await this.retrieval.retrieve(request.workspaceId, retrievalQuestion, request.lexicalResults, skill?.id === 'plan_my_week' ? 32 : 20, {
+    const retrieval = await this.orchestrator.retrieve(request.workspaceId, request.question, request.lexicalResults, skill?.id === 'plan_my_week' ? 32 : 20, {
       conversationId: request.conversation?.id,
-      plan: retrievalPlan,
-      boostResourceKeys: explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : [],
+      documents: request.documents,
+      retrievalQuestion,
+      boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...conversationResolution.resourceKeys],
+      resolvedResourceKeys: conversationResolution.resourceKeys,
     });
     const allowedItems = skill ? retrieval.items.filter((item) => skill.allowedContextTypes.includes(item.resourceType)) : retrieval.items;
     const explicitItem = explicitContext ? request.documents.find((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId) : undefined;
     const selectedItems = explicitItem && !allowedItems.some((item) => item.resourceType === explicitItem.resourceType && item.resourceId === explicitItem.resourceId)
       ? [explicitItem, ...allowedItems]
       : allowedItems;
-    const normalized = new LedgerContextBuilder().normalize(selectedItems.slice(0, skill ? 10 : 8), {
+    const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedItems });
+    const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: retrieval.mode, orchestration: retrieval.orchestration });
+    const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, {
       maxContextTokens: skill ? 2800 : 2400,
       maxItemTokens: 700,
       sortByFreshness: false,
@@ -334,8 +352,13 @@ export class AskLedgerService {
       projectId: item.projectId,
       projectName: item.projectName,
       sourceLabel: item.sourceLabel,
+      integrationProvider: item.integrationProvider,
+      integrationResourceType: item.integrationResourceType,
+      externalId: item.externalId,
+      explicitIntegrationLink: item.explicitIntegrationLink,
       updatedAt: item.updatedAt,
       parentResourceId: item.parentResourceId,
+      relationships: item.relationships,
       attachmentSource: item.attachmentSource,
     }));
     return {
@@ -349,6 +372,9 @@ export class AskLedgerService {
         skill,
         skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined,
         answerDepth: route.answerDepth,
+        generationDepth: generationDepth.depth,
+        generationDepthReason: generationDepth.reason,
+        evidencePackage: evidence.package,
       }),
       sources: [...sourceByKey.values()],
       contextItems: normalized.items,
@@ -385,7 +411,10 @@ export class AskLedgerService {
   }
 
   cancel(requestId: string) {
-    return this.localAI.cancel(requestId);
+    const result = this.localAI.cancel(requestId);
+    const repairRequestId = this.repairRequestIds.get(requestId);
+    if (repairRequestId) this.localAI.cancel(repairRequestId);
+    return result;
   }
 
   async shutdown() {
@@ -402,11 +431,38 @@ export class AskLedgerService {
 
   private async run(requestId: string, request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
     const startedAt = Date.now();
-    const emit = (event: LocalAIStreamEvent) => callbacks.onEvent(event.type === 'done'
-      ? { ...event, metrics: { ...event.metrics, totalMs: Date.now() - startedAt } }
-      : event);
+    const routingStartedAt = Date.now();
+    let routingMs = 0;
+    let indexingMs = 0;
+    let retrievalMs = 0;
+    let evidenceMs = 0;
+    let validationMs = 0;
+    let repairMs = 0;
+    let performanceSnapshot: Record<string, unknown> | undefined;
+    let modelRouting: ReturnType<LocalAIService['getModelRouting']> | undefined;
+    let activeGenerationDepth: ReturnType<typeof inferAskLedgerGenerationDepth> | undefined;
+    const emit = (event: LocalAIStreamEvent) => {
+      if (event.type === 'done' && performanceSnapshot) {
+        performanceSnapshot = { ...performanceSnapshot, generationMs: event.metrics?.totalMs, outputTokens: event.metrics?.predictedTokens, validationMs: validationMs || undefined, repairMs: repairMs || undefined, totalMs: Date.now() - startedAt };
+      }
+      const enrichedEvent = event.type === 'done'
+        ? { ...event, metrics: { ...event.metrics, totalMs: Date.now() - startedAt, performance: performanceSnapshot ?? event.metrics?.performance } }
+        : event;
+      if (enrichedEvent.type === 'done' && activeGenerationDepth) {
+        askLedgerDiagnostic('[local-ai] Ask Ledger generation complete', {
+          messageId: request.messageId,
+          answerDepth: activeGenerationDepth.depth,
+          depthReason: activeGenerationDepth.reason,
+          outputTokens: enrichedEvent.metrics?.predictedTokens,
+          generationMs: enrichedEvent.metrics?.totalMs,
+          truncated: enrichedEvent.metrics?.finishReason === 'length',
+        });
+      }
+      callbacks.onEvent(enrichedEvent);
+    };
     try {
       const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
+      const conversationResolution = resolveAskLedgerConversation(request.question, request.conversation?.state, request.workspaceId);
       const route = routeAskLedgerMessage(request.question, {
         previousQuestion: request.conversation?.previousQuestion,
         previousAnswer: request.conversation?.previousAnswer,
@@ -417,8 +473,8 @@ export class AskLedgerService {
         attachmentCount: request.attachmentIds?.length,
       });
       const retrievalPlan = buildRetrievalPlan(request.question);
-      const hasFreshRetrievalIntent = retrievalPlan.primaryResourceTypes.length > 0 || Boolean(retrievalPlan.containerQuery || retrievalPlan.entityQuery);
-      console.info('[local-ai] Ask Ledger routing', {
+      const hasFreshRetrievalIntent = retrievalPlan.primaryResourceTypes.length > 0 || Boolean(retrievalPlan.containerQuery || retrievalPlan.entityQuery) || conversationResolution.mode === 'refresh_state' || conversationResolution.mode === 'switch_provider' || conversationResolution.mode === 'switch_entity';
+      askLedgerDiagnostic('[local-ai] Ask Ledger routing', {
         messageId: request.messageId,
         mode: route.mode,
         retrievalRequired: route.retrievalRequired,
@@ -429,6 +485,7 @@ export class AskLedgerService {
         depthExplicit: route.depthExplicit,
         modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier,
       });
+      routingMs = Date.now() - routingStartedAt;
       if (!route.retrievalRequired) {
         const reusedSources = route.reusePreviousGroundedContext
           ? request.conversation?.previousSources ?? []
@@ -438,15 +495,19 @@ export class AskLedgerService {
           ? request.documents.filter((item) => (request.conversation?.previousSources ?? []).some((source) => source.resourceType === item.resourceType && source.resourceId === item.resourceId))
           : [];
         const normalized = new LedgerContextBuilder().normalize(previousContextItems, { maxContextTokens: 1800, maxItemTokens: 500 });
+        const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: 'quick' });
+        activeGenerationDepth = generationDepth;
         this.localAI.start(
-          { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, recentConversation: request.conversation, responseMode: route.mode, answerDepth: route.answerDepth, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), reasoningSignals: { answerDepth: route.answerDepth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
+          { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, recentConversation: request.conversation, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
           { onEvent: emit },
           requestId,
         );
         return;
       }
       if (request.conversation?.id) await this.restoreAttachments(request.workspaceId, request.conversation.id);
+      const indexingStartedAt = Date.now();
       await this.retrieval.indexWorkspace(request.workspaceId, request.documents);
+      indexingMs = Date.now() - indexingStartedAt;
       emit({ type: 'activity', requestId, activity: { type: 'searching' } });
       const retrievalQuestion = [
         request.question,
@@ -457,19 +518,20 @@ export class AskLedgerService {
           exchange.sources?.length ? `Recent sources: ${exchange.sources.slice(0, 6).map((source) => source.title).join('; ')}` : '',
         ]),
         request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length ? `Previous question: ${request.conversation.previousQuestion}` : '',
-        request.conversation?.previousAnswer && !request.conversation?.recentExchanges?.length ? `Previous grounded answer: ${request.conversation.previousAnswer.slice(0, 1200)}` : '',
         request.conversation?.previousSources?.length && !request.conversation?.recentExchanges?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
       ].filter(Boolean).join('\n');
       const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
       const intent = detectAskLedgerQueryIntent(request.question);
       const retrievalLimit = skill?.id === 'plan_my_week' || intent.kind === 'weekly_overview' ? 32 : 20;
-      const retrieval = await this.retrieval.retrieve(request.workspaceId, retrievalQuestion, request.lexicalResults, retrievalLimit, {
+      const retrievalStartedAt = Date.now();
+      const retrieval = await this.orchestrator.retrieve(request.workspaceId, request.question, request.lexicalResults, retrievalLimit, {
         conversationId: request.conversation?.id,
-        plan: retrievalPlan,
-        boostResourceKeys: explicitContext
-          ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`]
-          : [],
+        documents: request.documents,
+        retrievalQuestion,
+        boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...conversationResolution.resourceKeys],
+        resolvedResourceKeys: conversationResolution.resourceKeys,
       });
+      retrievalMs = Date.now() - retrievalStartedAt;
       const allowedSkillItems = skill
         ? retrieval.items.filter((item) => skill.allowedContextTypes.includes(item.resourceType))
         : retrieval.items;
@@ -493,7 +555,9 @@ export class AskLedgerService {
           .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
           .slice(0, 3)
         : [];
-      const selectedRetrievalItems = retrieval.primaryItems?.length
+      const selectedRetrievalItems = retrieval.mode === 'research'
+        ? skillItems
+        : retrieval.primaryItems?.length
         ? [...retrieval.primaryItems, ...(retrieval.relatedItems ?? [])]
         : continuationItems.length
         ? continuationItems
@@ -512,8 +576,24 @@ export class AskLedgerService {
         : intent.kind === 'weekly_overview'
           ? skillItems.slice(0, 20)
         : skillItems.slice(0, skill ? 10 : 8);
-      const previewSources = (items: AskLedgerContextItem[]) => items.slice(0, 3).map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, route: item.route, projectId: item.projectId, projectName: item.projectName, sourceLabel: item.sourceLabel, updatedAt: item.updatedAt, parentResourceId: item.parentResourceId, attachmentSource: item.attachmentSource }));
-      const normalized = new LedgerContextBuilder().normalize(selectedRetrievalItems, { maxContextTokens: skill ? 3200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview' });
+      const previewSources = (items: AskLedgerContextItem[]) => items.slice(0, 3).map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, route: item.route, projectId: item.projectId, projectName: item.projectName, sourceLabel: item.sourceLabel, integrationProvider: item.integrationProvider, integrationResourceType: item.integrationResourceType, externalId: item.externalId, explicitIntegrationLink: item.explicitIntegrationLink, updatedAt: item.updatedAt, parentResourceId: item.parentResourceId, relationships: item.relationships, attachmentSource: item.attachmentSource }));
+      const evidenceStartedAt = Date.now();
+      const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems });
+      evidenceMs = Date.now() - evidenceStartedAt;
+      const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: retrieval.mode, orchestration: retrieval.orchestration });
+      activeGenerationDepth = generationDepth;
+      modelRouting = this.localAI.getModelRouting?.({
+        answerDepth: generationDepth.depth,
+        researchRoute: retrieval.mode === 'research',
+        objectiveCount: retrieval.orchestration?.objectives.length,
+        evidenceCount: evidence.selectedItems.length,
+        evidenceTokens: evidence.package.stats.estimatedTokens,
+        resourceTypeCount: new Set(evidence.selectedItems.map((item) => item.resourceType)).size,
+        entityCount: new Set(evidence.selectedItems.map((item) => item.projectId ?? (item.resourceType === 'project' ? item.resourceId : undefined)).filter(Boolean)).size,
+        providerCount: new Set(evidence.selectedItems.map((item) => item.integrationProvider).filter(Boolean)).size,
+        crossResource: new Set(evidence.selectedItems.map((item) => item.resourceType)).size > 1,
+      });
+      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: skill ? 3200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview' });
       emit({ type: 'activity', requestId, activity: { type: 'sources_found', count: normalized.items.length, sources: previewSources(normalized.items) } });
       emit({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
@@ -525,16 +605,57 @@ export class AskLedgerService {
           projectId: item.projectId,
           projectName: item.projectName,
           sourceLabel: item.sourceLabel,
+          integrationProvider: item.integrationProvider,
+          integrationResourceType: item.integrationResourceType,
+          externalId: item.externalId,
+          explicitIntegrationLink: item.explicitIntegrationLink,
           updatedAt: item.updatedAt,
           parentResourceId: item.parentResourceId,
+          relationships: item.relationships,
           attachmentSource: item.attachmentSource,
         }));
       const sources = [...sourceByKey.values()];
-      console.info('[local-ai] Ask Ledger retrieval', {
+      const indexedResources = typeof (this.retrieval as LedgerRetrievalService & { indexedResources?: unknown }).indexedResources === 'function'
+        ? this.retrieval.indexedResources(request.workspaceId, request.conversation?.id)
+        : request.documents;
+      const documentDiagnostics = buildAskLedgerDocumentDiagnostics({
+        available: request.documents,
+        indexed: indexedResources,
+        retrieved: retrieval.items,
+        selected: normalized.items,
+      });
+      const activityInventory = request.documents.filter((item) => item.resourceType === 'activity').length;
+      const notificationInventory = request.documents.filter((item) => item.resourceType === 'notification').length;
+      const activityRetrieved = retrieval.items.filter((item) => item.resourceType === 'activity').length;
+      const notificationRetrieved = retrieval.items.filter((item) => item.resourceType === 'notification').length;
+      const activitySelected = normalized.items.filter((item) => item.resourceType === 'activity').length;
+      const notificationSelected = normalized.items.filter((item) => item.resourceType === 'notification').length;
+      const notificationState = retrieval.items.filter((item) => item.resourceType === 'notification').reduce((state, item) => { item.read ? state.read += 1 : state.unread += 1; return state; }, { unread: 0, read: 0 });
+      const attention = { activityInventory, notificationInventory, activityRetrieved, notificationRetrieved, activitySelected, notificationSelected, notificationState, alertState: retrieval.items.filter((item) => item.resourceType === 'activity' || item.resourceType === 'notification').reduce((state, item) => { const value = String(item.priority ?? item.severity ?? '').toLowerCase(); if (['high', 'urgent', 'critical'].includes(value)) state.highPriority += 1; else state.standard += 1; return state; }, { highPriority: 0, standard: 0 }), duplicateActivityNotificationCollapses: evidence.diagnostics.duplicateActivityNotificationCollapses ?? 0, temporalFilter: Object.keys(retrievalPlan.structuredConstraints).some((key) => ['dueAfter', 'dueBefore'].includes(key)) ? `${retrievalPlan.structuredConstraints.dueAfter ?? ''}..${retrievalPlan.structuredConstraints.dueBefore ?? ''}` : undefined, teamspaceFilter: retrievalPlan.structuredConstraints.sourceLabel ?? undefined };
+      const previousKeys = new Set(request.conversation?.state?.previousEvidenceSourceIds ?? []);
+      const conversationDiagnostics = { followUp: route.mode === 'follow_up', mode: conversationResolution.mode, resolvedReferences: conversationResolution.resolvedReferences, reusedEntities: conversationResolution.reusedEntities.map((entity) => `${entity.resourceType}:${entity.resourceId}`), freshRetrieval: normalized.items.filter((item) => !previousKeys.has(`${item.resourceType}:${item.resourceId}`)).map((item) => `${item.resourceType}:${item.resourceId}`).slice(0, 12), previousSourcesReused: normalized.items.filter((item) => previousKeys.has(`${item.resourceType}:${item.resourceId}`)).length, unresolvedReferences: conversationResolution.unresolvedReferences, contextReset: conversationResolution.contextReset };
+      const performance = {
+        routingMs,
+        indexingMs,
+        retrievalMs,
+        orchestrationMs: retrieval.orchestration ? retrievalMs : undefined,
+        evidenceMs,
+        evidenceTokens: evidence.package.stats.estimatedTokens,
+        retrievalRounds: retrieval.orchestration?.retrievalRounds,
+        graphResources: retrieval.graphExpansion ? Object.values(retrieval.graphExpansion.depthCounts).reduce((total, count) => total + Object.values(count).reduce((nestedTotal, nestedCount) => nestedTotal + nestedCount, 0), 0) : 0,
+        providerCalls: retrieval.integrationRetrieval?.remoteAttempts ?? 0,
+        cacheHits: 0,
+      };
+      performanceSnapshot = performance;
+      const diagnostics = retrieval.graphExpansion
+        ? { ...documentDiagnostics, graphExpansion: retrieval.graphExpansion, hybridRetrieval: retrieval.hybridRetrieval, orchestration: retrieval.orchestration, evidence: evidence.diagnostics, attention, conversation: conversationDiagnostics, integrationRetrieval: retrieval.integrationRetrieval, generation: { answerDepth: generationDepth.depth, depthReason: generationDepth.reason, evidenceResources: evidence.selectedItems.length, evidenceTokens: evidence.package.stats.estimatedTokens, modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier, modelRouting, performance, truncated: evidence.package.coverage.truncated.length > 0, missingEvidence: evidence.package.coverage.missing } }
+        : { ...documentDiagnostics, hybridRetrieval: retrieval.hybridRetrieval, orchestration: retrieval.orchestration, evidence: evidence.diagnostics, attention, conversation: conversationDiagnostics, integrationRetrieval: retrieval.integrationRetrieval, generation: { answerDepth: generationDepth.depth, depthReason: generationDepth.reason, evidenceResources: evidence.selectedItems.length, evidenceTokens: evidence.package.stats.estimatedTokens, modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier, modelRouting, performance, truncated: evidence.package.coverage.truncated.length > 0, missingEvidence: evidence.package.coverage.missing } };
+      askLedgerDiagnostic('[local-ai] Ask Ledger retrieval', {
         workspaceId: request.workspaceId,
         skillId: skill?.id,
         explicitContext: explicitContext ? { resourceType: explicitContext.resourceType, resourceId: explicitContext.resourceId } : undefined,
         question: request.question,
+        documentInventory: diagnostics,
         candidates: retrieval.debug,
         selectedContext: normalized.items.map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title })),
         droppedContext: Math.max(0, retrieval.items.length - normalized.items.length),
@@ -548,25 +669,36 @@ export class AskLedgerService {
           ordering: retrievalPlan.ordering,
           requestedCount: retrievalPlan.requestedCount,
           expandRelatedContext: retrievalPlan.expandRelatedContext,
+          retrievalStrategies: retrievalPlan.retrievalStrategies,
+          structuredConstraints: retrievalPlan.structuredConstraints,
         },
         primaryResourceCount: retrieval.primaryItems?.length ?? 0,
         relatedCandidateCount: retrieval.relatedCandidateCount ?? 0,
         relatedResourceCount: retrieval.relatedItems?.length ?? 0,
       });
-      emit({ type: 'sources', requestId, sources });
+      emit({ type: 'sources', requestId, sources, diagnostics });
       if (!skill && structuredAnswerFor.has(intent.kind) && !retrieval.primaryItems?.length) {
         emit({ type: 'delta', requestId, text: normalized.items.length ? formatStructuredAnswer(intent.kind, normalized.items) : emptyStructuredAnswer(intent.kind) });
         emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
       emit({ type: 'activity', requestId, activity: { type: 'preparing_answer' } });
+      askLedgerDiagnostic('[local-ai] Ask Ledger generation', {
+        messageId: request.messageId,
+        answerDepth: generationDepth.depth,
+        depthReason: generationDepth.reason,
+        evidenceResources: evidence.selectedItems.length,
+        evidenceTokens: evidence.package.stats.estimatedTokens,
+        coverage: evidence.package.coverage,
+        modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier,
+      });
       const topScore = retrieval.debug[0]?.score ?? 0;
       const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title')
         || (intent.kind === 'recent_updates' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('recent:')))
         || (intent.kind === 'meeting_prep' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('meeting-prep-')));
       const hasPlannedPrimary = Boolean(retrieval.primaryItems?.length);
       if (!normalized.items.length || (!skill && !hasPlannedPrimary && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
-        console.info('[local-ai] Ask Ledger grounding diagnostics', {
+        askLedgerDiagnostic('[local-ai] Ask Ledger grounding diagnostics', {
           messageId: request.messageId,
           responseMode: route.mode,
           groundingRequired: route.retrievalRequired,
@@ -579,6 +711,7 @@ export class AskLedgerService {
         return;
       }
       const generatedSkillAnswer: string[] = [];
+      const generatedAnswerChunks: string[] = [];
       const generationCallbacks = skill && ['plan_my_week', 'meeting_follow_up', 'prepare_for_meeting'].includes(skill.id)
         ? {
             onEvent: (event: LocalAIStreamEvent) => {
@@ -595,9 +728,68 @@ export class AskLedgerService {
               }
             },
           }
-        : { onEvent: emit };
+        : {
+            onEvent: (event: LocalAIStreamEvent) => {
+              if (event.type === 'delta') {
+                if (typeof event.text === 'string') generatedAnswerChunks.push(event.text);
+                return;
+              }
+              if (event.type !== 'done') {
+                emit(event);
+                return;
+              }
+              const generatedAnswer = generatedAnswerChunks.join('');
+              if (!generatedAnswer.trim()) {
+                emit({ ...event, requestId });
+                return;
+              }
+              const validation = this.answerValidator.validate({ question: request.question, answer: generatedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth });
+              validationMs += validation.durationMs;
+              const baseValidationDiagnostics = {
+                passed: validation.passed,
+                coverageIssues: validation.coverageIssues.length,
+                groundednessIssues: validation.groundednessIssues.length,
+                contradictionIssues: validation.contradictionIssues.length,
+                missingEvidenceIssues: validation.missingEvidenceIssues.length,
+                repairAttempted: false,
+                sourcesUsed: validation.sourceReferences.length,
+                durationMs: validation.durationMs,
+              };
+              const finish = (answer: string, finalValidation: typeof validation, repairAttempted: boolean, repairDurationMs?: number) => {
+                validationMs += finalValidation === validation ? 0 : finalValidation.durationMs;
+                repairMs = repairDurationMs ?? 0;
+                const validationDiagnostics = { ...baseValidationDiagnostics, passed: finalValidation.passed, coverageIssues: finalValidation.coverageIssues.length, groundednessIssues: finalValidation.groundednessIssues.length, contradictionIssues: finalValidation.contradictionIssues.length, missingEvidenceIssues: finalValidation.missingEvidenceIssues.length, repairAttempted, repairSucceeded: repairAttempted ? finalValidation.passed : undefined, sourcesUsed: finalValidation.sourceReferences.length, durationMs: finalValidation.durationMs, repairDurationMs };
+                askLedgerDiagnostic('[local-ai] Ask Ledger answer validation', { ...validationDiagnostics, failures: formatAskLedgerValidationFailures(finalValidation) });
+                if (answer.trim()) emit({ type: 'delta', requestId, text: `${answer}${finalValidation.passed ? '' : formatAskLedgerEvidenceLimitations(evidence.package)}` });
+                emit({ ...event, requestId, validation: validationDiagnostics });
+              };
+              if (validation.repairRecommended) {
+                const repairRequestId = `${requestId}:repair`;
+                const repairStartedAt = Date.now();
+                this.repairRequestIds.set(requestId, repairRequestId);
+                const repairChunks: string[] = [];
+                this.localAI.start(
+                  { question: request.question, context: buildAskLedgerRepairPrompt({ question: request.question, evidencePackage: evidence.package, answer: generatedAnswer, validationFailures: formatAskLedgerValidationFailures(validation) }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: 'answer_validation_repair' } },
+                  { onEvent: (repairEvent) => {
+                    if (repairEvent.type === 'delta' && typeof repairEvent.text === 'string') repairChunks.push(repairEvent.text);
+                    else if (repairEvent.type === 'activity') emit(repairEvent);
+                    else if (repairEvent.type === 'error') { this.repairRequestIds.delete(requestId); finish(generatedAnswer, validation, true, Date.now() - repairStartedAt); }
+                    else if (repairEvent.type === 'done') {
+                      this.repairRequestIds.delete(requestId);
+                      const repairedAnswer = repairChunks.join('');
+                      const repairedValidation = this.answerValidator.validate({ question: request.question, answer: repairedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth });
+                      finish(repairedAnswer.trim() ? repairedAnswer : generatedAnswer, repairedValidation, true, Date.now() - repairStartedAt);
+                    }
+                  } },
+                  repairRequestId,
+                );
+                return;
+              }
+              finish(generatedAnswer, validation, false);
+            },
+          };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, answerDepth: route.answerDepth }), reasoningSignals: { answerDepth: route.answerDepth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
+        { question: request.question, context: buildAskLedgerPrompt({ question: request.question, context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
         generationCallbacks,
         requestId,
       );

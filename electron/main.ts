@@ -36,6 +36,7 @@ import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
+import type { AskLedgerConversationState } from '../src/types/askLedgerConversationState.ts';
 import { RecordingSessionStore } from './recordingSessionStore';
 import { registerWindowsLoopbackCapture } from './windowsLoopbackCapture';
 import {
@@ -269,6 +270,16 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
   if (skill && explicitContext && !skill.supportedContextTypes.includes(explicitContext.resourceType as never)) throw new Error(`${skill.name} does not support this context.`);
   if (skill && explicitContext && !documents.some((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId)) throw new Error('Skill context was not found in the current workspace context.');
   const conversation = payload.conversation && typeof payload.conversation === 'object' ? payload.conversation as Record<string, unknown> : undefined;
+  const rawState = conversation?.state && typeof conversation.state === 'object' ? conversation.state as Record<string, unknown> : undefined;
+  const safeState: AskLedgerConversationState | undefined = rawState && String(rawState.workspaceId ?? '') === payload.workspaceId ? {
+    workspaceId: payload.workspaceId,
+    activeEntities: Array.isArray(rawState.activeEntities) ? rawState.activeEntities.filter((entity): entity is Record<string, unknown> => Boolean(entity) && typeof entity === 'object').slice(0, 12).map((entity) => ({ resourceType: String(entity.resourceType ?? 'external') as never, resourceId: String(entity.resourceId ?? '').slice(0, 200), title: String(entity.title ?? 'Untitled').slice(0, 300), projectId: typeof entity.projectId === 'string' ? entity.projectId.slice(0, 200) : undefined, integrationProvider: typeof entity.integrationProvider === 'string' ? entity.integrationProvider.slice(0, 80) : undefined, updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : undefined })) : [],
+    activeResources: Array.isArray(rawState.activeResources) ? rawState.activeResources.filter((entity): entity is Record<string, unknown> => Boolean(entity) && typeof entity === 'object').slice(0, 16).map((entity) => ({ resourceType: String(entity.resourceType ?? 'external') as never, resourceId: String(entity.resourceId ?? '').slice(0, 200), title: String(entity.title ?? 'Untitled').slice(0, 300), projectId: typeof entity.projectId === 'string' ? entity.projectId.slice(0, 200) : undefined, integrationProvider: typeof entity.integrationProvider === 'string' ? entity.integrationProvider.slice(0, 80) : undefined, updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : undefined })) : [],
+    activeTopics: Array.isArray(rawState.activeTopics) ? rawState.activeTopics.filter((topic): topic is string => typeof topic === 'string').slice(0, 8).map((topic) => topic.slice(0, 120)) : [],
+    previousRequest: typeof rawState.previousRequest === 'string' ? rawState.previousRequest.slice(0, 800) : undefined,
+    previousEvidenceSourceIds: Array.isArray(rawState.previousEvidenceSourceIds) ? rawState.previousEvidenceSourceIds.filter((id): id is string => typeof id === 'string').slice(0, 16) : [],
+    updatedAt: typeof rawState.updatedAt === 'string' ? rawState.updatedAt : new Date().toISOString(),
+  } : undefined;
   const safeConversation = conversation ? {
     id: typeof conversation.id === 'string' ? conversation.id.slice(0, 200) : undefined,
     initialContext: conversation.initialContext && typeof conversation.initialContext === 'object' ? {
@@ -278,6 +289,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
     } : undefined,
     previousQuestion: typeof conversation.previousQuestion === 'string' ? conversation.previousQuestion.slice(0, 800) : undefined,
     previousAnswer: typeof conversation.previousAnswer === 'string' ? conversation.previousAnswer.slice(0, 1200) : undefined,
+    state: safeState,
     previousSources: Array.isArray(conversation.previousSources) ? conversation.previousSources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 8).map((source) => ({
       resourceType: String(source.resourceType ?? 'external') as never,
       resourceId: String(source.resourceId ?? source.id ?? ''),
@@ -319,14 +331,14 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
         skillSelectedSources = (streamEvent.sources ?? []).map((source) => `${source.resourceType}:${source.resourceId}`);
       }
       if (streamEvent.type === 'done' && streamEvent.metrics) {
-        console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answer: answer.slice(0, 2000) });
+        if (process.env.NODE_ENV !== 'production') console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answerChars: answer.length });
       }
       if (!sender.isDestroyed()) {
         const eventWithSkill = streamEvent.type === 'done' && skill
           ? { ...streamEvent, skillResult: buildSkillResult(skill, answer, explicitContext as never) }
           : streamEvent;
         if (streamEvent.type === 'done' && skill) {
-          console.info('[local-ai] Ask Ledger skill diagnostics', {
+          if (process.env.NODE_ENV !== 'production') console.info('[local-ai] Ask Ledger skill diagnostics', {
             skillId: skill.id,
             explicitContext,
             retrievalSourceCount: skillSourceCount,

@@ -7,6 +7,7 @@ import {
   type EmbeddingProvider,
 } from './ledgerRetrievalService.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
+import { buildRetrievalPlan } from './askLedgerRetrievalPlan.ts';
 
 class FakeEmbeddingProvider implements EmbeddingProvider {
   readonly model = 'fake-local-model';
@@ -151,4 +152,117 @@ test('explicit contextual resource outranks unrelated matches', async () => {
   const result = await retrieval.retrieve('workspace-a', 'What should I do next?', [], 8, { boostResourceKeys: ['project:context-project'] });
   assert.equal(result.items[0]?.resourceId, 'context-project');
   assert.ok(result.debug[0]?.why.includes('explicit-context'));
+});
+
+test('exact project title outranks a semantically or lexically adjacent project', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'project', resourceId: 'alfa-exact', title: 'Alfa 2026 Catalog', content: 'The catalog project.' }),
+    resource({ resourceType: 'project', resourceId: 'alfa-adjacent', title: 'Catalog delays and proofs', content: 'Related catalog context.' }),
+  ]);
+  const plan = buildRetrievalPlan('Tell me about Alfa 2026 Catalog');
+  const result = await retrieval.retrieve('workspace-a', plan.semanticQuery, [], 2, { plan });
+  assert.equal(result.items[0]?.resourceId, 'alfa-exact');
+  assert.equal(result.debug[0]?.exactEntityMatch, true);
+  assert.ok(result.debug[0]?.why.includes('exact-title-match'));
+  assert.equal(result.hybridRetrieval?.candidateCounts.exact, 1);
+  assert.equal(result.hybridRetrieval?.selectedSeeds[0], 'project:alfa-exact');
+});
+
+test('exact entity scoring beats a slightly stronger semantic candidate', async () => {
+  const provider: EmbeddingProvider = {
+    model: 'hybrid-test',
+    version: '1',
+    async embed(texts) {
+      return texts.map((text) => {
+        const normalized = text.toLowerCase();
+        if (!text.includes('\n')) return [1, 0];
+        return normalized.includes('semantic') ? [0.99, 0.1] : normalized.includes('alfa') ? [0.1, 0.99] : [0, 1];
+      });
+    },
+  };
+  const index = new EmbeddingIndexService(provider);
+  const retrieval = new LedgerRetrievalService(index, provider);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'project', resourceId: 'exact', title: 'Alfa', content: 'Exact project.' }),
+    resource({ resourceType: 'project', resourceId: 'semantic', title: 'Unrelated semantic project', content: 'Semantic context.' }),
+  ]);
+  const question = 'Tell me about Alfa';
+  const result = await retrieval.retrieve('workspace-a', question, [], 2, { plan: buildRetrievalPlan(question) });
+  assert.equal(result.items[0]?.resourceId, 'exact');
+  assert.ok((result.debug.find((entry) => entry.resourceId === 'semantic')?.semanticScore ?? 0) > (result.debug.find((entry) => entry.resourceId === 'exact')?.semanticScore ?? 0));
+});
+
+test('today task retrieval uses horizon as an authoritative structured filter', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'task', resourceId: 'today-task', title: 'Prepare today review', taskHorizon: 'today', horizon: 'today', status: 'Not started' }),
+    resource({ resourceType: 'task', resourceId: 'long-task', title: 'Today appears in long-term notes', taskHorizon: 'long_term', horizon: 'long_term', status: 'Not started' }),
+  ]);
+  const plan = buildRetrievalPlan('Show my today tasks');
+  const result = await retrieval.retrieve('workspace-a', plan.semanticQuery, [], 8, { plan });
+  assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['today-task']);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'long-task'), false);
+  assert.equal(result.debug[0]?.structuredMatch, true);
+  assert.equal(result.hybridRetrieval?.candidateCounts.structured, 1);
+});
+
+test('long-term tasks and completed project tasks use structured horizon, status, and project filters', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'project', resourceId: 'alfa', title: 'Alfa 2026 Catalog', content: 'Catalog.' }),
+    resource({ resourceType: 'task', resourceId: 'long-task', title: 'Long-term catalog plan', projectId: 'alfa', projectName: 'Alfa 2026 Catalog', taskHorizon: 'long_term', horizon: 'long_term', status: 'Not started' }),
+    resource({ resourceType: 'task', resourceId: 'completed-task', title: 'Complete catalog handoff', projectId: 'alfa', projectName: 'Alfa 2026 Catalog', taskHorizon: 'today', horizon: 'today', status: 'Completed' }),
+    resource({ resourceType: 'task', resourceId: 'other-task', title: 'Complete another project', projectId: 'other', projectName: 'Other project', taskHorizon: 'long_term', horizon: 'long_term', status: 'Completed' }),
+  ]);
+  const longTerm = await retrieval.retrieve('workspace-a', 'What long-term tasks do I have?', [], 8, { plan: buildRetrievalPlan('What long-term tasks do I have?') });
+  assert.deepEqual(longTerm.primaryItems?.map((entry) => entry.resourceId), ['long-task', 'other-task']);
+  const completedAlfa = await retrieval.retrieve('workspace-a', 'Show completed Alfa tasks', [], 8, { plan: buildRetrievalPlan('Show completed Alfa tasks') });
+  assert.deepEqual(completedAlfa.primaryItems?.map((entry) => entry.resourceId), ['completed-task']);
+});
+
+test('overdue retrieval excludes completed tasks and uses due dates', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'task', resourceId: 'overdue-open', title: 'Overdue open task', dueAt: '2026-08-10', status: 'In Progress' }),
+    resource({ resourceType: 'task', resourceId: 'overdue-complete', title: 'Overdue completed task', dueAt: '2026-08-10', status: 'Completed' }),
+    resource({ resourceType: 'task', resourceId: 'future-task', title: 'Future task', dueAt: '2026-08-30', status: 'Not started' }),
+  ]);
+  const result = await retrieval.retrieve('workspace-a', 'Show my overdue tasks', [], 8, { plan: buildRetrievalPlan('Show my overdue tasks') });
+  assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['overdue-open']);
+});
+
+test('meeting retrieval combines entity and last-week date constraints without project fallback', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'event', resourceId: 'workday-last-week', title: 'Workday meeting', timestamp: '2026-08-10T10:00:00.000Z' }),
+    resource({ resourceType: 'event', resourceId: 'workday-this-week', title: 'Workday meeting', timestamp: '2026-08-17T10:00:00.000Z' }),
+    resource({ resourceType: 'project', resourceId: 'unrelated-project', title: 'Workday project', content: 'Not a meeting.' }),
+  ]);
+  const question = 'Find my Workday meetings last week';
+  const result = await retrieval.retrieve('workspace-a', question, [], 8, { plan: buildRetrievalPlan(question, new Date('2026-08-18T12:00:00')) });
+  assert.equal(result.primaryItems?.some((entry) => entry.resourceId === 'workday-last-week'), true);
+  assert.equal(result.primaryItems?.some((entry) => entry.resourceId === 'workday-this-week'), false);
+  assert.equal(result.primaryItems?.some((entry) => entry.resourceType === 'project'), false);
+  assert.equal(result.hybridRetrieval?.authoritativeZeroMatches, false);
+});
+
+test('retrieves unread notifications and Circle activity with structured constraints', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'notification', resourceId: 'notification-unread', title: 'Alfa needs attention', content: 'Unread project alert.', projectId: 'project-alfa', read: false, priority: 'high', timestamp: '2026-08-18T10:00:00Z' }),
+    resource({ resourceType: 'notification', resourceId: 'notification-read', title: 'Alfa was updated', content: 'Read project alert.', projectId: 'project-alfa', read: true, timestamp: '2026-08-18T09:00:00Z' }),
+    resource({ resourceType: 'activity', resourceId: 'circle-activity', title: 'Circle task changed', content: 'Circle teamspace activity for Alfa.', sourceLabel: 'Circle', projectId: 'project-alfa', timestamp: '2026-08-18T08:00:00Z' }),
+  ]);
+  const unread = await retrieval.retrieve('workspace-a', 'Show my unread notifications', [], 8, { plan: buildRetrievalPlan('Show my unread notifications') });
+  assert.deepEqual(unread.primaryItems?.map((entry) => entry.resourceId), ['notification-unread']);
+  const circleQuestion = 'What changed in Circle this week?';
+  const circle = await retrieval.retrieve('workspace-a', circleQuestion, [], 8, { plan: buildRetrievalPlan(circleQuestion, new Date('2026-08-18T12:00:00')) });
+  assert.deepEqual(circle.primaryItems?.map((entry) => entry.resourceId), ['circle-activity']);
 });

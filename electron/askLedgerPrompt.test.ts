@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ASK_LEDGER_ABSTENTION, buildAskLedgerPrompt } from './askLedgerPrompt.ts';
+import { ASK_LEDGER_ABSTENTION, buildAskLedgerPrompt, buildAskLedgerRepairPrompt } from './askLedgerPrompt.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 import { getAskLedgerSkill } from './askLedgerSkills.ts';
 
@@ -99,6 +99,29 @@ test('passes adaptive depth guidance through the shared grounded prompt', () => 
   assert.doesNotMatch(brief, /1-3 concise paragraphs/);
 });
 
+test('separates evidence from instructions and requires deep synthesis with missing coverage', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'Look across meetings and projects and tell me where everything stands.',
+    generationDepth: 'deep',
+    generationDepthReason: 'research_route',
+    evidencePackage: {
+      request: 'Look across meetings and projects and tell me where everything stands.',
+      coverage: { requested: ['projects', 'tasks', 'reminders'], found: ['projects', 'tasks'], missing: ['reminders'], truncated: [] },
+      sections: [],
+      sources: [],
+      stats: { retrieved: 2, selected: 2, dropped: 0, estimatedTokens: 100, estimatedTokensBefore: 120 },
+      text: 'PROJECTS\n- Alfa is in progress.\nTASKS\n- Review proof — today.',
+    },
+  });
+  assert.match(prompt, /ANSWER MODE: deep/);
+  assert.match(prompt, /EVIDENCE PACKAGE/);
+  assert.match(prompt, /MISSING \/ LIMITED EVIDENCE/);
+  assert.match(prompt, /reminders/);
+  assert.match(prompt, /overall picture/);
+  assert.match(prompt, /Do not stop at a list of projects/);
+  assert.match(prompt, /USER REQUEST/);
+});
+
 test('uses the primary event time for last-workday lookups', () => {
   const prompt = buildAskLedgerPrompt({
     question: 'When was my last day working at Alfa Art Gallery?',
@@ -122,4 +145,17 @@ test('asks project-specific answers to include linked work context', () => {
   });
   assert.match(prompt, /scan its linked milestones, tasks or next actions, reminders, events, notes/);
   assert.match(prompt, /Posters &amp; Banners|Posters & Banners/);
+});
+
+test('repair prompt keeps validation bounded and distinguishes unavailable evidence', () => {
+  const evidencePackage = {
+    request: 'What happened across GitHub and projects?',
+    coverage: { requested: ['projects', 'external'], found: ['projects'], missing: ['external'], truncated: [], unavailable: ['GitHub'] },
+    sections: [], sources: [], stats: { retrieved: 1, selected: 1, dropped: 0, estimatedTokens: 20, estimatedTokensBefore: 20 }, text: 'PROJECTS\n- Alfa is in progress.',
+  };
+  const prompt = buildAskLedgerRepairPrompt({ question: evidencePackage.request, evidencePackage, answer: 'There were no GitHub updates.', validationFailures: '- unavailable_claimed_empty: GitHub was unavailable.' });
+  assert.match(prompt, /GitHub/);
+  assert.match(prompt, /unavailable/);
+  assert.match(prompt, /ORIGINAL ANSWER/);
+  assert.match(prompt, /Return only the corrected answer/);
 });
