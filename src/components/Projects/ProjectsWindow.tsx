@@ -71,7 +71,6 @@ import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForHome, routeForNote, routeForProject, routeForTask, usePlatform, type LedgerRoute } from '../../platform';
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
-import type { RelatedContextResponse } from '../../types/relatedContext';
 
 const parseProjectsSection = (
   value: string
@@ -2355,23 +2354,10 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     async (projectId: string) => {
       setIsLoadingLinkedNotes(true);
       try {
-        const payload = (await api.getRelatedContext('project', projectId)) as RelatedContextResponse;
-        const links = Array.isArray(payload?.items)
-          ? payload.items
-              .filter((item) => item?.target?.type === 'note' && item.source === 'join')
-              .map((item) => ({
-                id: `${projectId}:${item.target.id}`,
-                note_id: item.target.id,
-                created_at: item.created_at ?? '',
-                note: {
-                  id: item.target.id,
-                  title: item.target.title || 'Untitled note',
-                  preview: String(item.target.preview ?? ''),
-                  updated_at: item.target.updated_at ?? null,
-                  mode: String(item.target.mode ?? '') || null,
-                },
-              }))
-          : [];
+        const payload = (await api.getProjectNoteLinks(projectId)) as {
+          links?: ProjectNoteLink[];
+        };
+        const links = Array.isArray(payload?.links) ? payload.links : [];
         setLinkedNotes(links);
       } catch (error) {
         setTaskError(error instanceof Error ? error.message : 'Could not load linked notes.');
@@ -3048,6 +3034,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         await api.linkProjectNote(projectId, noteId);
       }
       await loadLinkedNotes(projectId);
+      await loadWorkspaceProjectContext();
       setLinkableNotes((prev) => prev.filter((note) => !noteIds.includes(note.id)));
       setSelectedLinkNoteIds([]);
       setIsLinkNoteModalOpen(false);
@@ -3056,7 +3043,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     } finally {
       setIsLinkingNote(false);
     }
-  }, [api, loadLinkedNotes, selectedProjectId]);
+  }, [api, loadLinkedNotes, loadWorkspaceProjectContext, selectedProjectId]);
 
   const unlinkNoteFromProject = useCallback(
     async (noteId: string) => {
@@ -3102,6 +3089,8 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
           );
           setLinkableCalendarReminders((prev) => prev.filter((item) => item.id !== itemId));
         }
+        await loadProjectCalendarItems(selectedProjectId);
+        await loadWorkspaceProjectContext();
         setIsLinkCalendarModalOpen(false);
       } catch (error) {
         setError(
@@ -3111,7 +3100,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
         setIsLinkingCalendarItem(false);
       }
     },
-    [api, selectedProjectId]
+    [api, loadProjectCalendarItems, loadWorkspaceProjectContext, selectedProjectId]
   );
 
   const openLinkedNoteInNotesModule = useCallback((noteId: string) => {

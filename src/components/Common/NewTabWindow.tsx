@@ -60,6 +60,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const conversationMenuRef = useRef<HTMLDivElement>(null);
   const conversationMenuButtonRef = useRef<HTMLButtonElement>(null);
   const conversationMenuPopupRef = useRef<HTMLDivElement>(null);
+  const footerHistoryPositionRef = useRef(false);
   const [conversationMenuPosition, setConversationMenuPosition] = useState<CSSProperties | null>(null);
   const [askInitialContext, setAskInitialContext] = useState<AskLedgerInitialContext | null>(null);
   const [customSkills, setCustomSkills] = useState<AskLedgerCustomSkill[]>([]);
@@ -246,8 +247,33 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     };
   }, [conversationMenuOpen]);
 
+  useEffect(() => {
+    const openFooterHistory = (event: Event) => {
+      const detail = (event as CustomEvent<{ x?: number; y?: number }>).detail;
+      const x = Number(detail?.x ?? window.innerWidth - 40);
+      const y = Number(detail?.y ?? window.innerHeight - 8);
+      setConversationMenuPosition({
+        position: 'fixed',
+        left: Math.max(8, Math.min(x - 224, window.innerWidth - 232)),
+        top: Math.max(8, y),
+        width: 224,
+        zIndex: 9999,
+        transform: 'translateY(calc(-100% - 8px))',
+      });
+      footerHistoryPositionRef.current = true;
+      setConversationMenuOpen(true);
+    };
+
+    window.addEventListener('ledger:ask-ledger-history-open', openFooterHistory);
+    return () => window.removeEventListener('ledger:ask-ledger-history-open', openFooterHistory);
+  }, []);
+
   useLayoutEffect(() => {
     if (!conversationMenuOpen) return undefined;
+    if (footerHistoryPositionRef.current) {
+      footerHistoryPositionRef.current = false;
+      return undefined;
+    }
     const updatePosition = () => {
       const button = conversationMenuButtonRef.current;
       if (!button) return;
@@ -405,7 +431,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
                   if (event.target === event.currentTarget) setConversationMenuOpen(false);
                 }}
               >
-              <div ref={conversationMenuPopupRef} role="menu" aria-label="Ask Ledger conversations" style={conversationMenuPosition ?? undefined} className={`${sidebarTheme.menu} max-h-[calc(100vh-16px)] overflow-x-hidden overflow-y-auto p-1.5`} onMouseDown={(event) => event.stopPropagation()}>
+              <div ref={conversationMenuPopupRef} role="menu" aria-label="Ask Ledger conversations" style={conversationMenuPosition ?? undefined} className={`ask-ledger-history-menu ${sidebarTheme.menu} max-h-[calc(100vh-16px)] overflow-x-hidden overflow-y-auto p-1.5`} onMouseDown={(event) => event.stopPropagation()}>
                 <button type="button" role="menuitem" onClick={() => startNewAskChat()} className={sidebarTheme.menuItem}>
                   New chat
                 </button>

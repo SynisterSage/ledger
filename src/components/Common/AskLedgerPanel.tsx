@@ -558,7 +558,7 @@ const attachmentKindLabel = (attachment: AskLedgerAttachment) => attachment.exte
 
 const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}` : name;
 
-export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void }) => {
+export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, compact = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; compact?: boolean }) => {
   const api = useApi();
   const platform = usePlatform();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -832,11 +832,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       const button = skillButtonRef.current;
       if (!button) return;
       const bounds = button.getBoundingClientRect();
-      const openAbove = conversationActive && bounds.top > 160;
+      const openAbove = compact || (conversationActive && bounds.top > 160);
       const availableHeight = openAbove ? bounds.top - 16 : window.innerHeight - bounds.bottom - 16;
       const maxHeight = Math.max(140, Math.min(420, availableHeight));
       setSkillPopupPosition({
-        left: Math.max(8, Math.min(bounds.left, window.innerWidth - 296)),
+        left: Math.max(8, Math.min(bounds.left, window.innerWidth - (compact ? 188 : 296))),
         top: openAbove ? bounds.top : bounds.bottom + 6,
         maxHeight,
         transform: openAbove ? 'translateY(calc(-100% - 6px))' : undefined,
@@ -849,7 +849,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [conversationActive, skillPickerOpen]);
+  }, [compact, conversationActive, skillPickerOpen]);
 
   useEffect(() => {
     onConversationChange?.(conversationActive);
@@ -869,6 +869,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     recentTurnsRef.current = [];
     messagesRef.current = [];
     sessionIdRef.current = null;
+    onSessionIdChange?.(null);
     sessionSkillIdRef.current = skillId;
     pendingSkillIdRef.current = skillId;
     setSelectedSkillId(skillId ?? null);
@@ -892,6 +893,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const restoredMessages = Array.isArray(initialSession.messages) ? initialSession.messages : [];
     messagesRef.current = restoredMessages;
     sessionIdRef.current = initialSession.id;
+    onSessionIdChange?.(initialSession.id);
     conversationIdRef.current = initialSession.id;
     sessionSkillIdRef.current = initialSession.skillId;
     pendingSkillIdRef.current = undefined;
@@ -1127,6 +1129,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           const created = await api.createAskLedgerSession(workspaceId, { title, messages: nextMessages, initialContext: initialContextRef.current, skillId: sessionSkillIdRef.current }) as { session?: AskLedgerSession };
           sessionId = created.session?.id ?? null;
           sessionIdRef.current = sessionId;
+          onSessionIdChange?.(sessionId);
         }
         if (!sessionId) return;
         await api.updateAskLedgerSession(workspaceId, sessionId, { title, messages: nextMessages, initialContext: initialContextRef.current, skillId: sessionSkillIdRef.current });
@@ -1717,7 +1720,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   }, [conversationActive, messages.length]);
 
   return (
-    <div className={conversationActive ? 'flex min-h-[calc(100vh-160px)] flex-col' : 'mt-5'}>
+    <div className={compact
+      ? `agent-ask-ledger-content flex h-full min-h-0 flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
+      : conversationActive ? 'flex min-h-[calc(100vh-160px)] flex-col' : 'mt-5'}>
       {conversationActive && (
         <section className="order-1 min-h-0 flex-1 space-y-10 pb-32 pt-8" aria-live="polite">
           {messages.map((message, messageIndex) => (
@@ -1914,7 +1919,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                   }
                 }}
                 style={{ left: skillPopupPosition.left, top: skillPopupPosition.top, maxHeight: skillPopupPosition.maxHeight, transform: skillPopupPosition.transform }}
-                className="fixed z-[2147483647] w-[280px] overflow-y-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]"
+                className={`agent-ask-ledger-portal fixed z-[2147483647] overflow-y-auto rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)] ${compact ? 'agent-ask-ledger-portal--compact' : 'w-[280px]'}`}
               >
                 {contextPickerSkill ? (
                   <div role="dialog" aria-label={`Choose context for ${contextPickerSkill.name}`}>
@@ -1983,7 +1988,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               {isSubmitting ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
           {localAIReady && (
-            <div className="relative order-first">
+            <div className="ledger-ask-model-control relative order-first">
               <button
                 ref={advancedButtonRef}
                 type="button"

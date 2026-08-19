@@ -751,6 +751,16 @@ textarea:focus-visible,
   min-height: 100dvh;
 }
 
+/* The shared IPC footer is part of the shell flow. Keep module roots inside
+   the space above it so their internal scroll containers can reach the real
+   bottom without the footer covering content. */
+.shared-ipc-shell-module > * {
+  height: 100% !important;
+  min-height: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
 [data-platform='web'] .web-app-root {
   box-sizing: border-box;
   min-height: 100dvh;
@@ -1329,3 +1339,117 @@ textarea:focus-visible,
 .ledger-selection-link-editor input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--ledger-text-primary); font-size: 11px; }
 .ledger-selection-link-editor button { display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: var(--ledger-accent); color: white; }
 .ledger-block-menu { min-width: 176px; }
+
+/* The shared Agent launcher uses the real Ask Ledger panel in a compact shell. */
+.agent-ask-ledger-popover > .flex-1 {
+  min-height: 0;
+}
+.agent-ask-ledger-popover {
+  transform: translateY(calc(-100% - 8px));
+  transform-origin: bottom right;
+  will-change: opacity, transform;
+  animation: agentAskLedgerPopoverIn 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes agentAskLedgerPopoverIn {
+  from { opacity: 0; transform: translateY(calc(-100% - 2px)) scale(0.985); }
+  to { opacity: 1; transform: translateY(calc(-100% - 8px)) scale(1); }
+}
+.ask-ledger-history-menu {
+  will-change: opacity;
+  animation: askLedgerHistoryMenuIn 120ms ease-out both;
+}
+@keyframes askLedgerHistoryMenuIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-ask-ledger-popover,
+  .ask-ledger-history-menu {
+    animation: none;
+  }
+}
+.agent-ask-ledger-popover .flex-1 > div {
+  min-height: 0;
+  height: 100%;
+  margin-top: 0;
+}
+.agent-ask-ledger-popover section[aria-live="polite"] {
+  padding-top: 10px;
+  padding-bottom: 70px;
+  gap: 16px;
+}
+.agent-ask-ledger-popover .ask-ledger-activity {
+  display: block;
+  margin: 6px 2px 0;
+  padding: 6px 7px;
+  border: 1px solid color-mix(in srgb, var(--ledger-border-subtle) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ledger-surface-muted) 55%, transparent);
+}
+.agent-ask-ledger-popover .ask-ledger-activity button,
+.agent-ask-ledger-popover .ask-ledger-activity > p {
+  font-size: 11px;
+  line-height: 1.25rem;
+}
+.agent-ask-ledger-popover .ask-ledger-activity .space-y-3 {
+  margin-top: 5px;
+  gap: 6px;
+}
+.agent-ask-ledger-popover .ask-ledger-composer {
+  min-height: 84px;
+  max-width: none;
+  margin-top: auto;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border-radius: 10px;
+}
+.agent-ask-ledger-popover .ask-ledger-composer textarea {
+  min-height: 34px;
+  max-height: 68px;
+  font-size: 12px;
+  line-height: 1.35rem;
+}
+.agent-ask-ledger-popover .ask-ledger-composer .mt-2 {
+  margin-top: 4px;
+}
+.agent-ask-ledger-popover .agent-ask-ledger-portal {
+  max-height: 240px !important;
+  width: 180px;
+  font-size: 11px;
+  padding: 4px;
+}
+.agent-ask-ledger-popover .agent-ask-ledger-portal button {
+  padding: 6px 8px;
+}
+.agent-ask-ledger-popover .agent-ask-ledger-portal span {
+  line-height: 1.2;
+}
+.agent-ask-ledger-popover .agent-ask-ledger-content--active > section[aria-live="polite"] {
+  gap: 10px;
+  padding-top: 8px;
+  padding-bottom: 58px;
+}
+.agent-ask-ledger-popover .agent-ask-ledger-content--active .leading-7 {
+  line-height: 1.35rem;
+}
+.agent-ask-ledger-popover .agent-ask-ledger-content--active article {
+  font-size: 13px;
+}
+.agent-ask-ledger-popover .agent-ask-ledger-content--active article p {
+  line-height: 1.35rem;
+}
+.agent-ask-ledger-portal--compact {
+  width: 180px !important;
+  max-height: 240px !important;
+  font-size: 11px;
+}
+.agent-ask-ledger-portal--compact button {
+  padding: 6px 8px;
+}
+.agent-ask-ledger-popover [aria-labelledby="ask-ledger-examples-heading"] {
+  display: none;
+}
+.agent-ask-ledger-popover .ask-ledger-composer [aria-label="Add attachment"],
+.agent-ask-ledger-popover .ledger-ask-model-control {
+  display: none;
+}

@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   BriefcaseBusiness,
+  Bot,
   Bell,
   CalendarDays,
   CircleAlert,
@@ -13,9 +14,12 @@ import {
   Code2,
   Folder,
   FolderKanban,
+  History,
   Link2,
   LayoutList,
   Loader2,
+  Maximize2,
+  Minus,
   MoreHorizontal,
   MessageCircle,
   Plus,
@@ -45,6 +49,8 @@ import { NotificationMonitor } from './components/Common/NotificationMonitor';
 import {
   type CSSProperties,
   type ReactNode,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -116,6 +122,8 @@ import {
 } from './web/browserInviteContinuation';
 import { usePlatform } from './platform';
 import { routeForHome } from './platform/routes';
+const AgentAskLedgerPanel = lazy(() => import('./components/Common/AskLedgerPanel').then((module) => ({ default: module.AskLedgerPanel })));
+const ASK_LEDGER_SESSION_PERSISTED_EVENT = 'ledger:ask-ledger-session-persisted';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep =
@@ -254,6 +262,53 @@ const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as CSSProperties & {
 const dashboardSkeletonSurface = 'var(--ledger-surface-muted)';
 const dashboardSkeletonFill = 'var(--ledger-surface-hover)';
 const dashboardSkeletonBorder = 'var(--ledger-border-subtle)';
+
+const SharedIpcShellBottomStrip = () => {
+  if (!window.desktopWindow) return null;
+
+  return (
+    <div
+      className="pointer-events-none flex h-7 shrink-0 items-center justify-end rounded-b-[var(--ledger-window-radius)] border-x border-b border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3"
+    >
+      <div className="flex items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
+        <button
+          type="button"
+          aria-label="Open Agent"
+          title="Open Agent"
+          className="pointer-events-auto inline-flex items-center gap-1.5 text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+          onClick={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            window.dispatchEvent(new CustomEvent('ledger:agent-panel-open', {
+              detail: { x: bounds.right, y: bounds.top },
+            }));
+          }}
+        >
+          <Bot size={12} />
+          <span>Agent</span>
+        </button>
+        <button
+          type="button"
+          aria-label="Open Ask Ledger history"
+          title="Ask Ledger history"
+          className="pointer-events-auto inline-flex items-center justify-center text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+          onClick={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            window.dispatchEvent(
+              new CustomEvent('ledger:ask-ledger-history-open', {
+                detail: {
+                  x: bounds.right,
+                  y: bounds.top,
+                },
+              })
+            );
+          }}
+        >
+          <History size={13} />
+        </button>
+      </div>
+    </div>
+  );
+};
 
 const dashboardTheme = {
   shell:
@@ -7555,7 +7610,13 @@ export function DashboardContent({
                       </section>
                     ))}
 
-                    <section className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] pt-2.5 pb-2">
+                    <section
+                      className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] pt-2.5 pb-2"
+                      style={{
+                        backgroundColor:
+                          'color-mix(in srgb, var(--ledger-surface-muted) 35%, var(--ledger-surface-card))',
+                      }}
+                    >
                       <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                         Quick actions
                       </p>
@@ -9259,23 +9320,31 @@ export function AppShell({
         : [...visitedModuleKeys, activeKeepAliveModuleKey];
 
       return (
-        <div className="relative h-screen w-screen overflow-hidden">
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] bg-[var(--ledger-background)]">
           {renderedModuleKeys.map((key) => (
             <div
               key={key}
-              className="h-full w-full"
+              className="shared-ipc-shell-module min-h-0 w-full flex-1"
               style={{ display: key === activeKeepAliveModuleKey ? 'block' : 'none' }}
               aria-hidden={key !== activeKeepAliveModuleKey}
             >
               {renderKeepAliveModule(key)}
             </div>
           ))}
+          <SharedIpcShellBottomStrip />
         </div>
       );
     }
 
     if (isNewTabRoute(workspaceShellRoute)) {
-      return <NewTabWindow onClose={() => void window.desktopWindow?.closeModule('new-tab')} />;
+      return (
+        <div className="relative flex h-screen w-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] bg-[var(--ledger-background)]">
+          <div className="shared-ipc-shell-module min-h-0 w-full flex-1">
+            <NewTabWindow onClose={() => void window.desktopWindow?.closeModule('new-tab')} />
+          </div>
+          <SharedIpcShellBottomStrip />
+        </div>
+      );
     }
 
     if (
@@ -10200,6 +10269,169 @@ export function AppShell({
   );
 }
 
+function AskLedgerHistoryPopover() {
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const api = useApi();
+  const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 16, top: 16 });
+  const [sessions, setSessions] = useState<Array<{ id: string; title?: string | null; updatedAt: string }>>([]);
+
+  useEffect(() => {
+    const handleOpen = async (event: Event) => {
+      const detail = (event as CustomEvent<{ x?: number; y?: number }>).detail;
+      const x = Number(detail?.x ?? window.innerWidth - 40);
+      const y = Number(detail?.y ?? window.innerHeight - 8);
+      setPosition({ left: Math.max(8, Math.min(x - 224, window.innerWidth - 232)), top: Math.max(8, y) });
+      setIsOpen(true);
+
+      const navigation = await window.desktopWindow?.getWorkspaceNavigationState?.().catch(() => null);
+      if (navigation?.currentModule === 'new-tab') {
+        setIsOpen(false);
+        return;
+      }
+      if (activeWorkspaceId) {
+        try {
+          const payload = await api.getAskLedgerSessions(activeWorkspaceId, 5) as { sessions?: Array<{ id: string; title?: string | null; updatedAt: string }> };
+          setSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
+        } catch {
+          setSessions([]);
+        }
+      }
+    };
+    window.addEventListener('ledger:ask-ledger-history-open', handleOpen);
+    return () => window.removeEventListener('ledger:ask-ledger-history-open', handleOpen);
+  }, [activeWorkspaceId, api]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const refresh = () => {
+      if (!activeWorkspaceId) return;
+      void api.getAskLedgerSessions(activeWorkspaceId, 5)
+        .then((payload) => {
+          const value = payload as { sessions?: Array<{ id: string; title?: string | null; updatedAt: string }> };
+          setSessions(Array.isArray(value.sessions) ? value.sessions : []);
+        })
+        .catch(() => setSessions([]));
+    };
+    window.addEventListener(ASK_LEDGER_SESSION_PERSISTED_EVENT, refresh);
+    return () => window.removeEventListener(ASK_LEDGER_SESSION_PERSISTED_EVENT, refresh);
+  }, [activeWorkspaceId, api, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key === 'Escape') setIsOpen(false);
+      if (event instanceof MouseEvent && event.target instanceof Element && !event.target.closest('[data-ask-ledger-history-popover]')) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+  return createPortal(
+    <div data-ask-ledger-history-popover role="menu" aria-label="Ask Ledger chat history" className="ask-ledger-history-menu fixed z-[9999] w-56 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-1.5 shadow-[var(--ledger-shadow)]" style={{ ...position, transform: 'translateY(calc(-100% - 8px))' }}>
+      <button type="button" onClick={() => setIsOpen(false)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">New chat</button>
+      {sessions.length > 0 ? <div className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
+        {sessions.map((session) => <button key={session.id} type="button" role="menuitem" onClick={() => { setIsOpen(false); void window.desktopWindow?.openModule('new-tab', { kind: 'new-tab', focusContext: `ask-session:${session.id}` }); }} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-[var(--ledger-surface-hover)]">
+          <span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-primary)]">{session.title || 'Ask Ledger conversation'}</span>
+          <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{new Date(session.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+        </button>)}
+      </div> : <p className="px-2.5 py-2 text-xs text-[var(--ledger-text-muted)]">No recent chats</p>}
+    </div>,
+    document.body
+  );
+}
+
+function AgentMockupPopover() {
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const [position, setPosition] = useState({ left: 16, top: 16 });
+  const [isOpen, setIsOpen] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState('New chat');
+
+  useEffect(() => {
+    const handleOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ x?: number; y?: number }>).detail;
+      const x = Number(detail?.x ?? window.innerWidth - 80);
+      const y = Number(detail?.y ?? window.innerHeight - 28);
+      const width = Math.min(260, window.innerWidth - 32);
+      setPosition({
+        left: Math.max(16, Math.min(x - width, window.innerWidth - width - 16)),
+        top: Math.max(8, y),
+      });
+      setIsMinimized(false);
+      setIsOpen(true);
+    };
+    window.addEventListener('ledger:agent-panel-open', handleOpen);
+    return () => window.removeEventListener('ledger:agent-panel-open', handleOpen);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !window.askLedger?.switchGenerationTier) return;
+    void window.askLedger.switchGenerationTier('balanced');
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key === 'Escape') setIsOpen(false);
+      if (event instanceof MouseEvent && event.target instanceof Element && !event.target.closest('[data-agent-mockup-panel], .agent-ask-ledger-portal')) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+  const openFullscreen = () => {
+    void window.desktopWindow?.openModule('new-tab', {
+      kind: 'new-tab',
+      focusContext: sessionId ? `ask-session:${sessionId}` : 'new-tab:browser',
+    });
+    setIsOpen(false);
+  };
+  const closeAgent = () => {
+    setResetKey((key) => key + 1);
+    setSessionId(null);
+    setSessionTitle('New chat');
+    setIsMinimized(false);
+    setIsOpen(false);
+  };
+  return createPortal(
+    <section
+      data-agent-mockup-panel
+      aria-label="Agent preview"
+      className={`agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_18px_60px_rgba(0,0,0,0.36)] ${isMinimized ? 'h-10' : 'h-[400px]'}`}
+      style={{ left: position.left, top: position.top }}
+    >
+      <header className="flex h-10 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-3">
+        <h2 className="min-w-0 truncate text-sm font-medium text-[var(--ledger-text-primary)]">{sessionTitle}</h2>
+        <div className="flex items-center gap-2 text-[var(--ledger-text-muted)]">
+          <button type="button" aria-label="Minimize Agent" title="Minimize" onClick={() => setIsMinimized((current) => !current)} className="transition hover:text-[var(--ledger-text-primary)]"><Minus size={14} /></button>
+          <button type="button" aria-label="Open full Agent" title="Open full Agent" onClick={openFullscreen} className="transition hover:text-[var(--ledger-text-primary)]"><Maximize2 size={13} /></button>
+          <button type="button" aria-label="Close Agent preview" title="Close" onClick={closeAgent} className="transition hover:text-[var(--ledger-text-primary)]"><X size={16} /></button>
+        </div>
+      </header>
+      {!isMinimized && <div className="min-h-0 flex-1 overflow-hidden px-2">
+        <Suspense fallback={<div className="flex h-full items-end p-2 text-xs text-[var(--ledger-text-muted)]">Ask Ledger…</div>}>
+          <AgentAskLedgerPanel
+            workspaceId={activeWorkspaceId}
+            resetKey={resetKey}
+            compact
+            onSessionIdChange={setSessionId}
+            onSessionTitleChange={setSessionTitle}
+            onSessionPersisted={() => window.dispatchEvent(new Event(ASK_LEDGER_SESSION_PERSISTED_EVENT))}
+          />
+        </Suspense>
+      </div>}
+    </section>,
+    document.body
+  );
+}
+
 function App() {
   const { user } = useAuthContext();
   const figmaPluginAuthSession = windowParams.get('figmaPluginAuth');
@@ -10241,6 +10473,8 @@ function App() {
           ) : (
             <AppShell />
           )}
+          {user && isModuleWindow ? <AskLedgerHistoryPopover /> : null}
+          {user && isModuleWindow ? <AgentMockupPopover /> : null}
           {user && isModuleWindow ? (
             <NotificationTray
               isOpen={isNotificationTrayOpen}

@@ -20820,6 +20820,9 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
     const isPastEvent = existingEnd ? existingEnd.getTime() < Date.now() : false;
     const requestedKeys = Object.keys(req.body ?? {}).filter((key) => req.body?.[key] !== undefined);
     const isStatusOnlyUpdate = requestedKeys.length === 1 && requestedKeys[0] === 'status';
+    const isContextAssociationUpdate = requestedKeys.length > 0 && requestedKeys.every((key) =>
+      ['project_id', 'note_id'].includes(key)
+    );
     const requestedStatus = String(req.body?.status ?? '').toLowerCase();
     const isPastStatusUpdate = isPastEvent && isStatusOnlyUpdate && requestedStatus === 'done';
     const requestedEnd = req.body?.end_at ? new Date(req.body.end_at) : null;
@@ -20827,7 +20830,7 @@ app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res
       Boolean(requestedEnd) &&
       !Number.isNaN(requestedEnd.getTime()) &&
       requestedEnd.getTime() > Date.now();
-    if (isPastEvent && !isPastStatusUpdate && !isFutureReschedule) {
+    if (isPastEvent && !isPastStatusUpdate && !isFutureReschedule && !isContextAssociationUpdate) {
       return res.status(409).json({ error: 'Past events cannot be edited' });
     }
 
@@ -22608,6 +22611,8 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     const nextLinkedType = hasLinkedType ? normalizeReminderLinkedType(req.body.linked_type) : null;
     const hasLinkedId = req.body?.linked_id !== undefined;
     const nextLinkedId = hasLinkedId ? normalizeNullableText(req.body.linked_id) : null;
+    const hasProjectId = req.body?.project_id !== undefined;
+    const nextProjectId = hasProjectId ? normalizeNullableText(req.body.project_id) : null;
     const hasCalendarId = req.body?.calendar_id !== undefined;
     const nextCalendarId = hasCalendarId ? normalizeNullableText(req.body.calendar_id) : null;
     const hasAssignmentTarget =
@@ -22626,11 +22631,15 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     if (hasCalendarId && nextCalendarId && !isUuidLike(nextCalendarId)) {
       return res.status(400).json({ error: 'Invalid calendar_id' });
     }
+    if (hasProjectId && nextProjectId && !isUuidLike(nextProjectId)) {
+      return res.status(400).json({ error: 'Invalid project_id' });
+    }
 
     const currentStatus = String(reminder.status ?? 'active').toLowerCase();
     const effectiveStatus = nextStatus ?? currentStatus;
     const effectiveLinkedType = hasLinkedType ? nextLinkedType : reminder.linked_type ?? null;
     const effectiveLinkedId = hasLinkedId ? nextLinkedId : reminder.linked_id ?? null;
+    const effectiveProjectId = hasProjectId ? nextProjectId : reminder.project_id ?? null;
     let targetWorkspaceId = reminder.workspace_id;
     let resolvedCalendarId = hasCalendarId ? nextCalendarId : reminder.calendar_id ?? null;
 
@@ -22642,6 +22651,12 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
       await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
       targetWorkspaceId = calendar.workspace_id;
       resolvedCalendarId = calendar.id;
+    }
+    if (effectiveProjectId) {
+      const projectAllowed = await ensureWorkspaceResource('projects', effectiveProjectId, targetWorkspaceId);
+      if (!projectAllowed) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
     }
     if (assignmentTarget?.assigned_to_user_id) {
       const targetAllowed = await ensureWorkspaceMemberTarget(
@@ -22695,6 +22710,7 @@ app.patch('/api/reminders/:id', authMiddleware, rateLimit('write'), async (req, 
     if (hasLinkedType) updatePayload.linked_type = nextLinkedType;
     if (hasLinkedId) updatePayload.linked_id = nextLinkedId;
     if (hasCalendarId) updatePayload.calendar_id = resolvedCalendarId;
+    if (hasProjectId) updatePayload.project_id = nextProjectId;
     if (assignmentTarget) {
       Object.assign(
         updatePayload,
