@@ -474,7 +474,8 @@ export class AskLedgerService {
     try {
       const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
       const conversationResolution = resolveAskLedgerConversation(request.question, request.conversation?.state, request.workspaceId);
-      const route = routeAskLedgerMessage(request.question, {
+      const embeddedContextOnly = Boolean(request.explicitContext?.initialQuestion && !request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length);
+      const routed = routeAskLedgerMessage(request.question, {
         previousQuestion: request.conversation?.previousQuestion,
         previousAnswer: request.conversation?.previousAnswer,
         previousSources: request.conversation?.previousSources,
@@ -483,6 +484,9 @@ export class AskLedgerService {
         hasSelectedSkill: Boolean(skill),
         attachmentCount: request.attachmentIds?.length,
       });
+      const route = embeddedContextOnly
+        ? { ...routed, retrievalRequired: false, answerDepth: 'standard' as const, reason: 'embedded_context' }
+        : routed;
       const retrievalPlan = buildRetrievalPlan(request.question);
       const hasFreshRetrievalIntent = retrievalPlan.primaryResourceTypes.length > 0 || Boolean(retrievalPlan.containerQuery || retrievalPlan.entityQuery) || conversationResolution.mode === 'refresh_state' || conversationResolution.mode === 'switch_provider' || conversationResolution.mode === 'switch_entity';
       askLedgerDiagnostic('[local-ai] Ask Ledger routing', {
@@ -502,10 +506,13 @@ export class AskLedgerService {
           ? request.conversation?.previousSources ?? []
           : [];
         emit({ type: 'sources', requestId, sources: reusedSources });
+        const embeddedItem = request.explicitContext
+          ? request.documents.find((item) => item.resourceType === request.explicitContext?.resourceType && item.resourceId === request.explicitContext?.resourceId)
+          : undefined;
         const previousContextItems = route.reusePreviousGroundedContext
           ? request.documents.filter((item) => (request.conversation?.previousSources ?? []).some((source) => source.resourceType === item.resourceType && source.resourceId === item.resourceId))
           : [];
-        const normalized = new LedgerContextBuilder().normalize(previousContextItems, { maxContextTokens: 1800, maxItemTokens: 500 });
+        const normalized = new LedgerContextBuilder().normalize([...((embeddedItem ? [embeddedItem] : [])), ...previousContextItems], { maxContextTokens: 1800, maxItemTokens: 500 });
         const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: 'quick' });
         activeGenerationDepth = generationDepth;
         this.localAI.start(
@@ -714,7 +721,8 @@ export class AskLedgerService {
         || (intent.kind === 'recent_updates' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('recent:')))
         || (intent.kind === 'meeting_prep' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('meeting-prep-')));
       const hasPlannedPrimary = Boolean(retrieval.primaryItems?.length);
-      if (!normalized.items.length || (!skill && !hasPlannedPrimary && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
+      const hasExplicitContextEvidence = Boolean(explicitContext && normalized.items.some((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId));
+      if (!normalized.items.length || (!skill && !hasPlannedPrimary && !hasExplicitContextEvidence && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
         askLedgerDiagnostic('[local-ai] Ask Ledger grounding diagnostics', {
           messageId: request.messageId,
           responseMode: route.mode,

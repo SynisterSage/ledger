@@ -114,6 +114,13 @@ const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
 
 const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerResourceType[]) => {
   if (!primaryResourceTypes.includes('note') || !/\bnotes?\b|\bfolder\b|\bcollection\b/i.test(question)) return undefined;
+  const explicitFolder = question.match(
+    /\bfolder\s+(?:called\s+|named\s+)?([a-z0-9][a-z0-9_-]*(?:\s+[a-z0-9][a-z0-9_-]*){0,4})(?=\s*(?:[,.;?]|\band\b|\bhow\s+many\b|\b(?:last|latest|newest|recent|first|oldest|past)\b|$))/i
+  );
+  if (explicitFolder?.[1]) {
+    const candidate = explicitFolder[1].trim();
+    if (candidate.length >= 3) return candidate;
+  }
   const match = question.match(/\b(?:in|from|within|inside|through)\s+(?:my\s+)?(.+?)(?=\s*,?\s*(?:last|latest|newest|recent|first|oldest|past)\b|\s+and\s+(?:summarize|review|compare)|\s+to\s+(?:summarize|review)|$)/i);
   if (!match) return undefined;
   const candidate = match[1].replace(/\bfolder\b|\bcollection\b/gi, '').replace(/\s+/g, ' ').trim();
@@ -223,11 +230,54 @@ export const resourceDate = (item: AskLedgerContextItem) => {
 
 export const normalizedText = normalize;
 
+const compactNormalized = (value: string) => normalize(value).replace(/\s+/g, '');
+
+const editDistance = (left: string, right: string) => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    let diagonal = previous[0];
+    previous[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const above = previous[rightIndex];
+      previous[rightIndex] = left[leftIndex - 1] === right[rightIndex - 1]
+        ? diagonal
+        : Math.min(diagonal, previous[rightIndex - 1], above) + 1;
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
+};
+
+const containerNamesFor = (item: AskLedgerContextItem) => {
+  const names = item.containerName ? [item.containerName] : [];
+  const folderMatch = item.content.match(/\bFolder:\s*([^\n.]+?)(?:\.|$)/i);
+  if (folderMatch?.[1]) names.push(folderMatch[1].trim());
+  return names;
+};
+
+const matchesContainerQuery = (item: AskLedgerContextItem, query: string) => {
+  const normalizedQuery = normalize(query);
+  const queryTokens = normalizedQuery.split(' ').filter((token) => token.length > 2);
+  const names = containerNamesFor(item);
+  if (!queryTokens.length || !names.length) return false;
+  if (names.some((name) => {
+    const haystack = normalize(name);
+    return queryTokens.every((token) => haystack.includes(token));
+  })) return true;
+
+  const compactQuery = compactNormalized(query);
+  if (compactQuery.length < 5) return false;
+  return names.some((name) => {
+    const compactName = compactNormalized(name);
+    const threshold = Math.max(1, Math.floor(Math.max(compactQuery.length, compactName.length) * 0.2));
+    return editDistance(compactQuery, compactName) <= threshold;
+  });
+};
+
 export const matchesRetrievalScope = (item: AskLedgerContextItem, plan: RetrievalPlan) => {
   if (plan.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(item.resourceType)) return false;
-  const query = plan.containerQuery
-    ? normalize(plan.containerQuery).replace(/\bnotes?\b/g, ' ').replace(/\s+/g, ' ').trim()
-    : plan.entityQuery ? normalize(plan.entityQuery) : '';
+  if (plan.containerQuery) return matchesContainerQuery(item, plan.containerQuery);
+  const query = plan.entityQuery ? normalize(plan.entityQuery) : '';
   if (!query) return true;
   const haystack = normalize(`${item.containerName ?? ''} ${item.title} ${item.content} ${item.projectName ?? ''} ${item.provenance ?? ''}`);
   const queryTokens = query.split(' ').filter((token) => token.length > 2);

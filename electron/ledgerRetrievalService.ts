@@ -392,7 +392,11 @@ export class LedgerRetrievalService {
           const match = document.content.match(/\bFolder:\s*([^\n.]+?)(?:\.|$)/i);
           return match?.[1] ? [match[1].trim()] : [];
         });
-        const title = names.find((name) => name.toLowerCase().includes(query)) ?? names[0];
+        // The scoped corpus has already passed the container matcher, which may
+        // intentionally tolerate misspellings or missing spaces. Prefer the
+        // actual indexed container label instead of re-checking the raw query
+        // with an exact substring match.
+        const title = names[0];
         return { query: plan.containerQuery, title, confidence: title ? title.toLowerCase() === query ? 1 : 0.82 : 0 };
       })()
       : undefined;

@@ -34,7 +34,7 @@ import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
-import { OverviewFocusService, type OverviewFocusSnapshot } from './overviewFocus';
+import { OverviewFocusService, type OverviewFocusResult, type OverviewFocusSnapshot } from './overviewFocus';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import type { AskLedgerConversationState } from '../src/types/askLedgerConversationState.ts';
@@ -285,6 +285,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
     resourceType: String((payload.explicitContext as Record<string, unknown>).resourceType ?? ''),
     resourceId: String((payload.explicitContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
     title: String((payload.explicitContext as Record<string, unknown>).title ?? '').slice(0, 300),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((payload.explicitContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
     ...(sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) } : {}),
   } : undefined;
   if (skill && skill.requiresContext && !explicitContext) throw new Error(`${skill.name} needs explicit Ledger context.`);
@@ -308,6 +309,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
       resourceType: String((conversation.initialContext as Record<string, unknown>).resourceType ?? 'external') as never,
       resourceId: String((conversation.initialContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
       title: String((conversation.initialContext as Record<string, unknown>).title ?? 'Ledger context').slice(0, 300),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((conversation.initialContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
       ...(sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) } : {}),
     } : undefined,
     previousQuestion: typeof conversation.previousQuestion === 'string' ? conversation.previousQuestion.slice(0, 800) : undefined,
@@ -348,6 +350,13 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
       conversation: safeConversation,
     },
     { onEvent: (streamEvent) => {
+      if (streamEvent.type === 'error') {
+        console.error('[local-ai] Ask Ledger stream error', {
+          requestId: streamEvent.requestId,
+          code: streamEvent.error?.code,
+          message: streamEvent.error?.message,
+        });
+      }
       if (streamEvent.type === 'delta') answer += streamEvent.text ?? '';
       if (streamEvent.type === 'sources') {
         skillSourceCount = streamEvent.sources?.length ?? 0;
@@ -383,9 +392,11 @@ ipcMain.handle('ask-ledger:cancel', (_event, requestId: unknown) => {
   return askLedgerService.cancel(requestId);
 });
 
-ipcMain.handle('overview-focus:generate', async (_event, snapshot: unknown) => {
+ipcMain.handle('overview-focus:generate', async (_event, payload: unknown) => {
+  const snapshot = payload && typeof payload === 'object' && 'snapshot' in payload ? (payload as { snapshot?: unknown }).snapshot : payload;
+  const previousResult = payload && typeof payload === 'object' && 'previousResult' in payload ? (payload as { previousResult?: unknown }).previousResult : undefined;
   if (!snapshot || typeof snapshot !== 'object') return { insights: [] };
-  return overviewFocusService.generate(snapshot as OverviewFocusSnapshot);
+  return overviewFocusService.generate(snapshot as OverviewFocusSnapshot, previousResult && typeof previousResult === 'object' ? { previousResult: previousResult as OverviewFocusResult } : undefined);
 });
 
 ipcMain.handle('ask-ledger:local-ai-status', () => localAIAssets.status());

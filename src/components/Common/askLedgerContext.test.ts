@@ -7,6 +7,7 @@ test('preserves bounded Overview Focus handoff context through the existing Ask 
     resourceType: 'project',
     resourceId: 'project-alfa',
     title: 'Alfa 2026 Catalog',
+    initialQuestion: 'What should I pay attention to about Alfa 2026 Catalog?',
     handoff: {
       kind: 'overview_focus',
       workspaceId: 'workspace-a',
@@ -19,6 +20,7 @@ test('preserves bounded Overview Focus handoff context through the existing Ask 
     resourceType: 'project',
     resourceId: 'project-alfa',
     title: 'Alfa 2026 Catalog',
+    initialQuestion: 'What should I pay attention to about Alfa 2026 Catalog?',
     handoff: {
       kind: 'overview_focus',
       workspaceId: 'workspace-a',

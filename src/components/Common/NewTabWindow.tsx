@@ -204,6 +204,15 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         void restoreAskSession(focusContext.slice('ask-session:'.length));
         return;
       }
+      const askContext = decodeAskLedgerContext(focusContext);
+      if (askContext) {
+        setSelectedAskSession(null);
+        setAskInitialContext(askContext);
+        setAskConversationActive(false);
+        setAskSessionTitle('Ask Ledger');
+        setAskResetKey((key) => key + 1);
+        return;
+      }
       askRouteRestoreRef.current += 1;
       setSelectedAskSession(null);
       setAskInitialContext(null);

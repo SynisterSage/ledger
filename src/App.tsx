@@ -17,6 +17,7 @@ import {
   LayoutList,
   Loader2,
   MoreHorizontal,
+  MessageCircle,
   Plus,
   Palette,
   Funnel,
@@ -114,6 +115,7 @@ import {
   readBrowserInviteContinuation,
 } from './web/browserInviteContinuation';
 import { usePlatform } from './platform';
+import { routeForHome } from './platform/routes';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep =
@@ -1533,12 +1535,34 @@ export function DashboardContent({
   >([]);
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [overviewFocusStatus, setOverviewFocusStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable' | 'error'>('idle');
+  const [overviewFocusLoadingLabel, setOverviewFocusLoadingLabel] = useState('Looking for what needs attention…');
   const [overviewFocusResult, setOverviewFocusResult] = useState<OverviewFocusResult | null>(null);
+  const overviewFocusResultRef = useRef<OverviewFocusResult | null>(null);
   const [overviewFocusRefreshToken, setOverviewFocusRefreshToken] = useState(0);
   const overviewFocusRequestRef = useRef(0);
   const overviewFocusInFlightRef = useRef(false);
   const overviewFocusQueuedKeyRef = useRef<string | null>(null);
   const overviewFocusSnapshotKeyRef = useRef('');
+  overviewFocusResultRef.current = overviewFocusResult;
+
+  useEffect(() => {
+    if (overviewFocusStatus !== 'loading') {
+      setOverviewFocusLoadingLabel('Looking for what needs attention…');
+      return;
+    }
+    const labels = [
+      'Checking deadlines and overdue work…',
+      'Connecting related tasks and projects…',
+      'Looking for what needs attention…',
+    ];
+    let index = 0;
+    setOverviewFocusLoadingLabel(labels[index]);
+    const timer = window.setInterval(() => {
+      index = (index + 1) % labels.length;
+      setOverviewFocusLoadingLabel(labels[index]);
+    }, 2600);
+    return () => window.clearInterval(timer);
+  }, [overviewFocusStatus]);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [githubAttention, setGithubAttention] = useState<
@@ -1872,6 +1896,7 @@ export function DashboardContent({
     () => new Set()
   );
   const [selectedOverviewRowId, setSelectedOverviewRowId] = useState<string | null>(null);
+  const handledInitialFocusTaskRef = useRef<string | null>(null);
   const [collapsedOverviewGroups, setCollapsedOverviewGroups] = useState<Set<string>>(() => {
     try {
       const stored = window.localStorage.getItem('ledger:overview:collapsed-groups:v1');
@@ -1965,7 +1990,9 @@ export function DashboardContent({
           setOverviewFocusStatus('unavailable');
           return;
         }
-        const result = await window.askLedger.generateOverviewFocus(overviewFocusSnapshot);
+        const result = await window.askLedger.generateOverviewFocus(overviewFocusSnapshot, {
+          previousResult: overviewFocusResultRef.current ?? undefined,
+        });
         if (cancelled || requestGeneration !== overviewFocusRequestRef.current) return;
         const insights = Array.isArray(result?.insights) ? result.insights : [];
         setOverviewFocusResult({ insights: insights as OverviewFocusResult['insights'] });
@@ -4325,6 +4352,39 @@ export function DashboardContent({
     void window.desktopWindow?.openModule(kind, focus);
   };
 
+  const openOverviewRecentNote = () => {
+    const note = recentNotes[0];
+    if (!note || !activeWorkspaceId) return;
+    if (browserMode) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'note',
+        noteId: note.id,
+      });
+      return;
+    }
+    openModule('notes', { kind: 'notes', focusNoteId: note.id });
+  };
+
+  const openOverviewCalendarConnection = () => {
+    if (!activeWorkspaceId) return;
+    if (browserMode) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'settings',
+        scope: 'workspace',
+        section: 'integrations',
+      });
+      return;
+    }
+    void window.desktopWindow?.openModule('settings', {
+      kind: 'settings',
+      focusContext: 'integrations',
+    });
+  };
+
   const openOverviewFocusResource = (resource: { type: 'task' | 'project' | 'event' | 'note'; id: string }) => {
     if (!overviewFocusSnapshot) return;
     const primary = getOverviewFocusPrimaryResource({ id: 'focus', title: '', summary: '', importance: 'normal', resourceRefs: [resource] }, overviewFocusSnapshot);
@@ -5473,9 +5533,32 @@ export function DashboardContent({
 
   useEffect(() => {
     if (!initialFocusTaskId) return;
+    const focusKey = `${activeWorkspaceId ?? ''}:${initialFocusTaskId}`;
+    if (handledInitialFocusTaskRef.current === focusKey) return;
     const target = visibleOverviewRows.find((row) => row.kind === 'task' && row.sourceId === initialFocusTaskId);
-    if (target) setSelectedOverviewRowId(target.id);
-  }, [initialFocusTaskId, visibleOverviewRows]);
+    if (target) {
+      handledInitialFocusTaskRef.current = focusKey;
+      setSelectedOverviewRowId(target.id);
+    }
+  }, [activeWorkspaceId, initialFocusTaskId, visibleOverviewRows]);
+
+  useEffect(() => {
+    const focusTaskListener = (
+      _event: unknown,
+      payload: { kind?: string; focusTaskId?: string | null }
+    ) => {
+      if (payload?.kind !== 'dashboard' || !payload.focusTaskId) return;
+      const target = visibleOverviewRows.find(
+        (row) => row.kind === 'task' && row.sourceId === payload.focusTaskId
+      );
+      if (target) setSelectedOverviewRowId(target.id);
+    };
+
+    window.ledgerIpc?.events?.onModuleFocusTask(focusTaskListener);
+    return () => {
+      window.ledgerIpc?.events?.offModuleFocusTask(focusTaskListener);
+    };
+  }, [visibleOverviewRows]);
 
   const getOverviewCustomGroup = (row: OverviewRow) => {
     const groupBy = overviewLayoutPreferences.groupBy;
@@ -5733,6 +5816,21 @@ export function DashboardContent({
     selectedOverviewRow?.open();
   };
 
+  const askLedgerAboutSelectedOverviewRow = () => {
+    if (!selectedOverviewRow || !activeWorkspaceId) return;
+    const resourceType = selectedOverviewRow.kind === 'reminder'
+      ? 'reminder'
+      : selectedOverviewRow.kind === 'capture'
+      ? 'intake'
+      : selectedOverviewRow.kind;
+    openAskLedgerWithContext({
+      resourceType,
+      resourceId: selectedOverviewRow.sourceId,
+      title: selectedOverviewRow.title,
+      initialQuestion: `What should I pay attention to about ${selectedOverviewRow.title}, and what should I do next?`,
+    }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+  };
+
   const selectedOverviewTaskQuickActions = selectedOverviewRow
     ? (() => {
         if (selectedOverviewRow.kind !== 'task' && selectedOverviewRow.kind !== 'reminder') {
@@ -5860,6 +5958,12 @@ export function DashboardContent({
                 disabled: false,
               },
             ]),
+        {
+          label: 'Ask Ledger',
+          icon: <MessageCircle size={13} />,
+          action: askLedgerAboutSelectedOverviewRow,
+          disabled: false,
+        },
         ...(selectedOverviewRow.kind === 'project'
           ? [
               {
@@ -7331,7 +7435,12 @@ export function DashboardContent({
                           <RefreshCw size={12} className={overviewFocusStatus === 'loading' ? 'animate-spin' : ''} />
                         </button>
                       </div>
-                      {overviewFocusStatus === 'loading' && !overviewFocusResult ? (
+                      {overviewFocusStatus === 'loading' && (
+                        <p className="mt-1 text-[11px] leading-4 text-[var(--ledger-text-muted)]" aria-live="polite">
+                          {overviewFocusLoadingLabel}
+                        </p>
+                      )}
+                      {overviewFocusStatus === 'loading' && !overviewFocusResult?.insights.length ? (
                         <div className="mt-2 space-y-2" aria-label="Loading Focus">
                           <div className="h-3 w-4/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
                           <div className="h-2.5 w-full animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
@@ -7362,7 +7471,7 @@ export function DashboardContent({
                                 <p className="mt-0.5 break-words text-left text-[11px] leading-4 text-[var(--ledger-text-muted)]">{insight.summary}</p>
                               </>
                             );
-                            const className = `min-w-0 ${insight.importance === 'attention' ? 'border-l-2 border-[color:var(--ledger-accent)] pl-2' : ''} ${primaryResource ? 'cursor-pointer rounded-md pr-1 transition hover:bg-[var(--ledger-surface-hover)]' : ''}`;
+                            const className = `min-w-0 ${primaryResource ? 'cursor-pointer rounded-md pr-1 transition hover:bg-[var(--ledger-surface-hover)]' : ''}`;
                             return primaryResource ? (
                               <button key={insight.id} type="button" className={`block w-full ${className}`} onClick={() => openOverviewFocusResource(primaryResource)} aria-label={`Open ${insight.title}`}>
                                 {content}
@@ -7379,23 +7488,31 @@ export function DashboardContent({
                     </section> : null}
                     <div className="mt-auto space-y-2 pt-3">
                       {recentNotes[0] && (
-                        <div className="border-t border-[color:var(--ledger-border-subtle)] pt-2.5">
+                        <button
+                          type="button"
+                          onClick={openOverviewRecentNote}
+                          className="block w-full border-t border-[color:var(--ledger-border-subtle)] pt-2.5 text-left transition hover:text-[var(--ledger-text-primary)]"
+                        >
                           <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                             Recent note
                           </p>
                           <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
                             {recentNotes[0].title}
                           </p>
-                        </div>
+                        </button>
                       )}
-                      <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={openOverviewCalendarConnection}
+                        className="block w-full pt-2 text-left transition hover:text-[var(--ledger-text-primary)]"
+                      >
                         <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                           Try next
                         </p>
                         <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
                           Connect calendar
                         </p>
-                      </div>
+                      </button>
                     </div>
                   </>
                 ) : (
@@ -7438,7 +7555,7 @@ export function DashboardContent({
                       </section>
                     ))}
 
-                    <section className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] pt-2.5 pb-1">
+                    <section className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] pt-2.5 pb-2">
                       <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                         Quick actions
                       </p>

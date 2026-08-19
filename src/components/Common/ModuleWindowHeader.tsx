@@ -561,11 +561,11 @@ export const ModuleWindowHeader = ({
   const isAttachedFullscreen = workspaceShellLayout.shellFullscreen && workspaceShellLayout.sidebarMode === 'attached';
   const attachedHeaderRadiusClass = isAttachedFullscreen
     ? workspaceShellLayout.sidebarSize.left > 0
-      ? 'rounded-tl-[var(--ledger-window-radius)] overflow-hidden'
+      ? 'rounded-tl-[var(--ledger-window-radius)]'
       : workspaceShellLayout.sidebarSize.right > 0
-        ? 'rounded-tr-[var(--ledger-window-radius)] overflow-hidden'
+        ? 'rounded-tr-[var(--ledger-window-radius)]'
         : workspaceShellLayout.sidebarSize.top > 0
-          ? 'rounded-t-[var(--ledger-window-radius)] overflow-hidden'
+          ? 'rounded-t-[var(--ledger-window-radius)]'
           : ''
     : '';
   const { openSearch } = useSearch();
@@ -867,7 +867,7 @@ export const ModuleWindowHeader = ({
     <div
       ref={headerRef}
       data-ledger-module-header
-      className={`web-module-header w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${attachedHeaderRadiusClass}`}
+      className={`web-module-header relative z-50 w-full border-b ${sidebarTheme.subtleBorder} ${sidebarTheme.mutedSurface} ${attachedHeaderRadiusClass}`}
       style={dragRegionStyle}
       onDoubleClickCapture={handleStripDoubleClick}
     >

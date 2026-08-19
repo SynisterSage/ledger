@@ -106,7 +106,7 @@ interface Window {
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
   askLedger?: {
-    generateOverviewFocus: (snapshot: unknown) => Promise<{ insights: unknown[] }>;
+    generateOverviewFocus: (snapshot: unknown, options?: { previousResult?: unknown }) => Promise<{ insights: unknown[] }>;
     listSkills: () => Promise<unknown[]>;
     selectAttachments: (payload: { workspaceId: string; conversationId: string; existingCount?: number; existingSizeBytes?: number }) => Promise<unknown>;
     openAttachment: (attachmentId: string) => Promise<{ ok: boolean; error?: string }>;

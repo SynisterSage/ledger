@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildRetrievalPlan } from './askLedgerRetrievalPlan.ts';
+import { buildRetrievalPlan, matchesRetrievalScope } from './askLedgerRetrievalPlan.ts';
 import { EmbeddingIndexService, LedgerRetrievalService } from './ledgerRetrievalService.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 
@@ -16,6 +16,13 @@ test('builds a note container plan with ordering and count constraints', () => {
   assert.equal(plan.ordering, 'newest');
   assert.equal(plan.requestedCount, 3);
   assert.equal(plan.expandRelatedContext, true);
+});
+
+test('extracts an explicit folder before a count question', () => {
+  const plan = buildRetrievalPlan(
+    'how many workday meetings did i have like in my notes i jabe a folder wokrdaymeetings, how many days did i work'
+  );
+  assert.equal(plan.containerQuery, 'wokrdaymeetings');
 });
 
 test('builds resource-aware plans for common constrained requests', () => {
@@ -83,6 +90,26 @@ test('selects scoped newest notes before unrelated semantic candidates', async (
   assert.equal(result.primaryItems?.every((entry) => entry.content.includes('decision') || entry.content.includes('details') || entry.content.includes('Third')), true);
   assert.equal(result.primaryItems?.some((entry) => entry.resourceId === 'note-unrelated'), false);
   assert.equal(result.relatedItems?.[0]?.resourceId, 'event-related');
+});
+
+test('matches misspelled and unspaced folder names against note containers', () => {
+  const plan = buildRetrievalPlan(
+    'how many workday meetings did i have like in my notes i jabe a folder wokrdaymeetings, how many days did i work'
+  );
+  assert.equal(
+    matchesRetrievalScope(
+      item({ content: 'Folder: Workday Meetings. Jul 9 meeting notes.' }),
+      plan
+    ),
+    true
+  );
+  assert.equal(
+    matchesRetrievalScope(
+      item({ content: 'Folder: Personal. Unrelated notes.' }),
+      plan
+    ),
+    false
+  );
 });
 
 test('does not fall back to projects when an authoritative meeting corpus is empty', async () => {

@@ -394,7 +394,7 @@ contextBridge.exposeInMainWorld('meetingTranscription', {
 });
 
 contextBridge.exposeInMainWorld('askLedger', {
-  generateOverviewFocus(snapshot: unknown) { return ipcRenderer.invoke('overview-focus:generate', snapshot) as Promise<{ insights: unknown[] }>; },
+  generateOverviewFocus(snapshot: unknown, options?: { previousResult?: unknown }) { return ipcRenderer.invoke('overview-focus:generate', { snapshot, previousResult: options?.previousResult }) as Promise<{ insights: unknown[] }>; },
   listSkills() { return ipcRenderer.invoke('ask-ledger:list-skills') as Promise<unknown[]>; },
   selectAttachments(payload: { workspaceId: string; conversationId: string; existingCount?: number; existingSizeBytes?: number }) { return ipcRenderer.invoke('ask-ledger:select-attachments', payload); },
   openAttachment(attachmentId: string) { return ipcRenderer.invoke('ask-ledger:open-attachment', attachmentId) as Promise<{ ok: boolean; error?: string }>; },

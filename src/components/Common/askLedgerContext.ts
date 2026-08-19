@@ -20,7 +20,7 @@ export const decodeAskLedgerContext = (value: string | null | undefined): AskLed
           resourceRefs: Array.isArray(parsed.handoff.resourceRefs) ? parsed.handoff.resourceRefs.slice(0, 16).flatMap((item) => item && typeof item === 'object' && typeof item.resourceType === 'string' && typeof item.resourceId === 'string' && typeof item.title === 'string' ? [{ resourceType: item.resourceType as AskLedgerInitialContext['resourceType'], resourceId: item.resourceId.slice(0, 200), title: item.title.slice(0, 200) }] : []) : [],
         }
       : undefined;
-    return { resourceType: parsed.resourceType, resourceId: parsed.resourceId, title: parsed.title, ...(handoff?.workspaceId && handoff.overviewDate ? { handoff } : {}) };
+    return { resourceType: parsed.resourceType, resourceId: parsed.resourceId, title: parsed.title, ...(typeof parsed.initialQuestion === 'string' && parsed.initialQuestion.trim() ? { initialQuestion: parsed.initialQuestion.slice(0, 400) } : {}), ...(handoff?.workspaceId && handoff.overviewDate ? { handoff } : {}) };
   } catch {
     return null;
   }

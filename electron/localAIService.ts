@@ -32,6 +32,7 @@ export class LocalAIError extends Error {
 export interface LocalAIRequest {
   question: string;
   context: string;
+  generationBudget?: number;
   reasoningSignals?: Omit<ReasoningRequestSignals, 'question'>;
 }
 
@@ -292,7 +293,7 @@ export class LocalModelRuntime {
     });
     callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'generating' } });
     const startedAt = Date.now();
-    const configuredMaxTokens = typeof this.config.maxTokens === 'function' ? this.config.maxTokens() : this.config.maxTokens;
+    const configuredMaxTokens = request.generationBudget ?? (typeof this.config.maxTokens === 'function' ? this.config.maxTokens() : this.config.maxTokens);
     const contextSize = typeof this.config.contextSize === 'function' ? this.config.contextSize() : this.config.contextSize;
     const budgets = resolveGenerationBudgets(this.config.modelTier ?? 'fast', configuredMaxTokens, contextSize, { question: request.question, ...request.reasoningSignals });
     const initialBudget = budgets.initial;

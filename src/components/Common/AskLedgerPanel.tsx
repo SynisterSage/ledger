@@ -348,13 +348,19 @@ const isAskLedgerStreamEvent = (value: unknown): value is AskLedgerStreamEvent =
   return typeof event.type === 'string' && typeof event.requestId === 'string';
 };
 
-const localAIErrorMessage = (code?: string) => {
+const localAIErrorMessage = (code?: string, detail?: string) => {
   if (code === 'model_missing' || code === 'llama_unavailable')
     return 'Local AI is unavailable right now. Try again.';
   if (code === 'cancelled') return 'Generation cancelled.';
-  if (code === 'runtime_start_failed' || code === 'runtime_exited') return 'Local AI could not start. Try again.';
+  if (code === 'runtime_start_failed' || code === 'runtime_exited') {
+    return detail?.trim() ? `Local AI could not start: ${detail.trim()}` : 'Local AI could not start. Try again.';
+  }
   if (code === 'request_timeout') return 'Local AI took too long to respond. Try again.';
-  if (code === 'retrieval_failed') return "Couldn't search your workspace. Try again.";
+  if (code === 'retrieval_failed') {
+    const safeDetail = detail?.trim();
+    return safeDetail ? `Ledger could not complete this request: ${safeDetail}` : "Couldn't search your workspace. Try again.";
+  }
+  if (detail?.trim()) return `Ledger could not answer right now: ${detail.trim()}`;
   return 'Ledger could not answer right now. Try again.';
 };
 
@@ -656,6 +662,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const sessionSkillIdRef = useRef<AskLedgerSkillRef | undefined>(initialSession?.skillId ?? skillId);
   const pendingSkillIdRef = useRef<AskLedgerSkillRef | undefined>(skillId);
   const initialContextRef = useRef<AskLedgerInitialContext | null>(initialContext ?? null);
+  const autoSubmittedContextRef = useRef<string | null>(null);
   const sessionSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const questionRef = useRef(question);
   const workspaceIdRef = useRef(workspaceId);
@@ -1060,7 +1067,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               current.status === 'streaming' || current.status === 'submitting'
                 ? current.request
                 : { question: questionRef.current.trim(), workspaceId: workspaceIdRef.current };
-            return { status: 'error', request, message: localAIErrorMessage(value.error?.code) };
+            return { status: 'error', request, message: localAIErrorMessage(value.error?.code, value.error?.message) };
           });
           activeRequestIdRef.current = null;
         }
@@ -1212,12 +1219,32 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         documents?: Array<Record<string, unknown>>;
       }>,
       effectiveQuestion ? api.searchWorkspace(workspaceId, effectiveQuestion) as Promise<Array<Record<string, unknown>>> : Promise.resolve([]),
-    ] : [Promise.resolve({ documents: [] }), Promise.resolve([])] as const)
-      .then(([documentPayload, lexicalResults]) => {
+      (api.getSections().catch(() => []) as Promise<Array<Record<string, unknown>> | { sections?: Array<Record<string, unknown>> }>),
+    ] : [Promise.resolve({ documents: [] }), Promise.resolve([]), Promise.resolve([])] as const)
+      .then(([documentPayload, lexicalResults, sectionPayload]) => {
+        const sectionRows = Array.isArray(sectionPayload)
+          ? sectionPayload
+          : Array.isArray(sectionPayload?.sections)
+          ? sectionPayload.sections
+          : [];
+        const sectionNameById = new Map(
+          sectionRows.flatMap((section) => {
+            const id = String(section.id ?? '').trim();
+            const name = String(section.name ?? section.title ?? '').trim();
+            return id && name ? [[id, name] as const] : [];
+          })
+        );
         const documents: Array<Record<string, unknown>> = [...(documentPayload.documents ?? [])]
           .filter((item, index, all) => all.findIndex((candidate) => candidate.resourceType === item.resourceType && candidate.resourceId === item.resourceId) === index)
           .map(
-          (item) => ({ ...item, workspaceId })
+          (item) => {
+            if (item.resourceType !== 'note' || item.containerName || item.sectionName) {
+              return { ...item, workspaceId };
+            }
+            const sectionId = String(item.section_id ?? item.sectionId ?? '').trim();
+            const sectionName = sectionNameById.get(sectionId);
+            return sectionName ? { ...item, workspaceId, containerName: sectionName } : { ...item, workspaceId };
+          }
         );
         sourceItemsRef.current = [...documents
           .map((item) => {
@@ -1632,6 +1659,19 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     ? Math.min(100, Math.round((localAIBytesDownloaded / localAITotalBytes) * 100))
     : 0;
   const localAISettingUp = Boolean(generation?.downloading || embedding?.downloading || (setupStarted && !localAIReady));
+
+  useEffect(() => {
+    const context = activeInitialContext;
+    if (initialSession || !context?.initialQuestion?.trim() || !localAIReady || requestInitializingRef.current || activeRequestIdRef.current) return;
+    const key = `${context.resourceType}:${context.resourceId}:${context.initialQuestion}`;
+    if (autoSubmittedContextRef.current === key) return;
+    const timer = window.setTimeout(() => {
+      if (autoSubmittedContextRef.current === key) return;
+      autoSubmittedContextRef.current = key;
+      submit(context.initialQuestion, true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeInitialContext, initialSession, localAIReady, submit]);
   const localAIVerifying = Boolean(
     setupStarted && !generation?.downloading && !embedding?.downloading && !localAIReady && !setupError
   );
