@@ -52,9 +52,9 @@ const normalize = (value: string) =>
 const workspaceSignals =
   /\b(?:ledger|workspace|projects?|tasks?|todo|to do|action items?|milestones?|reminders?|meetings?|events?|calendar|notes?|transcripts?|deadlines?|overdue|blocked|blocking|stuck|status|progress|activity|happening|going on|decision|decided|discussed|changed|updates?|follow[- ]?ups?|team members?|integration|slack|github|figma|launch|this week)\b/i;
 const capabilitySignals =
-  /\b(?:what can you help me with|what can you do|what do you do|what do u do|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
+  /\b(?:what can you help me with|what can you do|what do you do|what do u do|what does ledger do|what is ledger|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
 const casualSignals =
-  /^(?:hi|hello|hey|yo|thanks?|thank you|thx|good morning|good afternoon|good evening|how are you|whats up|what is up|bye|goodbye|okay|ok|great|nice|cool|got it)[.!?\s]*$/i;
+  /^(?:h+i+|hello+|hey+|yo+|thanks?|thank you|thx|good morning|good afternoon|good evening|how are you|whats up|what is up|bye|goodbye|okay|ok|great|nice|cool|got it)[.!?\s]*$/i;
 const factualQuestionSignals =
   /^(?:what|whats|when|where|who|which|is|are|did|does|do|has|have|can|how many|how much|how long)\b/i;
 const transformationSignals =
@@ -176,11 +176,12 @@ export const routeAskLedgerMessage = (
       || (workspaceSignals.test(normalized) && factualQuestionSignals.test(normalized))
       || (/^(?:what|when|where|who|which|is|are|did|does|do|has|have)\b/i.test(normalized) && /^(?:what|how) about\b/i.test(normalized));
     if (!newFactsRequested && (referenceSignals.test(normalized) || continuationSignals.test(normalized) || reasoningFollowUpSignals.test(normalized) || casualSignals.test(normalized) || !factualQuestionSignals.test(normalized))) {
+      const casual = casualSignals.test(normalized);
       return withDepth({
-        mode: casualSignals.test(normalized) ? 'conversational' : 'follow_up',
+        mode: casual ? 'conversational' : 'follow_up',
         retrievalRequired: false,
-        reusePreviousGroundedContext: true,
-        reason: 'grounded_context_reuse',
+        reusePreviousGroundedContext: !casual,
+        reason: casual ? 'casual_conversation' : 'grounded_context_reuse',
       });
     }
     if (contextReuseSignals.test(normalized) && !explicitExistingResourceSignals.test(normalized)) {

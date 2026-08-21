@@ -46,6 +46,7 @@ const models = [
   { id: 'qwen3-4b-thinking-2507-q6-k', label: 'Qwen3-4B-Thinking-2507 Q6_K', family: 'Qwen3', path: qwenPath, reasoning: true },
   { id: 'qwen3.5-4b-q4-k-m', label: 'Qwen3.5 4B Q4_K_M', family: 'Qwen3.5', path: qwen35Path, reasoning: false },
   { id: 'qwen3-4b-q4-k-m', label: 'Qwen3 4B Q4_K_M', family: 'Qwen3', path: qwenRegularPath, reasoning: false },
+  { id: 'qwen3-4b-q4-k-m-thinking-mode', label: 'Qwen3 4B Q4_K_M Thinking mode', family: 'Qwen3', path: qwenRegularPath, reasoning: true },
 ];
 const requestedModelIds = process.env.LEDGER_PHASE7_MODEL_IDS?.split(',').map((value) => value.trim()).filter(Boolean);
 const benchmarkModels = requestedModelIds?.length ? models.filter((model) => requestedModelIds.includes(model.id)) : models;
@@ -69,7 +70,7 @@ const waitForHealth = async (port, child, diagnostics) => { const started = perf
 
 const streamRequest = async (port, prompt, maxTokens, reasoning) => {
   const started = performance.now(); let firstResponseByteMs = null; let firstReasoningMs = null; let firstVisibleMs = null; let lastDeltaMs = null; let reasoningText = ''; let visibleText = ''; let finishReason = null; let timings = null; let buffer = ''; let doneMarkerMs = null;
-  const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stream: true, max_tokens: maxTokens, n_predict: maxTokens, temperature: 0.2, top_p: 0.95, top_k: 40, min_p: 0.05, messages: [{ role: 'user', content: prompt }] }) });
+  const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stream: true, max_tokens: maxTokens, n_predict: maxTokens, temperature: 0.2, top_p: 0.95, top_k: 40, min_p: 0.05, messages: [{ role: 'user', content: `${prompt}\n${reasoning ? '/think' : '/no_think'}` }] }) });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
   const reader = response.body.getReader(); const decoder = new TextDecoder();
   while (true) {
@@ -97,7 +98,7 @@ const streamRequest = async (port, prompt, maxTokens, reasoning) => {
 };
 
 const runModel = async (model, prepared) => {
-  const port = 39500 + models.indexOf(model); const args = ['--model', model.path, '--host', '127.0.0.1', '--port', String(port), '--ctx-size', '4096', '--parallel', '1', '--jinja', '--n-gpu-layers', 'all', '--no-mmproj', '--verbosity', '4', ...(model.reasoning ? ['--reasoning', 'on', '--reasoning-format', 'deepseek'] : ['--reasoning', 'off'])];
+  const port = Number(process.env.LEDGER_PHASE7_PORT_BASE || 39500) + models.indexOf(model); const args = ['--model', model.path, '--host', '127.0.0.1', '--port', String(port), '--ctx-size', '4096', '--parallel', '1', '--jinja', '--n-gpu-layers', 'all', '--no-mmproj', '--verbosity', '4', ...(model.reasoning ? ['--reasoning', 'on', '--reasoning-format', 'deepseek'] : ['--reasoning', 'off'])];
   const child = spawn(runtime, args, { stdio: ['ignore', 'pipe', 'pipe'] }); const exitPromise = new Promise((resolve) => child.once('exit', resolve)); let diagnostics = ''; const collect = (chunk) => { diagnostics = `${diagnostics}${String(chunk)}`.slice(-40000); }; child.stdout?.on('data', collect); child.stderr?.on('data', collect);
   const startupStarted = performance.now();
   try {

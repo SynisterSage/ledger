@@ -13,11 +13,10 @@ const probe = (totalMemoryBytes: number | null, platform: NodeJS.Platform = 'dar
   platform, arch, totalMemoryBytes, availableMemoryBytes: totalMemoryBytes, logicalCores: 8,
 });
 
-test('conservative capability rules recommend Fast, Balanced, and Powerful by memory class', () => {
+test('conservative capability rules recommend Fast on low memory and Balanced otherwise', () => {
   assert.equal(recommendGenerationTier(probe(8 * 1024 ** 3)).recommendedTier, 'fast');
   assert.equal(recommendGenerationTier(probe(16 * 1024 ** 3)).recommendedTier, 'balanced');
-  assert.equal(recommendGenerationTier(probe(32 * 1024 ** 3)).recommendedTier, 'powerful');
-  assert.equal(recommendGenerationTier(probe(8 * 1024 ** 3)).warnings.powerful, 'May respond more slowly on this device.');
+  assert.equal(recommendGenerationTier(probe(32 * 1024 ** 3)).recommendedTier, 'balanced');
 });
 
 test('unknown hardware falls back to Fast without confident warnings', () => {
@@ -39,9 +38,9 @@ test('tier acknowledgement persists locally and rejects invalid renderer input',
     const service = new LocalAICapabilityService({ rootDir, probe: () => probe(16 * 1024 ** 3, 'win32', 'x64') });
     assert.deepEqual(service.getCapability().acknowledgedTiers, []);
     assert.throws(() => service.acknowledgeTier('/arbitrary/path'), /Invalid generation tier/);
-    assert.deepEqual(service.acknowledgeTier('powerful').acknowledgedTiers, ['powerful']);
+    assert.deepEqual(service.acknowledgeTier('balanced').acknowledgedTiers, ['balanced']);
     const restored = new LocalAICapabilityService({ rootDir, probe: () => probe(16 * 1024 ** 3, 'win32', 'x64') });
-    assert.deepEqual(restored.getCapability().acknowledgedTiers, ['powerful']);
+    assert.deepEqual(restored.getCapability().acknowledgedTiers, ['balanced']);
   } finally {
     fs.rmSync(rootDir, { recursive: true, force: true });
   }

@@ -78,7 +78,7 @@ export class LocalAIBenchmarkHarness {
     this.assets = assets;
   }
 
-  async run(cases: LocalAIBenchmarkCase[], tiers: GenerationTier[] = ['fast', 'balanced', 'powerful']): Promise<LocalAIBenchmarkReport> {
+  async run(cases: LocalAIBenchmarkCase[], tiers: GenerationTier[] = ['fast', 'balanced']): Promise<LocalAIBenchmarkReport> {
     const originalTier = this.assets.getSelectedGenerationTier();
     const prepared = new Map<string, PreparedAskLedgerBenchmarkCase>();
     const results: LocalAIBenchmarkResult[] = [];
@@ -116,7 +116,7 @@ export class LocalAIBenchmarkHarness {
     } finally {
       if (this.assets.getGenerationModelStatus(this.assets.getSelectedGenerationModel().id).installed) await this.localAI.switchGenerationTier(originalTier).catch(() => undefined);
     }
-    const summary = Object.fromEntries((['fast', 'balanced', 'powerful'] as GenerationTier[]).map((tier) => {
+    const summary = Object.fromEntries((['fast', 'balanced'] as GenerationTier[]).map((tier) => {
       const tierResults = results.filter((result) => result.tier === tier && !result.error);
       return [tier, { tested: tierResults.length, passed: tierResults.filter((result) => result.score.passed === true).length, averageFirstTokenMs: average(tierResults.map((result) => result.metrics.firstTokenMs).filter((value): value is number => value !== undefined)), averageTokensPerSecond: average(tierResults.map((result) => result.metrics.tokensPerSecond).filter((value): value is number => value !== undefined)), averageTotalMs: average(tierResults.map((result) => result.metrics.totalMs).filter((value): value is number => value !== undefined)), averageProcessRssDeltaBytes: average(tierResults.map((result) => result.metrics.processRssDeltaBytes).filter((value): value is number => value !== undefined)), fileSizeBytes: tierResults[0]?.model.fileSizeBytes ?? null }];
     })) as LocalAIBenchmarkReport['summary'];

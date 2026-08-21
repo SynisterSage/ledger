@@ -1,16 +1,21 @@
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext';
+import { structuredValueLinesFor, type AskLedgerStructuredDiagnostics, type AskLedgerStructuredValueOptions } from './askLedgerStructuredValues.ts';
 
 export type NormalizedAskLedgerContext = {
   items: AskLedgerContextItem[];
   text: string;
   estimatedTokens: number;
   truncated: boolean;
+  structuredDiagnostics?: AskLedgerStructuredDiagnostics;
 };
 
 export type AskLedgerContextBudget = {
   maxContextTokens?: number;
   maxItemTokens?: number;
   sortByFreshness?: boolean;
+  timeZone?: string;
+  timeFormat?: '12h' | '24h';
+  now?: Date;
 };
 
 const DEFAULT_MAX_CONTEXT_TOKENS = 2400;
@@ -42,24 +47,19 @@ const truncateText = (value: string, maxTokens: number) => {
   };
 };
 
-const renderItem = (item: AskLedgerContextItem, maxItemTokens: number) => {
+const renderItem = (item: AskLedgerContextItem, maxItemTokens: number, structuredOptions?: AskLedgerStructuredValueOptions) => {
   const content = truncateText(cleanText(item.content), maxItemTokens);
   const lines = [
     `[${item.resourceType.toUpperCase()}]`,
     `Title: ${cleanText(item.title) || FALLBACK_TITLE}`,
   ];
-  if (item.status) lines.push(`Status: ${cleanText(item.status)}`);
   if (item.projectName) lines.push(`Project: ${cleanText(item.projectName)}`);
-  if (item.timestamp) lines.push(`Time: ${cleanText(item.timestamp)}`);
-  if (item.dueAt) lines.push(`Due: ${cleanText(item.dueAt)}`);
-  if (item.endAt) lines.push(`Ends: ${cleanText(item.endAt)}`);
-  if (item.priority) lines.push(`Priority: ${cleanText(item.priority)}`);
+  lines.push(...structuredValueLinesFor(item, structuredOptions).lines);
   if (item.taskHorizon) lines.push(`Horizon: ${cleanText(item.taskHorizon)}`);
   if (item.provenance) lines.push(`Origin: ${cleanText(item.provenance)}`);
   if (item.attachmentSource?.pageNumber) lines.push(`Page: ${item.attachmentSource.pageNumber}`);
   if (item.attachmentSource?.section) lines.push(`Section: ${cleanText(item.attachmentSource.section)}`);
   if (item.attachmentSource?.rowStart) lines.push(`Rows: ${item.attachmentSource.rowStart}–${item.attachmentSource.rowEnd ?? item.attachmentSource.rowStart}`);
-  if (item.updatedAt) lines.push(`Updated: ${cleanText(item.updatedAt)}`);
   if (item.relationships?.length) lines.push(`Relationships: ${item.relationships.map((relationship) => `${cleanText(relationship.relationshipType)} (${cleanText(relationship.resourceType)})`).join(', ')}`);
   if (content.value) lines.push(content.value);
   return { text: lines.join('\n'), truncated: content.truncated };
@@ -77,6 +77,7 @@ export class LedgerContextBuilder {
     const rendered: string[] = [];
     let usedTokens = 0;
     let truncated = false;
+    const structuredDiagnostics: AskLedgerStructuredDiagnostics = { rawIsoDateObserved: false, raw24HourTimeObserved: false, invalidDateDetected: false, invalidTimeDetected: false, dateNormalizationFailure: false, relativeDateAvailableButUnused: false, dueStateMismatchDetected: false };
 
     for (const item of ordered) {
       const normalizedItem: AskLedgerContextItem = {
@@ -84,7 +85,9 @@ export class LedgerContextBuilder {
         title: cleanText(item.title) || FALLBACK_TITLE,
         content: cleanText(item.content),
       };
-      const renderedItem = renderItem(normalizedItem, maxItemTokens);
+      const structured = structuredValueLinesFor(normalizedItem, budget);
+      (Object.keys(structuredDiagnostics) as Array<keyof AskLedgerStructuredDiagnostics>).forEach((key) => { structuredDiagnostics[key] ||= structured.display.diagnostics[key]; });
+      const renderedItem = renderItem(normalizedItem, maxItemTokens, budget);
       const separatorTokens = rendered.length ? 2 : 0;
       const itemTokens = estimatedTokens(renderedItem.text);
       if (usedTokens + separatorTokens + itemTokens > maxContextTokens) {
@@ -93,7 +96,7 @@ export class LedgerContextBuilder {
           truncated = true;
           continue;
         }
-        const shortened = renderItem(normalizedItem, Math.min(maxItemTokens, remainingTokens));
+        const shortened = renderItem(normalizedItem, Math.min(maxItemTokens, remainingTokens), budget);
         const shortenedTokens = estimatedTokens(shortened.text);
         if (shortenedTokens > remainingTokens) {
           truncated = true;
@@ -116,6 +119,7 @@ export class LedgerContextBuilder {
       text: rendered.join('\n\n'),
       estimatedTokens: usedTokens,
       truncated,
+      structuredDiagnostics,
     };
   }
 }

@@ -58,6 +58,14 @@ export type AskLedgerGenerationDiagnostics = {
   evidenceResources: number;
   evidenceTokens: number;
   modelTier?: string;
+  reasoningMode?: 'off' | 'thinking';
+  reasoningReason?: string;
+  reasoningEnabled?: boolean;
+  reasoningBudget?: number;
+  reasoningTokens?: number;
+  reasoningDurationMs?: number;
+  visibleAnswerBudget?: number;
+  visibleTokens?: number;
   outputTokens?: number;
   generationMs?: number;
   truncated?: boolean;
@@ -66,6 +74,8 @@ export type AskLedgerGenerationDiagnostics = {
     requestedTier: string;
     recommendedTier: string;
     resolvedTier: string;
+    reasoningMode?: string;
+    reasoningReason?: string;
     fallbackReason?: string;
     reason: string;
   };
@@ -170,6 +180,15 @@ export type AskLedgerEvidenceDiagnostics = {
   notificationState?: { unread: number; read: number };
   activitySignals?: { highPriority: number; standard: number };
   duplicateActivityNotificationCollapses?: number;
+  structuredValues?: {
+    rawIsoDateObserved: boolean;
+    raw24HourTimeObserved: boolean;
+    invalidDateDetected: boolean;
+    invalidTimeDetected: boolean;
+    dateNormalizationFailure: boolean;
+    relativeDateAvailableButUnused: boolean;
+    dueStateMismatchDetected: boolean;
+  };
 };
 
 export type AskLedgerAnswerValidationDiagnostics = {
@@ -188,6 +207,7 @@ export type AskLedgerAnswerValidationDiagnostics = {
   repairDurationMs?: number;
   repairGenerationMs?: number;
   repairTokens?: number;
+  outputGuard?: import('./askLedgerOutputGuard').AskLedgerOutputGuardDiagnostics;
 };
 
 export type AskLedgerOrchestrationDiagnostics = {

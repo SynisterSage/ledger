@@ -196,15 +196,18 @@ const chunkContent = (item: AskLedgerContextItem) => {
 };
 
 export class EmbeddingIndexService {
+  private static readonly SEMANTIC_FAILURE_COOLDOWN_MS = 30_000;
   private readonly workspaces = new Map<string, Map<string, LedgerIndexDocument>>();
   private readonly conversations = new Map<string, Map<string, LedgerIndexDocument>>();
   private readonly provider?: EmbeddingProvider;
+  private semanticUnavailableUntil = 0;
 
   constructor(provider?: EmbeddingProvider) {
     this.provider = provider;
   }
 
-  async replaceWorkspace(workspaceId: string, items: AskLedgerContextItem[], options?: { performance?: AskLedgerPerformanceTrace }) {
+  async replaceWorkspace(workspaceId: string, items: AskLedgerContextItem[], options?: { performance?: AskLedgerPerformanceTrace; semantic?: boolean }) {
+    const preparationStartedAt = Date.now();
     const existing = this.workspaces.get(workspaceId) ?? new Map<string, LedgerIndexDocument>();
     const next = new Map<string, LedgerIndexDocument>();
     const pending: Array<{ key: string; document: LedgerIndexDocument }> = [];
@@ -213,7 +216,9 @@ export class EmbeddingIndexService {
       if (item.resourceType === 'attachment' || (item.workspaceId && item.workspaceId !== workspaceId)) continue;
       for (const [chunkIndex, content] of chunkContent(item).entries()) {
         const chunkId = `${item.resourceType}:${item.resourceId}:${chunkIndex}`;
-        const contentHash = hash(`${item.title}\n${content}\n${item.updatedAt ?? ''}`);
+        // Only semantic input participates in the hash. Updated timestamps and
+        // display metadata must not force a re-embedding of unchanged content.
+        const contentHash = hash(`${item.title}\n${content}`);
         const key = `${workspaceId}:${chunkId}`;
         const previous = existing.get(key);
         const document: LedgerIndexDocument = { ...item, workspaceId, chunkId, content, contentHash };
@@ -221,18 +226,22 @@ export class EmbeddingIndexService {
           document.embedding = previous.embedding;
           document.embeddingModel = previous.embeddingModel;
           document.embeddingVersion = previous.embeddingVersion;
-        } else if (this.provider) {
+        } else if (this.provider && options?.semantic !== false) {
           pending.push({ key, document });
         }
         next.set(key, document);
       }
     }
+    options?.performance?.set('indexPreparationMs', Date.now() - preparationStartedAt);
 
-    if (this.provider && pending.length) {
+    const semanticBlocked = options?.semantic !== false && Date.now() < this.semanticUnavailableUntil;
+    if (semanticBlocked) options?.performance?.set('semanticIndexUnavailable', true);
+    if (this.provider && pending.length && !semanticBlocked) {
       try {
         const embeddingStartedAt = Date.now();
         const vectors = await this.provider.embed(pending.map(({ document }) => formatEmbeddingInput(`${document.title}\n${document.content}`, 'document', this.provider?.model)), options);
         options?.performance?.set('embeddingMs', Date.now() - embeddingStartedAt);
+        this.semanticUnavailableUntil = 0;
         pending.forEach(({ key, document }, index) => {
           document.embedding = vectors[index];
           document.embeddingModel = this.provider?.model;
@@ -240,11 +249,18 @@ export class EmbeddingIndexService {
           next.set(key, document);
         });
       } catch (error) {
+        this.semanticUnavailableUntil = Date.now() + EmbeddingIndexService.SEMANTIC_FAILURE_COOLDOWN_MS;
+        options?.performance?.set('semanticIndexUnavailable', true);
+        options?.performance?.set('semanticIndexFailureCooldownMs', EmbeddingIndexService.SEMANTIC_FAILURE_COOLDOWN_MS);
         console.warn('[local-embedding] Semantic index unavailable; continuing with lexical retrieval.', error instanceof Error ? error.message : error);
       }
     }
+    const mutationStartedAt = Date.now();
     this.workspaces.set(workspaceId, next);
+    options?.performance?.set('semanticIndexMutationMs', Date.now() - mutationStartedAt);
     options?.performance?.set('documentsScanned', items.length);
+    options?.performance?.set('semanticIndexRequired', options?.semantic !== false);
+    options?.performance?.set('semanticIndexSkipped', options?.semantic === false);
     options?.performance?.set('documentsChanged', pending.length > 0 ? new Set(pending.map(({ document }) => document.resourceId)).size : 0);
     options?.performance?.set('chunksEmbedded', pending.length);
     return { indexed: next.size, embedded: pending.length, removed: Math.max(0, existing.size - next.size) };
@@ -333,7 +349,7 @@ export class LedgerRetrievalService {
     this.provider = provider;
   }
 
-  indexWorkspace(workspaceId: string, items: AskLedgerContextItem[], options?: { performance?: AskLedgerPerformanceTrace }) {
+  indexWorkspace(workspaceId: string, items: AskLedgerContextItem[], options?: { performance?: AskLedgerPerformanceTrace; semantic?: boolean }) {
     return this.index.replaceWorkspace(workspaceId, items, options);
   }
 
@@ -351,9 +367,11 @@ export class LedgerRetrievalService {
     await this.index.shutdown();
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[]; skipSemantic?: boolean }): Promise<LedgerRetrievalResult> {
-    const documents = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
-    const resourceDocuments = this.index.resourceDocuments(workspaceId, options?.conversationId);
+  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[]; skipSemantic?: boolean; documents?: AskLedgerContextItem[] }): Promise<LedgerRetrievalResult> {
+    const suppliedDocuments = options?.documents?.filter((document) => !document.workspaceId || document.workspaceId === workspaceId) ?? [];
+    const indexedDocuments = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
+    const documents = suppliedDocuments.length ? suppliedDocuments : indexedDocuments;
+    const resourceDocuments = suppliedDocuments.length ? [...new Map(suppliedDocuments.map((document) => [`${document.resourceType}:${document.resourceId}`, document])).values()] : this.index.resourceDocuments(workspaceId, options?.conversationId);
     const plan = options?.plan;
     const intent = detectAskLedgerQueryIntent(question);
     const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);

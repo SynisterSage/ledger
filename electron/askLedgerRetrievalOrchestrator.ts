@@ -284,7 +284,7 @@ export class AskLedgerRetrievalOrchestrator {
       const quickIntegrationResult = plan.integrationProviders?.length
         ? await quickIntegration.search({ workspaceId, query: plan.entityQuery ?? question, providers: plan.integrationProviders, limit, documents: quickCorpus })
         : undefined;
-      const result = await this.retrieval.retrieve(workspaceId, searchQuestion, lexicalResults, limit, { conversationId: options?.conversationId, boostResourceKeys: [...(options?.boostResourceKeys ?? []), ...(quickIntegrationResult?.results ?? []).map((entry) => keyFor(entry.item))], plan });
+      const result = await this.retrieval.retrieve(workspaceId, searchQuestion, lexicalResults, limit, { conversationId: options?.conversationId, documents: options?.documents, boostResourceKeys: [...(options?.boostResourceKeys ?? []), ...(quickIntegrationResult?.results ?? []).map((entry) => keyFor(entry.item))], plan, skipSemantic: true });
       return { ...result, mode, integrationRetrieval: quickIntegrationResult?.diagnostics, orchestration: { mode, objectives: [], retrievalRounds: 1, discoveredEntities: [], coverage: {}, resourcesCollected: result.items.length, resourcesDiscarded: 0, stopReason: 'quick_path', provenance: result.items.map((item) => ({ resourceKey: keyFor(item), objectiveId: 'quick', path: [keyFor(item)] })) } };
     }
 
@@ -346,10 +346,14 @@ export class AskLedgerRetrievalOrchestrator {
         }
         const result = await this.retrieval.retrieve(workspaceId, plan.semanticQuery, lexicalResults, Math.min(limit, Math.max(8, limits.maxEvidenceResources)), {
           conversationId: options?.conversationId,
+          documents: options?.documents,
           boostResourceKeys: [...(options?.boostResourceKeys ?? []), ...integrationBoostKeys],
           plan,
           graphLimits: { maxTotal: Math.min(20, limits.maxEvidenceResources) },
           graphRelationshipTypes: objective.graphRelationshipTypes,
+          // Supplied corpora are authoritative structured inputs and have no
+          // embedding vectors. Indexed research corpora retain semantic search.
+          skipSemantic: options?.documents ? true : undefined,
         });
         if (result.graphExpansion) {
           result.graphExpansion.seedResources.forEach((seed) => graphSeedResources.add(seed));

@@ -290,7 +290,7 @@ type SettingsNavSection = {
 
 type LocalAIModelSettingsRow = {
   id: string;
-  tier: 'fast' | 'balanced' | 'powerful';
+  tier: 'fast' | 'balanced';
   displayName: string;
   description?: string;
   expectedSize?: number;
@@ -305,7 +305,6 @@ type LocalAIModelSettingsRow = {
 const localAISettingsTierLabels: Record<LocalAIModelSettingsRow['tier'], string> = {
   fast: 'Fast',
   balanced: 'Balanced',
-  powerful: 'Powerful',
 };
 
 const formatLocalAIModelSize = (bytes?: number) => {
@@ -954,7 +953,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
           })
         : [];
       setLocalAIModels(rows);
-      if (selectedTier === 'fast' || selectedTier === 'balanced' || selectedTier === 'powerful') setLocalAISelectedTier(selectedTier);
+      if (selectedTier === 'fast' || selectedTier === 'balanced') setLocalAISelectedTier(selectedTier);
     } catch (error) {
       setLocalAIModelError(error instanceof Error ? error.message : 'Could not load Local AI models.');
     }
@@ -5256,7 +5255,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 <section className="w-full max-w-215" aria-labelledby="settings-local-ai">
                   <h2 id="settings-local-ai" className={settingsTheme.pageTitle}>Local AI</h2>
                   <p className={settingsTheme.pageSubtitle + ' mt-1'}>Manage the generation models Ledger uses on this device.</p>
-                  <p className={settingsTheme.pageStatus + ' mt-2'}>Fast is the required baseline. Balanced and Powerful are optional downloads.</p>
+                  <p className={settingsTheme.pageStatus + ' mt-2'}>Fast is the required baseline. Balanced is the optional stronger local model; Thinking uses it with deeper reasoning.</p>
 
                   <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="settings-generation-models">
                     <div className="flex items-start justify-between gap-4">

@@ -268,7 +268,7 @@ const sanitizeAskLedgerHandoff = (value: unknown) => {
   return workspaceId && overviewDate ? { kind: 'overview_focus' as const, workspaceId, overviewDate, insights, resourceRefs } : undefined;
 };
 
-ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown; performance?: { uiSubmitStartedAt?: unknown; preflightStartedAt?: unknown; preflightCompletedAt?: unknown } }) => {
+ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown; timeZone?: unknown; timeFormat?: unknown; performance?: { uiSubmitStartedAt?: unknown; preflightStartedAt?: unknown; preflightCompletedAt?: unknown } }) => {
   if (typeof payload?.question !== 'string' || (!payload.question.trim() && payload.skillId === undefined)) throw new Error('Ask Ledger question is required.');
   if (typeof payload.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
   if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
@@ -277,7 +277,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
   const builtinSkill = payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
   const customPayload = payload.customSkill && typeof payload.customSkill === 'object' ? payload.customSkill as Record<string, unknown> : undefined;
   const customSkill = !builtinSkill && customPayload && typeof customPayload.id === 'string' && customPayload.id === String(payload.skillId ?? '') && typeof customPayload.name === 'string' && typeof customPayload.instructions === 'string'
-    ? { id: customPayload.id as AskLedgerSkillId, name: String(customPayload.name).slice(0, 100), description: 'A custom Ledger workflow.', icon: 'Boxes', instructions: String(customPayload.instructions).slice(0, 12000), supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedActions: [], requiresContext: false, requiresConfirmation: false } as AskLedgerSkillDefinition
+    ? { id: customPayload.id as AskLedgerSkillId, name: String(customPayload.name).slice(0, 100), description: 'A custom Ledger workflow.', icon: 'Boxes', instructions: String(customPayload.instructions).slice(0, 12000), supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedActions: [], requiresContext: false, requiresConfirmation: false, executionContract: { resources: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], timeRange: 'workspace', retrieval: 'structured', reasoning: 'bounded', maxOutput: 640 } } as AskLedgerSkillDefinition
     : undefined;
   const skill = builtinSkill ?? customSkill;
   if (payload.skillId !== undefined && !skill) throw new Error('Unknown Ask Ledger skill.');
@@ -356,6 +356,8 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
       explicitContext: explicitContext as never,
       attachmentIds: Array.isArray(payload.attachmentIds) ? payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5) : undefined,
       messageId: typeof payload.messageId === 'string' ? payload.messageId.slice(0, 200) : undefined,
+      timeZone: typeof payload.timeZone === 'string' ? payload.timeZone.slice(0, 100) : undefined,
+      timeFormat: payload.timeFormat === '24h' ? '24h' : '12h',
       conversation: safeConversation,
     },
     { onEvent: (streamEvent) => {

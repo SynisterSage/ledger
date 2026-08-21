@@ -9,6 +9,7 @@ import type {
   AskLedgerOrchestrationDiagnostics,
 } from '../src/types/askLedgerResourceContract.ts';
 import type { LedgerRetrievalResult, RetrievalDebugCandidate } from './ledgerRetrievalService.ts';
+import { structuredValueLinesFor, type AskLedgerStructuredDiagnostics } from './askLedgerStructuredValues.ts';
 
 export type AskLedgerEvidenceBudget = {
   maxResources: number;
@@ -38,13 +39,12 @@ const normalize = (value: unknown) => String(value ?? '').toLowerCase().replace(
 const categoryFor = (type: AskLedgerResourceType) => type === 'event' ? 'meetings' : type === 'transcript' ? 'transcripts' : type === 'activity' ? 'activity' : `${type}s`;
 const estimatedTokens = (value: string) => Math.ceil(value.length / 4);
 
-const compactResourceText = (item: AskLedgerContextItem, maxTokens: number) => {
+const compactResourceText = (item: AskLedgerContextItem, maxTokens: number, options?: { timeZone?: string; timeFormat?: '12h' | '24h'; now?: Date }) => {
+  const structured = structuredValueLinesFor(item, options);
   const details = [
     item.title,
-    item.status ? `Status: ${item.status}` : '',
     item.projectName ? `Project: ${item.projectName}` : '',
-    item.dueAt ? `Due: ${item.dueAt}` : '',
-    item.timestamp ? `Time: ${item.timestamp}` : '',
+    ...structured.lines,
     item.horizon || item.taskHorizon ? `Horizon: ${item.horizon ?? item.taskHorizon}` : '',
     item.read !== undefined ? `Read: ${item.read ? 'yes' : 'no'}` : '',
     item.priority ? `Priority: ${item.priority}` : '',
@@ -124,6 +124,9 @@ export const compileAskLedgerEvidence = (input: {
   result: LedgerRetrievalResult & { mode?: 'quick' | 'research'; orchestration?: AskLedgerOrchestrationDiagnostics; integrationRetrieval?: AskLedgerIntegrationDiagnostics };
   items?: AskLedgerContextItem[];
   budget?: Partial<AskLedgerEvidenceBudget>;
+  timeZone?: string;
+  timeFormat?: '12h' | '24h';
+  now?: Date;
 }): AskLedgerEvidencePipelineResult => {
   const mode = input.result.mode ?? input.result.orchestration?.mode ?? 'standard';
   const budget = { ...DEFAULT_BUDGETS[mode], ...input.budget };
@@ -154,14 +157,16 @@ export const compileAskLedgerEvidence = (input: {
   const selectedKeys = new Set<string>();
   const transcriptCounts = new Map<string, number>();
   let usedTokens = 0;
-  const trySelect = (candidate: RankedEvidence, required = false) => {
+  const trySelect = (candidate: RankedEvidence, _required = false) => {
     const key = keyFor(candidate.resource);
     if (selectedKeys.has(key)) return false;
     const parent = candidate.resource.parentResourceId ?? candidate.resource.projectId ?? 'unparented';
     if (candidate.resource.resourceType === 'transcript' && (transcriptCounts.get(parent) ?? 0) >= budget.maxTranscriptSegmentsPerParent) { dropReasons.redundant_transcript = (dropReasons.redundant_transcript ?? 0) + 1; return false; }
-    const tokens = estimatedTokens(compactResourceText(candidate.resource, budget.maxItemTokens));
-    if (!required && (selected.length >= budget.maxResources || usedTokens + tokens > budget.maxTokens)) return false;
-    if (required && selected.length >= budget.maxResources) return false;
+    const tokens = estimatedTokens(compactResourceText(candidate.resource, budget.maxItemTokens, { timeZone: input.timeZone, timeFormat: input.timeFormat, now: input.now }));
+    if (selected.length >= budget.maxResources || usedTokens + tokens > budget.maxTokens) {
+      dropReasons.context_budget = (dropReasons.context_budget ?? 0) + 1;
+      return false;
+    }
     selected.push(candidate); selectedKeys.add(key); usedTokens += tokens;
     if (candidate.resource.resourceType === 'transcript') transcriptCounts.set(parent, (transcriptCounts.get(parent) ?? 0) + 1);
     return true;
@@ -186,14 +191,19 @@ export const compileAskLedgerEvidence = (input: {
   const textParts = [
     `REQUEST\n${input.question}`,
     `COVERAGE\nRequested: ${[...requested].join(', ') || 'workspace evidence'}\nFound: ${found.join(', ') || 'none'}\nMissing: ${missing.join(', ') || 'none'}${truncated.length ? `\nTruncated: ${truncated.join(', ')}` : ''}`,
-    ...sections.map((section) => `${section.title.toUpperCase()}\n${section.items.map(({ resource, source }) => `- ${compactResourceText(resource, budget.maxItemTokens)}\n  Source: ${source.resourceType}:${source.resourceId}${source.objectiveId ? ` · ${source.objectiveId}` : ''}${source.relationshipPath.length > 1 ? `\n  Path: ${source.relationshipPath.join(' → ')}` : ''}`).join('\n')}`),
+    ...sections.map((section) => `${section.title.toUpperCase()}\n${section.items.map(({ resource, source }) => `- ${compactResourceText(resource, budget.maxItemTokens, { timeZone: input.timeZone, timeFormat: input.timeFormat, now: input.now })}\n  Source: ${source.resourceType}:${source.resourceId}${source.objectiveId ? ` · ${source.objectiveId}` : ''}${source.relationshipPath.length > 1 ? `\n  Path: ${source.relationshipPath.join(' → ')}` : ''}`).join('\n')}`),
     sourceLines.length ? `RELATIONSHIPS AND SOURCES\n${sourceLines.join('\n')}` : '',
   ].filter(Boolean);
   const text = textParts.join('\n\n');
   const unavailable = [...new Set((input.result.integrationRetrieval?.failures ?? []).filter((failure) => /unavailable|failed|denied|timeout|error/i.test(failure.status)).map((failure) => failure.provider))];
   const notConnected = [...new Set((input.result.integrationRetrieval?.failures ?? []).filter((failure) => /not_connected|not connected|no_cached_context/i.test(failure.status)).map((failure) => failure.provider))];
-  const packageValue: AskLedgerEvidencePackage = { request: input.question, coverage: { requested: [...requested], found, missing, truncated, ...(unavailable.length ? { unavailable } : {}), ...(notConnected.length ? { notConnected } : {}) }, sections, sources: selected.map((entry) => entry.source), stats: { retrieved: rawItems.length, selected: selected.length, dropped: Math.max(0, rawItems.length - selected.length), estimatedTokens: estimatedTokens(text), estimatedTokensBefore: rawItems.reduce((sum, item) => sum + estimatedTokens(compactResourceText(item, budget.maxItemTokens)), 0) }, text };
+  const packageValue: AskLedgerEvidencePackage = { request: input.question, coverage: { requested: [...requested], found, missing, truncated, ...(unavailable.length ? { unavailable } : {}), ...(notConnected.length ? { notConnected } : {}) }, sections, sources: selected.map((entry) => entry.source), stats: { retrieved: rawItems.length, selected: selected.length, dropped: Math.max(0, rawItems.length - selected.length), estimatedTokens: estimatedTokens(text), estimatedTokensBefore: rawItems.reduce((sum, item) => sum + estimatedTokens(compactResourceText(item, budget.maxItemTokens, { timeZone: input.timeZone, timeFormat: input.timeFormat, now: input.now })), 0) }, text };
   const selectedNotifications = selected.filter((entry) => entry.resource.resourceType === 'notification');
   const selectedActivity = selected.filter((entry) => entry.resource.resourceType === 'activity');
-  return { package: packageValue, selectedItems: selected.map((entry) => entry.resource), ranked, diagnostics: { inputResources: rawItems.length, selectedResources: selected.length, droppedResources: Math.max(0, rawItems.length - selected.length), estimatedTokens: { before: packageValue.stats.estimatedTokensBefore, after: packageValue.stats.estimatedTokens }, selectedByType: selected.reduce<Record<string, number>>((counts, entry) => { counts[entry.resource.resourceType] = (counts[entry.resource.resourceType] ?? 0) + 1; return counts; }, {}), dropReasons, topScores: ranked.slice(0, 8).map((entry) => ({ resourceKey: keyFor(entry.resource), score: entry.score.finalScore, reasons: entry.score.reasons.slice(0, 5) })), notificationState: selectedNotifications.reduce((state, entry) => { entry.resource.read ? state.read += 1 : state.unread += 1; return state; }, { unread: 0, read: 0 }), activitySignals: selectedActivity.reduce((state, entry) => { const priority = String(entry.resource.priority ?? entry.resource.severity ?? '').toLowerCase(); if (['high', 'urgent', 'critical'].includes(priority)) state.highPriority += 1; else state.standard += 1; return state; }, { highPriority: 0, standard: 0 }), duplicateActivityNotificationCollapses: dropReasons.duplicate_activity_notification ?? 0 } };
+  const structuredValues: AskLedgerStructuredDiagnostics = { rawIsoDateObserved: false, raw24HourTimeObserved: false, invalidDateDetected: false, invalidTimeDetected: false, dateNormalizationFailure: false, relativeDateAvailableButUnused: false, dueStateMismatchDetected: false };
+  selected.forEach((entry) => {
+    const diagnostics = structuredValueLinesFor(entry.resource, { timeZone: input.timeZone, now: input.now }).display.diagnostics;
+    (Object.keys(structuredValues) as Array<keyof AskLedgerStructuredDiagnostics>).forEach((key) => { structuredValues[key] ||= diagnostics[key]; });
+  });
+  return { package: packageValue, selectedItems: selected.map((entry) => entry.resource), ranked, diagnostics: { inputResources: rawItems.length, selectedResources: selected.length, droppedResources: Math.max(0, rawItems.length - selected.length), estimatedTokens: { before: packageValue.stats.estimatedTokensBefore, after: packageValue.stats.estimatedTokens }, selectedByType: selected.reduce<Record<string, number>>((counts, entry) => { counts[entry.resource.resourceType] = (counts[entry.resource.resourceType] ?? 0) + 1; return counts; }, {}), dropReasons, topScores: ranked.slice(0, 8).map((entry) => ({ resourceKey: keyFor(entry.resource), score: entry.score.finalScore, reasons: entry.score.reasons.slice(0, 5) })), notificationState: selectedNotifications.reduce((state, entry) => { entry.resource.read ? state.read += 1 : state.unread += 1; return state; }, { unread: 0, read: 0 }), activitySignals: selectedActivity.reduce((state, entry) => { const priority = String(entry.resource.priority ?? entry.resource.severity ?? '').toLowerCase(); if (['high', 'urgent', 'critical'].includes(priority)) state.highPriority += 1; else state.standard += 1; return state; }, { highPriority: 0, standard: 0 }), duplicateActivityNotificationCollapses: dropReasons.duplicate_activity_notification ?? 0, structuredValues } };
 };

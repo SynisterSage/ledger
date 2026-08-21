@@ -71,6 +71,31 @@ test('does not re-embed unchanged chunks and chunks large resources', async () =
   assert.equal(provider.calls, callsAfterFirstIndex);
 });
 
+test('does not re-embed when only display timestamps change', async () => {
+  const provider = new FakeEmbeddingProvider();
+  const index = new EmbeddingIndexService(provider);
+  const first = resource({ resourceId: 'timestamped', title: 'Calendar note', content: 'Keep the calendar focused.', updatedAt: '2026-08-20T10:00:00Z' });
+  const second = { ...first, updatedAt: '2026-08-21T10:00:00Z' };
+  await index.replaceWorkspace('workspace-a', [first]);
+  const callsAfterFirstIndex = provider.calls;
+  const result = await index.replaceWorkspace('workspace-a', [second]);
+  assert.equal(result.embedded, 0);
+  assert.equal(provider.calls, callsAfterFirstIndex);
+});
+
+test('retrieves from a supplied structured corpus without an indexed workspace', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  const item = resource({ resourceType: 'task', resourceId: 'structured-task', title: 'Submit the catalog', content: 'Open task.', status: 'Not started' });
+  const result = await retrieval.retrieve('workspace-a', 'show my tasks', [], 8, {
+    documents: [item],
+    skipSemantic: true,
+    plan: buildRetrievalPlan('show my tasks'),
+  });
+  assert.equal(result.items[0]?.resourceId, 'structured-task');
+  assert.equal(index.documents('workspace-a').length, 0);
+});
+
 test('lexical retrieval can return exact evidence when embeddings are unavailable', async () => {
   const index = new EmbeddingIndexService();
   const retrieval = new LedgerRetrievalService(index);

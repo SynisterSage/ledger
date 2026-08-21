@@ -402,12 +402,12 @@ contextBridge.exposeInMainWorld('askLedger', {
   localAIStatus() { return ipcRenderer.invoke('ask-ledger:local-ai-status'); },
   localAIHardware() { return ipcRenderer.invoke('ask-ledger:local-ai-hardware'); },
   localAICapability() { return ipcRenderer.invoke('ask-ledger:local-ai-capability'); },
-  acknowledgeLocalAITier(tier: 'fast' | 'balanced' | 'powerful') { return ipcRenderer.invoke('ask-ledger:local-ai-acknowledge-tier', tier); },
+  acknowledgeLocalAITier(tier: 'fast' | 'balanced') { return ipcRenderer.invoke('ask-ledger:local-ai-acknowledge-tier', tier); },
   getGenerationModels() { return ipcRenderer.invoke('ask-ledger:generation-models'); },
   getAvailableGenerationModels() { return ipcRenderer.invoke('ask-ledger:generation-models'); },
   getSelectedGenerationTier() { return ipcRenderer.invoke('ask-ledger:selected-generation-tier'); },
-  setSelectedGenerationTier(tier: 'fast' | 'balanced' | 'powerful') { return ipcRenderer.invoke('ask-ledger:set-selected-generation-tier', tier); },
-  switchGenerationTier(tier: 'fast' | 'balanced' | 'powerful') { return ipcRenderer.invoke('ask-ledger:switch-generation-tier', tier); },
+  setSelectedGenerationTier(tier: 'fast' | 'balanced') { return ipcRenderer.invoke('ask-ledger:set-selected-generation-tier', tier); },
+  switchGenerationTier(tier: 'fast' | 'balanced') { return ipcRenderer.invoke('ask-ledger:switch-generation-tier', tier); },
   getGenerationRuntimeState() { return ipcRenderer.invoke('ask-ledger:generation-runtime-state'); },
   getGenerationModelStatus(modelId: string) { return ipcRenderer.invoke('ask-ledger:generation-model-status', modelId); },
   downloadGenerationModel(modelId: string) { return ipcRenderer.invoke('ask-ledger:generation-model-download', modelId); },
@@ -416,7 +416,7 @@ contextBridge.exposeInMainWorld('askLedger', {
   downloadLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-download', role); },
   cancelLocalAIDownload(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-cancel-download', role); },
   removeLocalAI(role: 'generation' | 'embedding') { return ipcRenderer.invoke('ask-ledger:local-ai-remove', role); },
-  start(payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; messageId?: string }) {
+  start(payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; messageId?: string; timeZone?: string; timeFormat?: '12h' | '24h' }) {
     return ipcRenderer.invoke('ask-ledger:start', payload) as Promise<{ requestId: string }>;
   },
   executeSkill(payload: { skillId: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; explicitContext?: unknown }) {

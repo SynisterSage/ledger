@@ -114,12 +114,12 @@ interface Window {
     localAIStatus: () => Promise<unknown>;
     localAIHardware: () => Promise<unknown>;
     localAICapability: () => Promise<unknown>;
-    acknowledgeLocalAITier: (tier: 'fast' | 'balanced' | 'powerful') => Promise<unknown>;
+    acknowledgeLocalAITier: (tier: 'fast' | 'balanced') => Promise<unknown>;
     getGenerationModels: () => Promise<unknown>;
     getAvailableGenerationModels: () => Promise<unknown>;
-    getSelectedGenerationTier: () => Promise<'fast' | 'balanced' | 'powerful'>;
-    setSelectedGenerationTier: (tier: 'fast' | 'balanced' | 'powerful') => Promise<unknown>;
-    switchGenerationTier: (tier: 'fast' | 'balanced' | 'powerful') => Promise<unknown>;
+    getSelectedGenerationTier: () => Promise<'fast' | 'balanced'>;
+    setSelectedGenerationTier: (tier: 'fast' | 'balanced') => Promise<unknown>;
+    switchGenerationTier: (tier: 'fast' | 'balanced') => Promise<unknown>;
     getGenerationRuntimeState: () => Promise<unknown>;
     getGenerationModelStatus: (modelId: string) => Promise<unknown>;
     downloadGenerationModel: (modelId: string) => Promise<unknown>;
@@ -130,7 +130,7 @@ interface Window {
     removeLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
     onLocalAIStatus: (listener: (event: unknown) => void) => () => void;
     onGenerationRuntimeState: (listener: (event: unknown) => void) => () => void;
-    start: (payload: { requestId?: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; messageId?: string; performance?: { uiSubmitStartedAt?: number; preflightStartedAt?: number; preflightCompletedAt?: number } }) => Promise<{ requestId: string }>;
+    start: (payload: { requestId?: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; reasoningMode?: 'off' | 'thinking'; timeZone?: string; timeFormat?: '12h' | '24h'; messageId?: string; performance?: { uiSubmitStartedAt?: number; preflightStartedAt?: number; preflightCompletedAt?: number } }) => Promise<{ requestId: string }>;
     executeSkill: (payload: { skillId: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; explicitContext?: unknown }) => Promise<{ requestId: string }>;
     cancel: (requestId: string) => Promise<{ ok: boolean }>;
     onStream: (listener: (event: unknown) => void) => () => void;

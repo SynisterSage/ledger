@@ -11,6 +11,7 @@ const groundedSession = {
 test('routes non-workspace conversation without retrieval', () => {
   for (const message of [
     'hey',
+    'HIII',
     'thanks',
     'what can you do?',
     'make that shorter',
@@ -26,6 +27,9 @@ test('routes non-workspace conversation without retrieval', () => {
     assert.equal(route.retrievalRequired, false);
   }
   assert.equal(routeAskLedgerMessage('hey').mode, 'conversational');
+  const greeting = routeAskLedgerMessage('HIII', groundedSession);
+  assert.equal(greeting.reason, 'casual_conversation');
+  assert.equal(greeting.reusePreviousGroundedContext, false);
 });
 
 test('routes workspace facts through grounding', () => {
@@ -103,6 +107,13 @@ test('routes capability questions as trusted conversational requests', () => {
     assert.equal(route.retrievalRequired, false);
     assert.equal(route.reason, 'capability_question');
   }
+});
+
+test('routes direct Ledger capability wording without workspace retrieval', () => {
+  const route = routeAskLedgerMessage('what does ledger do');
+  assert.equal(route.reason, 'capability_question');
+  assert.equal(route.retrievalRequired, false);
+  assert.equal(route.mode, 'conversational');
 });
 
 test('routes informal capability questions conversationally', () => {

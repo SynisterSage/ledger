@@ -48,14 +48,10 @@ export const normalizePlatform = (platform: NodeJS.Platform, arch: string): { pl
 export const recommendGenerationTier = (probe: DeviceProbe): Omit<LocalAICapability, 'acknowledgedTiers'> => {
   const normalized = normalizePlatform(probe.platform, probe.arch);
   const memoryClass: MemoryClass = probe.totalMemoryBytes === null ? 'unknown' : probe.totalMemoryBytes < 12 * GIB ? 'low' : probe.totalMemoryBytes < 24 * GIB ? 'mid' : 'high';
-  const recommendedTier: GenerationTier = memoryClass === 'high' ? 'powerful' : memoryClass === 'mid' ? 'balanced' : 'fast';
+  const recommendedTier: GenerationTier = memoryClass === 'low' || memoryClass === 'unknown' ? 'fast' : 'balanced';
   const performanceClass: PerformanceClass = memoryClass === 'unknown' ? 'unknown' : memoryClass === 'high' ? 'high' : memoryClass === 'mid' ? 'mid' : 'entry';
   const recommendationConfidence: RecommendationConfidence = memoryClass === 'unknown' ? 'low' : normalized.platform === 'unknown' || normalized.architecture === 'unknown' ? 'medium' : 'high';
-  const warnings: Partial<Record<GenerationTier, string>> = memoryClass === 'low'
-    ? { balanced: 'May respond more slowly on this device.', powerful: 'May respond more slowly on this device.' }
-    : memoryClass === 'mid'
-      ? { powerful: 'May respond more slowly on this device.' }
-      : {};
+  const warnings: Partial<Record<GenerationTier, string>> = memoryClass === 'low' ? { balanced: 'May respond more slowly on this device.' } : {};
   return {
     ...normalized,
     totalMemoryBytes: probe.totalMemoryBytes,
@@ -65,7 +61,7 @@ export const recommendGenerationTier = (probe: DeviceProbe): Omit<LocalAICapabil
     performanceClass,
     recommendationConfidence,
     recommendedTier,
-    recommendationReason: memoryClass === 'unknown' ? 'Hardware details are incomplete; Fast is the baseline recommendation.' : `Based primarily on ${memoryClass === 'low' ? 'available system memory' : 'system memory and device architecture'}.`,
+    recommendationReason: memoryClass === 'unknown' ? 'Hardware details are incomplete; Fast is the safe baseline recommendation.' : `Based primarily on ${memoryClass === 'low' ? 'available system memory' : 'system memory and device architecture'}.`,
     warnings,
     recommendationVersion: LOCAL_AI_RECOMMENDATION_VERSION,
   };

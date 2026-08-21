@@ -17,6 +17,8 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: true,
     outputSections: ['Decisions', 'Unresolved questions', 'Action items', 'Follow-ups'],
+    presentationProfile: 'meeting_summary',
+    reasoningPolicy: 'off',
     executionContract: { resources: ['event', 'note', 'task', 'reminder', 'milestone'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 448 },
   },
   {
@@ -31,6 +33,8 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: false,
     outputSections: ['Status', 'Blockers', 'Risks', 'Next steps'],
+    presentationProfile: 'project_status',
+    reasoningPolicy: 'optional',
     executionContract: { resources: ['project', 'task', 'milestone', 'note', 'event', 'reminder'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 448 },
   },
   {
@@ -45,7 +49,9 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: false,
     requiresConfirmation: false,
     outputSections: ['Focus this week', 'Deadlines and commitments', 'Risks or blockers', 'Next steps'],
-    executionContract: { resources: ['task', 'milestone', 'event', 'reminder'], timeRange: 'this_week', retrieval: 'structured', reasoning: 'bounded', maxOutput: 512 },
+    presentationProfile: 'weekly_plan',
+    reasoningPolicy: 'optional',
+    executionContract: { resources: ['task', 'milestone', 'event', 'reminder'], timeRange: 'this_week', retrieval: 'structured', reasoning: 'bounded', maxOutput: 640 },
   },
   {
     id: 'turn_notes_into_tasks',
@@ -59,6 +65,7 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: true,
     outputSections: ['Action items', 'Context'],
+    reasoningPolicy: 'off',
     executionContract: { resources: ['note', 'task', 'project', 'milestone'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 384 },
   },
   {
@@ -73,6 +80,8 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: false,
     outputSections: ['Current context', 'Unresolved items', 'Discussion points'],
+    presentationProfile: 'meeting_summary',
+    reasoningPolicy: 'off',
     executionContract: { resources: ['event', 'project', 'task', 'milestone', 'note', 'reminder'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 448 },
   },
 ];

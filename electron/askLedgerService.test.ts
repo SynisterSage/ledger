@@ -76,6 +76,36 @@ test('answers conversational and capability requests without workspace retrieval
   assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'generating'), true);
 });
 
+test('does not retrieve for conversational inertia when the prior turn has no sources', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let retrieveCalls = 0;
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => { retrieveCalls += 1; return { items: [], debug: [] }; },
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (_request: unknown, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      callbacks.onEvent({ type: 'delta', requestId, text: 'Not much — how about you?' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+  service.start({
+    workspaceId: 'workspace-a',
+    question: 'whats up',
+    documents: [],
+    lexicalResults: [],
+    conversation: { id: 'conversation-greeting', previousQuestion: 'What is the status?', previousAnswer: 'No workspace facts were available.', previousSources: [] },
+  }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+  assert.equal(retrieveCalls, 0);
+  assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'searching'), false);
+});
+
 test('expands project reviews with linked work records', async () => {
   const events: LocalAIStreamEvent[] = [];
   let generationPrompt = '';
@@ -158,7 +188,8 @@ test('formats direct entity lookups without invoking Qwen', async () => {
 
   assert.equal(generationCalled, false);
   assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Finish thumbnails/);
-  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Aug 18, 2026/);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Tuesday, Aug 18/);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /3 days overdue/);
 });
 
 test('generates from planned meeting notes instead of formatting the event intent', async () => {

@@ -17,7 +17,7 @@ test('harness prepares each case once and replays the frozen prompt across insta
   const assets = {
     getSelectedGenerationTier: () => 'fast',
     getSelectedGenerationModel: () => model('fast'),
-    getAvailableGenerationModels: () => ['fast', 'balanced', 'powerful'].map(model),
+    getAvailableGenerationModels: () => ['fast', 'balanced'].map(model),
     getGenerationModelStatus: () => ({ installed: true, installedBytes: 100 }),
   } as any;
   const localAI = {
@@ -29,8 +29,7 @@ test('harness prepares each case once and replays the frozen prompt across insta
   const harness = new LocalAIBenchmarkHarness(askLedger, localAI, assets);
   const report = await harness.run([{ id: 'case-1', category: 'grounding', workspaceId: 'workspace', question: 'Question', documents: [], lexicalResults: [], expectation: { requiredFacts: ['grounded'] } }]);
   assert.equal(preparations, 1);
-  assert.equal(report.results.filter((result) => !result.error).length, 3);
-  assert.deepEqual(prompts, ['frozen production prompt', 'frozen production prompt', 'frozen production prompt']);
-  assert.deepEqual(switches, ['fast', 'balanced', 'powerful', 'fast']);
+  assert.equal(report.results.filter((result) => !result.error).length, 2);
+  assert.deepEqual(prompts, ['frozen production prompt', 'frozen production prompt']);
+  assert.deepEqual(switches, ['fast', 'balanced', 'fast']);
 });
-

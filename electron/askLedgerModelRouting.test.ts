@@ -2,21 +2,30 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolveAskLedgerModelRoute } from './askLedgerModelRouting.ts';
 
-test('routes narrow lookups to Fast and deeper evidence to Balanced or Powerful', () => {
-  assert.equal(resolveAskLedgerModelRoute({ requestedTier: 'fast', installedTiers: ['fast', 'balanced', 'powerful'], signals: { answerDepth: 'quick' } }).recommendedTier, 'fast');
-  assert.equal(resolveAskLedgerModelRoute({ requestedTier: 'fast', installedTiers: ['fast', 'balanced', 'powerful'], signals: { answerDepth: 'standard', evidenceCount: 8 } }).recommendedTier, 'balanced');
-  assert.equal(resolveAskLedgerModelRoute({ requestedTier: 'balanced', installedTiers: ['fast', 'balanced', 'powerful'], signals: { researchRoute: true, objectiveCount: 4, providerCount: 2 } }).recommendedTier, 'powerful');
+const installed = ['fast', 'balanced'] as const;
+
+test('routes quick lookups to Fast and ordinary evidence work to Balanced', () => {
+  assert.equal(resolveAskLedgerModelRoute({ requestedTier: 'fast', installedTiers: [...installed], signals: { answerDepth: 'quick' } }).recommendedTier, 'fast');
+  const route = resolveAskLedgerModelRoute({ requestedTier: 'fast', installedTiers: [...installed], signals: { answerDepth: 'standard', evidenceCount: 8 } });
+  assert.equal(route.recommendedTier, 'balanced');
+  assert.equal(route.reasoningMode, 'off');
 });
 
-test('falls back to the strongest installed tier without downloading or failing the request', () => {
-  const route = resolveAskLedgerModelRoute({ requestedTier: 'powerful', installedTiers: ['fast', 'balanced'], signals: { researchRoute: true } });
+test('research does not imply Thinking', () => {
+  const route = resolveAskLedgerModelRoute({ requestedTier: 'balanced', installedTiers: [...installed], signals: { researchRoute: true, objectiveCount: 7, providerCount: 2, question: 'Summarize my last meetings.' } });
   assert.equal(route.resolvedTier, 'balanced');
-  assert.equal(route.fallbackReason, 'requested_unavailable');
-  assert.equal(route.shouldSwitch, false);
+  assert.equal(route.reasoningMode, 'off');
 });
 
-test('does not switch downward from a user-selected stronger installed tier', () => {
-  const route = resolveAskLedgerModelRoute({ requestedTier: 'powerful', installedTiers: ['fast', 'powerful'], signals: { answerDepth: 'quick' } });
-  assert.equal(route.resolvedTier, 'powerful');
-  assert.equal(route.shouldSwitch, false);
+test('complex questions select Thinking on the same Balanced model', () => {
+  const route = resolveAskLedgerModelRoute({ requestedTier: 'balanced', installedTiers: [...installed], signals: { question: 'Think deeply about why Atlas keeps slipping.', researchRoute: true } });
+  assert.equal(route.resolvedTier, 'balanced');
+  assert.equal(route.reasoningMode, 'thinking');
+});
+
+test('legacy Powerful requests resolve to Balanced without a separate model', () => {
+  const route = resolveAskLedgerModelRoute({ requestedTier: 'powerful', installedTiers: [...installed], signals: { researchRoute: true } });
+  assert.equal(route.resolvedTier, 'balanced');
+  assert.equal(route.recommendedTier, 'balanced');
+  assert.equal(route.fallbackReason, 'requested_unavailable');
 });

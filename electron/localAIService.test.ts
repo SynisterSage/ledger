@@ -13,7 +13,7 @@ type FakeRuntime = {
   stream: (request: LocalAIRequest, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, signal: AbortSignal, requestId: string) => Promise<void>;
 };
 
-const fakeAssets = (installed: Set<GenerationTier> = new Set(['fast', 'balanced', 'powerful'])) => {
+const fakeAssets = (installed: Set<GenerationTier> = new Set(['fast', 'balanced'])) => {
   let selectedTier: GenerationTier = 'fast';
   const embedding = { id: 'ledger-embedding', role: 'embedding', installed: true } as LocalAIAssetStatus;
   const assets = {
@@ -26,10 +26,11 @@ const fakeAssets = (installed: Set<GenerationTier> = new Set(['fast', 'balanced'
       return { ...model, installed: installed.has(model.tier), downloading: false, verifying: false, bytesDownloaded: 0, error: null } as LocalAIAssetStatus;
     },
     setSelectedGenerationTier: (tier: unknown) => {
-      if (tier !== 'fast' && tier !== 'balanced' && tier !== 'powerful') throw new Error('Invalid generation tier.');
-      if (!installed.has(tier)) throw new Error(`${tier} not installed`);
-      selectedTier = tier;
-      return { tier, modelId: GENERATION_MODEL_REGISTRY.find((model) => model.tier === tier)!.id };
+      const normalizedTier = tier === 'powerful' ? 'balanced' : tier;
+      if (normalizedTier !== 'fast' && normalizedTier !== 'balanced') throw new Error('Invalid generation tier.');
+      if (!installed.has(normalizedTier)) throw new Error(`${normalizedTier} not installed`);
+      selectedTier = normalizedTier;
+      return { tier: normalizedTier, modelId: GENERATION_MODEL_REGISTRY.find((model) => model.tier === normalizedTier)!.id };
     },
     getGenerationModelPath: (modelId: string) => `/managed/${modelId}.gguf`,
     removeGeneration: async (modelId: string) => ({ generationModelRemoved: modelId }),
@@ -68,12 +69,12 @@ const switchService = (installed?: Set<GenerationTier>, failures?: Set<string>) 
   return { ...fixture, service, runtimes };
 };
 
-test('switches Fast to Balanced to Powerful and back to Fast', async () => {
+test('switches Fast to Balanced and legacy Powerful aliases back to Fast', async () => {
   const { service, getSelectedTier } = switchService();
   assert.equal((await service.switchGenerationTier('fast')).state, 'ready');
   assert.equal((await service.switchGenerationTier('balanced')).state, 'ready');
   assert.equal(getSelectedTier(), 'balanced');
-  assert.equal((await service.switchGenerationTier('powerful')).state, 'ready');
+  assert.equal((await service.switchGenerationTier('powerful')).state, 'noop');
   assert.equal((await service.switchGenerationTier('fast')).state, 'ready');
   assert.equal(getSelectedTier(), 'fast');
 });
@@ -90,7 +91,7 @@ test('cold runtime starts the selected installed tier directly and uninstalled t
   assert.equal(result.state, 'ready');
   assert.equal(runtimes.length, 2); // constructor creates Fast; switch starts Balanced without starting Fast
   const missing = await service.switchGenerationTier('powerful');
-  assert.deepEqual(missing, { ok: false, state: 'requires_download', tier: 'powerful', modelId: 'qwen3-4b-thinking-2507-q6-k', expectedSize: 3306261216 });
+  assert.deepEqual(missing, { ok: true, state: 'noop', tier: 'balanced', modelId: 'qwen3-4b-q4-k-m' });
 });
 
 test('active generation is cancelled before the runtime is switched', async () => {
@@ -167,7 +168,7 @@ test('only one switch operation runs at a time and invalid tiers are rejected', 
   const first = service.switchGenerationTier('balanced');
   const second = service.switchGenerationTier('powerful');
   assert.equal((await first).tier, 'balanced');
-  assert.equal((await second).tier, 'powerful');
+  assert.equal((await second).tier, 'balanced');
   await assert.rejects(service.switchGenerationTier('invalid'), /Invalid generation tier/);
 });
 

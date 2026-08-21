@@ -1,6 +1,6 @@
 # Ask Ledger evaluation report
 
-Generated: 2026-08-20T02:24:48.225Z
+Generated: 2026-08-21T13:20:13.217Z
 
 This CI-safe report evaluates the canonical fixture through routing, retrieval, graph/orchestration, and evidence compilation. It does not claim live Qwen answer quality; use the optional live tier run for that.
 
@@ -8,8 +8,8 @@ This CI-safe report evaluates the canonical fixture through routing, retrieval, 
 
 - Cases: 32
 - Deterministic pipeline pass rate: 87.5% (28/32)
-- Average total fixture latency: 1.48 ms
-- Average selected evidence: 7.1 resources / 561 estimated tokens
+- Average total fixture latency: 24.56 ms
+- Average selected evidence: 7.1 resources / 669 estimated tokens
 
 ## By category
 

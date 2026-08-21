@@ -1,90 +1,44 @@
 import type { GenerationTier } from './localAIAssets.ts';
 
-export type ReasoningMode = 'off' | 'adaptive' | 'on';
-export type ReasoningDecisionReason =
-  | 'simple_request'
-  | 'direct_lookup'
-  | 'casual'
-  | 'transformation'
-  | 'explicit_reasoning_request'
-  | 'complex_analysis'
-  | 'multi_source_synthesis'
-  | 'dependency_reasoning'
-  | 'conflict_resolution'
-  | 'detailed_analytical_request'
-  | 'dedicated_reasoning';
+export type ReasoningMode = 'off' | 'auto' | 'thinking' | 'adaptive' | 'on';
+export type ReasoningDecisionReason = 'simple_request' | 'direct_lookup' | 'casual' | 'transformation' | 'explicit_reasoning_request' | 'conflict_resolution' | 'dependency_reasoning' | 'priority_tradeoffs' | 'recommendation' | 'risk_analysis' | 'dedicated_reasoning';
+export type ReasoningRequestSignals = { question: string; answerDepth?: 'brief' | 'standard' | 'detailed'; retrievalRequired?: boolean; sourceCount?: number; attachmentCount?: number; hasSkill?: boolean; routeReason?: string; generationDepth?: 'quick' | 'standard' | 'deep'; reasoningMode?: ReasoningMode; skillReasoningPolicy?: 'off' | 'optional' | 'preferred' };
+export type ReasoningDecision = { mode: 'off' | 'thinking'; enabled: boolean; reason: ReasoningDecisionReason };
+export type GenerationBudgets = { initial: number; retry: number; reasoning: number; visible: number };
 
-export type ReasoningRequestSignals = {
-  question: string;
-  answerDepth?: 'brief' | 'standard' | 'detailed';
-  retrievalRequired?: boolean;
-  sourceCount?: number;
-  attachmentCount?: number;
-  hasSkill?: boolean;
-  routeReason?: string;
-  generationDepth?: 'quick' | 'standard' | 'deep';
-};
-
-export type ReasoningDecision = {
-  mode: ReasoningMode;
-  enabled: boolean;
-  reason: ReasoningDecisionReason;
-};
-
-export type GenerationBudgets = {
-  initial: number;
-  retry: number;
-  reasoning: number;
-};
-
-export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxTokens: number | undefined, contextSize: number, signals?: ReasoningRequestSignals, reasoningEnabled = true): GenerationBudgets => {
-  const deepAnswer = signals?.generationDepth === 'deep' || signals?.answerDepth === 'detailed';
-  const reasoning = reasoningEnabled && tier === 'powerful'
-    ? ((signals?.hasSkill || (signals?.sourceCount ?? 0) >= 3 || deepAnswer) ? 2048 : 768)
-    : reasoningEnabled && tier === 'balanced' && signals?.retrievalRequired && signals.answerDepth !== 'brief' ? 1024 : 0;
-  const initial = tier === 'powerful'
-    ? Math.max(configuredMaxTokens ?? 4096, reasoning + 512, 4096)
-    : tier === 'balanced' && reasoning > 0
-      ? Math.max(configuredMaxTokens ?? 512, reasoning + 512, deepAnswer ? 1536 : 0)
-      : Math.max(configuredMaxTokens ?? 256, tier === 'fast' && deepAnswer ? 768 : 0);
-  return { initial, retry: tier === 'fast' ? initial : Math.max(initial, Math.max(256, contextSize - 256)), reasoning };
-};
-
-const explicitReasoning = /\b(think carefully|reason through|analy[sz]e deeply|deep analysis|consider the trade[- ]?offs|work through the dependencies|reason about)\b/i;
-const conflict = /\b(conflict|conflicting|contradict|inconsistent|disagree|different accounts)\b/i;
-const dependency = /\b(dependenc(?:y|ies)|blocked by|blocker|cause and effect|what is causing|why is|why are|figure out why)\b/i;
-const analysis = /\b(analy[sz](?:e|is)|compare|evaluate|prioriti[sz]e|recommend|trade[- ]?offs?|synthesi[sz](?:e|s)|implications?|health check|assess|plan)\b/i;
-const transformation = /\b(rewrite|rephrase|polish|edit|shorten|lengthen|translate|format|summari[sz]e|what does this say)\b/i;
+const explicitReasoning = /\b(think deeper|think deeply|really analy[sz]e|reason through|think this through|deep analysis|work through)\b/i;
+const conflict = /\b(conflict(?:ing)?|contradict|inconsistent|disagree|different accounts|what(?:'s| is) actually true)\b/i;
+const dependency = /\b(dependenc(?:y|ies)|blocked by|blocker|what is causing|why is|why are|figure out why|keeps slipping|get .* back on track)\b/i;
+const prioritization = /\b(prioriti[sz]e|what should I focus on|what matters most|urgency|impact|trade[- ]?offs?)\b/i;
+const recommendation = /\b(compare .* recommend|recommend which|which .* should we|evaluate .* approach|choose between)\b/i;
+const risk = /\b(at risk|risk analysis|risks?|threats?|what could go wrong)\b/i;
+const transformation = /\b(rewrite|rephrase|polish|edit|shorten|lengthen|translate|format|summari[sz]e|what did .* say)\b/i;
 const casual = /^(hi|hello|hey|thanks|thank you|good morning|good afternoon|good evening|what can you do|are you there)\b[!? .,]*$/i;
-const directLookup = /\b(what tasks? (?:are|is) due|when is (?:the|my) meeting|what time|what(?:'s| is) the status|list my|show me|who is|where is)\b/i;
-
-const adaptiveDecision = (signals: ReasoningRequestSignals): ReasoningDecision => {
-  const question = signals.question.trim();
-  if (casual.test(question)) return { mode: 'adaptive', enabled: false, reason: 'casual' };
-  if (transformation.test(question)) return { mode: 'adaptive', enabled: false, reason: 'transformation' };
-  if (explicitReasoning.test(question)) return { mode: 'adaptive', enabled: true, reason: 'explicit_reasoning_request' };
-  if (conflict.test(question)) return { mode: 'adaptive', enabled: true, reason: 'conflict_resolution' };
-  if (dependency.test(question)) return { mode: 'adaptive', enabled: true, reason: 'dependency_reasoning' };
-  if ((signals.sourceCount ?? 0) >= 3 && signals.retrievalRequired) return { mode: 'adaptive', enabled: true, reason: 'multi_source_synthesis' };
-  if (signals.hasSkill || (signals.attachmentCount ?? 0) > 0 && analysis.test(question)) return { mode: 'adaptive', enabled: true, reason: 'complex_analysis' };
-  if ((signals.answerDepth === 'detailed' || signals.generationDepth === 'deep') && analysis.test(question)) return { mode: 'adaptive', enabled: true, reason: 'detailed_analytical_request' };
-  if (analysis.test(question)) return { mode: 'adaptive', enabled: true, reason: 'complex_analysis' };
-  if (directLookup.test(question) || signals.routeReason === 'non_workspace_request' || signals.routeReason === 'direct_lookup') {
-    return { mode: 'adaptive', enabled: false, reason: 'direct_lookup' };
-  }
-  return { mode: 'adaptive', enabled: false, reason: 'simple_request' };
-};
+const directLookup = /\b(what tasks? (?:are|is) due|when is (?:the|my) meeting|what time|what(?:'s| is) the status|list my|show me|who is|where is|what changed|what happened)\b/i;
 
 export const resolveReasoningDecision = (tier: GenerationTier, mode: ReasoningMode, signals: ReasoningRequestSignals): ReasoningDecision => {
-  if (tier === 'fast' || mode === 'off') return { mode: 'off', enabled: false, reason: 'simple_request' };
-  // Powerful is a dedicated thinking model. Keep its native hidden reasoning
-  // path enabled even for short conversational requests; sending /no_think to
-  // this model can make its deliberation leak into the visible answer stream.
-  if (tier === 'powerful') return { mode: 'on', enabled: true, reason: 'dedicated_reasoning' };
-  if (mode === 'on') return { mode: 'on', enabled: true, reason: 'dedicated_reasoning' };
-  return adaptiveDecision(signals);
+  if (tier === 'fast' || mode === 'off' || signals.skillReasoningPolicy === 'off') return { mode: 'off', enabled: false, reason: 'simple_request' };
+  if (mode === 'thinking' || mode === 'on') return { mode: 'thinking', enabled: true, reason: 'dedicated_reasoning' };
+  if (signals.skillReasoningPolicy === 'preferred') return { mode: 'thinking', enabled: true, reason: 'dedicated_reasoning' };
+  if (casual.test(signals.question) || transformation.test(signals.question) || directLookup.test(signals.question)) return { mode: 'off', enabled: false, reason: transformation.test(signals.question) ? 'transformation' : directLookup.test(signals.question) ? 'direct_lookup' : 'casual' };
+  if (explicitReasoning.test(signals.question)) return { mode: 'thinking', enabled: true, reason: 'explicit_reasoning_request' };
+  if (conflict.test(signals.question)) return { mode: 'thinking', enabled: true, reason: 'conflict_resolution' };
+  if (dependency.test(signals.question)) return { mode: 'thinking', enabled: true, reason: 'dependency_reasoning' };
+  if (recommendation.test(signals.question)) return { mode: 'thinking', enabled: true, reason: 'recommendation' };
+  if (prioritization.test(signals.question)) return { mode: 'thinking', enabled: true, reason: 'priority_tradeoffs' };
+  if (risk.test(signals.question)) return { mode: 'thinking', enabled: true, reason: 'risk_analysis' };
+  return { mode: 'off', enabled: false, reason: 'simple_request' };
+};
+
+export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxTokens: number | undefined, _contextSize: number, signals?: ReasoningRequestSignals, reasoningEnabled = false): GenerationBudgets => {
+  const inferred = signals ? resolveReasoningDecision(tier, signals.reasoningMode ?? 'auto', signals).enabled : false;
+  const thinking = tier !== 'fast' && (reasoningEnabled || inferred);
+  const visible = Math.min(640, Math.max(448, configuredMaxTokens ?? 512));
+  const reasoning = thinking ? 384 : 0;
+  const initial = thinking ? reasoning + visible : visible;
+  return { initial, retry: initial, reasoning, visible };
 };
 
 export const applyQwenReasoningControl = (modelFamily: string | undefined, reasoningEnabled: boolean, context: string) => (
-  modelFamily === 'Qwen3' && !reasoningEnabled ? `${context}\n/no_think` : context
+  modelFamily === 'Qwen3' ? `${context}\n${reasoningEnabled ? '/think' : '/no_think'}` : context
 );

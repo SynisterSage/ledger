@@ -14,6 +14,7 @@ const isPackaged = () => Boolean(electronModule.app?.isPackaged);
 const resourcesPath = () => process.resourcesPath;
 
 export type LocalAIAssetRole = 'generation' | 'embedding';
+/** @deprecated `powerful` is accepted only as a migration alias for Balanced + Thinking. */
 export type GenerationTier = 'fast' | 'balanced' | 'powerful';
 export type GenerationModelId = 'qwen3-1.7b-q4-k-m' | 'qwen3-4b-q4-k-m' | 'qwen3-4b-thinking-2507-q6-k';
 export type GenerationTierResolution = {
@@ -40,7 +41,7 @@ export type LocalAIAssetManifest = {
   contextSize?: number;
   runtimeArgs?: string[];
   maxTokens?: number;
-  reasoningMode?: 'off' | 'adaptive' | 'on';
+  reasoningMode?: 'off' | 'auto' | 'adaptive' | 'on';
 };
 
 export type GenerationModelManifest = LocalAIAssetManifest & {
@@ -60,41 +61,7 @@ const VERIFIED_OPTIONAL_GENERATION_ARTIFACTS = {
     size: 2497280640,
     sha256: 'ab27b9bfa375a178d6cba48f3ad892b94b7739659dcc7aae8058ce0ffed6b328',
   },
-  powerful: {
-    url: 'https://huggingface.co/bartowski/Qwen_Qwen3-4B-Thinking-2507-GGUF/resolve/ba7f9bc071caf4788e3d7a5963543cff0149e483/Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf?download=true',
-    size: 3306261216,
-    sha256: 'f3f0b80140e7e41d965339fdefd9c98fb1453095cf4077fa587ab9266b627488',
-  },
 } as const;
-
-const LEGACY_POWERFUL_ARTIFACT = {
-  urlFragment: '/Qwen/Qwen3-8B-GGUF/',
-  size: 5027783488,
-  sha256: 'd98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785',
-} as const;
-const LEGACY_MINISTRAL_ARTIFACT = {
-  urlFragment: '/mistralai/Ministral-3-8B-Instruct-2512-GGUF/',
-  size: 5198911904,
-  sha256: '33e7a72cf5e6e2cfc2f2847075acc013d68bba023e35310cef86b5cf8fdca761',
-} as const;
-const powerfulUrlOverride = process.env.LEDGER_LOCAL_AI_POWERFUL_URL?.trim();
-const powerfulSizeOverride = Number(process.env.LEDGER_LOCAL_AI_POWERFUL_SIZE) || undefined;
-const powerfulShaOverride = process.env.LEDGER_LOCAL_AI_POWERFUL_SHA256?.trim().toLowerCase();
-const hasLegacyPowerfulOverride = Boolean(
-  powerfulUrlOverride?.includes(LEGACY_POWERFUL_ARTIFACT.urlFragment)
-  || powerfulSizeOverride === LEGACY_POWERFUL_ARTIFACT.size
-  || powerfulShaOverride === LEGACY_POWERFUL_ARTIFACT.sha256
-  || powerfulUrlOverride?.includes(LEGACY_MINISTRAL_ARTIFACT.urlFragment)
-  || powerfulSizeOverride === LEGACY_MINISTRAL_ARTIFACT.size
-  || powerfulShaOverride === LEGACY_MINISTRAL_ARTIFACT.sha256
-);
-const powerfulArtifact = hasLegacyPowerfulOverride
-  ? VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful
-  : {
-      url: powerfulUrlOverride || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful.url,
-      size: powerfulSizeOverride || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful.size,
-      sha256: powerfulShaOverride || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.powerful.sha256,
-    };
 
 export const GENERATION_MODEL_REGISTRY: GenerationModelManifest[] = [
   {
@@ -109,14 +76,7 @@ export const GENERATION_MODEL_REGISTRY: GenerationModelManifest[] = [
     fileName: 'qwen3-4b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_BALANCED_URL || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.url,
     expectedSize: Number(process.env.LEDGER_LOCAL_AI_BALANCED_SIZE) || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.size,
     sha256: process.env.LEDGER_LOCAL_AI_BALANCED_SHA256?.trim().toLowerCase() || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.sha256,
-    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, maxTokens: 1536, runtimeArgs: ['--n-gpu-layers', 'all', '--no-mmproj', '--reasoning', 'off', '--parallel', '1'], reasoningMode: 'off',
-  },
-  {
-    id: 'qwen3-4b-thinking-2507-q6-k', tier: 'powerful', displayName: 'Qwen3 4B Thinking', description: 'Takes more time to reason through complex work', modelFamily: 'Qwen3', role: 'generation', version: '2507',
-    fileName: 'Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf', downloadUrl: powerfulArtifact.url,
-    expectedSize: powerfulArtifact.size,
-    sha256: powerfulArtifact.sha256,
-    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 8192, maxTokens: 4096, runtimeArgs: ['--reasoning', 'on', '--reasoning-format', 'deepseek'], reasoningMode: 'on',
+    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, maxTokens: 512, runtimeArgs: ['--n-gpu-layers', 'all', '--no-mmproj', '--reasoning', 'off', '--parallel', '1'], reasoningMode: 'off',
   },
 ];
 
@@ -209,7 +169,7 @@ export class LocalAIAssetManager {
   private selectedTier(): GenerationTier {
     try {
       const value = JSON.parse(fs.readFileSync(selectionPath(), 'utf8')) as { tier?: unknown };
-      return value.tier === 'fast' || value.tier === 'balanced' || value.tier === 'powerful' ? value.tier : DEFAULT_GENERATION_TIER;
+      return value.tier === 'fast' || value.tier === 'balanced' ? value.tier : value.tier === 'powerful' ? 'balanced' : DEFAULT_GENERATION_TIER;
     } catch { return DEFAULT_GENERATION_TIER; }
   }
   getSelectedGenerationTier() {
@@ -219,9 +179,7 @@ export class LocalAIAssetManager {
     const requestedTier = this.selectedTier();
     const requestedModel = GENERATION_MODEL_REGISTRY.find((model) => model.tier === requestedTier)!;
     if (this.statusFor(requestedModel).installed) return { requestedTier, resolvedTier: requestedTier };
-    const preference: GenerationTier[] = requestedTier === 'powerful'
-      ? ['balanced', 'fast']
-      : requestedTier === 'balanced'
+    const preference: GenerationTier[] = requestedTier === 'balanced'
         ? ['fast']
         : [];
     const fallback = preference.find((tier) => this.statusFor(GENERATION_MODEL_REGISTRY.find((model) => model.tier === tier)!).installed);
@@ -238,18 +196,17 @@ export class LocalAIAssetManager {
     if (!model) throw new Error('Invalid generation model.');
     const override = model.tier === 'fast'
       ? process.env.LEDGER_LOCAL_AI_MODEL_PATH?.trim()
-      : model.tier === 'balanced'
-        ? process.env.LEDGER_LOCAL_AI_BALANCED_MODEL_PATH?.trim()
-        : process.env.LEDGER_LOCAL_AI_POWERFUL_MODEL_PATH?.trim();
+      : process.env.LEDGER_LOCAL_AI_BALANCED_MODEL_PATH?.trim();
     return override ? path.resolve(override) : modelPath(model);
   }
   setSelectedGenerationTier(tier: unknown) {
     if (tier !== 'fast' && tier !== 'balanced' && tier !== 'powerful') throw new Error('Invalid generation tier.');
-    const model = GENERATION_MODEL_REGISTRY.find((entry) => entry.tier === tier)!;
+    const normalizedTier = tier === 'powerful' ? 'balanced' : tier;
+    const model = GENERATION_MODEL_REGISTRY.find((entry) => entry.tier === normalizedTier)!;
     if (!this.statusFor(model).installed) throw new Error(`The ${tier} generation model is not installed.`);
-    fs.writeFileSync(selectionPath(), JSON.stringify({ tier, updatedAt: new Date().toISOString() }), { mode: 0o600 });
+    fs.writeFileSync(selectionPath(), JSON.stringify({ tier: normalizedTier, updatedAt: new Date().toISOString(), ...(tier === 'powerful' ? { migratedFrom: 'powerful' } : {}) }), { mode: 0o600 });
     this.emit();
-    return { tier, modelId: model.id };
+    return { tier: normalizedTier, modelId: model.id };
   }
   pathFor(role: LocalAIAssetRole) {
     if (role === 'generation') return this.getGenerationModelPath(this.getSelectedGenerationModel().id);
@@ -268,9 +225,7 @@ export class LocalAIAssetManager {
         ? 'LEDGER_LOCAL_AI_EMBEDDING_MODEL_PATH'
         : asset.tier === 'fast'
           ? 'LEDGER_LOCAL_AI_MODEL_PATH'
-          : asset.tier === 'balanced'
-            ? 'LEDGER_LOCAL_AI_BALANCED_MODEL_PATH'
-            : 'LEDGER_LOCAL_AI_POWERFUL_MODEL_PATH';
+          : 'LEDGER_LOCAL_AI_BALANCED_MODEL_PATH';
       const hasOverride = Boolean(process.env[overrideKey]?.trim());
       const hasVerifiedMetadata = Boolean(asset.downloadUrl && asset.expectedSize && asset.sha256);
       let installedBytes = 0;

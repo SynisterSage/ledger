@@ -43,6 +43,17 @@ test('builds a compact grounded prompt without raw resource JSON', () => {
   assert.match(prompt, /Do not output <think> tags/);
 });
 
+test('injects the shared presentation contract without changing the evidence contract', () => {
+  const prompt = buildAskLedgerPrompt({ question: 'What needs attention this week?', contextItems: context, executionMode: 'workspace_synthesis', presentationProfile: 'weekly_plan' });
+  assert.match(prompt, /ANSWER STYLE/);
+  assert.match(prompt, /bullets for 2–5 related items/);
+  assert.match(prompt, /🎯 Focus this week → 📅 Deadlines & commitments → ⚠️ Watchouts → ✅ Next steps/);
+  assert.match(prompt, /PRESENTATION SIGNALS/);
+  assert.match(prompt, /actionItemsPresent: true/);
+  assert.match(prompt, /Never mention evidence, retrieval, context, resources/);
+  assert.match(prompt, /EVIDENCE PACKAGE/);
+});
+
 test('uses the stable abstention instruction for unsupported questions', () => {
   const prompt = buildAskLedgerPrompt({ question: 'When will Local AI launch?', contextItems: context });
 
@@ -79,6 +90,16 @@ test('keeps conversational prompts free of global grounding abstention', () => {
   const prompt = buildAskLedgerPrompt({ question: 'Thanks', responseMode: 'conversational' });
   assert.doesNotMatch(prompt, /Use only the Ledger context below/);
   assert.doesNotMatch(prompt, new RegExp(ASK_LEDGER_ABSTENTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('tells conversational follow-ups to answer directly instead of critiquing prior output', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'Why not?',
+    responseMode: 'follow_up',
+    recentConversation: { previousQuestion: 'What is your favorite YouTuber?', previousAnswer: "I don't have a favorite YouTuber.", previousSources: [] },
+  });
+  assert.match(prompt, /Answer the current question directly/);
+  assert.match(prompt, /never critique, grade, or rewrite the previous answer/);
 });
 
 test('constrains capability answers to application-owned capabilities', () => {
@@ -134,7 +155,8 @@ test('uses the primary event time for last-workday lookups', () => {
     }],
   });
   assert.match(prompt, /newest primary workplace Event and its Time/);
-  assert.match(prompt, /2026-08-13T15:00:00Z/);
+  assert.match(prompt, /Thursday, Aug 13 at 3:00 PM/);
+  assert.doesNotMatch(prompt, /2026-08-13T15:00:00Z/);
 });
 
 test('asks project-specific answers to include linked work context', () => {

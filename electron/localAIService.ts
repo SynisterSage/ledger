@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { AskLedgerSource } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerAnswerValidationDiagnostics, AskLedgerDocumentDiagnostics } from '../src/types/askLedgerResourceContract.ts';
 import { LEGACY_MINISTRAL_MODEL_ID, LEGACY_POWERFUL_MODEL_ID, LocalAIAssetManager, resolveLocalAIRuntime, resolveLocalAIRuntimeVersion, type GenerationTier } from './localAIAssets.ts';
-import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision, type ReasoningRequestSignals } from './localAIReasoningPolicy.ts';
+import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision, type ReasoningMode, type ReasoningRequestSignals } from './localAIReasoningPolicy.ts';
 import { resolveAskLedgerModelRoute, type AskLedgerModelRoutingSignals, type AskLedgerModelRoute } from './askLedgerModelRouting.ts';
 import type { AskLedgerPerformanceTrace } from './askLedgerPerformance.ts';
 
@@ -54,6 +54,9 @@ export interface LocalAIMetrics {
   reasoningChunks?: number;
   contentChunks?: number;
   reasoningTokens?: number;
+  reasoningDurationMs?: number;
+  reasoningBudget?: number;
+  visibleAnswerBudget?: number;
   predictedTokens?: number;
   serverTimings?: Record<string, unknown>;
   performance?: Record<string, unknown>;
@@ -65,6 +68,7 @@ export type AskLedgerActivity =
   | { type: 'sources_found'; count: number; sources: AskLedgerSource[] }
   | { type: 'reading_context'; count: number; sources: AskLedgerSource[] }
   | { type: 'preparing_answer' }
+  | { type: 'reasoning' }
   | { type: 'generating' };
 
 export type AskLedgerSkillResult = {
@@ -100,7 +104,7 @@ type RuntimeConfig = {
   maxTokens?: number | (() => number);
   modelFamily?: string;
   modelTier?: GenerationTier;
-  reasoningMode?: 'off' | 'adaptive' | 'on';
+  reasoningMode?: ReasoningMode;
   idleTimeoutMs?: number;
 };
 
@@ -337,7 +341,7 @@ export class LocalModelRuntime {
       reasoningEnabled: reasoningDecision.enabled,
       reason: reasoningDecision.reason,
     });
-    callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'generating' } });
+    callbacks.onEvent({ type: 'activity', requestId, activity: { type: reasoningDecision.enabled ? 'reasoning' : 'generating' } });
     const startedAt = Date.now();
     const configuredMaxTokens = request.generationBudget ?? (typeof this.config.maxTokens === 'function' ? this.config.maxTokens() : this.config.maxTokens);
     const contextSize = typeof this.config.contextSize === 'function' ? this.config.contextSize() : this.config.contextSize;
@@ -356,6 +360,9 @@ export class LocalModelRuntime {
     request.performance?.set('generationBudget', initialBudget);
     request.performance?.set('reasoningEnabled', reasoningDecision.enabled);
     request.performance?.set('reasoningMode', reasoningDecision.mode);
+    request.performance?.set('reasoningReason', reasoningDecision.reason);
+    request.performance?.set('reasoningBudget', budgets.reasoning);
+    request.performance?.set('visibleAnswerBudget', budgets.visible);
     const metalRequested = process.platform === 'darwin' && Boolean(runtimeArgs?.includes('--n-gpu-layers'));
     request.performance?.set('gpuLayersRequested', runtimeArgs?.includes('--n-gpu-layers') ? runtimeArgs[runtimeArgs.indexOf('--n-gpu-layers') + 1] : undefined);
     request.performance?.set('metalRequested', metalRequested);
@@ -496,9 +503,11 @@ export class LocalModelRuntime {
       modelId,
       reasoningEnabled: reasoningDecision.enabled,
       reasoningMode: reasoningDecision.mode,
+      reasoningReason: reasoningDecision.reason,
+      reasoningBudget: budgets.reasoning,
+      visibleAnswerBudget: budgets.visible,
       reasoningFormat: this.config.modelFamily === 'Qwen3' ? 'deepseek' : undefined,
       generationBudget: shouldRetry ? maxRetryBudget : initialBudget,
-      reasoningBudget: budgets.reasoning,
       contextSize,
       temperature: 0.2,
       topP: 0.95,
@@ -664,20 +673,21 @@ export class LocalAIService {
     if (targetTier !== 'fast' && targetTier !== 'balanced' && targetTier !== 'powerful') {
       return Promise.reject(new Error('Invalid generation tier.'));
     }
+    const normalizedTargetTier: GenerationTier = targetTier === 'powerful' ? 'balanced' : targetTier;
     // Queue a later request behind the active switch instead of returning the
     // earlier request's result. This keeps rapid Balanced -> Fast interactions
     // deterministic: every requested target is handled, and the last request
     // becomes the final loaded/persisted tier.
     if (this.switchPromise) {
-      console.info('[local-ai] generation model switch queued', { requestedTier: targetTier });
+      console.info('[local-ai] generation model switch queued', { requestedTier: normalizedTargetTier });
       const activeSwitch = this.switchPromise;
-      const queuedSwitch = activeSwitch.then(() => this.performGenerationSwitch(targetTier));
+      const queuedSwitch = activeSwitch.then(() => this.performGenerationSwitch(normalizedTargetTier));
       let trackedSwitch!: Promise<GenerationModelSwitchResult>;
       trackedSwitch = queuedSwitch.finally(() => { if (this.switchPromise === trackedSwitch) this.switchPromise = null; });
       this.switchPromise = trackedSwitch;
       return trackedSwitch;
     }
-    this.switchPromise = this.performGenerationSwitch(targetTier).finally(() => { if (this.switchPromise) this.switchPromise = null; });
+    this.switchPromise = this.performGenerationSwitch(normalizedTargetTier).finally(() => { if (this.switchPromise) this.switchPromise = null; });
     return this.switchPromise;
   }
 
@@ -792,7 +802,7 @@ export const createLocalAIService = (assets = new LocalAIAssetManager(), overrid
       modelId: model.id,
       modelFamily: model.modelFamily,
       modelTier: model.tier,
-      reasoningMode: model.reasoningMode,
+      reasoningMode: model.tier === 'balanced' ? 'auto' : model.reasoningMode,
       serverPath: () => resolveLocalAIRuntime() || process.env.LEDGER_LLAMA_SERVER_PATH?.trim() || '',
       port: Number.isFinite(port) ? port : DEFAULT_PORT,
       contextSize: overrides.contextSize ?? model.contextSize ?? 4096,

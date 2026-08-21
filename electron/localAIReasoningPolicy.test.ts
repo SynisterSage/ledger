@@ -3,39 +3,34 @@ import test from 'node:test';
 import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision } from './localAIReasoningPolicy.ts';
 import { parseThinkingChunk, type ParsedThinkingStream } from './localAIService.ts';
 
-const decide = (question: string, overrides: Record<string, unknown> = {}) => resolveReasoningDecision('balanced', 'adaptive', { question, ...overrides });
+const decide = (question: string, overrides: Record<string, unknown> = {}) => resolveReasoningDecision('balanced', 'auto', { question, ...overrides });
 
-test('keeps simple Balanced requests out of reasoning', () => {
-  assert.equal(decide('Hello there').enabled, false);
-  assert.equal(decide('What tasks are due?').reason, 'direct_lookup');
-  assert.equal(decide('Summarize this note').reason, 'transformation');
-  assert.equal(decide('Rewrite this in a warmer tone').reason, 'transformation');
+test('keeps direct and transformation requests out of Thinking', () => {
+  for (const question of ["What's due today?", 'Summarize this meeting.', 'What did Sarah say?', 'Show my recent notes.', "What's a mutex?"]) assert.equal(decide(question).enabled, false, question);
+  assert.equal(decide('What changed this week?').enabled, false);
 });
 
-test('enables Balanced reasoning for analytical requests', () => {
-  assert.equal(decide('Why is the project blocked?').reason, 'dependency_reasoning');
-  assert.equal(decide('Compare these conflicting project updates').reason, 'conflict_resolution');
-  assert.equal(decide('Recommend what we should prioritize', { sourceCount: 4, retrievalRequired: true }).reason, 'multi_source_synthesis');
-  assert.equal(decide('Review this attachment and identify dependencies', { attachmentCount: 1 }).enabled, true);
-  assert.equal(decide('Give me a detailed analysis of this project', { answerDepth: 'detailed' }).reason, 'detailed_analytical_request');
-  assert.equal(decide('Think carefully and reason through the tradeoffs').reason, 'explicit_reasoning_request');
+test('selects Thinking for explicit and genuinely analytical requests', () => {
+  for (const question of ['Think deeply about why Atlas keeps slipping.', 'Compare the two launch plans and tell me which one you recommend.', 'Work through these conflicting updates and tell me what is most likely true.', 'Help me prioritize these projects based on urgency, dependencies, and impact.']) {
+    assert.equal(decide(question).enabled, true, question);
+    assert.equal(decide(question).mode, 'thinking');
+  }
+  assert.equal(decide('Summarize my last three meetings.', { skillReasoningPolicy: 'preferred' }).enabled, true);
+  assert.equal(decide('Plan my week.', { skillReasoningPolicy: 'optional' }).enabled, false);
 });
 
-test('model defaults remain isolated', () => {
-  assert.equal(resolveReasoningDecision('fast', 'off', { question: 'Analyze this deeply' }).enabled, false);
-  assert.equal(resolveReasoningDecision('powerful', 'on', { question: 'What time is the meeting?' }).enabled, true);
-  assert.equal(resolveReasoningDecision('powerful', 'on', { question: 'Analyze the project dependencies.' }).enabled, true);
-  assert.equal(resolveReasoningDecision('balanced', 'adaptive', { question: 'What time is the meeting?' }).enabled, false);
+test('Fast and explicit off policies never enable Thinking', () => {
+  assert.equal(resolveReasoningDecision('fast', 'auto', { question: 'Think deeply about this.' }).enabled, false);
+  assert.equal(resolveReasoningDecision('balanced', 'off', { question: 'Analyze the dependencies.' }).enabled, false);
 });
 
-test('Qwen thinking control is per-request and never applied to other model families', () => {
+test('Qwen control is per request and hides reasoning from other families', () => {
   assert.match(applyQwenReasoningControl('Qwen3', false, 'prompt'), /\/no_think$/);
-  assert.equal(applyQwenReasoningControl('Qwen3', true, 'prompt'), 'prompt');
-  assert.equal(applyQwenReasoningControl('Ministral 3', false, 'prompt'), 'prompt');
-  assert.equal(applyQwenReasoningControl('Qwen3', resolveReasoningDecision('powerful', 'on', { question: 'hi' }).enabled, 'prompt'), 'prompt');
+  assert.match(applyQwenReasoningControl('Qwen3', true, 'prompt'), /\/think$/);
+  assert.equal(applyQwenReasoningControl('Ministral 3', true, 'prompt'), 'prompt');
 });
 
-test('parses Qwen reasoning deltas separately from visible content', () => {
+test('parses reasoning deltas separately from visible content', () => {
   const state: ParsedThinkingStream = { visibleText: '', reasoningContentObserved: false, finishReason: null, reasoningChunks: 0, contentChunks: 0, reasoningTokens: 0 };
   assert.equal(parseThinkingChunk({ choices: [{ delta: { reasoning_content: 'private reasoning' } }] }, state), '');
   assert.equal(state.reasoningContentObserved, true);
@@ -43,10 +38,8 @@ test('parses Qwen reasoning deltas separately from visible content', () => {
   assert.equal(state.finishReason, 'stop');
 });
 
-test('keeps Deep generation budget independent from brief answer depth', () => {
-  assert.deepEqual(resolveGenerationBudgets('powerful', 128, 8192, { question: 'hello', answerDepth: 'brief' }), { initial: 4096, retry: 7936, reasoning: 768 });
-  assert.deepEqual(resolveGenerationBudgets('powerful', 128, 8192, { question: 'analyze this', answerDepth: 'detailed', sourceCount: 4 }), { initial: 4096, retry: 7936, reasoning: 2048 });
-  assert.deepEqual(resolveGenerationBudgets('balanced', 512, 4096, { question: 'analyze this', answerDepth: 'standard', retrievalRequired: true }), { initial: 1536, retry: 3840, reasoning: 1024 });
-  assert.deepEqual(resolveGenerationBudgets('fast', undefined, 4096), { initial: 256, retry: 256, reasoning: 0 });
-  assert.deepEqual(resolveGenerationBudgets('balanced', 512, 8192, { question: 'analyze this', answerDepth: 'standard', retrievalRequired: true }, false), { initial: 512, retry: 7936, reasoning: 0 });
+test('separates bounded reasoning and visible-answer budgets', () => {
+  assert.deepEqual(resolveGenerationBudgets('balanced', 512, 4096, { question: 'Summarize this.' }), { initial: 512, retry: 512, reasoning: 0, visible: 512 });
+  assert.deepEqual(resolveGenerationBudgets('balanced', 512, 4096, { question: 'Think deeply about this.' }), { initial: 896, retry: 896, reasoning: 384, visible: 512 });
+  assert.deepEqual(resolveGenerationBudgets('balanced', 640, 4096, { question: 'Think deeply about this.' }), { initial: 1024, retry: 1024, reasoning: 384, visible: 640 });
 });

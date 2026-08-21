@@ -7,7 +7,6 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
-  ChevronRight,
   Copy as CopyIcon,
   Download,
   ExternalLink,
@@ -46,6 +45,7 @@ import { ASK_LEDGER_SKILL_METADATA, type AskLedgerCustomSkill, type AskLedgerSki
 import { routeAskLedgerMessage } from '../../types/askLedgerResponseMode';
 import type { AskLedgerResponseMode } from '../../types/askLedgerResponseMode';
 import type { AskLedgerAnswerDepth } from '../../types/askLedgerAnswerDepth';
+import { sanitizeAskLedgerOutput } from '../../types/askLedgerOutputGuard';
 import {
   proposeAskLedgerActions,
   type AskLedgerActionProposal,
@@ -79,6 +79,7 @@ export interface AskLedgerRequest {
   responseMode?: AskLedgerResponseMode;
   retrievalRequired?: boolean;
   answerDepth?: AskLedgerAnswerDepth;
+  reasoningMode?: 'off' | 'thinking';
 }
 
 export interface AskLedgerSource {
@@ -117,7 +118,7 @@ export interface AskLedgerMessage {
   attachments?: AskLedgerMessageAttachment[];
   structured?: { skillId: AskLedgerSkillRef; sections: Array<{ title: string; content: string }> };
   skillId?: AskLedgerSkillRef;
-  activity?: { durationMs?: number; steps: Array<{ type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> }> };
+  activity?: { durationMs?: number; steps: Array<{ type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'reasoning' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> }> };
 }
 
 export interface AskLedgerSession {
@@ -167,7 +168,8 @@ export type AskLedgerState =
   | { status: 'error'; request: AskLedgerRequest; message: string };
 
 type LocalAISetupError = 'storage' | 'interrupted' | 'generic';
-type GenerationTier = 'fast' | 'balanced' | 'powerful';
+type GenerationTier = 'fast' | 'balanced';
+type GenerationMode = 'fast' | 'balanced' | 'thinking';
 type GenerationModelState = 'not_installed' | 'unavailable' | 'downloading' | 'verifying' | 'installed' | 'failed';
 type GenerationModelView = {
   id: string;
@@ -193,13 +195,15 @@ type LocalAICapabilityView = {
   recommendationReason?: string;
 };
 
-const generationTierLabels: Record<GenerationTier, string> = { fast: 'Fast', balanced: 'Balanced', powerful: 'Powerful' };
-const generationTierDescriptions: Record<GenerationTier, string> = {
-  fast: 'Quick responses with the lowest resource use.',
-  balanced: 'Stronger answers for more complex work.',
-  powerful: 'Highest local quality for demanding work.',
+const generationTierLabels: Record<GenerationTier, string> = { fast: 'Fast', balanced: 'Balanced' };
+const generationModeLabels: Record<GenerationMode, string> = { fast: 'Fast', balanced: 'Balanced', thinking: 'Thinking' };
+const generationModeDescriptions: Record<GenerationMode, string> = {
+  fast: 'Quickest responses',
+  balanced: 'Best for most work',
+  thinking: 'Deeper analysis, takes longer',
 };
-const generationTierOrder: GenerationTier[] = ['fast', 'balanced', 'powerful'];
+const generationModeOrder: GenerationMode[] = ['fast', 'balanced', 'thinking'];
+const generationTierOrder: GenerationTier[] = ['fast', 'balanced'];
 const isGenerationTier = (value: unknown): value is GenerationTier => generationTierOrder.includes(value as GenerationTier);
 
 const sourceType = (value: unknown): AskLedgerSourceType | null =>
@@ -262,7 +266,7 @@ const sourceTypeLabels: Record<AskLedgerSourceType, string> = {
 type AskLedgerStreamEvent = {
   type: 'start' | 'activity' | 'sources' | 'delta' | 'replace' | 'done' | 'error';
   requestId: string;
-  activity?: { type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> };
+  activity?: { type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'reasoning' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> };
   text?: string;
   sources?: Array<Record<string, unknown>>;
   error?: { code?: string; message?: string };
@@ -438,12 +442,18 @@ const deriveSessionTitle = (question: string) => {
 };
 
 const renderInlineAnswer = (value: string, keyPrefix: string): ReactNode[] =>
-  value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+  value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\s)]+\))/g).filter(Boolean).map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return <strong key={`${keyPrefix}-bold-${index}`} className="font-semibold text-[var(--ledger-text-primary)]">{part.slice(2, -2)}</strong>;
     }
     if (part.startsWith('`') && part.endsWith('`')) {
       return <code key={`${keyPrefix}-code-${index}`} className="rounded bg-[var(--ledger-surface-muted)] px-1 py-0.5 text-[0.9em] text-[var(--ledger-text-primary)]">{part.slice(1, -1)}</code>;
+    }
+    const link = part.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/);
+    if (link) {
+      const [, label, href] = link;
+      const safeHref = /^(?:https?:|mailto:|\/|#)/i.test(href) ? href : '#';
+      return <a key={`${keyPrefix}-link-${index}`} href={safeHref} target={/^https?:/i.test(safeHref) ? '_blank' : undefined} rel={/^https?:/i.test(safeHref) ? 'noreferrer' : undefined} className="ask-ledger-answer__link">{label}</a>;
     }
     return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
   });
@@ -452,9 +462,31 @@ const renderAnswerContent = (content: string): ReactNode[] => content.trim().spl
   const lines = block.split('\n');
   const isBulleted = lines.every((line) => /^\s*[-*]\s+/.test(line));
   const isNumbered = lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
+  const heading = lines.length === 1 ? lines[0].match(/^(#{1,3})\s+(.+)$/) : null;
+  const fencedCode = block.match(/^```(?:[\w+-]+)?\n?([\s\S]*?)(?:\n```)?$/);
+  const isBlockquote = lines.every((line) => /^\s*>\s?/.test(line));
+  const tableSeparator = lines.length >= 2 && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[1]);
+  const isTable = lines.length >= 2 && lines.every((line) => /^\s*\|?.+\|.+\|?\s*$/.test(line)) && tableSeparator;
+  if (heading) {
+    const level = heading[1].length;
+    const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3';
+    const headingText = heading[2].replace(/^⚠(?!️)/u, '⚠️');
+    return <Tag key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__heading ask-ledger-answer__heading--${level}`}><span className="ask-ledger-answer__heading-text">{renderInlineAnswer(headingText, `answer-${blockIndex}`)}</span></Tag>;
+  }
+  if (fencedCode) {
+    return <pre key={`answer-block-${blockIndex}`} className="ask-ledger-answer__code"><code>{fencedCode[1]}</code></pre>;
+  }
+  if (isTable) {
+    const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+    const headers = cells(lines[0]);
+    return <div key={`answer-block-${blockIndex}`} className="ask-ledger-answer__table-wrap"><table className="ask-ledger-answer__table"><thead><tr>{headers.map((cell, index) => <th key={`answer-table-head-${index}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-head-${index}`)}</th>)}</tr></thead><tbody>{lines.slice(2).map((line, rowIndex) => <tr key={`answer-table-row-${rowIndex}`}>{cells(line).map((cell, cellIndex) => <td key={`answer-table-cell-${rowIndex}-${cellIndex}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody></table></div>;
+  }
+  if (isBlockquote) {
+    return <blockquote key={`answer-block-${blockIndex}`} className="ask-ledger-answer__blockquote">{lines.map((line, lineIndex) => <span key={`answer-quote-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line.replace(/^\s*>\s?/, ''), `answer-${blockIndex}-${lineIndex}`)}</span>)}</blockquote>;
+  }
   if (isBulleted || isNumbered) {
     const List = isBulleted ? 'ul' : 'ol';
-    return <List key={`answer-block-${blockIndex}`} className={`${isBulleted ? 'list-disc' : 'list-decimal'} space-y-1 pl-5`}>{lines.map((line, lineIndex) => <li key={`answer-line-${lineIndex}`}>{renderInlineAnswer(line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, ''), `answer-${blockIndex}-${lineIndex}`)}</li>)}</List>;
+    return <List key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__list ${isNumbered ? 'ask-ledger-answer__list--ordered' : 'ask-ledger-answer__list--unordered'}`}>{lines.map((line, lineIndex) => <li key={`answer-line-${lineIndex}`}>{renderInlineAnswer(line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, ''), `answer-${blockIndex}-${lineIndex}`)}</li>)}</List>;
   }
   return <p key={`answer-block-${blockIndex}`}>{lines.map((line, lineIndex) => <span key={`answer-line-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line, `answer-${blockIndex}-${lineIndex}`)}</span>)}</p>;
 });
@@ -466,6 +498,8 @@ const askLedgerActivityLabel = (value?: AskLedgerStreamEvent['activity']) => {
   if (value.type === 'sources_found') return `Found ${value.count ?? 0} relevant sources`;
   if (value.type === 'reading_context') return `Reading ${value.count ?? 0} relevant sources…`;
   if (value.type === 'preparing_answer') return 'Preparing answer…';
+  if (value.type === 'reasoning') return 'Analyzing the evidence…';
+  if (value.type === 'generating') return 'Writing response…';
   return 'Preparing answer…';
 };
 
@@ -504,6 +538,8 @@ const askLedgerActivityDescription = (value: AskLedgerStreamEvent['activity']) =
   if (value.type === 'sources_found') return `Found ${value.count ?? 0} relevant sources.`;
   if (value.type === 'reading_context') return `Reviewed ${value.count ?? 0} sources relevant to this question.`;
   if (value.type === 'preparing_answer') return 'Organizing the selected context into an answer.';
+  if (value.type === 'reasoning') return 'Working through the evidence before writing the answer.';
+  if (value.type === 'generating') return 'Generating the response on this device.';
   return 'Answering from the selected Ledger context.';
 };
 
@@ -615,21 +651,18 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   } | null>(null);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [generationModels, setGenerationModels] = useState<GenerationModelView[]>([]);
-  const [selectedGenerationTier, setSelectedGenerationTier] = useState<GenerationTier>('fast');
+  const [selectedGenerationTier, setSelectedGenerationTier] = useState<GenerationTier>('balanced');
+  const [generationMode, setGenerationMode] = useState<GenerationMode>('balanced');
+  const [reasoningMode, setReasoningMode] = useState<'off' | 'thinking'>('off');
   const [generationRuntimeState, setGenerationRuntimeState] = useState<{ selectedTier?: GenerationTier; loadedTier?: GenerationTier | null; switching?: boolean; targetTier?: GenerationTier | null; ready?: boolean; failure?: unknown } | null>(null);
   const [localAICapability, setLocalAICapability] = useState<LocalAICapabilityView | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [advancedView, setAdvancedView] = useState<'quality' | 'models'>('quality');
   const [tierSwitchError, setTierSwitchError] = useState<string | null>(null);
   const [switchingTier, setSwitchingTier] = useState<GenerationTier | null>(null);
   const [downloadTier, setDownloadTier] = useState<GenerationTier | null>(null);
   const [downloadPhase, setDownloadPhase] = useState<'confirm' | 'downloading' | 'preparing' | 'error'>('confirm');
   const [downloadMinimized, setDownloadMinimized] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const qualityPointerInteractionRef = useRef(false);
-  const qualityPointerIdRef = useRef<number | null>(null);
-  const qualitySuppressClickRef = useRef(false);
-  const [qualityDragTier, setQualityDragTier] = useState<GenerationTier | null>(null);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [contextPickerSkill, setContextPickerSkill] = useState<AskLedgerSkillMetadata | null>(null);
   const [contextPickerOptions, setContextPickerOptions] = useState<AskLedgerInitialContext[]>([]);
@@ -961,7 +994,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         if (value.type === 'activity') {
           const nextActivity = value.activity ?? null;
           const activeRequest = stateRef.current.status === 'submitting' || stateRef.current.status === 'streaming' ? stateRef.current.request : null;
-          if (nextActivity && activeRequest?.retrievalRequired === false) return;
+          // Conversational turns still stream through the local model. Keep
+          // the lightweight runtime/generation state visible, while hiding
+          // workspace-only stages such as search and source reading.
+          if (nextActivity && activeRequest?.retrievalRequired === false && !['starting_runtime', 'reasoning', 'generating'].includes(nextActivity.type)) return;
           if (nextActivity) {
             setActivitySteps((current) => {
               const next = current.some((step) => step.type === nextActivity.type && step.count === nextActivity.count) ? current : [...current, nextActivity];
@@ -1101,11 +1137,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           setRequestWatchdogStatus(null);
           if (value.error?.code === 'cancelled') {
             const current = stateRef.current;
-            if ((current.status === 'streaming' || current.status === 'submitting') && current.status === 'streaming' && current.response.answer.trim()) {
+            if (current.status === 'streaming' || current.status === 'submitting') {
+              const currentResponse = current.status === 'streaming' ? current.response : { answer: '', sources: [] };
               const interruptedMessage: AskLedgerMessage = {
                 id: newAskLedgerMessageId(), role: 'assistant',
-                content: `${current.response.answer}\n\nGeneration stopped before it finished.`,
-                createdAt: new Date().toISOString(), sources: current.response.sources, interrupted: true,
+                content: currentResponse.answer.trim() || 'No response was completed.',
+                createdAt: new Date().toISOString(), sources: currentResponse.sources, interrupted: true,
                 activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
               };
               const nextMessages = [...messagesRef.current, interruptedMessage];
@@ -1140,7 +1177,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const applyLocalAIStatus = (value: unknown) => {
       const next = value as typeof localAIStatus;
       setLocalAIStatus(next);
-      if (isGenerationTier(next?.selectedGenerationTier)) setSelectedGenerationTier(next.selectedGenerationTier);
+      if (isGenerationTier(next?.selectedGenerationTier)) {
+        setSelectedGenerationTier(next.selectedGenerationTier);
+        setGenerationMode(next.selectedGenerationTier);
+        setReasoningMode('off');
+      }
       if (next?.generationModels) setGenerationModels(Object.values(next.generationModels));
       else if (next?.generation?.tier && next.generation.id) setGenerationModels([{ id: next.generation.id, tier: next.generation.tier, ...next.generation }]);
     };
@@ -1157,7 +1198,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     void window.askLedger.getGenerationRuntimeState().then((value) => {
       const next = value as typeof generationRuntimeState;
       setGenerationRuntimeState(next);
-      if (isGenerationTier(next?.selectedTier)) setSelectedGenerationTier(next.selectedTier);
+      if (isGenerationTier(next?.selectedTier)) {
+        setSelectedGenerationTier(next.selectedTier);
+        setGenerationMode(next.selectedTier);
+        setReasoningMode('off');
+      }
     });
     if (!window.askLedger.onGenerationRuntimeState) return;
     return window.askLedger.onGenerationRuntimeState((value) => {
@@ -1209,7 +1254,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const attachmentIds = submittedAttachments.flatMap((item) => item.kind === 'file' ? [item.attachment.id] : []);
 
     const customSkill = customSkills.find((skill) => skill.id === selectedSkillForRequest);
-    const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, customSkill, explicitContext: initialContextRef.current ?? undefined, attachmentIds };
+    const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, customSkill, explicitContext: initialContextRef.current ?? undefined, attachmentIds, reasoningMode };
     const route = routeAskLedgerMessage(effectiveQuestion, {
       previousQuestion: conversationRef.current?.previousQuestion,
       previousAnswer: conversationRef.current?.previousAnswer,
@@ -1338,6 +1383,16 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           customSkill: request.customSkill,
           explicitContext: request.explicitContext,
           attachmentIds: request.attachmentIds,
+          reasoningMode: request.reasoningMode,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timeFormat: (() => {
+            try {
+              const preferences = JSON.parse(window.localStorage.getItem('ledger:settings:v1') || '{}') as { timeFormat?: unknown };
+              return preferences.timeFormat === '24h' ? '24h' : '12h';
+            } catch {
+              return '12h';
+            }
+          })(),
           messageId: nextMessages[nextMessages.length - 1]?.id,
           performance: { uiSubmitStartedAt, preflightStartedAt, preflightCompletedAt: Date.now() },
         });
@@ -1389,13 +1444,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     if (activeRequestIdRef.current) void window.askLedger?.cancel(activeRequestIdRef.current);
     activeRequestIdRef.current = null;
     requestInitializingRef.current = false;
-    if (state.status === 'streaming' && state.response.answer.trim()) {
+    if (state.status === 'streaming' || state.status === 'submitting') {
+      const currentResponse = state.status === 'streaming' ? state.response : { answer: '', sources: [] };
       const interruptedMessage: AskLedgerMessage = {
         id: newAskLedgerMessageId(),
         role: 'assistant',
-        content: `${state.response.answer}\n\nGeneration stopped before it finished.`,
+        content: currentResponse.answer.trim() || 'No response was completed.',
         createdAt: new Date().toISOString(),
-        sources: state.response.sources,
+        sources: currentResponse.sources,
         interrupted: true,
         activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
       };
@@ -1448,37 +1504,33 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   };
 
   const modelForTier = (tier: GenerationTier) => generationModels.find((model) => model.tier === tier);
-  const visibleGenerationTiers = generationTierOrder;
-  const visibleRecommendedTier = localAICapability?.recommendedTier && visibleGenerationTiers.includes(localAICapability.recommendedTier)
-    ? localAICapability.recommendedTier
-    : 'fast';
   const downloadModelView = downloadTier ? modelForTier(downloadTier) : undefined;
   const tierSwitchInProgress = Boolean(switchingTier || generationRuntimeState?.switching);
   const tierWarning = (tier: GenerationTier) => localAICapability?.warnings?.[tier];
   const tierWarningNeedsAcknowledgement = (tier: GenerationTier) => Boolean(tierWarning(tier) && !localAICapability?.acknowledgedTiers?.includes(tier));
 
-  const switchToTier = async (tier: GenerationTier) => {
-    if (!window.askLedger?.switchGenerationTier || tierSwitchInProgress) return;
+  const switchToTier = async (tier: GenerationTier): Promise<boolean> => {
+    if (!window.askLedger?.switchGenerationTier || tierSwitchInProgress) return false;
     const model = modelForTier(tier);
     if (!model) {
       setTierSwitchError(`${generationTierLabels[tier]} is not available yet.`);
-      return;
+      return false;
     }
     if (model.state === 'unavailable' || model.available === false) {
       setTierSwitchError(`${generationTierLabels[tier]} is not available for download yet.`);
-      return;
+      return false;
     }
     if (tierWarningNeedsAcknowledgement(tier)) {
       setDownloadTier(tier);
       setDownloadPhase('confirm');
       setDownloadError(null);
-      return;
+      return false;
     }
     if (!model.installed || model.state === 'not_installed' || model.state === 'failed') {
       setDownloadTier(tier);
       setDownloadPhase('confirm');
       setDownloadError(null);
-      return;
+      return false;
     }
     setTierSwitchError(null);
     setSwitchingTier(tier);
@@ -1486,15 +1538,39 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setSwitchingTier(null);
     if (result?.ok && (result.state === 'ready' || result.state === 'noop')) {
       setSelectedGenerationTier(tier);
-      return;
+      setGenerationMode(tier);
+      setReasoningMode('off');
+      return true;
     }
     if (result?.state === 'requires_download') {
       setDownloadTier(tier);
       setDownloadPhase('confirm');
-      return;
+      return false;
     }
     const detail = errorMessage(result?.error);
     setTierSwitchError(detail ? `Couldn't switch to ${generationTierLabels[tier]}: ${detail}` : `Couldn't switch to ${generationTierLabels[tier]}.`);
+    return false;
+  };
+
+  const selectGenerationMode = async (mode: GenerationMode) => {
+    if (tierSwitchInProgress) return;
+    setTierSwitchError(null);
+    const selectedTier = mode === 'thinking' ? 'balanced' : mode;
+    const selectedModel = modelForTier(selectedTier);
+    const selectedModelReady = Boolean(selectedModel?.installed && selectedModel.state !== 'failed' && selectedModel.state !== 'unavailable' && selectedModel.available !== false);
+    if (mode === 'thinking') {
+      const ready = selectedGenerationTier === 'balanced' && selectedModelReady || await switchToTier('balanced');
+      if (!ready) return;
+      setGenerationMode('thinking');
+      setReasoningMode('thinking');
+      setAdvancedOpen(false);
+      return;
+    }
+    const ready = selectedGenerationTier === mode && selectedModelReady || await switchToTier(mode);
+    if (!ready) return;
+    setGenerationMode(mode);
+    setReasoningMode('off');
+    setAdvancedOpen(false);
   };
 
   const startOptionalDownload = async () => {
@@ -1526,6 +1602,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         throw new Error(detail || `Couldn't switch to ${generationTierLabels[tier]}.`);
       }
       setSelectedGenerationTier(tier);
+      setGenerationMode(tier);
+      setReasoningMode('off');
       setDownloadTier(null);
       setDownloadPhase('confirm');
       setAdvancedOpen(false);
@@ -1541,13 +1619,6 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setDownloadTier(null);
     setDownloadPhase('confirm');
     setDownloadError(null);
-  };
-
-  const qualityTierAtPointer = (clientX: number, element: HTMLElement) => {
-    const bounds = element.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
-    const index = Math.round(ratio * (visibleGenerationTiers.length - 1));
-    return visibleGenerationTiers[index] ?? null;
   };
 
   useEffect(() => {
@@ -1833,18 +1904,19 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 </div>
               ) : (
                 <div>
+                  {message.interrupted ? <div className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800" role="status"><Square size={11} aria-hidden="true" />Chat interrupted</div> : null}
                   {message.activity?.steps?.length ? <AskLedgerActivityTrace steps={message.activity.steps} durationMs={message.activity.durationMs} expanded={Boolean(expandedActivity[message.id])} onToggle={() => setExpandedActivity((current) => ({ ...current, [message.id]: !current[message.id] }))} /> : null}
                   {message.structured?.sections?.length ? (
-                    <div className="space-y-6 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">
+                    <div className="ask-ledger-answer text-[15px] text-[var(--ledger-text-secondary)]">
                       {message.structured.sections.map((section) => (
                         <section key={`${message.id}-${section.title}`}>
-                          <h3 className="mb-2 text-sm font-medium text-[var(--ledger-text-primary)]">{section.title}</h3>
-                          <div className="space-y-3">{renderAnswerContent(section.content)}</div>
+                          <h3 className="ask-ledger-answer__heading ask-ledger-answer__heading--3">{section.title}</h3>
+                          <div className="ask-ledger-answer__section-content">{renderAnswerContent(sanitizeAskLedgerOutput(section.content).answer)}</div>
                         </section>
                       ))}
                     </div>
                   ) : (
-                    <div className="space-y-4 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">{renderAnswerContent(message.content)}</div>
+                    <div className="ask-ledger-answer text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(message.content).answer)}</div>
                   )}
                   {message.actions && message.actions.length > 0 && (
                     <div className="mt-5 space-y-2">
@@ -1897,8 +1969,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           ))}
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
-              {state.request.retrievalRequired !== false && <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />}
-              {state.status === 'streaming' && state.response.answer ? <div className="mt-4 space-y-4 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">{renderAnswerContent(state.response.answer)}</div> : null}
+              <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />
+              {state.status === 'streaming' && state.response.answer ? <div className="ask-ledger-answer mt-4 text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer)}</div> : null}
             </article>
           )}
           {state.status === 'error' && <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert"><p>Ledger couldn’t answer this question.</p><button type="button" onClick={retryLastQuestion} className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline">Try again</button></article>}
@@ -2088,114 +2160,40 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 type="button"
                 aria-haspopup="dialog"
                 aria-expanded={advancedOpen}
-                onPointerDown={(event) => { event.stopPropagation(); qualityPointerInteractionRef.current = false; }}
-                onClick={(event) => { event.stopPropagation(); qualityPointerInteractionRef.current = false; setAttachmentMenuOpen(false); setAdvancedOpen((open) => !open); setAdvancedView('quality'); setTierSwitchError(null); }}
+                onPointerDown={(event) => { event.stopPropagation(); }}
+                onClick={(event) => { event.stopPropagation(); setAttachmentMenuOpen(false); setAdvancedOpen((open) => !open); setTierSwitchError(null); }}
                 disabled={tierSwitchInProgress}
                 className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-60"
               >
                 <SlidersHorizontal size={13} />
-                <span>{generationTierLabels[selectedGenerationTier]}</span>
+                <span>{generationModeLabels[generationMode]}</span>
               </button>
               {advancedOpen && (
-                <div ref={advancedPopoverRef} role="dialog" aria-label="Advanced Local AI settings" onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-9 left-0 z-40 w-[min(180px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-2.5 shadow-[var(--ledger-shadow)]">
+                <div ref={advancedPopoverRef} role="dialog" aria-label="How Ledger should respond" onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-9 left-0 z-40 w-[min(205px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-2.5 shadow-[var(--ledger-shadow)]">
                   <div className="flex items-center justify-between gap-3">
-                    <button type="button" onClick={() => setAdvancedView((view) => view === 'quality' ? 'models' : 'quality')} className="flex items-center gap-1 text-xs font-medium tracking-[-0.02em] text-[var(--ledger-text-secondary)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)]" aria-label={advancedView === 'quality' ? 'Show local AI models' : 'Show answer quality'}>
-                      <span>Advanced</span>{advancedView === 'quality' ? <ChevronRight size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
-                    </button>
+                    <span className="text-xs font-medium tracking-[-0.02em] text-[var(--ledger-text-secondary)]">Advanced</span>
                     {tierSwitchInProgress && <LoaderCircle size={15} className="shrink-0 animate-spin text-[var(--ledger-text-muted)]" aria-label="Switching Local AI model" />}
                   </div>
-                  {advancedView === 'quality' ? <>
-                    <div
-                    key={advancedView}
-                    className="ledger-ask-advanced-view relative mt-3 h-9"
-                    role="radiogroup"
-                    aria-label="Local AI quality"
-                    onPointerDown={(event) => {
-                      if (tierSwitchInProgress) return;
-                      event.preventDefault();
-                      qualityPointerInteractionRef.current = true;
-                      qualityPointerIdRef.current = event.pointerId;
-                      qualitySuppressClickRef.current = false;
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                      setQualityDragTier(qualityTierAtPointer(event.clientX, event.currentTarget));
-                    }}
-                    onPointerMove={(event) => {
-                      if (qualityPointerInteractionRef.current && qualityPointerIdRef.current === event.pointerId) {
-                        setQualityDragTier(qualityTierAtPointer(event.clientX, event.currentTarget));
-                      }
-                    }}
-                    onPointerUp={(event) => {
-                      if (qualityPointerIdRef.current !== event.pointerId) return;
-                      const tier = qualityDragTier;
-                      qualityPointerInteractionRef.current = false;
-                      qualityPointerIdRef.current = null;
-                      qualitySuppressClickRef.current = true;
-                      setQualityDragTier(null);
-                      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-                      if (tier) void switchToTier(tier);
-                    }}
-                    onPointerCancel={(event) => {
-                      if (qualityPointerIdRef.current !== event.pointerId) return;
-                      qualityPointerInteractionRef.current = false;
-                      qualityPointerIdRef.current = null;
-                      setQualityDragTier(null);
-                    }}
-                    onLostPointerCapture={() => {
-                      qualityPointerInteractionRef.current = false;
-                      qualityPointerIdRef.current = null;
-                      setQualityDragTier(null);
-                    }}
-                  >
-                    <div className="absolute inset-x-0 top-1/2 h-8 -translate-y-1/2 rounded-full bg-[var(--ledger-accent)]" aria-hidden="true" />
-                    <div className="relative grid h-full grid-cols-3 items-center px-3">
-                      {visibleGenerationTiers.map((tier) => {
-                        const model = modelForTier(tier);
-                        const installed = model?.installed || model?.state === 'installed';
-                        const unavailable = model?.state === 'unavailable' || model?.available === false;
-                        const active = (qualityDragTier ?? selectedGenerationTier) === tier;
-                        return (
-                          <button
-                            key={tier}
-                            type="button"
-                            role="radio"
-                            aria-checked={active}
-                            aria-label={`${generationTierLabels[tier]}: ${generationTierDescriptions[tier]}${installed ? ', installed' : unavailable ? ', unavailable' : ', download required'}`}
-                            disabled={tierSwitchInProgress}
-                            onClick={() => {
-                              if (qualityPointerInteractionRef.current || qualitySuppressClickRef.current) {
-                                qualityPointerInteractionRef.current = false;
-                                qualitySuppressClickRef.current = false;
-                                return;
-                              }
-                              void switchToTier(tier);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-                              event.preventDefault();
-                              const index = visibleGenerationTiers.indexOf(tier) + (event.key === 'ArrowRight' ? 1 : -1);
-                              const nextTier = visibleGenerationTiers[Math.max(0, Math.min(visibleGenerationTiers.length - 1, index))];
-                              if (nextTier) void switchToTier(nextTier);
-                            }}
-                            className="group flex h-full min-w-0 items-center justify-center rounded-lg px-1 text-center outline-none focus-visible:ring-2 focus-visible:ring-[var(--ledger-surface)] disabled:cursor-not-allowed disabled:opacity-55"
-                          >
-                            <span className={`z-10 rounded-full transition ${active ? 'h-9 w-9 bg-[var(--ledger-text-primary)] shadow-[0_1px_3px_rgba(17,24,39,0.18)]' : 'h-1.5 w-1.5 bg-[var(--ledger-accent-soft)]'}`} aria-hidden="true" />
-                            <span className="sr-only">{generationTierLabels[tier]}{visibleRecommendedTier === tier ? ', recommended for this device' : tierWarning(tier) ? ', may respond more slowly on this device' : ''}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    </div>
-                    <span className="sr-only" aria-live="polite">{tierSwitchInProgress ? 'Switching Local AI model…' : `${generationTierLabels[selectedGenerationTier]} selected`}</span>
-                  </> : (
-                    <div key={advancedView} className="ledger-ask-advanced-view mt-3 space-y-0.5" role="radiogroup" aria-label="Local AI models">
-                      {generationTierOrder.map((tier) => {
-                        const model = modelForTier(tier);
-                        const installed = Boolean(model?.installed || model?.state === 'installed');
-                        const unavailable = model?.state === 'unavailable' || model?.available === false;
-                        return <button key={tier} type="button" role="radio" aria-checked={selectedGenerationTier === tier} onClick={() => void switchToTier(tier)} disabled={tierSwitchInProgress} className={`flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selectedGenerationTier === tier ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:opacity-55`}><span className="min-w-0 font-medium">{generationTierLabels[tier]}</span><span className="flex shrink-0 items-center justify-end text-[10px] text-[var(--ledger-text-muted)]" aria-label={switchingTier === tier ? 'Switching' : installed ? 'Installed' : unavailable ? 'Unavailable' : 'Download required'}>{switchingTier === tier ? <LoaderCircle size={12} className="animate-spin" aria-hidden="true" /> : installed ? 'Installed' : <AlertCircle size={13} aria-hidden="true" />}</span></button>;
-                      })}
-                    </div>
-                  )}
+                  <div className="mt-3 space-y-0.5" role="radiogroup" aria-label="Response mode">
+                    {generationModeOrder.map((mode) => {
+                      const tier = mode === 'thinking' ? 'balanced' : mode;
+                      const model = modelForTier(tier);
+                      const installed = Boolean(model?.installed || model?.state === 'installed');
+                      const unavailable = model?.state === 'unavailable' || model?.available === false;
+                      const selected = generationMode === mode;
+                      return (
+                        <button key={mode} type="button" role="radio" aria-checked={selected} aria-label={`${generationModeLabels[mode]}: ${generationModeDescriptions[mode]}${mode === 'balanced' ? ', recommended' : ''}${mode !== 'thinking' && !installed ? unavailable ? ', unavailable' : ', download required' : ''}`} onClick={() => void selectGenerationMode(mode)} disabled={tierSwitchInProgress} className={`flex min-h-[46px] w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selected ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-not-allowed disabled:opacity-55`}>
+                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[var(--ledger-accent)]' : 'border-[var(--ledger-border-strong)]'}`} aria-hidden="true">{selected ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2 font-medium"><span>{generationModeLabels[mode]}</span>{mode === 'balanced' ? <span className="text-[10px] font-normal text-[var(--ledger-text-muted)]">Recommended</span> : null}</span>
+                            <span className="mt-0.5 block truncate text-[10px] leading-4 text-[var(--ledger-text-muted)]">{generationModeDescriptions[mode]}</span>
+                          </span>
+                          {mode !== 'thinking' && !installed ? <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{unavailable ? 'Unavailable' : 'Install'}</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span className="sr-only" aria-live="polite">{tierSwitchInProgress ? 'Switching response mode…' : `${generationModeLabels[generationMode]} selected`}</span>
                   {tierSwitchError && <p className="mt-2 text-[11px] text-[var(--ledger-danger)]" role="alert">{tierSwitchError}</p>}
                 </div>
               )}
@@ -2272,7 +2270,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">{downloadPhase === 'downloading' ? `Downloading ${downloadTier ? generationTierLabels[downloadTier] : 'model'}` : downloadPhase === 'preparing' ? `Preparing ${downloadTier ? generationTierLabels[downloadTier] : 'model'}` : downloadModelView?.installed ? `Use ${downloadTier ? generationTierLabels[downloadTier] : 'model'}` : `Download ${downloadTier ? generationTierLabels[downloadTier] : 'model'}`}</h2>
-              {downloadPhase === 'confirm' && <><p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{downloadTier ? generationTierDescriptions[downloadTier] : 'Improve local answer quality.'}</p>{downloadTier && tierWarningNeedsAcknowledgement(downloadTier) && <p className="mt-3 text-xs leading-5 text-[var(--ledger-text-muted)]">{tierWarning(downloadTier)}</p>}</>}
+              {downloadPhase === 'confirm' && <><p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{downloadTier ? generationModeDescriptions[downloadTier] : 'Improve local answer quality.'}</p>{downloadTier && tierWarningNeedsAcknowledgement(downloadTier) && <p className="mt-3 text-xs leading-5 text-[var(--ledger-text-muted)]">{tierWarning(downloadTier)}</p>}</>}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {downloadPhase === 'downloading' && <button type="button" onClick={() => { setDownloadMinimized(true); advancedButtonRef.current?.focus(); }} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]" aria-label="Minimize model download"><Minimize2 size={14} /></button>}
