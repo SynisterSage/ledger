@@ -34,6 +34,17 @@ const dateVariants = (value: string) => {
   return [`${month} ${day}, ${year}`, `${shortMonth} ${day}, ${year}`, `${month} ${day}`, `${shortMonth} ${day}`, `${year}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`].map(normalize);
 };
 const isCompleted = (item: AskLedgerContextItem) => ['completed', 'complete', 'done', 'cancelled', 'canceled'].includes(normalize(item.status));
+const statusAliases: Record<string, string[]> = {
+  completed: ['completed', 'complete', 'done'],
+  complete: ['completed', 'complete', 'done'],
+  done: ['completed', 'complete', 'done'],
+  todo: ['todo', 'to do', 'not started', 'not completed', 'open'],
+  open: ['open', 'todo', 'to do', 'not started', 'not completed'],
+  not_completed: ['not completed', 'todo', 'to do', 'not started', 'open'],
+  not_started: ['not started', 'todo', 'to do', 'not completed', 'open'],
+  in_progress: ['in progress', 'in-progress', 'in_progress'],
+};
+const answerContainsStatus = (answer: string, status: string) => (statusAliases[status.replace(/\s+/g, '_')] ?? [status]).some((value) => new RegExp(`\\b${value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&').replace(/_/g, '[ _-]')}\\b`, 'i').test(answer));
 const providerPattern = (provider: string) => provider.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');
 const explicitNegativeProviderClaim = (answer: string, provider: string) => new RegExp(`(?:no|none|nothing|did not find|there (?:was|were) no)\\s+(?:any\\s+)?${providerPattern(provider)}\\s+(?:updates?|activity|messages?|results?|work)`, 'i').test(answer);
 const availabilityAcknowledged = (answer: string, provider: string) => {
@@ -42,13 +53,13 @@ const availabilityAcknowledged = (answer: string, provider: string) => {
 };
 
 export class AskLedgerAnswerValidator {
-  validate(input: { question: string; answer: string; evidencePackage: AskLedgerEvidencePackage; depth?: 'quick' | 'standard' | 'deep' }): AskLedgerAnswerValidationResult {
+  validate(input: { question: string; answer: string; evidencePackage: AskLedgerEvidencePackage; depth?: 'quick' | 'standard' | 'deep'; enforceCoverage?: boolean }): AskLedgerAnswerValidationResult {
     const startedAt = Date.now(); const answer = normalize(input.answer);
     const coverageIssues: AskLedgerValidationIssue[] = []; const groundednessIssues: AskLedgerValidationIssue[] = [];
     const contradictionIssues: AskLedgerValidationIssue[] = []; const missingEvidenceIssues: AskLedgerValidationIssue[] = [];
     const items = input.evidencePackage.sections.flatMap((section) => section.items);
     const sourceReferences = items.filter(({ resource }) => answer.includes(normalize(resource.title)) || answer.includes(normalize(resource.resourceId))).map(({ resource }) => ({ resourceType: resource.resourceType, resourceId: resource.resourceId, title: resource.title, provider: resource.integrationProvider }));
-    if (input.depth !== 'quick') for (const category of input.evidencePackage.coverage.requested) {
+    if (input.enforceCoverage !== false && input.depth !== 'quick') for (const category of input.evidencePackage.coverage.requested) {
       const availableToAnswer = input.evidencePackage.coverage.found.includes(category) || input.evidencePackage.coverage.truncated.includes(category);
       const namedResourceMentioned = items.some(({ source }) => source.resourceType === (category === 'meetings' ? 'event' : category === 'transcripts' ? 'transcript' : category.replace(/s$/, '')) && answer.includes(normalize(source.title)));
       if (availableToAnswer && !categoryMentioned(input.answer, category) && !namedResourceMentioned) coverageIssues.push({ kind: 'coverage', code: 'missing_answer_coverage', message: `${category} was requested and available but is not represented in the answer.`, category });
@@ -60,9 +71,10 @@ export class AskLedgerAnswerValidator {
         if (expectedDates.length && !expectedDates.some((date) => answer.includes(date))) groundednessIssues.push({ kind: 'groundedness', code: 'structured_due_date_mismatch', message: `${resource.title} has due date ${resource.dueAt}, but the answer states a different date.`, claim: resource.title, sourceKeys: [keyFor(resource)] });
       }
       if (resource.status && answer.includes(normalize(resource.title))) {
-        const knownStatuses = ['completed', 'complete', 'done', 'blocked', 'in progress', 'not started', 'paused', 'open'];
-        const mentionedStatus = knownStatuses.find((status) => answer.includes(status)); const expected = normalize(resource.status);
-        const matches = mentionedStatus && (mentionedStatus === expected || (mentionedStatus === 'completed' && expected === 'complete') || (mentionedStatus === 'complete' && expected === 'completed') || (mentionedStatus === 'done' && ['completed', 'complete'].includes(expected)));
+        const knownStatuses = ['completed', 'complete', 'done', 'blocked', 'in progress', 'not started', 'not completed', 'todo', 'to do', 'paused', 'open'];
+        const resourceLine = input.answer.split(/\r?\n/).find((line) => normalize(line).includes(normalize(resource.title))) ?? '';
+        const mentionedStatus = knownStatuses.find((status) => answerContainsStatus(resourceLine, status)); const expected = normalize(resource.status).replace(/\s+/g, '_');
+        const matches = mentionedStatus && answerContainsStatus(mentionedStatus, expected);
         if (mentionedStatus && !matches && !answer.includes('appears') && !answer.includes('evidence suggests')) contradictionIssues.push({ kind: 'contradiction', code: 'structured_status_mismatch', message: `${resource.title} has current status ${resource.status}, which conflicts with the answer.`, claim: resource.title, sourceKeys: [keyFor(resource)] });
       }
     }

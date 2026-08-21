@@ -185,8 +185,9 @@ export const compileAskLedgerEvidence = (input: {
   selected.forEach((entry) => selectedByCategory.set(categoryFor(entry.resource.resourceType), [...(selectedByCategory.get(categoryFor(entry.resource.resourceType)) ?? []), entry]));
   const sections: AskLedgerEvidenceSection[] = [...selectedByCategory.entries()].map(([category, entries]) => ({ category, title: sectionTitle(category), items: entries.sort((left, right) => left.resource.resourceType === 'transcript' && right.resource.resourceType === 'transcript' ? (Date.parse(left.resource.timestamp ?? '') || 0) - (Date.parse(right.resource.timestamp ?? '') || 0) : right.score.finalScore - left.score.finalScore).map((entry) => ({ resource: entry.resource, source: entry.source })) }));
   const found = [...new Set(sections.map((section) => section.category))];
-  const missing = [...requested].filter((category) => !found.includes(category) && input.result.orchestration?.coverage[category] !== 'truncated');
-  const truncated = [...requested].filter((category) => input.result.orchestration?.coverage[category] === 'truncated' || (found.includes(category) && ranked.filter((entry) => categoryFor(entry.resource.resourceType) === category).length > selected.filter((entry) => categoryFor(entry.resource.resourceType) === category).length));
+  const rankedCategories = [...new Set(ranked.map((entry) => categoryFor(entry.resource.resourceType)))];
+  const missing = [...requested].filter((category) => !found.includes(category) && !rankedCategories.includes(category) && input.result.orchestration?.coverage[category] !== 'found' && input.result.orchestration?.coverage[category] !== 'truncated');
+  const truncated = [...requested].filter((category) => input.result.orchestration?.coverage[category] === 'truncated' || (rankedCategories.includes(category) && ranked.filter((entry) => categoryFor(entry.resource.resourceType) === category).length > selected.filter((entry) => categoryFor(entry.resource.resourceType) === category).length));
   const sourceLines = selected.map((entry) => `${entry.resource.title} [${keyFor(entry.resource)}]${entry.source.relationshipPath.length > 1 ? ` via ${entry.source.relationshipPath.join(' → ')}` : ''}`);
   const textParts = [
     `REQUEST\n${input.question}`,

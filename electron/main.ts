@@ -369,6 +369,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
         });
       }
       if (streamEvent.type === 'delta') answer += streamEvent.text ?? '';
+      if (streamEvent.type === 'replace') answer = streamEvent.text ?? '';
       if (streamEvent.type === 'delta' && ipcFirstDeltaSentAt === undefined) ipcFirstDeltaSentAt = Date.now();
       if (streamEvent.type === 'sources') {
         skillSourceCount = streamEvent.sources?.length ?? 0;

@@ -1178,9 +1178,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       const next = value as typeof localAIStatus;
       setLocalAIStatus(next);
       if (isGenerationTier(next?.selectedGenerationTier)) {
-        setSelectedGenerationTier(next.selectedGenerationTier);
-        setGenerationMode(next.selectedGenerationTier);
-        setReasoningMode('off');
+        const tier = next.selectedGenerationTier;
+        setSelectedGenerationTier(tier);
+        setGenerationMode((current) => current === 'thinking' && tier === 'balanced' ? 'thinking' : tier);
       }
       if (next?.generationModels) setGenerationModels(Object.values(next.generationModels));
       else if (next?.generation?.tier && next.generation.id) setGenerationModels([{ id: next.generation.id, tier: next.generation.tier, ...next.generation }]);
@@ -1199,9 +1199,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       const next = value as typeof generationRuntimeState;
       setGenerationRuntimeState(next);
       if (isGenerationTier(next?.selectedTier)) {
-        setSelectedGenerationTier(next.selectedTier);
-        setGenerationMode(next.selectedTier);
-        setReasoningMode('off');
+        const tier = next.selectedTier;
+        setSelectedGenerationTier(tier);
+        setGenerationMode((current) => current === 'thinking' && tier === 'balanced' ? 'thinking' : tier);
       }
     });
     if (!window.askLedger.onGenerationRuntimeState) return;
@@ -1468,9 +1468,19 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     if (lastQuestion) submit(lastQuestion.content, false);
   };
 
+  const copyableAnswer = (message: AskLedgerMessage) => {
+    if (message.structured?.sections?.length) {
+      return message.structured.sections
+        .map((section) => `## ${section.title}\n\n${sanitizeAskLedgerOutput(section.content).answer}`)
+        .join('\n\n')
+        .trim();
+    }
+    return sanitizeAskLedgerOutput(message.content).answer;
+  };
+
   const copyAnswer = async (message: AskLedgerMessage) => {
     try {
-      await navigator.clipboard?.writeText(message.content);
+      await navigator.clipboard?.writeText(copyableAnswer(message));
       setCopiedMessageId(message.id);
       window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? null : current), 1400);
     } catch {
@@ -1885,10 +1895,19 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   return (
       <div className={compact
-      ? `agent-ask-ledger-content flex h-full min-h-0 flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
-      : conversationActive ? 'flex h-full min-h-0 flex-col' : 'mt-5'}>
+      ? `agent-ask-ledger-content flex h-full min-h-0 w-full flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
+      : conversationActive ? 'flex h-full min-h-0 w-full flex-col' : 'mt-5'}>
       {conversationActive && (
-        <section className="order-1 min-h-0 flex-1 space-y-10 overflow-y-auto pb-32 pt-8" aria-live="polite">
+        <section
+          className="order-1 min-h-0 w-full flex-1 space-y-10 overflow-y-auto pb-32 pt-8"
+          style={!compact ? {
+            marginLeft: 'calc(50% - 50vw)',
+            width: '100vw',
+            paddingLeft: 'calc(50vw - 50%)',
+            paddingRight: 'calc(50vw - 50%)',
+          } : undefined}
+          aria-live="polite"
+        >
           {messages.map((message, messageIndex) => (
             <article key={message.id} ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined} className={message.role === 'user' ? 'group flex justify-end' : 'group max-w-[640px]'}>
               {message.role === 'user' ? (
@@ -2169,12 +2188,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 <span>{generationModeLabels[generationMode]}</span>
               </button>
               {advancedOpen && (
-                <div ref={advancedPopoverRef} role="dialog" aria-label="How Ledger should respond" onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-9 left-0 z-40 w-[min(205px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-2.5 shadow-[var(--ledger-shadow)]">
+                <div ref={advancedPopoverRef} role="dialog" aria-label="How Ledger should respond" onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-9 left-0 z-40 w-[min(205px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-2 shadow-[var(--ledger-shadow)]">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-xs font-medium tracking-[-0.02em] text-[var(--ledger-text-secondary)]">Advanced</span>
                     {tierSwitchInProgress && <LoaderCircle size={15} className="shrink-0 animate-spin text-[var(--ledger-text-muted)]" aria-label="Switching Local AI model" />}
                   </div>
-                  <div className="mt-3 space-y-0.5" role="radiogroup" aria-label="Response mode">
+                  <div className="mt-2 space-y-0.5" role="radiogroup" aria-label="Response mode">
                     {generationModeOrder.map((mode) => {
                       const tier = mode === 'thinking' ? 'balanced' : mode;
                       const model = modelForTier(tier);
@@ -2182,11 +2201,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                       const unavailable = model?.state === 'unavailable' || model?.available === false;
                       const selected = generationMode === mode;
                       return (
-                        <button key={mode} type="button" role="radio" aria-checked={selected} aria-label={`${generationModeLabels[mode]}: ${generationModeDescriptions[mode]}${mode === 'balanced' ? ', recommended' : ''}${mode !== 'thinking' && !installed ? unavailable ? ', unavailable' : ', download required' : ''}`} onClick={() => void selectGenerationMode(mode)} disabled={tierSwitchInProgress} className={`flex min-h-[46px] w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selected ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-not-allowed disabled:opacity-55`}>
-                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[var(--ledger-accent)]' : 'border-[var(--ledger-border-strong)]'}`} aria-hidden="true">{selected ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}</span>
+                        <button key={mode} type="button" role="radio" aria-checked={selected} aria-label={`${generationModeLabels[mode]}: ${generationModeDescriptions[mode]}${mode === 'balanced' ? ', recommended' : ''}${mode !== 'thinking' && !installed ? unavailable ? ', unavailable' : ', download required' : ''}`} onClick={() => void selectGenerationMode(mode)} disabled={tierSwitchInProgress} className={`flex min-h-[42px] w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selected ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-not-allowed disabled:opacity-55`}>
+                          <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[var(--ledger-accent)]' : 'border-[var(--ledger-border-strong)]'}`} aria-hidden="true">{selected ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}</span>
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-2 font-medium"><span>{generationModeLabels[mode]}</span>{mode === 'balanced' ? <span className="text-[10px] font-normal text-[var(--ledger-text-muted)]">Recommended</span> : null}</span>
-                            <span className="mt-0.5 block truncate text-[10px] leading-4 text-[var(--ledger-text-muted)]">{generationModeDescriptions[mode]}</span>
+                            <span className="flex items-center gap-1.5 font-medium"><span>{generationModeLabels[mode]}</span>{mode === 'balanced' ? <span className="shrink-0 rounded-full bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[9px] font-normal leading-none text-[var(--ledger-text-muted)]">Recommended</span> : null}</span>
+                            <span className="mt-0.5 block truncate text-[10px] leading-3.5 text-[var(--ledger-text-muted)]">{generationModeDescriptions[mode]}</span>
                           </span>
                           {mode !== 'thinking' && !installed ? <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{unavailable ? 'Unavailable' : 'Install'}</span> : null}
                         </button>

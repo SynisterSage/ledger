@@ -309,8 +309,8 @@ const localAISettingsTierLabels: Record<LocalAIModelSettingsRow['tier'], string>
 
 const formatLocalAIModelSize = (bytes?: number) => {
   if (!bytes || !Number.isFinite(bytes)) return 'Size unavailable';
-  const gigabytes = bytes / (1024 ** 3);
-  return `${gigabytes >= 1 ? gigabytes.toFixed(1) : (bytes / (1024 ** 2)).toFixed(0)} ${gigabytes >= 1 ? 'GB' : 'MB'}`;
+  const gigabytes = bytes / 1_000_000_000;
+  return `${gigabytes >= 1 ? gigabytes.toFixed(1) : (bytes / 1_000_000).toFixed(0)} ${gigabytes >= 1 ? 'GB' : 'MB'} download`;
 };
 
 const settingsNavGroups: Array<{
@@ -5255,7 +5255,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 <section className="w-full max-w-215" aria-labelledby="settings-local-ai">
                   <h2 id="settings-local-ai" className={settingsTheme.pageTitle}>Local AI</h2>
                   <p className={settingsTheme.pageSubtitle + ' mt-1'}>Manage the generation models Ledger uses on this device.</p>
-                  <p className={settingsTheme.pageStatus + ' mt-2'}>Fast is the required baseline. Balanced is the optional stronger local model; Thinking uses it with deeper reasoning.</p>
+                  <p className={settingsTheme.pageStatus + ' mt-2'}>Fast is the required baseline. Balanced and Thinking use the same Qwen3 4B model when the stronger model is installed; Thinking changes reasoning mode, not the download.</p>
 
                   <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="settings-generation-models">
                     <div className="flex items-start justify-between gap-4">
@@ -5277,7 +5277,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-muted)]"><HardDrive size={14} aria-hidden="true" /></span>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <p className={settingsTheme.rowLabel}>{localAISettingsTierLabels[model.tier]}</p>
+                                <p className={settingsTheme.rowLabel}>{localAISettingsTierLabels[model.tier]} · {model.displayName}</p>
                                 {active && <span className="text-[10px] text-[var(--ledger-text-muted)]">In use</span>}
                                 {protectedModel && <span className="text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
                               </div>

@@ -375,7 +375,8 @@ export class AskLedgerService {
       request.conversation?.previousSources?.length && !request.conversation?.recentExchanges?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
     ].filter(Boolean).join('\n');
     const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
-    const retrieval = await this.orchestrator.retrieve(request.workspaceId, request.question, request.lexicalResults, skill?.id === 'plan_my_week' ? 32 : 20, {
+    const retrievalQuery = request.question.trim() || (skill ? skill.instructions : request.question);
+    const retrieval = await this.orchestrator.retrieve(request.workspaceId, retrievalQuery, request.lexicalResults, skill?.id === 'plan_my_week' ? 32 : 20, {
       conversationId: request.conversation?.id,
       documents: request.documents,
       retrievalQuestion,
@@ -720,7 +721,12 @@ export class AskLedgerService {
       const retrievalDocuments = semanticIndexRequired ? undefined : request.documents;
       const retrievalStartedAt = Date.now();
       performanceTrace.mark('retrievalStarted');
-      const retrieval = await this.orchestrator.retrieve(request.workspaceId, request.question, request.lexicalResults, retrievalLimit, {
+      // Custom skills can intentionally submit an empty question. Give the
+      // retrieval planner the skill's own bounded purpose in that case so it
+      // does not fall into the generic empty-query quick path (which defaults
+      // to whichever resource type happens to rank first).
+      const retrievalQuery = request.question.trim() || (skill ? skill.instructions : request.question);
+      const retrieval = await this.orchestrator.retrieve(request.workspaceId, retrievalQuery, request.lexicalResults, retrievalLimit, {
         conversationId: request.conversation?.id,
         documents: retrievalDocuments,
         retrievalQuestion,
@@ -978,7 +984,7 @@ export class AskLedgerService {
                 emit({ ...event, requestId });
                 return;
               }
-              const validation = this.answerValidator.validate({ question: request.question, answer: generatedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth });
+              const validation = this.answerValidator.validate({ question: request.question, answer: generatedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth, enforceCoverage: !skill });
               validationMs += validation.durationMs;
               const baseValidationDiagnostics = {
                 validationTriggered: true,
@@ -1008,6 +1014,14 @@ export class AskLedgerService {
               };
               if (validation.repairRecommended) {
                 if (validation.contradictionIssues.length || validation.groundednessIssues.length) {
+                  // A bounded skill response can legitimately stop at the
+                  // visible output limit. Preserve useful streamed content
+                  // rather than replacing it with an abstention; the
+                  // validator diagnostics remain available for evaluation.
+                  if (skill && event.metrics?.finishReason === 'length' && generatedAnswer.trim()) {
+                    finish(generatedAnswer, validation, false);
+                    return;
+                  }
                   // A contradictory answer should not trigger another long
                   // model pass. Replace it with the safe grounded response;
                   // coverage-only failures may still use the bounded repair.
@@ -1032,7 +1046,7 @@ export class AskLedgerService {
                       this.repairRequestIds.delete(requestId);
                       repairTokens = repairEvent.metrics?.predictedTokens;
                       const repairedAnswer = sanitizeAskLedgerOutput(repairChunks.join(''), outputMappings).answer;
-                      const repairedValidation = this.answerValidator.validate({ question: request.question, answer: repairedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth });
+                      const repairedValidation = this.answerValidator.validate({ question: request.question, answer: repairedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth, enforceCoverage: !skill });
                       finish(repairedAnswer.trim() ? repairedAnswer : generatedAnswer, repairedValidation, true, Date.now() - repairStartedAt);
                     }
                   } },

@@ -44,3 +44,15 @@ test('accepts a current structured fact and source references', () => {
   assert.equal(result.passed, true);
   assert.deepEqual(result.sourceReferences.map((source) => source.resourceId), ['task-1']);
 });
+
+test('does not apply one resource status to another resource', () => {
+  const packageValue = evidence();
+  packageValue.sections[1].items[0].resource.status = 'Completed';
+  const result = new AskLedgerAnswerValidator().validate({
+    question: 'Review the work.',
+    answer: 'Final Production is Completed.\nReview Final Proof is due Aug 20.',
+    evidencePackage: packageValue,
+    depth: 'standard',
+  });
+  assert.equal(result.contradictionIssues.length, 0);
+});
