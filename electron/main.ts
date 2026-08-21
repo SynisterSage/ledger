@@ -229,7 +229,7 @@ ipcMain.handle('ask-ledger:list-skills', () => listAskLedgerSkills());
 ipcMain.handle('ask-ledger:select-attachments', async (_event, payload: { workspaceId?: unknown; conversationId?: unknown; existingCount?: unknown; existingSizeBytes?: unknown }) => {
   if (typeof payload?.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
   if (typeof payload?.conversationId !== 'string' || !payload.conversationId.trim()) throw new Error('Ask Ledger conversation is required.');
-  const selection = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'Ask Ledger attachments', extensions: ['pdf', 'docx', 'txt', 'md', 'csv'] }] });
+  const selection = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'Ask Ledger attachments', extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'] }] });
   if (selection.canceled || !selection.filePaths.length) return { canceled: true, attachments: [] };
   return { canceled: false, attachments: await askLedgerService.ingestAttachments(payload.workspaceId, payload.conversationId, selection.filePaths, { count: typeof payload.existingCount === 'number' ? payload.existingCount : 0, sizeBytes: typeof payload.existingSizeBytes === 'number' ? payload.existingSizeBytes : 0 }) };
 });

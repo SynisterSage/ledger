@@ -96,7 +96,7 @@ export interface AskLedgerSource {
   externalId?: string;
   explicitIntegrationLink?: boolean;
   updatedAt?: string;
-  attachmentSource?: { attachmentId: string; fileName: string; pageNumber?: number; section?: string; paragraph?: number; rowStart?: number; rowEnd?: number };
+  attachmentSource?: { attachmentId: string; fileName: string; pageNumber?: number; section?: string; paragraph?: number; rowStart?: number; rowEnd?: number; sheetName?: string; headers?: string[] };
 }
 
 export interface AskLedgerResponse {
@@ -441,13 +441,46 @@ const deriveSessionTitle = (question: string) => {
   return `${title.charAt(0).toUpperCase()}${title.slice(1)}`;
 };
 
-const renderInlineAnswer = (value: string, keyPrefix: string): ReactNode[] =>
+type AskLedgerAnswerRenderContext = {
+  sources?: AskLedgerSource[];
+  onOpenSource?: (source: AskLedgerSource) => void;
+};
+
+const escapeAnswerRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const looksLikeAnswerEntity = (value: string) => {
+  const text = value.trim();
+  if (text.length < 3 || text.length > 80 || /[.!?]$/.test(text)) return false;
+  if (/^(?:today|tomorrow|yesterday|open|completed|complete|overdue|upcoming|high|medium|low|not started|in progress|planned)$/i.test(text)) return false;
+  if (/^\d|\b(?:am|pm)\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(text)) return false;
+  return /^[A-ZÀ-ÖØ-Þ0-9]/.test(text);
+};
+
+const renderAnswerText = (value: string, keyPrefix: string, context?: AskLedgerAnswerRenderContext): ReactNode[] => {
+  const sources = (context?.sources ?? [])
+    .filter((source) => source.title.trim().length >= 3)
+    .sort((left, right) => right.title.length - left.title.length);
+  if (!sources.length || !context?.onOpenSource) return [<span key={`${keyPrefix}-text`}>{value}</span>];
+
+  const sourceByTitle = new Map(sources.map((source) => [source.title.trim().toLocaleLowerCase(), source]));
+  const matcher = new RegExp(`(${sources.map((source) => escapeAnswerRegExp(source.title.trim())).join('|')})`, 'gi');
+  return value.split(matcher).filter(Boolean).map((part, index) => {
+    const source = sourceByTitle.get(part.toLocaleLowerCase());
+    if (!source) return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
+    return <button key={`${keyPrefix}-mention-${index}`} type="button" onClick={() => context.onOpenSource?.(source)} className="ask-ledger-answer__mention" title={`Open ${source.title}`}>{part}</button>;
+  });
+};
+
+const renderInlineAnswer = (value: string, keyPrefix: string, context?: AskLedgerAnswerRenderContext): ReactNode[] =>
   value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\s)]+\))/g).filter(Boolean).map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={`${keyPrefix}-bold-${index}`} className="font-semibold text-[var(--ledger-text-primary)]">{part.slice(2, -2)}</strong>;
+      const boldText = part.slice(2, -2);
+      return <strong key={`${keyPrefix}-bold-${index}`} className={`font-semibold text-[var(--ledger-text-primary)] ${looksLikeAnswerEntity(boldText) ? 'ask-ledger-answer__entity-fallback' : ''}`}>{renderAnswerText(boldText, `${keyPrefix}-bold-${index}`, context)}</strong>;
     }
     if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={`${keyPrefix}-code-${index}`} className="rounded bg-[var(--ledger-surface-muted)] px-1 py-0.5 text-[0.9em] text-[var(--ledger-text-primary)]">{part.slice(1, -1)}</code>;
+      const code = part.slice(1, -1);
+      const isFileType = /^\.[a-z0-9]{1,8}$/i.test(code);
+      return <code key={`${keyPrefix}-code-${index}`} className={`rounded px-1 py-0.5 text-[0.9em] text-[var(--ledger-text-primary)] ${isFileType ? 'ask-ledger-answer__file-type' : 'bg-[var(--ledger-surface-muted)]'}`}>{code}</code>;
     }
     const link = part.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/);
     if (link) {
@@ -455,10 +488,10 @@ const renderInlineAnswer = (value: string, keyPrefix: string): ReactNode[] =>
       const safeHref = /^(?:https?:|mailto:|\/|#)/i.test(href) ? href : '#';
       return <a key={`${keyPrefix}-link-${index}`} href={safeHref} target={/^https?:/i.test(safeHref) ? '_blank' : undefined} rel={/^https?:/i.test(safeHref) ? 'noreferrer' : undefined} className="ask-ledger-answer__link">{label}</a>;
     }
-    return <span key={`${keyPrefix}-text-${index}`}>{part}</span>;
+    return <span key={`${keyPrefix}-text-${index}`}>{renderAnswerText(part, `${keyPrefix}-text-${index}`, context)}</span>;
   });
 
-const renderAnswerContent = (content: string): ReactNode[] => content.trim().split(/\n{2,}/).filter(Boolean).map((block, blockIndex) => {
+const renderAnswerContent = (content: string, context?: AskLedgerAnswerRenderContext): ReactNode[] => content.trim().split(/\n{2,}/).filter(Boolean).map((block, blockIndex) => {
   const lines = block.split('\n');
   const isBulleted = lines.every((line) => /^\s*[-*]\s+/.test(line));
   const isNumbered = lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
@@ -471,7 +504,7 @@ const renderAnswerContent = (content: string): ReactNode[] => content.trim().spl
     const level = heading[1].length;
     const Tag = level === 1 ? 'h1' : level === 2 ? 'h2' : 'h3';
     const headingText = heading[2].replace(/^⚠(?!️)/u, '⚠️');
-    return <Tag key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__heading ask-ledger-answer__heading--${level}`}><span className="ask-ledger-answer__heading-text">{renderInlineAnswer(headingText, `answer-${blockIndex}`)}</span></Tag>;
+    return <Tag key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__heading ask-ledger-answer__heading--${level}`}><span className="ask-ledger-answer__heading-text">{renderInlineAnswer(headingText, `answer-${blockIndex}`, context)}</span></Tag>;
   }
   if (fencedCode) {
     return <pre key={`answer-block-${blockIndex}`} className="ask-ledger-answer__code"><code>{fencedCode[1]}</code></pre>;
@@ -479,16 +512,16 @@ const renderAnswerContent = (content: string): ReactNode[] => content.trim().spl
   if (isTable) {
     const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
     const headers = cells(lines[0]);
-    return <div key={`answer-block-${blockIndex}`} className="ask-ledger-answer__table-wrap"><table className="ask-ledger-answer__table"><thead><tr>{headers.map((cell, index) => <th key={`answer-table-head-${index}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-head-${index}`)}</th>)}</tr></thead><tbody>{lines.slice(2).map((line, rowIndex) => <tr key={`answer-table-row-${rowIndex}`}>{cells(line).map((cell, cellIndex) => <td key={`answer-table-cell-${rowIndex}-${cellIndex}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody></table></div>;
+    return <div key={`answer-block-${blockIndex}`} className="ask-ledger-answer__table-wrap"><table className="ask-ledger-answer__table"><thead><tr>{headers.map((cell, index) => <th key={`answer-table-head-${index}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-head-${index}`, context)}</th>)}</tr></thead><tbody>{lines.slice(2).map((line, rowIndex) => <tr key={`answer-table-row-${rowIndex}`}>{cells(line).map((cell, cellIndex) => <td key={`answer-table-cell-${rowIndex}-${cellIndex}`}>{renderInlineAnswer(cell, `answer-${blockIndex}-${rowIndex}-${cellIndex}`, context)}</td>)}</tr>)}</tbody></table></div>;
   }
   if (isBlockquote) {
-    return <blockquote key={`answer-block-${blockIndex}`} className="ask-ledger-answer__blockquote">{lines.map((line, lineIndex) => <span key={`answer-quote-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line.replace(/^\s*>\s?/, ''), `answer-${blockIndex}-${lineIndex}`)}</span>)}</blockquote>;
+    return <blockquote key={`answer-block-${blockIndex}`} className="ask-ledger-answer__blockquote">{lines.map((line, lineIndex) => <span key={`answer-quote-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line.replace(/^\s*>\s?/, ''), `answer-${blockIndex}-${lineIndex}`, context)}</span>)}</blockquote>;
   }
   if (isBulleted || isNumbered) {
     const List = isBulleted ? 'ul' : 'ol';
-    return <List key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__list ${isNumbered ? 'ask-ledger-answer__list--ordered' : 'ask-ledger-answer__list--unordered'}`}>{lines.map((line, lineIndex) => <li key={`answer-line-${lineIndex}`}>{renderInlineAnswer(line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, ''), `answer-${blockIndex}-${lineIndex}`)}</li>)}</List>;
+    return <List key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__list ${isNumbered ? 'ask-ledger-answer__list--ordered' : 'ask-ledger-answer__list--unordered'}`}>{lines.map((line, lineIndex) => <li key={`answer-line-${lineIndex}`}>{renderInlineAnswer(line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, ''), `answer-${blockIndex}-${lineIndex}`, context)}</li>)}</List>;
   }
-  return <p key={`answer-block-${blockIndex}`}>{lines.map((line, lineIndex) => <span key={`answer-line-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line, `answer-${blockIndex}-${lineIndex}`)}</span>)}</p>;
+  return <p key={`answer-block-${blockIndex}`}>{lines.map((line, lineIndex) => <span key={`answer-line-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line, `answer-${blockIndex}-${lineIndex}`, context)}</span>)}</p>;
 });
 
 const askLedgerActivityLabel = (value?: AskLedgerStreamEvent['activity']) => {
@@ -529,6 +562,13 @@ const GENERATION_PHRASES = [
   'Writing the useful parts…',
   'Making the summary concise…',
   'Almost there…',
+] as const;
+
+const ATTACHMENT_INDEXING_PHRASES = [
+  'Reading attachment…',
+  'Extracting the useful text…',
+  'Indexing attachment locally…',
+  'Getting it ready for Ledger…',
 ] as const;
 
 const askLedgerActivityDescription = (value: AskLedgerStreamEvent['activity']) => {
@@ -674,6 +714,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const [resourcePickerLoading, setResourcePickerLoading] = useState(false);
   const [resourcePickerOptions, setResourcePickerOptions] = useState<AskLedgerSource[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachmentIndexing, setAttachmentIndexing] = useState(false);
+  const [attachmentIndexingPhrase, setAttachmentIndexingPhrase] = useState<string>(ATTACHMENT_INDEXING_PHRASES[0]);
   const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedSkillId, setSelectedSkillId] = useState<AskLedgerSkillRef | null>(skillId ?? null);
   const [skillCatalog, setSkillCatalog] = useState<AskLedgerSkillMetadata[]>(ASK_LEDGER_SKILL_METADATA);
@@ -777,6 +819,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const files = composerAttachments.filter((item): item is Extract<AskLedgerMessageAttachment, { kind: 'file' }> => item.kind === 'file');
     const existingSizeBytes = files.reduce((total, item) => total + item.attachment.sizeBytes, 0);
     setAttachmentError(null);
+    setAttachmentIndexing(true);
     try {
       const result = await window.askLedger.selectAttachments({ workspaceId, conversationId: conversationIdRef.current, existingCount: files.length, existingSizeBytes }) as { attachments?: AskLedgerAttachment[] };
       const attachments = Array.isArray(result?.attachments) ? result.attachments.filter((attachment) => attachment?.id) : [];
@@ -787,7 +830,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       setAttachmentMenuOpen(false);
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : 'Could not add that attachment.');
-    }
+    } finally { setAttachmentIndexing(false); }
   };
 
   const openResourcePicker = async () => {
@@ -1273,6 +1316,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const requestId = ++requestIdRef.current;
     const performanceRequestId = crypto.randomUUID();
     performanceRequestIdRef.current = performanceRequestId;
+    // Register the correlation id before invoking Electron. Deterministic
+    // capability answers can emit delta/done before ipcRenderer.invoke()
+    // resolves with the same id; without this, the renderer drops the answer
+    // and replaces it with the "no visible answer" fallback.
+    activeRequestIdRef.current = performanceRequestId;
     rendererFirstDeltaAtRef.current = null;
     const nextTitle = messagesRef.current.length === 0 && appendUserMessage
       ? (trimmedQuestion ? deriveSessionTitle(trimmedQuestion) : skillCatalog.find((skill) => skill.id === selectedSkillForRequest)?.name ?? 'Ask Ledger')
@@ -1520,7 +1568,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const tierWarningNeedsAcknowledgement = (tier: GenerationTier) => Boolean(tierWarning(tier) && !localAICapability?.acknowledgedTiers?.includes(tier));
 
   const switchToTier = async (tier: GenerationTier): Promise<boolean> => {
-    if (!window.askLedger?.switchGenerationTier || tierSwitchInProgress) return false;
+    if (!window.askLedger?.switchGenerationTier || tierSwitchInProgress || isSubmitting) return false;
     const model = modelForTier(tier);
     if (!model) {
       setTierSwitchError(`${generationTierLabels[tier]} is not available yet.`);
@@ -1563,7 +1611,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   };
 
   const selectGenerationMode = async (mode: GenerationMode) => {
-    if (tierSwitchInProgress) return;
+    if (tierSwitchInProgress || isSubmitting) return;
     setTierSwitchError(null);
     const selectedTier = mode === 'thinking' ? 'balanced' : mode;
     const selectedModel = modelForTier(selectedTier);
@@ -1584,7 +1632,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   };
 
   const startOptionalDownload = async () => {
-    if (!downloadTier || !window.askLedger?.downloadGenerationModel) return;
+    if (!downloadTier || !window.askLedger?.downloadGenerationModel || isSubmitting) return;
     const tier = downloadTier;
     const model = modelForTier(tier);
     if (!model) return;
@@ -1826,6 +1874,20 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     return () => window.clearInterval(timer);
   }, [generationActive]);
 
+  useEffect(() => {
+    if (!attachmentIndexing) {
+      setAttachmentIndexingPhrase(ATTACHMENT_INDEXING_PHRASES[0]);
+      return undefined;
+    }
+    let index = 0;
+    setAttachmentIndexingPhrase(ATTACHMENT_INDEXING_PHRASES[index]);
+    const timer = window.setInterval(() => {
+      index = (index + 1) % ATTACHMENT_INDEXING_PHRASES.length;
+      setAttachmentIndexingPhrase(ATTACHMENT_INDEXING_PHRASES[index]);
+    }, 950);
+    return () => window.clearInterval(timer);
+  }, [attachmentIndexing]);
+
   const generation = localAIStatus?.generation;
   const embedding = localAIStatus?.embedding;
   const localAIReady = Boolean(generation?.installed && embedding?.installed);
@@ -1930,12 +1992,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                       {message.structured.sections.map((section) => (
                         <section key={`${message.id}-${section.title}`}>
                           <h3 className="ask-ledger-answer__heading ask-ledger-answer__heading--3">{section.title}</h3>
-                          <div className="ask-ledger-answer__section-content">{renderAnswerContent(sanitizeAskLedgerOutput(section.content).answer)}</div>
+                          <div className="ask-ledger-answer__section-content">{renderAnswerContent(sanitizeAskLedgerOutput(section.content).answer, { sources: message.sources, onOpenSource: openSource })}</div>
                         </section>
                       ))}
                     </div>
                   ) : (
-                    <div className="ask-ledger-answer text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(message.content).answer)}</div>
+                    <div className="ask-ledger-answer text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(message.content).answer, { sources: message.sources, onOpenSource: openSource })}</div>
                   )}
                   {message.actions && message.actions.length > 0 && (
                     <div className="mt-5 space-y-2">
@@ -1989,7 +2051,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
               <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />
-              {state.status === 'streaming' && state.response.answer ? <div className="ask-ledger-answer mt-4 text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer)}</div> : null}
+              {state.status === 'streaming' && state.response.answer ? <div className="ask-ledger-answer mt-4 text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, { sources: state.response.sources, onOpenSource: openSource })}</div> : null}
             </article>
           )}
           {state.status === 'error' && <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert"><p>Ledger couldn’t answer this question.</p><button type="button" onClick={retryLastQuestion} className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline">Try again</button></article>}
@@ -2002,7 +2064,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           if (localAIUnavailable) setSetupModalOpen(true);
         }}
       >
-        {(activeInitialContext || selectedSkill || composerAttachments.length > 0) && (
+        {conversationActive && <div aria-hidden="true" className="ask-ledger-composer-fade pointer-events-none absolute inset-x-0 bottom-[calc(100%+1px)] z-0 h-12" />}
+        {(activeInitialContext || selectedSkill || composerAttachments.length > 0 || attachmentIndexing) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
             {composerAttachments.map((attachment) => (
               <span key={`${attachment.kind}-${attachment.kind === 'file' ? attachment.attachment.id : attachment.resource.resourceId}`} className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
@@ -2032,6 +2095,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 </button>
               </span>
             )}
+            {attachmentIndexing && <span className="inline-flex h-8 items-center px-1 text-xs text-[var(--ledger-text-muted)] ledger-ask-generating" role="status" aria-live="polite">{attachmentIndexingPhrase}</span>}
           </div>
         )}
         <textarea
@@ -2153,7 +2217,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               <button type="button" onClick={(event) => { event.stopPropagation(); setSetupModalOpen(true); }} aria-label="Set up Local AI" className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><AlertCircle size={15} /></button>
             )}
             <div ref={attachmentMenuRef} className="relative">
-              <button type="button" onClick={(event) => { event.stopPropagation(); setAdvancedOpen(false); setAttachmentMenuOpen((open) => !open); setResourcePickerOpen(false); }} aria-label="Add attachment" aria-expanded={attachmentMenuOpen} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
+              <button type="button" onClick={(event) => { event.stopPropagation(); setAdvancedOpen(false); setAttachmentMenuOpen((open) => !open); setResourcePickerOpen(false); }} aria-label="Add attachment" title="Attach PDF, DOCX, TXT, Markdown, CSV, or XLSX · Up to 5 files · 10 MB per file · 25 MB total" aria-expanded={attachmentMenuOpen} className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">
                 <Paperclip size={15} />
               </button>
               {attachmentMenuOpen && (
@@ -2179,9 +2243,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 type="button"
                 aria-haspopup="dialog"
                 aria-expanded={advancedOpen}
+                aria-label={isSubmitting ? 'Response mode locked while Ledger is generating' : 'Choose response mode'}
+                title={isSubmitting ? 'Response mode locked while Ledger is generating' : 'Choose response mode'}
                 onPointerDown={(event) => { event.stopPropagation(); }}
                 onClick={(event) => { event.stopPropagation(); setAttachmentMenuOpen(false); setAdvancedOpen((open) => !open); setTierSwitchError(null); }}
-                disabled={tierSwitchInProgress}
+                disabled={tierSwitchInProgress || isSubmitting}
                 className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-60"
               >
                 <SlidersHorizontal size={13} />
@@ -2201,7 +2267,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                       const unavailable = model?.state === 'unavailable' || model?.available === false;
                       const selected = generationMode === mode;
                       return (
-                        <button key={mode} type="button" role="radio" aria-checked={selected} aria-label={`${generationModeLabels[mode]}: ${generationModeDescriptions[mode]}${mode === 'balanced' ? ', recommended' : ''}${mode !== 'thinking' && !installed ? unavailable ? ', unavailable' : ', download required' : ''}`} onClick={() => void selectGenerationMode(mode)} disabled={tierSwitchInProgress} className={`flex min-h-[42px] w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selected ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-not-allowed disabled:opacity-55`}>
+                        <button key={mode} type="button" role="radio" aria-checked={selected} aria-label={`${generationModeLabels[mode]}: ${generationModeDescriptions[mode]}${mode === 'balanced' ? ', recommended' : ''}${mode !== 'thinking' && !installed ? unavailable ? ', unavailable' : ', download required' : ''}`} onClick={() => void selectGenerationMode(mode)} disabled={tierSwitchInProgress || isSubmitting} className={`flex min-h-[42px] w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selected ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-not-allowed disabled:opacity-55`}>
                           <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[var(--ledger-accent)]' : 'border-[var(--ledger-border-strong)]'}`} aria-hidden="true">{selected ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}</span>
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-1.5 font-medium"><span>{generationModeLabels[mode]}</span>{mode === 'balanced' ? <span className="shrink-0 rounded-full bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[9px] font-normal leading-none text-[var(--ledger-text-muted)]">Recommended</span> : null}</span>
@@ -2312,7 +2378,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             </>
           )}
           <div className="mt-6 flex justify-end gap-2">
-            {downloadPhase === 'downloading' ? <button type="button" onClick={cancelOptionalDownload} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button> : downloadPhase === 'preparing' ? null : downloadPhase === 'error' ? <><button type="button" onClick={() => setDownloadTier(null)} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)]">Close</button><button ref={downloadPrimaryButtonRef} type="button" onClick={() => void startOptionalDownload()} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)]">Try again</button></> : <><button type="button" onClick={() => setDownloadTier(null)} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button ref={downloadPrimaryButtonRef} type="button" onClick={() => void startOptionalDownload()} disabled={!downloadModelView?.available} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] disabled:opacity-50">{downloadModelView?.installed ? 'Use & continue' : 'Download & use'}</button></>}
+            {downloadPhase === 'downloading' ? <button type="button" onClick={cancelOptionalDownload} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button> : downloadPhase === 'preparing' ? null : downloadPhase === 'error' ? <><button type="button" onClick={() => setDownloadTier(null)} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)]">Close</button><button ref={downloadPrimaryButtonRef} type="button" onClick={() => void startOptionalDownload()} disabled={isSubmitting} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] disabled:cursor-not-allowed disabled:opacity-50">Try again</button></> : <><button type="button" onClick={() => setDownloadTier(null)} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button ref={downloadPrimaryButtonRef} type="button" onClick={() => void startOptionalDownload()} disabled={isSubmitting || !downloadModelView?.available} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] disabled:cursor-not-allowed disabled:opacity-50">{downloadModelView?.installed ? 'Use & continue' : 'Download & use'}</button></>}
           </div>
         </div>
       </ModalOverlay>

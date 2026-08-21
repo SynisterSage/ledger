@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { zipSync, strToU8 } from 'fflate';
+import * as XLSX from 'xlsx';
 import {
   ASK_LEDGER_ATTACHMENT_LIMITS,
   AskLedgerAttachmentError,
@@ -35,6 +36,54 @@ test('accepts TXT, Markdown, CSV, DOCX, and readable PDF and preserves source me
   await service.cleanupAll();
 });
 
+test('extracts XLSX sheets, headers, formatted cells, cached formulas, and provenance', async () => {
+  const dir = await fixtureDir();
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Date', 'Amount', 'Rate', 'Total'],
+    [new Date('2026-08-21T13:30:00Z'), 1234.5, 0.25, 1234.5],
+    ['2026-08-22', 200, 0.1, 200],
+  ]);
+  sheet.A2.z = 'm/d/yy';
+  sheet.B2.z = '$#,##0.00';
+  sheet.C2.z = '0%';
+  sheet.D2 = { t: 'n', v: 1234.5, w: '$1,234.50', f: 'SUM(B2:B2)' };
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Revenue');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['Only header']]), 'Empty');
+  const file = await write(dir, 'revenue.xlsx', XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', cellStyles: true }));
+  const service = new AskLedgerAttachmentService(path.join(dir, 'managed'));
+  const document = (await service.ingest([file], 'conversation-a', 'workspace-a'))[0];
+  assert.ok(document);
+  const revenue = document.blocks.find((block) => block.source.sheetName === 'Revenue');
+  assert.ok(revenue);
+  assert.deepEqual(revenue.source.headers, ['Date', 'Amount', 'Rate', 'Total']);
+  assert.equal(revenue.source.rowStart, 2);
+  assert.match(revenue.text, /Revenue/);
+  assert.match(revenue.text, /Amount: \$1,234\.50|Amount: 1234\.5/);
+  assert.match(revenue.text, /Total: \$1,234\.50|Total: 1234\.5/);
+  assert.equal(document.blocks.find((block) => block.source.sheetName === 'Empty')?.source.sheetName, 'Empty');
+  const context = attachmentBlocksToContext(document);
+  assert.equal(context.find((item) => item.attachmentSource?.sheetName === 'Revenue')?.sourceLabel?.includes('Revenue'), true);
+  await service.cleanupAll();
+});
+
+test('chunks large XLSX sheets by bounded row ranges and rejects corrupt workbooks', async () => {
+  const dir = await fixtureDir();
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['ID', 'Value'],
+    ...Array.from({ length: 101 }, (_, index) => [index + 1, `Unique row ${index + 1}`]),
+  ]), 'Rows');
+  const file = await write(dir, 'large.xlsx', XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  const service = new AskLedgerAttachmentService(path.join(dir, 'managed'));
+  const document = (await service.ingest([file], 'conversation-a', 'workspace-a'))[0];
+  assert.ok(document.blocks.length >= 6);
+  assert.ok(document.blocks.every((block) => block.source.sheetName === 'Rows' && (block.source.rowEnd ?? 0) >= (block.source.rowStart ?? 0)));
+  await service.cleanupAll();
+  const corrupt = await write(dir, 'corrupt.xlsx', new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00]));
+  await assert.rejects(() => service.ingest([corrupt], 'conversation-a', 'workspace-a'), /corrupt|password-protected|safely/i);
+});
+
 test('enforces file, count, and combined limits before indexing', async () => {
   const dir = await fixtureDir();
   const service = new AskLedgerAttachmentService(path.join(dir, 'managed'));
@@ -50,6 +99,8 @@ test('rejects unsupported and scanned PDF input clearly', async () => {
   const service = new AskLedgerAttachmentService(path.join(dir, 'managed'));
   const binary = await write(dir, 'bad.exe', 'MZ');
   await assert.rejects(() => service.ingest([binary], 'conversation-a', 'workspace-a'), /Unsupported attachment type/);
+  const legacyExcel = await write(dir, 'legacy.xls', 'not an XLSX workbook');
+  await assert.rejects(() => service.ingest([legacyExcel], 'conversation-a', 'workspace-a'), /Unsupported attachment type/);
   const scanned = await write(dir, 'scanned.pdf', '%PDF-1.4\n%%EOF');
   await assert.rejects(() => service.ingest([scanned], 'conversation-a', 'workspace-a'), /scanned or image-only/);
 });

@@ -284,11 +284,14 @@ export class EmbeddingIndexService {
       } else if (this.provider) pending.push({ key, document });
       next.set(key, document);
     }
-    if (this.provider && pending.length) {
+    const semanticBlocked = Date.now() < this.semanticUnavailableUntil;
+    if (this.provider && pending.length && !semanticBlocked) {
       try {
         const vectors = await this.provider.embed(pending.map(({ document }) => formatEmbeddingInput(`${document.title}\n${document.content}`, 'document', this.provider?.model)));
         pending.forEach(({ key, document }, index) => { document.embedding = vectors[index]; document.embeddingModel = this.provider?.model; document.embeddingVersion = this.provider?.version; next.set(key, document); });
+        this.semanticUnavailableUntil = 0;
       } catch (error) {
+        this.semanticUnavailableUntil = Date.now() + EmbeddingIndexService.SEMANTIC_FAILURE_COOLDOWN_MS;
         console.warn('[local-embedding] Attachment semantic index unavailable; continuing with lexical retrieval.', error instanceof Error ? error.message : error);
       }
     }
@@ -306,6 +309,8 @@ export class EmbeddingIndexService {
     if (!current) return;
     for (const key of [...current.keys()]) if (attachmentIds.some((id) => key.includes(`attachment:${id}:`))) current.delete(key);
   }
+
+  semanticAvailable() { return Boolean(this.provider) && Date.now() >= this.semanticUnavailableUntil; }
 
   documents(workspaceId: string, conversationId?: string) {
     return [...(this.workspaces.get(workspaceId)?.values() ?? []), ...(conversationId ? [...(this.conversations.get(conversationId)?.values() ?? [])].filter((document) => document.workspaceId === workspaceId) : [])];
@@ -367,7 +372,7 @@ export class LedgerRetrievalService {
     await this.index.shutdown();
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[]; skipSemantic?: boolean; documents?: AskLedgerContextItem[] }): Promise<LedgerRetrievalResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[]; skipSemantic?: boolean; attachmentFocus?: boolean; documents?: AskLedgerContextItem[] }): Promise<LedgerRetrievalResult> {
     const suppliedDocuments = options?.documents?.filter((document) => !document.workspaceId || document.workspaceId === workspaceId) ?? [];
     const indexedDocuments = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
     const documents = suppliedDocuments.length ? suppliedDocuments : indexedDocuments;
@@ -441,7 +446,7 @@ export class LedgerRetrievalService {
     const scopedPrimaryKeys = new Set(scopedPrimary.map((document) => `${document.resourceType}:${document.resourceId}`));
     const lexicalByResource = new Map(lexicalResults.map((result, position) => [`${result.type}:${result.id}`, { result, position }]));
     let queryVector: number[] | undefined;
-    if (!options?.skipSemantic && this.provider && documents.some((document) => document.embedding)) {
+    if (!options?.skipSemantic && this.provider && this.index.semanticAvailable() && documents.some((document) => document.embedding)) {
       try { queryVector = (await this.provider.embed([formatEmbeddingInput(question, 'query', this.provider.model)]))[0]; } catch { queryVector = undefined; }
     }
     const questionTokens = tokenize(question);
@@ -468,12 +473,13 @@ export class LedgerRetrievalService {
       if (exactEntityMatch) exactCandidateKeys.add(key);
       if (structuredMatch) structuredCandidateKeys.add(key);
       if (plan?.primaryResourceTypes.length && !matchesStructuredConstraints(document)) candidatesRemovedByStructured += 1;
+      const attachmentFocus = Boolean(options?.attachmentFocus && document.resourceType === 'attachment');
       const hybrid = scoreHybridCandidate({
         semanticScore: semantic,
         lexicalScore,
         exactEntityMatch,
         structuredMatch,
-        explicitContext: options?.boostResourceKeys?.includes(key),
+        explicitContext: options?.boostResourceKeys?.includes(key) || attachmentFocus,
         authoritativeResource: Boolean((plan?.primaryResourceTypes.includes(document.resourceType)) || (allowedResourceTypes?.includes(document.resourceType as never))),
       });
       let score = hybrid.score;
@@ -492,6 +498,7 @@ export class LedgerRetrievalService {
         score += 0.12;
         why.push('conversation-attachment');
       }
+      if (attachmentFocus) why.push('attachment-focus');
       if (allowedResourceTypes?.includes(document.resourceType as never)) why.push('resource-type-authority');
       const scheduledAt = document.dueAt ?? document.timestamp;
       const scheduledDate = scheduledAt ? Date.parse(scheduledAt) : NaN;

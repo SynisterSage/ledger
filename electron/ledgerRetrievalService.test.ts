@@ -108,6 +108,31 @@ test('lexical retrieval can return exact evidence when embeddings are unavailabl
   assert.equal(result.items[0]?.resourceId, 'project-local-ai');
 });
 
+test('generic attachment retrieval remains bounded and skips repeated embedding timeouts', async () => {
+  const provider: EmbeddingProvider = {
+    model: 'unavailable-embedding',
+    version: 'test',
+    calls: 0,
+    async embed() {
+      this.calls += 1;
+      throw new Error('embedding timeout');
+    },
+  } as EmbeddingProvider & { calls: number };
+  const index = new EmbeddingIndexService(provider);
+  const retrieval = new LedgerRetrievalService(index, provider);
+  const attachment = resource({ resourceType: 'attachment', resourceId: 'file-a:0', title: 'Class Information.docx', content: 'Course schedule and class policies.' });
+  await retrieval.indexAttachments('conversation-a', 'workspace-a', [attachment]);
+  const result = await retrieval.retrieve('workspace-a', 'what does this contain', [], 8, {
+    conversationId: 'conversation-a',
+    attachmentFocus: true,
+    skipSemantic: true,
+  });
+  assert.equal((provider as EmbeddingProvider & { calls: number }).calls, 1);
+  assert.equal(result.items[0]?.resourceId, 'file-a:0');
+  assert.ok((result.debug[0]?.score ?? 0) > 0.18);
+  assert.ok(result.debug[0]?.why.includes('attachment-focus'));
+});
+
 test('deadline intent prioritizes dated work and deduplicates chunks by resource', async () => {
   const index = new EmbeddingIndexService();
   const retrieval = new LedgerRetrievalService(index);

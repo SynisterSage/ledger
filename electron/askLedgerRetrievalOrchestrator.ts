@@ -264,7 +264,7 @@ export class AskLedgerRetrievalOrchestrator {
     };
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; attachmentFocus?: boolean; skipSemantic?: boolean; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
     if (options?.skillId === 'plan_my_week') return this.retrievePlanMyWeek(workspaceId, lexicalResults, limit, options) as Promise<AskLedgerOrchestrationResult>;
     const skillSeedQuestion = options?.skillId === 'project_health_check'
       ? 'Look through the project work and tell me what is happening, blocked, and what still needs to happen.'
@@ -272,7 +272,7 @@ export class AskLedgerRetrievalOrchestrator {
         ? 'Look through the meetings and connected context, decisions, follow-ups, projects, tasks, and reminders.'
         : undefined;
     const orchestrationQuestion = skillSeedQuestion ?? question;
-    const mode = classifyAskLedgerRetrievalMode(orchestrationQuestion);
+    const mode = options?.attachmentFocus ? 'quick' : classifyAskLedgerRetrievalMode(orchestrationQuestion);
     const searchQuestion = skillSeedQuestion || options?.retrievalQuestion?.trim() || orchestrationQuestion;
     if (mode === 'quick') {
       const plan = buildRetrievalPlan(question);
@@ -284,7 +284,7 @@ export class AskLedgerRetrievalOrchestrator {
       const quickIntegrationResult = plan.integrationProviders?.length
         ? await quickIntegration.search({ workspaceId, query: plan.entityQuery ?? question, providers: plan.integrationProviders, limit, documents: quickCorpus })
         : undefined;
-      const result = await this.retrieval.retrieve(workspaceId, searchQuestion, lexicalResults, limit, { conversationId: options?.conversationId, documents: options?.documents, boostResourceKeys: [...(options?.boostResourceKeys ?? []), ...(quickIntegrationResult?.results ?? []).map((entry) => keyFor(entry.item))], plan, skipSemantic: true });
+      const result = await this.retrieval.retrieve(workspaceId, searchQuestion, lexicalResults, limit, { conversationId: options?.conversationId, documents: options?.documents, boostResourceKeys: [...(options?.boostResourceKeys ?? []), ...(quickIntegrationResult?.results ?? []).map((entry) => keyFor(entry.item))], plan, skipSemantic: options?.skipSemantic ?? true, attachmentFocus: options?.attachmentFocus });
       return { ...result, mode, integrationRetrieval: quickIntegrationResult?.diagnostics, orchestration: { mode, objectives: [], retrievalRounds: 1, discoveredEntities: [], coverage: {}, resourcesCollected: result.items.length, resourcesDiscarded: 0, stopReason: 'quick_path', provenance: result.items.map((item) => ({ resourceKey: keyFor(item), objectiveId: 'quick', path: [keyFor(item)] })) } };
     }
 
@@ -353,7 +353,8 @@ export class AskLedgerRetrievalOrchestrator {
           graphRelationshipTypes: objective.graphRelationshipTypes,
           // Supplied corpora are authoritative structured inputs and have no
           // embedding vectors. Indexed research corpora retain semantic search.
-          skipSemantic: options?.documents ? true : undefined,
+          skipSemantic: options?.skipSemantic ?? (options?.documents ? true : undefined),
+          attachmentFocus: options?.attachmentFocus,
         });
         if (result.graphExpansion) {
           result.graphExpansion.seedResources.forEach((seed) => graphSeedResources.add(seed));

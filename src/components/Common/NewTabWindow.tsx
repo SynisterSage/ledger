@@ -492,7 +492,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         showWorkspaceNavigation
       />
       <main className={`web-new-tab-content relative min-h-0 flex-1 bg-[var(--ledger-background)] ${isBrowser ? 'overflow-auto' : 'overflow-hidden'}`}>
-        <div aria-hidden="true" className="pointer-events-none sticky top-0 z-0 h-0 overflow-visible">
+        {!askConversationActive && <div aria-hidden="true" className="pointer-events-none sticky top-0 z-0 h-0 overflow-visible">
           <div className="absolute left-0 top-0 h-screen w-full overflow-hidden">
             <div
               className="ledger-new-tab-atmosphere absolute inset-0"
@@ -511,7 +511,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
               }}
             />
           </div>
-        </div>
+        </div>}
         <div className={`web-new-tab-body relative z-10 mx-auto flex w-full max-w-[700px] flex-col px-5 pb-16 sm:px-6 ${askConversationActive ? 'h-full min-h-0 pt-5' : 'min-h-full justify-center'}`}>
           <div className={`relative z-10 w-full ${askConversationActive ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
             {!isBrowser && !askConversationActive && (

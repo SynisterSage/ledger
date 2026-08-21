@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { unzipSync, strFromU8, inflateSync } from 'fflate';
+import * as XLSX from 'xlsx';
 import type { AskLedgerAttachment, AskLedgerAttachmentSource } from '../src/types/askLedgerAttachments.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 
@@ -17,6 +18,7 @@ const SUPPORTED = new Map([
   ['txt', 'text/plain'],
   ['md', 'text/markdown'],
   ['csv', 'text/csv'],
+  ['xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
 ]);
 
 export type ExtractedAttachmentBlock = {
@@ -41,11 +43,12 @@ const clean = (value: string) => value.replace(/\u0000/g, '').replace(/\r/g, '')
 const xmlDecode = (value: string) => value.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 
 const validateBytes = (bytes: Uint8Array, extension: string) => {
-  if (bytes.includes(0) && extension !== 'pdf' && extension !== 'docx') throw new AskLedgerAttachmentError('This file does not contain readable text.');
+  if (bytes.includes(0) && !['pdf', 'docx', 'xlsx'].includes(extension)) throw new AskLedgerAttachmentError('This file does not contain readable text.');
   if (extension === 'pdf' && strFromU8(bytes.subarray(0, 5), true) !== '%PDF-') throw new AskLedgerAttachmentError('This file is not a readable PDF.');
   if (extension === 'docx') {
     if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new AskLedgerAttachmentError('This file is not a readable DOCX document.');
   }
+  if (extension === 'xlsx' && (bytes[0] !== 0x50 || bytes[1] !== 0x4b)) throw new AskLedgerAttachmentError('This file is not a readable XLSX workbook.');
 };
 
 const extractPdf = (bytes: Uint8Array): ExtractedAttachmentBlock[] => {
@@ -106,6 +109,58 @@ const extractCsv = (bytes: Uint8Array): ExtractedAttachmentBlock[] => {
   return blocks;
 };
 
+const displayCell = (value: unknown) => {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(/\r?\n/g, ' ').trim();
+};
+
+const extractXlsx = (bytes: Uint8Array, fileName: string): ExtractedAttachmentBlock[] => {
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(bytes, {
+      type: 'buffer',
+      cellDates: true,
+      cellNF: true,
+      cellText: true,
+      bookVBA: false,
+      bookFiles: false,
+      bookProps: false,
+      WTF: false,
+    });
+  } catch {
+    throw new AskLedgerAttachmentError('This XLSX workbook is corrupt, password-protected, or could not be opened safely.');
+  }
+  if (!workbook.SheetNames.length) throw new AskLedgerAttachmentError('This XLSX workbook contains no sheets.');
+
+  const blocks: ExtractedAttachmentBlock[] = [];
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const matrix = sheet ? XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '', blankrows: false }) : [];
+    const rows = matrix.map((row) => row.map(displayCell));
+    const headers = (rows[0] ?? []).map((value, index) => value || `Column ${index + 1}`);
+    const dataRows = rows.slice(1).filter((row) => row.some(Boolean));
+    if (!dataRows.length) {
+      blocks.push({ text: `Workbook: ${fileName}\nSheet: ${sheetName}\nThis sheet is empty.`, source: { sheetName, rowStart: 1, rowEnd: 1, headers } });
+      continue;
+    }
+    const groupSize = 20;
+    for (let start = 0; start < dataRows.length; start += groupSize) {
+      const group = dataRows.slice(start, start + groupSize);
+      const rowStart = start + 2;
+      const rowEnd = rowStart + group.length - 1;
+      const text = [
+        `Workbook: ${fileName}`,
+        `Sheet: ${sheetName}`,
+        `Headers: ${headers.join(' | ')}`,
+        `Rows ${rowStart}-${rowEnd}:`,
+        ...group.map((row, offset) => `Row ${rowStart + offset}: ${headers.map((header, index) => `${header}: ${row[index] ?? ''}`).join(' | ')}`),
+      ].join('\n');
+      blocks.push({ text, source: { sheetName, rowStart, rowEnd, headers } });
+    }
+  }
+  return blocks;
+};
+
 export const chunkAttachmentBlocks = (blocks: ExtractedAttachmentBlock[], maxCharacters = 1400): ExtractedAttachmentBlock[] => {
   const output: ExtractedAttachmentBlock[] = [];
   for (const block of blocks) {
@@ -155,7 +210,7 @@ export class AskLedgerAttachmentService {
       await fs.writeFile(temporaryPath, bytes, { flag: 'wx', mode: 0o600 });
       this.copies.set(id, temporaryPath);
       const attachment: AskLedgerAttachment = { id, conversationId, name, extension, mimeType, sizeBytes: bytes.byteLength, status: 'processing', createdAt: new Date().toISOString() };
-      const blocks = extension === 'pdf' ? extractPdf(bytes) : extension === 'docx' ? extractDocx(bytes) : extension === 'csv' ? extractCsv(bytes) : extractText(bytes);
+      const blocks = extension === 'pdf' ? extractPdf(bytes) : extension === 'docx' ? extractDocx(bytes) : extension === 'csv' ? extractCsv(bytes) : extension === 'xlsx' ? extractXlsx(bytes, name) : extractText(bytes);
       const chunks = chunkAttachmentBlocks(blocks);
       results.push({ attachment: { ...attachment, status: 'ready' }, blocks: chunks, temporaryPath });
       this.documents.set(id, results[results.length - 1]);
@@ -214,8 +269,8 @@ export const attachmentBlocksToContext = (document: NormalizedAttachmentDocument
   content: block.text,
   sourceLabel: block.source.pageNumber
     ? `${document.attachment.extension.toUpperCase()} · Page ${block.source.pageNumber}`
-    : block.source.rowStart
-      ? `${document.attachment.extension.toUpperCase()} · Rows ${block.source.rowStart}–${block.source.rowEnd ?? block.source.rowStart}`
+      : block.source.rowStart
+      ? `${document.attachment.extension.toUpperCase()} · ${block.source.sheetName ? `${block.source.sheetName} · ` : ''}Rows ${block.source.rowStart}–${block.source.rowEnd ?? block.source.rowStart}`
       : document.attachment.extension === 'docx' ? 'Document' : document.attachment.extension.toUpperCase(),
   route: { kind: 'ask-ledger-attachment', attachmentId: document.attachment.id, conversationId: document.attachment.conversationId },
   attachmentSource: { attachmentId: document.attachment.id, fileName: document.attachment.name, ...block.source },

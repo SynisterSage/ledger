@@ -76,6 +76,51 @@ test('answers conversational and capability requests without workspace retrieval
   assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'generating'), true);
 });
 
+test('answers Ledger product identity questions from canonical application facts', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationStarted = false;
+  const retrieval = {
+    indexWorkspace: async () => { throw new Error('workspace indexing should not run'); },
+    retrieve: async () => { throw new Error('retrieval should not run'); },
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: () => { generationStarted = true; return 'unexpected-generation'; },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+  service.start({ workspaceId: 'workspace-a', question: 'what does ledger do', documents: [], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+  assert.equal(generationStarted, false);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /desktop accountability workspace/);
+});
+
+test('answers combined Ledger product questions without invoking the model', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationStarted = false;
+  const retrieval = { indexWorkspace: async () => { throw new Error('workspace indexing should not run'); }, retrieve: async () => { throw new Error('retrieval should not run'); }, shutdown: async () => undefined } as unknown as LedgerRetrievalService;
+  const localAI = { start: () => { generationStarted = true; return 'unexpected-generation'; }, cancel: () => ({ ok: true }), shutdown: async () => undefined } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+  service.start({ workspaceId: 'workspace-a', question: 'what is ledger what does it do', documents: [], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+  assert.equal(generationStarted, false);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /desktop accountability workspace/);
+});
+
+test('answers Ledger creator questions from canonical application facts', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let generationStarted = false;
+  const retrieval = { indexWorkspace: async () => { throw new Error('workspace indexing should not run'); }, retrieve: async () => { throw new Error('retrieval should not run'); }, shutdown: async () => undefined } as unknown as LedgerRetrievalService;
+  const localAI = { start: () => { generationStarted = true; return 'unexpected-generation'; }, cancel: () => ({ ok: true }), shutdown: async () => undefined } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+  service.start({ workspaceId: 'workspace-a', question: 'who is it made by', documents: [], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+  assert.equal(generationStarted, false);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Lex Ferguson/);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /aferguson\.art/);
+});
+
 test('does not retrieve for conversational inertia when the prior turn has no sources', async () => {
   const events: LocalAIStreamEvent[] = [];
   let retrieveCalls = 0;

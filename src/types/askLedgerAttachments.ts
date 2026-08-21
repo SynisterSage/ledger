@@ -20,4 +20,6 @@ export type AskLedgerAttachmentSource = {
   paragraph?: number;
   rowStart?: number;
   rowEnd?: number;
+  sheetName?: string;
+  headers?: string[];
 };

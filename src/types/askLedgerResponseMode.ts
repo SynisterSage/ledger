@@ -52,7 +52,7 @@ const normalize = (value: string) =>
 const workspaceSignals =
   /\b(?:ledger|workspace|projects?|tasks?|todo|to do|action items?|milestones?|reminders?|meetings?|events?|calendar|notes?|transcripts?|deadlines?|overdue|blocked|blocking|stuck|status|progress|activity|happening|going on|decision|decided|discussed|changed|updates?|follow[- ]?ups?|team members?|integration|slack|github|figma|launch|this week)\b/i;
 const capabilitySignals =
-  /\b(?:what can you help me with|what can you do|what do you do|what do u do|what does ledger do|what is ledger|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
+  /\b(?:what can you help me with|what can you do|what do you do|what do u do|what does ledger do|what is ledger|who (?:made|built|created) (?:ledger|it)|who is ledger made by|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
 const casualSignals =
   /^(?:h+i+|hello+|hey+|yo+|thanks?|thank you|thx|good morning|good afternoon|good evening|how are you|whats up|what is up|bye|goodbye|okay|ok|great|nice|cool|got it)[.!?\s]*$/i;
 const factualQuestionSignals =

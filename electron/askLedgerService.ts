@@ -20,7 +20,7 @@ import { buildAskLedgerDocumentDiagnostics } from '../src/types/askLedgerResourc
 import { buildSkillPromptContext, getAskLedgerSkill, validateSkillContext } from './askLedgerSkills.ts';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import { routeAskLedgerMessage } from '../src/types/askLedgerResponseMode.ts';
-import { ASK_LEDGER_CAPABILITY_DESCRIPTION } from '../src/types/askLedgerCapabilities.ts';
+import { ASK_LEDGER_CAPABILITY_DESCRIPTION, ASK_LEDGER_CREATOR_DESCRIPTION, ASK_LEDGER_PRODUCT_DESCRIPTION, isLedgerCreatorQuestion, isLedgerProductQuestion } from '../src/types/askLedgerCapabilities.ts';
 import { AskLedgerAttachmentService, attachmentBlocksToContext } from './askLedgerAttachmentService.ts';
 import { buildRetrievalPlan } from './askLedgerRetrievalPlan.ts';
 import { AskLedgerRetrievalOrchestrator } from './askLedgerRetrievalOrchestrator.ts';
@@ -583,6 +583,18 @@ export class AskLedgerService {
       const reusableContextAvailable = !reuseRequested || !previousSourcesForReuse?.length || previousSourcesForReuse.every((source) => request.documents.some((item) => item.resourceType === source.resourceType && item.resourceId === source.resourceId));
       const shouldRetrieve = route.retrievalRequired || (reuseRequested && !reusableContextAvailable);
       performanceTrace.set('retrievalRequired', shouldRetrieve);
+      if (route.reason === 'capability_question' && isLedgerProductQuestion(request.question)) {
+        emit({ type: 'sources', requestId, sources: [] });
+        emit({ type: 'delta', requestId, text: ASK_LEDGER_PRODUCT_DESCRIPTION });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        return;
+      }
+      if (route.reason === 'capability_question' && isLedgerCreatorQuestion(request.question)) {
+        emit({ type: 'sources', requestId, sources: [] });
+        emit({ type: 'delta', requestId, text: ASK_LEDGER_CREATOR_DESCRIPTION });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        return;
+      }
       performanceTrace.set('existingGroundedContextReusable', reusableContextAvailable);
       const generationTimeoutMs = skill
         ? 120_000
@@ -715,6 +727,13 @@ export class AskLedgerService {
         request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length ? `Previous question: ${request.conversation.previousQuestion}` : '',
         request.conversation?.previousSources?.length && !request.conversation?.recentExchanges?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
       ].filter(Boolean).join('\n');
+      // Attachment-routed turns are already scoped to the user-selected file.
+      // Keep them out of workspace research objectives even when the wording
+      // is conversational, e.g. "look through this".
+      const genericAttachmentQuestion = Boolean(request.attachmentIds?.length || route.reason === 'attachment');
+      const attachmentFocusKeys = genericAttachmentQuestion
+        ? request.documents.filter((item) => item.resourceType === 'attachment').map((item) => `${item.resourceType}:${item.resourceId}`)
+        : [];
       const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
       const intent = detectAskLedgerQueryIntent(request.question);
       const retrievalLimit = skill?.id === 'plan_my_week' || intent.kind === 'weekly_overview' ? 32 : 20;
@@ -731,7 +750,9 @@ export class AskLedgerService {
         documents: retrievalDocuments,
         retrievalQuestion,
         skillId: skill?.id,
-        boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys],
+        boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
+        attachmentFocus: genericAttachmentQuestion,
+        skipSemantic: genericAttachmentQuestion,
         resolvedResourceKeys: conversationResolution.resourceKeys,
         onObjectiveTiming: (timing) => askLedgerDiagnostic('[local-ai] Ask Ledger retrieval objective', { requestId, messageId: request.messageId, skillId: skill?.id, ...timing }),
       });
@@ -789,10 +810,11 @@ export class AskLedgerService {
       const previewSources = (items: AskLedgerContextItem[]) => items.slice(0, 3).map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, route: item.route, projectId: item.projectId, projectName: item.projectName, sourceLabel: item.sourceLabel, integrationProvider: item.integrationProvider, integrationResourceType: item.integrationResourceType, externalId: item.externalId, explicitIntegrationLink: item.explicitIntegrationLink, updatedAt: item.updatedAt, parentResourceId: item.parentResourceId, relationships: item.relationships, attachmentSource: item.attachmentSource }));
       const evidenceStartedAt = Date.now();
       performanceTrace.mark('evidenceBuildStarted');
+      const customSkill = Boolean(skill && !skill.outputSections);
       const evidenceBudget = {
-        maxResources: skill ? 10 : retrieval.mode === 'research' ? 12 : 10,
-        maxTokens: skill ? 2200 : retrieval.mode === 'research' ? 2600 : 2200,
-        maxItemTokens: skill ? 360 : 520,
+        maxResources: customSkill ? 6 : skill ? 10 : retrieval.mode === 'research' ? 12 : 10,
+        maxTokens: customSkill ? 1200 : skill ? 1800 : retrieval.mode === 'research' ? 2600 : 2200,
+        maxItemTokens: customSkill ? 240 : skill ? 300 : 520,
       };
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems, budget: evidenceBudget, timeZone: request.timeZone, timeFormat: request.timeFormat });
       performanceTrace.mark('evidenceBuildCompleted');
@@ -816,7 +838,7 @@ export class AskLedgerService {
         question: request.question,
         skillReasoningPolicy: skill?.reasoningPolicy,
       });
-      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: skill ? 3200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
+      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: customSkill ? 1600 : skill ? 2200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: customSkill ? 300 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
       emit({ type: 'activity', requestId, activity: { type: 'sources_found', count: normalized.items.length, sources: previewSources(normalized.items) } });
       emit({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
@@ -917,12 +939,13 @@ export class AskLedgerService {
         modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier,
       });
       const topScore = retrieval.debug[0]?.score ?? 0;
-      const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title')
+      const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title' || reason === 'explicit-context')
         || (intent.kind === 'recent_updates' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('recent:')))
         || (intent.kind === 'meeting_prep' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('meeting-prep-')));
       const hasPlannedPrimary = Boolean(retrieval.primaryItems?.length);
       const hasExplicitContextEvidence = Boolean(explicitContext && normalized.items.some((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId));
-      if (!normalized.items.length || (!skill && !hasPlannedPrimary && !hasExplicitContextEvidence && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
+      const hasAttachmentEvidence = genericAttachmentQuestion && retrieval.debug[0]?.resourceType === 'attachment' && retrieval.debug[0]?.why.includes('explicit-context');
+      if (!normalized.items.length || (!skill && !hasPlannedPrimary && !hasExplicitContextEvidence && !hasAttachmentEvidence && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
         askLedgerDiagnostic('[local-ai] Ask Ledger grounding diagnostics', {
           messageId: request.messageId,
           responseMode: route.mode,
