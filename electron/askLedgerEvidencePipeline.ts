@@ -10,6 +10,7 @@ import type {
 } from '../src/types/askLedgerResourceContract.ts';
 import type { LedgerRetrievalResult, RetrievalDebugCandidate } from './ledgerRetrievalService.ts';
 import { structuredValueLinesFor, type AskLedgerStructuredDiagnostics } from './askLedgerStructuredValues.ts';
+import { ASK_LEDGER_DESKTOP_BUDGET, createAskLedgerEvidencePacket, type AskLedgerEvidencePacket } from '../src/shared/askLedger/index.ts';
 
 export type AskLedgerEvidenceBudget = {
   maxResources: number;
@@ -30,7 +31,7 @@ export interface AskLedgerReranker {
 
 const DEFAULT_BUDGETS: Record<'quick' | 'standard' | 'research', AskLedgerEvidenceBudget> = {
   quick: { maxResources: 6, maxTokens: 1800, maxItemTokens: 420, maxTranscriptSegmentsPerParent: 2 },
-  standard: { maxResources: 12, maxTokens: 2800, maxItemTokens: 600, maxTranscriptSegmentsPerParent: 2 },
+  standard: { maxResources: ASK_LEDGER_DESKTOP_BUDGET.selectedResourceLimit, maxTokens: ASK_LEDGER_DESKTOP_BUDGET.evidenceTokenBudget, maxItemTokens: ASK_LEDGER_DESKTOP_BUDGET.maxItemTokens, maxTranscriptSegmentsPerParent: ASK_LEDGER_DESKTOP_BUDGET.maxTranscriptSegmentsPerParent },
   research: { maxResources: 20, maxTokens: 4200, maxItemTokens: 720, maxTranscriptSegmentsPerParent: 3 },
 };
 
@@ -114,6 +115,7 @@ export class DeterministicAskLedgerReranker implements AskLedgerReranker {
 
 export type AskLedgerEvidencePipelineResult = {
   package: AskLedgerEvidencePackage;
+  packet: AskLedgerEvidencePacket;
   selectedItems: AskLedgerContextItem[];
   ranked: RankedEvidence[];
   diagnostics: AskLedgerEvidenceDiagnostics;
@@ -206,5 +208,5 @@ export const compileAskLedgerEvidence = (input: {
     const diagnostics = structuredValueLinesFor(entry.resource, { timeZone: input.timeZone, now: input.now }).display.diagnostics;
     (Object.keys(structuredValues) as Array<keyof AskLedgerStructuredDiagnostics>).forEach((key) => { structuredValues[key] ||= diagnostics[key]; });
   });
-  return { package: packageValue, selectedItems: selected.map((entry) => entry.resource), ranked, diagnostics: { inputResources: rawItems.length, selectedResources: selected.length, droppedResources: Math.max(0, rawItems.length - selected.length), estimatedTokens: { before: packageValue.stats.estimatedTokensBefore, after: packageValue.stats.estimatedTokens }, selectedByType: selected.reduce<Record<string, number>>((counts, entry) => { counts[entry.resource.resourceType] = (counts[entry.resource.resourceType] ?? 0) + 1; return counts; }, {}), dropReasons, topScores: ranked.slice(0, 8).map((entry) => ({ resourceKey: keyFor(entry.resource), score: entry.score.finalScore, reasons: entry.score.reasons.slice(0, 5) })), notificationState: selectedNotifications.reduce((state, entry) => { entry.resource.read ? state.read += 1 : state.unread += 1; return state; }, { unread: 0, read: 0 }), activitySignals: selectedActivity.reduce((state, entry) => { const priority = String(entry.resource.priority ?? entry.resource.severity ?? '').toLowerCase(); if (['high', 'urgent', 'critical'].includes(priority)) state.highPriority += 1; else state.standard += 1; return state; }, { highPriority: 0, standard: 0 }), duplicateActivityNotificationCollapses: dropReasons.duplicate_activity_notification ?? 0, structuredValues } };
+  return { package: packageValue, packet: createAskLedgerEvidencePacket({ query: input.question, resources: selected.map((entry) => entry.resource), evidence: packageValue, workspaceId: rawItems[0]?.workspaceId, temporalContext: { timezone: input.timeZone } }), selectedItems: selected.map((entry) => entry.resource), ranked, diagnostics: { inputResources: rawItems.length, selectedResources: selected.length, droppedResources: Math.max(0, rawItems.length - selected.length), estimatedTokens: { before: packageValue.stats.estimatedTokensBefore, after: packageValue.stats.estimatedTokens }, selectedByType: selected.reduce<Record<string, number>>((counts, entry) => { counts[entry.resource.resourceType] = (counts[entry.resource.resourceType] ?? 0) + 1; return counts; }, {}), dropReasons, topScores: ranked.slice(0, 8).map((entry) => ({ resourceKey: keyFor(entry.resource), score: entry.score.finalScore, reasons: entry.score.reasons.slice(0, 5) })), notificationState: selectedNotifications.reduce((state, entry) => { entry.resource.read ? state.read += 1 : state.unread += 1; return state; }, { unread: 0, read: 0 }), activitySignals: selectedActivity.reduce((state, entry) => { const priority = String(entry.resource.priority ?? entry.resource.severity ?? '').toLowerCase(); if (['high', 'urgent', 'critical'].includes(priority)) state.highPriority += 1; else state.standard += 1; return state; }, { highPriority: 0, standard: 0 }), duplicateActivityNotificationCollapses: dropReasons.duplicate_activity_notification ?? 0, structuredValues } };
 };

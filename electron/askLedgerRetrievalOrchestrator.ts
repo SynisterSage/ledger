@@ -138,15 +138,19 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   }
 
   const projectDependency = objectives.some((objective) => ['projects', 'linked-projects'].includes(objective.id)) ? [objectives.some((objective) => objective.id === 'linked-projects') ? 'linked-projects' : 'projects'] : [];
+  // Meeting names are anchors for the meeting objective, not project names.
+  // Dependent project work is constrained by discovered project IDs instead.
+  const projectEntityQuery = includesProjectContext && !hasMeetings ? base.entityQuery : undefined;
+  const projectEntity = projectEntityQuery ? { entityQuery: projectEntityQuery } : {};
   if (hasMilestones || includesProjectContext || hasMeetings) {
-    addObjective(objectives, { id: 'project-milestones', purpose: 'Retrieve milestones for discovered projects', resourceTypes: ['milestone'], constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectDependency });
+    addObjective(objectives, { id: 'project-milestones', purpose: 'Retrieve milestones for discovered projects', resourceTypes: ['milestone'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectDependency });
   }
   if (hasTasks || includesProjectContext || hasMeetings) {
     const constraints = { ...base.structuredConstraints, openOnly: true };
-    addObjective(objectives, { id: 'project-open-tasks', purpose: 'Retrieve open project tasks and horizons', resourceTypes: ['task'], constraints, expandRelationships: false, dependsOn: projectDependency });
+    addObjective(objectives, { id: 'project-open-tasks', purpose: 'Retrieve open project tasks and horizons', resourceTypes: ['task'], ...projectEntity, constraints, expandRelationships: false, dependsOn: projectDependency });
   }
   if (hasReminders || includesProjectContext || hasMeetings) {
-    addObjective(objectives, { id: 'linked-reminders', purpose: 'Retrieve reminders and follow-up context', resourceTypes: ['reminder'], constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectDependency });
+    addObjective(objectives, { id: 'linked-reminders', purpose: 'Retrieve reminders and follow-up context', resourceTypes: ['reminder'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectDependency });
   }
   if (hasAttention) {
     addObjective(objectives, { id: 'attention-tasks', purpose: 'Find overdue, blocked, and today work requiring attention', resourceTypes: ['task', 'milestone'], constraints: { ...base.structuredConstraints, attentionOnly: true }, expandRelationships: false, dependsOn: projectDependency });

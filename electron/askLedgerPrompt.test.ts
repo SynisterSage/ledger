@@ -92,6 +92,21 @@ test('keeps conversational prompts free of global grounding abstention', () => {
   assert.doesNotMatch(prompt, new RegExp(ASK_LEDGER_ABSTENTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
+test('builds product-help prompts from only the selected product node', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'What slash commands can I use?',
+    executionMode: 'ledger_product_help',
+    responseMode: 'conversational',
+    contextItems: context,
+    productKnowledgeContext: 'LEDGER PRODUCT KNOWLEDGE\n\nArea: Notes\nFeature: Slash commands\n\nSlash commands insert supported note blocks.',
+  });
+  assert.match(prompt, /Area: Notes/);
+  assert.match(prompt, /Slash commands insert supported note blocks/);
+  assert.match(prompt, /Do not use or imply facts from the user workspace/);
+  assert.doesNotMatch(prompt, /Local AI|Compare local models|Qwen3 1\.7B/);
+  assert.doesNotMatch(prompt, /Use only the Ledger context below/);
+});
+
 test('tells conversational follow-ups to answer directly instead of critiquing prior output', () => {
   const prompt = buildAskLedgerPrompt({
     question: 'Why not?',

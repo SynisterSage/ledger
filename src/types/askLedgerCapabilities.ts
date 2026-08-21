@@ -11,8 +11,9 @@ export const ASK_LEDGER_CAPABILITIES = [
 export const ASK_LEDGER_CAPABILITY_DESCRIPTION = `Ask Ledger can:\n- ${ASK_LEDGER_CAPABILITIES}`;
 
 export const ASK_LEDGER_PRODUCT_DESCRIPTION = 'Ledger is a calm desktop accountability workspace for capturing thoughts, planning your day, organizing projects and calendar context, following through on next actions, and reviewing what moved, what is blocked, and what comes next.';
+export const ASK_LEDGER_PRODUCT_OVERVIEW = `${ASK_LEDGER_PRODUCT_DESCRIPTION}\n\nThis is the current compact product overview. Detailed page and integration knowledge is not yet available in the product-help registry; when a question goes beyond this overview, say that the detailed answer is not available yet rather than guessing or using workspace records.`;
 
 export const ASK_LEDGER_CREATOR_DESCRIPTION = 'Ledger was made by Lex Ferguson, a Monmouth University alumnus. Learn more at https://aferguson.art.';
 
 export const isLedgerProductQuestion = (question: string) => /^\s*(?:what\s+(?:does|is)\s+ledger(?:\s+do)?|what\s+is\s+ledger\s+what\s+does\s+it\s+do)\s*\??\s*$/i.test(question);
-export const isLedgerCreatorQuestion = (question: string) => /^\s*(?:who\s+(?:made|built|created)\s+(?:ledger|it)|who\s+is\s+ledger\s+made\s+by)\s*\??\s*$/i.test(question);
+export const isLedgerCreatorQuestion = (question: string) => /^\s*(?:who\s+(?:made|built|created)\s+(?:ledger|it)|who\s+is\s+(?:ledger|it)\s+made\s+by)\s*\??\s*$/i.test(question);

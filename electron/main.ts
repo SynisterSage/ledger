@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
+import type { AskLedgerExecutionMode } from '../src/types/askLedgerResponseMode.ts';
 import {
   clampSidebarOpacity,
   defaultSidebarPreferences,
@@ -314,6 +315,10 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
     } : undefined,
     previousQuestion: typeof conversation.previousQuestion === 'string' ? conversation.previousQuestion.slice(0, 800) : undefined,
     previousAnswer: typeof conversation.previousAnswer === 'string' ? conversation.previousAnswer.slice(0, 1200) : undefined,
+    previousExecutionMode: ['conversation', 'ledger_product_help', 'workspace_lookup', 'workspace_synthesis', 'workspace_research', 'skills'].includes(String(conversation.previousExecutionMode)) ? String(conversation.previousExecutionMode) as AskLedgerExecutionMode : undefined,
+    productArea: typeof conversation.productArea === 'string' ? conversation.productArea.slice(0, 80) : undefined,
+    productFeature: typeof conversation.productFeature === 'string' ? conversation.productFeature.slice(0, 120) : undefined,
+    previousSkill: typeof conversation.previousSkill === 'string' ? conversation.previousSkill.slice(0, 120) : undefined,
     state: safeState,
     previousSources: Array.isArray(conversation.previousSources) ? conversation.previousSources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 8).map((source) => ({
       resourceType: String(source.resourceType ?? 'external') as never,
@@ -324,6 +329,9 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
     recentExchanges: Array.isArray(conversation.recentExchanges) ? conversation.recentExchanges.filter((exchange): exchange is Record<string, unknown> => Boolean(exchange) && typeof exchange === 'object').slice(-2).map((exchange) => ({
       question: typeof exchange.question === 'string' ? exchange.question.slice(0, 600) : undefined,
       answer: typeof exchange.answer === 'string' ? exchange.answer.slice(0, 900) : undefined,
+      executionMode: ['conversation', 'ledger_product_help', 'workspace_lookup', 'workspace_synthesis', 'workspace_research', 'skills'].includes(String(exchange.executionMode)) ? String(exchange.executionMode) as AskLedgerExecutionMode : undefined,
+      productArea: typeof exchange.productArea === 'string' ? exchange.productArea.slice(0, 80) : undefined,
+      productFeature: typeof exchange.productFeature === 'string' ? exchange.productFeature.slice(0, 120) : undefined,
       sources: Array.isArray(exchange.sources) ? exchange.sources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 6).map((source) => ({
         resourceType: String(source.resourceType ?? 'external') as never,
         resourceId: String(source.resourceId ?? source.id ?? ''),

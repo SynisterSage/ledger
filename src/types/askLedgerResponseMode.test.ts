@@ -116,6 +116,121 @@ test('routes direct Ledger capability wording without workspace retrieval', () =
   assert.equal(route.mode, 'conversational');
 });
 
+test('routes Ledger product help separately from workspace data', () => {
+  for (const message of [
+    'What is Ledger?',
+    'What does Ledger do?',
+    'What does the Calendar page have?',
+    'What features does Notes have?',
+    'Can Ledger transcribe meetings?',
+    'Does Ledger support GitHub?',
+    'Does Calendar have a week view?',
+  ]) {
+    const route = routeAskLedgerMessage(message);
+    assert.equal(route.executionMode, 'ledger_product_help', message);
+    assert.equal(route.retrievalRequired, false, message);
+    assert.equal(route.diagnostics.productHelpDetected, true, message);
+    assert.equal(route.diagnostics.workspaceDataIntentDetected, false, message);
+  }
+  for (const message of [
+    "What's on my calendar today?",
+    'Show my notes from yesterday.',
+    'What tasks are due?',
+    'What meetings do I have Friday?',
+  ]) {
+    const route = routeAskLedgerMessage(message);
+    assert.notEqual(route.executionMode, 'ledger_product_help', message);
+    assert.equal(route.retrievalRequired, true, message);
+  }
+});
+
+test('keeps general software questions in conversation', () => {
+  for (const message of ["What's a calendar API?", "What's Markdown?", 'What is transcription?']) {
+    const route = routeAskLedgerMessage(message);
+    assert.equal(route.executionMode, 'conversation', message);
+    assert.equal(route.retrievalRequired, false, message);
+  }
+});
+
+test('preserves and switches product-help context naturally', () => {
+  const product = routeAskLedgerMessage('What is Ledger?');
+  assert.equal(routeAskLedgerMessage('What does it do though?', { previousQuestion: 'What is Ledger?', previousExecutionMode: product.executionMode }).executionMode, 'ledger_product_help');
+  assert.equal(routeAskLedgerMessage('What about slash commands?', { previousQuestion: 'What does Notes do?', previousExecutionMode: 'ledger_product_help' }).executionMode, 'ledger_product_help');
+  const workspace = routeAskLedgerMessage('Show me my notes from yesterday.', { previousQuestion: 'What does Notes do?', previousExecutionMode: 'ledger_product_help' });
+  assert.notEqual(workspace.executionMode, 'ledger_product_help');
+  assert.equal(workspace.retrievalRequired, true);
+  assert.equal(routeAskLedgerMessage('Does Calendar have a week view?', { previousQuestion: "What's on my calendar today?", previousExecutionMode: 'workspace_lookup' }).executionMode, 'ledger_product_help');
+});
+
+test('follows multi-turn mode transitions instead of inheriting stale mode', () => {
+  let context = { previousQuestion: '', previousAnswer: '', previousSources: [], previousExecutionMode: undefined as undefined | 'conversation' | 'ledger_product_help' | 'workspace_lookup' | 'workspace_synthesis' | 'workspace_research' | 'skills' };
+  const turn = (question: string, extra: Record<string, unknown> = {}) => {
+    const route = routeAskLedgerMessage(question, { ...context, ...extra } as never);
+    context = { ...context, previousQuestion: question, previousExecutionMode: route.executionMode };
+    return route;
+  };
+
+  assert.equal(turn('What does Notes do?').executionMode, 'ledger_product_help');
+  assert.equal(turn('What about transcription?').executionMode, 'ledger_product_help');
+  const transcript = turn('Summarize my latest transcript.');
+  assert.equal(transcript.executionMode, 'workspace_synthesis');
+  assert.equal(transcript.diagnostics.contextReset, true);
+  assert.equal(transcript.diagnostics.transitionReason, 'explicit_workspace_data_request');
+  assert.equal(turn('How does transcription work in Ledger?').executionMode, 'ledger_product_help');
+  const project = turn('Show me the project connected to that meeting.');
+  assert.equal(project.executionMode, 'workspace_lookup');
+  assert.equal(project.diagnostics.contextReset, true);
+});
+
+test('keeps skills distinct from product questions and supports skill follow-ups', () => {
+  const product = routeAskLedgerMessage('What does Plan My Week do?');
+  assert.equal(product.executionMode, 'ledger_product_help');
+  assert.equal(product.retrievalRequired, false);
+
+  const skill = routeAskLedgerMessage('Plan my week.', { hasSelectedSkill: true });
+  assert.equal(skill.executionMode, 'skills');
+  assert.equal(skill.retrievalRequired, true);
+  assert.equal(skill.diagnostics.selectedExecutionMode, 'skills');
+
+  const skillFollowUp = routeAskLedgerMessage('How did you decide that?', {
+    previousQuestion: 'Plan my week.',
+    previousExecutionMode: 'skills',
+    previousSkill: 'plan_my_week',
+    previousSources: [{ resourceType: 'task', resourceId: 'task-1' }],
+  });
+  assert.equal(skillFollowUp.executionMode, 'skills');
+  assert.equal(skillFollowUp.retrievalRequired, false);
+  assert.equal(skillFollowUp.reusePreviousGroundedContext, true);
+
+  const workspace = routeAskLedgerMessage('Show me my tasks.', {
+    previousQuestion: 'Plan my week.',
+    previousExecutionMode: 'skills',
+    previousSkill: 'plan_my_week',
+  });
+  assert.equal(workspace.executionMode, 'workspace_lookup');
+  assert.equal(workspace.diagnostics.contextReset, true);
+});
+
+test('does not retrieve for context-free ambiguous references', () => {
+  for (const question of ['What about that?', 'Show me those.', 'What about mine?', 'Summarize it.']) {
+    const route = routeAskLedgerMessage(question);
+    assert.equal(route.executionMode, 'conversation', question);
+    assert.equal(route.retrievalRequired, false, question);
+  }
+});
+
+test('reports explicit product and workspace transition reasons', () => {
+  const product = routeAskLedgerMessage('Does Calendar support tasks?', { previousExecutionMode: 'workspace_lookup', previousQuestion: "What's on my calendar today?" });
+  assert.equal(product.executionMode, 'ledger_product_help');
+  assert.equal(product.diagnostics.previousExecutionMode, 'workspace_lookup');
+  assert.equal(product.diagnostics.contextReset, true);
+  assert.equal(product.diagnostics.transitionReason, 'explicit_product_question');
+
+  const workspace = routeAskLedgerMessage('Which tasks are on mine tomorrow?', { previousExecutionMode: 'ledger_product_help', previousQuestion: 'Does Calendar support tasks?' });
+  assert.equal(workspace.executionMode, 'workspace_lookup');
+  assert.equal(workspace.diagnostics.transitionReason, 'explicit_workspace_data_request');
+});
+
 test('routes informal capability questions conversationally', () => {
   const route = routeAskLedgerMessage('what do u do');
   assert.equal(route.mode, 'conversational');

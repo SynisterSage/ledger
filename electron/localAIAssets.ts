@@ -297,11 +297,19 @@ export class LocalAIAssetManager {
     try {
       const response = await fetch(downloadUrl!, { signal: controller.signal, redirect: 'follow' });
       if (!response.ok || !response.body) throw new Error(`Model download failed with HTTP ${response.status}.`);
-      const file = fs.createWriteStream(temporary, { flags: 'w', mode: 0o600 }); const hash = crypto.createHash('sha256'); let bytes = 0;
+      const file = fs.createWriteStream(temporary, { flags: 'w', mode: 0o600, highWaterMark: 4 * 1024 * 1024 }); const hash = crypto.createHash('sha256'); let bytes = 0;
+      let lastProgressEmitAt = 0;
+      const emitProgress = (force = false) => {
+        const now = Date.now();
+        if (force || now - lastProgressEmitAt >= 250) {
+          lastProgressEmitAt = now;
+          this.emit();
+        }
+      };
       const reader = response.body.getReader();
-      try { while (true) { const part = await reader.read(); if (part.done) break; const chunk = Buffer.from(part.value); bytes += chunk.length; hash.update(chunk); if (!file.write(chunk)) await new Promise<void>((resolve) => file.once('drain', resolve)); this.emit(); } }
+      try { while (true) { const part = await reader.read(); if (part.done) break; const chunk = Buffer.from(part.value); bytes += chunk.length; hash.update(chunk); if (!file.write(chunk)) await new Promise<void>((resolve) => file.once('drain', resolve)); emitProgress(); } }
       finally { reader.releaseLock(); await new Promise<void>((resolve, reject) => { file.end((error?: Error | null) => error ? reject(error) : resolve()); }); }
-      this.verifying.add(asset.id); this.emit();
+      emitProgress(true); this.verifying.add(asset.id); this.emit();
       if (bytes !== expectedSize) { this.downloadErrors.set(asset.id, { code: 'verification_failed', message: 'The Local AI download failed expected-size verification.' }); throw new Error('The Local AI download failed expected-size verification.'); }
       if (hash.digest('hex').toLowerCase() !== sha256) { this.downloadErrors.set(asset.id, { code: 'verification_failed', message: 'The Local AI download failed SHA-256 verification.' }); throw new Error('The Local AI download failed SHA-256 verification.'); }
       await fs.promises.rename(temporary, target); await fs.promises.writeFile(path.join(assetRoot(), 'metadata', `${asset.id}.json`), JSON.stringify({ ...asset, installedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });

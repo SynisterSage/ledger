@@ -33,6 +33,7 @@ import { AskLedgerPerformanceTrace, performanceWarning } from './askLedgerPerfor
 import { fastPathSource, resolveAskLedgerFastPath } from './askLedgerFastPath.ts';
 import { diagnoseAskLedgerStructuredOutput, structuredValueLinesFor } from './askLedgerStructuredValues.ts';
 import { sanitizeAskLedgerOutput, type AskLedgerOutputMapping } from '../src/types/askLedgerOutputGuard.ts';
+import { productKnowledgeNodeIds, selectAskLedgerProductKnowledge, type AskLedgerProductKnowledgeSelection } from '../src/types/askLedgerProductKnowledge.ts';
 
 const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines', 'time_window', 'integration']);
 const askLedgerDiagnostic = (...args: unknown[]) => {
@@ -274,6 +275,10 @@ export type AskLedgerRetrievalRequest = {
     previousQuestion?: string;
     previousAnswer?: string;
     previousSources?: AskLedgerSource[];
+    previousExecutionMode?: import('../src/types/askLedgerResponseMode.ts').AskLedgerExecutionMode;
+    productArea?: string;
+    productFeature?: string;
+    previousSkill?: string;
     recentExchanges?: Array<{
       question?: string;
       answer?: string;
@@ -563,10 +568,35 @@ export class AskLedgerService {
         explicitContext: request.explicitContext,
         hasSelectedSkill: Boolean(skill),
         attachmentCount: request.attachmentIds?.length,
+        previousExecutionMode: request.conversation?.previousExecutionMode,
+        previousProductArea: request.conversation?.productArea,
+        previousProductFeature: request.conversation?.productFeature,
+        previousSkill: request.conversation?.previousSkill,
       });
       const route = embeddedContextOnly
         ? { ...routed, retrievalRequired: false, answerDepth: 'standard' as const, reason: 'embedded_context' }
         : routed;
+      const conversationForCurrentTurn = route.diagnostics.contextReset || route.executionMode === 'ledger_product_help'
+        ? undefined
+        : request.conversation;
+      const productKnowledge: AskLedgerProductKnowledgeSelection | undefined = route.executionMode === 'ledger_product_help'
+        ? selectAskLedgerProductKnowledge(request.question, {
+          previousQuestion: request.conversation?.previousQuestion,
+          previousAnswer: request.conversation?.previousAnswer,
+          recentExchanges: request.conversation?.recentExchanges,
+          previousExecutionMode: request.conversation?.previousExecutionMode,
+          previousProductArea: request.conversation?.productArea,
+          previousProductFeature: request.conversation?.productFeature,
+        })
+        : undefined;
+      if (productKnowledge) {
+        route.diagnostics.productArea = productKnowledge.area;
+        route.diagnostics.productFeature = productKnowledge.feature;
+        route.diagnostics.productKnowledgeIds = productKnowledgeNodeIds(productKnowledge);
+        route.diagnostics.productKnowledgeTokens = productKnowledge.tokenCount;
+        route.diagnostics.productResolutionConfidence = productKnowledge.resolutionConfidence;
+        route.diagnostics.productResolutionReason = productKnowledge.resolutionReason;
+      }
       performanceTrace.mark('routingCompleted');
       performanceTrace.set('route', route.mode);
       performanceTrace.set('executionMode', route.executionMode);
@@ -583,13 +613,29 @@ export class AskLedgerService {
       const reusableContextAvailable = !reuseRequested || !previousSourcesForReuse?.length || previousSourcesForReuse.every((source) => request.documents.some((item) => item.resourceType === source.resourceType && item.resourceId === source.resourceId));
       const shouldRetrieve = route.retrievalRequired || (reuseRequested && !reusableContextAvailable);
       performanceTrace.set('retrievalRequired', shouldRetrieve);
-      if (route.reason === 'capability_question' && isLedgerProductQuestion(request.question)) {
+      if (route.executionMode === 'ledger_product_help') {
+        const productPerformance = { indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: 0, workspaceSources: 0 };
+        performanceTrace.set('indexingMs', 0);
+        performanceTrace.set('embeddingStartupMs', 0);
+        performanceTrace.set('retrievalMs', 0);
+        performanceTrace.set('workspaceEvidence', 0);
+        performanceTrace.set('workspaceSources', 0);
+        askLedgerDiagnostic('[local-ai] Ask Ledger product help', {
+          requestId,
+          executionMode: route.executionMode,
+          routingDiagnostics: route.diagnostics,
+          retrievalRequired: false,
+          ...productPerformance,
+        });
+      }
+      if (route.executionMode === 'ledger_product_help' && isLedgerProductQuestion(request.question)) {
         emit({ type: 'sources', requestId, sources: [] });
-        emit({ type: 'delta', requestId, text: ASK_LEDGER_PRODUCT_DESCRIPTION });
-        emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
+        const overview = productKnowledge?.nodes[0];
+        emit({ type: 'delta', requestId, text: overview ? `${overview.summary} ${overview.details}` : ASK_LEDGER_PRODUCT_DESCRIPTION });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: 0, workspaceSources: 0 }) } });
         return;
       }
-      if (route.reason === 'capability_question' && isLedgerCreatorQuestion(request.question)) {
+      if ((route.executionMode === 'ledger_product_help' || route.reason === 'capability_question') && isLedgerCreatorQuestion(request.question)) {
         emit({ type: 'sources', requestId, sources: [] });
         emit({ type: 'delta', requestId, text: ASK_LEDGER_CREATOR_DESCRIPTION });
         emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
@@ -617,7 +663,7 @@ export class AskLedgerService {
       }
       const retrievalPlan = buildRetrievalPlan(request.question);
       routingMs = Date.now() - routingStartedAt;
-      const fastPath = !skill && !request.explicitContext && !request.attachmentIds?.length && !request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length
+      const fastPath = route.executionMode !== 'ledger_product_help' && !skill && !request.explicitContext && !request.attachmentIds?.length && !request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length
         ? resolveAskLedgerFastPath(request.question, request.documents)
         : undefined;
       const fastPathResolved = fastPath && (fastPath.resolution === 'resolved' || fastPath.resolution === 'not_found');
@@ -687,9 +733,9 @@ export class AskLedgerService {
         const normalized = new LedgerContextBuilder().normalize([...((embeddedItem ? [embeddedItem] : [])), ...previousContextItems], { maxContextTokens: 1800, maxItemTokens: 500, timeZone: request.timeZone, timeFormat: request.timeFormat });
         const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: 'quick' });
         activeGenerationDepth = generationDepth;
-        const promptConversation = route.reason === 'casual_conversation' ? undefined : request.conversation;
+        const promptConversation = route.reason === 'casual_conversation' ? undefined : conversationForCurrentTurn;
         this.localAI.start(
-          { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, recentConversation: promptConversation, responseMode: route.mode, executionMode: route.executionMode, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: shouldRetrieve, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
+          { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, recentConversation: promptConversation, responseMode: route.mode, executionMode: route.executionMode, productKnowledgeContext: productKnowledge?.context, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: shouldRetrieve, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
           { onEvent: emit },
           requestId,
         );
@@ -701,7 +747,7 @@ export class AskLedgerService {
         && retrievalPlan.operation === 'lookup'
         && retrievalPlan.primaryResourceTypes.length > 0
         && !retrievalPlan.expandRelatedContext;
-      const semanticIndexRequired = !structuredSkillRetrieval && !structuredLookup && route.executionMode !== 'conversation';
+      const semanticIndexRequired = !structuredSkillRetrieval && !structuredLookup && !['conversation', 'ledger_product_help'].includes(route.executionMode);
       performanceTrace.set('semanticIndexRequired', semanticIndexRequired);
       if (!semanticIndexRequired) performanceTrace.set('semanticIndexSkippedReason', structuredSkillRetrieval ? 'skill_structured_contract' : structuredLookup ? 'structured_lookup' : 'route_does_not_require_semantic_retrieval');
       const indexingStartedAt = Date.now();
@@ -718,14 +764,14 @@ export class AskLedgerService {
       const retrievalQuestion = [
         request.question,
         skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
-        request.conversation?.initialContext ? `Current Ledger context: ${request.conversation.initialContext.title}` : '',
-        overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext),
-        ...(request.conversation?.recentExchanges ?? []).slice(-2).flatMap((exchange) => [
+        conversationForCurrentTurn?.initialContext ? `Current Ledger context: ${conversationForCurrentTurn.initialContext.title}` : '',
+        overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext),
+        ...(conversationForCurrentTurn?.recentExchanges ?? []).slice(-2).flatMap((exchange) => [
           exchange.question ? `Recent question: ${exchange.question.slice(0, 600)}` : '',
           exchange.sources?.length ? `Recent sources: ${exchange.sources.slice(0, 6).map((source) => source.title).join('; ')}` : '',
         ]),
-        request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length ? `Previous question: ${request.conversation.previousQuestion}` : '',
-        request.conversation?.previousSources?.length && !request.conversation?.recentExchanges?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
+        conversationForCurrentTurn?.previousQuestion && !conversationForCurrentTurn?.recentExchanges?.length ? `Previous question: ${conversationForCurrentTurn.previousQuestion}` : '',
+        conversationForCurrentTurn?.previousSources?.length && !conversationForCurrentTurn?.recentExchanges?.length ? `Previous sources: ${conversationForCurrentTurn.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
       ].filter(Boolean).join('\n');
       // Attachment-routed turns are already scoped to the user-selected file.
       // Keep them out of workspace research objectives even when the wording
@@ -922,8 +968,14 @@ export class AskLedgerService {
         relatedResourceCount: retrieval.relatedItems?.length ?? 0,
       });
       emit({ type: 'sources', requestId, sources, diagnostics });
-      if (!skill && structuredAnswerFor.has(intent.kind) && !retrieval.primaryItems?.length) {
-        emit({ type: 'delta', requestId, text: normalized.items.length ? formatStructuredAnswer(intent.kind, normalized.items, request.timeZone) : emptyStructuredAnswer(intent.kind) });
+      const directMilestoneLookup = !skill
+        && intent.kind === 'milestones'
+        && normalized.items.some((item) => item.resourceType === 'milestone');
+      if (!skill && (structuredAnswerFor.has(intent.kind) && !retrieval.primaryItems?.length || directMilestoneLookup)) {
+        const structuredItems = directMilestoneLookup
+          ? normalized.items.filter((item) => item.resourceType === 'milestone')
+          : normalized.items;
+        emit({ type: 'delta', requestId, text: structuredItems.length ? formatStructuredAnswer(intent.kind, structuredItems, request.timeZone) : emptyStructuredAnswer(intent.kind) });
         emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
@@ -1081,7 +1133,7 @@ export class AskLedgerService {
             },
           };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
+        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
         generationCallbacks,
         requestId,
       );

@@ -8,6 +8,7 @@ import type { AskLedgerEvidencePackage } from '../src/types/askLedgerResourceCon
 import type { AskLedgerGenerationDepth } from '../src/types/askLedgerGenerationDepth.ts';
 import { buildAskLedgerAnswerStyleContract, deriveAskLedgerPresentationSignals, formatAskLedgerPresentationSignals } from './askLedgerAnswerStyle.ts';
 import type { AskLedgerPresentationProfile } from '../src/types/askLedgerSkills.ts';
+import { ASK_LEDGER_PRODUCT_OVERVIEW } from '../src/types/askLedgerCapabilities.ts';
 
 export const ASK_LEDGER_ABSTENTION = "I don't have enough Ledger context to answer that.";
 
@@ -40,6 +41,7 @@ export type AskLedgerPromptInput = {
   presentationSignalsText?: string;
   executionMode?: import('../src/types/askLedgerResponseMode.ts').AskLedgerExecutionMode;
   presentationProfile?: AskLedgerPresentationProfile;
+  productKnowledgeContext?: string;
 };
 
 const buildStructuredEvidencePacket = (items: AskLedgerContextItem[]) => {
@@ -57,7 +59,7 @@ const buildStructuredEvidencePacket = (items: AskLedgerContextItem[]) => {
   ].filter(Boolean).join('\n');
 };
 
-export const buildAskLedgerPrompt = ({ question, contextItems = [], context, primaryContext, supportingContext, recentConversation, skill, skillContext, responseMode = 'workspace_grounded', capabilityDescription, answerDepth = 'standard', generationDepth, generationDepthReason, evidencePackage, executionMode, presentationProfile, timeZone, timeFormat, presentationSignalsText }: AskLedgerPromptInput) => {
+export const buildAskLedgerPrompt = ({ question, contextItems = [], context, primaryContext, supportingContext, recentConversation, skill, skillContext, responseMode = 'workspace_grounded', capabilityDescription, answerDepth = 'standard', generationDepth, generationDepthReason, evidencePackage, executionMode, presentationProfile, timeZone, timeFormat, presentationSignalsText, productKnowledgeContext }: AskLedgerPromptInput) => {
   const normalized = context ?? new LedgerContextBuilder().normalize(contextItems, { timeZone, timeFormat });
   const contextText = evidencePackage?.text
     ? `PRIMARY CONTEXT — COMPILED EVIDENCE PACKAGE\n${evidencePackage.text}`
@@ -124,7 +126,10 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
     : '';
 
   if (responseMode === 'conversational' || (responseMode === 'follow_up' && !normalized.text)) {
-    const followUpInstruction = responseMode === 'follow_up'
+    const productHelp = selectedExecutionMode === 'ledger_product_help';
+    const followUpInstruction = productHelp
+      ? 'Answer as Ledger product help using only the compact product overview below. Do not use or imply facts from the user workspace. If the question asks for detailed feature knowledge not covered there, say that detailed product knowledge is not available yet.'
+      : responseMode === 'follow_up'
       ? 'Treat the recent grounded answer below as the bounded material to transform. Do not introduce new workspace facts or claim that fresh Ledger data was checked.'
       : 'Answer the user\'s message naturally without requiring Ledger workspace evidence.';
     return `SYSTEM / BEHAVIOR
@@ -135,7 +140,7 @@ ${answerStyle}
 ${selectedProfile !== 'default' ? `PRESENTATION PROFILE: ${selectedProfile}\n${presentationSignals}` : ''}
 \nANSWER MODE: ${selectedGenerationDepth}${generationDepthReason ? ` (${generationDepthReason})` : ''}
 Response depth: ${depthInstruction}
-${capabilityDescription ? `\nTrusted application capabilities (answer capability questions from this list only):\n${capabilityDescription}\n` : ''}
+${productHelp ? `\n${productKnowledgeContext ?? `COMPACT LEDGER PRODUCT OVERVIEW\n${ASK_LEDGER_PRODUCT_OVERVIEW}`}\n` : ''}${capabilityDescription ? `\nTrusted application capabilities (answer capability questions from this list only):\n${capabilityDescription}\n` : ''}
 
 ${recentExchange}
 

@@ -1,6 +1,7 @@
 import type { AskLedgerInitialContext, AskLedgerResourceType } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerActionType, AskLedgerSkillDefinition } from '../src/types/askLedgerSkills.ts';
 import { isAskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
+import { validateAskLedgerSkillContext } from '../src/shared/askLedger/skills.ts';
 
 const allWorkspaceContext: AskLedgerResourceType[] = ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'];
 
@@ -93,9 +94,7 @@ export const listAskLedgerSkills = () => registry.map(({ instructions: _instruct
 
 export const validateSkillContext = (skill: AskLedgerSkillDefinition, context?: AskLedgerInitialContext | null) => {
   if (skill.requiresContext && !context) return 'This skill needs a Ledger resource as context.';
-  if (context && !skill.supportedContextTypes.includes(context.resourceType)) return `${skill.name} does not support ${context.resourceType} context.`;
-  if (context && (!context.resourceId.trim() || !context.title.trim())) return 'Skill context is incomplete.';
-  return null;
+  return validateAskLedgerSkillContext(skill, context);
 };
 
 export const buildSkillPromptContext = (skill: AskLedgerSkillDefinition, explicitContext?: AskLedgerInitialContext | null) => [

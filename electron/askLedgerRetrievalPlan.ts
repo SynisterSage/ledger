@@ -143,6 +143,12 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
     const match = question.match(/\bproject\s+(.+?)(?=\s+(?:and|to|that|where|what|is|has)\b|[,?.]|$)/i);
     return match?.[1]?.trim();
   }
+  // In compound questions the primary type can be a child resource even
+  // though the authoritative entity is the named project.
+  if (primaryResourceTypes.some((type) => ['task', 'milestone', 'reminder', 'event', 'note'].includes(type))) {
+    const namedProject = question.match(/\b(?:for|about|on)\s+(?:my|the)\s+(.+?)\s+projects?\b/i);
+    if (namedProject?.[1]) return namedProject[1].trim();
+  }
   if (primaryResourceTypes.some((type) => ['task', 'milestone', 'reminder', 'event', 'note'].includes(type))) {
     const typedEntity = question.match(/\b([A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+(?:tasks?|milestones?|reminders?|events?|meetings?|notes?)\b/);
     if (typedEntity?.[1]) return typedEntity[1].trim();

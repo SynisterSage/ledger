@@ -74,9 +74,11 @@ export const ASK_LEDGER_PRESENTATION_PROFILES: Record<AskLedgerPresentationProfi
 
 const modeGuidance: Record<AskLedgerExecutionMode, string> = {
   conversation: 'Conversation: natural, usually 1–3 short paragraphs; add structure only when useful.',
+  ledger_product_help: 'Ledger product help: answer from the compact product overview; be honest when detailed feature knowledge is not available yet, and do not cite workspace records.',
   workspace_lookup: 'Lookup: one concise sentence or short paragraph; no headings for a simple fact.',
   workspace_synthesis: 'Synthesis: lead with the conclusion, then use only useful sections and next steps.',
   workspace_research: 'Research: use a concise takeaway, risks/meaning, and next steps only when useful.',
+  skills: 'Skill: follow the selected skill contract and supplied Ledger context; do not execute a skill merely because its name appears in a question.',
 };
 
 const profileGuidance: Partial<Record<AskLedgerPresentationProfile, string>> = Object.fromEntries(

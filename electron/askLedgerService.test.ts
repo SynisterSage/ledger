@@ -76,6 +76,37 @@ test('answers conversational and capability requests without workspace retrieval
   assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'generating'), true);
 });
 
+test('keeps product-help requests out of indexing and retrieval', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  let indexCalls = 0;
+  let retrieveCalls = 0;
+  let generationPrompt = '';
+  const retrieval = {
+    indexWorkspace: async () => { indexCalls += 1; throw new Error('product help should not index workspace'); },
+    retrieve: async () => { retrieveCalls += 1; throw new Error('product help should not retrieve workspace'); },
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (request: { context: string }, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      generationPrompt = request.context;
+      callbacks.onEvent({ type: 'delta', requestId, text: 'Slash commands insert supported note blocks.' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+  service.start({ workspaceId: 'workspace-a', question: 'How do slash commands work?', documents: [resource], lexicalResults: [] }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.equal(indexCalls, 0);
+  assert.equal(retrieveCalls, 0);
+  assert.match(generationPrompt, /LEDGER PRODUCT KNOWLEDGE/);
+  assert.match(generationPrompt, /Slash commands/);
+  assert.deepEqual(events.find((event) => event.type === 'sources')?.sources, []);
+});
+
 test('answers Ledger product identity questions from canonical application facts', async () => {
   const events: LocalAIStreamEvent[] = [];
   let generationStarted = false;

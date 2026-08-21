@@ -376,11 +376,13 @@ export class LocalModelRuntime {
       let firstTokenMs: number | undefined;
       let generatedTokens = 0;
       let response: Response;
+      const timeoutSignal = AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS);
+      const requestSignal = AbortSignal.any([signal, timeoutSignal]);
       try {
         request.performance?.mark('promptRequestSent');
         response = await fetch(`${this.baseUrl()}/v1/chat/completions`, {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          signal: AbortSignal.any([signal, AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS)]),
+          signal: requestSignal,
           body: JSON.stringify({
             stream: true,
             max_tokens: generationBudget,
@@ -399,6 +401,7 @@ export class LocalModelRuntime {
           request.performance?.mark('fetchAborted');
           throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
         }
+        if (timeoutSignal.aborted) throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', { cause: error });
         throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', { cause: error });
       }
       if (!response.ok || !response.body) {
@@ -409,8 +412,8 @@ export class LocalModelRuntime {
       const decoder = new TextDecoder();
       const reader = response.body.getReader();
       const cancelReader = () => { void reader.cancel().catch(() => undefined); };
-      if (signal.aborted) cancelReader();
-      else signal.addEventListener('abort', cancelReader, { once: true });
+      if (requestSignal.aborted) cancelReader();
+      else requestSignal.addEventListener('abort', cancelReader, { once: true });
       const state: ParsedThinkingStream = { visibleText: '', reasoningContentObserved: false, finishReason: null, reasoningChunks: 0, contentChunks: 0, reasoningTokens: 0 };
       let buffer = '';
       let hidingReasoning = false;
@@ -441,6 +444,7 @@ export class LocalModelRuntime {
         while (true) {
           const { done, value } = await reader.read();
           if (signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.');
+          if (timeoutSignal.aborted) throw new LocalAIError('request_timeout', 'Local AI did not respond in time.');
           if (done) break;
           if (!responseByteMarked) {
             responseByteMarked = true;
@@ -475,10 +479,11 @@ export class LocalModelRuntime {
         }
       } catch (error) {
         if (signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
+        if (timeoutSignal.aborted) throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', { cause: error });
         throw error;
       } finally {
-        signal.removeEventListener('abort', cancelReader);
-        if (signal.aborted) cancelReader();
+        requestSignal.removeEventListener('abort', cancelReader);
+        if (requestSignal.aborted) cancelReader();
       }
       request.performance?.mark('httpBodyClosed');
       return { state, firstTokenMs, generatedTokens, totalMs: Date.now() - startedAt };

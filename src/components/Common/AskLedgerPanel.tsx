@@ -43,7 +43,8 @@ import { deriveAskLedgerConversationState, type AskLedgerConversationState } fro
 import type { AskLedgerAttachment } from '../../types/askLedgerAttachments';
 import { ASK_LEDGER_SKILL_METADATA, type AskLedgerCustomSkill, type AskLedgerSkillRef, type AskLedgerSkillMetadata } from '../../types/askLedgerSkills';
 import { routeAskLedgerMessage } from '../../types/askLedgerResponseMode';
-import type { AskLedgerResponseMode } from '../../types/askLedgerResponseMode';
+import type { AskLedgerResponseMode, AskLedgerExecutionMode } from '../../types/askLedgerResponseMode';
+import { selectAskLedgerProductKnowledge } from '../../types/askLedgerProductKnowledge';
 import type { AskLedgerAnswerDepth } from '../../types/askLedgerAnswerDepth';
 import { sanitizeAskLedgerOutput } from '../../types/askLedgerOutputGuard';
 import {
@@ -79,6 +80,9 @@ export interface AskLedgerRequest {
   responseMode?: AskLedgerResponseMode;
   retrievalRequired?: boolean;
   answerDepth?: AskLedgerAnswerDepth;
+  executionMode?: AskLedgerExecutionMode;
+  productArea?: string;
+  productFeature?: string;
   reasoningMode?: 'off' | 'thinking';
 }
 
@@ -118,6 +122,9 @@ export interface AskLedgerMessage {
   attachments?: AskLedgerMessageAttachment[];
   structured?: { skillId: AskLedgerSkillRef; sections: Array<{ title: string; content: string }> };
   skillId?: AskLedgerSkillRef;
+  executionMode?: AskLedgerExecutionMode;
+  productArea?: string;
+  productFeature?: string;
   activity?: { durationMs?: number; steps: Array<{ type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'reasoning' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> }> };
 }
 
@@ -138,6 +145,9 @@ type AskLedgerConversationTurn = {
   question: string;
   answer: string;
   sources: AskLedgerSource[];
+  executionMode?: AskLedgerExecutionMode;
+  productArea?: string;
+  productFeature?: string;
 };
 
 type AskLedgerConversationContext = {
@@ -145,6 +155,11 @@ type AskLedgerConversationContext = {
   previousQuestion: string;
   previousAnswer: string;
   previousSources: AskLedgerSource[];
+  productArea?: string;
+  productFeature?: string;
+  previousExecutionMode?: AskLedgerExecutionMode;
+  previousSkill?: string;
+  resolvedWorkspaceEntities?: Array<{ resourceType?: string; resourceId?: string; title?: string }>;
   recentExchanges: AskLedgerConversationTurn[];
   initialContext?: AskLedgerInitialContext;
   state?: AskLedgerConversationState;
@@ -287,6 +302,11 @@ const askLedgerDocumentScope = (question: string) => {
   if (/\bnotes?\b/.test(value)) return undefined;
   if (/\bunread\s+(?:notifications?|alerts?)\b|\bnotifications?\b/.test(value)) return 'notifications';
   if (/\bwhat needs my attention\b/.test(value)) return 'attention';
+  // A named project milestone request needs the project row as the
+  // authoritative seed, plus its milestone records. Returning only the
+  // milestones scope would prevent the local orchestrator from discovering
+  // the project dependency; returning only projects drops the answer rows.
+  if (/\bmilestones?\b/.test(value) && /\bprojects?\b/.test(value)) return undefined;
   if (/\b(?:what changed|changes|activity|happening|teamspace alerts?)\b/.test(value)) return 'activity';
   if (/\b(my team|team members|members of (the )?team|who.*team)\b/.test(value)) return 'team_members';
   if (/\b(deadline|deadlines|deadliens|due date|due dates)\b/.test(value)) return 'deadlines';
@@ -995,13 +1015,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         if (message.role !== 'assistant') return turns;
         const questionMessage = restoredMessages.slice(0, index).reverse().find((item) => item.role === 'user');
         if (!questionMessage) return turns;
-        return [...turns, { question: questionMessage.content, answer: message.content, sources: message.sources ?? [] }];
+        return [...turns, { question: questionMessage.content, answer: message.content, sources: message.sources ?? [], executionMode: questionMessage.executionMode ?? message.executionMode, productArea: questionMessage.productArea ?? message.productArea, productFeature: questionMessage.productFeature ?? message.productFeature }];
       }, [])
       .slice(-2);
     const lastTurn = recentTurnsRef.current[recentTurnsRef.current.length - 1];
     const restoredState = lastTurn ? deriveAskLedgerConversationState(workspaceIdRef.current ?? '', lastTurn.question, conversationStateSources(lastTurn.sources) as never) : undefined;
     conversationRef.current = lastTurn
-      ? { id: conversationIdRef.current, previousQuestion: lastTurn.question, previousAnswer: lastTurn.answer, previousSources: lastTurn.sources, recentExchanges: recentTurnsRef.current, initialContext: initialContextRef.current ?? undefined, state: restoredState }
+      ? { id: conversationIdRef.current, previousQuestion: lastTurn.question, previousAnswer: lastTurn.answer, previousSources: lastTurn.sources, previousExecutionMode: lastTurn.executionMode, productArea: lastTurn.productArea, productFeature: lastTurn.productFeature, recentExchanges: recentTurnsRef.current, initialContext: initialContextRef.current ?? undefined, state: restoredState }
       : null;
     onSessionTitleChange?.(sessionTitleRef.current);
     setQuestion('');
@@ -1136,6 +1156,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             content: answer,
             createdAt: new Date().toISOString(),
             sources: completedResponse.sources,
+            executionMode: completedState.request.executionMode,
+            ...(completedState.request.executionMode === 'ledger_product_help' ? { productArea: completedState.request.productArea, productFeature: completedState.request.productFeature } : {}),
             ...(completedActivity.length ? { activity: { durationMs, steps: completedActivity } } : {}),
             ...(value.skillResult?.sections?.length && value.skillResult.skillId ? { structured: { skillId: value.skillResult.skillId, sections: value.skillResult.sections } } : {}),
           };
@@ -1159,7 +1181,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           messagesRef.current = nextMessages;
           setMessages(nextMessages);
           queueSessionSave(nextMessages);
-          const completedTurn: AskLedgerConversationTurn = { question: completedState.request.question, answer, sources: completedResponse.sources };
+          const completedTurn: AskLedgerConversationTurn = { question: completedState.request.question, answer, sources: completedResponse.sources, executionMode: completedState.request.executionMode, productArea: completedState.request.productArea, productFeature: completedState.request.productFeature };
           recentTurnsRef.current = [...recentTurnsRef.current, completedTurn].slice(-2);
           const conversationState = deriveAskLedgerConversationState(workspaceIdRef.current ?? '', completedState.request.question, conversationStateSources(completedResponse.sources) as never, conversationRef.current?.state);
           conversationRef.current = {
@@ -1167,6 +1189,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             previousQuestion: completedState.request.question,
             previousAnswer: answer,
             previousSources: completedResponse.sources,
+            previousExecutionMode: completedState.request.executionMode,
+            ...(completedState.request.executionMode === 'ledger_product_help' ? { productArea: completedState.request.productArea, productFeature: completedState.request.productFeature } : {}),
+            ...(completedState.request.executionMode === 'skills' ? { previousSkill: completedState.request.skillId } : {}),
+            ...(completedState.request.executionMode !== 'ledger_product_help' ? { resolvedWorkspaceEntities: conversationStateSources(completedResponse.sources) } : {}),
             recentExchanges: recentTurnsRef.current,
             initialContext: initialContextRef.current ?? undefined,
             state: conversationState,
@@ -1306,8 +1332,22 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       explicitContext: initialContextRef.current ?? undefined,
       hasSelectedSkill: Boolean(selectedSkillForRequest),
       attachmentCount: attachmentIds.length,
+      previousProductArea: conversationRef.current?.productArea,
+      previousProductFeature: conversationRef.current?.productFeature,
+      previousExecutionMode: conversationRef.current?.previousExecutionMode,
+      previousSkill: conversationRef.current?.previousSkill,
     });
     request.responseMode = route.mode;
+    request.executionMode = route.executionMode;
+    if (route.executionMode === 'ledger_product_help') {
+      const productSelection = selectAskLedgerProductKnowledge(effectiveQuestion, {
+        previousQuestion: conversationRef.current?.previousQuestion,
+        previousProductArea: conversationRef.current?.productArea,
+        previousProductFeature: conversationRef.current?.productFeature,
+      });
+      request.productArea = productSelection.area;
+      request.productFeature = productSelection.feature;
+    }
     request.retrievalRequired = route.retrievalRequired;
     request.answerDepth = route.answerDepth;
     pendingSkillIdRef.current = undefined;
@@ -1337,6 +1377,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         content: trimmedQuestion,
         createdAt: new Date().toISOString(),
         skillId: selectedSkillForRequest,
+        executionMode: route.executionMode,
+        ...(route.executionMode === 'ledger_product_help' ? { productArea: request.productArea, productFeature: request.productFeature } : {}),
         attachments: submittedMessageAttachments,
       };
       nextMessages = [...messagesRef.current, userMessage];
