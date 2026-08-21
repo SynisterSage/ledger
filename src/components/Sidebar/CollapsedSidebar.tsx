@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
-import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, Power } from 'lucide-react';
+import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, Power, Sparkles } from 'lucide-react';
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
 import { HoldToQuitLogo } from './HoldToQuitLogo';
@@ -101,6 +101,16 @@ export const CollapsedSidebar = ({
             >
               <BarChart3 size={18} />
             </button>
+            {platform.kind === 'desktop' && (
+              <button
+                aria-label="Open Ask Ledger"
+                onClick={() => openModule('new-tab')}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={iconButtonClass}
+              >
+                <Sparkles size={18} />
+              </button>
+            )}
             <button
               aria-label="Open circle"
               onClick={() => toggleModule('circle')}

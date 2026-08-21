@@ -37,11 +37,11 @@ export type GenerationBudgets = {
   reasoning: number;
 };
 
-export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxTokens: number | undefined, contextSize: number, signals?: ReasoningRequestSignals): GenerationBudgets => {
+export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxTokens: number | undefined, contextSize: number, signals?: ReasoningRequestSignals, reasoningEnabled = true): GenerationBudgets => {
   const deepAnswer = signals?.generationDepth === 'deep' || signals?.answerDepth === 'detailed';
-  const reasoning = tier === 'powerful'
+  const reasoning = reasoningEnabled && tier === 'powerful'
     ? ((signals?.hasSkill || (signals?.sourceCount ?? 0) >= 3 || deepAnswer) ? 2048 : 768)
-    : tier === 'balanced' && signals?.retrievalRequired && signals.answerDepth !== 'brief' ? 1024 : 0;
+    : reasoningEnabled && tier === 'balanced' && signals?.retrievalRequired && signals.answerDepth !== 'brief' ? 1024 : 0;
   const initial = tier === 'powerful'
     ? Math.max(configuredMaxTokens ?? 4096, reasoning + 512, 4096)
     : tier === 'balanced' && reasoning > 0

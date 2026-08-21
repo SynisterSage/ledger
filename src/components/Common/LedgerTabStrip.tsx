@@ -111,7 +111,9 @@ const routeLabel = (
 ) => {
   switch (route.kind) {
     case 'new-tab':
-      return 'New Tab';
+      // The desktop destination is Ask Ledger; keep the browser surface's
+      // established New Tab label for the web product.
+      return window.desktopWindow ? 'Ask Ledger' : 'New Tab';
     case 'dashboard':
       return 'Workspace Overview';
     case 'notes':

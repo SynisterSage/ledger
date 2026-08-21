@@ -104,6 +104,33 @@ test('active generation is cancelled before the runtime is switched', async () =
   assert.equal(events.some((event) => event.type === 'error'), true);
 });
 
+test('cancelling an active request emits a terminal event and does not block the next request', async () => {
+  const { service } = switchService();
+  await service.switchGenerationTier('fast');
+  const cancelledEvents: LocalAIStreamEvent[] = [];
+  service.start({ question: 'cancel me', context: 'test' }, { onEvent: (event) => cancelledEvents.push(event) }, 'cancel-me');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(service.cancel('cancel-me'), { ok: true });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(cancelledEvents.find((event) => event.type === 'error')?.error?.code, 'cancelled');
+
+  const nextEvents: LocalAIStreamEvent[] = [];
+  service.start({ question: 'continue', context: 'test' }, { onEvent: (event) => nextEvents.push(event) }, 'continue');
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(nextEvents.some((event) => event.type === 'done'), true);
+});
+
+test('cancelling while a model switch is pending is still terminal', async () => {
+  const { service } = switchService();
+  const switchPromise = service.switchGenerationTier('balanced');
+  const events: LocalAIStreamEvent[] = [];
+  service.start({ question: 'cancel during switch', context: 'test' }, { onEvent: (event) => events.push(event) }, 'cancel-during-switch');
+  assert.deepEqual(service.cancel('cancel-during-switch'), { ok: true });
+  await switchPromise;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(events.find((event) => event.type === 'error')?.error?.code, 'cancelled');
+});
+
 test('generation requested during a switch waits without deadlocking', async () => {
   const { service } = switchService();
   const switchPromise = service.switchGenerationTier('balanced');

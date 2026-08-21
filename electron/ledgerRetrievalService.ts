@@ -10,6 +10,7 @@ import { expandRelatedContext, type AskLedgerRelationshipLimits } from './askLed
 import type { AskLedgerGraphExpansionDiagnostics } from '../src/types/askLedgerResourceContract.ts';
 import type { AskLedgerHybridRetrievalDiagnostics } from '../src/types/askLedgerResourceContract.ts';
 import { entityMatch, lexicalMatch, scoreHybridCandidate } from './askLedgerHybridScoring.ts';
+import type { AskLedgerPerformanceTrace } from './askLedgerPerformance.ts';
 
 export type LedgerIndexDocument = AskLedgerContextItem & {
   workspaceId: string;
@@ -61,7 +62,7 @@ export type LedgerRetrievalResult = {
 export interface EmbeddingProvider {
   readonly model: string;
   readonly version: string;
-  embed(texts: string[]): Promise<number[][]>;
+  embed(texts: string[], options?: { performance?: AskLedgerPerformanceTrace }): Promise<number[][]>;
   shutdown?(): Promise<void>;
 }
 
@@ -97,18 +98,27 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     return this.endpoint || `http://127.0.0.1:${Number.isFinite(this.port) ? this.port : 39282}`;
   }
 
-  private async ensureReady() {
-    if (this.endpoint) return this.endpoint;
+  private async ensureReady(options?: { performance?: AskLedgerPerformanceTrace }) {
+    if (this.endpoint) {
+      options?.performance?.set('embeddingRuntimeReused', true);
+      options?.performance?.mark('embeddingRuntimeReady');
+      return this.endpoint;
+    }
     if (this.startupPromise) return this.startupPromise;
     this.startupPromise = (async () => {
       const url = this.baseUrl();
       try {
-        if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(500) })).ok) return url;
+        if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(500) })).ok) {
+          options?.performance?.set('embeddingRuntimeReused', true);
+          options?.performance?.mark('embeddingRuntimeReady');
+          return url;
+        }
       } catch {}
       const modelPath = this.modelPath || this.assets?.pathFor('embedding') || '';
       const serverPath = resolveLocalAIRuntime() || process.env.LEDGER_LLAMA_SERVER_PATH?.trim() || '';
       if (!modelPath || !fs.existsSync(modelPath)) throw new EmbeddingUnavailableError('The Ledger semantic-search model is not installed.');
       if (!serverPath || !fs.existsSync(serverPath)) throw new EmbeddingUnavailableError('The Ledger local AI runtime is not installed.');
+      options?.performance?.mark('embeddingRuntimeStart');
       console.info('[local-embedding] starting runtime', { runtimeVersion: resolveLocalAIRuntimeVersion(serverPath), modelPath, model: this.model, version: this.version });
       this.child = spawn(serverPath, [
         '--model', path.resolve(modelPath),
@@ -124,7 +134,10 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline) {
         try {
-          if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(750) })).ok) return url;
+          if ((await fetch(`${url}/health`, { signal: AbortSignal.timeout(750) })).ok) {
+            options?.performance?.mark('embeddingRuntimeReady');
+            return url;
+          }
         } catch {}
         if (!this.child) break;
         await new Promise((resolve) => setTimeout(resolve, 250));
@@ -134,8 +147,9 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     return this.startupPromise;
   }
 
-  async embed(texts: string[]) {
-    const endpoint = await this.ensureReady();
+  async embed(texts: string[], options?: { performance?: AskLedgerPerformanceTrace }) {
+    if (this.endpoint || this.child) options?.performance?.set('embeddingRuntimeReused', true);
+    const endpoint = await this.ensureReady(options);
     const response = await fetch(`${endpoint.replace(/\/$/, '')}/v1/embeddings`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -190,7 +204,7 @@ export class EmbeddingIndexService {
     this.provider = provider;
   }
 
-  async replaceWorkspace(workspaceId: string, items: AskLedgerContextItem[]) {
+  async replaceWorkspace(workspaceId: string, items: AskLedgerContextItem[], options?: { performance?: AskLedgerPerformanceTrace }) {
     const existing = this.workspaces.get(workspaceId) ?? new Map<string, LedgerIndexDocument>();
     const next = new Map<string, LedgerIndexDocument>();
     const pending: Array<{ key: string; document: LedgerIndexDocument }> = [];
@@ -216,7 +230,9 @@ export class EmbeddingIndexService {
 
     if (this.provider && pending.length) {
       try {
-        const vectors = await this.provider.embed(pending.map(({ document }) => formatEmbeddingInput(`${document.title}\n${document.content}`, 'document', this.provider?.model)));
+        const embeddingStartedAt = Date.now();
+        const vectors = await this.provider.embed(pending.map(({ document }) => formatEmbeddingInput(`${document.title}\n${document.content}`, 'document', this.provider?.model)), options);
+        options?.performance?.set('embeddingMs', Date.now() - embeddingStartedAt);
         pending.forEach(({ key, document }, index) => {
           document.embedding = vectors[index];
           document.embeddingModel = this.provider?.model;
@@ -228,6 +244,9 @@ export class EmbeddingIndexService {
       }
     }
     this.workspaces.set(workspaceId, next);
+    options?.performance?.set('documentsScanned', items.length);
+    options?.performance?.set('documentsChanged', pending.length > 0 ? new Set(pending.map(({ document }) => document.resourceId)).size : 0);
+    options?.performance?.set('chunksEmbedded', pending.length);
     return { indexed: next.size, embedded: pending.length, removed: Math.max(0, existing.size - next.size) };
   }
 
@@ -314,8 +333,8 @@ export class LedgerRetrievalService {
     this.provider = provider;
   }
 
-  indexWorkspace(workspaceId: string, items: AskLedgerContextItem[]) {
-    return this.index.replaceWorkspace(workspaceId, items);
+  indexWorkspace(workspaceId: string, items: AskLedgerContextItem[], options?: { performance?: AskLedgerPerformanceTrace }) {
+    return this.index.replaceWorkspace(workspaceId, items, options);
   }
 
   indexAttachments(conversationId: string, workspaceId: string, items: AskLedgerContextItem[]) {

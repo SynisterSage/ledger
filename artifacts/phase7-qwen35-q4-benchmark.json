@@ -1,0 +1,446 @@
+{
+  "phase": 7,
+  "frozenRuntime": {
+    "contextSize": 4096,
+    "parallel": 1,
+    "gpuLayers": "all",
+    "mmproj": false
+  },
+  "repeats": 2,
+  "cases": [
+    {
+      "id": "normal-grounded",
+      "kind": "normal",
+      "estimatedPromptTokens": 703
+    },
+    {
+      "id": "short-grounded",
+      "kind": "normal",
+      "estimatedPromptTokens": 908
+    },
+    {
+      "id": "plan-my-week",
+      "kind": "skill",
+      "estimatedPromptTokens": 1363
+    },
+    {
+      "id": "multi-resource",
+      "kind": "normal",
+      "estimatedPromptTokens": 1564
+    }
+  ],
+  "reports": [
+    {
+      "model": {
+        "id": "qwen3.5-4b-q4-k-m",
+        "label": "Qwen3.5 4B Q4_K_M",
+        "family": "Qwen3.5",
+        "path": "/Users/lex/Library/Application Support/ledger/ai/models/generation/qwen3.5-4b-q4-k-m/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+        "reasoning": false,
+        "fileSizeBytes": 3013027808
+      },
+      "runtime": {
+        "metalConfirmed": true,
+        "gpuLayersOffloaded": "34/34",
+        "cpuFallbackDetected": false,
+        "metalMemoryMiB": null,
+        "modelMemoryMiB": null,
+        "contextMemoryMiB": null,
+        "computeMemoryMiB": null,
+        "kvMemoryMiB": 128
+      },
+      "startupMs": 5055.3144999999995,
+      "results": [
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "normal-grounded",
+          "run": 1,
+          "cold": true,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 5055.3144999999995,
+            "firstResponseByteMs": 3813.4465419999988,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 3818.2738339999987,
+            "bodyCloseMs": 9483.057625000001,
+            "promptTokens": 598,
+            "promptEvalMs": 3783.679,
+            "promptTokensPerSecond": 158.04723392232796,
+            "generationMs": 5669.532,
+            "generationTokensPerSecond": 15.69794473335718,
+            "generatedTokens": 90,
+            "visibleTokens": 57,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 0.9061250000013388
+          },
+          "memory": {
+            "before": {
+              "freePercent": 14,
+              "swapUsedMiB": 10634.19,
+              "runtimeRssMiB": 218.921875
+            },
+            "after": {
+              "freePercent": 14,
+              "swapUsedMiB": 10687.94,
+              "runtimeRssMiB": 213.03125
+            },
+            "peakRuntimeRssMiB": 218.921875,
+            "swapDeltaMiB": 53.75
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 424,
+            "answerPresent": true
+          },
+          "output": "The Ledger release is currently **In progress** and **40% complete**.\n\nThe primary focus for the next phase is **validating local AI performance**. This represents the immediate priority to ensure the release meets its technical requirements before proceeding to finalization.\n\n*   **Current State**: In progress (40% complete)\n*   **Next Priority**: Validating local AI performance\n*   **Source**: Project `project-release`",
+          "reasoning": ""
+        },
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "normal-grounded",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 166.4614160000001,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 166.52012500000092,
+            "bodyCloseMs": 3521.060583000002,
+            "promptTokens": 4,
+            "promptEvalMs": 139.385,
+            "promptTokensPerSecond": 28.69749255658787,
+            "generationMs": 3353.66,
+            "generationTokensPerSecond": 15.50544777944097,
+            "generatedTokens": 53,
+            "visibleTokens": 41,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 0.2679580000003625
+          },
+          "memory": {
+            "before": {
+              "freePercent": 14,
+              "swapUsedMiB": 10687.94,
+              "runtimeRssMiB": 213.03125
+            },
+            "after": {
+              "freePercent": 14,
+              "swapUsedMiB": 10714.75,
+              "runtimeRssMiB": 213.921875
+            },
+            "peakRuntimeRssMiB": 213.921875,
+            "swapDeltaMiB": 26.80999999999949
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 275,
+            "answerPresent": true
+          },
+          "output": "The current status of the Ledger release is **In progress**, with **40% completion**.\n\nThe primary focus for the next phase is **validating local AI performance**. This is the identified next priority to ensure the release meets its functional requirements before proceeding.",
+          "reasoning": ""
+        },
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "short-grounded",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 4059.3213749999995,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 4060.040084,
+            "bodyCloseMs": 22032.06875,
+            "promptTokens": 800,
+            "promptEvalMs": 4043.027,
+            "promptTokensPerSecond": 197.8715452555721,
+            "generationMs": 17962.995,
+            "generationTokensPerSecond": 15.253581042582265,
+            "generatedTokens": 275,
+            "visibleTokens": 179,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 3.2625829999960843
+          },
+          "memory": {
+            "before": {
+              "freePercent": 14,
+              "swapUsedMiB": 10714.75,
+              "runtimeRssMiB": 213.921875
+            },
+            "after": {
+              "freePercent": 14,
+              "swapUsedMiB": 10750.62,
+              "runtimeRssMiB": 213.5625
+            },
+            "peakRuntimeRssMiB": 213.921875,
+            "swapDeltaMiB": 35.8700000000008
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 1,
+            "visibleAnswerChars": 1248,
+            "answerPresent": true
+          },
+          "output": "Based on the provided Ledger context, there are currently **no tasks explicitly blocked**. All three open tasks in the \"Ledger release\" project are either in progress or not yet started, with no status indicators of being blocked, overdue, or facing specific impediments.\n\n**Supporting Context & Open Work:**\nThe workspace contains three active tasks related to evaluating a new 8K four-slot runtime configuration against a 4K single-slot candidate:\n1.  **Validate runtime configuration** (Due: Aug 22, 2026): Currently **In progress**. This involves comparing the two runtime configurations on the same workloads.\n2.  **Measure memory pressure** (Due: Aug 23, 2026): Status is **Not started**. This task requires checking unified memory, swap usage, and determining if embedding and generation runtimes can remain resident safely.\n3.  **Compare answer quality** (Due: Aug 24, 2026): Status is **Not started**. This will verify grounding, completeness, contradiction handling, and truncation under both configurations.\n\n**Next Steps:**\nSince no blockers are currently flagged, the immediate focus should be on advancing the tasks that are \"Not started\" (memory pressure and answer quality) to ensure the runtime validation is completed on schedule.",
+          "reasoning": ""
+        },
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "short-grounded",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 162.00641699999687,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 162.11879200000112,
+            "bodyCloseMs": 21393.340041999996,
+            "promptTokens": 4,
+            "promptEvalMs": 137.976,
+            "promptTokensPerSecond": 28.990549080999596,
+            "generationMs": 21222.23,
+            "generationTokensPerSecond": 14.701565292620051,
+            "generatedTokens": 313,
+            "visibleTokens": 196,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 2.6257089999999152
+          },
+          "memory": {
+            "before": {
+              "freePercent": 14,
+              "swapUsedMiB": 10770.19,
+              "runtimeRssMiB": 212.21875
+            },
+            "after": {
+              "freePercent": 14,
+              "swapUsedMiB": 10792.44,
+              "runtimeRssMiB": 214.109375
+            },
+            "peakRuntimeRssMiB": 214.109375,
+            "swapDeltaMiB": 22.25
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 1,
+            "visibleAnswerChars": 1389,
+            "answerPresent": true
+          },
+          "output": "Based on the provided Ledger context, **nothing is currently blocked**. There are no overdue tasks, no explicit blockers listed, and no unread notifications indicating a stall.\n\nThe workspace shows **3 open tasks** within the \"Ledger release\" project, all of which are in the future relative to the current date (due between August 22 and August 24, 2026). While these tasks are not yet started or in progress, their status does not constitute a blockage.\n\n**Supporting Context & Open Work:**\n*   **Validate runtime configuration** (Due: 2026-08-22): Currently **In progress**. This task involves comparing an 8K four-slot runtime against a 4K single-slot candidate on specific workloads.\n*   **Measure memory pressure** (Due: 2026-08-23): Currently **Not started**. This requires checking unified memory, swap usage, and determining if embedding and generation runtimes can remain resident safely.\n*   **Compare answer quality** (Due: 2026-08-24): Currently **Not started**. This will verify grounding, completeness, contradiction handling, and truncation under both runtime configurations.\n\n**Next Steps:**\nSince no items are blocked, the immediate focus should be on advancing the tasks that are already **In progress** or **Not started**. The team should prioritize completing the runtime configuration validation to unblock the subsequent memory pressure and quality comparison tasks.",
+          "reasoning": ""
+        },
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "plan-my-week",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 6024.138000000006,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 6027.940333000006,
+            "bodyCloseMs": 39678.296,
+            "promptTokens": 1098,
+            "promptEvalMs": 5750.233,
+            "promptTokensPerSecond": 190.94878416231134,
+            "generationMs": 33656.3,
+            "generationTokensPerSecond": 15.182892950205458,
+            "generatedTokens": 512,
+            "visibleTokens": 335,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 0.6020419999986188
+          },
+          "memory": {
+            "before": {
+              "freePercent": 14,
+              "swapUsedMiB": 10792.44,
+              "runtimeRssMiB": 213.671875
+            },
+            "after": {
+              "freePercent": 14,
+              "swapUsedMiB": 11021.12,
+              "runtimeRssMiB": 218.125
+            },
+            "peakRuntimeRssMiB": 218.125,
+            "swapDeltaMiB": 228.6800000000003
+          },
+          "quality": {
+            "grounding": 0.5,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 2263,
+            "answerPresent": true
+          },
+          "output": "### Focus This Week: Runtime Configuration Validation\n\nThe current workspace picture centers on a critical decision point regarding the production runtime configuration. You are in the middle of validating the **Runtime Configuration** task, which involves comparing an 8K four-slot runtime against a 4K single-slot candidate on the same workloads. This task is currently **In progress** and is due for completion by **2026-08-22T12:00:00Z**.\n\nThis validation is directly tied to an upcoming **Runtime review** meeting scheduled for today, **2026-08-21T15:00:00Z**. The purpose of this meeting is to review A/B timings and make a definitive decision on the safe 8 GB production configuration. Therefore, the immediate priority is to ensure the data gathered for the runtime configuration task is ready to inform the meeting's decision-making process.\n\n### Deadlines and Commitments\n\n*   **Today (2026-08-21):** You have a hard commitment to attend the **Runtime review** meeting at **15:00Z**. The outcome of this meeting will determine the safe production configuration.\n*   **Due Date (2026-08-22T12:00:00Z):** The **Validate runtime configuration** task must be completed by this time. This deadline is set for a runtime review, suggesting the configuration validation is the final step before deployment or further testing.\n\n### Risks or Blockers\n\n*   **Task Status:** The **Validate runtime configuration** task is currently **In progress**. There are no explicit blockers listed for this task in the provided context.\n*   **Missing Context:** The evidence package does not contain records for **milestones** or **reminders**. Without milestone data, it is unclear if this configuration decision is part of a larger release timeline or if there are specific success criteria tied to a milestone. Similarly, the absence of reminder records suggests no automated alerts have been set for this task, relying instead on the explicit deadline and meeting schedule.\n\n### Next Steps\n\n1.  **Prepare for the Runtime Review:** Since the meeting is today at 15:00Z, ensure the comparison between the 8K four-slot and 4K single-slot runtimes is complete and ready for presentation. The goal is to decide the safe 8 GB production configuration based on the A/B timings.\n2",
+          "reasoning": ""
+        },
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "plan-my-week",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 176.8577079999959,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 177.44724999999744,
+            "bodyCloseMs": 33340.583625000014,
+            "promptTokens": 4,
+            "promptEvalMs": 142.145,
+            "promptTokensPerSecond": 28.140279292271973,
+            "generationMs": 33159.508,
+            "generationTokensPerSecond": 15.410361335879893,
+            "generatedTokens": 512,
+            "visibleTokens": 333,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 0.17625000001862645
+          },
+          "memory": {
+            "before": {
+              "freePercent": 14,
+              "swapUsedMiB": 11021.12,
+              "runtimeRssMiB": 218.109375
+            },
+            "after": {
+              "freePercent": 14,
+              "swapUsedMiB": 10922.19,
+              "runtimeRssMiB": 219.203125
+            },
+            "peakRuntimeRssMiB": 219.203125,
+            "swapDeltaMiB": -98.93000000000029
+          },
+          "quality": {
+            "grounding": 0.5,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 2294,
+            "answerPresent": true
+          },
+          "output": "Based on the supplied Ledger context, here is the grounded plan for your week, synthesized from available evidence.\n\n### **Focus This Week**\nThe immediate focus is the **Ledger release**, specifically the critical decision point regarding the runtime configuration. You are currently validating the trade-off between an **8K four-slot runtime** and a **4K single-slot candidate** by comparing their performance on the same workloads. This task is the single open item in your queue, indicating a high concentration of effort on this specific architectural decision.\n\n### **Deadlines and Commitments**\n*   **Critical Deadline:** **2026-08-22T12:00:00Z** (Tomorrow at noon).\n    *   **Action Required:** Complete the validation of the runtime configuration.\n    *   **Context:** This deadline drives the urgency of the current task. The decision on whether to proceed with the 8K four-slot or 4K single-slot configuration must be finalized by this time to ensure the Ledger release proceeds without configuration errors.\n*   **Upcoming Meeting:** **2026-08-21T15:00:00Z** (Today at 3:00 PM).\n    *   **Event:** Runtime review.\n    *   **Purpose:** To review A/B timings and officially decide on the safe 8 GB production configuration.\n    *   **Dependency:** This meeting likely serves as the formal gate for the validation work you are doing on the runtime configuration. The evidence suggests the meeting is scheduled for today, implying the decision needs to be made or presented during this session.\n\n### **Risks or Blockers**\n*   **Configuration Uncertainty:** The core risk is selecting the wrong runtime configuration (8K four-slot vs. 4K single-slot) for the production environment. The current state is \"In progress,\" meaning the comparison is ongoing but not yet resolved.\n*   **Timing Pressure:** With the deadline set for tomorrow and the review meeting scheduled for today, there is a narrow window to validate the configuration and present the findings. If the validation does not yield a clear winner before the review, the decision process may be delayed, risking the 8 GB production configuration safety.\n\n### **Next Steps**\n1.  **Execute Validation (Immediate):** Continue the comparison of the 8K four-slot and 4K single-slot runtimes on the defined workloads. Ensure this work",
+          "reasoning": ""
+        },
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "multi-resource",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 7333.178874999983,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 7337.252707999985,
+            "bodyCloseMs": 36085.17179199998,
+            "promptTokens": 1395,
+            "promptEvalMs": 7136.359,
+            "promptTokensPerSecond": 195.47783400470746,
+            "generationMs": 28741.986,
+            "generationTokensPerSecond": 13.325453571649502,
+            "generatedTokens": 384,
+            "visibleTokens": 260,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 2.2495839999755844
+          },
+          "memory": {
+            "before": {
+              "freePercent": 15,
+              "swapUsedMiB": 10922.19,
+              "runtimeRssMiB": 219.203125
+            },
+            "after": {
+              "freePercent": 14,
+              "swapUsedMiB": 11526.94,
+              "runtimeRssMiB": 220.828125
+            },
+            "peakRuntimeRssMiB": 220.828125,
+            "swapDeltaMiB": 604.75
+          },
+          "quality": {
+            "grounding": 0.5,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 1858,
+            "answerPresent": true
+          },
+          "output": "### **Ledger Release Assessment: Phase 4 Performance Validation**\n\nThe **Ledger release** is currently **In Progress**, with **40% completion**. The immediate focus is shifting from baseline observation to rigorous performance validation, specifically comparing two distinct runtime configurations to determine the optimal balance between context sizing and system stability.\n\n#### **The Core Conflict: Configuration vs. Stability**\nThe project is currently navigating a critical decision point regarding the **8 GB runtime** configuration. The evidence suggests a tension between performance gains and system resource constraints:\n*   **Performance Baseline:** Phase 4 baseline data indicates that \"Normal grounded visible time\" is approximately **7.9 seconds** (total ~28.9s), while \"Plan my week\" visible time drops to **6.3 seconds** (total ~50.8s). This establishes a strong baseline for what the 8 GB runtime currently achieves.\n*   **The Decision:** The upcoming milestone, **\"Choose 8 GB runtime,\"** requires selecting between the current 8K four-slot runtime, a 4K single-slot candidate, or a hybrid approach. This decision is not merely about speed; it is about determining if the current configuration can safely remain resident in unified memory without triggering excessive swap usage.\n\n#### **Current Status: Moving vs. Blocked**\n\n**What is Moving (Active Work):**\n*   **Runtime Validation:** The task **\"Validate runtime configuration\"** is **In Progress**. This is the highest priority immediate action. The team is actively comparing the current 8K four-slot runtime against the 4K single-slot candidate on identical workloads.\n*   **Goal:** To determine if the 8 GB runtime offers a viable path forward or if the 4K single-slot candidate is the necessary pivot for stability.\n\n**What is Blocked or Stalled (Pending Evidence):**\n*   **Memory",
+          "reasoning": ""
+        },
+        {
+          "model": "qwen3.5-4b-q4-k-m",
+          "caseId": "multi-resource",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 446.9232079999929,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 447.1702499999956,
+            "bodyCloseMs": 28160.310916999995,
+            "promptTokens": 4,
+            "promptEvalMs": 359.584,
+            "promptTokensPerSecond": 11.123965471211177,
+            "generationMs": 27694.583,
+            "generationTokensPerSecond": 13.82941927668671,
+            "generatedTokens": 384,
+            "visibleTokens": 264,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 2.5423749999899883
+          },
+          "memory": {
+            "before": {
+              "freePercent": 14,
+              "swapUsedMiB": 11507.62,
+              "runtimeRssMiB": 216.59375
+            },
+            "after": {
+              "freePercent": 15,
+              "swapUsedMiB": 11790.38,
+              "runtimeRssMiB": 221.671875
+            },
+            "peakRuntimeRssMiB": 221.671875,
+            "swapDeltaMiB": 282.7599999999984
+          },
+          "quality": {
+            "grounding": 0.5,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 1859,
+            "answerPresent": true
+          },
+          "output": "### **Ledger Release Assessment: The Performance Validation Phase**\n\nThe **Ledger release** is currently **In Progress**, having reached **40% completion**. The immediate focus has shifted from general development to a critical validation phase centered on **local AI performance**. The team is actively determining the optimal balance between context sizing (memory footprint) and computational efficiency (speed) for the upcoming release.\n\n#### **The Current Picture: A Critical Decision Point**\nThe core objective is to select the correct runtime configuration—specifically choosing between an **8 GB** context size and a **4 GB** single-slot candidate. This decision is not merely technical; it dictates the user experience regarding response speed versus the ability to handle complex, long-context inputs.\n\n*   **What Changed:** The project has moved from a baseline measurement phase (Phase 4) into active configuration testing. The baseline data indicates that \"Normal\" visible time was roughly **7.9 seconds**, while \"Plan my week\" visible time was faster at **6.3 seconds**, though total processing times were significantly higher (28.9s and 50.8s, respectively).\n*   **What Matters Now:** The team must validate whether the **8 GB runtime** offers sufficient context handling without incurring unacceptable latency, or if the **4 GB runtime** provides a better balance for the target workloads. The success of the release hinges on the outcome of the upcoming runtime comparison.\n\n#### **Status of Work: Moving vs. Blocked**\n\n**1. Moving Forward (Active Validation)**\n*   **Runtime Configuration Validation (In Progress):** This is the highest priority task. The team is currently comparing the 8K four-slot runtime against the 4K single-slot candidate on identical workloads. This task is due **August 22, 2026**.\n*   **Memory Pressure Measurement",
+          "reasoning": ""
+        }
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "model": "qwen3.5-4b-q4-k-m",
+      "fileSizeBytes": 3013027808,
+      "metalMemoryMiB": null,
+      "kvMemoryMiB": 128,
+      "coldStartupMs": 5055.3144999999995,
+      "warmTTFTMs": 2625.4985059999985,
+      "promptTokensPerSecond": 104.91221046824867,
+      "generationTokensPerSecond": 14.863333247802755,
+      "visibleAnswerMs": 2774.595421999998,
+      "visibleTokens": 208.125,
+      "reasoningTokens": 0,
+      "averageGrounding": 0.75,
+      "finishReasons": {
+        "stop": 4,
+        "length": 4
+      },
+      "peakRuntimeRssMiB": 221.671875
+    }
+  ]
+}

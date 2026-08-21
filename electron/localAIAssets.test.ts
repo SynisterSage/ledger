@@ -29,7 +29,7 @@ const withModelMetadata = async (modelId: string, content: Buffer, run: (url: st
   }
 };
 
-test('Fast is the default and Powerful resolves to Qwen Thinking while Fast and Balanced stay Qwen', () => {
+test('Fast is the default, Balanced uses regular Qwen3, and Powerful resolves to Qwen Thinking', () => {
   const assets = new LocalAIAssetManager();
   assert.equal(DEFAULT_GENERATION_TIER, 'fast');
   assert.equal(assets.getSelectedGenerationTier(), 'fast');
@@ -39,12 +39,13 @@ test('Fast is the default and Powerful resolves to Qwen Thinking while Fast and 
     ['powerful', 'qwen3-4b-thinking-2507-q6-k'],
   ]);
   assert.equal(assets.getSelectedGenerationModel().id, GENERATION_MODEL_REGISTRY[0].id);
-  assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'powerful')?.modelFamily, 'Qwen3');
+  assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')?.modelFamily, 'Qwen3');
   assert.deepEqual(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'fast')?.runtimeArgs, ['--reasoning', 'off']);
-  assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')?.runtimeArgs, undefined);
+  assert.deepEqual(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')?.runtimeArgs, ['--n-gpu-layers', 'all', '--no-mmproj', '--reasoning', 'off', '--parallel', '1']);
   assert.deepEqual(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'powerful')?.runtimeArgs, ['--reasoning', 'on', '--reasoning-format', 'deepseek']);
   assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'fast')?.reasoningMode, 'off');
-  assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')?.reasoningMode, 'adaptive');
+  assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')?.reasoningMode, 'off');
+  assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced')?.maxTokens, 1536);
   assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'powerful')?.reasoningMode, 'on');
   assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'powerful')?.maxTokens, 4096);
 });

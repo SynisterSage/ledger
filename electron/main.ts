@@ -268,7 +268,7 @@ const sanitizeAskLedgerHandoff = (value: unknown) => {
   return workspaceId && overviewDate ? { kind: 'overview_focus' as const, workspaceId, overviewDate, insights, resourceRefs } : undefined;
 };
 
-ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown }) => {
+ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown; performance?: { uiSubmitStartedAt?: unknown; preflightStartedAt?: unknown; preflightCompletedAt?: unknown } }) => {
   if (typeof payload?.question !== 'string' || (!payload.question.trim() && payload.skillId === undefined)) throw new Error('Ask Ledger question is required.');
   if (typeof payload.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
   if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
@@ -333,11 +333,20 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
     })) : undefined,
   } : undefined;
   const sender = event.sender;
+  const correlationId = typeof payload.requestId === 'string' && payload.requestId.trim() ? payload.requestId.slice(0, 120) : undefined;
+  const ipcStartReceivedAt = Date.now();
+  const preflight = payload.performance && typeof payload.performance === 'object' ? {
+    uiSubmitStartedAt: typeof payload.performance.uiSubmitStartedAt === 'number' ? payload.performance.uiSubmitStartedAt : undefined,
+    preflightStartedAt: typeof payload.performance.preflightStartedAt === 'number' ? payload.performance.preflightStartedAt : undefined,
+    preflightCompletedAt: typeof payload.performance.preflightCompletedAt === 'number' ? payload.performance.preflightCompletedAt : undefined,
+  } : undefined;
+  let ipcFirstDeltaSentAt: number | undefined;
   let answer = '';
   let skillSourceCount = 0;
   let skillSelectedSources: string[] = [];
   const requestId = askLedgerService.start(
     {
+      requestId: correlationId,
       question: payload.question,
       workspaceId: payload.workspaceId,
       documents: documents as never,
@@ -358,6 +367,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
         });
       }
       if (streamEvent.type === 'delta') answer += streamEvent.text ?? '';
+      if (streamEvent.type === 'delta' && ipcFirstDeltaSentAt === undefined) ipcFirstDeltaSentAt = Date.now();
       if (streamEvent.type === 'sources') {
         skillSourceCount = streamEvent.sources?.length ?? 0;
         skillSelectedSources = (streamEvent.sources ?? []).map((source) => `${source.resourceType}:${source.resourceId}`);
@@ -366,8 +376,24 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
         if (process.env.NODE_ENV !== 'production') console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answerChars: answer.length });
       }
       if (!sender.isDestroyed()) {
-        const eventWithSkill = streamEvent.type === 'done' && skill
-          ? { ...streamEvent, skillResult: buildSkillResult(skill, answer, explicitContext as never) }
+        const eventWithSkill = streamEvent.type === 'done'
+          ? {
+              ...streamEvent,
+              metrics: {
+                ...streamEvent.metrics,
+                performance: {
+                  ...streamEvent.metrics?.performance,
+                  ipcStartReceivedAt,
+                  ipcFirstDeltaSentAt,
+                  ipcDoneSentAt: Date.now(),
+                  preflightMs: preflight?.preflightStartedAt && preflight?.preflightCompletedAt ? preflight.preflightCompletedAt - preflight.preflightStartedAt : undefined,
+                  corpusPreparationMs: preflight?.preflightStartedAt && preflight?.preflightCompletedAt ? preflight.preflightCompletedAt - preflight.preflightStartedAt : undefined,
+                  uiToIpcStartMs: preflight?.uiSubmitStartedAt ? ipcStartReceivedAt - preflight.uiSubmitStartedAt : undefined,
+                  totalRequestMs: preflight?.uiSubmitStartedAt ? Date.now() - preflight.uiSubmitStartedAt : undefined,
+                },
+              },
+              ...(skill ? { skillResult: buildSkillResult(skill, answer, explicitContext as never) } : {}),
+            }
           : streamEvent;
         if (streamEvent.type === 'done' && skill) {
           if (process.env.NODE_ENV !== 'production') console.info('[local-ai] Ask Ledger skill diagnostics', {
@@ -375,8 +401,16 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
             explicitContext,
             retrievalSourceCount: skillSourceCount,
             selectedSources: skillSelectedSources,
-            durationMs: streamEvent.metrics?.totalMs,
+            durationMs: eventWithSkill.metrics?.totalMs,
             proposedActionTypes: eventWithSkill.skillResult?.actionProposals.map((action) => action.type) ?? [],
+          });
+        }
+        if (streamEvent.type === 'done') {
+          console.info('[local-ai] Ask Ledger performance', {
+            requestId: streamEvent.requestId,
+            messageId: typeof payload.messageId === 'string' ? payload.messageId : undefined,
+            skillId: skill?.id,
+            ...eventWithSkill.metrics?.performance,
           });
         }
         sender.send('ask-ledger:stream', eventWithSkill);
@@ -389,6 +423,7 @@ ipcMain.handle('ask-ledger:start', (event, payload: { question?: unknown; worksp
 
 ipcMain.handle('ask-ledger:cancel', (_event, requestId: unknown) => {
   if (typeof requestId !== 'string' || !requestId) throw new Error('Invalid Ask Ledger request.');
+  console.info('[local-ai] Ask Ledger cancellation requested', { requestId, requestIdAvailable: true, requestedAt: Date.now() });
   return askLedgerService.cancel(requestId);
 });
 

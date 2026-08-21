@@ -48,4 +48,5 @@ test('keeps Deep generation budget independent from brief answer depth', () => {
   assert.deepEqual(resolveGenerationBudgets('powerful', 128, 8192, { question: 'analyze this', answerDepth: 'detailed', sourceCount: 4 }), { initial: 4096, retry: 7936, reasoning: 2048 });
   assert.deepEqual(resolveGenerationBudgets('balanced', 512, 4096, { question: 'analyze this', answerDepth: 'standard', retrievalRequired: true }), { initial: 1536, retry: 3840, reasoning: 1024 });
   assert.deepEqual(resolveGenerationBudgets('fast', undefined, 4096), { initial: 256, retry: 256, reasoning: 0 });
+  assert.deepEqual(resolveGenerationBudgets('balanced', 512, 8192, { question: 'analyze this', answerDepth: 'standard', retrievalRequired: true }, false), { initial: 512, retry: 7936, reasoning: 0 });
 });

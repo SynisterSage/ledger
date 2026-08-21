@@ -17,6 +17,7 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: true,
     outputSections: ['Decisions', 'Unresolved questions', 'Action items', 'Follow-ups'],
+    executionContract: { resources: ['event', 'note', 'task', 'reminder', 'milestone'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 448 },
   },
   {
     id: 'project_health_check',
@@ -30,6 +31,7 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: false,
     outputSections: ['Status', 'Blockers', 'Risks', 'Next steps'],
+    executionContract: { resources: ['project', 'task', 'milestone', 'note', 'event', 'reminder'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 448 },
   },
   {
     id: 'plan_my_week',
@@ -43,6 +45,7 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: false,
     requiresConfirmation: false,
     outputSections: ['Focus this week', 'Deadlines and commitments', 'Risks or blockers', 'Next steps'],
+    executionContract: { resources: ['task', 'milestone', 'event', 'reminder'], timeRange: 'this_week', retrieval: 'structured', reasoning: 'bounded', maxOutput: 512 },
   },
   {
     id: 'turn_notes_into_tasks',
@@ -56,6 +59,7 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: true,
     outputSections: ['Action items', 'Context'],
+    executionContract: { resources: ['note', 'task', 'project', 'milestone'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 384 },
   },
   {
     id: 'prepare_for_meeting',
@@ -69,6 +73,7 @@ const registry: AskLedgerSkillDefinition[] = [
     requiresContext: true,
     requiresConfirmation: false,
     outputSections: ['Current context', 'Unresolved items', 'Discussion points'],
+    executionContract: { resources: ['event', 'project', 'task', 'milestone', 'note', 'reminder'], timeRange: 'selected_context', retrieval: 'structured', reasoning: 'bounded', maxOutput: 448 },
   },
 ];
 

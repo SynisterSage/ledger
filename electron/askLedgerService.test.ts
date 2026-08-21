@@ -321,7 +321,7 @@ test('expands an empty meeting follow-up request beyond duplicate events', async
 
   assert.match(generationPrompt, /Packanack meeting notes/);
   assert.match(generationPrompt, /Confirm Packanack handoff/);
-  const answer = events.filter((streamEvent) => streamEvent.type === 'delta').map((streamEvent) => streamEvent.text).join('');
+  const answer = events.reduce((current, streamEvent) => streamEvent.type === 'replace' ? streamEvent.text ?? '' : streamEvent.type === 'delta' ? `${current}${streamEvent.text ?? ''}` : current, '');
   assert.match(answer, /Recommended next step/);
   assert.doesNotMatch(answer, /I don't have enough Ledger context/);
   assert.equal(events.find((streamEvent) => streamEvent.type === 'sources')?.sources?.some((source) => source.resourceId === duplicateEvent.resourceId), false);
@@ -378,7 +378,7 @@ test('falls back to a grounded weekly plan when the local model abstains', async
   service.start({ workspaceId: 'workspace-a', question: 'help me out', documents: [task], lexicalResults: [], skillId: 'plan_my_week' }, { onEvent: (event) => events.push(event) });
   await waitForEvents(events);
 
-  const answer = events.filter((event) => event.type === 'delta').map((event) => event.text).join('');
+  const answer = events.reduce((current, event) => event.type === 'replace' ? event.text ?? '' : event.type === 'delta' ? `${current}${event.text ?? ''}` : current, '');
   assert.match(answer, /Focus this week/);
   assert.match(answer, /Upload weekly logs/);
   assert.doesNotMatch(answer, /I don't have enough Ledger context/);
@@ -413,7 +413,28 @@ test('performs one targeted answer repair without repeating retrieval', async ()
 
   assert.equal(starts, 2);
   assert.equal(events.filter((event) => event.type === 'done').length, 1);
-  assert.match(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), /Final Production/);
-  assert.doesNotMatch(events.filter((event) => event.type === 'delta').map((event) => event.text).join(''), /Aug 22/);
+  const answer = events.reduce((current, event) => event.type === 'replace' ? event.text ?? '' : event.type === 'delta' ? `${current}${event.text ?? ''}` : current, '');
+  assert.match(answer, /Final Production/);
+  assert.doesNotMatch(answer, /Aug 22/);
   assert.ok(retrievalCalls > 0);
+});
+
+test('supersedes an older in-flight conversation request before starting the newer one', async () => {
+  const cancelled: string[] = [];
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async () => ({ items: [resource], debug: [] }),
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (_request: unknown, _callbacks: unknown, requestId: string) => requestId,
+    cancel: (requestId: string) => { cancelled.push(requestId); return { ok: true }; },
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+  const conversation = { id: 'conversation-1', previousQuestion: 'Why is this blocked?', previousAnswer: 'Approval is pending.', previousSources: [] };
+  service.start({ requestId: 'request-a', workspaceId: 'workspace-a', question: 'Explain that more simply.', documents: [resource], lexicalResults: [], conversation }, { onEvent: () => undefined });
+  service.start({ requestId: 'request-b', workspaceId: 'workspace-a', question: 'Why is this blocked?', documents: [resource], lexicalResults: [], conversation }, { onEvent: () => undefined });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(cancelled, ['request-a']);
 });

@@ -15,6 +15,8 @@
     "verify:local-ai-release": "node --env-file=.env.local scripts/verify-local-ai-release.mjs",
     "benchmark:local-ai": "node --experimental-strip-types scripts/run-local-ai-benchmark.mjs",
     "evaluate:ask-ledger": "node --experimental-strip-types scripts/run-ask-ledger-evaluation.mjs",
+    "evaluate:phase10-routing": "node --experimental-strip-types scripts/phase10-routing-evaluation.mjs",
+    "benchmark:phase10-live": "node --experimental-strip-types scripts/phase10-live-ask-ledger.mjs",
     "build:whisper-windows": "powershell -ExecutionPolicy Bypass -File scripts/build-whisper-windows.ps1",
     "build:apple-calendar": "node scripts/build-apple-calendar-bridge.mjs",
     "build:extension": "npm --prefix apps/browser-extension run build",

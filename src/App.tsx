@@ -10351,6 +10351,10 @@ function AgentMockupPopover() {
   const [isMinimized, setIsMinimized] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState('New chat');
+  const [questionDraft, setQuestionDraft] = useState('');
+  const [hasMounted, setHasMounted] = useState(false);
+  const [activeQuestion, setActiveQuestion] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     const handleOpen = (event: Event) => {
@@ -10363,6 +10367,7 @@ function AgentMockupPopover() {
         top: Math.max(8, y),
       });
       setIsMinimized(false);
+      setHasMounted(true);
       setIsOpen(true);
     };
     window.addEventListener('ledger:agent-panel-open', handleOpen);
@@ -10385,18 +10390,24 @@ function AgentMockupPopover() {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!hasMounted) return null;
   const openFullscreen = () => {
+    const continuingGeneration = isGenerating && activeQuestion.trim();
     void window.desktopWindow?.openModule('new-tab', {
       kind: 'new-tab',
-      focusContext: sessionId ? `ask-session:${sessionId}` : 'new-tab:browser',
+      focusContext: continuingGeneration ? 'new-tab:browser' : sessionId ? `ask-session:${sessionId}` : 'new-tab:browser',
     });
+    const questionToContinue = continuingGeneration || (!sessionId ? questionDraft.trim() : '');
+    if (questionToContinue) {
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent('ledger:ask-ledger-seed-question', { detail: { question: questionToContinue, submit: Boolean(continuingGeneration), source: 'fullscreen' } })), 120);
+    }
     setIsOpen(false);
   };
   const closeAgent = () => {
     setResetKey((key) => key + 1);
     setSessionId(null);
     setSessionTitle('New chat');
+    setQuestionDraft('');
     setIsMinimized(false);
     setIsOpen(false);
   };
@@ -10404,7 +10415,7 @@ function AgentMockupPopover() {
     <section
       data-agent-mockup-panel
       aria-label="Agent preview"
-      className={`agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_18px_60px_rgba(0,0,0,0.36)] ${isMinimized ? 'h-10' : 'h-[400px]'}`}
+      className={`${isOpen ? '' : 'hidden'} agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_18px_60px_rgba(0,0,0,0.36)] ${isMinimized ? 'h-10' : 'h-[400px]'}`}
       style={{ left: position.left, top: position.top }}
     >
       <header className="flex h-10 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-3">
@@ -10415,7 +10426,7 @@ function AgentMockupPopover() {
           <button type="button" aria-label="Close Agent preview" title="Close" onClick={closeAgent} className="transition hover:text-[var(--ledger-text-primary)]"><X size={16} /></button>
         </div>
       </header>
-      {!isMinimized && <div className="min-h-0 flex-1 overflow-hidden px-2">
+      <div className={`${isMinimized ? 'hidden' : ''} min-h-0 flex-1 overflow-hidden px-2`}>
         <Suspense fallback={<div className="flex h-full items-end p-2 text-xs text-[var(--ledger-text-muted)]">Ask Ledger…</div>}>
           <AgentAskLedgerPanel
             workspaceId={activeWorkspaceId}
@@ -10423,10 +10434,13 @@ function AgentMockupPopover() {
             compact
             onSessionIdChange={setSessionId}
             onSessionTitleChange={setSessionTitle}
+            onQuestionChange={setQuestionDraft}
+            onQuestionSubmitted={setActiveQuestion}
+            onGenerationActiveChange={setIsGenerating}
             onSessionPersisted={() => window.dispatchEvent(new Event(ASK_LEDGER_SESSION_PERSISTED_EVENT))}
           />
         </Suspense>
-      </div>}
+      </div>
     </section>,
     document.body
   );

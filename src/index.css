@@ -716,6 +716,10 @@ button:focus {
   outline-offset: 0;
 }
 
+:root[data-ledger-theme='light'] .ask-ledger-mark {
+  filter: invert(1);
+}
+
 .ask-ledger-composer textarea:focus-visible {
   outline: none !important;
   outline-offset: 0;
@@ -1374,9 +1378,24 @@ textarea:focus-visible,
   margin-top: 0;
 }
 .agent-ask-ledger-popover section[aria-live="polite"] {
+  display: block !important;
+  justify-content: flex-start !important;
+  min-height: 0;
+  overflow-y: auto;
   padding-top: 10px;
   padding-bottom: 70px;
-  gap: 16px;
+  gap: 0;
+}
+.agent-ask-ledger-popover section[aria-live="polite"] > article {
+  min-height: 0 !important;
+  margin-block: 0 !important;
+  padding-block: 0 !important;
+}
+.agent-ask-ledger-popover section[aria-live="polite"] > article + article {
+  margin-top: 6px !important;
+}
+.agent-ask-ledger-popover .ask-ledger-activity + div {
+  margin-top: 14px !important;
 }
 .agent-ask-ledger-popover .ask-ledger-activity {
   display: block;

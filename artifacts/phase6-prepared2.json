@@ -1,0 +1,92 @@
+[local-ai] generation model switch started { requestedTier: 'balanced', previousLoadedTier: null }
+[local-ai] generation runtime stopped for switch { durationMs: 0 }
+[local-ai] starting generation runtime {
+  runtimeVersion: 'version: 0.1.1-dev (build 10472, commit 60eeeb608)',
+  selectedModelId: 'ministral-3-3b-instruct-2512-q8-0',
+  modelFamily: 'Ministral 3',
+  modelPath: '/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q8-0/Ministral-3-3B-Instruct-2512-Q8_0.gguf',
+  installationState: 'installed'
+}
+[local-ai] generation runtime diagnostics {
+  metalConfirmed: undefined,
+  gpuLayersOffloaded: undefined,
+  cpuFallbackDetected: undefined,
+  metalMemoryMiB: undefined,
+  modelBufferMiB: undefined,
+  contextBufferMiB: undefined,
+  computeBufferMiB: undefined,
+  kvBufferMiB: undefined,
+  runtimeDiagnosticLines: []
+}
+[local-ai] generation model switch ready {
+  requestedTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  startupMs: 6210,
+  totalMs: 6256
+}
+{
+  "phase": 6,
+  "repeats": 0,
+  "configurations": [
+    {
+      "id": "B-candidate-4k-1slot",
+      "contextSize": 4096,
+      "runtimeArgs": [
+        "--n-gpu-layers",
+        "all",
+        "--no-mmproj",
+        "--reasoning",
+        "off",
+        "--parallel",
+        "1"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "normal-grounded",
+      "category": "normal-grounded",
+      "estimatedPromptTokens": 0,
+      "sources": [],
+      "contextItems": []
+    },
+    {
+      "id": "short-grounded",
+      "category": "short-grounded",
+      "estimatedPromptTokens": 0,
+      "sources": [],
+      "contextItems": []
+    },
+    {
+      "id": "plan-my-week",
+      "category": "skill",
+      "estimatedPromptTokens": 0,
+      "sources": [],
+      "contextItems": []
+    },
+    {
+      "id": "multi-resource",
+      "category": "multi-resource",
+      "estimatedPromptTokens": 0,
+      "sources": [],
+      "contextItems": []
+    }
+  ],
+  "results": [],
+  "summary": [
+    {
+      "configId": "B-candidate-4k-1slot",
+      "runs": 0,
+      "averageTTFTMs": null,
+      "averageVisibleTTFTMs": null,
+      "averagePromptEvalMs": null,
+      "averagePromptTokensPerSecond": null,
+      "averageGenerationMs": null,
+      "averageTokensPerSecond": null,
+      "averageTotalMs": null,
+      "minimumSystemFreePercent": null,
+      "maximumSwapUsedMiB": null,
+      "scorePassRate": null
+    }
+  ]
+}

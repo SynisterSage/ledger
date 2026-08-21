@@ -205,6 +205,9 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         void restoreAskSession(focusContext.slice('ask-session:'.length));
         return;
       }
+      // Returning to the existing generic Ask Ledger tab is a tab switch, not
+      // a request to discard its in-memory composer/conversation state.
+      if (focusContext === 'new-tab:browser') return;
       const askContext = decodeAskLedgerContext(focusContext);
       if (askContext) {
         setSelectedAskSession(null);
@@ -383,6 +386,11 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     } finally { setSkillSaving(false); }
   };
 
+  const handleAskSessionIdChange = (sessionId: string | null) => {
+    if (!sessionId) return;
+    updateAskRoute(`ask-session:${sessionId}`, 'replace');
+  };
+
   if (skillEditor) return <div className={`relative flex h-screen min-h-0 flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] ${isBrowser ? 'web-new-tab-module' : ''}`} style={workspaceShellLayout.workspaceShellStyle}>
     <ModuleWindowHeader title="Ledger" stripTitle="New Tab" icon={<img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-5 w-5" />} onClose={onClose} showBodyHeader={false} showWorkspaceNavigation />
     <main className="flex min-h-0 flex-1 flex-col overflow-auto px-6 pb-20 pt-8 sm:px-10">
@@ -483,7 +491,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         showBodyHeader={false}
         showWorkspaceNavigation
       />
-      <main className="web-new-tab-content relative min-h-0 flex-1 overflow-auto bg-[var(--ledger-background)]">
+      <main className={`web-new-tab-content relative min-h-0 flex-1 bg-[var(--ledger-background)] ${isBrowser ? 'overflow-auto' : 'overflow-hidden'}`}>
         <div aria-hidden="true" className="pointer-events-none sticky top-0 z-0 h-0 overflow-visible">
           <div className="absolute left-0 top-0 h-screen w-full overflow-hidden">
             <div
@@ -504,8 +512,18 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
             />
           </div>
         </div>
-        <div className={`web-new-tab-body relative z-10 mx-auto flex min-h-full w-full max-w-[700px] flex-col px-5 pb-16 sm:px-6 ${askConversationActive ? 'pt-5' : 'justify-center'}`}>
-          <Suspense fallback={<div className="min-h-[124px] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]" />}><DesktopAskLedgerPanel workspaceId={activeWorkspaceId} resetKey={askResetKey} initialSession={selectedAskSession} initialContext={askInitialContext} customSkills={customSkills} onEditCustomSkill={editCustomSkill} onConversationChange={setAskConversationActive} onSessionTitleChange={setAskSessionTitle} onSessionPersisted={() => void loadRecentSessions()} /></Suspense>
+        <div className={`web-new-tab-body relative z-10 mx-auto flex w-full max-w-[700px] flex-col px-5 pb-16 sm:px-6 ${askConversationActive ? 'h-full min-h-0 pt-5' : 'min-h-full justify-center'}`}>
+          <div className={`relative z-10 w-full ${askConversationActive ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+            {!isBrowser && !askConversationActive && (
+              <img
+                src={`${import.meta.env.BASE_URL}Askledger.svg`}
+                alt=""
+                aria-hidden="true"
+                className="ask-ledger-mark pointer-events-none absolute -top-12 left-4 z-20 block h-12 w-12 opacity-80"
+              />
+            )}
+            <Suspense fallback={<div className="min-h-[124px] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]" />}><DesktopAskLedgerPanel workspaceId={activeWorkspaceId} resetKey={askResetKey} initialSession={selectedAskSession} initialContext={askInitialContext} customSkills={customSkills} onEditCustomSkill={editCustomSkill} onConversationChange={setAskConversationActive} onSessionTitleChange={setAskSessionTitle} onSessionIdChange={handleAskSessionIdChange} onSessionPersisted={() => void loadRecentSessions()} /></Suspense>
+          </div>
         </div>
       </main>
     </div>

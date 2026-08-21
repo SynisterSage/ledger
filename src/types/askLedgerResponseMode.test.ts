@@ -112,6 +112,30 @@ test('routes informal capability questions conversationally', () => {
   assert.equal(route.reason, 'capability_question');
 });
 
+test('uses positive workspace evidence instead of generic factual wording', () => {
+  for (const message of ['lol yeah', 'what do you think?', 'why would someone do that?', "what's a mutex?", 'tell me more about that idea']) {
+    const route = routeAskLedgerMessage(message);
+    assert.equal(route.executionMode, 'conversation');
+    assert.equal(route.retrievalRequired, false);
+  }
+  assert.equal(routeAskLedgerMessage('what tasks are due today?').executionMode, 'workspace_lookup');
+  assert.equal(routeAskLedgerMessage('did Sarah respond?').executionMode, 'workspace_lookup');
+  assert.equal(routeAskLedgerMessage('summarize my last three meeting notes').executionMode, 'workspace_synthesis');
+  assert.equal(routeAskLedgerMessage('look across the project and tell me what is actually blocking us').executionMode, 'workspace_research');
+});
+
+test('reuses grounded context for conversational inertia but refreshes new facts', () => {
+  const reused = routeAskLedgerMessage("that's kind of annoying", groundedSession);
+  assert.equal(reused.executionMode, 'conversation');
+  assert.equal(reused.retrievalRequired, false);
+  assert.equal(reused.reusePreviousGroundedContext, true);
+  const why = routeAskLedgerMessage('why do you think that happened?', groundedSession);
+  assert.equal(why.retrievalRequired, false);
+  const fresh = routeAskLedgerMessage('Did Sarah ever respond?', groundedSession);
+  assert.equal(fresh.executionMode, 'workspace_lookup');
+  assert.equal(fresh.retrievalRequired, true);
+});
+
 test('infers adaptive depth independently of the response route', () => {
   assert.equal(routeAskLedgerMessage('Is Task X done?').answerDepth, 'brief');
   assert.equal(routeAskLedgerMessage("What's blocking Project A?").answerDepth, 'standard');

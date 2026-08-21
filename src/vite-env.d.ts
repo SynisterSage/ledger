@@ -130,7 +130,7 @@ interface Window {
     removeLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
     onLocalAIStatus: (listener: (event: unknown) => void) => () => void;
     onGenerationRuntimeState: (listener: (event: unknown) => void) => () => void;
-    start: (payload: { question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; messageId?: string }) => Promise<{ requestId: string }>;
+    start: (payload: { requestId?: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; messageId?: string; performance?: { uiSubmitStartedAt?: number; preflightStartedAt?: number; preflightCompletedAt?: number } }) => Promise<{ requestId: string }>;
     executeSkill: (payload: { skillId: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; explicitContext?: unknown }) => Promise<{ requestId: string }>;
     cancel: (requestId: string) => Promise<{ ok: boolean }>;
     onStream: (listener: (event: unknown) => void) => () => void;

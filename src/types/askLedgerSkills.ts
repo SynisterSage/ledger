@@ -45,6 +45,13 @@ export type AskLedgerSkillDefinition = {
   requiresContext: boolean;
   requiresConfirmation: boolean;
   outputSections?: string[];
+  executionContract?: {
+    resources: AskLedgerResourceType[];
+    timeRange: 'this_week' | 'selected_context' | 'workspace';
+    retrieval: 'structured' | 'hybrid' | 'semantic';
+    reasoning: 'off' | 'bounded';
+    maxOutput: number;
+  };
 };
 
 export const isAskLedgerSkillId = (value: unknown): value is AskLedgerSkillId =>

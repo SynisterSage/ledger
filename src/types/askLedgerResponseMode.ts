@@ -4,6 +4,7 @@ import { inferAskLedgerAnswerDepth, type AskLedgerAnswerDepth } from './askLedge
 type AskLedgerRoutingSource = { resourceType?: string; resourceId?: string };
 
 export type AskLedgerResponseMode = 'conversational' | 'workspace_grounded' | 'follow_up';
+export type AskLedgerExecutionMode = 'conversation' | 'workspace_lookup' | 'workspace_synthesis' | 'workspace_research';
 
 export type AskLedgerRoutingContext = {
   previousQuestion?: string;
@@ -17,15 +18,27 @@ export type AskLedgerRoutingContext = {
   explicitContext?: AskLedgerInitialContext;
   hasSelectedSkill?: boolean;
   attachmentCount?: number;
+  previousExecutionMode?: AskLedgerExecutionMode;
 };
 
 export type AskLedgerRoute = {
   mode: AskLedgerResponseMode;
+  executionMode: AskLedgerExecutionMode;
   retrievalRequired: boolean;
   reusePreviousGroundedContext: boolean;
   reason: string;
   answerDepth: AskLedgerAnswerDepth;
   depthExplicit: boolean;
+  diagnostics: {
+    workspaceEntityDetected: boolean;
+    workspacePossessiveDetected: boolean;
+    structuredIntentDetected: boolean;
+    followUpReferenceDetected: boolean;
+    newWorkspaceFactsRequired: boolean;
+    existingGroundedContextReusable: boolean;
+    skillSelected: boolean;
+    routingConfidence: number;
+  };
 };
 
 const normalize = (value: string) =>
@@ -37,13 +50,13 @@ const normalize = (value: string) =>
     .trim();
 
 const workspaceSignals =
-  /\b(?:ledger|workspace|project|task|todo|to do|action item|milestone|reminder|meeting|event|calendar|note|transcript|deadline|overdue|blocked|blocking|stuck|status|progress|activity|decision|decided|discussed|changed|updates?|follow[- ]?up|team members?|integration|slack|github|figma)\b/i;
+  /\b(?:ledger|workspace|projects?|tasks?|todo|to do|action items?|milestones?|reminders?|meetings?|events?|calendar|notes?|transcripts?|deadlines?|overdue|blocked|blocking|stuck|status|progress|activity|happening|going on|decision|decided|discussed|changed|updates?|follow[- ]?ups?|team members?|integration|slack|github|figma|launch|this week)\b/i;
 const capabilitySignals =
   /\b(?:what can you help me with|what can you do|what do you do|what do u do|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
 const casualSignals =
   /^(?:hi|hello|hey|yo|thanks?|thank you|thx|good morning|good afternoon|good evening|how are you|whats up|what is up|bye|goodbye|okay|ok|great|nice|cool|got it)[.!?\s]*$/i;
 const factualQuestionSignals =
-  /^(?:what|when|where|who|which|is|are|did|does|do|has|have|can|how many|how much|how long)\b/i;
+  /^(?:what|whats|when|where|who|which|is|are|did|does|do|has|have|can|how many|how much|how long)\b/i;
 const transformationSignals =
   /\b(?:explain|clarify|rewrite|rephrase|shorten|shorter|simplif(?:y|ier)|checklist|summari[sz]e|expand|elaborate|say that|make that|put that)\b/i;
 const referenceSignals =
@@ -53,6 +66,15 @@ const continuationSignals =
 const reasoningFollowUpSignals = /^(?:why|how)\b/i;
 const contextReuseSignals = /\b(?:with|using|based on|from)\s+(?:this|that|these|those)\s+(?:context|notes?|summary|answer)\b|\bnot really searching\b|\bwithout (?:search|searching|looking)\b/i;
 const explicitExistingResourceSignals = /\b(?:last|latest|newest|recent|what happened|what did|look through|look at|summari[sz]e|review|compare|linked)\b[\s\S]{0,80}\b(?:notes?|meetings?|events?|tasks?|reminders?|projects?|transcripts?)\b/i;
+const possessiveWorkspaceSignals = /\b(?:my|our|we|in ledger|in the workspace|this workspace)\b/i;
+const structuredIntentSignals = /\b(?:due today|due tomorrow|overdue|next meeting|meetings? (?:today|tomorrow|this week)|last \d+ notes?|how many .*tasks?|who owns|when is .* due|active reminders?|what should i do today|plan my week)\b/i;
+const synthesisSignals = /\b(?:summari[sz]e|recap|review|plan|prioriti[sz]e|explain what|tell me what|what did we decide|what happened with|compare (?:this|last) week|patterns .* last .* meetings?)\b/i;
+const researchSignals = /\b(?:across (?:all|the workspace|Atlas)|look through|actually blocking|where .* really stand\b|where .* really stands\b|connect|analy[sz]e .*dependencies|dependencies|compare .* and|compare .* evidence|all the context|contradictions?|cross[- ]resource|biggest .* risks?|keeping .* from moving)\b/i;
+const freshFollowUpSignals = /^(?:what happened\b|did (?:she|he|they|it|[a-z][a-z]+)\s+(?:ever\s+)?(?:respond|reply|answer)|what did we say\b|what about\b|when is that due\b)/i;
+const responseFactSignals = /\b(?:did|has)\s+(?:she|he|they|[A-Z][a-z]+)\s+(?:ever\s+)?(?:respond|reply|answer)/;
+const generalKnowledgeSignals = /^(?:what(?:'s| is)\s+(?:a|an)\s+\w+|how do .* usually work|what(?:'s| is) the difference between)\b/i;
+const namedWorkspaceEntity = (message: string) => [...message.matchAll(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][\w-]+)*\b/g)]
+  .some((match) => !/^(?:What|When|Where|Who|Which|Why|How|Can|Could|Would|Tell|Show|Did|Does|Do|Is|Are|Has|Have|The|And|That|Explain)$/i.test(match[0]));
 
 const priorTurns = (context: AskLedgerRoutingContext) =>
   Boolean(
@@ -70,11 +92,36 @@ export const routeAskLedgerMessage = (
   const depthFor = (options: { conversational?: boolean } = {}) =>
     inferAskLedgerAnswerDepth(message, options);
   const withDepth = (
-    base: Omit<AskLedgerRoute, 'answerDepth' | 'depthExplicit'>,
+    base: Omit<AskLedgerRoute, 'answerDepth' | 'depthExplicit' | 'executionMode' | 'diagnostics'> & { executionMode?: AskLedgerExecutionMode },
     options: { conversational?: boolean } = {}
   ): AskLedgerRoute => {
     const depth = depthFor(options);
-    return { ...base, answerDepth: depth.depth, depthExplicit: depth.explicit };
+    const workspaceEntityDetected = namedWorkspaceEntity(message) || workspaceSignals.test(normalized);
+    const workspacePossessiveDetected = possessiveWorkspaceSignals.test(normalized);
+    const structuredIntentDetected = structuredIntentSignals.test(normalized);
+    const followUpReferenceDetected = referenceSignals.test(normalized) || continuationSignals.test(normalized);
+    const newWorkspaceFactsRequired = Boolean(base.retrievalRequired && (structuredIntentDetected || explicitExistingResourceSignals.test(normalized) || workspaceEntityDetected || (workspacePossessiveDetected && factualQuestionSignals.test(normalized))));
+    const inferredMode = base.executionMode
+      ?? (!base.retrievalRequired ? 'conversation' : researchSignals.test(normalized) ? 'workspace_research' : synthesisSignals.test(normalized) ? 'workspace_synthesis' : 'workspace_lookup');
+    const confidence = base.retrievalRequired
+      ? (newWorkspaceFactsRequired ? 0.95 : 0.68)
+      : (followUpReferenceDetected || workspaceEntityDetected ? 0.78 : 0.97);
+    return {
+      ...base,
+      executionMode: inferredMode,
+      answerDepth: depth.depth,
+      depthExplicit: depth.explicit,
+      diagnostics: {
+        workspaceEntityDetected,
+        workspacePossessiveDetected,
+        structuredIntentDetected,
+        followUpReferenceDetected,
+        newWorkspaceFactsRequired,
+        existingGroundedContextReusable: Boolean(base.reusePreviousGroundedContext),
+        skillSelected: Boolean(context.hasSelectedSkill),
+        routingConfidence: confidence,
+      },
+    };
   };
   const forcedGrounding = Boolean(
     context.hasSelectedSkill || context.explicitContext || (context.attachmentCount ?? 0) > 0
@@ -105,7 +152,11 @@ export const routeAskLedgerMessage = (
   // Workspace-aware requests such as “can you help me plan a meeting?” must
   // not be treated as generic capability questions just because they contain
   // the phrase “can you help”.
-  if (capabilitySignals.test(normalized) && !workspaceSignals.test(normalized))
+  const capabilityOnly = capabilitySignals.test(normalized)
+    && !explicitExistingResourceSignals.test(normalized)
+    && !structuredIntentSignals.test(normalized)
+    && !/\b(?:plan|look|search|find|summari[sz]e|review)\b/i.test(normalized);
+  if (capabilityOnly)
     return withDepth(
       {
         mode: 'conversational',
@@ -116,6 +167,22 @@ export const routeAskLedgerMessage = (
       { conversational: true }
     );
   if (priorTurns(context)) {
+    const newFactsRequested = structuredIntentSignals.test(normalized)
+      || explicitExistingResourceSignals.test(normalized)
+      || freshFollowUpSignals.test(message)
+      || responseFactSignals.test(message)
+      || (namedWorkspaceEntity(message) && factualQuestionSignals.test(normalized))
+      || (possessiveWorkspaceSignals.test(normalized) && factualQuestionSignals.test(normalized))
+      || (workspaceSignals.test(normalized) && factualQuestionSignals.test(normalized))
+      || (/^(?:what|when|where|who|which|is|are|did|does|do|has|have)\b/i.test(normalized) && /^(?:what|how) about\b/i.test(normalized));
+    if (!newFactsRequested && (referenceSignals.test(normalized) || continuationSignals.test(normalized) || reasoningFollowUpSignals.test(normalized) || casualSignals.test(normalized) || !factualQuestionSignals.test(normalized))) {
+      return withDepth({
+        mode: casualSignals.test(normalized) ? 'conversational' : 'follow_up',
+        retrievalRequired: false,
+        reusePreviousGroundedContext: true,
+        reason: 'grounded_context_reuse',
+      });
+    }
     if (contextReuseSignals.test(normalized) && !explicitExistingResourceSignals.test(normalized)) {
       return withDepth({
         mode: 'follow_up',
@@ -133,10 +200,10 @@ export const routeAskLedgerMessage = (
       });
     }
     if (
+      freshFollowUpSignals.test(normalized) ||
       referenceSignals.test(normalized) ||
       continuationSignals.test(normalized) ||
-      reasoningFollowUpSignals.test(normalized) ||
-      workspaceSignals.test(normalized)
+      (reasoningFollowUpSignals.test(normalized) && (workspaceSignals.test(normalized) || namedWorkspaceEntity(message)))
     ) {
       return withDepth({
         mode: 'follow_up',
@@ -152,11 +219,9 @@ export const routeAskLedgerMessage = (
       });
     }
   }
-  if (
-    workspaceSignals.test(normalized) ||
-    explicitExistingResourceSignals.test(normalized) ||
-    (factualQuestionSignals.test(normalized) && !casualSignals.test(normalized))
-  ) {
+  const ambiguousReferenceWithoutContext = /\b(?:that|it|she|he|they)\b/i.test(normalized) && !priorTurns(context);
+  const namedEntityOnly = namedWorkspaceEntity(message) && factualQuestionSignals.test(normalized) && !responseFactSignals.test(message) && !workspaceSignals.test(normalized) && !possessiveWorkspaceSignals.test(normalized) && !structuredIntentSignals.test(normalized) && !explicitExistingResourceSignals.test(normalized);
+  if (!ambiguousReferenceWithoutContext && !namedEntityOnly && !generalKnowledgeSignals.test(message) && (workspaceSignals.test(normalized) || explicitExistingResourceSignals.test(normalized) || structuredIntentSignals.test(normalized) || synthesisSignals.test(normalized) || researchSignals.test(normalized) || responseFactSignals.test(message) || (namedWorkspaceEntity(message) && factualQuestionSignals.test(normalized)))) {
     return withDepth({
       mode: 'workspace_grounded',
       retrievalRequired: true,

@@ -1,0 +1,1333 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-20T02:24:58.363Z",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "runtimeVersion": "unknown",
+  "cases": [
+    {
+      "id": "simple-status",
+      "category": "simple_grounded_qa",
+      "promptTokens": 0,
+      "sources": []
+    },
+    {
+      "id": "cross-resource-synthesis",
+      "category": "cross_resource_synthesis",
+      "promptTokens": 56,
+      "sources": [
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "stale-context",
+      "category": "conflicting_stale_context",
+      "promptTokens": 203,
+      "sources": [
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Measure runtime startup",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-current",
+          "title": "Current benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-16T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-stale",
+          "title": "Older benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-07-01T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "abstention",
+      "category": "abstention",
+      "promptTokens": 0,
+      "sources": []
+    },
+    {
+      "id": "follow-up",
+      "category": "follow_up",
+      "promptTokens": 0,
+      "sources": []
+    },
+    {
+      "id": "meeting-follow-up",
+      "category": "skill",
+      "promptTokens": 203,
+      "sources": [
+        {
+          "resourceType": "note",
+          "resourceId": "note-current",
+          "title": "Current benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-16T12:00:00Z"
+        },
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Measure runtime startup",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-stale",
+          "title": "Older benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-07-01T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "project-health",
+      "category": "skill",
+      "promptTokens": 203,
+      "sources": [
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Measure runtime startup",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-current",
+          "title": "Current benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-16T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-stale",
+          "title": "Older benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-07-01T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "plan-week",
+      "category": "skill",
+      "promptTokens": 49,
+      "sources": [
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Measure runtime startup",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "turn-notes-into-tasks",
+      "category": "skill",
+      "promptTokens": 203,
+      "sources": [
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Measure runtime startup",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-current",
+          "title": "Current benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-16T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-stale",
+          "title": "Older benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-07-01T12:00:00Z"
+        },
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "prepare-meeting",
+      "category": "skill",
+      "promptTokens": 203,
+      "sources": [
+        {
+          "resourceType": "note",
+          "resourceId": "note-current",
+          "title": "Current benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-16T12:00:00Z"
+        },
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Measure runtime startup",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-stale",
+          "title": "Older benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-07-01T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "custom-skill",
+      "category": "custom_skill",
+      "promptTokens": 203,
+      "sources": [
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Measure runtime startup",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-current",
+          "title": "Current benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-16T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-stale",
+          "title": "Older benchmark notes",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-07-01T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "attachment-synthesis",
+      "category": "attachment",
+      "promptTokens": 56,
+      "sources": [
+        {
+          "resourceType": "project",
+          "resourceId": "project-ledger",
+          "title": "Ledger model tiers",
+          "projectId": "project-ledger",
+          "projectName": "Ledger model tiers",
+          "updatedAt": "2026-08-15T12:00:00Z"
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "caseId": "simple-status",
+      "category": "simple_grounded_qa",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "cross-resource-synthesis",
+      "category": "cross_resource_synthesis",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 56,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "stale-context",
+      "category": "conflicting_stale_context",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "abstention",
+      "category": "abstention",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "follow-up",
+      "category": "follow_up",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "meeting-follow-up",
+      "category": "skill",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "project-health",
+      "category": "skill",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "plan-week",
+      "category": "skill",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 49,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "turn-notes-into-tasks",
+      "category": "skill",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "prepare-meeting",
+      "category": "skill",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "custom-skill",
+      "category": "custom_skill",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "attachment-synthesis",
+      "category": "attachment",
+      "tier": "fast",
+      "model": {
+        "id": "qwen3-1.7b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-1.7b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 56,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "simple-status",
+      "category": "simple_grounded_qa",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "cross-resource-synthesis",
+      "category": "cross_resource_synthesis",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 56,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "stale-context",
+      "category": "conflicting_stale_context",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "abstention",
+      "category": "abstention",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "follow-up",
+      "category": "follow_up",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "meeting-follow-up",
+      "category": "skill",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "project-health",
+      "category": "skill",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "plan-week",
+      "category": "skill",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 49,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "turn-notes-into-tasks",
+      "category": "skill",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "prepare-meeting",
+      "category": "skill",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "custom-skill",
+      "category": "custom_skill",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "attachment-synthesis",
+      "category": "attachment",
+      "tier": "balanced",
+      "model": {
+        "id": "qwen3-4b-q4-k-m",
+        "version": "1",
+        "fileName": "qwen3-4b-q4_k_m.gguf",
+        "quantization": "Q4_K_M",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 56,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "simple-status",
+      "category": "simple_grounded_qa",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "cross-resource-synthesis",
+      "category": "cross_resource_synthesis",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 56,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "stale-context",
+      "category": "conflicting_stale_context",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "abstention",
+      "category": "abstention",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "follow-up",
+      "category": "follow_up",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 0,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "meeting-follow-up",
+      "category": "skill",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "project-health",
+      "category": "skill",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "plan-week",
+      "category": "skill",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 49,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "turn-notes-into-tasks",
+      "category": "skill",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "prepare-meeting",
+      "category": "skill",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "custom-skill",
+      "category": "custom_skill",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 203,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    },
+    {
+      "caseId": "attachment-synthesis",
+      "category": "attachment",
+      "tier": "powerful",
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "version": "2507",
+        "fileName": "Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "fileSizeBytes": null
+      },
+      "promptTokens": 56,
+      "sources": [],
+      "output": "",
+      "metrics": {},
+      "score": {
+        "factualCorrectness": null,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": null
+      },
+      "error": {
+        "code": "model_not_installed",
+        "message": "Model is not installed; benchmark skipped."
+      }
+    }
+  ],
+  "summary": {
+    "fast": {
+      "tested": 0,
+      "passed": 0,
+      "averageFirstTokenMs": null,
+      "averageTokensPerSecond": null,
+      "averageTotalMs": null,
+      "averageProcessRssDeltaBytes": null,
+      "fileSizeBytes": null
+    },
+    "balanced": {
+      "tested": 0,
+      "passed": 0,
+      "averageFirstTokenMs": null,
+      "averageTokensPerSecond": null,
+      "averageTotalMs": null,
+      "averageProcessRssDeltaBytes": null,
+      "fileSizeBytes": null
+    },
+    "powerful": {
+      "tested": 0,
+      "passed": 0,
+      "averageFirstTokenMs": null,
+      "averageTokensPerSecond": null,
+      "averageTotalMs": null,
+      "averageProcessRssDeltaBytes": null,
+      "fileSizeBytes": null
+    }
+  }
+}

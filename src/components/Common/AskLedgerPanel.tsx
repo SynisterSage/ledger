@@ -260,13 +260,13 @@ const sourceTypeLabels: Record<AskLedgerSourceType, string> = {
 };
 
 type AskLedgerStreamEvent = {
-  type: 'start' | 'activity' | 'sources' | 'delta' | 'done' | 'error';
+  type: 'start' | 'activity' | 'sources' | 'delta' | 'replace' | 'done' | 'error';
   requestId: string;
   activity?: { type: 'starting_runtime' | 'searching' | 'sources_found' | 'reading_context' | 'preparing_answer' | 'generating'; count?: number; sources?: Array<Record<string, unknown>> };
   text?: string;
   sources?: Array<Record<string, unknown>>;
   error?: { code?: string; message?: string };
-  metrics?: { totalMs?: number };
+  metrics?: { totalMs?: number; performance?: Record<string, unknown> };
   skillResult?: {
     skillId: string;
     sections?: Array<{ title: string; content: string }>;
@@ -558,7 +558,7 @@ const attachmentKindLabel = (attachment: AskLedgerAttachment) => attachment.exte
 
 const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}` : name;
 
-export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, compact = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; compact?: boolean }) => {
+export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, onQuestionChange, onQuestionSubmitted, onGenerationActiveChange, compact = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; onQuestionChange?: (question: string) => void; onQuestionSubmitted?: (question: string) => void; onGenerationActiveChange?: (active: boolean) => void; compact?: boolean }) => {
   const api = useApi();
   const platform = usePlatform();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -571,7 +571,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const [activitySteps, setActivitySteps] = useState<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
   const [activityExpanded, setActivityExpanded] = useState(true);
   const [activityDurationMs, setActivityDurationMs] = useState<number | null>(null);
+  const [requestWatchdogStatus, setRequestWatchdogStatus] = useState<'slow' | null>(null);
   const activityStartedAtRef = useRef<number | null>(null);
+  const requestWatchdogTimerRef = useRef<number | null>(null);
   const activityStepsRef = useRef<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
   const [activityNow, setActivityNow] = useState(() => Date.now());
   const [messages, setMessages] = useState<AskLedgerMessage[]>([]);
@@ -625,6 +627,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const [downloadMinimized, setDownloadMinimized] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const qualityPointerInteractionRef = useRef(false);
+  const qualityPointerIdRef = useRef<number | null>(null);
+  const qualitySuppressClickRef = useRef(false);
+  const [qualityDragTier, setQualityDragTier] = useState<GenerationTier | null>(null);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [contextPickerSkill, setContextPickerSkill] = useState<AskLedgerSkillMetadata | null>(null);
   const [contextPickerOptions, setContextPickerOptions] = useState<AskLedgerInitialContext[]>([]);
@@ -651,6 +656,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const downloadPrimaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const requestIdRef = useRef(0);
   const activeRequestIdRef = useRef<string | null>(null);
+  const performanceRequestIdRef = useRef<string | null>(null);
+  const rendererFirstDeltaAtRef = useRef<number | null>(null);
   const sourceItemsRef = useRef<AskLedgerSource[]>([]);
   const conversationRef = useRef<AskLedgerConversationContext | null>(null);
   const recentTurnsRef = useRef<AskLedgerConversationTurn[]>([]);
@@ -669,6 +676,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   stateRef.current = state;
   questionRef.current = question;
   workspaceIdRef.current = workspaceId;
+
+  const clearRequestWatchdog = () => {
+    if (requestWatchdogTimerRef.current !== null) window.clearTimeout(requestWatchdogTimerRef.current);
+    requestWatchdogTimerRef.current = null;
+  };
 
   const conversationActive = messages.length > 0;
   const selectedSkill = selectedSkillId ? skillCatalog.find((skill) => skill.id === selectedSkillId) : undefined;
@@ -988,6 +1000,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           return;
         }
         if (value.type === 'delta' && typeof value.text === 'string') {
+          clearRequestWatchdog();
+          setRequestWatchdogStatus(null);
+          if (rendererFirstDeltaAtRef.current === null) rendererFirstDeltaAtRef.current = Date.now();
           setState((current) => {
             if (current.status !== 'submitting' && current.status !== 'streaming') return current;
             const request = current.request;
@@ -1000,12 +1015,30 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           });
           return;
         }
+        if (value.type === 'replace' && typeof value.text === 'string') {
+          setState((current) => {
+            if (current.status !== 'submitting' && current.status !== 'streaming') return current;
+            return { status: 'streaming', request: current.request, response: { answer: value.text ?? '', sources: sourceItemsRef.current } };
+          });
+          return;
+        }
         if (value.type === 'done') {
+          clearRequestWatchdog();
+          setRequestWatchdogStatus(null);
           if (completedRequestIdRef.current === value.requestId) return;
           const completedState = stateRef.current;
           if (completedState.status !== 'submitting' && completedState.status !== 'streaming') return;
           completedRequestIdRef.current = value.requestId;
           const durationMs = value.metrics?.totalMs ?? (activityStartedAtRef.current ? Date.now() - activityStartedAtRef.current : 0);
+          const rendererDoneReceivedAt = Date.now();
+          console.info('[local-ai] Ask Ledger renderer performance', {
+            requestId: value.requestId,
+            rendererDoneReceivedAt,
+            rendererFirstDeltaAt: rendererFirstDeltaAtRef.current,
+            firstRendererDeltaMs: rendererFirstDeltaAtRef.current && activityStartedAtRef.current ? rendererFirstDeltaAtRef.current - activityStartedAtRef.current : undefined,
+            rendererDoneMs: activityStartedAtRef.current ? rendererDoneReceivedAt - activityStartedAtRef.current : undefined,
+            performance: value.metrics?.performance,
+          });
           const completedActivity = activityStepsRef.current;
           const completedResponse = completedState.status === 'streaming'
             ? completedState.response
@@ -1064,6 +1097,26 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           return;
         }
         if (value.type === 'error') {
+          clearRequestWatchdog();
+          setRequestWatchdogStatus(null);
+          if (value.error?.code === 'cancelled') {
+            const current = stateRef.current;
+            if ((current.status === 'streaming' || current.status === 'submitting') && current.status === 'streaming' && current.response.answer.trim()) {
+              const interruptedMessage: AskLedgerMessage = {
+                id: newAskLedgerMessageId(), role: 'assistant',
+                content: `${current.response.answer}\n\nGeneration stopped before it finished.`,
+                createdAt: new Date().toISOString(), sources: current.response.sources, interrupted: true,
+                activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
+              };
+              const nextMessages = [...messagesRef.current, interruptedMessage];
+              messagesRef.current = nextMessages;
+              setMessages(nextMessages);
+              queueSessionSave(nextMessages);
+            }
+            setState({ status: 'focused' });
+            activeRequestIdRef.current = null;
+            return;
+          }
           setState((current) => {
             const request =
               current.status === 'streaming' || current.status === 'submitting'
@@ -1075,6 +1128,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         }
       }) ?? (() => undefined);
     return () => {
+      clearRequestWatchdog();
       requestIdRef.current += 1;
       if (activeRequestIdRef.current) void window.askLedger?.cancel(activeRequestIdRef.current);
       unsubscribe();
@@ -1140,11 +1194,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       });
   };
   const submit = (questionOverride?: string, appendUserMessage = true) => {
+    const uiSubmitStartedAt = Date.now();
     const trimmedQuestion = (questionOverride ?? question).trim();
     const selectedSkillForRequest = pendingSkillIdRef.current;
     if ((!trimmedQuestion && !selectedSkillForRequest) || !localAIReady || requestInitializingRef.current || activeRequestIdRef.current) return;
 
     const effectiveQuestion = trimmedQuestion || (composerAttachments.length ? 'Review this attachment.' : '');
+    onQuestionSubmitted?.(effectiveQuestion);
     const submittedAttachments = composerAttachments;
     const submittedInitialContext = activeInitialContext;
     const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext
@@ -1170,6 +1226,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setSelectedSkillId(null);
     setSkillPickerOpen(false);
     const requestId = ++requestIdRef.current;
+    const performanceRequestId = crypto.randomUUID();
+    performanceRequestIdRef.current = performanceRequestId;
+    rendererFirstDeltaAtRef.current = null;
     const nextTitle = messagesRef.current.length === 0 && appendUserMessage
       ? (trimmedQuestion ? deriveSessionTitle(trimmedQuestion) : skillCatalog.find((skill) => skill.id === selectedSkillForRequest)?.name ?? 'Ask Ledger')
       : sessionTitleRef.current;
@@ -1197,6 +1256,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setAttachmentMenuOpen(false);
     setResourcePickerOpen(false);
     activityStartedAtRef.current = Date.now();
+    clearRequestWatchdog();
+    setRequestWatchdogStatus(null);
+    const watchdogMs = selectedSkillForRequest || route.answerDepth === 'detailed' || /\b(deep|analy[sz]e|compare|trade-offs?)\b/i.test(effectiveQuestion) ? 90_000 : 30_000;
+    requestWatchdogTimerRef.current = window.setTimeout(() => {
+      requestWatchdogTimerRef.current = null;
+      setRequestWatchdogStatus('slow');
+      console.warn('[local-ai] Ask Ledger request watchdog', { requestId: performanceRequestId, watchdogMs, requestDepth: route.answerDepth, skillId: selectedSkillForRequest, action: 'cancel_or_retry_available' });
+    }, watchdogMs);
     activityStepsRef.current = [];
     setActivitySteps([]);
     setActivityDurationMs(null);
@@ -1216,6 +1283,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       return;
     }
     requestInitializingRef.current = true;
+    const preflightStartedAt = Date.now();
     void Promise.all(route.retrievalRequired ? [
       api.getAskLedgerDocuments(workspaceId, { scope: askLedgerDocumentScope(effectiveQuestion), ...askLedgerDateWindow(effectiveQuestion), openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion), project: askLedgerProjectReference(effectiveQuestion), taskHorizon: askLedgerTaskHorizon(effectiveQuestion), assignedToMe: askLedgerAssignedToMe(effectiveQuestion, askLedgerDocumentScope(effectiveQuestion)), integrationQuery: effectiveQuestion }) as Promise<{
         workspaceId?: string;
@@ -1223,8 +1291,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       }>,
       effectiveQuestion ? api.searchWorkspace(workspaceId, effectiveQuestion) as Promise<Array<Record<string, unknown>>> : Promise.resolve([]),
       (api.getSections().catch(() => []) as Promise<Array<Record<string, unknown>> | { sections?: Array<Record<string, unknown>> }>),
-    ] : [Promise.resolve({ documents: [] }), Promise.resolve([]), Promise.resolve([])] as const)
+      ] : [Promise.resolve({ documents: [] }), Promise.resolve([]), Promise.resolve([])] as const)
       .then(([documentPayload, lexicalResults, sectionPayload]) => {
+        if (requestId !== requestIdRef.current || !requestInitializingRef.current) return { requestId: '' };
         const sectionRows = Array.isArray(sectionPayload)
           ? sectionPayload
           : Array.isArray(sectionPayload?.sections)
@@ -1259,6 +1328,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           .filter((item): item is AskLedgerSource => Boolean(item))
         ].filter((item, index, all) => all.findIndex((candidate) => candidate.type === item.type && candidate.resourceId === item.resourceId) === index).slice(0, 8);
         const startResult = window.askLedger!.start({
+          requestId: performanceRequestId,
           question: effectiveQuestion,
           workspaceId,
           documents,
@@ -1269,6 +1339,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           explicitContext: request.explicitContext,
           attachmentIds: request.attachmentIds,
           messageId: nextMessages[nextMessages.length - 1]?.id,
+          performance: { uiSubmitStartedAt, preflightStartedAt, preflightCompletedAt: Date.now() },
         });
         // The selected Ledger resource was attached to this request. Keep it
         // in the sent message, but remove it from the composer so it does not
@@ -1279,6 +1350,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       })
       .then(({ requestId: localRequestId }) => {
         requestInitializingRef.current = false;
+        if (!localRequestId) return;
         if (requestId !== requestIdRef.current) return;
         if (completedRequestIdRef.current === localRequestId) {
           activeRequestIdRef.current = null;
@@ -1293,9 +1365,27 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       });
   };
 
+  useEffect(() => {
+    const handleSeedQuestion = (event: Event) => {
+      const detail = (event as CustomEvent<{ question?: string; submit?: boolean; source?: string }>).detail;
+      if (compact && detail?.source === 'fullscreen') return;
+      const seededQuestion = detail?.question?.trim();
+      if (!seededQuestion) return;
+      setQuestion(seededQuestion);
+      onQuestionChange?.(seededQuestion);
+      if (detail?.submit) window.setTimeout(() => submit(seededQuestion), 0);
+      else window.setTimeout(() => inputRef.current?.focus(), 0);
+    };
+    window.addEventListener('ledger:ask-ledger-seed-question', handleSeedQuestion);
+    return () => window.removeEventListener('ledger:ask-ledger-seed-question', handleSeedQuestion);
+  }, [compact, onQuestionChange]);
+
   const cancel = () => {
     if (!activeRequestIdRef.current && !requestInitializingRef.current) return;
+    clearRequestWatchdog();
+    setRequestWatchdogStatus(null);
     requestIdRef.current += 1;
+    console.info('[local-ai] Ask Ledger renderer cancellation', { requestId: activeRequestIdRef.current ?? performanceRequestIdRef.current, requestIdAvailable: Boolean(activeRequestIdRef.current), cancelledAt: Date.now() });
     if (activeRequestIdRef.current) void window.askLedger?.cancel(activeRequestIdRef.current);
     activeRequestIdRef.current = null;
     requestInitializingRef.current = false;
@@ -1453,12 +1543,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setDownloadError(null);
   };
 
-  const selectQualityAtPointer = (clientX: number, element: HTMLElement) => {
+  const qualityTierAtPointer = (clientX: number, element: HTMLElement) => {
     const bounds = element.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
     const index = Math.round(ratio * (visibleGenerationTiers.length - 1));
-    const tier = visibleGenerationTiers[index];
-    if (tier) void switchToTier(tier);
+    return visibleGenerationTiers[index] ?? null;
   };
 
   useEffect(() => {
@@ -1639,6 +1728,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const generationActive = state.status === 'submitting' || (state.status === 'streaming' && !state.response.answer);
 
   useEffect(() => {
+    onGenerationActiveChange?.(generationActive);
+  }, [generationActive, onGenerationActiveChange]);
+
+  useEffect(() => {
     if (!generationActive) {
       setGenerationPhrase(GENERATION_PHRASES[0]);
       return undefined;
@@ -1720,11 +1813,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   }, [conversationActive, messages.length]);
 
   return (
-    <div className={compact
+      <div className={compact
       ? `agent-ask-ledger-content flex h-full min-h-0 flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
-      : conversationActive ? 'flex min-h-[calc(100vh-160px)] flex-col' : 'mt-5'}>
+      : conversationActive ? 'flex h-full min-h-0 flex-col' : 'mt-5'}>
       {conversationActive && (
-        <section className="order-1 min-h-0 flex-1 space-y-10 pb-32 pt-8" aria-live="polite">
+        <section className="order-1 min-h-0 flex-1 space-y-10 overflow-y-auto pb-32 pt-8" aria-live="polite">
           {messages.map((message, messageIndex) => (
             <article key={message.id} ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined} className={message.role === 'user' ? 'group flex justify-end' : 'group max-w-[640px]'}>
               {message.role === 'user' ? (
@@ -1804,7 +1897,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           ))}
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
-              {state.request.retrievalRequired !== false && <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={generationPhrase} />}
+              {state.request.retrievalRequired !== false && <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />}
               {state.status === 'streaming' && state.response.answer ? <div className="mt-4 space-y-4 text-[15px] leading-7 text-[var(--ledger-text-secondary)]">{renderAnswerContent(state.response.answer)}</div> : null}
             </article>
           )}
@@ -1857,6 +1950,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           onChange={(event) => {
             if (!localAIReady) return;
             setQuestion(event.target.value);
+            onQuestionChange?.(event.target.value);
             if (state.status === 'idle') setState({ status: 'focused' });
           }}
           onFocus={() => {
@@ -2018,17 +2112,39 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                     aria-label="Local AI quality"
                     onPointerDown={(event) => {
                       if (tierSwitchInProgress) return;
+                      event.preventDefault();
                       qualityPointerInteractionRef.current = true;
+                      qualityPointerIdRef.current = event.pointerId;
+                      qualitySuppressClickRef.current = false;
                       event.currentTarget.setPointerCapture(event.pointerId);
-                      selectQualityAtPointer(event.clientX, event.currentTarget);
+                      setQualityDragTier(qualityTierAtPointer(event.clientX, event.currentTarget));
                     }}
                     onPointerMove={(event) => {
-                      if (qualityPointerInteractionRef.current && !tierSwitchInProgress) selectQualityAtPointer(event.clientX, event.currentTarget);
+                      if (qualityPointerInteractionRef.current && qualityPointerIdRef.current === event.pointerId) {
+                        setQualityDragTier(qualityTierAtPointer(event.clientX, event.currentTarget));
+                      }
                     }}
                     onPointerUp={(event) => {
+                      if (qualityPointerIdRef.current !== event.pointerId) return;
+                      const tier = qualityDragTier;
+                      qualityPointerInteractionRef.current = false;
+                      qualityPointerIdRef.current = null;
+                      qualitySuppressClickRef.current = true;
+                      setQualityDragTier(null);
                       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                      if (tier) void switchToTier(tier);
                     }}
-                    onPointerCancel={() => { qualityPointerInteractionRef.current = false; }}
+                    onPointerCancel={(event) => {
+                      if (qualityPointerIdRef.current !== event.pointerId) return;
+                      qualityPointerInteractionRef.current = false;
+                      qualityPointerIdRef.current = null;
+                      setQualityDragTier(null);
+                    }}
+                    onLostPointerCapture={() => {
+                      qualityPointerInteractionRef.current = false;
+                      qualityPointerIdRef.current = null;
+                      setQualityDragTier(null);
+                    }}
                   >
                     <div className="absolute inset-x-0 top-1/2 h-8 -translate-y-1/2 rounded-full bg-[var(--ledger-accent)]" aria-hidden="true" />
                     <div className="relative grid h-full grid-cols-3 items-center px-3">
@@ -2036,7 +2152,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                         const model = modelForTier(tier);
                         const installed = model?.installed || model?.state === 'installed';
                         const unavailable = model?.state === 'unavailable' || model?.available === false;
-                        const active = selectedGenerationTier === tier;
+                        const active = (qualityDragTier ?? selectedGenerationTier) === tier;
                         return (
                           <button
                             key={tier}
@@ -2046,8 +2162,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                             aria-label={`${generationTierLabels[tier]}: ${generationTierDescriptions[tier]}${installed ? ', installed' : unavailable ? ', unavailable' : ', download required'}`}
                             disabled={tierSwitchInProgress}
                             onClick={() => {
-                              if (qualityPointerInteractionRef.current) {
+                              if (qualityPointerInteractionRef.current || qualitySuppressClickRef.current) {
                                 qualityPointerInteractionRef.current = false;
+                                qualitySuppressClickRef.current = false;
                                 return;
                               }
                               void switchToTier(tier);

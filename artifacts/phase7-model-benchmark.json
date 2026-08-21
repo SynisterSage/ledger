@@ -1,0 +1,891 @@
+{
+  "phase": 7,
+  "frozenRuntime": {
+    "contextSize": 4096,
+    "parallel": 1,
+    "gpuLayers": "all",
+    "mmproj": false
+  },
+  "repeats": 2,
+  "cases": [
+    {
+      "id": "normal-grounded",
+      "kind": "normal",
+      "estimatedPromptTokens": 703
+    },
+    {
+      "id": "short-grounded",
+      "kind": "normal",
+      "estimatedPromptTokens": 844
+    },
+    {
+      "id": "plan-my-week",
+      "kind": "skill",
+      "estimatedPromptTokens": 1314
+    },
+    {
+      "id": "multi-resource",
+      "kind": "normal",
+      "estimatedPromptTokens": 1487
+    }
+  ],
+  "reports": [
+    {
+      "model": {
+        "id": "ministral-3b-q8",
+        "label": "Ministral 3B Q8",
+        "family": "Ministral 3",
+        "path": "/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q8-0/Ministral-3-3B-Instruct-2512-Q8_0.gguf",
+        "reasoning": false,
+        "fileSizeBytes": 3651679744
+      },
+      "runtime": {
+        "metalConfirmed": true,
+        "gpuLayersOffloaded": "27/27",
+        "cpuFallbackDetected": false,
+        "metalMemoryMiB": 3961,
+        "modelMemoryMiB": 3474,
+        "contextMemoryMiB": 416,
+        "computeMemoryMiB": 70,
+        "kvMemoryMiB": 416
+      },
+      "startupMs": 5821.564917,
+      "results": [
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "normal-grounded",
+          "run": 1,
+          "cold": true,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 5821.564917,
+            "firstResponseByteMs": 4325.256957999999,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 4333.041625000001,
+            "bodyCloseMs": 15816.030374999998,
+            "promptTokens": 1136,
+            "promptEvalMs": 4265.749,
+            "promptTokensPerSecond": 266.30727686978304,
+            "generationMs": 11485.081,
+            "generationTokensPerSecond": 13.756977421404343,
+            "generatedTokens": 159,
+            "visibleTokens": 111,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 1.8547919999982696
+          },
+          "memory": {
+            "before": {
+              "freePercent": 10,
+              "swapUsedMiB": 11864.81,
+              "runtimeRssMiB": 437.625
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 11896.5,
+              "runtimeRssMiB": 451.59375
+            },
+            "peakRuntimeRssMiB": 451.59375,
+            "swapDeltaMiB": 31.69000000000051
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 725,
+            "answerPresent": true
+          },
+          "output": "The **Ledger release** is **in progress**, at **40% completion**, with the next priority being **validating local AI performance**.\n\n### **Supporting Context**\n- The project is tracked as **`project-release`** with an explicit status of *In progress*.\n- The current focus is on validating AI performance before moving forward.\n\n### **Open Work & Next Steps**\n- **No blockers or overdue tasks** are visible in the current evidence.\n- The next action appears to be **local AI validation**, but no specific task or milestone is linked yet.\n- If further details (e.g., task assignments, deadlines) are needed, they would require additional context.\n\nIf you need deeper breakdowns (e.g., task progress, dependencies), let me know.",
+          "reasoning": ""
+        },
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "normal-grounded",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 97.76095899999927,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 99.15462499999921,
+            "bodyCloseMs": 13005.101042000002,
+            "promptTokens": 1,
+            "promptEvalMs": 71.66,
+            "promptTokensPerSecond": 13.954786491766678,
+            "generationMs": 12896.32,
+            "generationTokensPerSecond": 14.965509540706186,
+            "generatedTokens": 194,
+            "visibleTokens": 129,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 0.5569170000017039
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 11881.12,
+              "runtimeRssMiB": 446.828125
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 11860.69,
+              "runtimeRssMiB": 452.34375
+            },
+            "peakRuntimeRssMiB": 452.34375,
+            "swapDeltaMiB": -20.43000000000029
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 900,
+            "answerPresent": true
+          },
+          "output": "The **Ledger release** is **in progress**, at **40% completion**, with the next priority being **validating local AI performance**.\n\n---\n**Supporting context:**\n- The project is tracked as `project:project-release` with a clear status of *In progress*.\n- No blockers or overdue tasks are explicitly noted in the provided evidence, but the 40% completion suggests remaining work is open (e.g., testing, documentation, or integration).\n\n**Open work:**\n- Local AI performance validation (next priority).\n- Likely additional tasks to reach 100% completion (e.g., bug fixes, user testing, or documentation).\n\n**Next steps:**\n- Confirm validation progress in the project’s task or milestone tracking (if available).\n- Monitor for updates on blockers or dependencies (e.g., AI model updates, third-party integrations).\n\n*No evidence of overdue deadlines or urgent blockers was found in the current context.*",
+          "reasoning": ""
+        },
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "short-grounded",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 1473.5956250000017,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 1474.4725830000025,
+            "bodyCloseMs": 26329.327583,
+            "promptTokens": 381,
+            "promptEvalMs": 1435.48,
+            "promptTokensPerSecond": 265.4164460668208,
+            "generationMs": 24849.999,
+            "generationTokensPerSecond": 14.486922112149784,
+            "generatedTokens": 361,
+            "visibleTokens": 202,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 4.365832999996201
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 11852.69,
+              "runtimeRssMiB": 448.875
+            },
+            "after": {
+              "freePercent": 10,
+              "swapUsedMiB": 11911.25,
+              "runtimeRssMiB": 454.734375
+            },
+            "peakRuntimeRssMiB": 454.734375,
+            "swapDeltaMiB": 58.55999999999949
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 1,
+            "visibleAnswerChars": 1552,
+            "answerPresent": true
+          },
+          "output": "The **Ledger release** is currently blocked by **unstarted tasks** in its backlog.\n\n### **Key Blockers:**\n1. **Three pending tasks** must be completed before progress can resume:\n   - **`task-memory`** (Status: *Not started*) – Memory pressure measurement for unified memory, swap, and runtime safety checks.\n     - *Why it matters*: Critical for ensuring embedding/generation runtimes remain resident safely under both runtime configurations.\n   - **`task-quality`** (Status: *Not started*) – Answer quality validation (grounding, completeness, contradiction handling, truncation).\n     - *Why it matters*: Directly impacts correctness and robustness of runtime outputs.\n   - **`task-runtime`** (Status: *In progress*) – Runtime configuration validation (8K four-slot vs. 4K single-slot comparison).\n     - *Note*: While this is *in progress*, its completion depends on resolving the unstarted tasks above.\n\n2. **No explicit blockers** (e.g., dependencies, approvals, or technical roadblocks) are visible in the current Ledger context.\n\n### **Open Work & Next Steps:**\n- **Immediate priority**: Start `task-memory` and `task-quality` (due 2026-08-23/24).\n  - *Why*: These tasks are the foundational prerequisites for `task-runtime` validation and release readiness.\n- **Follow-up**: Once `task-memory` and `task-quality` are completed, `task-runtime` can proceed toward its August 22 deadline.\n- **No overdue or urgent actions** beyond the due dates listed.\n\n**Action**: Assign ownership to the team responsible for these tasks to accelerate progress.",
+          "reasoning": ""
+        },
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "short-grounded",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 113.19800000000396,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 113.49591700000019,
+            "bodyCloseMs": 20575.474250000007,
+            "promptTokens": 1,
+            "promptEvalMs": 80.16,
+            "promptTokensPerSecond": 12.4750499001996,
+            "generationMs": 20440.322,
+            "generationTokensPerSecond": 13.649491431690754,
+            "generatedTokens": 280,
+            "visibleTokens": 160,
+            "reasoningTokens": 0,
+            "finishReason": "stop",
+            "doneToCloseMs": 1.2846660000068368
+          },
+          "memory": {
+            "before": {
+              "freePercent": 10,
+              "swapUsedMiB": 11990.25,
+              "runtimeRssMiB": 443.328125
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 12259.88,
+              "runtimeRssMiB": 455.484375
+            },
+            "peakRuntimeRssMiB": 455.484375,
+            "swapDeltaMiB": 269.6299999999992
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 1,
+            "visibleAnswerChars": 1103,
+            "answerPresent": true
+          },
+          "output": "The **only explicit blocker** in the Ledger workspace context is the **unstarted task \"Measure memory pressure\"** (due 2026-08-23).\n\n---\n**Supporting context:**\n- The task is part of the **Ledger release** project and is **not started** (status: *Not started*).\n- It is **dependent** on the runtime configuration and answer quality validation tasks, which are either in progress or overdue (due 2026-08-22/24).\n- No other tasks are marked as blocked or overdue, but the lack of progress on *task-memory* creates a **critical gap** for the release timeline.\n\n---\n**Open work:**\n- *task-runtime* (in progress) and *task-quality* (overdue) are not blocked but require completion before *task-memory* can proceed.\n- The **due dates** for all three tasks are in August 2026, but *task-memory* remains unaddressed.\n\n---\n**Next steps:**\n1. **Address *task-memory*** to avoid cascading delays.\n2. Clarify dependencies: If *task-runtime* or *task-quality* cannot be completed by their deadlines, reassess the release timeline.\n3. Monitor for updates on task progress or blockers in related meetings/integrations.",
+          "reasoning": ""
+        },
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "plan-my-week",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 4035.211917000008,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 4035.7309590000077,
+            "bodyCloseMs": 40655.90770900001,
+            "promptTokens": 1007,
+            "promptEvalMs": 3910.461,
+            "promptTokensPerSecond": 257.51439536156994,
+            "generationMs": 36593.828,
+            "generationTokensPerSecond": 13.964103454823038,
+            "generatedTokens": 512,
+            "visibleTokens": 339,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 3.1802500000048894
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12263.12,
+              "runtimeRssMiB": 451.53125
+            },
+            "after": {
+              "freePercent": 10,
+              "swapUsedMiB": 12426.31,
+              "runtimeRssMiB": 460.234375
+            },
+            "peakRuntimeRssMiB": 460.234375,
+            "swapDeltaMiB": 163.1899999999987
+          },
+          "quality": {
+            "grounding": 0.5,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 2339,
+            "answerPresent": true
+          },
+          "output": "Here’s the grounded week-planning synthesis from the available Ledger context, structured to reflect urgency, dependencies, and actionable priorities:\n\n---\n\n### **Focus This Week**\n**Core Theme**: The week centers on finalizing the **Ledger release runtime configuration**—a critical milestone for production stability. The work is split into two interdependent streams: *validation* and *review*, with a tight deadline (August 22) and a meeting to resolve configuration decisions.\n\n---\n\n### **Deadlines and Commitments**\n1. **Runtime Configuration Validation**\n   - **Status**: *In progress* (no explicit blockers noted, but workloads are still being compared).\n   - **Due**: **August 22, 2026** (UTC) — *Critical*: This deadline is explicit and tied to the release timeline. The task requires comparing two runtime configurations (8K four-slot vs. 4K single-slot) across identical workloads. If validation isn’t completed by the meeting, the release may face delays.\n   - **Implications**: The validation must be wrapped up *before* the review meeting on August 21, as the review will depend on these results.\n\n2. **Runtime Review Meeting**\n   - **Time**: **August 21, 2026, 3:00 PM UTC** — *High-priority*: This meeting is scheduled to review A/B timings and decide the *safe 8 GB production configuration*. The decision here will lock the runtime choice for the release.\n   - **Dependencies**: The review assumes the validation task is complete and the timings are ready. If validation is incomplete, the meeting may need to defer or clarify scope.\n\n---\n\n### **Risks or Blockers**\n- **Validation Risk**: The task is marked *in progress* but lacks explicit blockers. However, the workload comparison is time-sensitive. If the comparison stalls or yields unexpected results, it could delay the review and require rework.\n- **Review Risk**: The meeting’s outcome hinges on the validation results. If the 8K four-slot configuration proves less stable or inefficient than expected, the team may need to pivot to the 4K single-slot alternative, which could introduce further testing.\n- **No Missing Evidence**: No other blockers (e.g., dependencies on other teams, resource constraints) are visible in the provided context.\n\n---\n\n### **Next Steps**\n#### **Immediate Actions (Today or Tomorrow)**\n1. **Validate Runtime Configuration**\n   - **",
+          "reasoning": ""
+        },
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "plan-my-week",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 166.6171250000043,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 166.86204200000793,
+            "bodyCloseMs": 35867.570875000005,
+            "promptTokens": 1,
+            "promptEvalMs": 69.874,
+            "promptTokensPerSecond": 14.31147494060738,
+            "generationMs": 35681.091,
+            "generationTokensPerSecond": 14.321310971124733,
+            "generatedTokens": 512,
+            "visibleTokens": 323,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 0.2954160000081174
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12437.19,
+              "runtimeRssMiB": 453.25
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 12341.06,
+              "runtimeRssMiB": 460.640625
+            },
+            "peakRuntimeRssMiB": 460.640625,
+            "swapDeltaMiB": -96.13000000000102
+          },
+          "quality": {
+            "grounding": 0.5,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 2220,
+            "answerPresent": true
+          },
+          "output": "Here’s the grounded week-planning synthesis from the available Ledger context:\n\n---\n### **Focus This Week**\n**Core Priority:** The week centers on finalizing the **Ledger release runtime configuration**—specifically validating and deciding the production-ready 8 GB slot configuration after A/B testing. This is a high-stakes technical milestone tied to the release timeline.\n\n---\n\n### **Deadlines and Commitments**\n1. **Runtime Validation Task**\n   - **Status:** *In progress* (but critical to wrap up before the review).\n   - **Due:** **2026-08-22 at 12:00 UTC** (exact deadline for comparison).\n   - **Action:** The comparison between the 8K four-slot runtime and the 4K single-slot candidate must be completed *before* the review meeting. This is the last hurdle before finalizing the production configuration.\n   - **Risk:** If not finished by the review, the release could face delays or incorrect configuration choices.\n\n2. **Runtime Review Meeting**\n   - **Time:** **2026-08-21 at 15:00 UTC** (today’s meeting).\n   - **Purpose:** Review A/B timings and decide the safe 8 GB production configuration.\n   - **Connection:** This meeting is directly tied to the runtime validation task. The validation results will be the basis for the decision.\n\n---\n\n### **Risks or Blockers**\n- **Unresolved Workflow Gap:** The task is *in progress* but lacks explicit blockers or dependencies. The evidence suggests the work is ongoing, but no signals indicate delays (e.g., no overdue status, no blocked tasks). However, the due date is tight, so *proactive completion* is required.\n- **No Missing Resources:** No evidence of missing tools, team members, or documentation. The workloads and comparison criteria appear well-defined.\n\n---\n\n### **Next Steps**\n#### **Immediate Actions (Today)**\n1. **Finalize Runtime Comparison**\n   - **What to Do:** Complete the comparison between the 8K four-slot and 4K single-slot runtimes on the specified workloads.\n   - **Why Now:** The review meeting is tomorrow, and the task’s due date is tomorrow afternoon. This is the last critical step before the decision.\n   - **Grounded Next Action:** Start or accelerate the validation work *today* to ensure it’s ready for the review. If the task",
+          "reasoning": ""
+        },
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "multi-resource",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 3905.997792000009,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 3912.3157089999877,
+            "bodyCloseMs": 30399.48129200001,
+            "promptTokens": 945,
+            "promptEvalMs": 3748.894,
+            "promptTokensPerSecond": 252.0743451268561,
+            "generationMs": 26492.011,
+            "generationTokensPerSecond": 14.457188621883027,
+            "generatedTokens": 384,
+            "visibleTokens": 217,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 0.30120800001895986
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12346.69,
+              "runtimeRssMiB": 458.96875
+            },
+            "after": {
+              "freePercent": 10,
+              "swapUsedMiB": 12610.38,
+              "runtimeRssMiB": 462.140625
+            },
+            "peakRuntimeRssMiB": 462.140625,
+            "swapDeltaMiB": 263.6899999999987
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 1561,
+            "answerPresent": true
+          },
+          "output": "The **Ledger release** is in an active phase of validation and optimization, with a clear focus on runtime performance and memory efficiency. Below is a synthesized assessment of the current state, priorities, and unresolved work, organized around what matters next.\n\n---\n\n### **Overall Picture**\nThe release is **40% complete** and prioritizing **local AI performance validation** as the next critical step. The current trajectory hinges on three interdependent tasks:\n1. **Runtime configuration validation** (due 2026-08-22)\n2. **Memory pressure assessment** (due 2026-08-23)\n3. **Answer quality comparison** (due 2026-08-24)\n\nThese tasks are linked to a **milestone** (8 GB runtime selection) due on 2026-08-25, which requires iterative sizing decisions based on performance measurements. The **Phase 4 baseline** notes provide context for expected performance trade-offs between visible time and total runtime.\n\n---\n\n### **What Changed**\n- **Progress**: The release has shifted from conceptual planning to execution, with explicit due dates for validation tasks.\n- **Focus Shift**: The baseline notes (visible time: 7.9s vs. 6.3s; total time: 28.9s vs. 50.8s) suggest a trade-off between efficiency and latency, which will inform runtime configuration choices.\n- **Unresolved Work**: No tasks are blocked, but the sequence of validation steps is critical to avoid misalignment between memory, performance, and quality metrics.\n\n---\n\n### **What Matters Now**\n#### **Immediate Priorities (Due 2026-08-22–24)**\n1. **Validate Runtime Configuration (Due 2026-08-",
+          "reasoning": ""
+        },
+        {
+          "model": "ministral-3b-q8",
+          "caseId": "multi-resource",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": false,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 107.99545799999032,
+            "firstReasoningMs": null,
+            "firstVisibleMs": 108.05666599998949,
+            "bodyCloseMs": 27997.933540999977,
+            "promptTokens": 1,
+            "promptEvalMs": 68.477,
+            "promptTokensPerSecond": 14.603443491975407,
+            "generationMs": 27877.206,
+            "generationTokensPerSecond": 13.738823037000193,
+            "generatedTokens": 384,
+            "visibleTokens": 227,
+            "reasoningTokens": 0,
+            "finishReason": "length",
+            "doneToCloseMs": 0.2388749999809079
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12615.38,
+              "runtimeRssMiB": 461.71875
+            },
+            "after": {
+              "freePercent": 10,
+              "swapUsedMiB": 12667,
+              "runtimeRssMiB": 462.8125
+            },
+            "peakRuntimeRssMiB": 462.8125,
+            "swapDeltaMiB": 51.6200000000008
+          },
+          "quality": {
+            "grounding": 1,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 1608,
+            "answerPresent": true
+          },
+          "output": "The **Ledger release** is in an active phase of validation and optimization, with a clear focus on refining runtime performance, memory efficiency, and answer quality before finalizing the 8 GB runtime configuration. Below is a synthesized assessment of the current state, priorities, and next steps based on the available Ledger context.\n\n---\n\n### **Overall Picture**\nThe release is **40% complete** and prioritizes validating local AI performance, particularly around runtime configuration, memory constraints, and grounding accuracy. The decision to proceed with an **8 GB runtime** (or a hybrid/single-slot alternative) hinges on three critical tasks:\n1. **Runtime configuration validation** (due **2026-08-22**)\n2. **Memory pressure measurement** (due **2026-08-23**)\n3. **Answer quality comparison** (due **2026-08-24**)\n\nThese tasks are interdependent: poor memory usage or inconsistent grounding could invalidate the 8 GB choice, while performance benchmarks must align with the baseline metrics (e.g., ~7.9s visible time, ~28.9s total time).\n\n---\n\n### **What Matters Now**\n#### **1. Immediate Priorities (Due Dates Closer Than 2026-08-25)**\n- **Task: Validate runtime configuration** (due **2026-08-22**)\n  - **Status**: In progress (but no evidence of progress tracking or completion).\n  - **Action Required**: Compare the **8K four-slot runtime** vs. the **4K single-slot candidate** on the same workloads. The evidence suggests this is the next critical step to confirm whether the 8 GB choice is viable or if a lighter configuration should be adopted.\n  - **Risk**: If this task is not completed",
+          "reasoning": ""
+        }
+      ]
+    },
+    {
+      "model": {
+        "id": "ministral-3b-q4-k-m",
+        "label": "Ministral 3B Q4_K_M",
+        "family": "Ministral 3",
+        "path": "/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q4-k-m/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf",
+        "reasoning": false,
+        "fileSizeBytes": 2147023008
+      },
+      "runtime": {
+        "metalConfirmed": false,
+        "gpuLayersOffloaded": null,
+        "cpuFallbackDetected": null,
+        "metalMemoryMiB": null,
+        "modelMemoryMiB": null,
+        "contextMemoryMiB": null,
+        "computeMemoryMiB": null,
+        "kvMemoryMiB": null
+      },
+      "error": "runtime exited with 1: count u32              = 128\n0.00.313.459 I llama_model_loader: - kv  30:                 mistral3.rope.scaling.type str              = yarn\n0.00.313.460 I llama_model_loader: - kv  31:               mistral3.rope.scaling.factor f32              = 16.000000\n0.00.313.460 I llama_model_loader: - kv  32:       mistral3.rope.scaling.yarn_beta_fast f32              = 32.000000\n0.00.313.461 I llama_model_loader: - kv  33:       mistral3.rope.scaling.yarn_beta_slow f32              = 1.000000\n0.00.313.461 I llama_model_loader: - kv  34:  mistral3.rope.scaling.yarn_log_multiplier f32              = 1.000000\n0.00.313.461 I llama_model_loader: - kv  35: mistral3.rope.scaling.original_context_length u32              = 16384\n0.00.313.462 I llama_model_loader: - kv  36:       mistral3.attention.temperature_scale f32              = 0.100000\n0.00.313.462 I llama_model_loader: - kv  37:                       tokenizer.ggml.model str              = gpt2\n0.00.313.463 I llama_model_loader: - kv  38:                         tokenizer.ggml.pre str              = tekken\n0.00.341.641 I llama_model_loader: - kv  39:                      tokenizer.ggml.merges arr[str,269443]  = [\"Ġ Ġ\", \"Ġ t\", \"e r\", \"i n\", \"Ġ �...\n0.00.341.646 I llama_model_loader: - kv  40:                tokenizer.ggml.bos_token_id u32              = 1\n0.00.341.646 I llama_model_loader: - kv  41:                tokenizer.ggml.eos_token_id u32              = 2\n0.00.341.646 I llama_model_loader: - kv  42:            tokenizer.ggml.unknown_token_id u32              = 0\n0.00.341.647 I llama_model_loader: - kv  43:            tokenizer.ggml.padding_token_id u32              = 11\n0.00.355.705 I llama_model_loader: - kv  44:                      tokenizer.ggml.tokens arr[str,131072]  = [\"<unk>\", \"<s>\", \"</s>\", \"[INST]\", \"[...\n0.00.359.388 I llama_model_loader: - kv  45:                      tokenizer.ggml.scores arr[i32,131072]  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...\n0.00.363.065 I llama_model_loader: - kv  46:                  tokenizer.ggml.token_type arr[i32,131072]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...\n0.00.363.068 I llama_model_loader: - kv  47:                        mistral3.vocab_size u32              = 131072\n0.00.363.069 I llama_model_loader: - kv  48:               tokenizer.ggml.add_bos_token bool             = true\n0.00.363.069 I llama_model_loader: - kv  49:               tokenizer.ggml.add_eos_token bool             = false\n0.00.363.072 I llama_model_loader: - kv  50:                    tokenizer.chat_template str              = {#- Default system message if no syst...\n0.00.363.072 I llama_model_loader: - kv  51:               general.quantization_version u32              = 2\n0.00.363.073 I llama_model_loader: - kv  52:                          general.file_type u32              = 15\n0.00.363.073 I llama_model_loader: - type  f32:   53 tensors\n0.00.363.074 I llama_model_loader: - type q4_K:  156 tensors\n0.00.363.074 I llama_model_loader: - type q6_K:   27 tensors\n0.00.363.076 I print_info: file format = GGUF V3 (latest)\n0.00.363.076 I print_info: file type   = Q4_K - Medium\n0.00.363.077 I print_info: file size   = 1.99 GiB (4.99 BPW) \n0.00.363.091 I llama_prepare_model_devices: using device MTL0 (Apple M1) (unknown id) - 5460 MiB free\n0.00.412.373 E llama_model_load: error loading model: error loading model vocabulary: invalid gguf type for tokenizer.ggml.scores\n0.00.412.378 E llama_model_load_from_file_impl: failed to load model\n0.00.412.380 E cmn  common_init_: failed to load model '/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q4-k-m/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf'\n0.00.412.382 E srv    load_model: failed to load model, '/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q4-k-m/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf'\n0.00.412.384 I srv    operator(): operator(): cleaning up before exit...\n0.00.412.568 E srv  llama_server: exiting due to model loading error\n"
+    },
+    {
+      "model": {
+        "id": "qwen3-4b-thinking-2507-q6-k",
+        "label": "Qwen3-4B-Thinking-2507 Q6_K",
+        "family": "Qwen3",
+        "path": "/Users/lex/Library/Application Support/ledger/ai/models/generation/qwen3-4b-thinking-2507-q6-k/Qwen_Qwen3-4B-Thinking-2507-Q6_K.gguf",
+        "reasoning": true,
+        "fileSizeBytes": 3306261216
+      },
+      "runtime": {
+        "metalConfirmed": true,
+        "gpuLayersOffloaded": "37/37",
+        "cpuFallbackDetected": false,
+        "metalMemoryMiB": null,
+        "modelMemoryMiB": null,
+        "contextMemoryMiB": null,
+        "computeMemoryMiB": null,
+        "kvMemoryMiB": 576
+      },
+      "startupMs": 3024.668250000017,
+      "results": [
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "normal-grounded",
+          "run": 1,
+          "cold": true,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 3024.668250000017,
+            "firstResponseByteMs": 2661.5518750000047,
+            "firstReasoningMs": 2662.350542,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 26821.942749999987,
+            "promptTokens": 573,
+            "promptEvalMs": 2648.338,
+            "promptTokensPerSecond": 216.36211087859633,
+            "generationMs": 24155.419,
+            "generationTokensPerSecond": 15.85565541214582,
+            "generatedTokens": 384,
+            "visibleTokens": 0,
+            "reasoningTokens": 291,
+            "finishReason": "length",
+            "doneToCloseMs": 3.871500000008382
+          },
+          "memory": {
+            "before": {
+              "freePercent": 15,
+              "swapUsedMiB": 12635.94,
+              "runtimeRssMiB": 3661.984375
+            },
+            "after": {
+              "freePercent": 10,
+              "swapUsedMiB": 12458.44,
+              "runtimeRssMiB": 3639.65625
+            },
+            "peakRuntimeRssMiB": 3661.984375,
+            "swapDeltaMiB": -177.5
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given a specific request: \"What is the current status of the Ledger release?\"\n\nFrom the EVIDENCE PACKAGE, we have the following relevant information:\n\n- In the PRIMARY CONTEXT — COMPILED EVIDENCE PACKAGE under PROJECTS:\n  - Ledger release — Status: In progress — The Ledger release is In progress and 40% complete. The next priority is validating local AI performance.\n    Source: project:project-release · quick\n\nThe context does not mention any missing evidence, truncated data, unavailable data, or not connected items.\n\nRules to follow:\n- Use only the Ledger context below.\n- Do not invent facts, status, dates, deadlines, owners, or decisions.\n- When records conflict, prefer the record with the clearest newer Updated or Time value. (But here there is no conflict, only one record)\n- Do not silently merge outdated and current states. (We have one clear record)\n- If the context does not support the answer, say exactly: \"I don't have enough Ledger context to answer that.\" (We have the answer)\n\nThe answer must be:\n- Concise but genuinely useful synthesis.\n- State the answer first, then include important supporting context, open work, blockers, and next steps when supported.\n\nFrom the context:\n- Current status: In progress (40% complete)\n- Next priority: validating local AI performance\n\nWe don't have any blockers mentioned in the context, so we don't have to mention any blockers. Also, there are no next steps explicitly stated beyond the next priority.\n\nImportant: The context says \"The next priority is validating local AI performance.\" This is the immediate next step.\n\nWe must avoid:\n- Repeating resource rows (so don't just say \"The Ledger release is in progress and 40% complete\")\n- Turning the answer into a catalog (so don't list every detail)\n\nStructure the answer:\n"
+        },
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "normal-grounded",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 95.41475000002538,
+            "firstReasoningMs": 95.76058300002478,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 24015.062875000032,
+            "promptTokens": 1,
+            "promptEvalMs": 68.784,
+            "promptTokensPerSecond": 14.538264712723889,
+            "generationMs": 23907.392,
+            "generationTokensPerSecond": 16.020149751173197,
+            "generatedTokens": 384,
+            "visibleTokens": 0,
+            "reasoningTokens": 295,
+            "finishReason": "length",
+            "doneToCloseMs": 1.7047920000040904
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12450.44,
+              "runtimeRssMiB": 3629.984375
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 12375.19,
+              "runtimeRssMiB": 3640.15625
+            },
+            "peakRuntimeRssMiB": 3640.15625,
+            "swapDeltaMiB": -75.25
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given the user request: \"What is the current status of the Ledger release?\"\n\nFrom the EVIDENCE PACKAGE, we have:\n\nPROJECTS\n- Ledger release — Status: In progress — The Ledger release is In progress and 40% complete. The next priority is validating local AI performance.\n  Source: project:project-release · quick\n\nWe are to answer in the following structure:\n1. State the answer first (concise)\n2. Then include important supporting context, open work, blockers, and next steps when supported.\n\nRules to follow:\n- Use only the provided context (we have the project status from the evidence package)\n- Do not invent facts: we have the status as \"In progress\" and 40% complete, next priority is validating local AI performance.\n- There are no conflicting records (only one record for the project status)\n- We don't have any blockers or next steps explicitly stated beyond the next priority (which is an open work item)\n\nImportant: The context does not mention any blockers, overdue items, or specific next steps beyond the next priority.\n\nSo, the answer:\n\nThe Ledger release is currently in progress at 40% completion, with the immediate next step being validation of local AI performance.\n\nSupporting context:\n- The status is explicitly stated as \"In progress\" and 40% complete in the project:project-release record.\n- The next priority is validating local AI performance (which is an open work item).\n\nOpen work: \n- Validating local AI performance (as the next priority)\n\nBlockers: \n- The context does not mention any blockers. So we cannot say there are blockers.\n\nNext steps:\n- The context does not specify any next steps beyond the next priority. However, the next priority (validating local AI performance) is an action that will be taken. We can note that this is the immediate next step.\n\n"
+        },
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "short-grounded",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 1876.4808750000084,
+            "firstReasoningMs": 1877.233917000005,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 25768.00433299999,
+            "promptTokens": 371,
+            "promptEvalMs": 1799.249,
+            "promptTokensPerSecond": 206.19714114055364,
+            "generationMs": 23888.618,
+            "generationTokensPerSecond": 16.032739943348755,
+            "generatedTokens": 384,
+            "visibleTokens": 0,
+            "reasoningTokens": 251,
+            "finishReason": "length",
+            "doneToCloseMs": 1.2098329999716952
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12367.19,
+              "runtimeRssMiB": 3640.015625
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 12460.5,
+              "runtimeRssMiB": 3641.359375
+            },
+            "peakRuntimeRssMiB": 3641.359375,
+            "swapDeltaMiB": 93.30999999999949
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 1,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given a user request: \"What is blocked?\"\n\nWe have the following tasks from the evidence package:\n\n1. Validate runtime configuration — Status: In progress — Project: Ledger release — Due: 2026-08-22T12:00:00Z\n2. Measure memory pressure — Status: Not started — Project: Ledger release — Due: 2026-08-23T12:00:00Z\n3. Compare answer quality — Status: Not started — Project: Ledger release — Due: 2026-08-24T12:00:00Z\n\nThe rules state: \n- Do not invent facts, status, dates, deadlines, owners, or decisions.\n- When records conflict, prefer the record with the clearest newer Updated or Time value. (But here there are no conflicts in the provided context)\n- Do not silently merge outdated and current states.\n\nWe are to answer \"What is blocked?\".\n\nIn the context of tasks, a task being blocked would typically mean that it is not started (or in progress but blocked by something) and there is a dependency or an issue preventing it from moving forward.\n\nLooking at the tasks:\n\n- The first task (Validate runtime configuration) is \"In progress\". So it's not blocked by being not started.\n- The second task (Measure memory pressure) is \"Not started\". \n- The third task (Compare answer quality) is \"Not started\".\n\nHowever, the question is \"What is blocked?\" meaning what is preventing progress? \n\nIn the evidence package, we don't have explicit information about blockers (like dependencies, issues, etc.) for these tasks. The tasks themselves have statuses and due dates, but no blockers are mentioned.\n\nThe rules say: \"If the context does not support the answer,"
+        },
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "short-grounded",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 96.12508299999172,
+            "firstReasoningMs": 96.26487499999348,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 26873.26995799999,
+            "promptTokens": 1,
+            "promptEvalMs": 65.795,
+            "promptTokensPerSecond": 15.198723307242192,
+            "generationMs": 26758.032,
+            "generationTokensPerSecond": 14.313459225999878,
+            "generatedTokens": 384,
+            "visibleTokens": 0,
+            "reasoningTokens": 262,
+            "finishReason": "length",
+            "doneToCloseMs": 11.311416000011377
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12468.62,
+              "runtimeRssMiB": 3634.75
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 12952.75,
+              "runtimeRssMiB": 3641.53125
+            },
+            "peakRuntimeRssMiB": 3641.53125,
+            "swapDeltaMiB": 484.1299999999992
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 1,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given a user request: \"What is blocked?\"\n\nWe have the evidence package which includes tasks and their statuses.\n\nLet's look at the tasks:\n\n1. Validate runtime configuration — Status: In progress — Due: 2026-08-22T12:00:00Z\n2. Measure memory pressure — Status: Not started — Due: 2026-08-23T12:00:00Z\n3. Compare answer quality — Status: Not started — Due: 2026-08-24T12:00:00Z\n\nThe question is: \"What is blocked?\"\n\nIn the context of the Ledger system, a task being \"blocked\" typically means it is not progressing because of dependencies, resource constraints, or other issues. However, the evidence package does not explicitly state any blockers for these tasks.\n\nWe have to be careful: the rules say we must not invent facts. We only have the status of the tasks.\n\nThe tasks have statuses:\n- One task is \"In progress\"\n- Two tasks are \"Not started\"\n\nThe system does not have any explicit information about what is blocking the tasks. The evidence package does not mention any blockers, dependencies, or issues that are causing delays.\n\nThe rules also say: \"When records conflict, prefer the record with the clearest newer Updated or Time value.\" But here, we don't have any conflicting records about blockers.\n\nThe evidence package says: \"Missing: none reported\" for missing evidence, so there are no reported blockers.\n\nTherefore, we cannot say that any specific task is blocked because the context does not indicate any blockers.\n\nHowever, note that the user might be asking about what is blocking progress in the project. But the evidence package does not provide any information about blockers.\n\nThe rule: \"If the context"
+        },
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "plan-my-week",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 4819.980209000001,
+            "firstReasoningMs": 4824.420125000004,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 37391.12016699999,
+            "promptTokens": 954,
+            "promptEvalMs": 4640.952,
+            "promptTokensPerSecond": 205.56127277334477,
+            "generationMs": 32570.114,
+            "generationTokensPerSecond": 15.689229703033892,
+            "generatedTokens": 512,
+            "visibleTokens": 0,
+            "reasoningTokens": 322,
+            "finishReason": "length",
+            "doneToCloseMs": 2.478332999977283
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12957.38,
+              "runtimeRssMiB": 3641.203125
+            },
+            "after": {
+              "freePercent": 13,
+              "swapUsedMiB": 12821.06,
+              "runtimeRssMiB": 3645.734375
+            },
+            "peakRuntimeRssMiB": 3645.734375,
+            "swapDeltaMiB": -136.3199999999997
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given a specific evidence package for the user's request \"Plan my week.\"\n\nKey points from the evidence package:\n- Tasks: \n   - \"Validate runtime configuration\" (Status: In progress, Project: Ledger release, Due: 2026-08-22T12:00:00Z)\n      - Description: Compare the current 8K four-slot runtime with the 4K single-slot candidate on the same workloads.\n      - Source: task:task-runtime (from week-open-tasks)\n\n- Meetings:\n   - \"Runtime review\" (Time: 2026-08-21T15:00:00Z)\n      - Description: Review A/B timings and decide the safe 8 GB production configuration.\n      - Source: event:event-review (from week-events)\n\nMissing categories: milestones, reminders (as per the evidence package)\n\nRules to follow:\n- Use only the provided context.\n- Do not invent facts, status, dates, deadlines, owners, etc.\n- When records conflict, prefer the record with the clearest newer Updated or Time value (but here we don't have conflicts).\n- Do not silently merge outdated and current states.\n- If context doesn't support the answer, say \"I don't have enough Ledger context to answer that.\" (But we have some context, so we can answer with what we have)\n- Answer mode: deep (research_route) -> we need to be thorough and explain the picture.\n\nStructure the answer as per the expected sections (when useful): Focus this week, Deadlines and commitments, Risks or blockers, Next steps.\n\nWe must:\n- Organize around meaning, not just dumping records.\n- Explain what changed (if any), what matters now, unresolved work, immediate vs longer-term, and grounded next actions.\n- Acknowledge missing categories (milestones and reminders) without inventing.\n\nSteps:\n\n1. **Overall picture**: \n   - The current week (as of the time of the request) has one active task in progress: validating runtime configuration for the Ledger release. \n   - There is a meeting scheduled for August 21, 2026 at 3:00 PM (UTC) to review A/B timings and decide on the safe 8 GB production configuration.\n\n2. **What changed?** \n   - The evidence doesn't show any changes from a previous state (we don't have historical context). So we can't say what changed"
+        },
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "plan-my-week",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 100.3933749999851,
+            "firstReasoningMs": 101.3059999999823,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 33943.07837499998,
+            "promptTokens": 1,
+            "promptEvalMs": 65.842,
+            "promptTokensPerSecond": 15.187874001397285,
+            "generationMs": 33804.909,
+            "generationTokensPerSecond": 15.116147776052289,
+            "generatedTokens": 512,
+            "visibleTokens": 0,
+            "reasoningTokens": 330,
+            "finishReason": "length",
+            "doneToCloseMs": 14.080249999999069
+          },
+          "memory": {
+            "before": {
+              "freePercent": 12,
+              "swapUsedMiB": 12813.06,
+              "runtimeRssMiB": 3643.125
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 12941.31,
+              "runtimeRssMiB": 3644.5625
+            },
+            "peakRuntimeRssMiB": 3644.5625,
+            "swapDeltaMiB": 128.25
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given a specific evidence package for the user's request \"Plan my week.\"\n\nKey points from the evidence:\n- Tasks: Only one task is listed: \"Validate runtime configuration\" (In progress, Project: Ledger release, Due: 2026-08-22T12:00:00Z)\n- Meetings: One meeting: \"Runtime review\" (Time: 2026-08-21T15:00:00Z)\n- Missing: milestones, reminders\n\nRules to follow:\n- Use only the provided context.\n- Do not invent facts, status, dates, etc.\n- When records conflict, prefer the clearest newer Updated or Time value (but here no conflicts are apparent).\n- Do not silently merge outdated and current states.\n- If context doesn't support, say \"I don't have enough Ledger context to answer that.\" (But here we have some context, so we can answer with what we have)\n- Answer mode: deep (research_route) -> we need to be thorough and explain the picture.\n\nStructure the answer as per the expected sections (if useful): Focus this week, Deadlines and commitments, Risks or blockers, Next steps.\n\nWe must:\n- Organize around meaning, not just dumping records.\n- Explain what changed (if any) - but note: we don't have a history of changes, so we can't say what changed. We have the current state.\n- What matters now: the in-progress task and the upcoming meeting.\n- Unresolved or blocked work: the task is in progress, so it's not blocked (unless we have evidence of a blocker, but we don't). The meeting is scheduled but we don't have evidence of what's blocked.\n- Immediate vs longer-term: the meeting is today (relative to the current context? note: the meeting is in the future: 2026-08-21, which is in the future from now, but the task is due in 2026-08-22). However, note: the current context is for the week (we don't know the current date, but the meeting is set for 2026-08-21, which is a future date). We have to be careful: the evidence says \"week-open-tasks\" and \"week-events\", so we assume the context is for the current week (but the dates are in 2026"
+        },
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "multi-resource",
+          "run": 1,
+          "cold": false,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 4816.035124999995,
+            "firstReasoningMs": 4817.030374999973,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 30683.29133400001,
+            "promptTokens": 904,
+            "promptEvalMs": 4624.072,
+            "promptTokensPerSecond": 195.49868600661927,
+            "generationMs": 25850.005,
+            "generationTokensPerSecond": 14.81624471639367,
+            "generatedTokens": 384,
+            "visibleTokens": 0,
+            "reasoningTokens": 214,
+            "finishReason": "length",
+            "doneToCloseMs": 1.1293339999974705
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 12993.38,
+              "runtimeRssMiB": 3634.328125
+            },
+            "after": {
+              "freePercent": 11,
+              "swapUsedMiB": 13436.38,
+              "runtimeRssMiB": 3645.265625
+            },
+            "peakRuntimeRssMiB": 3645.265625,
+            "swapDeltaMiB": 443
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given a specific request: \"Assess the release across its project, tasks, milestone, event, and notes. What matters next?\"\n\nWe have the following evidence (from the EVIDENCE PACKAGE):\n\nPROJECTS:\n- Ledger release — Status: In progress — 40% complete. Next priority: validating local AI performance.\n\nMILESTONES:\n- Choose 8 GB runtime — Status: Not started — Due: 2026-08-25T12:00:00Z — Description: Select current, candidate, or hybrid context sizing after repeated performance and memory measurements.\n\nTASKS:\n1. Validate runtime configuration — Status: In progress — Due: 2026-08-22T12:00:00Z — Description: Compare the current 8K four-slot runtime with the 4K single-slot candidate on the same workloads.\n2. Measure memory pressure — Status: Not started — Due: 2026-08-23T12:00:00Z — Description: Check unified memory, swap, and whether embedding and generation runtimes can remain resident safely.\n3. Compare answer quality — Status: Not started — Due: 2026-08-24T12:00:00Z — Description: Verify grounding, completeness, contradiction handling, and truncation under both runtime configurations.\n\nNOTES:\n- Phase 4 baseline — Normal grounded visible time was about 7.9 seconds and total time about 28.9 seconds. Plan my week visible time was about 6.3 seconds and total time about 50.8 seconds.\n\nMissing: reminders (so we cannot address reminders)\n\nWe are to synthesize the project state, what is moving, what is blocked or stalled, and what needs"
+        },
+        {
+          "model": "qwen3-4b-thinking-2507-q6-k",
+          "caseId": "multi-resource",
+          "run": 2,
+          "cold": false,
+          "modelReasoningEnabled": true,
+          "metrics": {
+            "startupMs": 0,
+            "firstResponseByteMs": 350.03670900000725,
+            "firstReasoningMs": 351.012584000011,
+            "firstVisibleMs": null,
+            "bodyCloseMs": 27237.33845900005,
+            "promptTokens": 1,
+            "promptEvalMs": 74.633,
+            "promptTokensPerSecond": 13.398898610534214,
+            "generationMs": 26884.386,
+            "generationTokensPerSecond": 14.246187359458387,
+            "generatedTokens": 384,
+            "visibleTokens": 0,
+            "reasoningTokens": 194,
+            "finishReason": "length",
+            "doneToCloseMs": 0.6175420000217855
+          },
+          "memory": {
+            "before": {
+              "freePercent": 11,
+              "swapUsedMiB": 13397.75,
+              "runtimeRssMiB": 3635.3125
+            },
+            "after": {
+              "freePercent": 12,
+              "swapUsedMiB": 13491.19,
+              "runtimeRssMiB": 3645.25
+            },
+            "peakRuntimeRssMiB": 3645.25,
+            "swapDeltaMiB": 93.44000000000051
+          },
+          "quality": {
+            "grounding": 0,
+            "expectedFacts": 2,
+            "visibleAnswerChars": 0,
+            "answerPresent": false
+          },
+          "output": "",
+          "reasoning": "We are given a specific request: \"Assess the release across its project, tasks, milestone, event, and notes. What matters next?\"\n\nWe have the evidence package (as described above) and we must follow the rules.\n\nKey points from the evidence:\n\n1. Project: Ledger release\n   - Status: In progress (40% complete)\n   - Next priority: validating local AI performance\n\n2. Milestones:\n   - Choose 8 GB runtime: Not started, due 2026-08-25T12:00:00Z\n     - Description: Select current, candidate, or hybrid context sizing after repeated performance and memory measurements.\n\n3. Tasks:\n   - Validate runtime configuration: In progress, due 2026-08-22T12:00:00Z\n     - Description: Compare the current 8K four-slot runtime with the 4K single-slot candidate on the same workloads.\n   - Measure memory pressure: Not started, due 2026-08-23T12:00:00Z\n     - Description: Check unified memory, swap, and whether embedding and generation runtimes can remain resident safely.\n   - Compare answer quality: Not started, due 2026-08-24T12:00:00Z\n     - Description: Verify grounding, completeness, contradiction handling, and truncation under both runtime configurations.\n\n4. Notes:\n   - Phase 4 baseline: \n        Normal grounded visible time: 7.9 seconds, total time: 28.9 seconds.\n        Plan my week visible time: 6.3 seconds, total time: 50.8 seconds.\n\n5. Missing: reminders (so we cannot talk about reminders)\n\nWe are to synthesize"
+        }
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "model": "ministral-3b-q8",
+      "fileSizeBytes": 3651679744,
+      "metalMemoryMiB": 3961,
+      "kvMemoryMiB": 416,
+      "coldStartupMs": 5821.564917,
+      "warmTTFTMs": 1415.726928714285,
+      "promptTokensPerSecond": 137.08215228119738,
+      "generationTokensPerSecond": 14.167540823847757,
+      "visibleAnswerMs": 1780.3912657499995,
+      "visibleTokens": 213.5,
+      "reasoningTokens": 0,
+      "averageGrounding": 0.875,
+      "finishReasons": {
+        "stop": 4,
+        "length": 4
+      },
+      "peakRuntimeRssMiB": 462.8125
+    },
+    {
+      "model": "ministral-3b-q4-k-m",
+      "fileSizeBytes": 2147023008,
+      "error": "runtime exited with 1: count u32              = 128\n0.00.313.459 I llama_model_loader: - kv  30:                 mistral3.rope.scaling.type str              = yarn\n0.00.313.460 I llama_model_loader: - kv  31:               mistral3.rope.scaling.factor f32              = 16.000000\n0.00.313.460 I llama_model_loader: - kv  32:       mistral3.rope.scaling.yarn_beta_fast f32              = 32.000000\n0.00.313.461 I llama_model_loader: - kv  33:       mistral3.rope.scaling.yarn_beta_slow f32              = 1.000000\n0.00.313.461 I llama_model_loader: - kv  34:  mistral3.rope.scaling.yarn_log_multiplier f32              = 1.000000\n0.00.313.461 I llama_model_loader: - kv  35: mistral3.rope.scaling.original_context_length u32              = 16384\n0.00.313.462 I llama_model_loader: - kv  36:       mistral3.attention.temperature_scale f32              = 0.100000\n0.00.313.462 I llama_model_loader: - kv  37:                       tokenizer.ggml.model str              = gpt2\n0.00.313.463 I llama_model_loader: - kv  38:                         tokenizer.ggml.pre str              = tekken\n0.00.341.641 I llama_model_loader: - kv  39:                      tokenizer.ggml.merges arr[str,269443]  = [\"Ġ Ġ\", \"Ġ t\", \"e r\", \"i n\", \"Ġ �...\n0.00.341.646 I llama_model_loader: - kv  40:                tokenizer.ggml.bos_token_id u32              = 1\n0.00.341.646 I llama_model_loader: - kv  41:                tokenizer.ggml.eos_token_id u32              = 2\n0.00.341.646 I llama_model_loader: - kv  42:            tokenizer.ggml.unknown_token_id u32              = 0\n0.00.341.647 I llama_model_loader: - kv  43:            tokenizer.ggml.padding_token_id u32              = 11\n0.00.355.705 I llama_model_loader: - kv  44:                      tokenizer.ggml.tokens arr[str,131072]  = [\"<unk>\", \"<s>\", \"</s>\", \"[INST]\", \"[...\n0.00.359.388 I llama_model_loader: - kv  45:                      tokenizer.ggml.scores arr[i32,131072]  = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...\n0.00.363.065 I llama_model_loader: - kv  46:                  tokenizer.ggml.token_type arr[i32,131072]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...\n0.00.363.068 I llama_model_loader: - kv  47:                        mistral3.vocab_size u32              = 131072\n0.00.363.069 I llama_model_loader: - kv  48:               tokenizer.ggml.add_bos_token bool             = true\n0.00.363.069 I llama_model_loader: - kv  49:               tokenizer.ggml.add_eos_token bool             = false\n0.00.363.072 I llama_model_loader: - kv  50:                    tokenizer.chat_template str              = {#- Default system message if no syst...\n0.00.363.072 I llama_model_loader: - kv  51:               general.quantization_version u32              = 2\n0.00.363.073 I llama_model_loader: - kv  52:                          general.file_type u32              = 15\n0.00.363.073 I llama_model_loader: - type  f32:   53 tensors\n0.00.363.074 I llama_model_loader: - type q4_K:  156 tensors\n0.00.363.074 I llama_model_loader: - type q6_K:   27 tensors\n0.00.363.076 I print_info: file format = GGUF V3 (latest)\n0.00.363.076 I print_info: file type   = Q4_K - Medium\n0.00.363.077 I print_info: file size   = 1.99 GiB (4.99 BPW) \n0.00.363.091 I llama_prepare_model_devices: using device MTL0 (Apple M1) (unknown id) - 5460 MiB free\n0.00.412.373 E llama_model_load: error loading model: error loading model vocabulary: invalid gguf type for tokenizer.ggml.scores\n0.00.412.378 E llama_model_load_from_file_impl: failed to load model\n0.00.412.380 E cmn  common_init_: failed to load model '/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q4-k-m/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf'\n0.00.412.382 E srv    load_model: failed to load model, '/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q4-k-m/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf'\n0.00.412.384 I srv    operator(): operator(): cleaning up before exit...\n0.00.412.568 E srv  llama_server: exiting due to model loading error\n",
+      "runtime": {
+        "metalConfirmed": false,
+        "gpuLayersOffloaded": null,
+        "cpuFallbackDetected": null,
+        "metalMemoryMiB": null,
+        "modelMemoryMiB": null,
+        "contextMemoryMiB": null,
+        "computeMemoryMiB": null,
+        "kvMemoryMiB": null
+      }
+    },
+    {
+      "model": "qwen3-4b-thinking-2507-q6-k",
+      "fileSizeBytes": 3306261216,
+      "metalMemoryMiB": null,
+      "kvMemoryMiB": 576,
+      "coldStartupMs": 3024.668250000017,
+      "warmTTFTMs": null,
+      "promptTokensPerSecond": 110.24287142887644,
+      "generationTokensPerSecond": 15.261226735950736,
+      "visibleAnswerMs": null,
+      "visibleTokens": 0,
+      "reasoningTokens": 269.875,
+      "averageGrounding": 0,
+      "finishReasons": {
+        "length": 8
+      },
+      "peakRuntimeRssMiB": 3661.984375
+    }
+  ]
+}

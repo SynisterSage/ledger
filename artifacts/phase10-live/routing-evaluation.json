@@ -1,0 +1,1114 @@
+{
+  "phase": 10,
+  "status": "static_router_evaluation",
+  "total": 54,
+  "passed": 54,
+  "accuracy": 1,
+  "byMode": {
+    "conversation": {
+      "total": 19,
+      "correct": 19,
+      "accuracy": 1
+    },
+    "workspace_lookup": {
+      "total": 15,
+      "correct": 15,
+      "accuracy": 1
+    },
+    "workspace_synthesis": {
+      "total": 10,
+      "correct": 10,
+      "accuracy": 1
+    },
+    "workspace_research": {
+      "total": 10,
+      "correct": 10,
+      "accuracy": 1
+    }
+  },
+  "conversationAccuracy": 1,
+  "falseRetrievalRate": 0,
+  "missedRetrievalRate": 0,
+  "rows": [
+    {
+      "id": "conversation-01",
+      "question": "what's a mutex?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-02",
+      "question": "why would someone do that?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-03",
+      "question": "what do you think?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-04",
+      "question": "lol yeah",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-05",
+      "question": "explain that differently",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-06",
+      "question": "what's OAuth?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-07",
+      "question": "what's the difference between RAM and storage?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-08",
+      "question": "what is a project manager?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-09",
+      "question": "how do meetings usually work?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "conversation-10",
+      "question": "tell me more about that idea",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "lookup-01",
+      "question": "what's due today?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-02",
+      "question": "how many overdue tasks do I have?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-03",
+      "question": "when is my next meeting?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-04",
+      "question": "what meetings are tomorrow?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-05",
+      "question": "when is Atlas due?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-06",
+      "question": "who owns this task?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-07",
+      "question": "show my last three notes",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-08",
+      "question": "what reminders are active?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-09",
+      "question": "did Sarah respond?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "lookup-10",
+      "question": "what should I do today?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-01",
+      "question": "summarize my last three meeting notes",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-02",
+      "question": "what happened with Atlas this week?",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-03",
+      "question": "summarize the last three launch meetings",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-04",
+      "question": "review my project status and explain the next steps",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-05",
+      "question": "what patterns do you see across the last few meetings?",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-06",
+      "question": "plan my week",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-07",
+      "question": "what did we decide about the launch?",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-08",
+      "question": "compare this week with last week",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-09",
+      "question": "summarize my recent notes about Atlas",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "synthesis-10",
+      "question": "give me a concise project review",
+      "expectedMode": "workspace_synthesis",
+      "actualMode": "workspace_synthesis",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-01",
+      "question": "look across Atlas and tell me what is blocking launch",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-02",
+      "question": "what patterns do you see across all the meetings?",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-03",
+      "question": "connect the project, tasks, and calendar and find conflicts",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-04",
+      "question": "look across the workspace and tell me what actually matters",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-05",
+      "question": "analyze dependencies across Atlas",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-06",
+      "question": "where does the project really stand?",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-07",
+      "question": "compare the evidence and identify contradictions",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.68
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-08",
+      "question": "find what is keeping launch from moving",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-09",
+      "question": "tell me the biggest cross-resource risks",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.68
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "research-10",
+      "question": "what is actually blocking us?",
+      "expectedMode": "workspace_research",
+      "actualMode": "workspace_research",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_fact_or_entity"
+    },
+    {
+      "id": "followup-01",
+      "question": "what happened?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.68
+      },
+      "reason": "workspace_follow_up"
+    },
+    {
+      "id": "followup-02",
+      "question": "what about that?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.68
+      },
+      "reason": "referential_workspace_follow_up"
+    },
+    {
+      "id": "followup-03",
+      "question": "why?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": true,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "grounded_context_reuse"
+    },
+    {
+      "id": "followup-04",
+      "question": "did she respond?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.68
+      },
+      "reason": "workspace_follow_up"
+    },
+    {
+      "id": "followup-05",
+      "question": "when is that due?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "referential_workspace_follow_up"
+    },
+    {
+      "id": "followup-06",
+      "question": "that's kind of ridiculous",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": true,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "grounded_context_reuse"
+    },
+    {
+      "id": "followup-07",
+      "question": "why do you think that happened?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": true,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "grounded_context_reuse"
+    },
+    {
+      "id": "followup-08",
+      "question": "explain that more simply",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": true,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "grounded_context_reuse"
+    },
+    {
+      "id": "followup-09",
+      "question": "what did we say about memory?",
+      "expectedMode": "workspace_lookup",
+      "actualMode": "workspace_lookup",
+      "retrievalExpected": true,
+      "retrievalActual": true,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": true,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.95
+      },
+      "reason": "workspace_follow_up"
+    },
+    {
+      "id": "followup-10",
+      "question": "what's memory?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "ambiguous-01",
+      "question": "what should we do about this?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": true,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "ambiguous-02",
+      "question": "what happened?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.97
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "ambiguous-03",
+      "question": "when is that due?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": false,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": true,
+        "followUpReferenceDetected": true,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    },
+    {
+      "id": "ambiguous-04",
+      "question": "what is Atlas?",
+      "expectedMode": "conversation",
+      "actualMode": "conversation",
+      "retrievalExpected": false,
+      "retrievalActual": false,
+      "passed": true,
+      "diagnostics": {
+        "workspaceEntityDetected": true,
+        "workspacePossessiveDetected": false,
+        "structuredIntentDetected": false,
+        "followUpReferenceDetected": false,
+        "newWorkspaceFactsRequired": false,
+        "existingGroundedContextReusable": false,
+        "skillSelected": false,
+        "routingConfidence": 0.78
+      },
+      "reason": "non_workspace_request"
+    }
+  ]
+}

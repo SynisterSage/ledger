@@ -26,6 +26,7 @@ import {
   UserPlus,
   CircleUserRound,
   Users,
+  Sparkles,
   Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -2553,6 +2554,13 @@ export const ExpandedSidebar = ({
                 icon: BarChart3,
                 action: () => toggleSidebarModule('dashboard'),
               },
+              ...(platform.kind === 'desktop'
+                ? [{
+                    label: 'Ask Ledger',
+                    icon: Sparkles,
+                    action: () => openSidebarModule('new-tab'),
+                  }]
+                : []),
               ...(!isPersonalWorkspace
                 ? [
                     {
@@ -2867,6 +2875,13 @@ export const ExpandedSidebar = ({
                 icon: BarChart3,
                 action: () => toggleSidebarModule('dashboard'),
               },
+              ...(platform.kind === 'desktop'
+                ? [{
+                    label: 'Ask Ledger',
+                    icon: Sparkles,
+                    action: () => openSidebarModule('new-tab'),
+                  }]
+                : []),
               {
                 label: 'Projects',
                 icon: Folder,

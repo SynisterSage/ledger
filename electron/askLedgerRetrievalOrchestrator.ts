@@ -31,6 +31,16 @@ export type AskLedgerOrchestrationResult = LedgerRetrievalResult & {
   integrationRetrieval?: AskLedgerIntegrationDiagnostics;
 };
 
+export type RetrievalObjectiveTiming = {
+  objectiveId: string;
+  resourceTypes: AskLedgerResourceType[];
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+  candidateCount: number;
+  selectedCount: number;
+};
+
 const DEFAULT_LIMITS: Required<AskLedgerOrchestrationLimits> = {
   maxObjectives: 8,
   maxRounds: 4,
@@ -168,12 +178,45 @@ export class AskLedgerRetrievalOrchestrator {
     this.limits = limits;
   }
 
-  private async retrievePlanMyWeek(workspaceId: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2], limit: number, options?: { conversationId?: string; boostResourceKeys?: string[]; documents?: AskLedgerContextItem[] }) {
+  private async retrievePlanMyWeek(workspaceId: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2], limit: number, options?: { conversationId?: string; boostResourceKeys?: string[]; documents?: AskLedgerContextItem[]; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }) {
     const collected = new Map<string, AskLedgerContextItem>();
     const debug: LedgerRetrievalResult['debug'] = [];
     const objectives: AskLedgerOrchestrationDiagnostics['objectives'] = [];
     let retrievalRounds = 0;
+    const corpus = options?.documents;
+    if (corpus) {
+      // Weekly planning is a structured scope. One in-memory pass is enough;
+      // do not turn each resource category into a separate retrieval round.
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const todayIso = iso(today);
+      const isClosed = (item: AskLedgerContextItem) => ['completed', 'complete', 'done', 'finished', 'cancelled', 'canceled'].includes(String(item.status ?? '').toLowerCase());
+      const dateOf = (item: AskLedgerContextItem) => item.dueAt ?? item.timestamp ?? '';
+      retrievalRounds = 1;
+      const eligible = (query: PlanMyWeekQuery, item: AskLedgerContextItem) => {
+        if (item.resourceType !== query.resourceTypes[0]) return false;
+        const constraints = query.constraints;
+        const date = dateOf(item).slice(0, 10);
+        if (constraints.openOnly && isClosed(item)) return false;
+        if (constraints.statuses?.length && !constraints.statuses.some((status) => status.toLowerCase() === String(item.status ?? '').toLowerCase())) return false;
+        if (constraints.overdue && (!date || date >= todayIso || isClosed(item))) return false;
+        if (constraints.horizon && (item.horizon ?? item.taskHorizon) !== constraints.horizon) return false;
+        const basePlan = buildRetrievalPlan(query.query);
+        if (basePlan.structuredConstraints.dueAfter && (!date || date < basePlan.structuredConstraints.dueAfter)) return false;
+        if (basePlan.structuredConstraints.dueBefore && (!date || date > basePlan.structuredConstraints.dueBefore)) return false;
+        return true;
+      };
+      for (const query of planMyWeekQueries) {
+        const objectiveStartedAt = Date.now();
+        const items = corpus.filter((item) => eligible(query, item)).slice(0, Math.min(20, limit));
+        options?.onObjectiveTiming?.({ objectiveId: query.id, resourceTypes: [...query.resourceTypes], startedAt: objectiveStartedAt, completedAt: Date.now(), durationMs: Date.now() - objectiveStartedAt, candidateCount: items.length, selectedCount: items.length });
+        items.forEach((item) => { if (!collected.has(keyFor(item)) && collected.size < Math.min(DEFAULT_LIMITS.maxEvidenceResources, limit)) collected.set(keyFor(item), item); });
+        items.forEach((item) => debug.push({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, score: 1, why: [`objective:${query.id}`, 'structured'] }));
+        objectives.push({ id: query.id, resourceTypes: [...query.resourceTypes], dependsOn: [], strategy: 'structured', graphExpansion: false, status: items.length ? 'found' : 'not_found', resourcesCollected: items.length });
+      }
+    }
     for (const query of planMyWeekQueries) {
+      if (corpus) break;
       if (collected.size >= Math.min(DEFAULT_LIMITS.maxEvidenceResources, limit)) break;
       retrievalRounds += 1;
       const basePlan = buildRetrievalPlan(query.query);
@@ -185,8 +228,10 @@ export class AskLedgerRetrievalOrchestrator {
         expandRelatedContext: false,
         retrievalStrategies: { semantic: false, lexical: true, exactEntity: false, structured: true },
       };
+      const objectiveStartedAt = Date.now();
       const result = await this.retrieval.retrieve(workspaceId, query.query, lexicalResults, Math.min(20, limit), { conversationId: options?.conversationId, boostResourceKeys: options?.boostResourceKeys, plan, skipSemantic: true });
       const items = [...(result.primaryItems ?? result.items)].filter((item) => item.resourceType === query.resourceTypes[0]);
+      options?.onObjectiveTiming?.({ objectiveId: query.id, resourceTypes: [...query.resourceTypes], startedAt: objectiveStartedAt, completedAt: Date.now(), durationMs: Date.now() - objectiveStartedAt, candidateCount: result.debug.length, selectedCount: items.length });
       items.forEach((item) => { if (!collected.has(keyFor(item)) && collected.size < Math.min(DEFAULT_LIMITS.maxEvidenceResources, limit)) collected.set(keyFor(item), item); });
       debug.push(...result.debug.map((candidate) => ({ ...candidate, why: [`objective:${query.id}`, ...candidate.why] })));
       objectives.push({ id: query.id, resourceTypes: [...query.resourceTypes], dependsOn: [], strategy: 'structured', graphExpansion: false, status: items.length ? 'found' : 'not_found', resourcesCollected: items.length });
@@ -219,7 +264,7 @@ export class AskLedgerRetrievalOrchestrator {
     };
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId }): Promise<AskLedgerOrchestrationResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
     if (options?.skillId === 'plan_my_week') return this.retrievePlanMyWeek(workspaceId, lexicalResults, limit, options) as Promise<AskLedgerOrchestrationResult>;
     const skillSeedQuestion = options?.skillId === 'project_health_check'
       ? 'Look through the project work and tell me what is happening, blocked, and what still needs to happen.'
@@ -282,6 +327,7 @@ export class AskLedgerRetrievalOrchestrator {
           continue;
         }
         const plan = buildObjectivePlan(searchQuestion, objective, projectIds);
+        const objectiveStartedAt = Date.now();
         const provider = objective.id.startsWith('integration-') ? objective.id.slice('integration-'.length) : null;
         const integrationBoostKeys: string[] = [];
         if (provider && integration.supports(provider)) {
@@ -317,6 +363,7 @@ export class AskLedgerRetrievalOrchestrator {
           graphTruncated += result.graphExpansion.truncated;
         }
         const objectiveItems = [...(result.primaryItems ?? []), ...(result.relatedItems ?? [])];
+        options?.onObjectiveTiming?.({ objectiveId: objective.id, resourceTypes: [...objective.resourceTypes], startedAt: objectiveStartedAt, completedAt: Date.now(), durationMs: Date.now() - objectiveStartedAt, candidateCount: result.debug.length, selectedCount: objectiveItems.length });
         objectiveItems.forEach((item) => {
           const key = keyFor(item);
           if (!collected.has(key) && collected.size < limits.maxEvidenceResources) {

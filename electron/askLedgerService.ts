@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { buildAskLedgerPrompt, buildAskLedgerRepairPrompt } from './askLedgerPrompt.ts';
 import { ASK_LEDGER_ABSTENTION } from './askLedgerPrompt.ts';
 import { LedgerContextBuilder } from './askLedgerContext.ts';
-import { LocalAIService, type LocalAIStreamEvent } from './localAIService.ts';
+import { LocalAIError, LocalAIService, type LocalAIStreamEvent } from './localAIService.ts';
 import {
   EmbeddingIndexService,
   LedgerRetrievalService,
@@ -29,6 +29,8 @@ import { inferAskLedgerGenerationDepth } from '../src/types/askLedgerGenerationD
 import { AskLedgerAnswerValidator, formatAskLedgerEvidenceLimitations, formatAskLedgerValidationFailures } from './askLedgerAnswerValidator.ts';
 import os from 'node:os';
 import path from 'node:path';
+import { AskLedgerPerformanceTrace, performanceWarning } from './askLedgerPerformance.ts';
+import { fastPathSource, resolveAskLedgerFastPath } from './askLedgerFastPath.ts';
 
 const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines', 'time_window', 'integration']);
 const askLedgerDiagnostic = (...args: unknown[]) => {
@@ -220,6 +222,7 @@ const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefined, ca
 };
 
 export type AskLedgerRetrievalRequest = {
+  requestId?: string;
   workspaceId: string;
   question: string;
   documents: AskLedgerContextItem[];
@@ -266,6 +269,8 @@ export class AskLedgerService {
   private readonly localAI: LocalAIService;
   private readonly answerValidator = new AskLedgerAnswerValidator();
   private readonly repairRequestIds = new Map<string, string>();
+  private readonly cancelledRequestIds = new Set<string>();
+  private readonly activeConversationRequests = new Map<string, string>();
   private readonly attachments: AskLedgerAttachmentService;
 
   constructor(
@@ -395,7 +400,10 @@ export class AskLedgerService {
 
   start(request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
     if (request.skillId) return this.executeSkill(request, callbacks);
-    const requestId = randomUUID();
+    const requestId = request.requestId ?? randomUUID();
+    this.supersedeConversationRequest(request, requestId);
+    const conversationKey = this.conversationRequestKey(request);
+    if (conversationKey) this.activeConversationRequests.set(conversationKey, requestId);
     queueMicrotask(() => {
       void this.run(requestId, request, callbacks);
     });
@@ -405,23 +413,27 @@ export class AskLedgerService {
   executeSkill(request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
     const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
     if (!skill) {
-      const requestId = randomUUID();
+      const requestId = request.requestId ?? randomUUID();
       queueMicrotask(() => callbacks.onEvent({ type: 'error', requestId, error: { code: 'retrieval_failed', message: 'Unknown Ask Ledger skill.' } }));
       return requestId;
     }
     const context = request.explicitContext ?? request.conversation?.initialContext;
     const validationError = validateSkillContext(skill, context);
     if (validationError) {
-      const requestId = randomUUID();
+      const requestId = request.requestId ?? randomUUID();
       queueMicrotask(() => callbacks.onEvent({ type: 'error', requestId, error: { code: 'retrieval_failed', message: validationError } }));
       return requestId;
     }
-    const requestId = randomUUID();
+    const requestId = request.requestId ?? randomUUID();
+    this.supersedeConversationRequest(request, requestId);
+    const conversationKey = this.conversationRequestKey(request);
+    if (conversationKey) this.activeConversationRequests.set(conversationKey, requestId);
     queueMicrotask(() => void this.run(requestId, { ...request, explicitContext: context }, callbacks));
     return requestId;
   }
 
   cancel(requestId: string) {
+    this.cancelledRequestIds.add(requestId);
     const result = this.localAI.cancel(requestId);
     const repairRequestId = this.repairRequestIds.get(requestId);
     if (repairRequestId) this.localAI.cancel(repairRequestId);
@@ -442,6 +454,8 @@ export class AskLedgerService {
 
   private async run(requestId: string, request: AskLedgerRetrievalRequest, callbacks: AskLedgerStreamCallbacks) {
     const startedAt = Date.now();
+    const performanceTrace = new AskLedgerPerformanceTrace({ requestId, messageId: request.messageId, skillId: request.skillId });
+    performanceTrace.mark('serviceRunStarted');
     const routingStartedAt = Date.now();
     let routingMs = 0;
     let indexingMs = 0;
@@ -452,9 +466,25 @@ export class AskLedgerService {
     let performanceSnapshot: Record<string, unknown> | undefined;
     let modelRouting: ReturnType<LocalAIService['getModelRouting']> | undefined;
     let activeGenerationDepth: ReturnType<typeof inferAskLedgerGenerationDepth> | undefined;
+    const throwIfCancelled = () => {
+      if (this.cancelledRequestIds.has(requestId)) throw new LocalAIError('cancelled', 'Ask Ledger request cancelled.');
+    };
     const emit = (event: LocalAIStreamEvent) => {
-      if (event.type === 'done' && performanceSnapshot) {
-        performanceSnapshot = { ...performanceSnapshot, generationMs: event.metrics?.totalMs, outputTokens: event.metrics?.predictedTokens, validationMs: validationMs || undefined, repairMs: repairMs || undefined, totalMs: Date.now() - startedAt };
+      if (event.type === 'delta') performanceTrace.mark('firstDeltaForwarded');
+      if (event.type === 'done') {
+        performanceTrace.mark('serviceDonePrepared');
+        performanceSnapshot = {
+          ...performanceSnapshot,
+          ...event.metrics?.performance,
+          generationMs: event.metrics?.totalMs,
+          outputTokens: event.metrics?.predictedTokens,
+          validationMs: validationMs || undefined,
+          repairMs: repairMs || undefined,
+          totalMs: Date.now() - startedAt,
+          firstForwardedDeltaMs: performanceTrace.get('firstDeltaForwarded'),
+        };
+        const warnings = performanceWarning(performanceSnapshot);
+        askLedgerDiagnostic('[local-ai] Ask Ledger performance', { ...performanceSnapshot, warnings: warnings.length ? warnings : undefined });
       }
       const enrichedEvent = event.type === 'done'
         ? { ...event, metrics: { ...event.metrics, totalMs: Date.now() - startedAt, performance: performanceSnapshot ?? event.metrics?.performance } }
@@ -469,9 +499,17 @@ export class AskLedgerService {
           truncated: enrichedEvent.metrics?.finishReason === 'length',
         });
       }
+      if (enrichedEvent.type === 'done' || enrichedEvent.type === 'error') {
+        this.cancelledRequestIds.delete(requestId);
+        this.repairRequestIds.delete(requestId);
+        const conversationKey = this.conversationRequestKey(request);
+        if (conversationKey && this.activeConversationRequests.get(conversationKey) === requestId) this.activeConversationRequests.delete(conversationKey);
+      }
       callbacks.onEvent(enrichedEvent);
     };
     try {
+      throwIfCancelled();
+      performanceTrace.mark('routingStarted');
       const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
       const conversationResolution = resolveAskLedgerConversation(request.question, request.conversation?.state, request.workspaceId);
       const embeddedContextOnly = Boolean(request.explicitContext?.initialQuestion && !request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length);
@@ -487,11 +525,87 @@ export class AskLedgerService {
       const route = embeddedContextOnly
         ? { ...routed, retrievalRequired: false, answerDepth: 'standard' as const, reason: 'embedded_context' }
         : routed;
+      performanceTrace.mark('routingCompleted');
+      performanceTrace.set('route', route.mode);
+      performanceTrace.set('executionMode', route.executionMode);
+      performanceTrace.set('retrievalRequired', route.retrievalRequired);
+      performanceTrace.set('answerDepth', route.answerDepth);
+      const previousSourcesForReuse = request.conversation?.recentExchanges?.slice(-1)[0]?.sources?.length
+        ? request.conversation.recentExchanges.slice(-1)[0].sources
+        : request.conversation?.previousSources;
+      const reuseRequested = route.reusePreviousGroundedContext;
+      const reusableContextAvailable = !reuseRequested || Boolean(previousSourcesForReuse?.length && previousSourcesForReuse.every((source) => request.documents.some((item) => item.resourceType === source.resourceType && item.resourceId === source.resourceId)));
+      const shouldRetrieve = route.retrievalRequired || (reuseRequested && !reusableContextAvailable);
+      performanceTrace.set('retrievalRequired', shouldRetrieve);
+      performanceTrace.set('existingGroundedContextReusable', reusableContextAvailable);
+      const generationTimeoutMs = skill
+        ? 120_000
+        : route.executionMode === 'conversation'
+        ? 30_000
+        : route.executionMode === 'workspace_lookup'
+        ? 20_000
+        : route.executionMode === 'workspace_synthesis'
+        ? 60_000
+        : 120_000;
+      performanceTrace.set('timeoutMs', generationTimeoutMs);
+      if (reuseRequested && !reusableContextAvailable) {
+        askLedgerDiagnostic('[local-ai] Ask Ledger grounded context invalidated', {
+          requestId,
+          messageId: request.messageId,
+          reason: 'source_missing_from_current_workspace_context',
+          workspaceId: request.workspaceId,
+          previousSourceCount: previousSourcesForReuse?.length ?? 0,
+        });
+      }
       const retrievalPlan = buildRetrievalPlan(request.question);
+      routingMs = Date.now() - routingStartedAt;
+      const fastPath = !skill && !request.explicitContext && !request.attachmentIds?.length && !request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length
+        ? resolveAskLedgerFastPath(request.question, request.documents)
+        : undefined;
+      const fastPathResolved = fastPath && (fastPath.resolution === 'resolved' || fastPath.resolution === 'not_found');
+      if (fastPath && !fastPathResolved) {
+        performanceTrace.set('fastPathKind', fastPath.kind);
+        performanceTrace.set('fastPathResolution', fastPath.resolution);
+        askLedgerDiagnostic('[local-ai] Ask Ledger fast path escalation', {
+          messageId: request.messageId,
+          fastPathKind: fastPath.kind,
+          fastPathResolution: fastPath.resolution,
+          fallback: 'bounded_retrieval',
+        });
+      }
+      if (fastPath && fastPathResolved) {
+        performanceTrace.mark('fastPathCompleted');
+        performanceTrace.set('fastPath', fastPath.kind);
+        performanceTrace.set('fastPathKind', fastPath.kind);
+        performanceTrace.set('fastPathResolution', fastPath.resolution);
+        const performance = performanceTrace.snapshot({
+          executionMode: 'workspace_lookup',
+          retrievalRequired: false,
+          retrievalMode: 'deterministic',
+          fastPathKind: fastPath.kind,
+          fastPathResolution: fastPath.resolution,
+        });
+        askLedgerDiagnostic('[local-ai] Ask Ledger routing', {
+          messageId: request.messageId,
+          mode: route.mode,
+          executionMode: 'workspace_lookup',
+          routingDiagnostics: route.diagnostics,
+          fastPath: fastPath.kind,
+          fastPathResolution: fastPath.resolution,
+          retrievalRequired: false,
+        });
+        const sources = fastPath.items.map(fastPathSource);
+        emit({ type: 'sources', requestId, sources });
+        emit({ type: 'delta', requestId, text: fastPath.answer });
+        emit({ type: 'done', requestId, metrics: { totalMs: performance.totalMs as number, performance } });
+        return;
+      }
       const hasFreshRetrievalIntent = retrievalPlan.primaryResourceTypes.length > 0 || Boolean(retrievalPlan.containerQuery || retrievalPlan.entityQuery) || conversationResolution.mode === 'refresh_state' || conversationResolution.mode === 'switch_provider' || conversationResolution.mode === 'switch_entity';
       askLedgerDiagnostic('[local-ai] Ask Ledger routing', {
         messageId: request.messageId,
         mode: route.mode,
+        executionMode: route.executionMode,
+        routingDiagnostics: route.diagnostics,
         retrievalRequired: route.retrievalRequired,
         followUp: route.mode === 'follow_up',
         reason: route.reason,
@@ -501,7 +615,7 @@ export class AskLedgerService {
         modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier,
       });
       routingMs = Date.now() - routingStartedAt;
-      if (!route.retrievalRequired) {
+      if (!shouldRetrieve) {
         const reusedSources = route.reusePreviousGroundedContext
           ? request.conversation?.previousSources ?? []
           : [];
@@ -516,7 +630,7 @@ export class AskLedgerService {
         const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: 'quick' });
         activeGenerationDepth = generationDepth;
         this.localAI.start(
-          { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, recentConversation: request.conversation, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
+          { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, recentConversation: request.conversation, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), timeoutMs: generationTimeoutMs, reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: shouldRetrieve, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason }, performance: performanceTrace },
           { onEvent: emit },
           requestId,
         );
@@ -524,7 +638,9 @@ export class AskLedgerService {
       }
       if (request.conversation?.id) await this.restoreAttachments(request.workspaceId, request.conversation.id);
       const indexingStartedAt = Date.now();
-      await this.retrieval.indexWorkspace(request.workspaceId, request.documents);
+      performanceTrace.mark('indexingStarted');
+      await this.retrieval.indexWorkspace(request.workspaceId, request.documents, { performance: performanceTrace });
+      performanceTrace.mark('indexingCompleted');
       indexingMs = Date.now() - indexingStartedAt;
       emit({ type: 'activity', requestId, activity: { type: 'searching' } });
       const retrievalQuestion = [
@@ -543,6 +659,7 @@ export class AskLedgerService {
       const intent = detectAskLedgerQueryIntent(request.question);
       const retrievalLimit = skill?.id === 'plan_my_week' || intent.kind === 'weekly_overview' ? 32 : 20;
       const retrievalStartedAt = Date.now();
+      performanceTrace.mark('retrievalStarted');
       const retrieval = await this.orchestrator.retrieve(request.workspaceId, request.question, request.lexicalResults, retrievalLimit, {
         conversationId: request.conversation?.id,
         documents: request.documents,
@@ -550,7 +667,10 @@ export class AskLedgerService {
         skillId: skill?.id,
         boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys],
         resolvedResourceKeys: conversationResolution.resourceKeys,
+        onObjectiveTiming: (timing) => askLedgerDiagnostic('[local-ai] Ask Ledger retrieval objective', { requestId, messageId: request.messageId, skillId: skill?.id, ...timing }),
       });
+      performanceTrace.mark('retrievalCompleted');
+      throwIfCancelled();
       retrievalMs = Date.now() - retrievalStartedAt;
       const allowedSkillItems = skill
         ? retrieval.items.filter((item) => skill.allowedContextTypes.includes(item.resourceType))
@@ -602,9 +722,14 @@ export class AskLedgerService {
         : skillItems.slice(0, skill ? 10 : 8);
       const previewSources = (items: AskLedgerContextItem[]) => items.slice(0, 3).map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, route: item.route, projectId: item.projectId, projectName: item.projectName, sourceLabel: item.sourceLabel, integrationProvider: item.integrationProvider, integrationResourceType: item.integrationResourceType, externalId: item.externalId, explicitIntegrationLink: item.explicitIntegrationLink, updatedAt: item.updatedAt, parentResourceId: item.parentResourceId, relationships: item.relationships, attachmentSource: item.attachmentSource }));
       const evidenceStartedAt = Date.now();
+      performanceTrace.mark('evidenceBuildStarted');
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems });
+      performanceTrace.mark('evidenceBuildCompleted');
       evidenceMs = Date.now() - evidenceStartedAt;
       const generationDepth = inferAskLedgerGenerationDepth({ question: request.question, routeDepth: route.answerDepth, retrievalMode: retrieval.mode, orchestration: retrieval.orchestration });
+      performanceTrace.set('retrievalMode', retrieval.mode);
+      performanceTrace.set('retrievalRounds', retrieval.orchestration?.retrievalRounds);
+      performanceTrace.set('requestedTier', this.localAI.getGenerationRuntimeState?.().selectedTier);
       activeGenerationDepth = generationDepth;
       modelRouting = this.localAI.getModelRouting?.({
         answerDepth: generationDepth.depth,
@@ -707,6 +832,7 @@ export class AskLedgerService {
         return;
       }
       emit({ type: 'activity', requestId, activity: { type: 'preparing_answer' } });
+      performanceTrace.set('promptTokens', normalized.estimatedTokens);
       askLedgerDiagnostic('[local-ai] Ask Ledger generation', {
         messageId: request.messageId,
         answerDepth: generationDepth.depth,
@@ -737,26 +863,33 @@ export class AskLedgerService {
       }
       const generatedSkillAnswer: string[] = [];
       const generatedAnswerChunks: string[] = [];
+      const answerGenerationBudget = skill
+        ? Math.min(skill.executionContract?.maxOutput ?? (generationDepth.depth === 'deep' || generationDepth.explicit ? 512 : 448), generationDepth.depth === 'deep' || generationDepth.explicit ? 512 : (skill.executionContract?.maxOutput ?? 448))
+        : generationDepth.depth === 'deep' ? 768 : route.answerDepth === 'detailed' ? 512 : 384;
       const generationCallbacks = skill && ['plan_my_week', 'meeting_follow_up', 'prepare_for_meeting'].includes(skill.id)
         ? {
             onEvent: (event: LocalAIStreamEvent) => {
-              if (event.type === 'delta' && typeof event.text === 'string') generatedSkillAnswer.push(event.text);
+              if (event.type === 'delta' && typeof event.text === 'string') {
+                generatedSkillAnswer.push(event.text);
+                emit(event);
+              }
               if (event.type === 'done') {
                 const generatedAnswer = generatedSkillAnswer.join('').trim();
                 if (generatedAnswer === ASK_LEDGER_ABSTENTION && normalized.items.length) {
-                  emit({ type: 'delta', requestId, text: skill.id === 'plan_my_week' ? formatPlanMyWeekFallback(normalized.items) : formatMeetingFollowUpFallback(normalized.items, skill.id) });
-                } else if (generatedAnswer) {
-                  emit({ type: 'delta', requestId, text: generatedAnswer });
+                  emit({ type: 'replace', requestId, text: skill.id === 'plan_my_week' ? formatPlanMyWeekFallback(normalized.items) : formatMeetingFollowUpFallback(normalized.items, skill.id) });
                 }
                 emit(event);
-                return;
               }
+              if (event.type === 'error') emit(event);
             },
           }
         : {
             onEvent: (event: LocalAIStreamEvent) => {
               if (event.type === 'delta') {
-                if (typeof event.text === 'string') generatedAnswerChunks.push(event.text);
+                if (typeof event.text === 'string') {
+                  generatedAnswerChunks.push(event.text);
+                  emit(event);
+                }
                 return;
               }
               if (event.type !== 'done') {
@@ -771,6 +904,9 @@ export class AskLedgerService {
               const validation = this.answerValidator.validate({ question: request.question, answer: generatedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth });
               validationMs += validation.durationMs;
               const baseValidationDiagnostics = {
+                validationTriggered: true,
+                validationReason: validation.repairRecommended ? formatAskLedgerValidationFailures(validation) : undefined,
+                repairRequired: validation.repairRecommended,
                 passed: validation.passed,
                 coverageIssues: validation.coverageIssues.length,
                 groundednessIssues: validation.groundednessIssues.length,
@@ -780,27 +916,40 @@ export class AskLedgerService {
                 sourcesUsed: validation.sourceReferences.length,
                 durationMs: validation.durationMs,
               };
+              let repairTokens: number | undefined;
               const finish = (answer: string, finalValidation: typeof validation, repairAttempted: boolean, repairDurationMs?: number) => {
                 validationMs += finalValidation === validation ? 0 : finalValidation.durationMs;
                 repairMs = repairDurationMs ?? 0;
-                const validationDiagnostics = { ...baseValidationDiagnostics, passed: finalValidation.passed, coverageIssues: finalValidation.coverageIssues.length, groundednessIssues: finalValidation.groundednessIssues.length, contradictionIssues: finalValidation.contradictionIssues.length, missingEvidenceIssues: finalValidation.missingEvidenceIssues.length, repairAttempted, repairSucceeded: repairAttempted ? finalValidation.passed : undefined, sourcesUsed: finalValidation.sourceReferences.length, durationMs: finalValidation.durationMs, repairDurationMs };
+                const validationDiagnostics = { ...baseValidationDiagnostics, passed: finalValidation.passed, coverageIssues: finalValidation.coverageIssues.length, groundednessIssues: finalValidation.groundednessIssues.length, contradictionIssues: finalValidation.contradictionIssues.length, missingEvidenceIssues: finalValidation.missingEvidenceIssues.length, repairAttempted, repairSucceeded: repairAttempted ? finalValidation.passed : undefined, sourcesUsed: finalValidation.sourceReferences.length, durationMs: finalValidation.durationMs, repairDurationMs, repairGenerationMs: repairDurationMs, repairTokens };
                 askLedgerDiagnostic('[local-ai] Ask Ledger answer validation', { ...validationDiagnostics, failures: formatAskLedgerValidationFailures(finalValidation) });
-                if (answer.trim()) emit({ type: 'delta', requestId, text: `${answer}${finalValidation.passed ? '' : formatAskLedgerEvidenceLimitations(evidence.package)}` });
+                if (answer.trim()) emit({ type: 'replace', requestId, text: `${answer}${finalValidation.passed ? '' : formatAskLedgerEvidenceLimitations(evidence.package)}` });
                 emit({ ...event, requestId, validation: validationDiagnostics });
               };
               if (validation.repairRecommended) {
+                if (validation.contradictionIssues.length || validation.groundednessIssues.length) {
+                  // A contradictory answer should not trigger another long
+                  // model pass. Replace it with the safe grounded response;
+                  // coverage-only failures may still use the bounded repair.
+                  finish(ASK_LEDGER_ABSTENTION, validation, false, 0);
+                  return;
+                }
                 const repairRequestId = `${requestId}:repair`;
                 const repairStartedAt = Date.now();
                 this.repairRequestIds.set(requestId, repairRequestId);
                 const repairChunks: string[] = [];
                 this.localAI.start(
-                  { question: request.question, context: buildAskLedgerRepairPrompt({ question: request.question, evidencePackage: evidence.package, answer: generatedAnswer, validationFailures: formatAskLedgerValidationFailures(validation) }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: 'answer_validation_repair' } },
+                  { question: request.question, context: buildAskLedgerRepairPrompt({ question: request.question, evidencePackage: evidence.package, answer: generatedAnswer, validationFailures: formatAskLedgerValidationFailures(validation) }), generationBudget: Math.min(answerGenerationBudget, 256), timeoutMs: Math.min(generationTimeoutMs, 30_000), reasoningSignals: { answerDepth: 'brief', generationDepth: 'standard', retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: 'answer_validation_repair' } },
                   { onEvent: (repairEvent) => {
                     if (repairEvent.type === 'delta' && typeof repairEvent.text === 'string') repairChunks.push(repairEvent.text);
                     else if (repairEvent.type === 'activity') emit(repairEvent);
-                    else if (repairEvent.type === 'error') { this.repairRequestIds.delete(requestId); finish(generatedAnswer, validation, true, Date.now() - repairStartedAt); }
+                    else if (repairEvent.type === 'error') {
+                      this.repairRequestIds.delete(requestId);
+                      if (repairEvent.error?.code === 'cancelled') emit(repairEvent);
+                      else finish(generatedAnswer, validation, true, Date.now() - repairStartedAt);
+                    }
                     else if (repairEvent.type === 'done') {
                       this.repairRequestIds.delete(requestId);
+                      repairTokens = repairEvent.metrics?.predictedTokens;
                       const repairedAnswer = repairChunks.join('');
                       const repairedValidation = this.answerValidator.validate({ question: request.question, answer: repairedAnswer, evidencePackage: evidence.package, depth: generationDepth.depth });
                       finish(repairedAnswer.trim() ? repairedAnswer : generatedAnswer, repairedValidation, true, Date.now() - repairStartedAt);
@@ -814,19 +963,38 @@ export class AskLedgerService {
             },
           };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason } },
+        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: request.conversation, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), routeReason: route.reason }, performance: performanceTrace },
         generationCallbacks,
         requestId,
       );
     } catch (error) {
+      const cancelled = this.cancelledRequestIds.has(requestId) || (error instanceof LocalAIError && error.code === 'cancelled');
       emit({
         type: 'error',
         requestId,
         error: {
-          code: 'retrieval_failed',
-          message: error instanceof Error ? error.message : 'Ledger retrieval failed.',
+          code: cancelled ? 'cancelled' : 'retrieval_failed',
+          message: cancelled ? 'Ask Ledger request cancelled.' : error instanceof Error ? error.message : 'Ledger retrieval failed.',
         },
       });
+    }
+  }
+
+  private conversationRequestKey(request: AskLedgerRetrievalRequest) {
+    return request.conversation?.id ? `${request.workspaceId}:${request.conversation.id}` : undefined;
+  }
+
+  private supersedeConversationRequest(request: AskLedgerRetrievalRequest, nextRequestId: string) {
+    const key = this.conversationRequestKey(request);
+    const previousRequestId = key ? this.activeConversationRequests.get(key) : undefined;
+    if (previousRequestId && previousRequestId !== nextRequestId) {
+      askLedgerDiagnostic('[local-ai] Ask Ledger request superseded', {
+        previousRequestId,
+        nextRequestId,
+        workspaceId: request.workspaceId,
+        conversationId: request.conversation?.id,
+      });
+      this.cancel(previousRequestId);
     }
   }
 }

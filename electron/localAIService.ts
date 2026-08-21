@@ -6,6 +6,7 @@ import type { AskLedgerAnswerValidationDiagnostics, AskLedgerDocumentDiagnostics
 import { LEGACY_MINISTRAL_MODEL_ID, LEGACY_POWERFUL_MODEL_ID, LocalAIAssetManager, resolveLocalAIRuntime, resolveLocalAIRuntimeVersion, type GenerationTier } from './localAIAssets.ts';
 import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision, type ReasoningRequestSignals } from './localAIReasoningPolicy.ts';
 import { resolveAskLedgerModelRoute, type AskLedgerModelRoutingSignals, type AskLedgerModelRoute } from './askLedgerModelRouting.ts';
+import type { AskLedgerPerformanceTrace } from './askLedgerPerformance.ts';
 
 export type LocalAIErrorCode =
   | 'model_missing'
@@ -33,7 +34,10 @@ export interface LocalAIRequest {
   question: string;
   context: string;
   generationBudget?: number;
+  /** Mode-specific upper bound for the model HTTP stream. */
+  timeoutMs?: number;
   reasoningSignals?: Omit<ReasoningRequestSignals, 'question'>;
+  performance?: AskLedgerPerformanceTrace;
 }
 
 export interface LocalAIMetrics {
@@ -70,7 +74,7 @@ export type AskLedgerSkillResult = {
 };
 
 export interface LocalAIStreamEvent {
-  type: 'start' | 'activity' | 'sources' | 'delta' | 'done' | 'error';
+  type: 'start' | 'activity' | 'sources' | 'delta' | 'replace' | 'done' | 'error';
   requestId: string;
   activity?: AskLedgerActivity;
   text?: string;
@@ -118,12 +122,35 @@ export type ParsedThinkingStream = {
   reasoningTokens: number;
   predictedTokens?: number;
   serverTimings?: Record<string, unknown>;
+  doneMarkerReceived?: boolean;
 };
 
 const DEFAULT_PORT = 39281;
 const REQUEST_TIMEOUT_MS = 90_000;
 
 const readErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+const parseRuntimeDiagnostics = (diagnostics: string) => {
+  const lines = diagnostics.split('\n').map((line) => line.trim()).filter((line) => /metal|offload|backend|gpu|layer/i.test(line)).slice(-20);
+  const metalConfirmed = /ggml[_ -]?metal|metal backend|using metal/i.test(diagnostics) ? true : undefined;
+  const offloadMatch = diagnostics.match(/offload(?:ed|ing)?[^\d]*(\d+)(?:\s*\/\s*(\d+))?\s*layers?/i);
+  const metalMemoryMiB = diagnostics.match(/MTL\d+[^|]*\|\s*\d+\s*=\s*\d+\s*\+\s*\(\s*([\d.]+)\s*=\s*([\d.]+)\s*\+\s*([\d.]+)\s*\+\s*([\d.]+)/i);
+  const kvBufferMiB = diagnostics.match(/MTL\d+ KV buffer size\s*=\s*([\d.]+)\s*MiB/i);
+  const cpuFallbackDetected = /cpu fallback|falling back to cpu|no gpu|offloaded\s+0\s*\/|offloaded\s+0\s+layers/i.test(diagnostics)
+    ? true
+    : offloadMatch && Number(offloadMatch[1]) > 0 ? false : undefined;
+  return {
+    metalConfirmed,
+    gpuLayersOffloaded: offloadMatch ? offloadMatch[2] ? `${offloadMatch[1]}/${offloadMatch[2]}` : offloadMatch[1] : undefined,
+    cpuFallbackDetected,
+    metalMemoryMiB: metalMemoryMiB ? Number(metalMemoryMiB[1]) : undefined,
+    modelBufferMiB: metalMemoryMiB ? Number(metalMemoryMiB[2]) : undefined,
+    contextBufferMiB: metalMemoryMiB ? Number(metalMemoryMiB[3]) : undefined,
+    computeBufferMiB: metalMemoryMiB ? Number(metalMemoryMiB[4]) : undefined,
+    kvBufferMiB: kvBufferMiB ? Number(kvBufferMiB[1]) : undefined,
+    runtimeDiagnosticLines: lines,
+  };
+};
 
 const partialTagAtEnd = (value: string, tag: string) => {
   const lower = value.toLowerCase();
@@ -181,9 +208,15 @@ export class LocalModelRuntime {
     return Boolean(this.child && !this.child.killed);
   }
 
-  async ensureReady() {
+  async ensureReady(trace?: AskLedgerPerformanceTrace) {
     this.clearIdleTimer();
-    if (await this.isHealthy()) return { startupMs: 0, owned: this.ownedRuntime };
+    trace?.mark('generationRuntimeHealthCheck');
+    if (await this.isHealthy()) {
+      trace?.set('generationRuntimeReused', true);
+      trace?.set('modelWasAlreadyLoaded', true);
+      trace?.mark('generationRuntimeReady');
+      return { startupMs: 0, owned: this.ownedRuntime, reused: true };
+    }
     if (this.startupPromise) return this.startupPromise;
 
     const startedAt = Date.now();
@@ -217,10 +250,14 @@ export class LocalModelRuntime {
         '--port', String(this.config.port),
         '--ctx-size', String(contextSize),
         '--jinja',
+        ...(process.env.LEDGER_LLAMA_VERBOSE === '1' ? ['--verbosity', '4'] : []),
         ...(runtimeArgs ?? []),
       ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
       this.child = child;
       this.ownedRuntime = true;
+      trace?.mark('generationRuntimeSpawned');
+      trace?.set('generationRuntimeReused', false);
+      trace?.set('modelWasAlreadyLoaded', false);
 
       let diagnostics = '';
       let exitCode: number | null = null;
@@ -257,6 +294,15 @@ export class LocalModelRuntime {
         const deadline = Date.now() + 60_000;
         while (Date.now() < deadline) {
           if (await this.isHealthy()) {
+            const runtimeDiagnostics = parseRuntimeDiagnostics(diagnostics);
+            trace?.set('metalConfirmed', runtimeDiagnostics.metalConfirmed);
+            trace?.set('gpuLayersOffloaded', runtimeDiagnostics.gpuLayersOffloaded ?? 'unknown_until_runtime_report');
+            trace?.set('cpuFallbackDetected', runtimeDiagnostics.cpuFallbackDetected);
+            for (const key of ['metalMemoryMiB', 'modelBufferMiB', 'contextBufferMiB', 'computeBufferMiB', 'kvBufferMiB'] as const) {
+              trace?.set(key, runtimeDiagnostics[key]);
+            }
+            console.info('[local-ai] generation runtime diagnostics', runtimeDiagnostics);
+            trace?.mark('generationRuntimeReady');
             resolve({ startupMs: Date.now() - startedAt, owned: true });
             return;
           }
@@ -278,7 +324,7 @@ export class LocalModelRuntime {
 
   async stream(request: LocalAIRequest, callbacks: StreamCallbacks, signal: AbortSignal, requestId: string) {
     if (!(await this.isHealthy())) callbacks.onEvent({ type: 'activity', requestId, activity: { type: 'starting_runtime' } });
-    const runtime = await this.ensureReady();
+    const runtime = await this.ensureReady(request.performance);
     const reasoningDecision = resolveReasoningDecision(
       this.config.modelTier ?? 'fast',
       this.config.reasoningMode ?? 'off',
@@ -295,19 +341,39 @@ export class LocalModelRuntime {
     const startedAt = Date.now();
     const configuredMaxTokens = request.generationBudget ?? (typeof this.config.maxTokens === 'function' ? this.config.maxTokens() : this.config.maxTokens);
     const contextSize = typeof this.config.contextSize === 'function' ? this.config.contextSize() : this.config.contextSize;
-    const budgets = resolveGenerationBudgets(this.config.modelTier ?? 'fast', configuredMaxTokens, contextSize, { question: request.question, ...request.reasoningSignals });
+    const budgets = resolveGenerationBudgets(this.config.modelTier ?? 'fast', configuredMaxTokens, contextSize, { question: request.question, ...request.reasoningSignals }, reasoningDecision.enabled);
     const initialBudget = budgets.initial;
     const maxRetryBudget = budgets.retry;
+    const reasoningPathActive = reasoningDecision.enabled;
     const prompt = applyQwenReasoningControl(this.config.modelFamily, reasoningDecision.enabled, request.context);
+    const modelId = typeof this.config.modelId === 'function' ? this.config.modelId() : this.config.modelId;
+    const runtimeArgs = typeof this.config.runtimeArgs === 'function' ? this.config.runtimeArgs() : this.config.runtimeArgs;
+    const modelQuant = modelId?.match(/(q[468]_[a-z0-9]+|q8_0|q6_k)/i)?.[1]?.toUpperCase();
+    request.performance?.set('modelId', modelId);
+    request.performance?.set('loadedTier', this.config.modelTier);
+    request.performance?.set('modelQuant', modelQuant);
+    request.performance?.set('contextSize', contextSize);
+    request.performance?.set('generationBudget', initialBudget);
+    request.performance?.set('reasoningEnabled', reasoningDecision.enabled);
+    request.performance?.set('reasoningMode', reasoningDecision.mode);
+    const metalRequested = process.platform === 'darwin' && Boolean(runtimeArgs?.includes('--n-gpu-layers'));
+    request.performance?.set('gpuLayersRequested', runtimeArgs?.includes('--n-gpu-layers') ? runtimeArgs[runtimeArgs.indexOf('--n-gpu-layers') + 1] : undefined);
+    request.performance?.set('metalRequested', metalRequested);
+    request.performance?.set('backend', metalRequested ? 'metal_requested' : 'unknown');
+    request.performance?.set('metalAvailable', process.platform === 'darwin');
+    request.performance?.set('metalConfirmed', undefined);
+    request.performance?.set('gpuLayersOffloaded', 'unknown_until_runtime_report');
+    request.performance?.set('cpuFallbackDetected', undefined);
 
     const streamAttempt = async (generationBudget: number, allowVisibleDeltas: boolean) => {
       let firstTokenMs: number | undefined;
       let generatedTokens = 0;
       let response: Response;
       try {
+        request.performance?.mark('promptRequestSent');
         response = await fetch(`${this.baseUrl()}/v1/chat/completions`, {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+          signal: AbortSignal.any([signal, AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS)]),
           body: JSON.stringify({
             stream: true,
             max_tokens: generationBudget,
@@ -316,13 +382,16 @@ export class LocalModelRuntime {
             top_p: 0.95,
             top_k: 40,
             min_p: 0.05,
-            reasoning_budget: budgets.reasoning,
-            reasoning_format: this.config.modelFamily === 'Qwen3' ? 'deepseek' : undefined,
+            ...(reasoningPathActive ? { reasoning_budget: budgets.reasoning } : {}),
+            ...(this.config.modelFamily === 'Qwen3' && reasoningPathActive ? { reasoning_format: 'deepseek' } : {}),
             messages: [{ role: 'user', content: prompt }],
           }),
         });
       } catch (error) {
-        if (signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
+        if (signal.aborted) {
+          request.performance?.mark('fetchAborted');
+          throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
+        }
         throw new LocalAIError('request_timeout', 'Local AI did not respond in time.', { cause: error });
       }
       if (!response.ok || !response.body) {
@@ -332,6 +401,9 @@ export class LocalModelRuntime {
       }
       const decoder = new TextDecoder();
       const reader = response.body.getReader();
+      const cancelReader = () => { void reader.cancel().catch(() => undefined); };
+      if (signal.aborted) cancelReader();
+      else signal.addEventListener('abort', cancelReader, { once: true });
       const state: ParsedThinkingStream = { visibleText: '', reasoningContentObserved: false, finishReason: null, reasoningChunks: 0, contentChunks: 0, reasoningTokens: 0 };
       let buffer = '';
       let hidingReasoning = false;
@@ -357,39 +429,63 @@ export class LocalModelRuntime {
         }
         return visible;
       };
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          const trimmed = line.trim(); if (!trimmed.startsWith('data:')) continue;
-          const data = trimmed.slice(5).trim(); if (data === '[DONE]') continue;
-          let parsed: ChatCompletionChunk;
-          try { parsed = JSON.parse(data) as ChatCompletionChunk; }
-          catch (error) { throw new LocalAIError('malformed_response', 'Local AI returned malformed streaming data.', { cause: error }); }
-          const rawText = parseThinkingChunk(parsed, state);
-          const text = emitContent(rawText);
-          if (!text) continue;
-          state.visibleText += text;
-          if (!allowVisibleDeltas) continue;
-          if (firstTokenMs === undefined) firstTokenMs = Date.now() - startedAt;
-          generatedTokens += text.trim().split(/\s+/).filter(Boolean).length;
-          callbacks.onEvent({ type: 'delta', requestId, text });
+      let responseByteMarked = false;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.');
+          if (done) break;
+          if (!responseByteMarked) {
+            responseByteMarked = true;
+            request.performance?.mark('firstResponseByte');
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            const trimmed = line.trim(); if (!trimmed.startsWith('data:')) continue;
+            const data = trimmed.slice(5).trim();
+            if (data === '[DONE]') {
+              state.doneMarkerReceived = true;
+              request.performance?.mark('doneMarkerReceived');
+              continue;
+            }
+            let parsed: ChatCompletionChunk;
+            try { parsed = JSON.parse(data) as ChatCompletionChunk; }
+            catch (error) { throw new LocalAIError('malformed_response', 'Local AI returned malformed streaming data.', { cause: error }); }
+            const rawText = parseThinkingChunk(parsed, state);
+            const text = emitContent(rawText);
+            if (!text) continue;
+            state.visibleText += text;
+            if (!allowVisibleDeltas) continue;
+            if (firstTokenMs === undefined) {
+              firstTokenMs = Date.now() - startedAt;
+              request.performance?.mark('firstTokenGenerated');
+            }
+            request.performance?.mark('lastTokenGenerated');
+            generatedTokens += text.trim().split(/\s+/).filter(Boolean).length;
+            callbacks.onEvent({ type: 'delta', requestId, text });
+          }
         }
+      } catch (error) {
+        if (signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.', { cause: error });
+        throw error;
+      } finally {
+        signal.removeEventListener('abort', cancelReader);
+        if (signal.aborted) cancelReader();
       }
+      request.performance?.mark('httpBodyClosed');
       return { state, firstTokenMs, generatedTokens, totalMs: Date.now() - startedAt };
     };
 
     let attempt = await streamAttempt(initialBudget, true);
-    const shouldRetry = this.config.modelTier !== 'fast' && attempt.state.visibleText.trim().length === 0
+    const shouldRetry = reasoningPathActive && this.config.modelTier !== 'fast' && attempt.state.visibleText.trim().length === 0
       && attempt.state.reasoningContentObserved && attempt.state.finishReason === 'length' && maxRetryBudget > initialBudget;
     if (shouldRetry) {
       console.warn('[local-ai] reasoning budget exhausted; retrying once', { modelTier: this.config.modelTier, generationBudget: initialBudget, retryBudget: maxRetryBudget });
       attempt = await streamAttempt(maxRetryBudget, true);
     }
     const failureReason = attempt.state.visibleText.trim().length === 0
-      ? attempt.state.reasoningContentObserved && attempt.state.finishReason === 'length'
+      ? reasoningPathActive && attempt.state.reasoningContentObserved && attempt.state.finishReason === 'length'
         ? 'reasoning_budget_exhausted' as const
         : attempt.state.contentChunks > 0
           ? 'stream_parser_failure' as const
@@ -397,7 +493,7 @@ export class LocalModelRuntime {
       : undefined;
     console.info('[local-ai] generation diagnostics', {
       modelTier: this.config.modelTier,
-      modelId: typeof this.config.modelId === 'function' ? this.config.modelId() : this.config.modelId,
+      modelId,
       reasoningEnabled: reasoningDecision.enabled,
       reasoningMode: reasoningDecision.mode,
       reasoningFormat: this.config.modelFamily === 'Qwen3' ? 'deepseek' : undefined,
@@ -419,6 +515,16 @@ export class LocalModelRuntime {
       serverTimings: attempt.state.serverTimings,
       ...(failureReason ? { failureReason } : {}),
     });
+    const serverTimings = attempt.state.serverTimings;
+    if (typeof serverTimings?.prompt_n === 'number') {
+      const cacheTokens = typeof serverTimings.cache_n === 'number' ? serverTimings.cache_n : 0;
+      request.performance?.set('promptTokens', serverTimings.prompt_n + cacheTokens);
+      request.performance?.set('promptCacheTokens', cacheTokens);
+    }
+    if (typeof serverTimings?.prompt_per_second === 'number') request.performance?.set('promptTokensPerSecond', serverTimings.prompt_per_second);
+    if (typeof serverTimings?.predicted_per_second === 'number') request.performance?.set('serverReportedTokensPerSecond', serverTimings.predicted_per_second);
+    if (typeof serverTimings?.predicted_ms === 'number') request.performance?.set('serverGenerationMs', serverTimings.predicted_ms);
+    request.performance?.mark('generationCompleted');
     callbacks.onEvent({ type: 'done', requestId, metrics: {
       startupMs: runtime.startupMs || undefined, firstTokenMs: attempt.firstTokenMs, totalMs: attempt.totalMs,
       tokensPerSecond: attempt.generatedTokens > 0 ? attempt.generatedTokens / (attempt.totalMs / 1000) : undefined,
@@ -427,6 +533,13 @@ export class LocalModelRuntime {
       finishReason: attempt.state.finishReason, failureReason, reasoningChunks: attempt.state.reasoningChunks,
       contentChunks: attempt.state.contentChunks, reasoningTokens: attempt.state.reasoningTokens,
       predictedTokens: attempt.state.predictedTokens, serverTimings: attempt.state.serverTimings,
+      performance: request.performance?.snapshot({
+        generatedTokens: attempt.state.predictedTokens ?? attempt.generatedTokens,
+        generationBudget: shouldRetry ? maxRetryBudget : initialBudget,
+        tokensPerSecond: attempt.generatedTokens > 0 ? attempt.generatedTokens / (attempt.totalMs / 1000) : undefined,
+        finishReason: attempt.state.finishReason,
+        doneMarkerReceived: attempt.state.doneMarkerReceived === true,
+      }),
     } });
     this.armIdleTimer();
   }
@@ -466,7 +579,7 @@ export class LocalAIService {
   private switchPromise: Promise<GenerationModelSwitchResult> | null = null;
   private switchState: GenerationRuntimeState = { switching: false, targetTier: null, ready: false, failure: null };
   private readonly runtimeStateListeners = new Set<(state: GenerationRuntimeState) => void>();
-  private readonly requests = new Map<string, { controller: AbortController; completion: Promise<void> }>();
+  private readonly requests = new Map<string, { controller: AbortController; completion: Promise<void>; performance?: AskLedgerPerformanceTrace; started: boolean }>();
 
   constructor(assets: LocalAIAssetManager, runtimeFactory: (modelId: string) => LocalModelRuntime) {
     this.assets = assets;
@@ -480,30 +593,36 @@ export class LocalAIService {
     const controller = new AbortController();
     let resolveCompletion!: () => void;
     const completion = new Promise<void>((resolve) => { resolveCompletion = resolve; });
+    const requestState = { controller, completion, performance: request.performance, started: false };
+    this.requests.set(requestId, requestState);
     queueMicrotask(() => {
       void (async () => {
         if (this.switchPromise) await this.switchPromise;
-        // Register only after a switch has settled. Registering beforehand
-        // would make the switch wait for a request that is itself waiting for
-        // the switch, deadlocking generation startup.
-        this.requests.set(requestId, { controller, completion });
+        if (controller.signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.');
+        requestState.started = true;
         await this.runtime.stream(request, callbacks, controller.signal, requestId);
         this.loadedModelId = this.runtimeModelId;
         this.switchState = { ...this.switchState, ready: true, failure: null };
       })()
-        .catch((error) => {
-          const localError = error instanceof LocalAIError
+      .catch((error) => {
+          const localError = controller.signal.aborted
+            ? new LocalAIError('cancelled', 'Generation cancelled.', { cause: error })
+            : error instanceof LocalAIError
             ? error
             : new LocalAIError('runtime_exited', readErrorMessage(error), { cause: error });
+          if (localError.code === 'cancelled') request.performance?.mark('fetchAborted');
           callbacks.onEvent({ type: 'error', requestId, error: { code: localError.code, message: localError.message } });
         })
-        .finally(() => { this.requests.delete(requestId); resolveCompletion(); });
+        .finally(() => { if (controller.signal.aborted) request.performance?.mark('generationStopped'); this.requests.delete(requestId); resolveCompletion(); });
     });
     return requestId;
   }
 
   cancel(requestId: string) {
-    this.requests.get(requestId)?.controller.abort();
+    const request = this.requests.get(requestId);
+    request?.performance?.mark('cancelRequestedAt');
+    request?.performance?.set('requestIdAvailable', true);
+    request?.controller.abort();
     return { ok: true };
   }
 
@@ -602,7 +721,9 @@ export class LocalAIService {
     console.info('[local-ai] generation model switch started', { requestedTier: targetTier, previousLoadedTier: previousModelId ? this.assets.generationModel(previousModelId)?.tier : null });
     let nextRuntime: LocalModelRuntime | null = null;
     try {
-      const activeRequests = [...this.requests.values()];
+      const activeRequests = [...this.requests.values()].filter((request) => request.started);
+      const pendingRequests = [...this.requests.values()].filter((request) => !request.started);
+      pendingRequests.forEach(({ controller }) => controller.abort());
       if (activeRequests.length) {
         console.info('[local-ai] cancelling active generation for model switch', { count: activeRequests.length });
         activeRequests.forEach(({ controller }) => controller.abort());
@@ -661,7 +782,7 @@ export type GenerationModelSwitchResult =
   | { ok: false; state: 'requires_download'; tier: GenerationTier; modelId: string; expectedSize?: number }
   | { ok: false; state: 'failed'; tier: GenerationTier; modelId: string; error: { code: string; message: string } };
 
-export const createLocalAIService = (assets = new LocalAIAssetManager()) => {
+export const createLocalAIService = (assets = new LocalAIAssetManager(), overrides: { contextSize?: number; runtimeArgs?: string[] } = {}) => {
   const port = Number(process.env.LEDGER_LOCAL_AI_PORT || DEFAULT_PORT);
   const runtimeFactory = (modelId: string) => {
     const model = assets.generationModel(modelId);
@@ -674,8 +795,8 @@ export const createLocalAIService = (assets = new LocalAIAssetManager()) => {
       reasoningMode: model.reasoningMode,
       serverPath: () => resolveLocalAIRuntime() || process.env.LEDGER_LLAMA_SERVER_PATH?.trim() || '',
       port: Number.isFinite(port) ? port : DEFAULT_PORT,
-      contextSize: model.contextSize ?? 4096,
-      runtimeArgs: model.runtimeArgs ?? [],
+      contextSize: overrides.contextSize ?? model.contextSize ?? 4096,
+      runtimeArgs: overrides.runtimeArgs ?? model.runtimeArgs ?? [],
       maxTokens: model.maxTokens ?? 256,
       idleTimeoutMs: Number(process.env.LEDGER_LOCAL_AI_IDLE_MS || 300_000),
     });

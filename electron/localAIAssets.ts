@@ -56,7 +56,7 @@ export type GenerationModelManifest = LocalAIAssetManifest & {
 // but production no longer depends on an external .env file to verify them.
 const VERIFIED_OPTIONAL_GENERATION_ARTIFACTS = {
   balanced: {
-    url: 'https://huggingface.co/ggml-org/Qwen3-4B-GGUF/resolve/2f3b082b1356a6123f7ed71e65aea340da25d53c/Qwen3-4B-Q4_K_M.gguf?download=true',
+    url: 'https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf?download=true',
     size: 2497280640,
     sha256: 'ab27b9bfa375a178d6cba48f3ad892b94b7739659dcc7aae8058ce0ffed6b328',
   },
@@ -109,7 +109,7 @@ export const GENERATION_MODEL_REGISTRY: GenerationModelManifest[] = [
     fileName: 'qwen3-4b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_BALANCED_URL || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.url,
     expectedSize: Number(process.env.LEDGER_LOCAL_AI_BALANCED_SIZE) || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.size,
     sha256: process.env.LEDGER_LOCAL_AI_BALANCED_SHA256?.trim().toLowerCase() || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.sha256,
-    minimumRam: 12 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, maxTokens: 512, reasoningMode: 'adaptive',
+    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, maxTokens: 1536, runtimeArgs: ['--n-gpu-layers', 'all', '--no-mmproj', '--reasoning', 'off', '--parallel', '1'], reasoningMode: 'off',
   },
   {
     id: 'qwen3-4b-thinking-2507-q6-k', tier: 'powerful', displayName: 'Qwen3 4B Thinking', description: 'Takes more time to reason through complex work', modelFamily: 'Qwen3', role: 'generation', version: '2507',

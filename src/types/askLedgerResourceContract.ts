@@ -173,6 +173,9 @@ export type AskLedgerEvidenceDiagnostics = {
 };
 
 export type AskLedgerAnswerValidationDiagnostics = {
+  validationTriggered?: boolean;
+  validationReason?: string;
+  repairRequired?: boolean;
   passed: boolean;
   coverageIssues: number;
   groundednessIssues: number;
@@ -183,6 +186,8 @@ export type AskLedgerAnswerValidationDiagnostics = {
   sourcesUsed: number;
   durationMs: number;
   repairDurationMs?: number;
+  repairGenerationMs?: number;
+  repairTokens?: number;
 };
 
 export type AskLedgerOrchestrationDiagnostics = {

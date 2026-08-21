@@ -8,6 +8,7 @@ import {
   StickyNote,
   Folder,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
@@ -116,6 +117,16 @@ export const MinimizedSidebar = ({
           >
             <BarChart3 size={18} />
           </button>
+          {platform.kind === 'desktop' && (
+            <button
+              aria-label="Open Ask Ledger"
+              onClick={() => openModule('new-tab')}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={neutralIcon}
+            >
+              <Sparkles size={18} />
+            </button>
+          )}
           <button
             aria-label="Open calendar"
               onClick={() => openModule('calendar')}

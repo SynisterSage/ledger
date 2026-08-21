@@ -1,0 +1,1423 @@
+[local-ai] generation model switch started { requestedTier: 'balanced', previousLoadedTier: null }
+[local-ai] generation runtime stopped for switch { durationMs: 0 }
+[local-ai] starting generation runtime {
+  runtimeVersion: 'version: 0.1.1-dev (build 10472, commit 60eeeb608)',
+  selectedModelId: 'ministral-3-3b-instruct-2512-q8-0',
+  modelFamily: 'Ministral 3',
+  modelPath: '/Users/lex/Library/Application Support/ledger/ai/models/generation/ministral-3-3b-instruct-2512-q8-0/Ministral-3-3B-Instruct-2512-Q8_0.gguf',
+  installationState: 'installed'
+}
+[local-ai] generation runtime diagnostics {
+  metalConfirmed: undefined,
+  gpuLayersOffloaded: undefined,
+  cpuFallbackDetected: undefined,
+  metalMemoryMiB: undefined,
+  modelBufferMiB: undefined,
+  contextBufferMiB: undefined,
+  computeBufferMiB: undefined,
+  kvBufferMiB: undefined,
+  runtimeDiagnosticLines: []
+}
+[local-ai] generation model switch ready {
+  requestedTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  startupMs: 5866,
+  totalMs: 5905
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 384,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 227,
+  visibleContentChars: 1081,
+  finishReason: 'stop',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 0,
+    prompt_n: 1136,
+    prompt_ms: 4262.359,
+    prompt_per_token_ms: 3.7520765845070425,
+    prompt_per_second: 266.51908016194784,
+    predicted_n: 228,
+    predicted_ms: 18119.602,
+    predicted_per_token_ms: 79.82203524229074,
+    predicted_per_second: 12.52786898961688
+  }
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 384,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 184,
+  visibleContentChars: 898,
+  finishReason: 'stop',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 1135,
+    prompt_n: 1,
+    prompt_ms: 87.984,
+    prompt_per_token_ms: 87.984,
+    prompt_per_second: 11.365702855064558,
+    predicted_n: 185,
+    predicted_ms: 13896.653,
+    predicted_per_token_ms: 75.52528804347826,
+    predicted_per_second: 13.240598293704247
+  }
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 384,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 209,
+  visibleContentChars: 863,
+  finishReason: 'stop',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 925,
+    prompt_n: 381,
+    prompt_ms: 1476.642,
+    prompt_per_token_ms: 3.8757007874015748,
+    prompt_per_second: 258.0178540228437,
+    predicted_n: 210,
+    predicted_ms: 15635.082,
+    predicted_per_token_ms: 74.809004784689,
+    predicted_per_second: 13.367374728191384
+  }
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 384,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 366,
+  visibleContentChars: 1333,
+  finishReason: 'stop',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 1305,
+    prompt_n: 1,
+    prompt_ms: 77.227,
+    prompt_per_token_ms: 77.227,
+    prompt_per_second: 12.948839136571406,
+    predicted_n: 367,
+    predicted_ms: 27226.937,
+    predicted_per_token_ms: 74.39053825136612,
+    predicted_per_second: 13.442569760968706
+  }
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 512,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 512,
+  visibleContentChars: 2373,
+  finishReason: 'length',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 651,
+    prompt_n: 983,
+    prompt_ms: 3810.87,
+    prompt_per_token_ms: 3.8767751780264494,
+    prompt_per_second: 257.9463482092016,
+    predicted_n: 512,
+    predicted_ms: 38364.735,
+    predicted_per_token_ms: 75.07775929549902,
+    predicted_per_second: 13.319523776197073
+  }
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 512,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 512,
+  visibleContentChars: 2273,
+  finishReason: 'length',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 1633,
+    prompt_n: 1,
+    prompt_ms: 72.996,
+    prompt_per_token_ms: 72.996,
+    prompt_per_second: 13.699380787988384,
+    predicted_n: 512,
+    predicted_ms: 37409.438,
+    predicted_per_token_ms: 73.20829354207437,
+    predicted_per_second: 13.659654550276858
+  }
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 384,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 384,
+  visibleContentChars: 1779,
+  finishReason: 'length',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 951,
+    prompt_n: 945,
+    prompt_ms: 3793.962,
+    prompt_per_token_ms: 4.014774603174603,
+    prompt_per_second: 249.07998551382437,
+    predicted_n: 384,
+    predicted_ms: 30883.258,
+    predicted_per_token_ms: 80.63513838120105,
+    predicted_per_second: 12.401541314067316
+  }
+}
+[local-ai] reasoning policy {
+  modelTier: 'balanced',
+  modelFamily: 'Ministral 3',
+  reasoningMode: 'off',
+  reasoningEnabled: false,
+  reason: 'simple_request'
+}
+[local-ai] generation diagnostics {
+  modelTier: 'balanced',
+  modelId: 'ministral-3-3b-instruct-2512-q8-0',
+  reasoningEnabled: false,
+  reasoningMode: 'off',
+  reasoningFormat: undefined,
+  generationBudget: 384,
+  reasoningBudget: 0,
+  contextSize: 8192,
+  temperature: 0.2,
+  topP: 0.95,
+  topK: 40,
+  minP: 0.05,
+  stream: true,
+  reasoningContentObserved: false,
+  reasoningChunks: 0,
+  reasoningTokens: 0,
+  contentChunks: 384,
+  visibleContentChars: 1608,
+  finishReason: 'length',
+  predictedTokens: undefined,
+  serverTimings: {
+    cache_n: 1895,
+    prompt_n: 1,
+    prompt_ms: 76.199,
+    prompt_per_token_ms: 76.199,
+    prompt_per_second: 13.12353180487933,
+    predicted_n: 384,
+    predicted_ms: 30335.783,
+    predicted_per_token_ms: 79.20569973890339,
+    predicted_per_second: 12.625354024980995
+  }
+}
+{
+  "phase": 6,
+  "repeats": 2,
+  "configurations": [
+    {
+      "id": "A-current-8k-4slot",
+      "contextSize": 8192,
+      "runtimeArgs": [
+        "--n-gpu-layers",
+        "all",
+        "--no-mmproj",
+        "--reasoning",
+        "off"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "normal-grounded",
+      "category": "normal-grounded",
+      "estimatedPromptTokens": 47,
+      "sources": [
+        {
+          "resourceType": "project",
+          "resourceId": "project-release",
+          "title": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        }
+      ],
+      "contextItems": [
+        "project:project-release"
+      ]
+    },
+    {
+      "id": "short-grounded",
+      "category": "short-grounded",
+      "estimatedPromptTokens": 186,
+      "sources": [
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Validate runtime configuration",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-memory",
+          "title": "Measure memory pressure",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-quality",
+          "title": "Compare answer quality",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        }
+      ],
+      "contextItems": [
+        "task:task-runtime",
+        "task:task-memory",
+        "task:task-quality"
+      ]
+    },
+    {
+      "id": "plan-my-week",
+      "category": "skill",
+      "estimatedPromptTokens": 96,
+      "sources": [
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Validate runtime configuration",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "event",
+          "resourceId": "event-review",
+          "title": "Runtime review",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        }
+      ],
+      "contextItems": [
+        "task:task-runtime",
+        "event:event-review"
+      ]
+    },
+    {
+      "id": "multi-resource",
+      "category": "multi-resource",
+      "estimatedPromptTokens": 358,
+      "sources": [
+        {
+          "resourceType": "project",
+          "resourceId": "project-release",
+          "title": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "milestone",
+          "resourceId": "milestone-config",
+          "title": "Choose 8 GB runtime",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-runtime",
+          "title": "Validate runtime configuration",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "note",
+          "resourceId": "note-baseline",
+          "title": "Phase 4 baseline",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-memory",
+          "title": "Measure memory pressure",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        },
+        {
+          "resourceType": "task",
+          "resourceId": "task-quality",
+          "title": "Compare answer quality",
+          "projectId": "project-release",
+          "projectName": "Ledger release",
+          "updatedAt": "2026-08-20T12:00:00Z"
+        }
+      ],
+      "contextItems": [
+        "project:project-release",
+        "milestone:milestone-config",
+        "task:task-runtime",
+        "note:note-baseline",
+        "task:task-memory",
+        "task:task-quality"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "normal-grounded",
+      "run": 1,
+      "requestId": "b7438780-8ea0-4605-9c50-37c8b6fa535e",
+      "score": {
+        "factualCorrectness": 1,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": true
+      },
+      "prompt": {
+        "systemTokens": 1076,
+        "questionTokens": 13,
+        "evidenceTokens": 47,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1136,
+        "generationBudget": 384,
+        "remainingContextHeadroom": 6672
+      },
+      "metrics": {
+        "firstTokenMs": 4301,
+        "totalMs": 22555.918666999998,
+        "tokensPerSecond": 10.10820679520862,
+        "generationBudget": 384,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 1081,
+        "finishReason": "stop",
+        "reasoningChunks": 0,
+        "contentChunks": 227,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 0,
+          "prompt_n": 1136,
+          "prompt_ms": 4262.359,
+          "prompt_per_token_ms": 3.7520765845070425,
+          "prompt_per_second": 266.51908016194784,
+          "predicted_n": 228,
+          "predicted_ms": 18119.602,
+          "predicted_per_token_ms": 79.82203524229074,
+          "predicted_per_second": 12.52786898961688
+        },
+        "performance": {
+          "requestId": "9cc298f2-83e5-4734-b0f9-fa0e24762883",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 384,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1136,
+          "promptCacheTokens": 0,
+          "promptTokensPerSecond": 266.51908016194784,
+          "serverReportedTokensPerSecond": 12.52786898961688,
+          "serverGenerationMs": 18119.602,
+          "marks": {
+            "generationRuntimeHealthCheck": 304.19195799999943,
+            "generationRuntimeReady": 304.47499999999945,
+            "promptRequestSent": 305.9181669999998,
+            "firstResponseByte": 4602.394124999999,
+            "firstTokenGenerated": 4605.206749999999,
+            "lastTokenGenerated": 4605.209417,
+            "doneMarkerReceived": 22754.902083,
+            "httpBodyClosed": 22760.404875,
+            "generationCompleted": 22768.079542
+          },
+          "runtimeStartupMs": 0.2830420000000231,
+          "promptEvalMs": 4299.288583,
+          "firstTokenMs": 4605.206749999999,
+          "firstModelDeltaMs": 4605.206749999999,
+          "lastModelDeltaMs": 4605.209417,
+          "doneMarkerMs": 22754.902083,
+          "bodyCloseMs": 22760.404875,
+          "generationMs": 18162.872792000002,
+          "streamCloseMs": 5.502791999999317,
+          "doneToCloseMs": 5.502791999999317,
+          "totalMs": 22769.166707999997,
+          "generatedTokens": 227,
+          "tokensPerSecond": 10.10820679520862,
+          "finishReason": "stop",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 9,
+          "swap": {
+            "raw": "total = 12288.00M  used = 11426.31M  free = 861.69M  (encrypted)",
+            "usedMiB": 11426.31
+          },
+          "processRssMiB": 29.453125,
+          "runtimeRssMiB": 988.625
+        },
+        "peakProcessRssMiB": 29.453125,
+        "peakRuntimeRssMiB": 999.890625,
+        "minimumSystemFreePercent": 8,
+        "maximumSwapUsedMiB": 11773.56
+      },
+      "outputLength": 1081,
+      "output": "The **Ledger release** is **in progress** at **40% completion**, with the next priority being **validating local AI performance**.\n\n---\n**Supporting Context:**\n- The project is actively tracked under `project:project-release` with a clear status of **\"In progress\"**.\n- The current focus is on validating AI performance locally, which suggests ongoing technical validation and testing phases.\n\n**Open Work:**\n- No explicit blockers are visible in the current evidence, but the **40% completion** implies remaining work (e.g., integration, documentation, or final testing) is needed before release.\n\n**Next Steps:**\n- The team should prioritize **local AI validation** to advance the release toward a higher milestone (e.g., beta or final release).\n- If there are dependencies (e.g., third-party integrations, stakeholder approvals), those should be addressed to avoid delays.\n\n**Note:** No recent changes (e.g., updated timelines, new blockers) are visible in the provided context. If further details (e.g., blockers, deadlines) are needed, the evidence package may need expansion."
+    },
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "normal-grounded",
+      "run": 2,
+      "requestId": "939cf6ef-1889-4007-bce9-abb6fb293951",
+      "score": {
+        "factualCorrectness": 1,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": true
+      },
+      "prompt": {
+        "systemTokens": 1076,
+        "questionTokens": 13,
+        "evidenceTokens": 47,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1136,
+        "generationBudget": 384,
+        "remainingContextHeadroom": 6672
+      },
+      "metrics": {
+        "firstTokenMs": 219,
+        "totalMs": 14208.453499999996,
+        "tokensPerSecond": 12.951167728237792,
+        "generationBudget": 384,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 898,
+        "finishReason": "stop",
+        "reasoningChunks": 0,
+        "contentChunks": 184,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 1135,
+          "prompt_n": 1,
+          "prompt_ms": 87.984,
+          "prompt_per_token_ms": 87.984,
+          "prompt_per_second": 11.365702855064558,
+          "predicted_n": 185,
+          "predicted_ms": 13896.653,
+          "predicted_per_token_ms": 75.52528804347826,
+          "predicted_per_second": 13.240598293704247
+        },
+        "performance": {
+          "requestId": "a02c24b3-97d1-4ec4-82a0-58af0a434d28",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 384,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1136,
+          "promptCacheTokens": 1135,
+          "promptTokensPerSecond": 11.365702855064558,
+          "serverReportedTokensPerSecond": 13.240598293704247,
+          "serverGenerationMs": 13896.653,
+          "marks": {
+            "generationRuntimeHealthCheck": 80.01704199999949,
+            "generationRuntimeReady": 82.67720800000097,
+            "promptRequestSent": 100.3794170000001,
+            "firstResponseByte": 299.48141699999906,
+            "firstTokenGenerated": 302.4680420000004,
+            "lastTokenGenerated": 302.47404200000165,
+            "doneMarkerReceived": 14210.007875,
+            "httpBodyClosed": 14212.686333000001,
+            "generationCompleted": 14218.838291999997
+          },
+          "runtimeStartupMs": 2.6601660000014817,
+          "promptEvalMs": 202.08862500000032,
+          "firstTokenMs": 302.4680420000004,
+          "firstModelDeltaMs": 302.4680420000004,
+          "lastModelDeltaMs": 302.47404200000165,
+          "doneMarkerMs": 14210.007875,
+          "bodyCloseMs": 14212.686333000001,
+          "generationMs": 13916.370249999996,
+          "streamCloseMs": 2.678458000002138,
+          "doneToCloseMs": 2.678458000002138,
+          "totalMs": 14219.256707999997,
+          "generatedTokens": 183,
+          "tokensPerSecond": 12.951167728237792,
+          "finishReason": "stop",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 8,
+          "swap": {
+            "raw": "total = 12288.00M  used = 11803.25M  free = 484.75M  (encrypted)",
+            "usedMiB": 11803.25
+          },
+          "processRssMiB": 20.078125,
+          "runtimeRssMiB": 989.609375
+        },
+        "peakProcessRssMiB": 30.296875,
+        "peakRuntimeRssMiB": 1001.296875,
+        "minimumSystemFreePercent": 8,
+        "maximumSwapUsedMiB": 11935.06
+      },
+      "outputLength": 898,
+      "output": "The **Ledger release** is **in progress**, at **40% completion**, with the next priority being **validating local AI performance**.\n\n---\n**Supporting context:**\n- The project is tracked as `project-release` with a clear status of *In progress* and a completion estimate of 40%.\n- No blockers or overdue tasks are explicitly flagged in the provided evidence, but the next focus area (local AI validation) suggests ongoing work may require coordination or testing.\n\n**Open work:**\n- **Local AI performance validation** (next priority).\n- No other high-priority tasks are visible in the current Ledger snapshot.\n\n**Next steps:**\n- Confirm alignment with the local AI validation milestone (if tied to specific tasks or dependencies).\n- Monitor for updates on testing, integration, or feedback loops tied to this phase.\n\n*No additional blockers or unresolved issues are evident in the provided context.*"
+    },
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "short-grounded",
+      "run": 1,
+      "requestId": "e3bb82a5-013f-4625-b4f8-3eeeee61bfe0",
+      "score": {
+        "factualCorrectness": 1,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": true
+      },
+      "prompt": {
+        "systemTokens": 1116,
+        "questionTokens": 4,
+        "evidenceTokens": 186,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1306,
+        "generationBudget": 384,
+        "remainingContextHeadroom": 6502
+      },
+      "metrics": {
+        "firstTokenMs": 1590,
+        "totalMs": 17293.040625,
+        "tokensPerSecond": 11.948955916473318,
+        "generationBudget": 384,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 863,
+        "finishReason": "stop",
+        "reasoningChunks": 0,
+        "contentChunks": 209,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 925,
+          "prompt_n": 381,
+          "prompt_ms": 1476.642,
+          "prompt_per_token_ms": 3.8757007874015748,
+          "prompt_per_second": 258.0178540228437,
+          "predicted_n": 210,
+          "predicted_ms": 15635.082,
+          "predicted_per_token_ms": 74.809004784689,
+          "predicted_per_second": 13.367374728191384
+        },
+        "performance": {
+          "requestId": "628a28d1-18b5-4cfd-bb05-136e667f8ca9",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 384,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1306,
+          "promptCacheTokens": 925,
+          "promptTokensPerSecond": 258.0178540228437,
+          "serverReportedTokensPerSecond": 13.367374728191384,
+          "serverGenerationMs": 15635.082,
+          "marks": {
+            "generationRuntimeHealthCheck": 45.32483299999876,
+            "generationRuntimeReady": 45.94024999999965,
+            "promptRequestSent": 49.94120799999655,
+            "firstResponseByte": 1633.7317079999993,
+            "firstTokenGenerated": 1636.0221249999959,
+            "lastTokenGenerated": 1636.042125,
+            "doneMarkerReceived": 17283.553207999998,
+            "httpBodyClosed": 17285.045583,
+            "generationCompleted": 17291.493624999996
+          },
+          "runtimeStartupMs": 0.615417000000889,
+          "promptEvalMs": 1586.0809169999993,
+          "firstTokenMs": 1636.0221249999959,
+          "firstModelDeltaMs": 1636.0221249999959,
+          "lastModelDeltaMs": 1636.042125,
+          "doneMarkerMs": 17283.553207999998,
+          "bodyCloseMs": 17285.045583,
+          "generationMs": 15655.4715,
+          "streamCloseMs": 1.4923750000016298,
+          "doneToCloseMs": 1.4923750000016298,
+          "totalMs": 17291.688917,
+          "generatedTokens": 206,
+          "tokensPerSecond": 11.948955916473318,
+          "finishReason": "stop",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 8,
+          "swap": {
+            "raw": "total = 12288.00M  used = 11934.12M  free = 353.88M  (encrypted)",
+            "usedMiB": 11934.12
+          },
+          "processRssMiB": 24.40625,
+          "runtimeRssMiB": 999.203125
+        },
+        "peakProcessRssMiB": 24.40625,
+        "peakRuntimeRssMiB": 1002.984375,
+        "minimumSystemFreePercent": 8,
+        "maximumSwapUsedMiB": 12018.25
+      },
+      "outputLength": 863,
+      "output": "**Blocked work:**\nNone of the tasks in the Ledger release are explicitly blocked. However, the following tasks are **not started** and have upcoming due dates (all due in August 2026):\n\n- **Measure memory pressure** (Due: 2026-08-23) – No progress recorded.\n- **Compare answer quality** (Due: 2026-08-24) – No progress recorded.\n\n**Supporting context:**\n- The only task in progress is *Validate runtime configuration*, which is due on **2026-08-22** (one day before the other tasks’ deadlines).\n- No explicit blockers (e.g., dependencies unresolved, missing resources) are visible in the provided Ledger context.\n\n**Next steps:**\n- Prioritize starting *Measure memory pressure* and *Compare answer quality* to avoid overdue status.\n- If these tasks require dependencies from *Validate runtime configuration*, confirm alignment with its progress before proceeding."
+    },
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "short-grounded",
+      "run": 2,
+      "requestId": "63805936-0df4-4c68-b1eb-4073336869a1",
+      "score": {
+        "factualCorrectness": 0,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": false
+      },
+      "prompt": {
+        "systemTokens": 1116,
+        "questionTokens": 4,
+        "evidenceTokens": 186,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1306,
+        "generationBudget": 384,
+        "remainingContextHeadroom": 6502
+      },
+      "metrics": {
+        "firstTokenMs": 186,
+        "totalMs": 27495.220042,
+        "tokensPerSecond": 12.94109069699621,
+        "generationBudget": 384,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 1333,
+        "finishReason": "stop",
+        "reasoningChunks": 0,
+        "contentChunks": 366,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 1305,
+          "prompt_n": 1,
+          "prompt_ms": 77.227,
+          "prompt_per_token_ms": 77.227,
+          "prompt_per_second": 12.948839136571406,
+          "predicted_n": 367,
+          "predicted_ms": 27226.937,
+          "predicted_per_token_ms": 74.39053825136612,
+          "predicted_per_second": 13.442569760968706
+        },
+        "performance": {
+          "requestId": "0cc97da8-9983-497c-a788-b73ba95a54b4",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 384,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1306,
+          "promptCacheTokens": 1305,
+          "promptTokensPerSecond": 12.948839136571406,
+          "serverReportedTokensPerSecond": 13.442569760968706,
+          "serverGenerationMs": 27226.937,
+          "marks": {
+            "generationRuntimeHealthCheck": 56.38020800000231,
+            "generationRuntimeReady": 56.98295800000051,
+            "promptRequestSent": 59.48958300000231,
+            "firstResponseByte": 242.25216699999874,
+            "firstTokenGenerated": 243.35120800000004,
+            "lastTokenGenerated": 243.3533329999991,
+            "doneMarkerReceived": 27487.304750000003,
+            "httpBodyClosed": 27489.293792000004,
+            "generationCompleted": 27492.538250000005
+          },
+          "runtimeStartupMs": 0.6027499999981956,
+          "promptEvalMs": 183.86162499999773,
+          "firstTokenMs": 243.35120800000004,
+          "firstModelDeltaMs": 243.35120800000004,
+          "lastModelDeltaMs": 243.3533329999991,
+          "doneMarkerMs": 27487.304750000003,
+          "bodyCloseMs": 27489.293792000004,
+          "generationMs": 27249.187042000005,
+          "streamCloseMs": 1.9890420000010636,
+          "doneToCloseMs": 1.9890420000010636,
+          "totalMs": 27493.114708,
+          "generatedTokens": 355,
+          "tokensPerSecond": 12.94109069699621,
+          "finishReason": "stop",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 8,
+          "swap": {
+            "raw": "total = 12288.00M  used = 12012.19M  free = 275.81M  (encrypted)",
+            "usedMiB": 12012.19
+          },
+          "processRssMiB": 24.28125,
+          "runtimeRssMiB": 1002.921875
+        },
+        "peakProcessRssMiB": 24.28125,
+        "peakRuntimeRssMiB": 1003.703125,
+        "minimumSystemFreePercent": 8,
+        "maximumSwapUsedMiB": 12012.19
+      },
+      "outputLength": 1333,
+      "output": "The **only explicit blocker** in the Ledger workspace context is:\n\n---\n**No tasks are currently blocked**—all open work (three tasks) is either *in progress* or *not started* without any explicit dependencies, blockers, or overdue constraints preventing progress.\n---\n\n### Supporting Context:\n1. **No explicit blockers** – The tasks (`task-runtime`, `task-memory`, `task-quality`) lack:\n   - Attached blockers (e.g., \"waiting on PR #123\").\n   - Overdue deadlines (all due dates are future).\n   - Dependencies on unresolved work (e.g., \"requires approval from QA\").\n\n2. **Open work status**:\n   - *In progress*: `task-runtime` (due 2026-08-22) – no blockers noted.\n   - *Not started*: `task-memory` (due 2026-08-23) and `task-quality` (due 2026-08-24) – no blockers noted.\n\n3. **No recent changes** – The evidence package does not include:\n   - Meeting minutes with blockers.\n   - Task updates (e.g., \"blocked by X\").\n   - Integration evidence (e.g., failed CI checks).\n\n---\n### Next Steps:\nIf blockers are needed, check:\n- **Task updates** (e.g., \"blocked by PR #123\") or **meeting notes** from the last sync.\n- **Dependencies** (e.g., \"requires review of `feature/embedding`\").\n- **Overdue tasks** (none exist here, but future tasks may need monitoring).\n\n*If no blockers appear in the Ledger context, the work is ready to proceed.*"
+    },
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "plan-my-week",
+      "run": 1,
+      "requestId": "e27534ec-e253-4ed6-b756-124b7df8473d",
+      "score": {
+        "factualCorrectness": 0.5,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": false
+      },
+      "prompt": {
+        "systemTokens": 1534,
+        "questionTokens": 4,
+        "evidenceTokens": 96,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1634,
+        "generationBudget": 512,
+        "remainingContextHeadroom": 6046
+      },
+      "metrics": {
+        "firstTokenMs": 4055,
+        "totalMs": 42531.046375000005,
+        "tokensPerSecond": 11.875868894177525,
+        "generationBudget": 512,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 2373,
+        "finishReason": "length",
+        "reasoningChunks": 0,
+        "contentChunks": 512,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 651,
+          "prompt_n": 983,
+          "prompt_ms": 3810.87,
+          "prompt_per_token_ms": 3.8767751780264494,
+          "prompt_per_second": 257.9463482092016,
+          "predicted_n": 512,
+          "predicted_ms": 38364.735,
+          "predicted_per_token_ms": 75.07775929549902,
+          "predicted_per_second": 13.319523776197073
+        },
+        "performance": {
+          "requestId": "19526f37-5f6a-4a67-b1ff-ba0ca160b4ee",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 512,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1634,
+          "promptCacheTokens": 651,
+          "promptTokensPerSecond": 257.9463482092016,
+          "serverReportedTokensPerSecond": 13.319523776197073,
+          "serverGenerationMs": 38364.735,
+          "marks": {
+            "generationRuntimeHealthCheck": 46.84604200000467,
+            "generationRuntimeReady": 47.21354199999769,
+            "promptRequestSent": 47.78645900000993,
+            "firstResponseByte": 4102.272292000009,
+            "firstTokenGenerated": 4102.685750000004,
+            "lastTokenGenerated": 4102.689624999999,
+            "doneMarkerReceived": 42473.74249999999,
+            "httpBodyClosed": 42485.978166999994,
+            "generationCompleted": 42501.237334000005
+          },
+          "runtimeStartupMs": 0.3674999999930151,
+          "promptEvalMs": 4054.8992909999943,
+          "firstTokenMs": 4102.685750000004,
+          "firstModelDeltaMs": 4102.685750000004,
+          "lastModelDeltaMs": 4102.689624999999,
+          "doneMarkerMs": 42473.74249999999,
+          "bodyCloseMs": 42485.978166999994,
+          "generationMs": 38398.551584,
+          "streamCloseMs": 12.23566700000083,
+          "doneToCloseMs": 12.23566700000083,
+          "totalMs": 42501.53241700001,
+          "generatedTokens": 504,
+          "tokensPerSecond": 11.875868894177525,
+          "finishReason": "length",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 8,
+          "swap": {
+            "raw": "total = 12288.00M  used = 11838.62M  free = 449.38M  (encrypted)",
+            "usedMiB": 11838.62
+          },
+          "processRssMiB": 25.03125,
+          "runtimeRssMiB": 1003.171875
+        },
+        "peakProcessRssMiB": 25.03125,
+        "peakRuntimeRssMiB": 1109.5,
+        "minimumSystemFreePercent": 8,
+        "maximumSwapUsedMiB": 12140.94
+      },
+      "outputLength": 2373,
+      "output": "Here’s the grounded week-planning synthesis from the available Ledger context, structured to prioritize urgency, dependencies, and actionable focus:\n\n---\n### **Focus This Week**\n**Core Theme**: The week centers on finalizing the **Ledger release** runtime configuration, with a critical deadline approaching (2026-08-22) and a pending review meeting. The work is interdependent: the runtime validation task must align with the runtime review meeting’s decisions.\n\n#### **Immediate Priorities (Today/Overdue)**\n1. **Runtime Validation Task**\n   - **Status**: *In progress* (no explicit blockers or overdue signals, but the due date is 6+ months away—likely a long-term milestone).\n   - **Action**: **No urgent action required yet**, but the task is critical for the release. The comparison of 8K four-slot vs. 4K single-slot runtime on workloads should be prioritized if the review meeting’s timing aligns with the release timeline. If the review is imminent, the validation may need to be accelerated to ensure data is ready for comparison.\n\n2. **Runtime Review Meeting**\n   - **Status**: Scheduled (no explicit date/time in context, but implied urgency due to the task’s due date and the meeting’s title).\n   - **Action**: **Critical follow-up**: The meeting’s timing is not specified, but its purpose (deciding the safe 8 GB production configuration) directly impacts the runtime validation task. If the meeting is scheduled for this week, the validation work should be completed or at least documented to ensure the comparison is accurate. If the meeting is delayed, the validation must be paused until the review’s guidance is clarified.\n\n#### **Longer-Term Work**\n- **Runtime Configuration Validation**: This is the sole open task for the Ledger release, with no other dependencies or blockers visible. The due date (2026-08-22) is distant, but the task’s status as “in progress” suggests it may require sustained effort if the review meeting is delayed or if the workloads/baselines change.\n\n#### **Unresolved or Blocked Work**\n- **No explicit blockers**: The task and meeting are both open, but neither shows signs of being blocked (e.g., missing dependencies, unresolved conflicts). The lack of a meeting date or explicit deadlines for the review creates ambiguity about the timeline for follow-up actions.\n- **Missing Context**: The absence of milestones/reminders"
+    },
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "plan-my-week",
+      "run": 2,
+      "requestId": "f901ba3a-da36-4095-a3f3-046a4fd3d8e9",
+      "score": {
+        "factualCorrectness": 1,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": true
+      },
+      "prompt": {
+        "systemTokens": 1534,
+        "questionTokens": 4,
+        "evidenceTokens": 96,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1634,
+        "generationBudget": 512,
+        "remainingContextHeadroom": 6046
+      },
+      "metrics": {
+        "firstTokenMs": 168,
+        "totalMs": 37645.84895800002,
+        "tokensPerSecond": 13.115190210162275,
+        "generationBudget": 512,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 2273,
+        "finishReason": "length",
+        "reasoningChunks": 0,
+        "contentChunks": 512,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 1633,
+          "prompt_n": 1,
+          "prompt_ms": 72.996,
+          "prompt_per_token_ms": 72.996,
+          "prompt_per_second": 13.699380787988384,
+          "predicted_n": 512,
+          "predicted_ms": 37409.438,
+          "predicted_per_token_ms": 73.20829354207437,
+          "predicted_per_second": 13.659654550276858
+        },
+        "performance": {
+          "requestId": "e4669418-0830-44a2-be2b-b769c2fd3f7f",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 512,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1634,
+          "promptCacheTokens": 1633,
+          "promptTokensPerSecond": 13.699380787988384,
+          "serverReportedTokensPerSecond": 13.659654550276858,
+          "serverGenerationMs": 37409.438,
+          "marks": {
+            "generationRuntimeHealthCheck": 59.73149999999441,
+            "generationRuntimeReady": 60.400709000008646,
+            "promptRequestSent": 60.968250000005355,
+            "firstResponseByte": 228.82312499999534,
+            "firstTokenGenerated": 229.22816700002295,
+            "lastTokenGenerated": 229.2300840000098,
+            "doneMarkerReceived": 37647.93004200002,
+            "httpBodyClosed": 37649.90279200001,
+            "generationCompleted": 37657.82787500002
+          },
+          "runtimeStartupMs": 0.6692090000142343,
+          "promptEvalMs": 168.2599170000176,
+          "firstTokenMs": 229.22816700002295,
+          "firstModelDeltaMs": 229.22816700002295,
+          "lastModelDeltaMs": 229.2300840000098,
+          "doneMarkerMs": 37647.93004200002,
+          "bodyCloseMs": 37649.90279200001,
+          "generationMs": 37428.599707999994,
+          "streamCloseMs": 1.972749999986263,
+          "doneToCloseMs": 1.972749999986263,
+          "totalMs": 37658.03600000002,
+          "generatedTokens": 493,
+          "tokensPerSecond": 13.115190210162275,
+          "finishReason": "length",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 8,
+          "swap": {
+            "raw": "total = 13312.00M  used = 12140.19M  free = 1171.81M  (encrypted)",
+            "usedMiB": 12140.19
+          },
+          "processRssMiB": 23.796875,
+          "runtimeRssMiB": 1006.859375
+        },
+        "peakProcessRssMiB": 23.796875,
+        "peakRuntimeRssMiB": 1012.625,
+        "minimumSystemFreePercent": 8,
+        "maximumSwapUsedMiB": 12140.19
+      },
+      "outputLength": 2273,
+      "output": "Here’s the grounded week-planning synthesis from the available Ledger context, structured to reflect urgency, dependencies, and actionable priorities:\n\n---\n\n### **Focus This Week**\n**Core Theme**: The week centers on finalizing the **Ledger release runtime configuration**—specifically validating and deciding the production-ready 8 GB configuration after A/B testing. This is a high-stakes technical milestone tied to the release timeline, with a clear deadline and a direct meeting to resolve trade-offs.\n\n---\n\n### **Deadlines and Commitments**\n1. **Critical Task Deadline**:\n   - **Validate runtime configuration** (Due: **2026-08-22T12:00:00Z**).\n     *Status*: In progress (no explicit blockers noted, but depends on meeting outcomes).\n     *Context*: This is a direct comparison of two runtime configurations (8K four-slot vs. 4K single-slot) across workloads. The task is tied to the release, so delays risk scope creep or missed performance guarantees.\n\n2. **Meeting Commitment**:\n   - **Runtime review** (Event: **event-review**).\n     *Purpose*: Review A/B timings and decide the safe 8 GB production configuration.\n     *Status*: Scheduled (no timestamp provided in context, but implied urgency given the task deadline).\n     *Dependencies*: The meeting’s outcome will directly inform the task’s resolution. If the meeting doesn’t address the 8 GB configuration, the task may stall.\n\n---\n\n### **Risks or Blockers**\n- **Unresolved Technical Trade-offs**:\n  The task is in progress but lacks explicit blockers. However, the decision to choose between configurations hinges on the meeting’s findings. If the meeting’s output is ambiguous (e.g., no clear winner for 8 GB), the task could require additional validation or a revised scope.\n- **Release Timeline Risk**:\n  The 2026-08-22 deadline is **10 weeks away**, but the task’s status (in progress) suggests it’s not yet fully resolved. If the meeting doesn’t clarify the 8 GB configuration, the team may need to extend the validation phase or adjust priorities.\n\n---\n\n### **Next Steps**\n#### **Immediate Actions (This Week)**\n1. **Prepare for the Runtime Review Meeting**:\n   - Gather all A/B timing data and performance metrics for the 8 GB configuration.\n   - Anticipate questions about trade-offs (e.g., memory"
+    },
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "multi-resource",
+      "run": 1,
+      "requestId": "000a4616-e336-4023-ab7c-98e5293a4915",
+      "score": {
+        "factualCorrectness": 1,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": true
+      },
+      "prompt": {
+        "systemTokens": 1514,
+        "questionTokens": 24,
+        "evidenceTokens": 358,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1896,
+        "generationBudget": 384,
+        "remainingContextHeadroom": 5912
+      },
+      "metrics": {
+        "firstTokenMs": 3972,
+        "totalMs": 34941.322625,
+        "tokensPerSecond": 10.670644254489128,
+        "generationBudget": 384,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 1779,
+        "finishReason": "length",
+        "reasoningChunks": 0,
+        "contentChunks": 384,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 951,
+          "prompt_n": 945,
+          "prompt_ms": 3793.962,
+          "prompt_per_token_ms": 4.014774603174603,
+          "prompt_per_second": 249.07998551382437,
+          "predicted_n": 384,
+          "predicted_ms": 30883.258,
+          "predicted_per_token_ms": 80.63513838120105,
+          "predicted_per_second": 12.401541314067316
+        },
+        "performance": {
+          "requestId": "b9f74f64-b951-4a6b-a3a7-00b481c3fdfb",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 384,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1896,
+          "promptCacheTokens": 951,
+          "promptTokensPerSecond": 249.07998551382437,
+          "serverReportedTokensPerSecond": 12.401541314067316,
+          "serverGenerationMs": 30883.258,
+          "marks": {
+            "generationRuntimeHealthCheck": 57.12887500002398,
+            "generationRuntimeReady": 58.015125000005355,
+            "promptRequestSent": 58.52258300001267,
+            "firstResponseByte": 4025.658833000023,
+            "firstTokenGenerated": 4029.8212080000085,
+            "lastTokenGenerated": 4029.830250000028,
+            "doneMarkerReceived": 34916.90850000002,
+            "httpBodyClosed": 34920.000333,
+            "generationCompleted": 34928.377083
+          },
+          "runtimeStartupMs": 0.8862499999813735,
+          "promptEvalMs": 3971.298624999996,
+          "firstTokenMs": 4029.8212080000085,
+          "firstModelDeltaMs": 4029.8212080000085,
+          "lastModelDeltaMs": 4029.830250000028,
+          "doneMarkerMs": 34916.90850000002,
+          "bodyCloseMs": 34920.000333,
+          "generationMs": 30898.55587499999,
+          "streamCloseMs": 3.0918329999840353,
+          "doneToCloseMs": 3.0918329999840353,
+          "totalMs": 34929.08670800002,
+          "generatedTokens": 372,
+          "tokensPerSecond": 10.670644254489128,
+          "finishReason": "length",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 8,
+          "swap": {
+            "raw": "total = 13312.00M  used = 12055.06M  free = 1256.94M  (encrypted)",
+            "usedMiB": 12055.06
+          },
+          "processRssMiB": 24.640625,
+          "runtimeRssMiB": 1009.359375
+        },
+        "peakProcessRssMiB": 24.640625,
+        "peakRuntimeRssMiB": 1074.328125,
+        "minimumSystemFreePercent": 7,
+        "maximumSwapUsedMiB": 12706.44
+      },
+      "outputLength": 1779,
+      "output": "The **Ledger release** is in **active progress** (40% complete) with a clear focus on validating local AI performance, but the current state reveals a **high-priority convergence of immediate and longer-term challenges** tied to runtime configuration, memory constraints, and answer quality. Below is a structured synthesis of what matters next, organized by urgency, dependencies, and unresolved work.\n\n---\n\n### **Overall Picture: A Critical Validation Phase**\nThe release is transitioning from foundational setup to **performance and correctness validation**, where the choice of runtime configuration (8 GB vs. 4K single-slot) directly impacts system stability, efficiency, and user experience. The baseline note highlights performance trade-offs (e.g., 7.9s vs. 50.8s for visible time), suggesting that the 8 GB runtime may be over-provisioned for some workloads, while the 4K candidate risks instability under memory pressure.\n\n**Key drivers of urgency:**\n1. **Due dates** for tasks are clustered in the next 5 days (Aug 22–24), with two tasks (*runtime validation* and *memory pressure*) overdue by 1–2 days.\n2. **Milestone dependency**: The \"Choose 8 GB runtime\" milestone (due Aug 25) requires resolution of the three linked tasks, which are either incomplete or overdue.\n3. **Performance baseline**: The notes imply that current configurations may not meet expected efficiency goals, necessitating iterative adjustments.\n\n---\n\n### **What Changed?**\n- **Status shift**: The project is no longer in \"planning\" mode; it’s now in a **validation sprint**, with explicit due dates and task dependencies.\n- **Performance insights**: The baseline note reveals that the 8 GB runtime is **not yet optimized** (visible time is higher than expected), while the 4K candidate’s safety"
+    },
+    {
+      "configId": "A-current-8k-4slot",
+      "caseId": "multi-resource",
+      "run": 2,
+      "requestId": "53dc76d7-eda6-4f49-a962-b154496fd32e",
+      "score": {
+        "factualCorrectness": 1,
+        "unsupportedClaims": 0,
+        "abstentionCorrect": null,
+        "requiredStructure": null,
+        "actionSchemaValid": null,
+        "passed": true
+      },
+      "prompt": {
+        "systemTokens": 1514,
+        "questionTokens": 24,
+        "evidenceTokens": 358,
+        "conversationTokens": 0,
+        "totalPromptTokens": 1896,
+        "generationBudget": 384,
+        "remainingContextHeadroom": 5912
+      },
+      "metrics": {
+        "firstTokenMs": 176,
+        "totalMs": 30643.486749999982,
+        "tokensPerSecond": 12.109311078383243,
+        "generationBudget": 384,
+        "reasoningEnabled": false,
+        "reasoningContentObserved": false,
+        "visibleContentChars": 1608,
+        "finishReason": "length",
+        "reasoningChunks": 0,
+        "contentChunks": 384,
+        "reasoningTokens": 0,
+        "serverTimings": {
+          "cache_n": 1895,
+          "prompt_n": 1,
+          "prompt_ms": 76.199,
+          "prompt_per_token_ms": 76.199,
+          "prompt_per_second": 13.12353180487933,
+          "predicted_n": 384,
+          "predicted_ms": 30335.783,
+          "predicted_per_token_ms": 79.20569973890339,
+          "predicted_per_second": 12.625354024980995
+        },
+        "performance": {
+          "requestId": "53aba710-c592-462e-8f5a-582c09ca17f6",
+          "route": "phase6_validation",
+          "requestedTier": "balanced",
+          "loadedTier": "balanced",
+          "modelId": "ministral-3-3b-instruct-2512-q8-0",
+          "generationRuntimeReused": true,
+          "modelWasAlreadyLoaded": true,
+          "contextSize": 8192,
+          "generationBudget": 384,
+          "reasoningEnabled": false,
+          "reasoningMode": "off",
+          "gpuLayersRequested": "all",
+          "metalRequested": true,
+          "backend": "metal_requested",
+          "metalAvailable": true,
+          "gpuLayersOffloaded": "unknown_until_runtime_report",
+          "promptTokens": 1896,
+          "promptCacheTokens": 1895,
+          "promptTokensPerSecond": 13.12353180487933,
+          "serverReportedTokensPerSecond": 12.625354024980995,
+          "serverGenerationMs": 30335.783,
+          "marks": {
+            "generationRuntimeHealthCheck": 71.62954199998057,
+            "generationRuntimeReady": 74.32683299999917,
+            "promptRequestSent": 75.25283300000592,
+            "firstResponseByte": 249.70108299999265,
+            "firstTokenGenerated": 250.19649999999092,
+            "lastTokenGenerated": 250.1979580000043,
+            "doneMarkerReceived": 30621.249582999997,
+            "httpBodyClosed": 30628.872333000007,
+            "generationCompleted": 30639.269042
+          },
+          "runtimeStartupMs": 2.697291000018595,
+          "promptEvalMs": 174.943666999985,
+          "firstTokenMs": 250.19649999999092,
+          "firstModelDeltaMs": 250.19649999999092,
+          "lastModelDeltaMs": 250.1979580000043,
+          "doneMarkerMs": 30621.249582999997,
+          "bodyCloseMs": 30628.872333000007,
+          "generationMs": 30389.07254200001,
+          "streamCloseMs": 7.622750000009546,
+          "doneToCloseMs": 7.622750000009546,
+          "totalMs": 30639.93216699999,
+          "generatedTokens": 370,
+          "tokensPerSecond": 12.109311078383243,
+          "finishReason": "length",
+          "doneMarkerReceived": true
+        }
+      },
+      "memory": {
+        "initial": {
+          "systemFreePercent": 8,
+          "swap": {
+            "raw": "total = 13312.00M  used = 12617.31M  free = 694.69M  (encrypted)",
+            "usedMiB": 12617.31
+          },
+          "processRssMiB": 16.21875,
+          "runtimeRssMiB": 999.5625
+        },
+        "peakProcessRssMiB": 21.953125,
+        "peakRuntimeRssMiB": 1011.265625,
+        "minimumSystemFreePercent": 8,
+        "maximumSwapUsedMiB": 12910.81
+      },
+      "outputLength": 1608,
+      "output": "The **Ledger release** is in an active phase of validation and optimization, with a **40% completion rate** and a clear focus on validating local AI performance. Below is a synthesized assessment of the current state, priorities, and next actions based on the available Ledger context.\n\n---\n\n### **Overall Picture**\nThe release is **not yet fully aligned with its milestone deadlines** (due in late August 2026) and is currently prioritizing **runtime configuration validation** as the immediate focus. The project’s structure centers on three interdependent tasks:\n1. **Runtime configuration validation** (due Aug 22, 2026)\n2. **Memory pressure measurement** (due Aug 23, 2026)\n3. **Answer quality comparison** (due Aug 24, 2026)\n\nThese tasks are linked to a **milestone** (8 GB runtime selection) and a **baseline note** from Phase 4, which provides performance context.\n\n---\n\n### **What Changed?**\n- **Progress**: The release is **40% complete**, but the current focus is on **local AI performance validation**, which may imply that foundational infrastructure or foundational model integration is not yet fully verified.\n- **Milestone Shift**: The **8 GB runtime milestone** (due Aug 25) is **not started**, suggesting that the decision on runtime context sizing has not yet been made. This could be a blocking factor if the tasks below are dependent on it.\n- **Task Statuses**:\n  - **`task-runtime` (validation)**: In progress, but due Aug 22 (one day before the milestone).\n  - **`task-memory` and `task-quality`**: Not started, with due dates Aug 23 and 24, respectively.\n\n---\n\n### **What Matters Now?"
+    }
+  ],
+  "summary": [
+    {
+      "configId": "A-current-8k-4slot",
+      "runs": 8,
+      "averageTTFTMs": 1924.8724687500028,
+      "averageVisibleTTFTMs": null,
+      "averagePromptEvalMs": 1830.0901562499987,
+      "averagePromptTokensPerSecond": 135.33759031154017,
+      "averageGenerationMs": 26512.335161625,
+      "averageTokensPerSecond": 11.965054446766016,
+      "averageTotalMs": 28437.726791625006,
+      "minimumSystemFreePercent": 7,
+      "maximumSwapUsedMiB": 12910.81,
+      "scorePassRate": 0.75
+    }
+  ]
+}

@@ -35,6 +35,21 @@ export type AskLedgerPromptInput = {
   evidencePackage?: AskLedgerEvidencePackage;
 };
 
+const buildStructuredEvidencePacket = (items: AskLedgerContextItem[]) => {
+  const tasks = items.filter((item) => item.resourceType === 'task');
+  const openTasks = tasks.filter((item) => !['completed', 'complete', 'done', 'finished', 'cancelled', 'canceled'].includes(String(item.status ?? '').toLowerCase()));
+  const overdueTasks = openTasks.filter((item) => item.dueAt && item.dueAt.slice(0, 10) < new Date().toISOString().slice(0, 10));
+  const blocked = items.filter((item) => /blocked|stuck|blocked by/i.test(`${item.status ?? ''} ${item.content}`));
+  const dated = items.filter((item) => item.dueAt || item.timestamp).slice(0, 12);
+  if (!items.length || (!tasks.length && !blocked.length && !dated.length)) return '';
+  return [
+    'STRUCTURED LEDGER SUMMARY',
+    tasks.length ? `TASK STATE: ${openTasks.length} open; ${overdueTasks.length} overdue; ${tasks.length - openTasks.length} completed/cancelled.` : '',
+    blocked.length ? `BLOCKERS: ${blocked.slice(0, 6).map((item) => item.title).join('; ')}` : '',
+    dated.length ? `DATED RECORDS: ${dated.map((item) => `${item.title} (${item.dueAt ? `due ${item.dueAt}` : `at ${item.timestamp}`})`).join('; ')}` : '',
+  ].filter(Boolean).join('\n');
+};
+
 export const buildAskLedgerPrompt = ({ question, contextItems = [], context, primaryContext, supportingContext, recentConversation, skill, skillContext, responseMode = 'workspace_grounded', capabilityDescription, answerDepth = 'standard', generationDepth, generationDepthReason, evidencePackage }: AskLedgerPromptInput) => {
   const normalized = context ?? new LedgerContextBuilder().normalize(contextItems);
   const contextText = evidencePackage?.text
@@ -48,6 +63,7 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
         : '',
     ].filter(Boolean).join('\n\n')
     : normalized.text || '(No Ledger context was supplied.)';
+  const structuredPacket = buildStructuredEvidencePacket(normalized.items);
   const truncationNote = normalized.truncated
     ? '\nSome lower-priority context was omitted to stay within the context budget. Do not assume omitted information.\n'
     : '';
@@ -138,7 +154,7 @@ ${meetingPrepInstructions}
 ${lastWorkdayInstructions}
 
 EVIDENCE PACKAGE
-${contextText}
+${structuredPacket ? `${structuredPacket}\n\n` : ''}${contextText}
 ${missingEvidence}
 ${truncationNote}
 ${recentExchange}

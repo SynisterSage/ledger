@@ -1,0 +1,2811 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-20T02:24:48.225Z",
+  "deterministic": true,
+  "cases": [
+    {
+      "caseId": "fact-due",
+      "category": "simple_facts",
+      "question": "When is Alfa due?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 2,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "reminder:reminder-proof",
+            "event:event-workday",
+            "activity:activity-alfa",
+            "notification:notification-proof",
+            "activity:activity-circle",
+            "note:note-workday",
+            "external:slack-alfa",
+            "transcript:transcript-workday-1",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "reminder:reminder-proof",
+            "event:event-workday",
+            "activity:activity-alfa",
+            "notification:notification-proof",
+            "activity:activity-circle",
+            "note:note-workday",
+            "external:slack-alfa",
+            "transcript:transcript-workday-1",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 409,
+          "selectedKeys": [
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "project:project-alfa",
+            "reminder:reminder-proof",
+            "event:event-workday",
+            "activity:activity-circle"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 4.468874999999997,
+        "evidence": 1.7641249999999786,
+        "validation": 0.0002920000000017353,
+        "total": 7.886959000000019
+      }
+    },
+    {
+      "caseId": "fact-owner",
+      "category": "simple_facts",
+      "question": "Who owns this task?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 2,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 6,
+          "selectedSeeds": [
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm"
+          ],
+          "primary": [
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 6,
+          "selected": 6,
+          "tokens": 385,
+          "selectedKeys": [
+            "task:task-overdue-copy",
+            "task:task-review-proof",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-archive-assets",
+            "task:task-watercolor-longterm"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 2.2509589999999946,
+        "evidence": 8.905249999999995,
+        "validation": 0.0002499999999940883,
+        "total": 11.505958000000021
+      }
+    },
+    {
+      "caseId": "fact-milestone",
+      "category": "simple_facts",
+      "question": "What milestone is Review Final Proof part of?",
+      "score": {
+        "retrievalCorrectness": 0,
+        "contextCoverage": 0,
+        "evidenceQuality": 2,
+        "answerCompleteness": 2,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": false
+      },
+      "failures": [
+        "wrong_seed",
+        "missing_relationship_context"
+      ],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 0,
+          "selectedSeeds": [
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets"
+          ],
+          "primary": []
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 0,
+          "selected": 0,
+          "tokens": 30,
+          "selectedKeys": []
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.7526249999999948,
+        "evidence": 0.05308299999998667,
+        "validation": 0.0006669999999928677,
+        "total": 1.0834169999999972
+      }
+    },
+    {
+      "caseId": "fact-today",
+      "category": "simple_facts",
+      "question": "Show my today tasks.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 2,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 4,
+          "selectedSeeds": [
+            "task:task-review-proof",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets"
+          ],
+          "primary": [
+            "task:task-review-proof",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 4,
+          "selected": 4,
+          "tokens": 266,
+          "selectedKeys": [
+            "task:task-overdue-copy",
+            "task:task-review-proof",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.4172920000000033,
+        "evidence": 0.1327500000000157,
+        "validation": 0.00016699999997626946,
+        "total": 0.8277500000000089
+      }
+    },
+    {
+      "caseId": "project-alfa",
+      "category": "resource_understanding",
+      "question": "What's going on with Alfa?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "note:note-workday",
+            "activity:activity-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-watercolor-assets",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "note:note-workday",
+            "activity:activity-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-watercolor-assets",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 439,
+          "selectedKeys": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "note:note-workday",
+            "activity:activity-alfa",
+            "transcript:transcript-workday-1"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.7346249999999941,
+        "evidence": 0.33720800000000395,
+        "validation": 0.00016700000000469117,
+        "total": 1.2206659999999943
+      }
+    },
+    {
+      "caseId": "project-watercolor",
+      "category": "resource_understanding",
+      "question": "Summarize Watercolor.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "external:figma-watercolor",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "external:figma-watercolor",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 441,
+          "selectedKeys": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "external:figma-watercolor"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.4746250000000032,
+        "evidence": 0.28804200000001856,
+        "validation": 0.00016700000000469117,
+        "total": 0.9102499999999907
+      }
+    },
+    {
+      "caseId": "project-next",
+      "category": "resource_understanding",
+      "question": "What still needs to happen for this project?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 28,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ]
+        },
+        "graph": {
+          "expandedResources": 17,
+          "paths": 18
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 20,
+          "tokens": 1667,
+          "selectedKeys": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "task:task-review-proof",
+            "task:task-watercolor-assets",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-watercolor-assets",
+            "task:task-archive-assets",
+            "task:task-watercolor-longterm",
+            "notification:notification-proof",
+            "task:task-completed-proof",
+            "external:github-alfa",
+            "external:slack-alfa",
+            "external:figma-watercolor",
+            "event:event-workday",
+            "note:note-irrelevant",
+            "activity:activity-alfa",
+            "note:note-workday"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 2.646375000000006,
+        "evidence": 0.4103330000000085,
+        "validation": 0.00020799999998644125,
+        "total": 3.7917500000000075
+      }
+    },
+    {
+      "caseId": "project-status",
+      "category": "resource_understanding",
+      "question": "Review my projects and tell me what is blocked.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 28,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ]
+        },
+        "graph": {
+          "expandedResources": 17,
+          "paths": 18
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 20,
+          "tokens": 1668,
+          "selectedKeys": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "task:task-review-proof",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "task:task-watercolor-assets",
+            "milestone:milestone-watercolor-assets",
+            "task:task-archive-assets",
+            "task:task-watercolor-longterm",
+            "notification:notification-proof",
+            "task:task-completed-proof",
+            "external:github-alfa",
+            "external:slack-alfa",
+            "external:figma-watercolor",
+            "event:event-workday",
+            "note:note-irrelevant",
+            "activity:activity-alfa",
+            "note:note-workday"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 1.112499999999983,
+        "evidence": 0.2883329999999944,
+        "validation": 0.00020800000001486296,
+        "total": 1.827666999999991
+      }
+    },
+    {
+      "caseId": "meeting-latest",
+      "category": "meeting_intelligence",
+      "question": "Summarize my latest Workday meeting.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 14,
+          "selectedSeeds": [
+            "note:note-workday",
+            "event:event-workday"
+          ],
+          "primary": [
+            "note:note-workday",
+            "event:event-workday"
+          ]
+        },
+        "graph": {
+          "expandedResources": 12,
+          "paths": 12
+        },
+        "evidence": {
+          "retrieved": 14,
+          "selected": 6,
+          "tokens": 407,
+          "selectedKeys": [
+            "note:note-workday",
+            "event:event-workday",
+            "task:task-overdue-copy",
+            "task:task-review-proof",
+            "notification:notification-proof",
+            "external:github-alfa"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.920125000000013,
+        "evidence": 0.17833300000000918,
+        "validation": 0.00016599999997879422,
+        "total": 1.2915419999999926
+      }
+    },
+    {
+      "caseId": "meeting-decisions",
+      "category": "meeting_intelligence",
+      "question": "What decisions came out of the Workday meetings?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 0,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": false
+      },
+      "failures": [
+        "missing_relationship_context"
+      ],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 2,
+          "selectedSeeds": [
+            "note:note-workday",
+            "event:event-workday"
+          ],
+          "primary": [
+            "note:note-workday",
+            "event:event-workday"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 2,
+          "selected": 2,
+          "tokens": 159,
+          "selectedKeys": [
+            "note:note-workday",
+            "event:event-workday"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.4548329999999794,
+        "evidence": 0.06595799999999485,
+        "validation": 0.00016600000000721593,
+        "total": 0.8733330000000024
+      }
+    },
+    {
+      "caseId": "meeting-followups",
+      "category": "meeting_intelligence",
+      "question": "What follow-ups came from yesterday's meeting?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 0,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": false
+      },
+      "failures": [
+        "missing_relationship_context"
+      ],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 3,
+          "selectedSeeds": [
+            "event:event-workday",
+            "note:note-workday",
+            "note:note-irrelevant"
+          ],
+          "primary": [
+            "event:event-workday",
+            "note:note-workday",
+            "note:note-irrelevant"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 3,
+          "selected": 3,
+          "tokens": 195,
+          "selectedKeys": [
+            "event:event-workday",
+            "note:note-workday",
+            "note:note-irrelevant"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.20916699999997945,
+        "evidence": 0.07233299999998621,
+        "validation": 0.00016600000000721593,
+        "total": 0.3916670000000124
+      }
+    },
+    {
+      "caseId": "meeting-project-link",
+      "category": "meeting_intelligence",
+      "question": "Connect the Workday meeting to its project work.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "meetings",
+            "meeting-context",
+            "linked-projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 30,
+          "selectedSeeds": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof"
+          ],
+          "primary": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof"
+          ]
+        },
+        "graph": {
+          "expandedResources": 14,
+          "paths": 21
+        },
+        "evidence": {
+          "retrieved": 14,
+          "selected": 14,
+          "tokens": 1276,
+          "selectedKeys": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "notification:notification-proof",
+            "task:task-completed-proof",
+            "external:github-alfa",
+            "external:slack-alfa",
+            "activity:activity-alfa"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 1.1727500000000077,
+        "evidence": 0.2447920000000181,
+        "validation": 0.0007080000000030395,
+        "total": 1.5437499999999886
+      }
+    },
+    {
+      "caseId": "research-meetings-projects",
+      "category": "cross_resource_research",
+      "question": "Look through my Workday meetings and connect them to my current projects.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "meetings",
+            "meeting-context",
+            "linked-projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 30,
+          "selectedSeeds": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof"
+          ],
+          "primary": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof"
+          ]
+        },
+        "graph": {
+          "expandedResources": 14,
+          "paths": 21
+        },
+        "evidence": {
+          "retrieved": 14,
+          "selected": 14,
+          "tokens": 1282,
+          "selectedKeys": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "notification:notification-proof",
+            "task:task-completed-proof",
+            "external:github-alfa",
+            "external:slack-alfa",
+            "activity:activity-alfa"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 1.7081249999999955,
+        "evidence": 0.22999999999998977,
+        "validation": 0.0002499999999940883,
+        "total": 2.0810830000000067
+      }
+    },
+    {
+      "caseId": "research-project-state",
+      "category": "cross_resource_research",
+      "question": "Tell me where my projects stand, including milestones and open work.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 28,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ]
+        },
+        "graph": {
+          "expandedResources": 17,
+          "paths": 18
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 20,
+          "tokens": 1673,
+          "selectedKeys": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "task:task-review-proof",
+            "task:task-watercolor-assets",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-watercolor-assets",
+            "task:task-archive-assets",
+            "task:task-watercolor-longterm",
+            "notification:notification-proof",
+            "task:task-completed-proof",
+            "external:github-alfa",
+            "external:slack-alfa",
+            "external:figma-watercolor",
+            "event:event-workday",
+            "note:note-irrelevant",
+            "activity:activity-alfa",
+            "note:note-workday"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.5155420000000106,
+        "evidence": 0.24529200000000628,
+        "validation": 0.00016700000000469117,
+        "total": 0.8919170000000065
+      }
+    },
+    {
+      "caseId": "research-week",
+      "category": "cross_resource_research",
+      "question": "What have I been working on this week?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "task:task-review-proof",
+            "task:task-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-longterm",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "notification:notification-proof",
+            "note:note-workday",
+            "activity:activity-alfa",
+            "transcript:transcript-workday-1",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "task:task-review-proof",
+            "task:task-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-longterm",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "notification:notification-proof",
+            "note:note-workday",
+            "activity:activity-alfa",
+            "transcript:transcript-workday-1",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 420,
+          "selectedKeys": [
+            "task:task-review-proof",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "milestone:milestone-final-production",
+            "project:project-alfa",
+            "notification:notification-proof"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.33320900000001075,
+        "evidence": 0.2729580000000169,
+        "validation": 0.00012499999999704414,
+        "total": 0.7166250000000218
+      }
+    },
+    {
+      "caseId": "research-tying-summary",
+      "category": "cross_resource_research",
+      "question": "Look through my meetings, projects, milestones, tasks and next actions and give me a tying summary.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "meetings",
+            "meeting-context",
+            "linked-projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 34,
+          "selectedSeeds": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "note:note-irrelevant",
+            "project:project-alfa",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof"
+          ],
+          "primary": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "note:note-irrelevant",
+            "project:project-alfa",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof"
+          ]
+        },
+        "graph": {
+          "expandedResources": 16,
+          "paths": 23
+        },
+        "evidence": {
+          "retrieved": 16,
+          "selected": 16,
+          "tokens": 1409,
+          "selectedKeys": [
+            "event:event-workday",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "task:task-review-proof",
+            "project:project-unrelated",
+            "task:task-archive-assets",
+            "note:note-irrelevant",
+            "notification:notification-proof",
+            "task:task-completed-proof",
+            "external:github-alfa",
+            "external:slack-alfa",
+            "activity:activity-alfa"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.9778749999999832,
+        "evidence": 0.3942910000000097,
+        "validation": 0.0002089999999839165,
+        "total": 1.498041999999998
+      }
+    },
+    {
+      "caseId": "task-focus",
+      "category": "task_intelligence",
+      "question": "What should I focus on today?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "notification:notification-proof",
+            "note:note-workday",
+            "activity:activity-alfa",
+            "transcript:transcript-workday-1",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "notification:notification-proof",
+            "note:note-workday",
+            "activity:activity-alfa",
+            "transcript:transcript-workday-1",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 417,
+          "selectedKeys": [
+            "task:task-review-proof",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "notification:notification-proof"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.3380830000000117,
+        "evidence": 0.24866700000001174,
+        "validation": 0.00025000000002251,
+        "total": 0.8017499999999984
+      }
+    },
+    {
+      "caseId": "task-long-term",
+      "category": "task_intelligence",
+      "question": "What long-term work is building up?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 436,
+          "selectedKeys": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.20479100000000017,
+        "evidence": 0.42824999999999136,
+        "validation": 0.00016600000000721593,
+        "total": 0.747667000000007
+      }
+    },
+    {
+      "caseId": "task-overdue",
+      "category": "task_intelligence",
+      "question": "What is overdue?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "notification:notification-proof",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "notification:notification-proof",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 443,
+          "selectedKeys": [
+            "project:project-alfa",
+            "notification:notification-proof",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "note:note-workday",
+            "transcript:transcript-workday-1"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.24962500000000887,
+        "evidence": 0.22954200000000924,
+        "validation": 0.00016700000000469117,
+        "total": 0.7029159999999877
+      }
+    },
+    {
+      "caseId": "task-blocked",
+      "category": "task_intelligence",
+      "question": "What am I blocked on?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "note:note-irrelevant",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "note:note-irrelevant",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 434,
+          "selectedKeys": [
+            "project:project-alfa",
+            "task:task-review-proof",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "milestone:milestone-final-production",
+            "event:event-workday"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.5328339999999798,
+        "evidence": 0.5848750000000109,
+        "validation": 0.0006249999999852207,
+        "total": 1.4263750000000073
+      }
+    },
+    {
+      "caseId": "task-completed",
+      "category": "task_intelligence",
+      "question": "What did I complete recently?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 434,
+          "selectedKeys": [
+            "project:project-alfa",
+            "milestone:milestone-final-production",
+            "task:task-review-proof",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.3386660000000177,
+        "evidence": 0.19679199999998787,
+        "validation": 0.00012499999999704414,
+        "total": 0.6850419999999815
+      }
+    },
+    {
+      "caseId": "attention-now",
+      "category": "attention",
+      "question": "What needs my attention?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 6,
+          "selectedSeeds": [
+            "task:task-review-proof",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-circle"
+          ],
+          "primary": [
+            "task:task-review-proof",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-circle"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 6,
+          "selected": 6,
+          "tokens": 395,
+          "selectedKeys": [
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-circle",
+            "task:task-review-proof",
+            "task:task-watercolor-assets"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.18412499999999454,
+        "evidence": 0.10554200000001401,
+        "validation": 0.00012499999999704414,
+        "total": 0.39354099999999903
+      }
+    },
+    {
+      "caseId": "attention-away",
+      "category": "attention",
+      "question": "What changed while I was away?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 14,
+          "selectedSeeds": [
+            "activity:activity-alfa",
+            "activity:activity-circle"
+          ],
+          "primary": [
+            "activity:activity-alfa",
+            "activity:activity-circle"
+          ]
+        },
+        "graph": {
+          "expandedResources": 12,
+          "paths": 12
+        },
+        "evidence": {
+          "retrieved": 14,
+          "selected": 6,
+          "tokens": 381,
+          "selectedKeys": [
+            "activity:activity-circle",
+            "activity:activity-alfa",
+            "task:task-overdue-copy",
+            "task:task-review-proof",
+            "notification:notification-proof",
+            "external:github-alfa"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.17333300000001373,
+        "evidence": 0.1374580000000094,
+        "validation": 0.00008400000001529406,
+        "total": 0.40116700000001515
+      }
+    },
+    {
+      "caseId": "attention-circle",
+      "category": "attention",
+      "question": "Anything important happen in Circle?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "external:slack-alfa",
+            "external:github-alfa",
+            "external:figma-watercolor",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "note:note-irrelevant",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "activity:activity-alfa",
+            "activity:activity-circle"
+          ],
+          "primary": [
+            "external:slack-alfa",
+            "external:github-alfa",
+            "external:figma-watercolor",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "note:note-workday",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "note:note-irrelevant",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "activity:activity-alfa",
+            "activity:activity-circle"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 410,
+          "selectedKeys": [
+            "external:slack-alfa",
+            "project:project-alfa",
+            "task:task-review-proof",
+            "note:note-workday",
+            "event:event-workday",
+            "reminder:reminder-proof"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.28666599999999676,
+        "evidence": 0.20579200000000242,
+        "validation": 0.00012499999999704414,
+        "total": 0.6118329999999901
+      }
+    },
+    {
+      "caseId": "integration-slack",
+      "category": "integration_context",
+      "question": "What did Slack say about Alfa?",
+      "score": {
+        "retrievalCorrectness": 0,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": false
+      },
+      "failures": [
+        "wrong_seed"
+      ],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 0,
+          "selectedSeeds": [
+            "external:slack-alfa",
+            "external:github-alfa",
+            "external:figma-watercolor"
+          ],
+          "primary": [],
+          "integration": {
+            "requestedSources": [
+              "slack"
+            ],
+            "availableSources": [
+              "slack"
+            ],
+            "candidates": 1,
+            "selected": 0,
+            "localCacheCandidates": 1,
+            "remoteAttempts": 0,
+            "failures": [],
+            "explicitLinks": 0,
+            "discovered": 0,
+            "duplicateCollapses": 0
+          }
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 0,
+          "selected": 0,
+          "tokens": 26,
+          "selectedKeys": []
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.362166000000002,
+        "evidence": 0.009832999999986214,
+        "validation": 0.00012499999999704414,
+        "total": 0.4495420000000081
+      }
+    },
+    {
+      "caseId": "integration-github",
+      "category": "integration_context",
+      "question": "Are there GitHub resources connected to this project?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 1,
+          "selectedSeeds": [
+            "external:github-alfa"
+          ],
+          "primary": [
+            "external:github-alfa"
+          ],
+          "integration": {
+            "requestedSources": [
+              "github"
+            ],
+            "availableSources": [
+              "github"
+            ],
+            "candidates": 1,
+            "selected": 1,
+            "localCacheCandidates": 1,
+            "remoteAttempts": 0,
+            "failures": [],
+            "explicitLinks": 1,
+            "discovered": 0,
+            "duplicateCollapses": 0
+          }
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 1,
+          "selected": 1,
+          "tokens": 98,
+          "selectedKeys": [
+            "external:github-alfa"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.1249170000000106,
+        "evidence": 0.02095800000000736,
+        "validation": 0.00012499999999704414,
+        "total": 0.21637499999999932
+      }
+    },
+    {
+      "caseId": "integration-figma",
+      "category": "integration_context",
+      "question": "Find the Figma context linked to Watercolor.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 1,
+          "selectedSeeds": [
+            "external:figma-watercolor"
+          ],
+          "primary": [
+            "external:figma-watercolor"
+          ],
+          "integration": {
+            "requestedSources": [
+              "figma"
+            ],
+            "availableSources": [
+              "figma"
+            ],
+            "candidates": 1,
+            "selected": 1,
+            "localCacheCandidates": 1,
+            "remoteAttempts": 0,
+            "failures": [],
+            "explicitLinks": 1,
+            "discovered": 0,
+            "duplicateCollapses": 0
+          }
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 1,
+          "selected": 1,
+          "tokens": 90,
+          "selectedKeys": [
+            "external:figma-watercolor"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.08737500000000864,
+        "evidence": 0.016834000000017113,
+        "validation": 0.00012499999999704414,
+        "total": 0.16616600000000403
+      }
+    },
+    {
+      "caseId": "integration-mixed",
+      "category": "integration_context",
+      "question": "Give me an update on Alfa across Ledger, Slack and GitHub.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "research",
+          "objectives": [
+            "integration-slack",
+            "integration-github",
+            "projects",
+            "project-milestones",
+            "project-open-tasks",
+            "linked-reminders"
+          ]
+        },
+        "retrieval": {
+          "candidates": 32,
+          "selectedSeeds": [
+            "external:slack-alfa",
+            "external:github-alfa",
+            "project:project-unrelated",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ],
+          "primary": [
+            "external:slack-alfa",
+            "external:github-alfa",
+            "project:project-unrelated",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "reminder:reminder-proof"
+          ],
+          "integration": {
+            "requestedSources": [
+              "slack",
+              "github"
+            ],
+            "availableSources": [
+              "slack",
+              "github"
+            ],
+            "candidates": 2,
+            "selected": 2,
+            "localCacheCandidates": 2,
+            "remoteAttempts": 0,
+            "failures": [],
+            "explicitLinks": 2,
+            "discovered": 0,
+            "duplicateCollapses": 0,
+            "latencyMs": 1
+          }
+        },
+        "graph": {
+          "expandedResources": 17,
+          "paths": 18
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 20,
+          "tokens": 1628,
+          "selectedKeys": [
+            "external:github-alfa",
+            "project:project-unrelated",
+            "milestone:milestone-final-production",
+            "task:task-overdue-copy",
+            "reminder:reminder-proof",
+            "external:slack-alfa",
+            "task:task-review-proof",
+            "task:task-watercolor-assets",
+            "project:project-alfa",
+            "project:project-watercolor",
+            "milestone:milestone-watercolor-assets",
+            "task:task-archive-assets",
+            "task:task-watercolor-longterm",
+            "notification:notification-proof",
+            "external:figma-watercolor",
+            "task:task-completed-proof",
+            "event:event-workday",
+            "note:note-irrelevant",
+            "activity:activity-alfa",
+            "note:note-workday"
+          ]
+        },
+        "generation": {
+          "depth": "deep",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 1.0808749999999918,
+        "evidence": 0.23825000000002206,
+        "validation": 0.00012499999999704414,
+        "total": 1.3901249999999834
+      }
+    },
+    {
+      "caseId": "missing-reminders",
+      "category": "missing_uncertain_evidence",
+      "question": "Show reminders for Garden Plans.",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 0,
+          "selectedSeeds": [
+            "reminder:reminder-proof"
+          ],
+          "primary": []
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 0,
+          "selected": 0,
+          "tokens": 27,
+          "selectedKeys": []
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.0609579999999994,
+        "evidence": 0.004707999999993717,
+        "validation": 0.00012499999999704414,
+        "total": 0.13941699999998036
+      }
+    },
+    {
+      "caseId": "missing-github",
+      "category": "missing_uncertain_evidence",
+      "question": "What happened in GitHub about the missing client project?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 0,
+          "selectedSeeds": [
+            "external:slack-alfa",
+            "external:figma-watercolor"
+          ],
+          "primary": [],
+          "integration": {
+            "requestedSources": [
+              "github"
+            ],
+            "availableSources": [],
+            "candidates": 0,
+            "selected": 0,
+            "localCacheCandidates": 0,
+            "remoteAttempts": 0,
+            "failures": [
+              {
+                "provider": "github",
+                "status": "no_cached_context"
+              }
+            ],
+            "explicitLinks": 0,
+            "discovered": 0,
+            "duplicateCollapses": 0
+          }
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 0,
+          "selected": 0,
+          "tokens": 33,
+          "selectedKeys": []
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.08237500000001319,
+        "evidence": 0.07279200000002106,
+        "validation": 0.00012499999999704414,
+        "total": 0.2134579999999744
+      }
+    },
+    {
+      "caseId": "conflicting-state",
+      "category": "missing_uncertain_evidence",
+      "question": "What is the current status of Alfa?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 0,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 20,
+          "selectedSeeds": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ],
+          "primary": [
+            "project:project-alfa",
+            "project:project-watercolor",
+            "project:project-unrelated",
+            "task:task-review-proof",
+            "task:task-archive-assets",
+            "task:task-overdue-copy",
+            "task:task-completed-proof",
+            "task:task-watercolor-assets",
+            "task:task-watercolor-longterm",
+            "milestone:milestone-final-production",
+            "milestone:milestone-watercolor-assets",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday",
+            "reminder:reminder-proof",
+            "notification:notification-proof",
+            "activity:activity-alfa",
+            "activity:activity-circle",
+            "external:slack-alfa",
+            "external:github-alfa"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 20,
+          "selected": 6,
+          "tokens": 436,
+          "selectedKeys": [
+            "project:project-alfa",
+            "task:task-review-proof",
+            "milestone:milestone-final-production",
+            "note:note-workday",
+            "transcript:transcript-workday-1",
+            "event:event-workday"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.1869999999999834,
+        "evidence": 0.1957920000000115,
+        "validation": 0.00012500000002546585,
+        "total": 0.447749999999985
+      }
+    },
+    {
+      "caseId": "no-results",
+      "category": "missing_uncertain_evidence",
+      "question": "What is happening with the Moonbase project?",
+      "score": {
+        "retrievalCorrectness": 2,
+        "contextCoverage": 2,
+        "evidenceQuality": 2,
+        "answerCompleteness": 2,
+        "groundedness": 1,
+        "synthesisQuality": 0,
+        "usefulness": 0,
+        "passed": true
+      },
+      "failures": [],
+      "stages": {
+        "route": {
+          "mode": "quick",
+          "objectives": []
+        },
+        "retrieval": {
+          "candidates": 2,
+          "selectedSeeds": [
+            "activity:activity-alfa",
+            "activity:activity-circle"
+          ],
+          "primary": [
+            "activity:activity-alfa",
+            "activity:activity-circle"
+          ]
+        },
+        "graph": {
+          "expandedResources": 0,
+          "paths": 0
+        },
+        "evidence": {
+          "retrieved": 2,
+          "selected": 2,
+          "tokens": 134,
+          "selectedKeys": [
+            "activity:activity-circle",
+            "activity:activity-alfa"
+          ]
+        },
+        "generation": {
+          "depth": "standard",
+          "answer": "",
+          "validationPassed": null,
+          "repairAttempted": false
+        }
+      },
+      "latencyMs": {
+        "retrieval": 0.05112500000001319,
+        "evidence": 0.02549999999999386,
+        "validation": 0.00012500000002546585,
+        "total": 0.13824999999999932
+      }
+    }
+  ],
+  "summary": {
+    "totalCases": 32,
+    "passed": 28,
+    "passRate": 0.875,
+    "byCategory": {
+      "simple_facts": {
+        "cases": 4,
+        "passed": 3,
+        "passRate": 0.75
+      },
+      "resource_understanding": {
+        "cases": 4,
+        "passed": 4,
+        "passRate": 1
+      },
+      "meeting_intelligence": {
+        "cases": 4,
+        "passed": 2,
+        "passRate": 0.5
+      },
+      "cross_resource_research": {
+        "cases": 4,
+        "passed": 4,
+        "passRate": 1
+      },
+      "task_intelligence": {
+        "cases": 5,
+        "passed": 5,
+        "passRate": 1
+      },
+      "attention": {
+        "cases": 3,
+        "passed": 3,
+        "passRate": 1
+      },
+      "integration_context": {
+        "cases": 4,
+        "passed": 3,
+        "passRate": 0.75
+      },
+      "missing_uncertain_evidence": {
+        "cases": 4,
+        "passed": 4,
+        "passRate": 1
+      }
+    },
+    "averageLatencyMs": 1.4773046874999993,
+    "averageEvidenceResources": 7.09375,
+    "averageEvidenceTokens": 560.875,
+    "failureCategories": {
+      "wrong_seed": 2,
+      "missing_relationship_context": 3
+    },
+    "worstCases": [
+      {
+        "caseId": "fact-milestone",
+        "category": "simple_facts",
+        "failures": [
+          "wrong_seed",
+          "missing_relationship_context"
+        ]
+      },
+      {
+        "caseId": "meeting-decisions",
+        "category": "meeting_intelligence",
+        "failures": [
+          "missing_relationship_context"
+        ]
+      },
+      {
+        "caseId": "meeting-followups",
+        "category": "meeting_intelligence",
+        "failures": [
+          "missing_relationship_context"
+        ]
+      },
+      {
+        "caseId": "integration-slack",
+        "category": "integration_context",
+        "failures": [
+          "wrong_seed"
+        ]
+      }
+    ]
+  },
+  "thresholds": {
+    "simple_facts": {
+      "threshold": 0.95,
+      "actual": 0.75,
+      "passed": false
+    },
+    "resource_understanding": {
+      "threshold": 0.75,
+      "actual": 1,
+      "passed": true
+    },
+    "meeting_intelligence": {
+      "threshold": 0.75,
+      "actual": 0.5,
+      "passed": false
+    },
+    "cross_resource_research": {
+      "threshold": 0.7,
+      "actual": 1,
+      "passed": true
+    },
+    "task_intelligence": {
+      "threshold": 0.85,
+      "actual": 1,
+      "passed": true
+    },
+    "attention": {
+      "threshold": 0.75,
+      "actual": 1,
+      "passed": true
+    },
+    "integration_context": {
+      "threshold": 0.75,
+      "actual": 0.75,
+      "passed": true
+    },
+    "missing_uncertain_evidence": {
+      "threshold": 0.85,
+      "actual": 1,
+      "passed": true
+    }
+  }
+}
