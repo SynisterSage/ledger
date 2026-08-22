@@ -308,11 +308,14 @@ const askLedgerDocumentScope = (question: string) => {
   // the project dependency; returning only projects drops the answer rows.
   if (/\bmilestones?\b/.test(value) && /\bprojects?\b/.test(value)) return undefined;
   if (/\b(?:what changed|changes|activity|happening|teamspace alerts?)\b/.test(value)) return 'activity';
+  if (/\b(?:teamspaces?|teams?|circle)\b/.test(value) && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|what .* have)\b/.test(value)) return undefined;
   if (/\b(my team|team members|members of (the )?team|who.*team)\b/.test(value)) return 'team_members';
   if (/\b(deadline|deadlines|deadliens|due date|due dates)\b/.test(value)) return 'deadlines';
   if (/\b(github|git hub|slack|figma|integration|integrations|intake|pull requests?|issues?)\b/.test(value)) return 'integration';
   if (/\b(projects?|portfolio)\b/.test(value) && !/\b(discuss|discussed|decide|decided|mention|mentioned|say|said)\b/.test(value)) return 'projects';
   if (/\b(reminders?|remind me)\b/.test(value)) return 'reminders';
+  if (/\b(?:tasks?|actions?|milestones?)\b/.test(value) && /\b(?:somewhere|search|find|linked to|belongs to)\b/.test(value)) return undefined;
+  if (/\b(?:meetings?|calls?)\b/.test(value) && /\b(?:next steps?|follow[- ]?ups?|action items?|what should i do)\b/.test(value)) return 'meeting_prep';
   if (/\b(prepare|prep|get ready|brief|plan|planning|plan it out)\b/.test(value) && /\b(meeting|meetings|call|calls)\b/.test(value)) return 'meeting_prep';
   if (/\b(meetings?|events?)\b/.test(value) || /\b(calendar|schedule)\b.*\b(upcoming|today|this week|next week|event|meeting)\b/.test(value)) return 'events';
   if (/\b(open tasks?|todos?|to dos?|to-do|actions?|things to do|what do i need to do)\b/.test(value)) return 'open_actions';
@@ -350,7 +353,7 @@ const askLedgerProjectReference = (question: string) => {
   if (!/\bprojects?\b/i.test(question)) return undefined;
   const match = question.match(/\bproject\s+([^?.,]+?)(?:\?|$|\s+(?:and|where|that|with)\b)/i);
   const candidate = match?.[1]?.trim();
-  if (!candidate || /^(this|next|last|the)?\s*(week|month|year|calendar|team|workspace)$/i.test(candidate)) return undefined;
+  if (!candidate || /^(this|next|last|the)?\s*(week|month|year|calendar|team|workspace)$/i.test(candidate) || /^(?:is|was|that|this|it)\b/i.test(candidate) || /\b(?:linked|belongs|related)\s+to\b/i.test(candidate)) return undefined;
   return candidate.length >= 2 && candidate.length <= 100 ? candidate : undefined;
 };
 
@@ -664,6 +667,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const [generationPhrase, setGenerationPhrase] = useState<string>(GENERATION_PHRASES[0]);
   const stateRef = useRef<AskLedgerState>({ status: 'idle' });
   const completedRequestIdRef = useRef<string | null>(null);
+  const liveResponseRef = useRef<AskLedgerResponse>({ answer: '', sources: [] });
   const [activitySteps, setActivitySteps] = useState<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
   const [activityExpanded, setActivityExpanded] = useState(true);
   const [activityDurationMs, setActivityDurationMs] = useState<number | null>(null);
@@ -1096,12 +1100,17 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 : null;
             })
             .filter(Boolean) as AskLedgerSource[];
+          liveResponseRef.current = { ...liveResponseRef.current, sources: sourceItemsRef.current };
           return;
         }
         if (value.type === 'delta' && typeof value.text === 'string') {
           clearRequestWatchdog();
           setRequestWatchdogStatus(null);
           if (rendererFirstDeltaAtRef.current === null) rendererFirstDeltaAtRef.current = Date.now();
+          liveResponseRef.current = {
+            answer: `${liveResponseRef.current.answer}${value.text}`,
+            sources: sourceItemsRef.current,
+          };
           setState((current) => {
             if (current.status !== 'submitting' && current.status !== 'streaming') return current;
             const request = current.request;
@@ -1115,6 +1124,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           return;
         }
         if (value.type === 'replace' && typeof value.text === 'string') {
+          liveResponseRef.current = { answer: value.text, sources: sourceItemsRef.current };
           setState((current) => {
             if (current.status !== 'submitting' && current.status !== 'streaming') return current;
             return { status: 'streaming', request: current.request, response: { answer: value.text ?? '', sources: sourceItemsRef.current } };
@@ -1139,9 +1149,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             performance: value.metrics?.performance,
           });
           const completedActivity = activityStepsRef.current;
-          const completedResponse = completedState.status === 'streaming'
-            ? completedState.response
-            : { answer: '', sources: sourceItemsRef.current };
+          // Direct product-help answers can arrive as one delta immediately
+          // followed by done, before React commits the delta state. The ref
+          // is updated synchronously in the stream handler, so it remains the
+          // authoritative live response for same-tick completion.
+          const completedResponse = liveResponseRef.current;
           setActivityDurationMs(durationMs);
           const isAbstention = Boolean(completedState.request.retrievalRequired)
             && /(?:couldn['’]t find enough information|don't have enough Ledger context)/i.test(completedResponse.answer);
@@ -1207,7 +1219,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           if (value.error?.code === 'cancelled') {
             const current = stateRef.current;
             if (current.status === 'streaming' || current.status === 'submitting') {
-              const currentResponse = current.status === 'streaming' ? current.response : { answer: '', sources: [] };
+              const currentResponse = liveResponseRef.current;
               const interruptedMessage: AskLedgerMessage = {
                 id: newAskLedgerMessageId(), role: 'assistant',
                 content: currentResponse.answer.trim() || 'No response was completed.',
@@ -1219,6 +1231,23 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               setMessages(nextMessages);
               queueSessionSave(nextMessages);
             }
+            setState({ status: 'focused' });
+            activeRequestIdRef.current = null;
+            return;
+          }
+          const partialResponse = liveResponseRef.current;
+          const currentState = stateRef.current;
+          if ((currentState.status === 'streaming' || currentState.status === 'submitting') && partialResponse.answer.trim()) {
+            const partialMessage: AskLedgerMessage = {
+              id: newAskLedgerMessageId(), role: 'assistant',
+              content: partialResponse.answer.trim(), createdAt: new Date().toISOString(),
+              sources: partialResponse.sources, interrupted: true,
+              activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
+            };
+            const nextMessages = [...messagesRef.current, partialMessage];
+            messagesRef.current = nextMessages;
+            setMessages(nextMessages);
+            queueSessionSave(nextMessages);
             setState({ status: 'focused' });
             activeRequestIdRef.current = null;
             return;
@@ -1401,6 +1430,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     }, watchdogMs);
     activityStepsRef.current = [];
     setActivitySteps([]);
+    liveResponseRef.current = { answer: '', sources: [] };
     setActivityDurationMs(null);
     setActivityExpanded(true);
     setState({ status: 'submitting', request });
@@ -2094,6 +2124,28 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             <article className="max-w-[640px]">
               <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />
               {state.status === 'streaming' && state.response.answer ? <div className="ask-ledger-answer mt-4 text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, { sources: state.response.sources, onOpenSource: openSource })}</div> : null}
+              {state.status === 'streaming' && state.response.sources.length > 0 && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    aria-expanded={Boolean(expandedSources.streaming)}
+                    aria-controls="ask-ledger-streaming-sources"
+                    onClick={() => setExpandedSources((current) => ({ ...current, streaming: !current.streaming }))}
+                    className="inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    <img src={`${import.meta.env.BASE_URL}logo-color.svg`} alt="" className="h-4 w-4 shrink-0" />
+                    <span>Ledger sources</span>
+                    <span className="text-[11px] text-[var(--ledger-text-muted)]">{state.response.sources.length}</span>
+                    <ChevronDown size={13} className={`transition-transform ${expandedSources.streaming ? 'rotate-180' : ''}`} />
+                  </button>
+                  {expandedSources.streaming && <div id="ask-ledger-streaming-sources" className="mt-1.5 max-h-64 space-y-1 overflow-y-auto pl-1">
+                    {state.response.sources.map((source) => {
+                      const Icon = sourceIconMap[source.type];
+                      return <button key={source.id} type="button" onClick={() => openSource(source)} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-1.5 text-left transition hover:border-[color:var(--ledger-border-subtle)] hover:bg-[var(--ledger-surface-hover)]"><Icon size={14} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-secondary)]">{source.title}</span><span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{source.sourceLabel ?? sourceTypeLabels[source.type]}</span></button>;
+                    })}
+                  </div>}
+                </div>
+              )}
             </article>
           )}
           {state.status === 'error' && <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert"><p>Ledger couldn’t answer this question.</p><button type="button" onClick={retryLastQuestion} className="mt-2 text-xs text-[var(--ledger-text-primary)] underline-offset-2 hover:underline">Try again</button></article>}

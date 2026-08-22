@@ -53,6 +53,21 @@ test('keeps narrow questions on the quick retrieval path', async () => {
   ]);
 });
 
+test('retrieves teamspaces, people, and their open workload for Circle questions', async () => {
+  const design = item({ resourceType: 'team', resourceId: 'team-design', title: 'Design', content: 'Design teamspace.' });
+  const alex = item({ resourceType: 'person', resourceId: 'person-alex', title: 'Alex', content: 'Alex is in the Design team.', teamId: 'team-design', relationships: [{ relationshipType: 'belongs_to_team', resourceType: 'team', resourceId: 'team-design' }] });
+  const task = item({ resourceType: 'task', resourceId: 'task-alex', title: 'Prepare design review', content: 'Open task assigned to Alex.', status: 'todo', assigneeId: 'person-alex', teamId: 'team-design', relationships: [{ relationshipType: 'assigned_to', resourceType: 'person', resourceId: 'person-alex' }, { relationshipType: 'belongs_to_team', resourceType: 'team', resourceId: 'team-design' }] });
+  const documents = [design, alex, task];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'How are my teamspaces? Does anyone in my circle have tasks?', [], 20, { documents });
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'team-workspace-members'));
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'team-workload-actions'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'team-design'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'person-alex'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'task-alex'));
+  await index.shutdown();
+});
+
 test('plan my week uses structured weekly, overdue, and completion task scopes', async () => {
   const now = new Date();
   const day = new Date(now); day.setHours(0, 0, 0, 0);

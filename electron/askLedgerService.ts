@@ -33,7 +33,7 @@ import { AskLedgerPerformanceTrace, performanceWarning } from './askLedgerPerfor
 import { fastPathSource, resolveAskLedgerFastPath } from './askLedgerFastPath.ts';
 import { diagnoseAskLedgerStructuredOutput, structuredValueLinesFor } from './askLedgerStructuredValues.ts';
 import { sanitizeAskLedgerOutput, type AskLedgerOutputMapping } from '../src/types/askLedgerOutputGuard.ts';
-import { productKnowledgeNodeIds, selectAskLedgerProductKnowledge, type AskLedgerProductKnowledgeSelection } from '../src/types/askLedgerProductKnowledge.ts';
+import { formatAskLedgerProductHelp, formatAskLedgerProductOverview, productKnowledgeNodeIds, selectAskLedgerProductKnowledge, type AskLedgerProductKnowledgeSelection } from '../src/types/askLedgerProductKnowledge.ts';
 
 const structuredAnswerFor = new Set(['team_members', 'projects', 'tasks', 'milestones', 'reminders', 'events', 'open_actions', 'deadlines', 'time_window', 'integration']);
 const askLedgerDiagnostic = (...args: unknown[]) => {
@@ -630,8 +630,7 @@ export class AskLedgerService {
       }
       if (route.executionMode === 'ledger_product_help' && isLedgerProductQuestion(request.question)) {
         emit({ type: 'sources', requestId, sources: [] });
-        const overview = productKnowledge?.nodes[0];
-        emit({ type: 'delta', requestId, text: overview ? `${overview.summary} ${overview.details}` : ASK_LEDGER_PRODUCT_DESCRIPTION });
+        emit({ type: 'delta', requestId, text: productKnowledge?.nodes.length ? formatAskLedgerProductOverview(productKnowledge) : `# What Ledger does\n\n${ASK_LEDGER_PRODUCT_DESCRIPTION}` });
         emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: 0, workspaceSources: 0 }) } });
         return;
       }
@@ -641,15 +640,21 @@ export class AskLedgerService {
         emit({ type: 'done', requestId, metrics: { totalMs: 0 } });
         return;
       }
+      if (route.executionMode === 'ledger_product_help' && productKnowledge?.nodes.length) {
+        emit({ type: 'sources', requestId, sources: [] });
+        emit({ type: 'delta', requestId, text: formatAskLedgerProductHelp(productKnowledge) });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: 0, workspaceSources: 0 }) } });
+        return;
+      }
       performanceTrace.set('existingGroundedContextReusable', reusableContextAvailable);
       const generationTimeoutMs = skill
         ? 120_000
         : route.executionMode === 'conversation'
         ? 30_000
         : route.executionMode === 'workspace_lookup'
-        ? 20_000
+        ? route.answerDepth === 'detailed' ? 120_000 : 60_000
         : route.executionMode === 'workspace_synthesis'
-        ? 60_000
+        ? 120_000
         : 120_000;
       performanceTrace.set('timeoutMs', generationTimeoutMs);
       if (reuseRequested && !reusableContextAvailable) {
@@ -747,7 +752,7 @@ export class AskLedgerService {
         && retrievalPlan.operation === 'lookup'
         && retrievalPlan.primaryResourceTypes.length > 0
         && !retrievalPlan.expandRelatedContext;
-      const semanticIndexRequired = !structuredSkillRetrieval && !structuredLookup && !['conversation', 'ledger_product_help'].includes(route.executionMode);
+      const semanticIndexRequired = !structuredSkillRetrieval && !structuredLookup && route.mode !== 'follow_up' && !['conversation', 'ledger_product_help', 'workspace_lookup'].includes(route.executionMode);
       performanceTrace.set('semanticIndexRequired', semanticIndexRequired);
       if (!semanticIndexRequired) performanceTrace.set('semanticIndexSkippedReason', structuredSkillRetrieval ? 'skill_structured_contract' : structuredLookup ? 'structured_lookup' : 'route_does_not_require_semantic_retrieval');
       const indexingStartedAt = Date.now();
@@ -798,7 +803,7 @@ export class AskLedgerService {
         skillId: skill?.id,
         boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
         attachmentFocus: genericAttachmentQuestion,
-        skipSemantic: genericAttachmentQuestion,
+        skipSemantic: genericAttachmentQuestion || route.mode === 'follow_up' || route.executionMode === 'workspace_lookup',
         resolvedResourceKeys: conversationResolution.resourceKeys,
         onObjectiveTiming: (timing) => askLedgerDiagnostic('[local-ai] Ask Ledger retrieval objective', { requestId, messageId: request.messageId, skillId: skill?.id, ...timing }),
       });
@@ -991,7 +996,7 @@ export class AskLedgerService {
         modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier,
       });
       const topScore = retrieval.debug[0]?.score ?? 0;
-      const hasSignal = retrieval.debug[0]?.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('semantic:') || reason === 'title' || reason === 'explicit-context')
+      const hasSignal = retrieval.debug.some((candidate) => candidate.why.some((reason) => reason.startsWith('lexical:') || reason.startsWith('lexical-score:') || reason.startsWith('backend-lexical:') || reason.startsWith('semantic:') || reason === 'title' || reason === 'explicit-context'))
         || (intent.kind === 'recent_updates' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('recent:')))
         || (intent.kind === 'meeting_prep' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('meeting-prep-')));
       const hasPlannedPrimary = Boolean(retrieval.primaryItems?.length);
@@ -1044,7 +1049,10 @@ export class AskLedgerService {
               if (event.type === 'delta') {
                 if (typeof event.text === 'string') {
                   generatedAnswerChunks.push(event.text);
-                  emit(event);
+                  // Custom skills are validated and may be repaired before
+                  // the final answer is known. Buffer their deltas so a late
+                  // model fallback cannot briefly flash in the renderer.
+                  if (!skill) emit(event);
                 }
                 return;
               }

@@ -402,6 +402,18 @@ export class LedgerRetrievalService {
       const closedStatuses = new Set(['completed', 'complete', 'done', 'finished', 'cancelled', 'canceled', 'dismissed']);
       if (constraints.read !== undefined && document.resourceType === 'notification' && document.read !== constraints.read) return false;
       if (constraints.teamId && document.teamId !== constraints.teamId && !document.relationships?.some((relationship) => relationship.resourceType === 'team' && relationship.resourceId === constraints.teamId)) return false;
+      const linkedTeamIds = new Set([
+        ...(document.teamId ? [String(document.teamId)] : []),
+        ...(document.relationships ?? []).filter((relationship) => relationship.resourceType === 'team').map((relationship) => String(relationship.resourceId)),
+        ...[document.metadata?.assigned_to_team_id, document.metadata?.assigned_team_id].filter(Boolean).map(String),
+      ]);
+      const linkedAssigneeIds = new Set([
+        ...(document.assigneeId ? [String(document.assigneeId)] : []),
+        ...(document.relationships ?? []).filter((relationship) => relationship.resourceType === 'person').map((relationship) => String(relationship.resourceId)),
+        ...[document.metadata?.assigned_to_user_id, document.metadata?.assigned_to].filter(Boolean).map(String),
+      ]);
+      if (constraints.teamIds?.length && !constraints.teamIds.some((teamId) => linkedTeamIds.has(String(teamId)))) return false;
+      if (constraints.assigneeIds?.length && !constraints.assigneeIds.some((assigneeId) => linkedAssigneeIds.has(String(assigneeId)))) return false;
       if (constraints.sourceLabel && String(document.sourceLabel ?? '').toLowerCase() !== constraints.sourceLabel.toLowerCase()) return false;
       if (plan.integrationProviders?.length && document.resourceType === 'external' && !plan.integrationProviders.includes(String(document.integrationProvider ?? document.metadata?.provider ?? '').toLowerCase() as never)) return false;
       if (constraints.attentionOnly) {

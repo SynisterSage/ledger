@@ -316,3 +316,22 @@ test('retrieves unread notifications and Circle activity with structured constra
   const circle = await retrieval.retrieve('workspace-a', circleQuestion, [], 8, { plan: buildRetrievalPlan(circleQuestion, new Date('2026-08-18T12:00:00')) });
   assert.deepEqual(circle.primaryItems?.map((entry) => entry.resourceId), ['circle-activity']);
 });
+
+test('filters team workload to normalized assignee and team relationships', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  const documents = [
+    resource({ resourceType: 'task', resourceId: 'task-sarah', title: 'Review exhibition proof', status: 'Open', assigneeId: 'person-sarah', teamId: 'team-design', relationships: [{ relationshipType: 'assigned_to', resourceType: 'person', resourceId: 'person-sarah' }, { relationshipType: 'belongs_to_team', resourceType: 'team', resourceId: 'team-design' }] }),
+    resource({ resourceType: 'task', resourceId: 'task-other', title: 'Unrelated workspace task', status: 'Open', metadata: { assigned_to_user_id: 'person-other', assigned_to_team_id: 'team-other' } }),
+  ];
+  const result = await retrieval.retrieve('workspace-a', 'Find open team workload', [], 8, {
+    plan: {
+      ...buildRetrievalPlan('Find open team workload'),
+      primaryResourceTypes: ['task'],
+      entityQuery: undefined,
+      structuredConstraints: { openOnly: true, teamIds: ['team-design'], assigneeIds: ['person-sarah'] },
+    },
+    documents,
+  });
+  assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['task-sarah']);
+});

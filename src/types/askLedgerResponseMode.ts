@@ -87,13 +87,16 @@ const continuationSignals =
 const reasoningFollowUpSignals = /^(?:why|how)\b/i;
 const contextReuseSignals = /\b(?:with|using|based on|from)\s+(?:this|that|these|those)\s+(?:context|notes?|summary|answer)\b|\bnot really searching\b|\bwithout (?:search|searching|looking)\b/i;
 const explicitExistingResourceSignals = /\b(?:last|latest|newest|recent|what happened|what did|look through|look at|summari[sz]e|review|compare|linked)\b[\s\S]{0,80}\b(?:notes?|meetings?|events?|tasks?|reminders?|projects?|transcripts?)\b/i;
+const explicitWorkspaceSearchSignals = /\b(?:somewhere|search(?: for)?|find(?: me)?|look for|which project .*\b(?:linked|belongs)|what project .*\b(?:linked|belongs)|linked to|belongs to)\b/i;
 const possessiveWorkspaceSignals = /\b(?:my|our|we|in ledger|in the workspace|this workspace)\b/i;
 const structuredIntentSignals = /\b(?:due today|due tomorrow|overdue|next meeting|meetings? (?:today|tomorrow|this week)|last \d+ notes?|how many .*tasks?|who owns|when is .* due|active reminders?|what should i do today|plan my week)\b/i;
-const synthesisSignals = /\b(?:summari[sz]e|recap|review|plan|prioriti[sz]e|explain what|tell me what|what did we decide|what happened with|compare (?:this|last) week|patterns .* last .* meetings?)\b/i;
+const synthesisSignals = /\b(?:summari[sz]e|recap|review|plan|prioriti[sz]e|next steps?|follow[- ]?ups?|explain what|tell me what|what did we decide|what happened with|compare (?:this|last) week|patterns .* last .* meetings?)\b/i;
 const productAreas = /\b(calendar|notes?|projects?|sidebar|dashboard|settings|reminders?|tasks?|meetings?|teams?|intake|inbox|search|transcri(?:be|ption)|integrations?|github|slack|figma|google drive|drive|apple calendar|apple reminders|browser extension|mcp|slash commands?|smart dates?|people references?|mind ?map|embeds?|skills?)\b/i;
 const productLanguage = /\b(?:ledger|feature(?:s)?|page|support(?:s|ed)?|how does|how do i?|what does|what can|can ledger|does ledger|is ledger|available in)\b/i;
+const broadProductQuestionSignals = /^(?:what features(?: does ledger have)?|what can ledger do|how does ledger work)\b/i;
 const productQuestionSignals = /^(?:what|how|does|do|can|is|are|which|where)\b/i;
 const productFollowUpQuestionSignals = /^(?:what\s+does|how\s+does|can\s+it|does\s+it|what\s+about|how\s+about|and\s+what|what\s+else)\b/i;
+const creatorQuestionSignals = /\bwho\s+(?:made|built|created)\s+(?:ledger|it)\b|\bwho\s+is\s+(?:ledger|it)\s+made\s+by\b/i;
 const productSkillHelpSignals = /\b(?:what|how)\s+(?:does|do)\s+(?:the\s+)?plan\s+my\s+week\s+(?:skill|do)|\bdoes\s+ledger\s+have\s+(?:other\s+)?planning\s+skills?\b/i;
 const notesPeopleCapabilitySignals = /\b(?:mention|mentions|people|ppl|person)\b[\s\S]*\bnotes?\b|\bnotes?\b[\s\S]*\b(?:mention|mentions|people|ppl|person)\b/i;
 const notesDateCapabilitySignals = /\bhow\s+does\s+(?:that\s+)?date\s+thing\s+work\b/i;
@@ -124,18 +127,21 @@ const previousProductHelpContext = (context: AskLedgerRoutingContext): boolean =
 export const isLedgerProductHelpQuestion = (message: string, context: AskLedgerRoutingContext = {}): boolean => {
   const normalized = normalize(message);
   const hasPriorProductContext = context.previousExecutionMode === 'ledger_product_help' || Boolean(context.previousProductArea);
+  const creatorQuestion = creatorQuestionSignals.test(normalized);
   const productCapabilityIntent = /\b(?:can|could|does|do|will)\b[\s\S]*\b(?:appear|show|sync|import|connect|support|work|use)\b[\s\S]*\b(?:ledger|workspace|there)\b/i.test(normalized);
   const genericSoftwareQuestion = /\b(?:api|markdown|transcription)\b/i.test(normalized) && !/\bledger\b/i.test(normalized) && !hasPriorProductContext;
-  const genericCapabilityQuestion = capabilitySignals.test(normalized) && !/\bledger\b/i.test(normalized) && !productSkillHelpSignals.test(normalized);
+  const genericCapabilityQuestion = capabilitySignals.test(normalized) && !/\bledger\b/i.test(normalized) && !productSkillHelpSignals.test(normalized) && !(creatorQuestion && hasPriorProductContext);
   if (!normalized || genericSoftwareQuestion || genericCapabilityQuestion || (workspaceDataIntentSignals.test(normalized) && !productCapabilityIntent && !productSkillHelpSignals.test(normalized))) return false;
   const productWords = productLanguage.test(normalized);
   const productFollowUp: boolean = hasPriorProductContext
     && (referenceSignals.test(normalized) || continuationSignals.test(normalized) || productFollowUpQuestionSignals.test(normalized));
   return Boolean(
-    productSkillHelpSignals.test(normalized)
+    creatorQuestion
+    || productSkillHelpSignals.test(normalized)
     || notesPeopleCapabilitySignals.test(normalized)
     || notesDateCapabilitySignals.test(normalized)
     || (productWords && (productAreas.test(normalized) || /\bledger\b/i.test(normalized)))
+    || broadProductQuestionSignals.test(normalized)
     || (detectAskLedgerProductArea(message) && productQuestionSignals.test(normalized) && /\b(?:feature|page|work|support|view|do|have|use|are|overview|integration|mention|recognize|capture)\b/i.test(normalized))
     || productFollowUp
   );
@@ -249,7 +255,7 @@ export const routeAskLedgerMessage = (
       { conversational: true }
     );
   if (productHelpDetected) {
-    return withDepth({
+    const productRoute = withDepth({
       mode: previousProductHelpContextReusable ? 'follow_up' : 'conversational',
       executionMode: 'ledger_product_help',
       retrievalRequired: false,
@@ -257,7 +263,8 @@ export const routeAskLedgerMessage = (
       reason: /^what\s+(?:does|is)\s+ledger(?:\s+do)?\s*\??$/i.test(message)
         ? 'capability_question'
         : previousProductHelpContextReusable ? 'product_help_context_reuse' : 'ledger_product_help',
-    }, { conversational: true });
+    }, { conversational: false });
+    return { ...productRoute, answerDepth: 'detailed', depthExplicit: false, diagnostics: { ...productRoute.diagnostics, routingConfidence: Math.max(productRoute.diagnostics.routingConfidence, 0.88) } };
   }
   const skillContextReusable = previousExecutionMode === 'skills' && Boolean(context.previousSkill || context.previousQuestion);
   if (skillContextReusable && (referenceSignals.test(normalized) || continuationSignals.test(normalized) || reasoningFollowUpSignals.test(normalized))) {
@@ -289,6 +296,7 @@ export const routeAskLedgerMessage = (
   if (priorTurns(context) && (!workspaceDataIntentDetected || contextReuseSignals.test(normalized))) {
     const newFactsRequested = structuredIntentSignals.test(normalized)
       || explicitExistingResourceSignals.test(normalized)
+      || explicitWorkspaceSearchSignals.test(normalized)
       || freshFollowUpSignals.test(message)
       || responseFactSignals.test(message)
       || (namedWorkspaceEntity(message) && factualQuestionSignals.test(normalized))

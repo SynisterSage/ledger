@@ -76,7 +76,7 @@ test('answers conversational and capability requests without workspace retrieval
   assert.equal(events.some((event) => event.type === 'activity' && event.activity?.type === 'generating'), true);
 });
 
-test('keeps product-help requests out of indexing and retrieval', async () => {
+test('answers product-help requests from canonical knowledge without indexing or retrieval', async () => {
   const events: LocalAIStreamEvent[] = [];
   let indexCalls = 0;
   let retrieveCalls = 0;
@@ -102,8 +102,9 @@ test('keeps product-help requests out of indexing and retrieval', async () => {
 
   assert.equal(indexCalls, 0);
   assert.equal(retrieveCalls, 0);
-  assert.match(generationPrompt, /LEDGER PRODUCT KNOWLEDGE/);
-  assert.match(generationPrompt, /Slash commands/);
+  assert.equal(generationPrompt, '');
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /# Notes in Ledger/);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /## Slash commands/);
   assert.deepEqual(events.find((event) => event.type === 'sources')?.sources, []);
 });
 

@@ -48,7 +48,9 @@ export type AskLedgerRelationshipType =
   | 'linked_activity'
   | 'has_activity'
   | 'belongs_to_team'
-  | 'member_of_team';
+  | 'member_of_team'
+  | 'assigned_to'
+  | 'linked_reminder';
 
 export type AskLedgerInitialContext = {
   resourceType: AskLedgerResourceType;
@@ -76,6 +78,7 @@ export type AskLedgerContextItem = {
   taskId?: string;
   noteId?: string;
   teamId?: string;
+  assigneeId?: string;
   integrationProvider?: string;
   integrationResourceType?: string;
   externalId?: string;

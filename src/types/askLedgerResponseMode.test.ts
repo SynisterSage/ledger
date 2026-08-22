@@ -155,6 +155,7 @@ test('keeps general software questions in conversation', () => {
 test('preserves and switches product-help context naturally', () => {
   const product = routeAskLedgerMessage('What is Ledger?');
   assert.equal(routeAskLedgerMessage('What does it do though?', { previousQuestion: 'What is Ledger?', previousExecutionMode: product.executionMode }).executionMode, 'ledger_product_help');
+  assert.equal(routeAskLedgerMessage('Who made it?', { previousQuestion: 'What does Ledger do?', previousExecutionMode: 'ledger_product_help' }).executionMode, 'ledger_product_help');
   assert.equal(routeAskLedgerMessage('What about slash commands?', { previousQuestion: 'What does Notes do?', previousExecutionMode: 'ledger_product_help' }).executionMode, 'ledger_product_help');
   const workspace = routeAskLedgerMessage('Show me my notes from yesterday.', { previousQuestion: 'What does Notes do?', previousExecutionMode: 'ledger_product_help' });
   assert.notEqual(workspace.executionMode, 'ledger_product_help');

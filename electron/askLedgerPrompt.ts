@@ -128,7 +128,7 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
   if (responseMode === 'conversational' || (responseMode === 'follow_up' && !normalized.text)) {
     const productHelp = selectedExecutionMode === 'ledger_product_help';
     const followUpInstruction = productHelp
-      ? 'Answer as Ledger product help using only the compact product overview below. Do not use or imply facts from the user workspace. If the question asks for detailed feature knowledge not covered there, say that detailed product knowledge is not available yet.'
+      ? 'Answer as Ledger product help using only the authoritative product knowledge below. Give a useful, specific explanation rather than a generic one-paragraph description. Use Markdown headings, **bold feature names**, and bullets when they improve scanning. For broad questions, explain the Capture → Plan → Execute → Review loop, connect the major Ledger surfaces to that loop, and explain what makes Ledger different. For feature questions, cover what the feature is, what the user can do with it, how it connects to the rest of Ledger, and any meaningful boundary. Do not use or imply facts from the user workspace. If the question asks for detailed product knowledge not covered below, say that detailed product knowledge is not available yet rather than guessing.'
       : responseMode === 'follow_up'
       ? 'Treat the recent grounded answer below as the bounded material to transform. Do not introduce new workspace facts or claim that fresh Ledger data was checked.'
       : 'Answer the user\'s message naturally without requiring Ledger workspace evidence.';

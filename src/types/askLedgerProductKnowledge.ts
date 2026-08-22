@@ -86,7 +86,7 @@ const areaAliases: Array<[AskLedgerProductArea, string[]]> = [
   ['teams', ['team', 'teams', 'people', 'members']],
   ['intake', ['intake', 'inbox', 'captured items']],
   ['search', ['search', 'find in ledger']],
-  ['ledger', ['ledger']],
+  ['ledger', ['ledger', 'features', 'what features', 'what can ledger do', 'what does ledger do', 'how does ledger work']],
 ];
 
 const featureAliases: Array<{ area: AskLedgerProductArea; feature: string; aliases: string[] }> = [
@@ -164,7 +164,12 @@ export const selectAskLedgerProductKnowledge = (question: string, context: AskLe
     nodes = ASK_LEDGER_PRODUCT_KNOWLEDGE.filter((entry) => entry.area === area).slice(0, 9) as AskLedgerProductKnowledgeNode[];
   } else if (area && !explicitUnknownFeature) {
     const overview = nodeById.get(`${area}.overview`);
-    if (overview && (isBroadQuestion(question) || !feature)) nodes = [overview];
+    if (overview && (isBroadQuestion(question) || !feature)) {
+      const relatedOverviewNodes = area === 'ledger'
+        ? (overview.related ?? []).map((id) => nodeById.get(id)).filter((entry): entry is AskLedgerProductKnowledgeNode => Boolean(entry)).slice(0, 6)
+        : [];
+      nodes = [overview, ...relatedOverviewNodes];
+    }
   }
   const missingTopic = !nodes.length ? question.trim().slice(0, 160) : undefined;
   const resolutionReason = featureMatch
@@ -192,3 +197,81 @@ export const selectAskLedgerProductKnowledge = (question: string, context: AskLe
 };
 
 export const productKnowledgeNodeIds = (selection: AskLedgerProductKnowledgeSelection) => selection.nodes.map((entry) => entry.id);
+
+/** Deterministic overview for the broad product question fast path. */
+export const formatAskLedgerProductOverview = (selection: AskLedgerProductKnowledgeSelection) => {
+  const overview = selection.nodes.find((entry) => entry.id === 'ledger.overview');
+  if (!overview) return selection.nodes.map((entry) => `## ${entry.title}\n\n**${entry.summary}**\n\n${entry.details}`).join('\n\n');
+  return [
+    '# What Ledger does',
+    '',
+    `**${overview.summary}**`,
+    '',
+    overview.details,
+    '',
+    '## The Ledger loop',
+    '',
+    '**Capture**',
+    '- Get thoughts, notes, tasks, reminders, and imported items into one workspace.',
+    '- Use Notes, Intake, browser capture, and integrations to preserve context before it gets lost.',
+    '',
+    '**Plan**',
+    '- Turn captured material into projects, milestones, next actions, and dated commitments.',
+    '- Keep the goal visible while tasks, notes, events, and supporting context stay connected to it.',
+    '',
+    '**Execute**',
+    '- Work from the sidebar and project command centers without opening another heavyweight system.',
+    '- Use Calendar, tasks, reminders, meeting notes, and follow-ups to decide what needs attention next.',
+    '',
+    '**Review**',
+    '- See what moved, what is overdue or blocked, and what should happen next.',
+    '- Keep progress and recent activity attached to the work instead of treating review as a separate report.',
+    '',
+    '## What makes Ledger different',
+    '',
+    '- **Sidebar-first:** Ledger stays beside the apps where work is happening, so capture and follow-through are close at hand.',
+    '- **Connected context:** Projects, notes, tasks, milestones, calendar items, reminders, meetings, and integrations are designed to reinforce one another.',
+    '- **Accountability over administration:** Ledger focuses on the next meaningful action and the loop back to review, not building an elaborate database.',
+    '',
+    '## Ask Ledger',
+    '',
+    'Ask Ledger is the conversational layer on top of that system. It can explain Ledger, answer questions from your workspace, synthesize connected records, and propose supported actions for your review and confirmation.',
+  ].join('\n');
+};
+
+/** Render any resolved product-help selection with consistent depth and Markdown. */
+export const formatAskLedgerProductHelp = (selection: AskLedgerProductKnowledgeSelection) => {
+  if (!selection.nodes.length) return `# Ledger product help\n\nDetailed product knowledge is not available yet for **${selection.missingTopic ?? 'that question'}**.`;
+  if (selection.nodes.some((entry) => entry.id === 'ledger.overview')) return formatAskLedgerProductOverview(selection);
+
+  const areaLabel = selection.area === 'ask_ledger' ? 'Ask Ledger' : (selection.area ?? 'Ledger').replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const primary = selection.nodes[0];
+  const nodes = !primary.feature && selection.area
+    ? ASK_LEDGER_PRODUCT_KNOWLEDGE.filter((entry) => entry.area === selection.area)
+    : selection.nodes;
+  const relatedNodes = primary.feature || nodes.length === 1
+    ? (primary.related ?? [])
+      .map((id) => ASK_LEDGER_PRODUCT_KNOWLEDGE.find((candidate) => candidate.id === id))
+      .filter((entry): entry is AskLedgerProductKnowledgeNode => Boolean(entry))
+    : [];
+  const sections = nodes.map((entry) => {
+    return [
+      `## ${entry.title}`,
+      '',
+      `**${entry.summary}**`,
+      '',
+      entry.details,
+    ].filter(Boolean).join('\n')
+  });
+  const connectionEntries = (primary.related ?? [])
+    .map((id) => ASK_LEDGER_PRODUCT_KNOWLEDGE.find((candidate) => candidate.id === id))
+    .filter((entry): entry is AskLedgerProductKnowledgeNode => Boolean(entry))
+    .slice(0, 6);
+  const relatedSection = connectionEntries.length
+    ? [`## How ${primary.title} connects`, '', ...connectionEntries.map((entry) => `- **${entry.title}:** ${entry.summary} ${entry.details}`)].join('\n')
+    : '';
+  const featureRelatedSection = primary.feature && relatedNodes.length
+    ? ['## Related capabilities', '', ...relatedNodes.map((entry) => `- **${entry.title}:** ${entry.summary} ${entry.details}`)].join('\n')
+    : '';
+  return [`# ${areaLabel} in Ledger`, '', `Here is how **${areaLabel}** supports the Ledger workflow:`, '', ...sections, relatedSection, featureRelatedSection].filter(Boolean).join('\n\n');
+};

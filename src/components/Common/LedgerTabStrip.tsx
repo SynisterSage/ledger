@@ -107,12 +107,14 @@ const routeLabel = (
   projectTitle?: string,
   noteTitle?: string,
   circlePersonTitle?: string,
-  teamTitle?: string
+  teamTitle?: string,
+  askSessionTitle?: string
 ) => {
   switch (route.kind) {
     case 'new-tab':
       // The desktop destination is Ask Ledger; keep the browser surface's
       // established New Tab label for the web product.
+      if (route.focusContext?.startsWith('ask-session:')) return askSessionTitle || 'Ask Ledger';
       return window.desktopWindow ? 'Ask Ledger' : 'New Tab';
     case 'dashboard':
       return 'Workspace Overview';
@@ -208,7 +210,11 @@ const sameRouteState = (left: LedgerRoute, right: LedgerRoute) =>
   (left.focusTaskId ?? null) === (right.focusTaskId ?? null) &&
   (left.focusContext ?? null) === (right.focusContext ?? null) &&
   (left.focusSection ?? null) === (right.focusSection ?? null);
-const isNewTabRoute = (route: LedgerRoute | null | undefined) => route?.kind === 'new-tab';
+// The blank Ask Ledger surface is the reusable "new tab" destination. Once a
+// conversation has an id it becomes a real tab and must not be replaced by
+// navigation to another module.
+const isNewTabRoute = (route: LedgerRoute | null | undefined) =>
+  route?.kind === 'new-tab' && !route.focusContext?.startsWith('ask-session:');
 const createNewTabRoute = (): LedgerRoute => ({
   kind: 'new-tab',
   focusContext: `new-tab:${crypto.randomUUID()}`,
@@ -350,7 +356,7 @@ export const LedgerTab = ({
 
 export const LedgerTabStrip = () => {
   const { activeWorkspaceId } = useWorkspaceContext();
-  const { getNoteById, getPerson, getProjects, getTeams } = useApi();
+  const { getAskLedgerSession, getNoteById, getPerson, getProjects, getTeams } = useApi();
   const toast = useToast();
   const [navigationState, setNavigationState] = useState<NavigationState>({});
   const [tabOrder, setTabOrder] = useState<LedgerRoute[]>(getInitialTabOrder);
@@ -382,6 +388,8 @@ export const LedgerTabStrip = () => {
   const [noteTitles, setNoteTitles] = useState<Record<string, string>>({});
   const [circlePersonTitles, setCirclePersonTitles] = useState<Record<string, string>>({});
   const [teamTitles, setTeamTitles] = useState<Record<string, string>>({});
+  const [askSessionTitles, setAskSessionTitles] = useState<Record<string, string>>({});
+  const [askSessionTitleRefresh, setAskSessionTitleRefresh] = useState(0);
 
   const currentRoute = normalizeRoute(navigationState.currentRoute);
   const visualCurrentRoute = visualRouteOverride ?? currentRoute;
@@ -429,6 +437,15 @@ export const LedgerTabStrip = () => {
             .filter(Boolean)
         )
       ),
+    [tabOrder]
+  );
+  const askSessionIds = useMemo(
+    () => Array.from(new Set(
+      tabOrder
+        .filter((route) => route.kind === 'new-tab' && route.focusContext?.startsWith('ask-session:'))
+        .map((route) => route.focusContext?.slice('ask-session:'.length) ?? '')
+        .filter(Boolean)
+    )),
     [tabOrder]
   );
 
@@ -576,6 +593,47 @@ export const LedgerTabStrip = () => {
     };
   }, [activeWorkspaceId, getTeams, teamIds]);
 
+  useEffect(() => {
+    if (askSessionIds.length === 0 || !activeWorkspaceId) {
+      setAskSessionTitles({});
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.all(
+      askSessionIds.map(async (sessionId) => {
+        try {
+          const payload = await getAskLedgerSession(activeWorkspaceId, sessionId) as {
+            session?: { id?: string; title?: string | null };
+          };
+          const session = payload?.session;
+          return session?.id && session.title?.trim()
+            ? [session.id, session.title.trim()] as const
+            : null;
+        } catch {
+          return null;
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      const titles: Record<string, string> = {};
+      for (const entry of entries) {
+        if (entry) titles[entry[0]] = entry[1];
+      }
+      setAskSessionTitles(titles);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, askSessionIds, askSessionTitleRefresh, getAskLedgerSession]);
+
+  useEffect(() => {
+    const refresh = () => setAskSessionTitleRefresh((value) => value + 1);
+    window.addEventListener('ledger:ask-ledger-session-persisted', refresh);
+    return () => window.removeEventListener('ledger:ask-ledger-session-persisted', refresh);
+  }, []);
+
   const getTabTitle = (route: LedgerRoute) =>
     routeLabel(
       route,
@@ -584,6 +642,9 @@ export const LedgerTabStrip = () => {
       getCirclePersonId(route) ? circlePersonTitles[getCirclePersonId(route) as string] : undefined,
       route.kind === 'teams' && route.focusContext?.startsWith('team:')
         ? teamTitles[route.focusContext.slice('team:'.length)]
+        : undefined,
+      route.kind === 'new-tab' && route.focusContext?.startsWith('ask-session:')
+        ? askSessionTitles[route.focusContext.slice('ask-session:'.length)]
         : undefined
     );
 

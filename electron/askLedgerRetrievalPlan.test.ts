@@ -49,6 +49,14 @@ test('builds attention and notification plans from authoritative fields', () => 
   assert.ok(circle.structuredConstraints.dueAfter);
 });
 
+test('builds a team workload plan across teams, people, and open work', () => {
+  const plan = buildRetrievalPlan('How are my teamspaces? Does anyone in my circle have tasks?');
+  assert.deepEqual(plan.primaryResourceTypes, ['team', 'person', 'task', 'milestone', 'reminder', 'event', 'project']);
+  assert.equal(plan.structuredConstraints.sourceLabel, undefined);
+  const named = buildRetrievalPlan('What does the Design team have open?');
+  assert.equal(named.entityQuery, 'Design');
+});
+
 test('constrains explicit integration questions to their provider', () => {
   const plan = buildRetrievalPlan('What did Slack say about Alfa?');
   assert.deepEqual(plan.primaryResourceTypes, ['external']);

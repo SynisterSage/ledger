@@ -64,8 +64,10 @@ export const classifyAskLedgerRetrievalMode = (question: string): AskLedgerRetri
     /\breminders?\b/.test(normalized),
   ].filter(Boolean).length;
   const compoundSignal = /\b(connect|tie|tying|across|everything stands|what(?:'s| is) going on|what still needs|where .* stands|look through|summari[sz]e .* and|and (?:tell|what|how|where))\b/.test(normalized);
+  const teamWorkloadSignal = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
+    && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized);
   const narrowSignal = /^(?:when|what time|show|get|who owns|who is responsible|find my latest|latest)\b/.test(normalized);
-  return requestedCategories >= 2 || (compoundSignal && !narrowSignal) ? 'research' : 'quick';
+  return requestedCategories >= 2 || teamWorkloadSignal || (compoundSignal && !narrowSignal) ? 'research' : 'quick';
 };
 
 const addObjective = (objectives: RetrievalObjective[], objective: RetrievalObjective) => {
@@ -94,7 +96,9 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const hasReminders = /\breminders?\b/.test(normalized);
   const hasActivity = /\b(?:activity|what changed|changes|happening)\b/.test(normalized);
   const hasNotifications = /\bnotifications?\b/.test(normalized);
-  const hasAttention = /\bwhat needs my attention\b|\balerts?\b|\bteamspace\b|\bcircle\b/.test(normalized);
+  const hasTeamWorkload = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
+    && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized);
+  const hasAttention = /\bwhat needs my attention\b|\balerts?\b|\bteamspace\b|\bcircle\b/.test(normalized) && !hasTeamWorkload;
   const integrationProviders = base.integrationProviders ?? [];
   const hasInternalLedger = integrationProviders.length > 0 && /\bledger\b/.test(normalized);
   const includesProjectContext = hasProjects || hasInternalLedger;
@@ -116,6 +120,29 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   }
   if (hasActivity || hasAttention) {
     addObjective(objectives, { id: 'activity', purpose: 'Find meaningful recent workspace and teamspace activity', resourceTypes: ['activity'], entityQuery: base.entityQuery, constraints: { ...base.structuredConstraints, ...(hasAttention ? { attentionOnly: true } : {}) }, expandRelationships: true, dependsOn: [], graphRelationshipTypes: ['linked_project', 'linked_task', 'linked_note', 'linked_milestone', 'belongs_to_team'] });
+  }
+
+  if (hasTeamWorkload) {
+    addObjective(objectives, {
+      id: 'team-workspace-members',
+      purpose: 'Find workspace teamspaces and people for team workload analysis',
+      resourceTypes: ['team', 'person'],
+      entityQuery: base.entityQuery,
+      constraints: {},
+      expandRelationships: true,
+      dependsOn: [],
+      graphRelationshipTypes: ['belongs_to_team', 'assigned_to', 'linked_task', 'linked_project', 'linked_milestone', 'linked_event', 'linked_reminder'],
+    });
+    addObjective(objectives, {
+      id: 'team-workload-actions',
+      purpose: 'Find open tasks and actions assigned to workspace people',
+      resourceTypes: ['task', 'milestone', 'reminder'],
+      entityQuery: base.entityQuery,
+      constraints: { openOnly: true },
+      expandRelationships: true,
+      dependsOn: ['team-workspace-members'],
+      graphRelationshipTypes: ['assigned_to', 'belongs_to_team', 'linked_project', 'linked_milestone'],
+    });
   }
 
   if (hasMeetings) {
@@ -145,7 +172,7 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   if (hasMilestones || includesProjectContext || hasMeetings) {
     addObjective(objectives, { id: 'project-milestones', purpose: 'Retrieve milestones for discovered projects', resourceTypes: ['milestone'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectDependency });
   }
-  if (hasTasks || includesProjectContext || hasMeetings) {
+  if ((hasTasks && !hasTeamWorkload) || includesProjectContext || hasMeetings) {
     const constraints = { ...base.structuredConstraints, openOnly: true };
     addObjective(objectives, { id: 'project-open-tasks', purpose: 'Retrieve open project tasks and horizons', resourceTypes: ['task'], ...projectEntity, constraints, expandRelationships: false, dependsOn: projectDependency });
   }
@@ -160,13 +187,18 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   return objectives;
 };
 
-const buildObjectivePlan = (question: string, objective: RetrievalObjective, projectIds: string[]): RetrievalPlan => {
+const buildObjectivePlan = (question: string, objective: RetrievalObjective, projectIds: string[], teamIds: string[] = [], assigneeIds: string[] = []): RetrievalPlan => {
   const base = buildRetrievalPlan(question);
   return {
     ...base,
     primaryResourceTypes: objective.resourceTypes,
     entityQuery: objective.entityQuery,
-    structuredConstraints: { ...objective.constraints, ...(projectIds.length ? { projectIds } : {}) },
+    structuredConstraints: {
+      ...objective.constraints,
+      ...(projectIds.length ? { projectIds } : {}),
+      ...(teamIds.length ? { teamIds } : {}),
+      ...(assigneeIds.length ? { assigneeIds } : {}),
+    },
     semanticQuery: `${objective.purpose}: ${question}`,
     expandRelatedContext: objective.expandRelationships,
     retrievalStrategies: { semantic: true, lexical: true, exactEntity: true, structured: true },
@@ -305,6 +337,8 @@ export class AskLedgerRetrievalOrchestrator {
     const statuses = new Map<string, AskLedgerOrchestrationDiagnostics['objectives'][number]['status']>();
     const completed = new Set<string>();
     const discoveredProjects = new Set<string>((options?.resolvedResourceKeys ?? []).filter((key) => key.startsWith('project:')).map((key) => key.slice('project:'.length)));
+    const discoveredTeams = new Set<string>();
+    const discoveredPeople = new Set<string>();
     const debug: LedgerRetrievalResult['debug'] = [];
     const primaryItems: AskLedgerContextItem[] = [];
     const relatedItems: AskLedgerContextItem[] = [];
@@ -325,12 +359,15 @@ export class AskLedgerRetrievalOrchestrator {
       for (const objective of objectives) {
         if (completed.has(objective.id) || objective.dependsOn.some((dependency) => !completed.has(dependency))) continue;
         const projectIds = objective.resourceTypes.some((type) => ['project', 'task', 'milestone', 'reminder'].includes(type)) ? [...discoveredProjects].slice(0, limits.maxDiscoveredEntities) : [];
-        if (objective.dependsOn.length && !projectIds.length && objective.resourceTypes.some((type) => ['project', 'task', 'milestone', 'reminder'].includes(type))) {
+        const teamIds = objective.id === 'team-workload-actions' ? [...discoveredTeams].slice(0, limits.maxDiscoveredEntities) : [];
+        const assigneeIds = objective.id === 'team-workload-actions' ? [...discoveredPeople].slice(0, limits.maxDiscoveredEntities) : [];
+        const hasDependencyScope = projectIds.length || teamIds.length || assigneeIds.length;
+        if (objective.dependsOn.length && !hasDependencyScope && objective.resourceTypes.some((type) => ['project', 'task', 'milestone', 'reminder'].includes(type))) {
           statuses.set(objective.id, 'not_found');
           completed.add(objective.id);
           continue;
         }
-        const plan = buildObjectivePlan(searchQuestion, objective, projectIds);
+        const plan = buildObjectivePlan(searchQuestion, objective, projectIds, teamIds, assigneeIds);
         const objectiveStartedAt = Date.now();
         const provider = objective.id.startsWith('integration-') ? objective.id.slice('integration-'.length) : null;
         const integrationBoostKeys: string[] = [];
@@ -348,7 +385,8 @@ export class AskLedgerRetrievalOrchestrator {
           integrationState.discovered += integrationResult.diagnostics.discovered;
           integrationState.latencyMs = (integrationState.latencyMs ?? 0) + Date.now() - startedAt;
         }
-        const result = await this.retrieval.retrieve(workspaceId, plan.semanticQuery, lexicalResults, Math.min(limit, Math.max(8, limits.maxEvidenceResources)), {
+        const objectiveLimit = objective.id === 'team-workload-actions' ? Math.min(8, limit) : Math.min(limit, Math.max(8, limits.maxEvidenceResources));
+        const result = await this.retrieval.retrieve(workspaceId, plan.semanticQuery, lexicalResults, objectiveLimit, {
           conversationId: options?.conversationId,
           documents: options?.documents,
           boostResourceKeys: [...(options?.boostResourceKeys ?? []), ...integrationBoostKeys],
@@ -380,6 +418,8 @@ export class AskLedgerRetrievalOrchestrator {
             const path = result.graphExpansion?.paths.find((candidate) => keyFor(candidate) === key)?.path ?? [key];
             provenance.set(key, { objectiveId: objective.id, path });
             if (item.resourceType === 'project') discoveredProjects.add(item.resourceId);
+            if (item.resourceType === 'team') discoveredTeams.add(item.resourceId);
+            if (item.resourceType === 'person') discoveredPeople.add(item.resourceId);
             progressed = true;
           }
         });

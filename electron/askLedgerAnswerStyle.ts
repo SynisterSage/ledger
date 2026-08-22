@@ -74,7 +74,7 @@ export const ASK_LEDGER_PRESENTATION_PROFILES: Record<AskLedgerPresentationProfi
 
 const modeGuidance: Record<AskLedgerExecutionMode, string> = {
   conversation: 'Conversation: natural, usually 1–3 short paragraphs; add structure only when useful.',
-  ledger_product_help: 'Ledger product help: answer from the compact product overview; be honest when detailed feature knowledge is not available yet, and do not cite workspace records.',
+  ledger_product_help: 'Ledger product help: give a specific product-level explanation from authoritative knowledge. Prefer a clear takeaway followed by Markdown headings, **bold feature names**, and concise bullets. For broad questions, explain Capture → Plan → Execute → Review and connect the major surfaces to it. Be honest when detailed knowledge is unavailable, and do not cite workspace records.',
   workspace_lookup: 'Lookup: one concise sentence or short paragraph; no headings for a simple fact.',
   workspace_synthesis: 'Synthesis: lead with the conclusion, then use only useful sections and next steps.',
   workspace_research: 'Research: use a concise takeaway, risks/meaning, and next steps only when useful.',

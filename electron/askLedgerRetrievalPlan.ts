@@ -21,6 +21,8 @@ export type RetrievalStructuredConstraints = {
   projectIds?: string[];
   read?: boolean;
   teamId?: string;
+  teamIds?: string[];
+  assigneeIds?: string[];
   sourceLabel?: string;
   attentionOnly?: boolean;
 };
@@ -90,6 +92,9 @@ const integrationProvidersFor = (question: string): AskLedgerIntegrationSource[]
 
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  if (/\b(?:teamspaces?|teams?|circle)\b/.test(normalized) && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized)) {
+    return ['team', 'person', 'task', 'milestone', 'reminder', 'event', 'project'];
+  }
   if (/\bacross\s+ledger\b/.test(normalized) && /\b(?:slack|github|figma|drive|calendar)\b/.test(normalized)) return ['project', 'external'];
   if (/\b(?:slack|github|figma|google drive|drive docs?|google calendar|apple calendar|apple reminders?|mcp)\b/.test(normalized)) return ['external'];
   if (/\bunread\s+(?:notifications?|alerts?)\b/.test(normalized)) return ['notification'];
@@ -101,6 +106,7 @@ const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
     && !/\bmeeting notes?\b/.test(normalized)
     && !/\b(?:last|latest|newest|recent|first|oldest)\s+(?:\d+\s+)?meetings?\b/.test(normalized)
     && !/\bwhat happened in\b/.test(normalized);
+  if (/\bmeetings?\b/.test(normalized) && /\b(?:next steps?|follow[- ]?ups?|action items?|what should i do)\b/.test(normalized)) return ['event', 'note', 'task', 'milestone', 'reminder'];
   if (broadMeetingSearch) return ['event', 'note'];
   if (/\bmeeting notes?\b|\bnotes?\b/.test(normalized)) return ['note'];
   if (/\bevents?\b/.test(normalized) || ( /\bmeetings?\b/.test(normalized) && /\b(last|latest|newest|recent|what happened|what did|look through|look at|summari[sz]e|review|compare|linked|with)\b/.test(normalized))) return ['event'];
@@ -128,11 +134,20 @@ const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerReso
 };
 
 const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourceType[]) => {
+  if (primaryResourceTypes.includes('team') || primaryResourceTypes.includes('person')) {
+    const namedTeam = question.match(/\b(?:teamspace|team)\s+(?:named|called)\s+([A-Za-z][\w-]*)|\b(?:teamspace|team)\s+([A-Za-z][\w-]*)/i);
+    const reversedTeam = question.match(/\b([A-Za-z][\w-]*)\s+(?:teamspace|team)\b/i);
+    const teamName = [namedTeam?.[1], namedTeam?.[2], reversedTeam?.[1]]
+      .find((candidate) => candidate && !/^(?:have|has|open|tasks?|actions?)$/i.test(candidate));
+    if (teamName) return teamName.trim();
+  }
   if (primaryResourceTypes.includes('event') && lastWorkdaySignals.test(question)) {
     const match = question.match(/\b(?:at|for|with)\s+(?:my\s+)?([A-Z][\w-]*)/);
     return match?.[1]?.trim();
   }
   if (primaryResourceTypes.includes('event') && /\bmeetings?\b/i.test(question)) {
+    const upcomingNamedMeeting = question.match(/\b(?:next|upcoming|latest|recent|last)\s+([a-z0-9][\w-]*)\s+meetings?\b/i);
+    if (upcomingNamedMeeting?.[1] && !/^(?:the|my|our|\d+)$/i.test(upcomingNamedMeeting[1])) return upcomingNamedMeeting[1].trim();
     const match = question.match(/\b(?:my\s+(?:latest|recent|last)|my|the|latest|recent|last|yesterday'?s)\s+([a-z0-9][\w-]*(?:\s+[a-z0-9][\w-]*)?)\s+meetings?\b/i);
     const candidate = match?.[1]?.trim();
     if (candidate && !/^(?:last|latest|newest|recent|upcoming|calendar|work)(?:\s+\d+)?$/i.test(candidate) && !/^\d+$/.test(candidate)) return candidate;
@@ -146,6 +161,8 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
   // In compound questions the primary type can be a child resource even
   // though the authoritative entity is the named project.
   if (primaryResourceTypes.some((type) => ['task', 'milestone', 'reminder', 'event', 'note'].includes(type))) {
+    const searchEntity = question.match(/\b(?:with|containing|contains|mentions?|about)\s+([A-Za-z][\w-]*)\b/i);
+    if (searchEntity?.[1] && !/^(?:my|the|this|that)$/i.test(searchEntity[1])) return searchEntity[1].trim();
     const namedProject = question.match(/\b(?:for|about|on)\s+(?:my|the)\s+(.+?)\s+projects?\b/i);
     if (namedProject?.[1]) return namedProject[1].trim();
   }
@@ -168,7 +185,7 @@ export const buildRetrievalPlan = (question: string, now = new Date()): Retrieva
   if (/\bunread\b/.test(normalizedQuestion) && primaryResourceTypes.includes('notification')) structuredConstraints.read = false;
   if (/\bread\b/.test(normalizedQuestion) && primaryResourceTypes.includes('notification') && !/unread/.test(normalizedQuestion)) structuredConstraints.read = true;
   if (/\b(?:attention|important|high priority|urgent)\b/.test(normalizedQuestion)) structuredConstraints.attentionOnly = true;
-  if (/\bcircle\b/.test(normalizedQuestion)) structuredConstraints.sourceLabel = 'Circle';
+  if (/\bcircle\b/.test(normalizedQuestion) && !(/\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active)\b/.test(normalizedQuestion))) structuredConstraints.sourceLabel = 'Circle';
   if (taskQuery && /\btoday\b/.test(normalizedQuestion)) structuredConstraints.horizon = 'today';
   if (taskQuery && /\blong[- ]term\b|\blong term work\b/.test(normalizedQuestion)) structuredConstraints.horizon = 'long_term';
   if (/\boverdue\b|\bover due\b/.test(normalizedQuestion)) {
