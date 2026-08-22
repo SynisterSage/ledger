@@ -379,6 +379,20 @@ export class LedgerRetrievalService {
     const resourceDocuments = suppliedDocuments.length ? [...new Map(suppliedDocuments.map((document) => [`${document.resourceType}:${document.resourceId}`, document])).values()] : this.index.resourceDocuments(workspaceId, options?.conversationId);
     const plan = options?.plan;
     const intent = detectAskLedgerQueryIntent(question);
+    const projectWorkloadLinks = new Map<string, { teamIds: string[]; assigneeIds: string[] }>();
+    resourceDocuments.filter((document) => document.resourceType === 'project').forEach((project) => {
+      const teamIds = [
+        ...(project.teamId ? [String(project.teamId)] : []),
+        ...(project.relationships ?? []).filter((relationship) => relationship.resourceType === 'team').map((relationship) => String(relationship.resourceId)),
+        ...[project.metadata?.owner_team_id, project.metadata?.ownerTeamId].filter(Boolean).map(String),
+      ];
+      const assigneeIds = [
+        ...(project.assigneeId ? [String(project.assigneeId)] : []),
+        ...(project.relationships ?? []).filter((relationship) => relationship.resourceType === 'person').map((relationship) => String(relationship.resourceId)),
+        ...[project.metadata?.lead_id, project.metadata?.leadId].filter(Boolean).map(String),
+      ];
+      projectWorkloadLinks.set(project.resourceId, { teamIds: [...new Set(teamIds)], assigneeIds: [...new Set(assigneeIds)] });
+    });
     const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);
     const entityProjectIds = new Set(resourceDocuments
       .filter((document) => document.resourceType === 'project' && plan?.entityQuery && entityMatch(plan.entityQuery, document))
@@ -405,15 +419,21 @@ export class LedgerRetrievalService {
       const linkedTeamIds = new Set([
         ...(document.teamId ? [String(document.teamId)] : []),
         ...(document.relationships ?? []).filter((relationship) => relationship.resourceType === 'team').map((relationship) => String(relationship.resourceId)),
-        ...[document.metadata?.assigned_to_team_id, document.metadata?.assigned_team_id].filter(Boolean).map(String),
+        ...[document.metadata?.assigned_to_team_id, document.metadata?.assigned_team_id, document.metadata?.assignedToTeamId, document.metadata?.assignedTeamId].filter(Boolean).map(String),
+        ...(document.projectId ? projectWorkloadLinks.get(String(document.projectId))?.teamIds ?? [] : []),
       ]);
       const linkedAssigneeIds = new Set([
         ...(document.assigneeId ? [String(document.assigneeId)] : []),
         ...(document.relationships ?? []).filter((relationship) => relationship.resourceType === 'person').map((relationship) => String(relationship.resourceId)),
-        ...[document.metadata?.assigned_to_user_id, document.metadata?.assigned_to].filter(Boolean).map(String),
+        ...[document.metadata?.assigned_to_user_id, document.metadata?.assigned_to, document.metadata?.assignedTo, document.metadata?.assignedToUserId].filter(Boolean).map(String),
+        ...(document.projectId ? projectWorkloadLinks.get(String(document.projectId))?.assigneeIds ?? [] : []),
       ]);
-      if (constraints.teamIds?.length && !constraints.teamIds.some((teamId) => linkedTeamIds.has(String(teamId)))) return false;
-      if (constraints.assigneeIds?.length && !constraints.assigneeIds.some((assigneeId) => linkedAssigneeIds.has(String(assigneeId)))) return false;
+      const workloadTeamMatch = Boolean(constraints.teamIds?.some((teamId) => linkedTeamIds.has(String(teamId))));
+      const workloadAssigneeMatch = Boolean(constraints.assigneeIds?.some((assigneeId) => linkedAssigneeIds.has(String(assigneeId))));
+      // A work item may be assigned directly to a person, directly to a
+      // team, or carry both. Circle/teamspace workload is an OR relationship,
+      // not an AND relationship.
+      if ((constraints.teamIds?.length || constraints.assigneeIds?.length) && !workloadTeamMatch && !workloadAssigneeMatch) return false;
       if (constraints.sourceLabel && String(document.sourceLabel ?? '').toLowerCase() !== constraints.sourceLabel.toLowerCase()) return false;
       if (plan.integrationProviders?.length && document.resourceType === 'external' && !plan.integrationProviders.includes(String(document.integrationProvider ?? document.metadata?.provider ?? '').toLowerCase() as never)) return false;
       if (constraints.attentionOnly) {

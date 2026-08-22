@@ -321,7 +321,9 @@ test('filters team workload to normalized assignee and team relationships', asyn
   const index = new EmbeddingIndexService();
   const retrieval = new LedgerRetrievalService(index);
   const documents = [
+    resource({ resourceType: 'project', resourceId: 'project-design', title: 'Design project', assigneeId: 'person-sarah', teamId: 'team-design' }),
     resource({ resourceType: 'task', resourceId: 'task-sarah', title: 'Review exhibition proof', status: 'Open', assigneeId: 'person-sarah', teamId: 'team-design', relationships: [{ relationshipType: 'assigned_to', resourceType: 'person', resourceId: 'person-sarah' }, { relationshipType: 'belongs_to_team', resourceType: 'team', resourceId: 'team-design' }] }),
+    resource({ resourceType: 'task', resourceId: 'task-project', title: 'Prepare design handoff', status: 'Open', projectId: 'project-design' }),
     resource({ resourceType: 'task', resourceId: 'task-other', title: 'Unrelated workspace task', status: 'Open', metadata: { assigned_to_user_id: 'person-other', assigned_to_team_id: 'team-other' } }),
   ];
   const result = await retrieval.retrieve('workspace-a', 'Find open team workload', [], 8, {
@@ -333,5 +335,5 @@ test('filters team workload to normalized assignee and team relationships', asyn
     },
     documents,
   });
-  assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['task-sarah']);
+  assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId).sort(), ['task-project', 'task-sarah']);
 });
