@@ -42,4 +42,6 @@ test('separates bounded reasoning and visible-answer budgets', () => {
   assert.deepEqual(resolveGenerationBudgets('balanced', 512, 4096, { question: 'Summarize this.' }), { initial: 512, retry: 512, reasoning: 0, visible: 512 });
   assert.deepEqual(resolveGenerationBudgets('balanced', 512, 4096, { question: 'Think deeply about this.' }), { initial: 896, retry: 896, reasoning: 384, visible: 512 });
   assert.deepEqual(resolveGenerationBudgets('balanced', 640, 4096, { question: 'Think deeply about this.' }), { initial: 1024, retry: 1024, reasoning: 384, visible: 640 });
+  assert.deepEqual(resolveGenerationBudgets('fast', 768, 4096, { question: 'Build my week.', hasSkill: true }), { initial: 768, retry: 768, reasoning: 0, visible: 768 });
+  assert.deepEqual(resolveGenerationBudgets('fast', 768, 4096, { question: 'Normal answer.' }), { initial: 640, retry: 640, reasoning: 0, visible: 640 });
 });

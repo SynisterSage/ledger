@@ -467,6 +467,7 @@ const deriveSessionTitle = (question: string) => {
 type AskLedgerAnswerRenderContext = {
   sources?: AskLedgerSource[];
   onOpenSource?: (source: AskLedgerSource) => void;
+  streaming?: boolean;
 };
 
 const escapeAnswerRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -514,9 +515,16 @@ const renderInlineAnswer = (value: string, keyPrefix: string, context?: AskLedge
     return <span key={`${keyPrefix}-text-${index}`}>{renderAnswerText(part, `${keyPrefix}-text-${index}`, context)}</span>;
   });
 
-const renderAnswerContent = (content: string, context?: AskLedgerAnswerRenderContext): ReactNode[] => content.trim().split(/\n{2,}/).filter(Boolean).map((block, blockIndex) => {
+const renderAnswerContent = (content: string, context?: AskLedgerAnswerRenderContext): ReactNode[] => {
+  // Models sometimes put a heading directly above a list with only one
+  // newline. Split those headings into their own render block so the markdown
+  // marker never leaks into the visible answer.
+  const normalizedContent = content.trim()
+    .replace(/\n(?=#{1,3}\s+)/g, '\n\n')
+    .replace(/(#{1,3}\s+[^\n]+)(?=\n|$)/g, '$1\n\n');
+  return normalizedContent.split(/\n{2,}/).filter(Boolean).map((block, blockIndex) => {
   const lines = block.split('\n');
-  const isBulleted = lines.every((line) => /^\s*[-*]\s+/.test(line));
+  const isBulleted = lines.every((line) => context?.streaming ? /^\s*[-*](?:\s+.*)?$/.test(line) : /^\s*[-*]\s+/.test(line));
   const isNumbered = lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
   const heading = lines.length === 1 ? lines[0].match(/^(#{1,3})\s+(.+)$/) : null;
   const fencedCode = block.match(/^```(?:[\w+-]+)?\n?([\s\S]*?)(?:\n```)?$/);
@@ -542,10 +550,11 @@ const renderAnswerContent = (content: string, context?: AskLedgerAnswerRenderCon
   }
   if (isBulleted || isNumbered) {
     const List = isBulleted ? 'ul' : 'ol';
-    return <List key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__list ${isNumbered ? 'ask-ledger-answer__list--ordered' : 'ask-ledger-answer__list--unordered'}`}>{lines.map((line, lineIndex) => <li key={`answer-line-${lineIndex}`}>{renderInlineAnswer(line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, ''), `answer-${blockIndex}-${lineIndex}`, context)}</li>)}</List>;
+    return <List key={`answer-block-${blockIndex}`} className={`ask-ledger-answer__list ${isNumbered ? 'ask-ledger-answer__list--ordered' : 'ask-ledger-answer__list--unordered'}`}>{lines.map((line, lineIndex) => <li key={`answer-line-${lineIndex}`}>{renderInlineAnswer(line.replace(/^\s*(?:[-*]|\d+[.)])(?:\s+|$)/, ''), `answer-${blockIndex}-${lineIndex}`, context)}</li>)}</List>;
   }
   return <p key={`answer-block-${blockIndex}`}>{lines.map((line, lineIndex) => <span key={`answer-line-${lineIndex}`}>{lineIndex > 0 && <br />}{renderInlineAnswer(line, `answer-${blockIndex}-${lineIndex}`, context)}</span>)}</p>;
-});
+  });
+};
 
 const askLedgerActivityLabel = (value?: AskLedgerStreamEvent['activity']) => {
   if (!value) return '';
@@ -2123,7 +2132,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
               <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />
-              {state.status === 'streaming' && state.response.answer ? <div className="ask-ledger-answer mt-4 text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, { sources: state.response.sources, onOpenSource: openSource })}</div> : null}
+              {state.status === 'streaming' && state.response.answer ? <div className="ask-ledger-answer mt-4 text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, { sources: state.response.sources, onOpenSource: openSource, streaming: true })}</div> : null}
               {state.status === 'streaming' && state.response.sources.length > 0 && (
                 <div className="mt-4">
                   <button

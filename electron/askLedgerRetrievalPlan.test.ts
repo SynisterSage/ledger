@@ -57,6 +57,12 @@ test('builds a team workload plan across teams, people, and open work', () => {
   assert.equal(named.entityQuery, 'Design');
 });
 
+test('builds a team-linked context plan for notes tied to the current team', () => {
+  const plan = buildRetrievalPlan('What are notes tied with this team?');
+  assert.deepEqual(plan.primaryResourceTypes, ['note', 'team', 'person', 'project', 'task', 'milestone', 'reminder', 'event']);
+  assert.equal(plan.structuredConstraints.sourceLabel, undefined);
+});
+
 test('constrains explicit integration questions to their provider', () => {
   const plan = buildRetrievalPlan('What did Slack say about Alfa?');
   assert.deepEqual(plan.primaryResourceTypes, ['external']);

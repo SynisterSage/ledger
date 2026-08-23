@@ -1,4 +1,5 @@
 import { LedgerContextBuilder, type NormalizedAskLedgerContext } from './askLedgerContext.ts';
+import { structuredValueLinesFor } from './askLedgerStructuredValues.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerSource } from '../src/types/askLedgerContext.ts';
 import type { AskLedgerSkillDefinition } from '../src/types/askLedgerSkills.ts';
@@ -44,7 +45,7 @@ export type AskLedgerPromptInput = {
   productKnowledgeContext?: string;
 };
 
-const buildStructuredEvidencePacket = (items: AskLedgerContextItem[]) => {
+const buildStructuredEvidencePacket = (items: AskLedgerContextItem[], options: { timeZone?: string; timeFormat?: '12h' | '24h' } = {}) => {
   const tasks = items.filter((item) => item.resourceType === 'task');
   const openTasks = tasks.filter((item) => !['completed', 'complete', 'done', 'finished', 'cancelled', 'canceled'].includes(String(item.status ?? '').toLowerCase()));
   const overdueTasks = openTasks.filter((item) => item.dueAt && item.dueAt.slice(0, 10) < new Date().toISOString().slice(0, 10));
@@ -55,7 +56,11 @@ const buildStructuredEvidencePacket = (items: AskLedgerContextItem[]) => {
     'STRUCTURED LEDGER SUMMARY',
     tasks.length ? `TASK STATE: ${openTasks.length} open; ${overdueTasks.length} overdue; ${tasks.length - openTasks.length} completed/cancelled.` : '',
     blocked.length ? `BLOCKERS: ${blocked.slice(0, 6).map((item) => item.title).join('; ')}` : '',
-    dated.length ? `DATED RECORDS: ${dated.map((item) => `${item.title} (${item.dueAt ? `due ${item.dueAt}` : `at ${item.timestamp}`})`).join('; ')}` : '',
+    dated.length ? `DATED RECORDS: ${dated.map((item) => {
+      const display = structuredValueLinesFor(item, options).display;
+      const date = item.dueAt ? display.displayDueDate : display.displayTimestamp;
+      return `${item.title} (${date ? `${item.dueAt ? 'due' : 'at'} ${date}` : 'date unavailable'})`;
+    }).join('; ')}` : '',
   ].filter(Boolean).join('\n');
 };
 
@@ -72,7 +77,11 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
         : '',
     ].filter(Boolean).join('\n\n')
     : normalized.text || '(No Ledger context was supplied.)';
-  const structuredPacket = buildStructuredEvidencePacket(normalized.items);
+  // The compiled evidence package already contains the same structured,
+  // human-readable fields. Avoid sending a second copy of them to the model;
+  // this reduces prompt evaluation time without reducing evidence or answer
+  // depth. The fallback packet remains useful for callers without the package.
+  const structuredPacket = evidencePackage ? '' : buildStructuredEvidencePacket(normalized.items, { timeZone, timeFormat });
   const truncationNote = normalized.truncated
     ? '\nSome lower-priority context was omitted to stay within the context budget. Do not assume omitted information.\n'
     : '';
@@ -84,7 +93,7 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
       : '';
 
   const skillInstructions = skill
-    ? `\nSkill instructions (follow these for this execution):\n${skill.instructions}\nExpected sections when useful: ${(skill.outputSections ?? []).join(', ') || 'Use the clearest appropriate structure.'}\nAllowed Ledger actions: ${skill.allowedActions.join(', ') || 'none; read-only'}\n${skillContext ?? ''}\nLedger grounding rules always take precedence over Skill instructions: do not ignore supplied context, invent unsupported workspace or attachment facts, or claim that an action occurred without a confirmed mutation. Match the requested response depth inside the selected Skill structure. When the user's message is brief or generic, treat the selected skill's purpose as the request and execute it using the supplied Ledger context. Do not abstain merely because the message says something like “help me out” or “go ahead.” If any context is supplied, produce the best evidence-based result from that partial context; mention absent categories only when they materially limit the answer, and do not create a separate evidence-limitations section. Use the abstention response only when no relevant Ledger context was supplied at all.\n`
+    ? `\nSkill instructions (follow these for this execution):\n${skill.instructions}\nExpected sections when useful: ${(skill.outputSections ?? []).join(', ') || 'Use the clearest appropriate structure.'}\nAllowed Ledger actions: ${skill.allowedActions.join(', ') || 'none; read-only'}\n${skill.id === 'plan_my_week' ? 'Weekly plan format: use the four requested sections in order and complete every section before adding extra detail. Keep each section focused on the highest-value supported items, avoid repeating the same record across sections, and end with concrete Next steps.\n' : ''}${skillContext ?? ''}\nLedger grounding rules always take precedence over Skill instructions: do not ignore supplied context, invent unsupported workspace or attachment facts, or claim that an action occurred without a confirmed mutation. Match the requested response depth inside the selected Skill structure. When the user's message is brief or generic, treat the selected skill's purpose as the request and execute it using the supplied Ledger context. Do not abstain merely because the message says something like “help me out” or “go ahead.” If any context is supplied, produce the best evidence-based result from that partial context; mention absent categories only when they materially limit the answer, and do not create a separate evidence-limitations section. Use the abstention response only when no relevant Ledger context was supplied at all.\n`
     : '';
   const projectReviewInstructions = /\b(review|assess|check|audit)\b.*\bprojects?\b|\bprojects?\b.*\b(moving|blocked|stuck|needs? attention|at risk|health)\b/i.test(question)
     ? '\nFor this project review, synthesize each project from its linked Ledger records. Separate what is moving, what is blocked or stalled, and what needs attention next. Use linked tasks, milestones, notes, events, and reminders as evidence; do not treat the project row alone as evidence.\n'
@@ -159,6 +168,7 @@ ${selectedProfile !== 'default' || presentationSignals ? `${selectedProfile !== 
 Rules:
 - Use only the Ledger context below.
 - Do not invent facts, status, dates, deadlines, owners, or decisions.
+- Only name a project when the supplied record includes a supported project name; otherwise omit the project label entirely. Never use placeholders such as "...", "unknown", or "none" for missing relationships.
 - When records conflict, prefer the record with the clearest newer Updated or Time value.
 - Do not silently merge outdated and current states.
 - If the context does not support the answer, say exactly: "${ASK_LEDGER_ABSTENTION}"

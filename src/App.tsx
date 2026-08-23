@@ -106,6 +106,8 @@ import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { NewTabWindow } from './components/Common/NewTabWindow';
 import { PageFindBar } from './components/Common/PageFindBar';
 import { buildOverviewFocusSnapshot, getOverviewFocusPrimaryResource, type OverviewFocusResult, type OverviewFocusSnapshot } from './types/overviewFocus';
+import { LensCache } from './features/lens/lensCache';
+import { LensRequestRegistry } from './features/lens/lensRequestRegistry';
 import { openAskLedgerWithContext } from './components/Common/askLedgerContext';
 import type { AskLedgerInitialContext } from './types/askLedgerContext';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
@@ -1418,6 +1420,12 @@ function OnboardingFlow({
 type DashboardCacheState = Record<string, unknown>;
 
 const DASHBOARD_CACHE_MAX_AGE = 45_000;
+const overviewLensCache = new LensCache<OverviewFocusResult>({
+  storageKey: 'ledger:overview-lens-cache:v1',
+  maxEntries: 8,
+  maxAgeMs: 30 * 60 * 1000,
+});
+const overviewLensInFlight = new LensRequestRegistry<OverviewFocusResult>();
 const dashboardCache = new Map<
   string,
   { updatedAt: number; refreshToken: number; state: DashboardCacheState }
@@ -1595,8 +1603,6 @@ export function DashboardContent({
   const overviewFocusResultRef = useRef<OverviewFocusResult | null>(null);
   const [overviewFocusRefreshToken, setOverviewFocusRefreshToken] = useState(0);
   const overviewFocusRequestRef = useRef(0);
-  const overviewFocusInFlightRef = useRef(false);
-  const overviewFocusQueuedKeyRef = useRef<string | null>(null);
   const overviewFocusSnapshotKeyRef = useRef('');
   overviewFocusResultRef.current = overviewFocusResult;
 
@@ -2006,7 +2012,6 @@ export function DashboardContent({
 
   useEffect(() => {
     overviewFocusRequestRef.current += 1;
-    overviewFocusQueuedKeyRef.current = null;
     setOverviewFocusResult(null);
     setOverviewFocusStatus('idle');
   }, [activeWorkspaceId]);
@@ -2020,24 +2025,28 @@ export function DashboardContent({
       return;
     }
 
-    if (overviewFocusInFlightRef.current) {
-      overviewFocusQueuedKeyRef.current = overviewFocusSnapshotKey;
-      setOverviewFocusStatus('loading');
-      return;
-    }
-
     const requestGeneration = overviewFocusRequestRef.current + 1;
     overviewFocusRequestRef.current = requestGeneration;
-    overviewFocusInFlightRef.current = true;
     let cancelled = false;
     setOverviewFocusStatus('loading');
 
     const generate = async () => {
       try {
+        const cacheKey = `${activeWorkspaceId}:overview`;
+        const cached = overviewLensCache.get(cacheKey, overviewFocusSnapshotKey);
+        if (cached) {
+          console.info('[overview-lens] cache', { workspaceId: activeWorkspaceId, cache: 'hit' });
+          if (!cancelled && requestGeneration === overviewFocusRequestRef.current) {
+            setOverviewFocusResult(cached);
+            setOverviewFocusStatus('ready');
+          }
+          return;
+        }
+        console.info('[overview-lens] cache', { workspaceId: activeWorkspaceId, cache: 'miss' });
         const localAIStatus = await window.askLedger?.localAIStatus();
         if (cancelled || requestGeneration !== overviewFocusRequestRef.current) return;
-        const generation = (localAIStatus as { generation?: { installed?: boolean; state?: string } } | undefined)?.generation;
-        if (generation && generation.installed === false && generation.state !== 'downloading' && generation.state !== 'verifying') {
+        const generationStatus = (localAIStatus as { generation?: { installed?: boolean; state?: string } } | undefined)?.generation;
+        if (generationStatus && generationStatus.installed === false && generationStatus.state !== 'downloading' && generationStatus.state !== 'verifying') {
           setOverviewFocusStatus('unavailable');
           return;
         }
@@ -2045,21 +2054,22 @@ export function DashboardContent({
           setOverviewFocusStatus('unavailable');
           return;
         }
-        const result = await window.askLedger.generateOverviewFocus(overviewFocusSnapshot, {
-          previousResult: overviewFocusResultRef.current ?? undefined,
+        const generationKey = `${cacheKey}:${overviewFocusSnapshotKey}`;
+        const lensGeneration = overviewLensInFlight.getOrCreate(generationKey, async () => {
+          const result = await window.askLedger!.generateOverviewFocus(overviewFocusSnapshot, {
+            previousResult: overviewFocusResultRef.current ?? undefined,
+          });
+          return { insights: Array.isArray(result?.insights) ? result.insights as OverviewFocusResult['insights'] : [] };
         });
+        void lensGeneration.then((result) => {
+          if (result.insights.length) overviewLensCache.set(cacheKey, overviewFocusSnapshotKey, result);
+        });
+        const result = await lensGeneration;
         if (cancelled || requestGeneration !== overviewFocusRequestRef.current) return;
-        const insights = Array.isArray(result?.insights) ? result.insights : [];
-        setOverviewFocusResult({ insights: insights as OverviewFocusResult['insights'] });
+        setOverviewFocusResult(result);
         setOverviewFocusStatus('ready');
       } catch {
         if (!cancelled && requestGeneration === overviewFocusRequestRef.current) setOverviewFocusStatus('error');
-      } finally {
-        overviewFocusInFlightRef.current = false;
-        if (overviewFocusQueuedKeyRef.current && overviewFocusQueuedKeyRef.current !== overviewFocusSnapshotKeyRef.current) {
-          overviewFocusQueuedKeyRef.current = null;
-          setOverviewFocusRefreshToken((current) => current + 1);
-        }
       }
     };
 
@@ -7474,18 +7484,18 @@ export function DashboardContent({
                           ))}
                       </div>
                     </div>
-                    {!browserMode ? <section className="border-t border-[color:var(--ledger-border-subtle)] pt-3" aria-labelledby="overview-focus-heading">
+                    {!browserMode ? <section className="border-t border-[color:var(--ledger-border-subtle)] pt-3" aria-labelledby="overview-lens-heading">
                       <div className="flex items-center justify-between gap-2">
-                        <p id="overview-focus-heading" className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                          Focus
+                        <p id="overview-lens-heading" className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                          Lens
                         </p>
                         <button
                           type="button"
                           onClick={refreshOverviewFocus}
                           disabled={overviewFocusStatus === 'loading'}
                           className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)] disabled:cursor-wait disabled:opacity-60"
-                          aria-label="Refresh Focus"
-                          title="Refresh Focus"
+                          aria-label="Refresh Lens"
+                          title="Refresh Lens"
                         >
                           <RefreshCw size={12} className={overviewFocusStatus === 'loading' ? 'animate-spin' : ''} />
                         </button>
@@ -7496,14 +7506,13 @@ export function DashboardContent({
                         </p>
                       )}
                       {overviewFocusStatus === 'loading' && !overviewFocusResult?.insights.length ? (
-                        <div className="mt-2 space-y-2" aria-label="Loading Focus">
-                          <div className="h-3 w-4/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+                        <div className="mt-1.5 space-y-1.5" aria-label="Loading Lens">
+                          <div className="h-2.5 w-4/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
                           <div className="h-2.5 w-full animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
-                          <div className="h-3 w-3/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
                         </div>
                       ) : overviewFocusStatus === 'unavailable' ? (
                         <div className="mt-1.5">
-                          <p className="text-[12px] leading-5 text-[var(--ledger-text-muted)]">Set up local AI to enable Focus.</p>
+                          <p className="text-[12px] leading-5 text-[var(--ledger-text-muted)]">Set up local AI to enable Lens.</p>
                           <button
                             type="button"
                             className="mt-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] underline decoration-[color:var(--ledger-border-subtle)] underline-offset-2 hover:text-[var(--ledger-text-primary)]"
@@ -7515,7 +7524,7 @@ export function DashboardContent({
                           </button>
                         </div>
                       ) : overviewFocusStatus === 'error' ? (
-                        <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">Focus is unavailable right now.</p>
+                        <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">Lens is unavailable right now.</p>
                       ) : overviewFocusResult?.insights.length ? (
                         <div className="mt-2 space-y-3">
                           {overviewFocusResult.insights.map((insight) => {

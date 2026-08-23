@@ -66,8 +66,11 @@ export const classifyAskLedgerRetrievalMode = (question: string): AskLedgerRetri
   const compoundSignal = /\b(connect|tie|tying|across|everything stands|what(?:'s| is) going on|what still needs|where .* stands|look through|summari[sz]e .* and|and (?:tell|what|how|where))\b/.test(normalized);
   const teamWorkloadSignal = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
     && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized);
+  const teamLinkedContextSignal = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
+    && /\b(?:notes?|tasks?|actions?|projects?|milestones?|reminders?|events?|activity|work)\b/.test(normalized)
+    && /\b(?:tied|linked|connected|associated|related|belong|with|for)\b/.test(normalized);
   const narrowSignal = /^(?:when|what time|show|get|who owns|who is responsible|find my latest|latest)\b/.test(normalized);
-  return requestedCategories >= 2 || teamWorkloadSignal || (compoundSignal && !narrowSignal) ? 'research' : 'quick';
+  return requestedCategories >= 2 || teamWorkloadSignal || teamLinkedContextSignal || (compoundSignal && !narrowSignal) ? 'research' : 'quick';
 };
 
 const addObjective = (objectives: RetrievalObjective[], objective: RetrievalObjective) => {
@@ -98,6 +101,9 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const hasNotifications = /\bnotifications?\b/.test(normalized);
   const hasTeamWorkload = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
     && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized);
+  const hasTeamLinkedContext = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
+    && /\b(?:notes?|tasks?|actions?|projects?|milestones?|reminders?|events?|activity|work)\b/.test(normalized)
+    && /\b(?:tied|linked|connected|associated|related|belong|with|for)\b/.test(normalized);
   const hasAttention = /\bwhat needs my attention\b|\balerts?\b|\bteamspace\b|\bcircle\b/.test(normalized) && !hasTeamWorkload;
   const integrationProviders = base.integrationProviders ?? [];
   const hasInternalLedger = integrationProviders.length > 0 && /\bledger\b/.test(normalized);
@@ -145,6 +151,29 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
     });
   }
 
+  if (hasTeamLinkedContext && !hasTeamWorkload) {
+    addObjective(objectives, {
+      id: 'team-workspace-members',
+      purpose: 'Resolve the referenced workspace team and its members',
+      resourceTypes: ['team', 'person'],
+      entityQuery: base.entityQuery,
+      constraints: {},
+      expandRelationships: true,
+      dependsOn: [],
+      graphRelationshipTypes: ['belongs_to_team', 'member_of_team', 'linked_project', 'linked_note', 'assigned_to'],
+    });
+    addObjective(objectives, {
+      id: 'team-linked-context',
+      purpose: 'Find notes and workspace records linked to the referenced team and its members',
+      resourceTypes: ['note', 'project', 'task', 'milestone', 'reminder', 'event'],
+      entityQuery: base.entityQuery,
+      constraints: {},
+      expandRelationships: true,
+      dependsOn: ['team-workspace-members'],
+      graphRelationshipTypes: ['belongs_to_team', 'member_of_team', 'assigned_to', 'linked_project', 'linked_note', 'linked_task', 'linked_milestone', 'linked_event', 'linked_reminder'],
+    });
+  }
+
   if (hasMeetings) {
     addObjective(objectives, {
       id: 'meetings', purpose: 'Find relevant meetings and calendar evidence', resourceTypes: ['event'], entityQuery: base.entityQuery,
@@ -182,7 +211,7 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   if (hasAttention) {
     addObjective(objectives, { id: 'attention-tasks', purpose: 'Find overdue, blocked, and today work requiring attention', resourceTypes: ['task', 'milestone'], constraints: { ...base.structuredConstraints, attentionOnly: true }, expandRelationships: false, dependsOn: projectDependency });
   }
-  if (hasNotes && !hasMeetings) addObjective(objectives, { id: 'notes', purpose: 'Find requested notes and transcripts', resourceTypes: ['note'], entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: true, dependsOn: [] });
+  if (hasNotes && !hasMeetings && !hasTeamLinkedContext) addObjective(objectives, { id: 'notes', purpose: 'Find requested notes and transcripts', resourceTypes: ['note'], entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: true, dependsOn: [] });
   if (!objectives.length) addObjective(objectives, { id: 'primary', purpose: 'Retrieve the primary workspace evidence', resourceTypes: base.primaryResourceTypes, entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: base.expandRelatedContext, dependsOn: [] });
   return objectives;
 };
@@ -300,7 +329,7 @@ export class AskLedgerRetrievalOrchestrator {
     };
   }
 
-  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; attachmentFocus?: boolean; skipSemantic?: boolean; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
+  async retrieve(workspaceId: string, question: string, lexicalResults: Parameters<LedgerRetrievalService['retrieve']>[2] = [], limit = 20, options?: { conversationId?: string; boostResourceKeys?: string[]; resolvedResourceKeys?: string[]; documents?: AskLedgerContextItem[]; retrievalQuestion?: string; skillId?: AskLedgerSkillId; customSkillResourceTypes?: AskLedgerResourceType[]; attachmentFocus?: boolean; skipSemantic?: boolean; onObjectiveTiming?: (timing: RetrievalObjectiveTiming) => void }): Promise<AskLedgerOrchestrationResult> {
     if (options?.skillId === 'plan_my_week') return this.retrievePlanMyWeek(workspaceId, lexicalResults, limit, options) as Promise<AskLedgerOrchestrationResult>;
     const skillSeedQuestion = options?.skillId === 'project_health_check'
       ? 'Look through the project work and tell me what is happening, blocked, and what still needs to happen.'
@@ -325,7 +354,10 @@ export class AskLedgerRetrievalOrchestrator {
     }
 
     const limits = { ...DEFAULT_LIMITS, ...this.limits };
-    const objectives = decomposeRetrievalObjectives(orchestrationQuestion).slice(0, limits.maxObjectives);
+    const customSkillResourceTypes = options?.customSkillResourceTypes?.length ? [...new Set(options.customSkillResourceTypes)] : undefined;
+    const objectives = customSkillResourceTypes
+      ? [{ id: 'custom-skill-context', purpose: 'Retrieve the workspace context allowed by the custom skill', resourceTypes: customSkillResourceTypes, constraints: {}, expandRelationships: false, dependsOn: [] }]
+      : decomposeRetrievalObjectives(orchestrationQuestion).slice(0, limits.maxObjectives);
     if (options?.skillId === 'project_health_check' || options?.skillId === 'meeting_follow_up' || options?.skillId === 'prepare_for_meeting') {
       // The selected resource ID is the authoritative seed. Synthetic skill
       // wording must not turn words such as "project work" into a title filter.
@@ -359,8 +391,9 @@ export class AskLedgerRetrievalOrchestrator {
       for (const objective of objectives) {
         if (completed.has(objective.id) || objective.dependsOn.some((dependency) => !completed.has(dependency))) continue;
         const projectIds = objective.resourceTypes.some((type) => ['project', 'task', 'milestone', 'reminder'].includes(type)) ? [...discoveredProjects].slice(0, limits.maxDiscoveredEntities) : [];
-        const teamIds = objective.id === 'team-workload-actions' ? [...discoveredTeams].slice(0, limits.maxDiscoveredEntities) : [];
-        const assigneeIds = objective.id === 'team-workload-actions' ? [...discoveredPeople].slice(0, limits.maxDiscoveredEntities) : [];
+        const teamScopedObjective = objective.id === 'team-workload-actions' || objective.id === 'team-linked-context';
+        const teamIds = teamScopedObjective ? [...discoveredTeams].slice(0, limits.maxDiscoveredEntities) : [];
+        const assigneeIds = teamScopedObjective ? [...discoveredPeople].slice(0, limits.maxDiscoveredEntities) : [];
         const hasDependencyScope = projectIds.length || teamIds.length || assigneeIds.length;
         if (objective.dependsOn.length && !hasDependencyScope && objective.resourceTypes.some((type) => ['project', 'task', 'milestone', 'reminder'].includes(type))) {
           statuses.set(objective.id, 'not_found');

@@ -71,7 +71,7 @@ const normalize = (value: string) =>
     .trim();
 
 const workspaceSignals =
-  /\b(?:ledger|workspace|projects?|tasks?|todo|to do|action items?|milestones?|reminders?|meetings?|events?|calendar|notes?|transcripts?|deadlines?|overdue|blocked|blocking|stuck|status|progress|activity|happening|going on|decision|decided|discussed|changed|updates?|follow[- ]?ups?|team members?|integration|slack|github|figma|launch|this week)\b/i;
+  /\b(?:ledger|workspace|projects?|tasks?|todo|to do|action items?|milestones?|reminders?|meetings?|events?|calendar|notes?|transcripts?|deadlines?|overdue|blocked|blocking|stuck|status|progress|activity|happening|going on|decision|decided|discussed|changed|updates?|follow[- ]?ups?|team members?|teamspaces?|teams?|circle|integration|slack|github|figma|launch|this week)\b/i;
 const capabilitySignals =
   /\b(?:what can you help me with|what can you do|what do you do|what do u do|what does ledger do|what is ledger|who (?:made|built|created) (?:ledger|it)|who is (?:ledger|it) made by|can you help|can you read|can you create|what are skills|how do skills work|what files can you read|what do you support)\b/i;
 const casualSignals =
@@ -88,6 +88,7 @@ const reasoningFollowUpSignals = /^(?:why|how)\b/i;
 const contextReuseSignals = /\b(?:with|using|based on|from)\s+(?:this|that|these|those)\s+(?:context|notes?|summary|answer)\b|\bnot really searching\b|\bwithout (?:search|searching|looking)\b/i;
 const explicitExistingResourceSignals = /\b(?:last|latest|newest|recent|what happened|what did|look through|look at|summari[sz]e|review|compare|linked)\b[\s\S]{0,80}\b(?:notes?|meetings?|events?|tasks?|reminders?|projects?|transcripts?)\b/i;
 const explicitWorkspaceSearchSignals = /\b(?:somewhere|search(?: for)?|find(?: me)?|look for|which project .*\b(?:linked|belongs)|what project .*\b(?:linked|belongs)|linked to|belongs to)\b/i;
+const linkedTeamWorkspaceSignals = /\b(?:this|that|the)\s+(?:team|teamspace|circle)\b[\s\S]*\b(?:notes?|tasks?|actions?|projects?|milestones?|reminders?|events?|activity|work)\b[\s\S]*\b(?:tied|linked|connected|associated|related|belong|with|for)\b|\b(?:notes?|tasks?|actions?|projects?|milestones?|reminders?|events?|activity|work)\b[\s\S]*\b(?:tied|linked|connected|associated|related|belong|with|for)\b[\s\S]*\b(?:this|that|the)\s+(?:team|teamspace|circle)\b/i;
 const possessiveWorkspaceSignals = /\b(?:my|our|we|in ledger|in the workspace|this workspace)\b/i;
 const structuredIntentSignals = /\b(?:due today|due tomorrow|overdue|next meeting|meetings? (?:today|tomorrow|this week)|last \d+ notes?|how many .*tasks?|who owns|when is .* due|active reminders?|what should i do today|plan my week)\b/i;
 const synthesisSignals = /\b(?:summari[sz]e|recap|review|plan|prioriti[sz]e|next steps?|follow[- ]?ups?|explain what|tell me what|what did we decide|what happened with|compare (?:this|last) week|patterns .* last .* meetings?)\b/i;
@@ -254,6 +255,33 @@ export const routeAskLedgerMessage = (
       },
       { conversational: true }
     );
+  // A resource question that refers back to a workspace team must stay in
+  // workspace retrieval, even when the resource name (for example, "notes")
+  // also looks like a Ledger product-help question. Product help describes
+  // the Notes feature; this asks for notes belonging to the current team.
+  const linkedTeamWorkspaceFollowUp = linkedTeamWorkspaceSignals.test(normalized);
+  if (linkedTeamWorkspaceFollowUp) {
+    return withDepth({
+      mode: 'follow_up',
+      executionMode: 'workspace_lookup',
+      retrievalRequired: true,
+      // This is a fresh relationship lookup. Reusing the prior source set can
+      // incorrectly invalidate the turn when the compact team answer only
+      // exposed a subset of the current workspace corpus.
+      reusePreviousGroundedContext: false,
+      reason: 'referential_workspace_follow_up',
+    });
+  }
+  const directTeamWorkspaceQuestion = /\b(?:my|our|this|that|in the workspace|in ledger)\s+(?:teamspaces?|teams?|circle)\b|\b(?:teamspaces?|teams?|circle)\b[\s\S]*\b(?:members?|people|tasks?|actions?|workload|active|open)\b/i.test(normalized);
+  if (directTeamWorkspaceQuestion) {
+    return withDepth({
+      mode: priorTurns(context) ? 'follow_up' : 'workspace_grounded',
+      executionMode: 'workspace_lookup',
+      retrievalRequired: true,
+      reusePreviousGroundedContext: false,
+      reason: 'workspace_fact_or_entity',
+    });
+  }
   if (productHelpDetected) {
     const productRoute = withDepth({
       mode: previousProductHelpContextReusable ? 'follow_up' : 'conversational',

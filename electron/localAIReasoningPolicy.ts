@@ -33,7 +33,11 @@ export const resolveReasoningDecision = (tier: GenerationTier, mode: ReasoningMo
 export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxTokens: number | undefined, _contextSize: number, signals?: ReasoningRequestSignals, reasoningEnabled = false): GenerationBudgets => {
   const inferred = signals ? resolveReasoningDecision(tier, signals.reasoningMode ?? 'auto', signals).enabled : false;
   const thinking = tier !== 'fast' && (reasoningEnabled || inferred);
-  const visible = Math.min(640, Math.max(448, configuredMaxTokens ?? 512));
+  // Fast skill plans need a little more room to complete their required
+  // sections. Keep ordinary answers at the existing ceiling so this does not
+  // become an unrestricted output increase across the app.
+  const visibleCeiling = tier === 'fast' && signals?.hasSkill ? 768 : 640;
+  const visible = Math.min(visibleCeiling, Math.max(448, configuredMaxTokens ?? 512));
   const reasoning = thinking ? 384 : 0;
   const initial = thinking ? reasoning + visible : visible;
   return { initial, retry: initial, reasoning, visible };

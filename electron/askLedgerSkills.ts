@@ -52,7 +52,7 @@ const registry: AskLedgerSkillDefinition[] = [
     outputSections: ['Focus this week', 'Deadlines and commitments', 'Risks or blockers', 'Next steps'],
     presentationProfile: 'weekly_plan',
     reasoningPolicy: 'optional',
-    executionContract: { resources: ['task', 'milestone', 'event', 'reminder'], timeRange: 'this_week', retrieval: 'structured', reasoning: 'bounded', maxOutput: 640 },
+    executionContract: { resources: ['task', 'milestone', 'event', 'reminder'], timeRange: 'this_week', retrieval: 'structured', reasoning: 'bounded', maxOutput: 768 },
   },
   {
     id: 'turn_notes_into_tasks',

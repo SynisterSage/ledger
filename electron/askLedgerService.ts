@@ -50,10 +50,18 @@ const formatLedgerDate = (value?: string, timeZone?: string) => {
 const outputMappingsFor = (items: AskLedgerContextItem[], timeZone?: string, timeFormat?: '12h' | '24h'): AskLedgerOutputMapping[] => items.flatMap((item) => {
   const display = structuredValueLinesFor(item, { timeZone, timeFormat }).display;
   const mappings: AskLedgerOutputMapping[] = [];
-  const add = (raw: string | undefined, value: string | undefined) => {
-    if (raw && value) mappings.push({ raw, display: value, kind: 'structured_value' });
+  const add = (raw: string | undefined, value: string | undefined, anchor?: string) => {
+    if (raw && value) mappings.push({ raw, display: value, kind: 'structured_value', ...(anchor ? { anchor } : {}) });
   };
   add(item.dueAt, display.displayDueDate);
+  const dueDateOnly = item.dueAt?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dueDateOnly) {
+    const [year, month, day] = dueDateOnly.slice(1);
+    add(`${year}-${Number(month)}-${Number(day)}`, display.displayDueDate);
+    add(`${year}-d-m`, display.displayDueDate, item.title);
+    add(`${year}-m-d`, display.displayDueDate, item.title);
+    add('YYYY-MM-DD', display.displayDueDate, item.title);
+  }
   add(item.timestamp, display.displayTimestamp);
   add(item.endAt, display.displayEndAt);
   add(item.updatedAt, display.displayUpdatedAt);
@@ -98,6 +106,45 @@ const formatStructuredAnswer = (kind: string, items: AskLedgerContextItem[], tim
 const emptyStructuredAnswer = (kind: string) => {
   const label = kind === 'team_members' ? 'team members' : kind === 'projects' ? 'projects' : kind === 'milestones' ? 'milestones' : kind === 'events' ? 'events' : kind === 'reminders' ? 'reminders' : kind === 'deadlines' ? 'deadlines' : kind === 'time_window' ? 'dated items' : kind === 'integration' ? 'integration records' : 'open actions';
   return `I couldn't find any matching ${label} in this workspace.`;
+};
+
+const isTeamWorkloadQuestion = (question: string) => /\b(?:teamspaces?|teams?|circle)\b/i.test(question)
+  && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/i.test(question);
+
+const formatTeamWorkloadAnswer = (items: AskLedgerContextItem[], timeZone?: string) => {
+  const unique = [...new Map(items.map((item) => [`${item.resourceType}:${item.resourceId}`, item])).values()];
+  const teams = unique.filter((item) => item.resourceType === 'team');
+  const people = unique.filter((item) => item.resourceType === 'person');
+  const work = unique
+    .filter((item) => ['task', 'milestone', 'reminder'].includes(item.resourceType))
+    .filter((item) => !['completed', 'complete', 'done', 'cancelled', 'canceled', 'dismissed'].includes(String(item.status ?? '').toLowerCase()))
+    .sort((left, right) => {
+      const leftDate = Date.parse(left.dueAt ?? left.updatedAt ?? left.createdAt ?? '') || Number.MAX_SAFE_INTEGER;
+      const rightDate = Date.parse(right.dueAt ?? right.updatedAt ?? right.createdAt ?? '') || Number.MAX_SAFE_INTEGER;
+      return leftDate - rightDate;
+    })
+    .slice(0, 8);
+  const lines = ['## Teamspaces'];
+  if (teams.length) {
+    teams.forEach((team) => {
+      const memberNames = people
+        .filter((person) => person.relationships?.some((relationship) => relationship.resourceType === 'team' && relationship.resourceId === team.resourceId) || person.content.toLowerCase().includes(team.title.toLowerCase()))
+        .map((person) => person.title);
+      lines.push(`- **${team.title}**${memberNames.length ? ` — ${memberNames.join(', ')}` : ''}`);
+    });
+  } else lines.push('- No active teamspaces were found.');
+  lines.push('', '## Recent open work');
+  if (work.length) {
+    work.forEach((item) => {
+      const details = [
+        item.resourceType === 'task' ? 'Task' : item.resourceType === 'milestone' ? 'Milestone' : 'Reminder',
+        item.projectName,
+        item.dueAt ? `Due ${formatLedgerDate(item.dueAt, timeZone)}` : undefined,
+      ].filter(Boolean);
+      lines.push(`- **${item.title}**${details.length ? ` — ${details.join(' · ')}` : ''}`);
+    });
+  } else lines.push('- No linked open tasks, milestones, or reminders were found.');
+  return lines.join('\n');
 };
 
 const overviewFocusHandoff = (context?: AskLedgerInitialContext) => context?.handoff?.kind === 'overview_focus' ? context.handoff : undefined;
@@ -325,6 +372,10 @@ export class AskLedgerService {
     this.attachments = attachments;
   }
 
+  getRetrievalService() {
+    return this.retrieval;
+  }
+
   async ingestAttachments(workspaceId: string, conversationId: string, paths: string[], existing?: { count?: number; sizeBytes?: number }) {
     const documents = await this.attachments.ingest(paths, conversationId, workspaceId, existing);
     await this.retrieval.indexAttachments(conversationId, workspaceId, documents.flatMap(attachmentBlocksToContext));
@@ -380,12 +431,14 @@ export class AskLedgerService {
       request.conversation?.previousSources?.length && !request.conversation?.recentExchanges?.length ? `Previous sources: ${request.conversation.previousSources.slice(0, 8).map((source) => source.title).join('; ')}` : '',
     ].filter(Boolean).join('\n');
     const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
+    const isCustomSkill = Boolean(skill && !getAskLedgerSkill(skill.id));
     const retrievalQuery = request.question.trim() || (skill ? skill.instructions : request.question);
     const retrieval = await this.orchestrator.retrieve(request.workspaceId, retrievalQuery, request.lexicalResults, skill?.id === 'plan_my_week' ? 32 : 20, {
       conversationId: request.conversation?.id,
       documents: request.documents,
       retrievalQuestion,
       skillId: skill?.id,
+      ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources } : {}),
       boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys],
       resolvedResourceKeys: conversationResolution.resourceKeys,
     });
@@ -786,6 +839,7 @@ export class AskLedgerService {
         ? request.documents.filter((item) => item.resourceType === 'attachment').map((item) => `${item.resourceType}:${item.resourceId}`)
         : [];
       const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
+      const isCustomSkill = Boolean(skill && !getAskLedgerSkill(skill.id));
       const intent = detectAskLedgerQueryIntent(request.question);
       const retrievalLimit = skill?.id === 'plan_my_week' || intent.kind === 'weekly_overview' ? 32 : 20;
       const retrievalDocuments = semanticIndexRequired ? undefined : request.documents;
@@ -801,6 +855,7 @@ export class AskLedgerService {
         documents: retrievalDocuments,
         retrievalQuestion,
         skillId: skill?.id,
+        ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources } : {}),
         boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
         attachmentFocus: genericAttachmentQuestion,
         skipSemantic: genericAttachmentQuestion || route.mode === 'follow_up' || route.executionMode === 'workspace_lookup',
@@ -973,6 +1028,11 @@ export class AskLedgerService {
         relatedResourceCount: retrieval.relatedItems?.length ?? 0,
       });
       emit({ type: 'sources', requestId, sources, diagnostics });
+      if (!skill && isTeamWorkloadQuestion(request.question)) {
+        emit({ type: 'delta', requestId, text: formatTeamWorkloadAnswer(normalized.items, request.timeZone) });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: normalized.items.length, workspaceSources: sources.length }) } });
+        return;
+      }
       const directMilestoneLookup = !skill
         && intent.kind === 'milestones'
         && normalized.items.some((item) => item.resourceType === 'milestone');
@@ -1018,8 +1078,16 @@ export class AskLedgerService {
       const generatedSkillAnswer: string[] = [];
       const generatedAnswerChunks: string[] = [];
       const outputMappings = outputMappingsFor(normalized.items, request.timeZone, request.timeFormat);
+      const defaultSkillBudget = skill?.id === 'plan_my_week'
+        ? 768
+        : generationDepth.depth === 'deep' || generationDepth.explicit
+          ? 512
+          : 448;
+      // A custom skill's execution contract is its intentional output
+      // allowance. Do not accidentally clamp it with the generic grounded
+      // answer default; LocalAI still applies the tier-specific safety ceiling.
       const answerGenerationBudget = skill
-        ? Math.min(skill.executionContract?.maxOutput ?? (generationDepth.depth === 'deep' || generationDepth.explicit ? 512 : 448), skill.id === 'plan_my_week' ? 640 : generationDepth.depth === 'deep' || generationDepth.explicit ? 512 : (skill.executionContract?.maxOutput ?? 448))
+        ? skill.executionContract?.maxOutput ?? defaultSkillBudget
         : 512;
       const generationCallbacks = skill && ['plan_my_week', 'meeting_follow_up', 'prepare_for_meeting'].includes(skill.id)
         ? {
@@ -1052,7 +1120,7 @@ export class AskLedgerService {
                   // Custom skills are validated and may be repaired before
                   // the final answer is known. Buffer their deltas so a late
                   // model fallback cannot briefly flash in the renderer.
-                  if (!skill) emit(event);
+                  if (!skill || isCustomSkill) emit(event);
                 }
                 return;
               }
@@ -1092,7 +1160,12 @@ export class AskLedgerService {
                 const structuredPresentation = diagnoseAskLedgerStructuredOutput(answer, normalized.items, { timeZone: request.timeZone, timeFormat: request.timeFormat });
                 Object.assign(validationDiagnostics, { structuredPresentation, outputGuard: guarded.diagnostics });
                 askLedgerDiagnostic('[local-ai] Ask Ledger answer validation', { ...validationDiagnostics, failures: formatAskLedgerValidationFailures(finalValidation) });
-                if (answer.trim()) emit({ type: 'replace', requestId, text: `${answer}${finalValidation.passed ? '' : formatAskLedgerEvidenceLimitations(evidence.package)}` });
+                // Retrieval diagnostics belong in development telemetry, not
+                // in the user-facing answer. Skills have their own bounded
+                // structure and should return a clean grounded fallback or
+                // abstention when validation fails.
+                const evidenceLimitations = !skill && !finalValidation.passed ? formatAskLedgerEvidenceLimitations(evidence.package) : '';
+                if (answer.trim()) emit({ type: 'replace', requestId, text: `${answer}${evidenceLimitations}` });
                 emit({ ...event, requestId, validation: validationDiagnostics });
               };
               if (validation.repairRecommended) {

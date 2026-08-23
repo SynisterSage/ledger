@@ -131,13 +131,14 @@ export type ParsedThinkingStream = {
 
 const DEFAULT_PORT = 39281;
 const REQUEST_TIMEOUT_MS = 90_000;
+export const DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 const readErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-const parseRuntimeDiagnostics = (diagnostics: string) => {
+export const parseRuntimeDiagnostics = (diagnostics: string) => {
   const lines = diagnostics.split('\n').map((line) => line.trim()).filter((line) => /metal|offload|backend|gpu|layer/i.test(line)).slice(-20);
-  const metalConfirmed = /ggml[_ -]?metal|metal backend|using metal/i.test(diagnostics) ? true : undefined;
-  const offloadMatch = diagnostics.match(/offload(?:ed|ing)?[^\d]*(\d+)(?:\s*\/\s*(\d+))?\s*layers?/i);
+  const metalConfirmed = /ggml[_ -]?metal|metal backend|using metal|ggml_metal_init|\[metal\]/i.test(diagnostics) ? true : undefined;
+  const offloadMatch = diagnostics.match(/(?:offload(?:ed|ing)?|gpu\s+layers?)[^\d]{0,100}(\d+)(?:\s*\/\s*(\d+))?\s*layers?/i);
   const metalMemoryMiB = diagnostics.match(/MTL\d+[^|]*\|\s*\d+\s*=\s*\d+\s*\+\s*\(\s*([\d.]+)\s*=\s*([\d.]+)\s*\+\s*([\d.]+)\s*\+\s*([\d.]+)/i);
   const kvBufferMiB = diagnostics.match(/MTL\d+ KV buffer size\s*=\s*([\d.]+)\s*MiB/i);
   const cpuFallbackDetected = /cpu fallback|falling back to cpu|no gpu|offloaded\s+0\s*\/|offloaded\s+0\s+layers/i.test(diagnostics)
@@ -267,7 +268,9 @@ export class LocalModelRuntime {
       let exitCode: number | null = null;
       let exitSignal: NodeJS.Signals | null = null;
       const collectDiagnostics = (chunk: Buffer) => {
-        diagnostics = `${diagnostics}${String(chunk)}`.slice(-4000);
+        // Keep enough of the startup log to retain Metal/offload lines. The
+        // runtime can print those before the final readiness lines.
+        diagnostics = `${diagnostics}${String(chunk)}`.slice(-12000);
       };
       child.stdout?.on('data', collectDiagnostics);
       child.stderr?.on('data', collectDiagnostics);
@@ -385,6 +388,10 @@ export class LocalModelRuntime {
           signal: requestSignal,
           body: JSON.stringify({
             stream: true,
+            // llama-server reuses the common KV prefix between requests. The
+            // first request is unchanged; follow-ups can skip re-evaluating
+            // the stable Ask Ledger instructions and style contract.
+            cache_prompt: true,
             max_tokens: generationBudget,
             n_predict: generationBudget,
             temperature: 0.2,
@@ -579,7 +586,7 @@ export class LocalModelRuntime {
   private clearIdleTimer() { if (this.idleTimer) clearTimeout(this.idleTimer); this.idleTimer = null; }
   private armIdleTimer() {
     this.clearIdleTimer();
-    const timeout = this.config.idleTimeoutMs ?? 5 * 60 * 1000;
+    const timeout = this.config.idleTimeoutMs ?? DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS;
     if (timeout > 0) this.idleTimer = setTimeout(() => { void this.shutdown(); }, timeout);
   }
 }
@@ -813,7 +820,7 @@ export const createLocalAIService = (assets = new LocalAIAssetManager(), overrid
       contextSize: overrides.contextSize ?? model.contextSize ?? 4096,
       runtimeArgs: overrides.runtimeArgs ?? model.runtimeArgs ?? [],
       maxTokens: model.maxTokens ?? 256,
-      idleTimeoutMs: Number(process.env.LEDGER_LOCAL_AI_IDLE_MS || 300_000),
+      idleTimeoutMs: Number(process.env.LEDGER_LOCAL_AI_IDLE_MS || DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS),
     });
   };
   return new LocalAIService(assets, runtimeFactory);

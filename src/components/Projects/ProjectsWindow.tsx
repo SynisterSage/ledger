@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock3,
   CircleDot,
   FileText,
@@ -71,6 +72,19 @@ import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForHome, routeForNote, routeForProject, routeForTask, usePlatform, type LedgerRoute } from '../../platform';
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
+import {
+  deriveWorkspaceProjectSignals,
+  summarizeProjectSignals,
+} from '../../features/projects/projectSignals';
+import { buildProjectIntelligenceContext } from '../../features/projects/projectIntelligenceContext';
+import type { ProjectIntelligenceContext } from '../../features/projects/projectIntelligenceContext';
+import { validateProjectChangeProposals, type ProjectChangeProposal, type ProjectLensAction, type ProjectLensActionResult, type ProjectLensResult, type ProjectResourceRef } from '../../features/projects/projectLens';
+import { ProjectLensCache } from '../../features/projects/projectLensCache';
+import { LensRequestRegistry } from '../../features/lens/lensRequestRegistry';
+
+const projectLensCache = new ProjectLensCache();
+type ProjectLensGenerationResponse = { status?: string; reason?: string; result?: ProjectLensResult };
+const projectLensInFlight = new LensRequestRegistry<ProjectLensGenerationResponse>();
 
 const parseProjectsSection = (
   value: string
@@ -599,6 +613,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   const isDirtyRef = useRef(false);
   const isCompletenessDraggingRef = useRef(false);
   const projectContextRef = useRef<HTMLDivElement | null>(null);
+  const projectLensMenuRef = useRef<HTMLElement | null>(null);
   const taskContextRef = useRef<HTMLDivElement | null>(null);
   const linkedNoteContextRef = useRef<HTMLDivElement | null>(null);
   const rightPanelMenuRef = useRef<HTMLDivElement | null>(null);
@@ -613,6 +628,9 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   const briefTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const projectsDataCacheRef = useRef(new Map<string, ProjectsDataCacheEntry>());
   const tasksDataCacheRef = useRef(new Map<string, TasksDataCacheEntry>());
+  const projectLensCacheRef = useRef(projectLensCache);
+  const projectsWindowMountedRef = useRef(true);
+  const projectLensRequestRef = useRef(0);
   const hasLoadedProjectsDataRef = useRef(false);
   const hasLoadedTasksDataRef = useRef(false);
 
@@ -768,6 +786,21 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   const [projectActivity, setProjectActivity] = useState<ProjectActivityItem[]>([]);
   const [isLoadingProjectActivity, setIsLoadingProjectActivity] = useState(false);
   const [isLoadingProjectCalendarItems, setIsLoadingProjectCalendarItems] = useState(false);
+  const [projectLensState, setProjectLensState] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+  const [projectLensLoadingStage, setProjectLensLoadingStage] = useState(0);
+  const [projectLensResult, setProjectLensResult] = useState<ProjectLensResult | null>(null);
+  const [projectLensUnavailableReason, setProjectLensUnavailableReason] = useState<'model' | 'failed' | null>(null);
+  const [projectLensAction, setProjectLensAction] = useState<ProjectLensAction | null>(null);
+  const [projectLensMenuOpen, setProjectLensMenuOpen] = useState(false);
+  const [projectLensActionState, setProjectLensActionState] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
+  const [projectLensActionResult, setProjectLensActionResult] = useState<ProjectLensActionResult | null>(null);
+  const [projectLensActionUnavailableReason, setProjectLensActionUnavailableReason] = useState<'model' | 'failed' | null>(null);
+  const [projectLensReview, setProjectLensReview] = useState<Array<{ type: 'create_action'; title: string; description?: string; dueDate?: string; sourceRefs: ProjectResourceRef[]; id: string; selected: boolean; status: 'pending' | 'created' }>>([]);
+  const [projectLensReviewError, setProjectLensReviewError] = useState<string | null>(null);
+  const [projectLensReviewBusy, setProjectLensReviewBusy] = useState(false);
+  const [projectLensReviewNotice, setProjectLensReviewNotice] = useState<string | null>(null);
+  const [projectLensLinkBusy, setProjectLensLinkBusy] = useState<string | null>(null);
+  const projectLensActionRequestRef = useRef(0);
   const [isLinkCalendarModalOpen, setIsLinkCalendarModalOpen] = useState(false);
   const [calendarLinkKind, setCalendarLinkKind] = useState<CalendarLinkKind>('event');
   const [calendarLinkSearch, setCalendarLinkSearch] = useState('');
@@ -825,6 +858,17 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     x: number;
     y: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (projectLensState !== 'loading' || projectLensActionState === 'loading') return;
+
+    setProjectLensLoadingStage(0);
+    const interval = window.setInterval(() => {
+      setProjectLensLoadingStage((current) => (current + 1) % 4);
+    }, 1800);
+
+    return () => window.clearInterval(interval);
+  }, [projectLensActionState, projectLensState]);
 
   useEffect(() => {
     const header = projectsHeaderRef.current;
@@ -885,6 +929,17 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId]
   );
+
+  useEffect(() => {
+    if (!selectedProject || !activeWorkspaceId) return;
+    window.dispatchEvent(new CustomEvent('ledger:project-title', {
+      detail: {
+        workspaceId: activeWorkspaceId,
+        projectId: selectedProject.id,
+        title: selectedProject.name,
+      },
+    }));
+  }, [activeWorkspaceId, selectedProject]);
 
   const statusFilteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -996,6 +1051,21 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     return stats;
   }, [tasks]);
 
+  const projectSignalSummary = useMemo(
+    () =>
+      summarizeProjectSignals(
+        deriveWorkspaceProjectSignals({
+          workspaceId: activeWorkspaceId ?? 'unknown-workspace',
+          projects,
+          tasks,
+          milestones: workspaceMilestones,
+          events: workspaceEvents,
+          reminders: workspaceReminders,
+        }),
+      ),
+    [activeWorkspaceId, projects, tasks, workspaceEvents, workspaceMilestones, workspaceReminders],
+  );
+
   const activeProjectTasks = useMemo(
     () =>
       selectedProjectTasks.filter(
@@ -1097,6 +1167,229 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       ['Earlier', groups.get('Earlier') ?? []],
     ] as const;
   }, [fullProjectActivity]);
+
+  const selectedProjectIntelligenceContext = useMemo<ProjectIntelligenceContext | null>(() => {
+    if (!selectedProject || !activeWorkspaceId) return null;
+    const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const context = buildProjectIntelligenceContext({
+      workspaceId: activeWorkspaceId,
+      project: selectedProject,
+      tasks: selectedProjectTasks,
+      milestones: selectedProjectMilestones,
+      events: projectEvents,
+      reminders: projectReminders,
+      activity: projectActivity.map((item) => ({
+        id: item.id,
+        project_id: selectedProject.id,
+        at: item.at,
+        created_at: item.at,
+        updated_at: item.at,
+      })),
+      linkedNotes: linkedNotes.map((link) => ({
+        workspaceId: activeWorkspaceId,
+        resourceType: 'note' as const,
+        resourceId: link.note_id,
+        title: link.note.title,
+        content: link.note.preview,
+        updatedAt: link.note.updated_at ?? link.created_at,
+        route: routeForNote(activeWorkspaceId, link.note_id),
+      })),
+    });
+    const finishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (typeof console !== 'undefined' && console.debug) console.debug('[project-lens] context built', { workspaceId: activeWorkspaceId, projectId: selectedProject.id, contextBuildMs: Math.round(finishedAt - startedAt), taskCount: context.tasks.length, semanticEvidenceCount: context.semanticContext.length });
+    return context;
+  }, [
+    activeWorkspaceId,
+    linkedNotes,
+    projectActivity,
+    projectEvents,
+    projectReminders,
+    selectedProject,
+    selectedProjectMilestones,
+    selectedProjectTasks,
+  ]);
+
+  const projectLensFingerprint = useMemo(() => {
+    if (!selectedProjectIntelligenceContext) return '';
+    const context = selectedProjectIntelligenceContext;
+    const byId = <T extends { id: string }>(rows: T[]) => [...rows].sort((left, right) => left.id.localeCompare(right.id));
+    return JSON.stringify({
+      project: {
+        id: context.project.id,
+        name: context.project.name,
+        description: context.project.description,
+        status: context.project.status,
+        completeness: context.project.completeness,
+        startDate: context.project.start_date,
+        endDate: context.project.end_date,
+      },
+      signals: [...context.signals].sort((left, right) => `${left.kind}:${left.resourceId}`.localeCompare(`${right.kind}:${right.resourceId}`)).map((signal) => ({
+        kind: signal.kind,
+        severity: signal.severity,
+        title: signal.title,
+        detail: signal.detail,
+        projectId: signal.projectId,
+        resourceType: signal.resourceType,
+        resourceId: signal.resourceId,
+        date: signal.date,
+        count: signal.count,
+      })),
+      tasks: byId(context.tasks).map((task) => ({ id: task.id, title: task.title, status: task.status, dueDate: task.due_date, priority: task.priority })),
+      milestones: byId(context.milestones).map((milestone) => ({ id: milestone.id, title: milestone.title, date: milestone.milestone_date, completed: milestone.completed, status: milestone.status })),
+      events: byId(context.events).map((event) => ({ id: event.id, title: event.title, startAt: event.start_at, status: event.status })),
+      reminders: byId(context.reminders).map((reminder) => ({ id: reminder.id, title: reminder.title, remindAt: reminder.remind_at, status: reminder.status })),
+      linkedNotes: [...context.linkedNotes].sort((left, right) => left.resourceId.localeCompare(right.resourceId)).map((note) => ({ id: note.resourceId, title: note.title, updatedAt: note.updatedAt, content: note.content })),
+      activity: byId(context.recentActivity).map((item) => ({ id: item.id, at: item.at })),
+    });
+  }, [selectedProjectIntelligenceContext]);
+
+  const requestProjectLens = useCallback(async (context: ProjectIntelligenceContext, fingerprint: string) => {
+    const requestNumber = projectLensRequestRef.current + 1;
+    projectLensRequestRef.current = requestNumber;
+    const cacheKey = `${context.workspaceId}:${context.projectId}`;
+    const cached = projectLensCacheRef.current.get(cacheKey, fingerprint);
+    if (cached) {
+      console.info('[project-lens] cache', { workspaceId: context.workspaceId, projectId: context.projectId, cache: 'hit' });
+      setProjectLensResult(cached);
+      setProjectLensUnavailableReason(null);
+      setProjectLensState('ready');
+      return;
+    }
+    console.info('[project-lens] cache', { workspaceId: context.workspaceId, projectId: context.projectId, cache: 'miss' });
+    setProjectLensResult(null);
+    setProjectLensUnavailableReason(null);
+    setProjectLensState('loading');
+    if (!window.askLedger?.generateProjectLens) {
+      if (requestNumber === projectLensRequestRef.current) setProjectLensState('unavailable');
+      return;
+    }
+    const inFlightKey = `${cacheKey}:${fingerprint}`;
+    const generation = projectLensInFlight.getOrCreate(inFlightKey, async () => {
+        let semanticDocuments: unknown[] = [];
+        try {
+          const payload = await api.getAskLedgerDocuments(context.workspaceId, { scope: 'all', project: context.project.name });
+          semanticDocuments = Array.isArray((payload as { documents?: unknown[] })?.documents)
+            ? (payload as { documents: unknown[] }).documents.slice(0, 180)
+            : [];
+        } catch {
+          semanticDocuments = [];
+        }
+        return (await window.askLedger!.generateProjectLens({
+          workspaceId: context.workspaceId,
+          context,
+          semanticDocuments,
+        })) as ProjectLensGenerationResponse;
+      });
+    try {
+      const response = await generation;
+      if (response?.status === 'ready' && response.result) {
+        console.info('[project-lens] renderer received ready response', { workspaceId: context.workspaceId, projectId: context.projectId, requestNumber });
+        projectLensCacheRef.current.set(cacheKey, fingerprint, response.result);
+        if (!projectsWindowMountedRef.current || requestNumber !== projectLensRequestRef.current) return;
+        setProjectLensResult(response.result);
+        setProjectLensUnavailableReason(null);
+        setProjectLensState('ready');
+      } else {
+        console.info('[project-lens] renderer received unavailable response', { workspaceId: context.workspaceId, projectId: context.projectId, reason: response?.reason ?? 'unknown' });
+        if (response?.reason === 'superseded' || !projectsWindowMountedRef.current || requestNumber !== projectLensRequestRef.current) return;
+        setProjectLensUnavailableReason(response?.reason === 'model_unavailable' ? 'model' : 'failed');
+        setProjectLensState('unavailable');
+      }
+    } catch {
+      if (projectsWindowMountedRef.current && requestNumber === projectLensRequestRef.current) {
+        setProjectLensUnavailableReason('failed');
+        setProjectLensState('unavailable');
+      }
+    }
+  }, [api]);
+
+  const requestProjectLensAction = useCallback(async (action: ProjectLensAction, context: ProjectIntelligenceContext) => {
+    const requestNumber = projectLensActionRequestRef.current + 1;
+    projectLensActionRequestRef.current = requestNumber;
+    setProjectLensAction(action);
+    setProjectLensActionResult(null);
+    setProjectLensActionUnavailableReason(null);
+    setProjectLensActionState('loading');
+    if (!window.askLedger?.generateProjectLensAction) {
+      if (requestNumber === projectLensActionRequestRef.current) setProjectLensActionState('unavailable');
+      return;
+    }
+    let semanticDocuments: unknown[] = [];
+    try {
+      const payload = await api.getAskLedgerDocuments(context.workspaceId, { scope: 'all', project: context.project.name });
+      semanticDocuments = Array.isArray((payload as { documents?: unknown[] })?.documents) ? (payload as { documents: unknown[] }).documents.slice(0, 180) : [];
+    } catch {
+      semanticDocuments = [];
+    }
+    if (requestNumber !== projectLensActionRequestRef.current) return;
+    try {
+      const response = await window.askLedger.generateProjectLensAction({ workspaceId: context.workspaceId, context, action, semanticDocuments }) as { status?: string; reason?: string; result?: ProjectLensActionResult };
+      if (requestNumber !== projectLensActionRequestRef.current) return;
+      if (response?.status === 'ready' && response.result) {
+        console.info('[project-lens] renderer received action ready response', { workspaceId: context.workspaceId, projectId: context.projectId, action, requestNumber });
+        setProjectLensActionResult(response.result);
+        setProjectLensActionUnavailableReason(null);
+        setProjectLensActionState('ready');
+      } else {
+        console.info('[project-lens] renderer received action unavailable response', { workspaceId: context.workspaceId, projectId: context.projectId, action, reason: response?.reason ?? 'unknown' });
+        if (response?.reason === 'superseded') return;
+        setProjectLensActionUnavailableReason(response?.reason === 'model_unavailable' ? 'model' : 'failed');
+        setProjectLensActionState('unavailable');
+      }
+    } catch {
+      if (requestNumber === projectLensActionRequestRef.current) {
+        setProjectLensActionUnavailableReason('failed');
+        setProjectLensActionState('unavailable');
+      }
+    }
+  }, [api]);
+
+  useEffect(() => {
+    projectsWindowMountedRef.current = true;
+    return () => {
+      projectsWindowMountedRef.current = false;
+      projectLensActionRequestRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProjectIntelligenceContext || !projectLensFingerprint || isLoadingLinkedNotes || isLoadingProjectCalendarItems || isLoadingProjectActivity || isLoadingTasks) {
+      projectLensRequestRef.current += 1;
+      projectLensActionRequestRef.current += 1;
+      setProjectLensResult(null);
+      setProjectLensUnavailableReason(null);
+      setProjectLensState('idle');
+      setProjectLensAction(null);
+      setProjectLensActionResult(null);
+      setProjectLensActionUnavailableReason(null);
+      setProjectLensActionState('idle');
+      setProjectLensReview([]);
+      setProjectLensReviewError(null);
+      setProjectLensReviewNotice(null);
+      return;
+    }
+    void requestProjectLens(selectedProjectIntelligenceContext, projectLensFingerprint);
+  }, [
+    isLoadingLinkedNotes,
+    isLoadingProjectActivity,
+    isLoadingProjectCalendarItems,
+    isLoadingTasks,
+    projectLensFingerprint,
+    requestProjectLens,
+    selectedProjectIntelligenceContext,
+  ]);
+
+  useEffect(() => {
+    projectLensActionRequestRef.current += 1;
+    setProjectLensMenuOpen(false);
+    setProjectLensAction(null);
+    setProjectLensActionResult(null);
+    setProjectLensActionUnavailableReason(null);
+    setProjectLensActionState('idle');
+    setProjectLensReview([]);
+    setProjectLensReviewError(null);
+    setProjectLensReviewNotice(null);
+  }, [activeWorkspaceId, selectedProject?.id]);
 
   const workspaceMemberById = useMemo(() => {
     return new Map(workspaceMembers.map((member) => [member.user_id, member]));
@@ -3522,6 +3815,31 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   }, [projectContextMenu]);
 
   useEffect(() => {
+    if (!projectLensMenuOpen) return;
+
+    const closeMenu = () => setProjectLensMenuOpen(false);
+    const onPointerDown = (event: MouseEvent) => {
+      if (projectLensMenuRef.current?.contains(event.target as Node)) return;
+      closeMenu();
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [projectLensMenuOpen]);
+
+  useEffect(() => {
     if (!projectOwnerTeamPickerProject) {
       setProjectOwnerTeamDraft('');
       return;
@@ -5214,8 +5532,271 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     );
   };
 
+  const beginProjectLensReview = useCallback(() => {
+    if (!selectedProjectIntelligenceContext || projectLensActionResult?.action !== 'prepare_actions') return;
+    const proposals = validateProjectChangeProposals((projectLensActionResult.proposedActions ?? []).map((proposal) => ({ type: 'create_action' as const, title: proposal.title, description: proposal.description, dueDate: proposal.suggestedDueDate, sourceRefs: proposal.sourceRefs })), selectedProjectIntelligenceContext).filter((proposal): proposal is Extract<ProjectChangeProposal, { type: 'create_action' }> => proposal.type === 'create_action');
+    setProjectLensReview(proposals.map((proposal, index) => ({ ...proposal, id: `lens-action-${Date.now()}-${index}`, selected: true, status: 'pending' })));
+    setProjectLensReviewError(null);
+    setProjectLensReviewNotice(null);
+  }, [projectLensActionResult, selectedProjectIntelligenceContext]);
+
+  const createReviewedProjectActions = useCallback(async () => {
+    if (!selectedProjectId) return;
+    const pending = projectLensReview.filter((proposal) => proposal.selected && proposal.status === 'pending');
+    if (!pending.length) {
+      setProjectLensReviewError('Select at least one action to create.');
+      return;
+    }
+    if (!selectedProjectIntelligenceContext || validateProjectChangeProposals(pending.map(({ type, title, description, dueDate, sourceRefs }) => ({ type, title, description, dueDate, sourceRefs })), selectedProjectIntelligenceContext).length !== pending.length) {
+      setProjectLensReviewError('One or more reviewed actions is no longer valid. Remove it and try again.');
+      return;
+    }
+    setProjectLensReviewBusy(true);
+    setProjectLensReviewError(null);
+    setProjectLensReviewNotice(null);
+    let created = 0;
+    let failed = 0;
+    const nextReview = [...projectLensReview];
+    try {
+      for (const proposal of pending) {
+        try {
+          await api.createTask({ title: proposal.title.trim(), description: proposal.description?.trim() || null, due_date: proposal.dueDate?.trim() || null, project_id: selectedProjectId, status: 'todo', task_horizon: 'long_term' });
+          const row = nextReview.find((item) => item.id === proposal.id);
+          if (row) row.status = 'created';
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      await Promise.all([loadTasks(), loadProjects(), loadProjectActivity(selectedProjectId)]);
+      if (activeWorkspaceId) projectLensCacheRef.current.invalidate(`${activeWorkspaceId}:${selectedProjectId}`);
+      setProjectLensReview(nextReview);
+      setProjectLensReviewNotice(created ? `${created} action${created === 1 ? '' : 's'} created.` : null);
+      if (failed) setProjectLensReviewError(`${failed} action${failed === 1 ? '' : 's'} could not be created. Review and try again.`);
+    } finally {
+      setProjectLensReviewBusy(false);
+    }
+  }, [activeWorkspaceId, api, loadProjectActivity, loadProjects, loadTasks, projectLensReview, selectedProjectId]);
+
+  const linkProjectLensResource = useCallback(async (ref: ProjectResourceRef) => {
+    if (!selectedProject || !activeWorkspaceId || !selectedProjectIntelligenceContext) return;
+    if (validateProjectChangeProposals([{ type: 'link_resource', resource: ref }], selectedProjectIntelligenceContext).length !== 1) {
+      setProjectLensReviewError('This resource is no longer available in the current workspace.');
+      return;
+    }
+    const alreadyLinked = ref.resourceType === 'note'
+      ? linkedNotes.some((item) => item.note_id === ref.resourceId)
+      : ref.resourceType === 'task'
+        ? selectedProjectTasks.some((item) => item.id === ref.resourceId && item.project_id === selectedProject.id)
+        : ref.resourceType === 'event'
+          ? projectEvents.some((item) => item.id === ref.resourceId && item.project_id === selectedProject.id)
+          : ref.resourceType === 'reminder'
+            ? projectReminders.some((item) => item.id === ref.resourceId && item.project_id === selectedProject.id)
+            : false;
+    if (alreadyLinked) return;
+    setProjectLensLinkBusy(`${ref.resourceType}:${ref.resourceId}`);
+    setProjectLensReviewError(null);
+    try {
+      if (ref.resourceType === 'note') await api.linkProjectNote(selectedProject.id, ref.resourceId);
+      else if (ref.resourceType === 'task') await api.updateTask(ref.resourceId, { project_id: selectedProject.id });
+      else if (ref.resourceType === 'event') await api.updateEvent(ref.resourceId, { project_id: selectedProject.id });
+      else if (ref.resourceType === 'reminder') await api.updateReminder(ref.resourceId, { project_id: selectedProject.id });
+      await Promise.all([loadLinkedNotes(selectedProject.id), loadProjectCalendarItems(selectedProject.id), loadTasks(), loadProjectActivity(selectedProject.id)]);
+      projectLensCacheRef.current.invalidate(`${activeWorkspaceId}:${selectedProject.id}`);
+      setProjectLensActionResult((current) => current ? { ...current, relatedResources: current.relatedResources?.filter((item) => item.resourceType !== ref.resourceType || item.resourceId !== ref.resourceId) } : current);
+      setProjectLensReviewNotice('Context linked to this project.');
+    } catch (linkError) {
+      setProjectLensReviewError(linkError instanceof Error ? linkError.message : 'Could not link this context.');
+    } finally {
+      setProjectLensLinkBusy(null);
+    }
+  }, [activeWorkspaceId, api, linkedNotes, loadLinkedNotes, loadProjectActivity, loadProjectCalendarItems, loadTasks, projectEvents, projectReminders, selectedProject, selectedProjectIntelligenceContext, selectedProjectTasks]);
+
+  const renderProjectLens = () => {
+    if (!selectedProject || !activeWorkspaceId) return null;
+    const openSource = (ref: ProjectResourceRef) => {
+      if (ref.resourceType === 'note') return platform.navigation.openRoute(routeForNote(activeWorkspaceId, ref.resourceId));
+      if (ref.resourceType === 'event') return platform.navigation.openRoute(routeForCalendarEvent(activeWorkspaceId, ref.resourceId));
+      if (ref.resourceType === 'reminder') return platform.navigation.openRoute(routeForCalendarReminder(activeWorkspaceId, ref.resourceId));
+      if (ref.resourceType === 'task') return platform.navigation.openRoute(routeForProject(activeWorkspaceId, selectedProject.id, ref.resourceId));
+      return platform.navigation.openRoute(routeForProject(activeWorkspaceId, selectedProject.id));
+    };
+    const sourceLabel = (ref: ProjectResourceRef) => {
+      if (ref.resourceType === 'project') return selectedProject.name;
+      if (ref.resourceType === 'task') return selectedProjectTasks.find((item) => item.id === ref.resourceId)?.title ?? 'Task';
+      if (ref.resourceType === 'milestone') return selectedProjectMilestones.find((item) => item.id === ref.resourceId)?.title ?? 'Milestone';
+      if (ref.resourceType === 'note') return linkedNotes.find((item) => item.note_id === ref.resourceId)?.note.title ?? 'Note';
+      if (ref.resourceType === 'event') return projectEvents.find((item) => item.id === ref.resourceId)?.title ?? 'Event';
+      if (ref.resourceType === 'reminder') return projectReminders.find((item) => item.id === ref.resourceId)?.title ?? 'Reminder';
+      return 'Project activity';
+    };
+    const primaryActions: Array<[ProjectLensAction, string]> = [
+      ['catch_up', 'Catch me up'],
+      ['next_steps', 'Next steps'],
+    ];
+    const secondaryActions: Array<[ProjectLensAction, string]> = [
+      ['find_blockers', 'Find blockers'],
+      ['prepare_actions', 'Prepare actions'],
+      ['find_context', 'Find context'],
+    ];
+    const initialLensLoadingText = [
+      'Checking recent activity…',
+      'Reading project context…',
+      'Looking for what needs attention…',
+      'Preparing your brief…',
+    ][projectLensLoadingStage];
+    const lensSources = [
+      ...(projectLensResult?.nextStep?.sources ?? []),
+      ...(projectLensResult?.attention?.sources ?? []),
+      ...(projectLensResult?.sources ?? []),
+    ].filter((ref, index, all) => all.findIndex((candidate) => candidate.resourceType === ref.resourceType && candidate.resourceId === ref.resourceId) === index).slice(0, 5);
+    const nextStepText = projectLensResult?.nextStep?.text ?? '';
+    const nextStepLead = /^(to|before|after|until|while)\b/i.test(nextStepText)
+      ? 'The clearest next move is '
+      : 'The clearest next move is to ';
+    const lensLoadingText = projectLensActionState === 'loading'
+      ? ({
+          catch_up: 'Preparing your catch-up…',
+          find_blockers: 'Identifying possible blockers…',
+          next_steps: 'Preparing next steps…',
+          prepare_actions: 'Preparing suggested actions…',
+          find_context: 'Searching related workspace context…',
+        } satisfies Record<ProjectLensAction, string>)[projectLensAction ?? 'catch_up']
+      : initialLensLoadingText;
+    const collapseLensAction = () => {
+      projectLensActionRequestRef.current += 1;
+      setProjectLensAction(null);
+      setProjectLensActionResult(null);
+      setProjectLensActionUnavailableReason(null);
+      setProjectLensActionState('idle');
+    };
+    const runLensAction = (action: ProjectLensAction) => {
+      setProjectLensMenuOpen(false);
+      if (projectLensAction === action) {
+        collapseLensAction();
+        return;
+      }
+      if (selectedProjectIntelligenceContext && projectLensState !== 'loading') {
+        void requestProjectLensAction(action, selectedProjectIntelligenceContext);
+      }
+    };
+    const openAskLedger = () => {
+      openAskLedgerWithContext({ resourceType: 'project', resourceId: selectedProject.id, title: selectedProject.name, contextType: 'project', workspaceId: activeWorkspaceId, projectId: selectedProject.id, origin: 'projects' }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+    };
+    return (
+      <section ref={projectLensMenuRef} className="pb-2">
+        <div className="relative flex items-center justify-between gap-3">
+          <p className="text-[13px] font-semibold text-[var(--ledger-text-primary)]">Lens</p>
+          <button
+            type="button"
+            aria-label="More Lens actions"
+            aria-expanded={projectLensMenuOpen}
+            onClick={() => setProjectLensMenuOpen((open) => !open)}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] opacity-60 hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)] hover:opacity-100 focus-visible:opacity-100"
+          >
+            <MoreHorizontal size={15} />
+          </button>
+          {projectLensMenuOpen && (
+            <div className="absolute right-0 top-7 z-20 min-w-36 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[0_10px_24px_rgba(17,24,39,0.12)]">
+              {secondaryActions.map(([action, label]) => (
+                <button
+                  key={action}
+                  type="button"
+                  disabled={!selectedProjectIntelligenceContext || projectLensState === 'loading' || (projectLensActionState === 'loading' && projectLensAction !== action)}
+                  onClick={() => runLensAction(action)}
+                  className="block w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectLensMenuOpen(false);
+                  if (selectedProjectIntelligenceContext && projectLensFingerprint) {
+                    projectLensCacheRef.current.invalidate(`${selectedProjectIntelligenceContext.workspaceId}:${selectedProjectIntelligenceContext.projectId}`);
+                    void requestProjectLens(selectedProjectIntelligenceContext, projectLensFingerprint);
+                  }
+                }}
+                className="block w-full rounded-md px-2.5 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              >
+                Refresh Lens
+              </button>
+            </div>
+          )}
+        </div>
+        {projectLensState === 'loading' ? (
+          <div className="mt-4 flex min-h-10 items-center gap-2" aria-label="Loading Lens">
+            <Loader2 size={13} className="shrink-0 animate-spin text-[var(--ledger-text-muted)]" />
+            <p className="text-[13px] leading-5 text-[var(--ledger-text-muted)]">{lensLoadingText}</p>
+          </div>
+        ) : projectLensState === 'unavailable' ? (
+          <button type="button" onClick={openAskLedger} className="mt-4 flex w-full items-center justify-between gap-3 text-left text-[13px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
+            <span>{projectLensUnavailableReason === 'model' ? 'Local AI model required' : 'Lens could not complete this pass'}</span>
+            <span aria-hidden="true" className="text-base">›</span>
+          </button>
+        ) : projectLensResult ? (
+          <div className="mt-4 max-w-[820px] space-y-2">
+            <p className="text-[15px] leading-6 text-[var(--ledger-text-secondary)]">{projectLensResult.summary}</p>
+            {(projectLensResult.attention || projectLensResult.nextStep) && (
+              <p className="text-[15px] leading-6 text-[var(--ledger-text-secondary)]">
+                {projectLensResult.nextStep ? nextStepLead : projectLensResult.attention?.text}
+                {projectLensResult.nextStep ? nextStepText.charAt(0).toLowerCase() + nextStepText.slice(1) : ''}
+                {lensSources.map((ref) => (
+                  <button key={`inline-${ref.resourceType}:${ref.resourceId}`} type="button" onClick={() => openSource(ref)} className="ml-1 text-[13px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-accent)] hover:underline">{sourceLabel(ref)} ↗</button>
+                ))}
+              </p>
+            )}
+            {projectLensResult.sources.length > 0 && !projectLensResult.attention && !projectLensResult.nextStep && (
+              <p className="text-[13px] leading-5 text-[var(--ledger-text-muted)]">
+                {lensSources.map((ref) => (
+                  <button key={`source-${ref.resourceType}:${ref.resourceId}`} type="button" onClick={() => openSource(ref)} className="mr-2 text-[var(--ledger-text-muted)] hover:text-[var(--ledger-accent)] hover:underline">{sourceLabel(ref)} ↗</button>
+                ))}
+              </p>
+            )}
+          </div>
+        ) : null}
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {primaryActions.map(([action, label]) => (
+            <button key={action} type="button" disabled={!selectedProjectIntelligenceContext || projectLensState === 'loading' || (projectLensActionState === 'loading' && projectLensAction !== action)} onClick={() => runLensAction(action)} aria-expanded={projectLensAction === action} className="inline-flex items-center gap-1 py-1 text-[12px] text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-50">
+              {label}{projectLensAction === action && <ChevronUp size={13} aria-hidden="true" />}
+            </button>
+          ))}
+          <button type="button" onClick={openAskLedger} className="py-1 text-[12px] text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Ask Ledger →</button>
+        </div>
+        {projectLensAction && projectLensActionState === 'loading' && (
+          <div className="ml-4 mt-3 flex min-h-8 items-center gap-2 border-l border-[color:var(--ledger-border-subtle)] pl-4" aria-label="Loading Lens action">
+            <Loader2 size={12} className="shrink-0 animate-spin text-[var(--ledger-text-muted)]" />
+            <p className="text-[12px] leading-5 text-[var(--ledger-text-muted)]">{lensLoadingText}</p>
+          </div>
+        )}
+        {projectLensAction && projectLensActionState === 'unavailable' && <p className="ml-4 mt-3 border-l border-[color:var(--ledger-border-subtle)] pl-4 text-[11px] text-[var(--ledger-text-muted)]">{projectLensActionUnavailableReason === 'model' ? 'This action needs a local AI model.' : 'This action could not complete.'}</p>}
+        {projectLensAction && projectLensActionState === 'ready' && projectLensActionResult && (
+          <div className="ml-4 mt-3 space-y-2 border-l border-[color:var(--ledger-border-subtle)] pl-4">
+            <p className="text-[12px] leading-5 text-[var(--ledger-text-secondary)]">{projectLensActionResult.summary}</p>
+            {projectLensActionResult.items?.map((item, index) => <div key={`item-${index}`} className="text-[12px] leading-5 text-[var(--ledger-text-secondary)]"><span>• {item.text}</span>{item.sources.length > 0 && <span className="ml-1.5">{item.sources.map((ref) => <button key={`${ref.resourceType}:${ref.resourceId}`} type="button" onClick={() => openSource(ref)} className="mr-1 text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-accent)] hover:underline">{sourceLabel(ref)} ↗</button>)}</span>}</div>)}
+            {projectLensActionResult.blockers?.map((blocker, index) => <div key={`blocker-${index}`} className="text-[12px] leading-5 text-[var(--ledger-text-secondary)]"><span className="font-medium">{blocker.kind === 'confirmed' ? 'Confirmed' : 'Possible'}:</span> {blocker.text}{blocker.sources.map((ref) => <button key={`${ref.resourceType}:${ref.resourceId}`} type="button" onClick={() => openSource(ref)} className="ml-1 text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-accent)] hover:underline">{sourceLabel(ref)} ↗</button>)}</div>)}
+            {projectLensActionResult.proposedActions?.map((proposal, index) => <div key={`proposal-${index}`} className="py-1"><p className="text-[12px] font-medium text-[var(--ledger-text-primary)]">{proposal.title}{proposal.suggestedDueDate ? ` · ${proposal.suggestedDueDate}` : ''}</p><p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">{proposal.reason}</p></div>)}
+            {projectLensActionResult.proposedActions && projectLensActionResult.proposedActions.length > 0 && <button type="button" onClick={beginProjectLensReview} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)]">Edit · Review actions</button>}
+            {projectLensActionResult.relatedResources && projectLensActionResult.relatedResources.length > 0 && <div className="space-y-1.5"><div className="flex flex-wrap items-center gap-1.5"><span className="text-[11px] text-[var(--ledger-text-muted)]">Possibly related:</span>{projectLensActionResult.relatedResources.map((ref) => <button key={`${ref.resourceType}:${ref.resourceId}`} type="button" onClick={() => openSource(ref)} className="text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-accent)] hover:underline">{sourceLabel(ref)} ↗</button>)}</div><div className="flex flex-wrap gap-1.5">{projectLensActionResult.relatedResources.map((ref) => <button key={`link-${ref.resourceType}:${ref.resourceId}`} type="button" disabled={projectLensLinkBusy === `${ref.resourceType}:${ref.resourceId}`} onClick={() => void linkProjectLensResource(ref)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-muted)] disabled:opacity-50">{projectLensLinkBusy === `${ref.resourceType}:${ref.resourceId}` ? 'Linking…' : 'Link to project'}</button>)}</div></div>}
+          </div>
+        )}
+        {projectLensReview.length > 0 && (
+          <div className="ml-4 mt-3 space-y-2 border-l border-[color:var(--ledger-border-subtle)] pl-4">
+            <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-semibold text-[var(--ledger-text-primary)]">Suggested actions</p><button type="button" onClick={() => setProjectLensReview([])} className="text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">Cancel</button></div>
+            {projectLensReview.map((proposal) => <div key={proposal.id} className={`rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 ${proposal.status === 'created' ? 'opacity-60' : ''}`}><div className="flex items-start gap-2"><input type="checkbox" checked={proposal.selected} disabled={proposal.status === 'created' || projectLensReviewBusy} onChange={(event) => setProjectLensReview((current) => current.map((item) => item.id === proposal.id ? { ...item, selected: event.target.checked } : item))} className="mt-1 accent-[var(--ledger-accent)]" /><div className="min-w-0 flex-1"><input value={proposal.title} disabled={proposal.status === 'created' || projectLensReviewBusy} onChange={(event) => setProjectLensReview((current) => current.map((item) => item.id === proposal.id ? { ...item, title: event.target.value } : item))} className="w-full bg-transparent text-[12px] font-medium text-[var(--ledger-text-primary)] outline-none" /><textarea value={proposal.description ?? ''} disabled={proposal.status === 'created' || projectLensReviewBusy} onChange={(event) => setProjectLensReview((current) => current.map((item) => item.id === proposal.id ? { ...item, description: event.target.value } : item))} placeholder="Description (optional)" rows={1} className="mt-1 w-full resize-none bg-transparent text-[11px] text-[var(--ledger-text-muted)] outline-none" /><input type="date" value={proposal.dueDate ?? ''} disabled={proposal.status === 'created' || projectLensReviewBusy} onChange={(event) => setProjectLensReview((current) => current.map((item) => item.id === proposal.id ? { ...item, dueDate: event.target.value } : item))} className="mt-1 bg-transparent text-[11px] text-[var(--ledger-text-muted)] outline-none" /></div><button type="button" disabled={proposal.status === 'created' || projectLensReviewBusy} onClick={() => setProjectLensReview((current) => current.filter((item) => item.id !== proposal.id))} className="text-[11px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-danger)]">Remove</button></div></div>)}
+            {projectLensReviewError && <p className="text-[11px] text-[var(--ledger-danger)]">{projectLensReviewError}</p>}
+            {projectLensReviewNotice && <p className="text-[11px] text-[var(--ledger-text-muted)]">{projectLensReviewNotice}</p>}
+            <button type="button" disabled={projectLensReviewBusy || !projectLensReview.some((item) => item.selected && item.status === 'pending')} onClick={() => void createReviewedProjectActions()} className="rounded-md bg-[var(--ledger-accent)] px-2.5 py-1.5 text-[11px] font-medium text-white disabled:opacity-50">{projectLensReviewBusy ? 'Creating…' : `Create ${projectLensReview.filter((item) => item.selected && item.status === 'pending').length} action${projectLensReview.filter((item) => item.selected && item.status === 'pending').length === 1 ? '' : 's'}`}</button>
+          </div>
+        )}
+      </section>
+    );
+  };
+
   const renderProjectOverviewDocument = () => (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
+      {renderProjectLens()}
       {renderNextActionsPreviewSection()}
       {renderMilestonesDocumentSection()}
       {renderCalendarPreviewSection()}
@@ -5264,34 +5845,6 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       if (!parsed || timelineDays <= 0) return 0;
       return timelineOffsetPercent(timelineRange.start, parsed, timelineDays);
     };
-    const needsAttention = [
-      ...datelessProjects.slice(0, 1).map((project) => ({
-        id: `dates-${project.id}`,
-        label: `${project.name} has no dates set.`,
-        action: 'Add dates',
-        onClick: () => void selectProject(project),
-      })),
-      ...projects
-        .filter((project) => (projectTaskStats.get(project.id)?.active ?? 0) === 0)
-        .slice(0, 1)
-        .map((project) => ({
-          id: `actions-${project.id}`,
-          label: `${project.name} has no next actions.`,
-          action: 'Add action',
-          onClick: () => {
-            void selectProject(project).then(() => openTaskComposer());
-          },
-        })),
-      ...projects
-        .filter((project) => parseProjectStatus(String(project.status)) === 'completed')
-        .slice(0, 1)
-        .map((project) => ({
-          id: `complete-${project.id}`,
-          label: `${project.name} is complete.`,
-          action: 'Review',
-          onClick: () => void selectProject(project),
-        })),
-    ].slice(0, 3);
     const listProjects =
       projectsOverviewRange === 'all'
         ? [...datedProjects, ...datelessProjects]
@@ -5307,37 +5860,51 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
           </section>
         )}
 
-        {needsAttention.length > 0 && (
+        {(projectSignalSummary.needsActionProjectIds.length > 0 ||
+          projectSignalSummary.overdueCount > 0 ||
+          projectSignalSummary.dueSoonCount > 0) && (
           <section className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-              <p className="shrink-0 text-xs font-semibold text-[var(--ledger-text-primary)]">
-                Needs attention
-              </p>
-              <div className="relative min-w-0 flex-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-6 bg-linear-to-r from-[var(--ledger-surface-muted)] to-transparent" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 z-[1] w-8 bg-linear-to-l from-[var(--ledger-surface-muted)] to-transparent" />
-                <div className="overflow-x-auto pr-2 [scrollbar-width:thin]">
-                  <div className="flex min-w-max items-center gap-2">
-                    {needsAttention.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={item.onClick}
-                        className="inline-flex shrink-0 items-center gap-2 rounded-md px-2 py-1 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                      >
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--ledger-accent)] text-[9px] font-semibold leading-none text-white">
-                          !
-                        </span>
-                        <span className="min-w-0 truncate">{item.label}</span>
-                        <span className="shrink-0 font-medium text-[var(--ledger-accent)]">
-                          {item.action}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <div className="flex min-w-0 items-center gap-2 overflow-x-auto text-xs">
+              <p className="shrink-0 font-semibold text-[var(--ledger-text-primary)]">Project signals</p>
+              {projectSignalSummary.needsActionProjectIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const project = projects.find((item) => item.id === projectSignalSummary.needsActionProjectIds[0]);
+                    if (project) void selectProject(project);
+                  }}
+                  className="shrink-0 rounded-md px-2 py-1 text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  {projectSignalSummary.needsActionProjectIds.length} needs an action
+                </button>
+              )}
+              {projectSignalSummary.overdueCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const signal = projectSignalSummary.signals.find((item) => item.kind === 'overdue_action' || item.kind === 'overdue_milestone');
+                    const project = projects.find((item) => item.id === signal?.projectId);
+                    if (project) void selectProject(project);
+                  }}
+                  className="shrink-0 rounded-md px-2 py-1 text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  {projectSignalSummary.overdueCount} overdue
+                </button>
+              )}
+              {projectSignalSummary.dueSoonCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const signal = projectSignalSummary.signals.find((item) => ['deadline_approaching', 'milestone_approaching', 'upcoming_event', 'upcoming_reminder'].includes(item.kind));
+                    const project = projects.find((item) => item.id === signal?.projectId);
+                    if (project) void selectProject(project);
+                  }}
+                  className="shrink-0 rounded-md px-2 py-1 text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                >
+                  {projectSignalSummary.dueSoonCount} due soon
+                </button>
+              )}
               </div>
-            </div>
           </section>
         )}
 
@@ -5373,11 +5940,11 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
           </section>
         ) : projectsOverviewView === 'list' ? (
           <section className="min-h-0 flex-1 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
-            <div className="border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 py-3">
+            <div className="border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-4">
               <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
                 Project list
               </p>
-              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+              <p className="mt-1 text-xs text-[var(--ledger-text-secondary)]">
                 {projectsOverviewRange === 'month'
                   ? 'Month view'
                   : projectsOverviewRange === 'quarter'
@@ -5386,8 +5953,8 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               </p>
             </div>
             <div className="overflow-auto">
-              <div className="min-w-[880px] divide-y divide-[color:var(--ledger-border-subtle)]">
-                <div className="grid grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2 text-xs font-medium text-[var(--ledger-text-muted)]">
+              <div className="min-w-[960px] divide-y divide-[color:var(--ledger-border-subtle)]">
+                <div className="grid grid-cols-[minmax(320px,1.7fr)_120px_150px_minmax(165px,0.9fr)_minmax(180px,1fr)] items-center gap-4 px-5 py-2.5 text-[11px] font-medium text-[var(--ledger-text-muted)]">
                   <span>Project</span>
                   <span>Status</span>
                   <span>Dates</span>
@@ -5425,12 +5992,12 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                         onContextMenu={(event) =>
                           handleTimelineProjectContextMenu(event, project.id)
                         }
-                        className="grid w-full grid-cols-[minmax(260px,1.5fr)_120px_140px_minmax(150px,0.9fr)_minmax(180px,1fr)] gap-2 px-4 py-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                        className="grid w-full grid-cols-[minmax(320px,1.7fr)_120px_150px_minmax(165px,0.9fr)_minmax(180px,1fr)] items-center gap-4 px-5 py-3.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                       >
-                        <span className="flex min-w-0 items-start gap-2">
-                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-secondary)]">
                             <ProjectTypeIcon
-                              size={12}
+                              size={14}
                               style={{ color: project.color || '#FF5F40' }}
                             />
                           </span>
@@ -5443,11 +6010,12 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                             </span>
                           </span>
                         </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                        <span className="min-w-0 self-stretch py-0.5">
+                          <span className="flex items-center gap-1.5 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+                            <CircleDot size={11} style={{ color: project.color || '#FF5F40' }} />
                             {projectStatusLabels[semantic]}
                           </span>
-                          <span className="mt-0.5 block truncate text-xs text-[var(--ledger-text-muted)]">
+                          <span className="mt-1 block truncate text-xs text-[var(--ledger-text-muted)]">
                             {completeness}%
                           </span>
                         </span>
@@ -5464,11 +6032,11 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                               : 'No dates'}
                           </span>
                         </span>
-                        <span className="min-w-0 text-sm text-[var(--ledger-text-secondary)]">
+                        <span className="flex min-w-0 items-center self-stretch text-sm text-[var(--ledger-text-secondary)]">
                           <span className="flex min-w-0 items-center gap-2">
                             <span className="min-w-0 truncate">{workspaceLabel}</span>
                             {isSharedWorkspace && (
-                              <span className="flex shrink-0 items-center gap-2">
+                              <span className="flex h-8 shrink-0 items-center gap-2">
                                 <span className="text-[var(--ledger-text-muted)]">·</span>
                                 {renderMemberStack('h-4 w-4')}
                               </span>
@@ -6716,9 +7284,6 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                     const progressColor = active
                       ? projectDraft.color || '#FF5F40'
                       : project.color || '#FF5F40';
-                    const dueLabel = isSharedWorkspace
-                      ? `${workspaceLabel} · ${workspaceMembers.length} members`
-                      : workspaceLabel;
                     const rowTaskStats = projectTaskStats.get(project.id) ?? {
                       active: 0,
                       completed: 0,
@@ -6730,10 +7295,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                         : semantic === 'not_started'
                         ? 'Not started'
                         : projectStatusLabels[semantic];
-                    const actionLabel =
-                      rowTaskStats.total > 0
-                        ? `${rowTaskStats.active} active`
-                        : `${displayCompleteness}%`;
+                    const actionLabel = `${rowTaskStats.active} active`;
 
                     return (
                       <button
@@ -6769,11 +7331,8 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                             </p>
                           </div>
                           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] leading-4">
-                            <span className="shrink-0 text-[var(--ledger-text-secondary)]">
+                            <span className="truncate text-[var(--ledger-text-secondary)]">
                               {statusLabel} · {actionLabel}
-                            </span>
-                            <span className="truncate text-[var(--ledger-text-muted)]">
-                              · {dueLabel}
                             </span>
                           </div>
                         </div>
@@ -6957,7 +7516,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                   {renderProjectResources()}
                 </section>
 
-                <div className="mt-7">
+                <div className="mt-5">
                   <div className="flex items-center gap-5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {projectTabs.map((tab) => (
                       <button
@@ -6976,7 +7535,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
                   </div>
                 </div>
 
-                <div className="py-5">{renderTabContent()}</div>
+                <div className="py-4">{renderTabContent()}</div>
               </div>
             ) : (
               renderProjectsTimelineOverview()

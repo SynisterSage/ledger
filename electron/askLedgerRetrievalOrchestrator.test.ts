@@ -68,6 +68,22 @@ test('retrieves teamspaces, people, and their open workload for Circle questions
   await index.shutdown();
 });
 
+test('retrieves notes linked through the referenced team context', async () => {
+  const design = item({ resourceType: 'team', resourceId: 'team-design', title: 'Design', content: 'Design teamspace.' });
+  const alex = item({ resourceType: 'person', resourceId: 'person-alex', title: 'Alex', content: 'Alex is in the Design team.', teamId: 'team-design', relationships: [{ relationshipType: 'belongs_to_team', resourceType: 'team', resourceId: 'team-design' }] });
+  const project = item({ resourceType: 'project', resourceId: 'project-design', title: 'Design launch', content: 'Design work.', teamId: 'team-design', relationships: [{ relationshipType: 'belongs_to_team', resourceType: 'team', resourceId: 'team-design' }] });
+  const note = item({ resourceType: 'note', resourceId: 'note-design', title: 'Design handoff', content: 'The team agreed on the handoff sequence.', projectId: 'project-design', projectName: 'Design launch' });
+  const unrelated = item({ resourceType: 'note', resourceId: 'note-unrelated', title: 'Personal note', content: 'Unrelated.' });
+  const documents = [design, alex, project, note, unrelated];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'What are notes tied with this team?', [], 20, { documents });
+  assert.equal(result.mode, 'research');
+  assert.ok(result.orchestration.objectives.some((objective) => objective.id === 'team-linked-context'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'note-design'));
+  assert.equal(result.items.some((entry) => entry.resourceId === 'note-unrelated'), false);
+  await index.shutdown();
+});
+
 test('plan my week uses structured weekly, overdue, and completion task scopes', async () => {
   const now = new Date();
   const day = new Date(now); day.setHours(0, 0, 0, 0);
@@ -103,6 +119,24 @@ test('context-bound health and meeting skills expand their selected seeds', asyn
   assert.equal(meeting.mode, 'research');
   assert.ok(meeting.items.some((entry) => entry.resourceId === 'event-health'));
   assert.ok(meeting.items.some((entry) => entry.resourceId === 'note-health'));
+  await index.shutdown();
+});
+
+test('custom skills retrieve their declared workspace scope instead of parsing instructions as a query', async () => {
+  const team = item({ resourceType: 'team', resourceId: 'team-design', title: 'Design', content: 'Design teamspace.' });
+  const meeting = item({ resourceType: 'event', resourceId: 'event-design', title: 'Design review', content: 'Review the current work.' });
+  const note = item({ resourceType: 'note', resourceId: 'note-design', title: 'Design notes', content: 'Open decisions and follow-ups.' });
+  const documents = [team, meeting, note];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'Review team members, meetings, and notes.', [], 20, {
+    documents,
+    skillId: 'custom-skill-id' as never,
+    customSkillResourceTypes: ['team', 'person', 'event', 'note'],
+  });
+  assert.equal(result.orchestration.objectives[0]?.id, 'custom-skill-context');
+  assert.ok(result.items.some((entry) => entry.resourceId === 'team-design'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'event-design'));
+  assert.ok(result.items.some((entry) => entry.resourceId === 'note-design'));
   await index.shutdown();
 });
 

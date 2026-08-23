@@ -2,31 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeAskLedgerContext, encodeAskLedgerContext } from './askLedgerContext.ts';
 
-test('preserves bounded Overview Focus handoff context through the existing Ask Ledger route', () => {
-  const encoded = encodeAskLedgerContext({
-    resourceType: 'project',
-    resourceId: 'project-alfa',
-    title: 'Alfa 2026 Catalog',
-    initialQuestion: 'What should I pay attention to about Alfa 2026 Catalog?',
-    handoff: {
-      kind: 'overview_focus',
-      workspaceId: 'workspace-a',
-      overviewDate: '2026-08-18',
-      insights: [{ title: 'Needs attention', summary: 'Past its due date.' }],
-      resourceRefs: [{ resourceType: 'project', resourceId: 'project-alfa', title: 'Alfa 2026 Catalog' }],
-    },
-  });
+test('project Ask Ledger handoff preserves the workspace and project anchor', () => {
+  const encoded = encodeAskLedgerContext({ resourceType: 'project', resourceId: 'project-a', title: 'Watercolor Exhibition', contextType: 'project', workspaceId: 'workspace-a', projectId: 'project-a', origin: 'projects', initialQuestion: 'What should I know right now?' });
   assert.deepEqual(decodeAskLedgerContext(encoded), {
     resourceType: 'project',
-    resourceId: 'project-alfa',
-    title: 'Alfa 2026 Catalog',
-    initialQuestion: 'What should I pay attention to about Alfa 2026 Catalog?',
-    handoff: {
-      kind: 'overview_focus',
-      workspaceId: 'workspace-a',
-      overviewDate: '2026-08-18',
-      insights: [{ title: 'Needs attention', summary: 'Past its due date.' }],
-      resourceRefs: [{ resourceType: 'project', resourceId: 'project-alfa', title: 'Alfa 2026 Catalog' }],
-    },
+    resourceId: 'project-a',
+    title: 'Watercolor Exhibition',
+    contextType: 'project',
+    workspaceId: 'workspace-a',
+    projectId: 'project-a',
+    origin: 'projects',
+    initialQuestion: 'What should I know right now?',
   });
 });

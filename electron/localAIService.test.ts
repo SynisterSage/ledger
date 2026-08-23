@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GENERATION_MODEL_REGISTRY, type GenerationTier, type LocalAIAssetStatus, LocalAIAssetManager } from './localAIAssets.ts';
-import { LocalAIService, type GenerationModelSwitchResult, type LocalAIRequest, type LocalAIStreamEvent, LocalModelRuntime } from './localAIService.ts';
+import { DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS, LocalAIService, parseRuntimeDiagnostics, type GenerationModelSwitchResult, type LocalAIRequest, type LocalAIStreamEvent, LocalModelRuntime } from './localAIService.ts';
 
 type FakeRuntime = {
   healthy: boolean;
@@ -68,6 +68,22 @@ const switchService = (installed?: Set<GenerationTier>, failures?: Set<string>) 
   const service = new LocalAIService(fixture.assets, runtimeFactoryFor(runtimes, failures));
   return { ...fixture, service, runtimes };
 };
+
+test('parses Metal and GPU offload diagnostics from llama-server startup output', () => {
+  const diagnostics = parseRuntimeDiagnostics([
+    'ggml_metal_init: Metal backend available',
+    'llama_model_load: offloaded 35/35 layers to GPU',
+    'MTL0 KV buffer size = 512.00 MiB',
+  ].join('\n'));
+  assert.equal(diagnostics.metalConfirmed, true);
+  assert.equal(diagnostics.gpuLayersOffloaded, '35/35');
+  assert.equal(diagnostics.cpuFallbackDetected, false);
+  assert.equal(diagnostics.kvBufferMiB, 512);
+});
+
+test('uses a fifteen-minute idle timeout by default', () => {
+  assert.equal(DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS, 900_000);
+});
 
 test('switches Fast to Balanced and legacy Powerful aliases back to Fast', async () => {
   const { service, getSelectedTier } = switchService();

@@ -107,6 +107,8 @@ interface Window {
   };
   askLedger?: {
     generateOverviewFocus: (snapshot: unknown, options?: { previousResult?: unknown }) => Promise<{ insights: unknown[] }>;
+    generateProjectLens: (payload: unknown) => Promise<unknown>;
+    generateProjectLensAction: (payload: unknown) => Promise<unknown>;
     listSkills: () => Promise<unknown[]>;
     selectAttachments: (payload: { workspaceId: string; conversationId: string; existingCount?: number; existingSizeBytes?: number }) => Promise<unknown>;
     openAttachment: (attachmentId: string) => Promise<{ ok: boolean; error?: string }>;

@@ -163,6 +163,29 @@ test('preserves and switches product-help context naturally', () => {
   assert.equal(routeAskLedgerMessage('Does Calendar have a week view?', { previousQuestion: "What's on my calendar today?", previousExecutionMode: 'workspace_lookup' }).executionMode, 'ledger_product_help');
 });
 
+test('keeps linked team resources in workspace retrieval after a team answer', () => {
+  const route = routeAskLedgerMessage('What are notes tied with this team?', {
+    previousQuestion: 'How are my teamspaces? Does anyone in my circle have tasks?',
+    previousAnswer: '## Teamspaces\n- Design — Sarah Daily, Lex Ferguson',
+    previousSources: [{ resourceType: 'team', resourceId: 'design-team' }],
+    previousExecutionMode: 'workspace_lookup',
+  });
+  assert.equal(route.executionMode, 'workspace_lookup');
+  assert.equal(route.retrievalRequired, true);
+  assert.equal(route.reusePreviousGroundedContext, false);
+  assert.equal(route.reason, 'referential_workspace_follow_up');
+});
+
+test('routes teamspace questions to workspace retrieval even without prior context', () => {
+  const linkedNotes = routeAskLedgerMessage('What notes are tied with this team?');
+  assert.equal(linkedNotes.executionMode, 'workspace_lookup');
+  assert.equal(linkedNotes.retrievalRequired, true);
+
+  const teamspaces = routeAskLedgerMessage('How are my teamspaces? Does anyone in my circle have tasks?');
+  assert.equal(teamspaces.executionMode, 'workspace_lookup');
+  assert.equal(teamspaces.retrievalRequired, true);
+});
+
 test('follows multi-turn mode transitions instead of inheriting stale mode', () => {
   let context = { previousQuestion: '', previousAnswer: '', previousSources: [], previousExecutionMode: undefined as undefined | 'conversation' | 'ledger_product_help' | 'workspace_lookup' | 'workspace_synthesis' | 'workspace_research' | 'skills' };
   const turn = (question: string, extra: Record<string, unknown> = {}) => {

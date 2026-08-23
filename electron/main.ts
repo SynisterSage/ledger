@@ -36,6 +36,7 @@ import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
 import { OverviewFocusService, type OverviewFocusResult, type OverviewFocusSnapshot } from './overviewFocus';
+import { ProjectLensService } from './projectLensService';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import type { AskLedgerConversationState } from '../src/types/askLedgerConversationState.ts';
@@ -76,6 +77,7 @@ const localAICapabilityService = new LocalAICapabilityService();
 const localAIService = createLocalAIService(localAIAssets);
 const askLedgerService = createAskLedgerService(localAIService, localAIAssets, path.join(app.getPath('userData'), 'ask-ledger-attachments'));
 const overviewFocusService = new OverviewFocusService(localAIService);
+const projectLensService = new ProjectLensService(localAIService, askLedgerService.getRetrievalService());
 localAIService.onGenerationRuntimeState((state) => {
   BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed()) window.webContents.send('ask-ledger:generation-runtime-state', state);
@@ -443,6 +445,16 @@ ipcMain.handle('overview-focus:generate', async (_event, payload: unknown) => {
   const previousResult = payload && typeof payload === 'object' && 'previousResult' in payload ? (payload as { previousResult?: unknown }).previousResult : undefined;
   if (!snapshot || typeof snapshot !== 'object') return { insights: [] };
   return overviewFocusService.generate(snapshot as OverviewFocusSnapshot, previousResult && typeof previousResult === 'object' ? { previousResult: previousResult as OverviewFocusResult } : undefined);
+});
+
+ipcMain.handle('project-lens:generate', async (_event, payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return { status: 'unavailable', reason: 'invalid_context' };
+  return projectLensService.generate(payload as never);
+});
+
+ipcMain.handle('project-lens:action', async (_event, payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return { status: 'unavailable', reason: 'invalid_context' };
+  return projectLensService.generateAction(payload as never);
 });
 
 ipcMain.handle('ask-ledger:local-ai-status', () => localAIAssets.status());

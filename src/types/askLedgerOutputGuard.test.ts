@@ -37,3 +37,15 @@ test('replaces a known resource UUID with its user-facing title', () => {
   assert.equal(result.answer, 'project Final Portfolio is moving.');
   assert.equal(result.diagnostics.knownResourceIdNormalized, true);
 });
+
+test('normalizes date templates only beside the known Ledger record', () => {
+  const result = sanitizeAskLedgerOutput('Launch Review UI is due 2026-d-m. Another note uses 2026-d-m.', [
+    { raw: '2026-d-m', display: 'Wednesday, Aug 19', kind: 'structured_value', anchor: 'Launch Review UI' },
+  ]);
+  assert.equal(result.answer, 'Launch Review UI is due Wednesday, Aug 19. Another note uses 2026-d-m.');
+});
+
+test('omits unsupported project placeholders instead of displaying them', () => {
+  const result = sanitizeAskLedgerOutput('Make short thumbnails – Project: ... – Status: Todo\nUpload logs — Project: unknown — Due: Friday, Aug 21.');
+  assert.equal(result.answer, 'Make short thumbnails – Status: Todo\nUpload logs — Due: Friday, Aug 21.');
+});

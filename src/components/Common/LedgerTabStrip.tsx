@@ -475,6 +475,24 @@ export const LedgerTabStrip = () => {
   }, [getProjects, projectIds, activeWorkspaceId]);
 
   useEffect(() => {
+    const handleProjectTitle = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId?: string; projectId?: string; title?: string }>).detail;
+      if (
+        !detail?.projectId ||
+        !detail.title?.trim() ||
+        (detail.workspaceId && detail.workspaceId !== activeWorkspaceId)
+      ) return;
+      const title = detail.title.trim();
+      setProjectTitles((current) => current[detail.projectId as string] === title
+        ? current
+        : { ...current, [detail.projectId as string]: title });
+    };
+
+    window.addEventListener('ledger:project-title', handleProjectTitle);
+    return () => window.removeEventListener('ledger:project-title', handleProjectTitle);
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
     if (noteIds.length === 0) {
       setNoteTitles({});
       return;

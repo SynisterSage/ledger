@@ -84,11 +84,10 @@ test('builds factual fallback insights when structured model output is rejected'
   assert.equal(result.insights.some((insight) => /immediate|urgent|critical/i.test(`${insight.title} ${insight.summary}`)), false);
 });
 
-test('asks the existing model router for the Balanced tier when it is available', async () => {
+test('prefers the Fast tier before falling back to Balanced', async () => {
   let selectedTier = '';
   let requestedBudget = 0;
   const service = new OverviewFocusService({
-    getModelRouting: () => ({ requestedTier: 'fast', recommendedTier: 'balanced', resolvedTier: 'fast', shouldSwitch: true, reason: 'moderate grounded synthesis' }),
     switchGenerationTier: async (tier: string) => { selectedTier = tier; return { ok: true }; },
     start: (request: LocalAIRequest, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
       requestedBudget = request.generationBudget ?? 0;
@@ -99,8 +98,26 @@ test('asks the existing model router for the Balanced tier when it is available'
     cancel: () => ({ ok: true }),
   } as never);
   assert.deepEqual(await service.generate(snapshot), { insights: [] });
-  assert.equal(selectedTier, 'balanced');
+  assert.equal(selectedTier, 'fast');
   assert.equal(requestedBudget, 768);
+});
+
+test('falls back to Balanced when the Fast model is unavailable', async () => {
+  const selectedTiers: string[] = [];
+  const service = new OverviewFocusService({
+    switchGenerationTier: async (tier: string) => {
+      selectedTiers.push(tier);
+      return tier === 'fast' ? { ok: false } : { ok: true };
+    },
+    start: (_request: LocalAIRequest, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      callbacks.onEvent({ type: 'delta', requestId, text: JSON.stringify({ insights: [] }) });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+  } as never);
+  await service.generate(snapshot);
+  assert.deepEqual(selectedTiers, ['fast', 'balanced']);
 });
 
 test('chooses the first still-present resource and leaves stale references non-navigable', () => {

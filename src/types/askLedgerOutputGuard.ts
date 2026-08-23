@@ -2,6 +2,7 @@ export type AskLedgerOutputMapping = {
   raw: string;
   display: string;
   kind: 'structured_value' | 'resource_id';
+  anchor?: string;
 };
 
 export type AskLedgerOutputGuardDiagnostics = {
@@ -27,6 +28,7 @@ const hiddenReasoningBlock = /<(?:think|thinking|reasoning|reasoning_content)>[\
 const unclosedHiddenReasoningBlock = /<(?:think|thinking|reasoning|reasoning_content)>[\s\S]*$/i;
 const hiddenReasoningLine = /^\s*(?:<\/?(?:think|thinking|reasoning|reasoning_content)>|reasoning_content\s*[:=]).*$/gim;
 const internalMetadataLine = /^\s*(?:model[_ -]?id|resource[_ -]?id|retrieval[_ -]?(?:score|rank|debug)|embedding(?:[_ -]?(?:metadata|score|vector))?|token[_ -]?(?:budget|count)|prompt[_ -]?tokens?|completion[_ -]?tokens?|system prompt|presentation signals)\s*[:=].*$/gim;
+const unsupportedProjectPlaceholder = /\s*(?:[–—-]\s*)?Project:\s*(?:\.\.\.|…|unknown|none|n\/?a)\s*\)?(?=\s*(?:[–—-]|$))/gi;
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -45,13 +47,30 @@ export const sanitizeAskLedgerOutput = (value: string, mappings: AskLedgerOutput
   answer = answer.replace(internalMetadataLine, '');
   diagnostics.internalMetadataRemoved = answer !== beforeMetadata;
 
+  // Models sometimes emit a placeholder project label when a task has no
+  // supported project relationship. Remove the whole placeholder segment;
+  // never present it as if Ledger had fetched a project.
+  answer = answer.split('\n').map((line) => line.replace(unsupportedProjectPlaceholder, '').replace(/[ \t]{2,}/g, ' ').replace(/(?<!\s)([–—])(?=\s)/g, ' $1').replace(/([–—])(?=\S)/g, '$1 ').trim()).join('\n');
+
   const orderedMappings = mappings
     .filter((mapping) => mapping.raw && mapping.display && mapping.raw !== mapping.display)
     .sort((a, b) => b.raw.length - a.raw.length);
   for (const mapping of orderedMappings) {
-    const pattern = new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(mapping.raw)}(?![A-Za-z0-9])`, 'g');
-    if (!pattern.test(answer)) continue;
-    answer = answer.replace(pattern, mapping.display);
+    const pattern = new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(mapping.raw)}(?![A-Za-z0-9])`, mapping.anchor ? '' : 'g');
+    if (mapping.anchor) {
+      const anchor = mapping.anchor.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      let changed = false;
+      answer = answer.split('\n').map((line) => {
+        if (!line.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').includes(anchor)) return line;
+        const replaced = line.replace(pattern, mapping.display);
+        changed ||= replaced !== line;
+        return replaced;
+      }).join('\n');
+      if (!changed) continue;
+    } else {
+      if (!pattern.test(answer)) continue;
+      answer = answer.replace(pattern, mapping.display);
+    }
     if (mapping.kind === 'resource_id') diagnostics.knownResourceIdNormalized = true;
     else diagnostics.knownStructuredValueNormalized = true;
   }

@@ -61,6 +61,16 @@ test('uses the stable abstention instruction for unsupported questions', () => {
   assert.match(prompt, /Do not invent facts, status, dates, deadlines, owners, or decisions/);
 });
 
+test('does not put raw task dates into the secondary evidence packet', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'What is due?',
+    contextItems: [{ ...context[1], dueAt: '2026-08-19' }],
+    timeZone: 'America/New_York',
+  });
+  assert.match(prompt, /Wednesday, Aug 19/);
+  assert.doesNotMatch(prompt, /due 2026-08-19/);
+});
+
 test('lets a selected skill interpret a brief follow-up as the skill request', () => {
   const skill = getAskLedgerSkill('plan_my_week');
   assert.ok(skill);
@@ -68,6 +78,14 @@ test('lets a selected skill interpret a brief follow-up as the skill request', (
 
   assert.match(prompt, /treat the selected skill's purpose as the request/);
   assert.match(prompt, /Do not abstain merely because the message says something like/);
+});
+
+test('keeps weekly plans complete before adding extra detail', () => {
+  const skill = getAskLedgerSkill('plan_my_week');
+  assert.ok(skill);
+  const prompt = buildAskLedgerPrompt({ question: 'Help me out', contextItems: context, skill });
+  assert.match(prompt, /Weekly plan format: use the four requested sections in order/);
+  assert.match(prompt, /end with concrete Next steps/);
 });
 
 test('bounds follow-up context and keeps it separate from current Ledger evidence', () => {
@@ -156,6 +174,23 @@ test('separates evidence from instructions and requires deep synthesis with miss
   assert.match(prompt, /overall picture/);
   assert.match(prompt, /Do not stop at a list of projects/);
   assert.match(prompt, /USER REQUEST/);
+});
+
+test('does not duplicate the compiled evidence packet in the model prompt', () => {
+  const prompt = buildAskLedgerPrompt({
+    question: 'What is due?',
+    contextItems: context,
+    evidencePackage: {
+      request: 'What is due?',
+      coverage: { requested: ['tasks'], found: ['tasks'], missing: [], truncated: [] },
+      sections: [],
+      sources: [],
+      stats: { retrieved: 1, selected: 1, dropped: 0, estimatedTokens: 20, estimatedTokensBefore: 20 },
+      text: 'TASKS\n- Compare local models — Due: Wednesday, Aug 19',
+    },
+  });
+  assert.equal(prompt.match(/Compare local models/g)?.length, 1);
+  assert.match(prompt, /TASKS\n- Compare local models — Due: Wednesday, Aug 19/);
 });
 
 test('uses the primary event time for last-workday lookups', () => {

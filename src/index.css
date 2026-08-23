@@ -1519,20 +1519,23 @@ textarea:focus-visible,
 .ask-ledger-answer strong { color: var(--ledger-text-primary); font-weight: 650; }
 .ask-ledger-answer__mention {
   display: inline;
-  padding: 0 0.18rem;
+  padding: 0;
   border: 0;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--ledger-accent) 10%, transparent);
   color: var(--ledger-text-primary);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ledger-accent) 48%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
-.ask-ledger-answer__mention:hover { background: color-mix(in srgb, var(--ledger-accent) 18%, transparent); }
+.ask-ledger-answer__mention:hover {
+  color: var(--ledger-accent);
+  text-decoration-color: currentColor;
+}
 .ask-ledger-answer__entity-fallback {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--ledger-accent) 8%, transparent);
-  padding: 0 0.16rem;
+  color: var(--ledger-text-primary);
 }
 .ask-ledger-answer__file-type {
   border: 1px solid color-mix(in srgb, var(--ledger-text-muted) 18%, transparent);

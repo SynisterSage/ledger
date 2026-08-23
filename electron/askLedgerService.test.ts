@@ -243,11 +243,16 @@ test('abstains before generation when retrieval evidence is insufficient', async
 test('formats direct entity lookups without invoking Qwen', async () => {
   const events: LocalAIStreamEvent[] = [];
   let generationCalled = false;
+  const overdueDate = new Date();
+  overdueDate.setHours(12, 0, 0, 0);
+  overdueDate.setDate(overdueDate.getDate() - 3);
+  const overdueDateValue = overdueDate.toISOString().slice(0, 10);
+  const expectedDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(overdueDate);
   const retrieval = {
     indexWorkspace: async () => undefined,
     retrieve: async () => ({
       items: [
-        { ...resource, resourceType: 'task', resourceId: 'task-1', title: 'Finish thumbnails', status: 'In Progress', dueAt: '2026-08-18' },
+        { ...resource, resourceType: 'task', resourceId: 'task-1', title: 'Finish thumbnails', status: 'In Progress', dueAt: overdueDateValue },
       ],
       debug: [{ resourceType: 'task', resourceId: 'task-1', title: 'Finish thumbnails', score: 0.4, why: ['entity-resource'] }],
     }),
@@ -265,7 +270,7 @@ test('formats direct entity lookups without invoking Qwen', async () => {
 
   assert.equal(generationCalled, false);
   assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Finish thumbnails/);
-  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /Tuesday, Aug 18/);
+  assert.match(events.find((event) => event.type === 'delta')?.text ?? '', new RegExp(expectedDate));
   assert.match(events.find((event) => event.type === 'delta')?.text ?? '', /3 days overdue/);
 });
 

@@ -185,44 +185,39 @@ export class OverviewFocusService {
     if (!snapshot.workspaceId) return { insights: [] };
     if (deriveOverviewFocusSignals(snapshot).length === 0) return { insights: [] };
     const previousResult = options.previousResult ? validateOverviewFocusResult(options.previousResult, snapshot) : undefined;
-    try {
-      const route = this.localAI.getModelRouting?.({
-        answerDepth: 'standard',
-        evidenceCount: Math.max(6, snapshot.tasks.length + snapshot.projects.length + snapshot.events.length),
-        resourceTypeCount: 2,
-        crossResource: false,
-      });
-      if (route?.shouldSwitch && this.localAI.switchGenerationTier) await this.localAI.switchGenerationTier(route.recommendedTier);
-    } catch {
-      return { insights: [] };
-    }
     const startedAt = Date.now();
     const prompt = buildOverviewFocusPrompt(snapshot, new Date(), previousResult);
-    return new Promise((resolve) => {
-      let answer = '';
-      let settled = false;
-      const finish = (result: OverviewFocusResult) => { if (settled) return; settled = true; resolve(result); };
-      const requestId = `overview-focus-${Date.now()}`;
-      const timeout = setTimeout(() => { this.localAI.cancel(requestId); if (process.env.NODE_ENV !== 'production' && !process.execArgv.includes('--test')) console.warn('[overview-focus] generation timed out'); finish({ insights: [] }); }, 95_000);
-      this.localAI.start({ question: 'Generate Overview Focus insights.', context: prompt, generationBudget: 768, reasoningSignals: { answerDepth: 'brief', generationDepth: 'standard', retrievalRequired: false, routeReason: 'overview_focus' } }, {
-        onEvent: (event: LocalAIStreamEvent) => {
-          if (event.type === 'delta') answer += event.text ?? '';
-          if (event.type === 'done' || event.type === 'error') {
-            clearTimeout(timeout);
-            const validation = event.type === 'error' ? { result: { insights: [] }, rawInsightCount: 0, rejectionReasons: ['invalid_result' as const] } : validateOverviewFocusResultWithDiagnostics(parseJson(answer), snapshot);
-            const priorInsights = previousResult?.insights ?? [];
-            const acceptedText = validation.result.insights.map((insight) => tokenize(`${insight.title} ${insight.summary}`));
-            const retainedPrior = priorInsights.filter((insight) => {
-              const tokens = tokenize(`${insight.title} ${insight.summary}`);
-              return !acceptedText.some((candidate) => overlap(candidate, tokens) >= 0.8);
-            });
-            const fallback = validation.result.insights.length === 0 && validation.rawInsightCount > 0 ? buildOverviewFocusFallbackResult(snapshot) : { insights: [] };
-            const result = { insights: [...(validation.result.insights.length ? validation.result.insights : fallback.insights), ...retainedPrior].slice(0, 3) };
-            if (process.env.NODE_ENV !== 'production' && !process.execArgv.includes('--test')) console.info('[overview-focus] generation complete', { modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier, snapshot: { tasks: snapshot.tasks.length, projects: snapshot.projects.length, events: snapshot.events.length, notes: snapshot.recentNotes.length }, promptChars: prompt.length, answerChars: answer.length, durationMs: Date.now() - startedAt, modelDurationMs: event.type === 'done' ? event.metrics?.totalMs : undefined, rawInsightCount: validation.rawInsightCount, acceptedInsightCount: result.insights.length, fallbackUsed: fallback.insights.length > 0, retainedPriorCount: retainedPrior.length, rejectionReasons: validation.rejectionReasons });
-            finish(result);
-          }
-        },
-      }, requestId);
-    });
+    for (const tier of ['fast', 'balanced'] as const) {
+      if (!this.localAI.switchGenerationTier) continue;
+      const switchResult = await this.localAI.switchGenerationTier(tier).catch(() => ({ ok: false }));
+      if (!switchResult || switchResult.ok !== true) continue;
+      return new Promise((resolve) => {
+        let answer = '';
+        let settled = false;
+        const finish = (result: OverviewFocusResult) => { if (settled) return; settled = true; resolve(result); };
+        const requestId = `overview-focus-${Date.now()}`;
+        const timeout = setTimeout(() => { this.localAI.cancel(requestId); if (process.env.NODE_ENV !== 'production' && !process.execArgv.includes('--test')) console.warn('[overview-focus] generation timed out'); finish({ insights: [] }); }, 95_000);
+        this.localAI.start({ question: 'Generate Overview Lens insights.', context: prompt, generationBudget: 768, reasoningSignals: { answerDepth: 'brief', generationDepth: 'standard', retrievalRequired: false, routeReason: 'overview_lens' } }, {
+          onEvent: (event: LocalAIStreamEvent) => {
+            if (event.type === 'delta') answer += event.text ?? '';
+            if (event.type === 'done' || event.type === 'error') {
+              clearTimeout(timeout);
+              const validation = event.type === 'error' ? { result: { insights: [] }, rawInsightCount: 0, rejectionReasons: ['invalid_result' as const] } : validateOverviewFocusResultWithDiagnostics(parseJson(answer), snapshot);
+              const priorInsights = previousResult?.insights ?? [];
+              const acceptedText = validation.result.insights.map((insight) => tokenize(`${insight.title} ${insight.summary}`));
+              const retainedPrior = priorInsights.filter((insight) => {
+                const tokens = tokenize(`${insight.title} ${insight.summary}`);
+                return !acceptedText.some((candidate) => overlap(candidate, tokens) >= 0.8);
+              });
+              const fallback = validation.result.insights.length === 0 && validation.rawInsightCount > 0 ? buildOverviewFocusFallbackResult(snapshot) : { insights: [] };
+              const result = { insights: [...(validation.result.insights.length ? validation.result.insights : fallback.insights), ...retainedPrior].slice(0, 3) };
+              if (process.env.NODE_ENV !== 'production' && !process.execArgv.includes('--test')) console.info('[overview-focus] generation complete', { modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier, snapshot: { tasks: snapshot.tasks.length, projects: snapshot.projects.length, events: snapshot.events.length, notes: snapshot.recentNotes.length }, promptChars: prompt.length, answerChars: answer.length, durationMs: Date.now() - startedAt, modelDurationMs: event.type === 'done' ? event.metrics?.totalMs : undefined, rawInsightCount: validation.rawInsightCount, acceptedInsightCount: result.insights.length, fallbackUsed: fallback.insights.length > 0, retainedPriorCount: retainedPrior.length, rejectionReasons: validation.rejectionReasons });
+              finish(result);
+            }
+          },
+        }, requestId);
+      });
+    }
+    return { insights: [] };
   }
 }

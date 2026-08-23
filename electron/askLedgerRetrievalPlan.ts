@@ -92,6 +92,10 @@ const integrationProvidersFor = (question: string): AskLedgerIntegrationSource[]
 
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  const linkedTeamContext = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
+    && /\b(?:notes?|tasks?|actions?|projects?|milestones?|reminders?|events?|activity|work)\b/.test(normalized)
+    && /\b(?:tied|linked|connected|associated|related|belong|with|for)\b/.test(normalized);
+  if (linkedTeamContext) return ['note', 'team', 'person', 'project', 'task', 'milestone', 'reminder', 'event'];
   if (/\b(?:teamspaces?|teams?|circle)\b/.test(normalized) && /\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active|open|what .* have)\b/.test(normalized)) {
     return ['team', 'person', 'task', 'milestone', 'reminder', 'event', 'project'];
   }
@@ -138,7 +142,7 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
     const namedTeam = question.match(/\b(?:teamspace|team)\s+(?:named|called)\s+([A-Za-z][\w-]*)|\b(?:teamspace|team)\s+([A-Za-z][\w-]*)/i);
     const reversedTeam = question.match(/\b([A-Za-z][\w-]*)\s+(?:teamspace|team)\b/i);
     const teamName = [namedTeam?.[1], namedTeam?.[2], reversedTeam?.[1]]
-      .find((candidate) => candidate && !/^(?:have|has|open|tasks?|actions?)$/i.test(candidate));
+      .find((candidate) => candidate && !/^(?:this|that|the|my|our|circle|have|has|open|tasks?|actions?)$/i.test(candidate));
     if (teamName) return teamName.trim();
   }
   if (primaryResourceTypes.includes('event') && lastWorkdaySignals.test(question)) {
@@ -162,7 +166,7 @@ const entityQueryFor = (question: string, primaryResourceTypes: AskLedgerResourc
   // though the authoritative entity is the named project.
   if (primaryResourceTypes.some((type) => ['task', 'milestone', 'reminder', 'event', 'note'].includes(type))) {
     const searchEntity = question.match(/\b(?:with|containing|contains|mentions?|about)\s+([A-Za-z][\w-]*)\b/i);
-    if (searchEntity?.[1] && !/^(?:my|the|this|that)$/i.test(searchEntity[1])) return searchEntity[1].trim();
+    if (searchEntity?.[1] && !/^(?:my|our|the|this|that|its|their)$/i.test(searchEntity[1])) return searchEntity[1].trim();
     const namedProject = question.match(/\b(?:for|about|on)\s+(?:my|the)\s+(.+?)\s+projects?\b/i);
     if (namedProject?.[1]) return namedProject[1].trim();
   }

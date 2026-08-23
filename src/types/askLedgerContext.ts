@@ -56,6 +56,10 @@ export type AskLedgerInitialContext = {
   resourceType: AskLedgerResourceType;
   resourceId: string;
   title: string;
+  contextType?: 'project';
+  workspaceId?: string;
+  projectId?: string;
+  origin?: 'projects';
   /** Optional one-shot question for contextual entry points. */
   initialQuestion?: string;
   handoff?: {
