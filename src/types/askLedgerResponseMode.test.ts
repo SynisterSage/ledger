@@ -163,6 +163,29 @@ test('preserves and switches product-help context naturally', () => {
   assert.equal(routeAskLedgerMessage('Does Calendar have a week view?', { previousQuestion: "What's on my calendar today?", previousExecutionMode: 'workspace_lookup' }).executionMode, 'ledger_product_help');
 });
 
+test('does not route project work questions to product help', () => {
+  const route = routeAskLedgerMessage('Pigmented Perceptions: what is left to do? I have a meeting next week.', {
+    previousExecutionMode: 'ledger_product_help',
+    previousProductArea: 'projects',
+    previousQuestion: 'What are Projects in Ledger?',
+  });
+  assert.notEqual(route.executionMode, 'ledger_product_help');
+  assert.equal(route.retrievalRequired, true);
+});
+
+test('does not route other resource-state questions to product help', () => {
+  for (const message of [
+    'What tasks are left for the Alfa project?',
+    'What is the status of my meeting follow-up?',
+    'Which notes mention the next step?',
+    'Are any reminders overdue?',
+  ]) {
+    const route = routeAskLedgerMessage(message, { previousExecutionMode: 'ledger_product_help', previousProductArea: 'projects' });
+    assert.notEqual(route.executionMode, 'ledger_product_help', message);
+    assert.equal(route.retrievalRequired, true, message);
+  }
+});
+
 test('keeps linked team resources in workspace retrieval after a team answer', () => {
   const route = routeAskLedgerMessage('What are notes tied with this team?', {
     previousQuestion: 'How are my teamspaces? Does anyone in my circle have tasks?',

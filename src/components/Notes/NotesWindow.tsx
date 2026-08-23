@@ -103,9 +103,20 @@ import type {
   MeetingNoteMetadata,
   MeetingTranscriptionStatus,
   MeetingTranscriptLink,
+  MeetingSpeakerIdentity,
   NoteMode,
   TranscriptSegment,
 } from '../../types/notes';
+import type { MeetingIntelligenceContext } from '../../types/notes';
+import { resolveDeterministicSpeakerIdentity } from '../../types/meetingPeople';
+import type { MeetingIdentitySuggestion } from '../../types/meetingPeople';
+import type { MeetingPrepContext, MeetingPrepResult } from '../../types/meetingPrep';
+import type {
+  MeetingActionSuggestion,
+  MeetingInsight,
+  MeetingRecapDraft,
+  MeetingRecapGenerationResult,
+} from '../../types/meetingRecap';
 
 type NoteRow = {
   id: string;
@@ -731,7 +742,7 @@ const formatMeetingDuration = (seconds: number) => {
 };
 
 const transcriptSpeakerLabel = (segment: TranscriptSegment) =>
-  segment.speaker_label?.trim() || (segment.audio_source === 'user_microphone' ? 'You' : 'Meeting');
+  segment.speaker_identity?.displayName?.trim() || segment.speaker_label?.trim() || (segment.audio_source === 'user_microphone' ? 'You' : 'Meeting');
 
 const mergeTranscriptText = (first: string, second: string) => {
   const left = first.trimEnd();
@@ -1067,7 +1078,7 @@ const MeetingTranscriptSection = ({
       : text.trim();
   };
   const speakerLabelFor = (segment: TranscriptSegment) =>
-    segment.speaker_label?.trim() ||
+    segment.speaker_identity?.displayName?.trim() || segment.speaker_label?.trim() ||
     (segment.audio_source === 'user_microphone' ? 'You' : 'Meeting');
   const requestSplit = (segment: TranscriptSegment) => {
     if (isMutationBusy) return;
@@ -2297,6 +2308,119 @@ const RecordingRecoveryNotice = ({
   );
 };
 
+const MeetingRecapDraftSection = ({
+  draft,
+  tier,
+  onCitation,
+  onRegenerate,
+  onAccept,
+  onCreateAction,
+  onCreateReminder,
+  onCreateEvent,
+  onLinkProject,
+  identitySuggestions,
+  onConfirmIdentity,
+  onAskMeeting,
+  isBusy,
+}: {
+  draft: MeetingRecapDraft;
+  tier: 'balanced' | 'fast' | null;
+  onCitation: (segmentId: string) => void;
+  onRegenerate: () => void;
+  onAccept: () => void;
+  onCreateAction: (action: MeetingActionSuggestion) => void;
+  onCreateReminder: (action: MeetingActionSuggestion) => void;
+  onCreateEvent: (action: MeetingActionSuggestion) => void;
+  onLinkProject: () => void;
+  identitySuggestions: MeetingIdentitySuggestion[];
+  onConfirmIdentity: (suggestion: MeetingIdentitySuggestion) => void;
+  onAskMeeting: () => void;
+  isBusy: boolean;
+}) => {
+  const citation = (item: MeetingInsight) =>
+    item.sourceRefs.map((ref) => (
+      <button
+        key={`${ref.transcriptSegmentId}:${ref.timestampMs}`}
+        type="button"
+        onClick={() => onCitation(ref.transcriptSegmentId)}
+        className="ml-1 inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium text-[var(--ledger-accent)] hover:bg-[var(--ledger-surface-hover)]"
+        title="Open transcript evidence"
+      >
+        {formatTranscriptTimestamp(ref.timestampMs)} ↗
+      </button>
+    ));
+  const section = (title: string, items: MeetingInsight[], action = false) =>
+    items.length ? (
+      <section className="mt-5" key={title}>
+        <h3 className="mb-1.5 text-[11px] font-semibold text-[var(--ledger-text-primary)]">{title}</h3>
+        <ul className="space-y-1.5 text-sm leading-6 text-[var(--ledger-text-secondary)]">
+          {items.map((item, index) => {
+            const actionItem = action ? (item as MeetingActionSuggestion) : null;
+            return (
+              <li key={`${title}-${index}`} className="flex items-start gap-2">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-accent)]" />
+                <span>
+                  {actionItem?.ownerText ? `${actionItem.ownerText} — ` : ''}{item.text}
+                  {actionItem?.dueDateText ? ` · ${actionItem.dueDateText}` : ''}
+                  {citation(item)}
+                  {actionItem && (
+                    <button
+                      type="button"
+                      onClick={() => onCreateAction(actionItem)}
+                      className="ml-2 rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      Create task
+                    </button>
+                  )}
+                  {actionItem && <>
+                    <button type="button" onClick={() => onCreateReminder(actionItem)} className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Reminder</button>
+                    <button type="button" onClick={() => onCreateEvent(actionItem)} className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Event</button>
+                    <button type="button" onClick={onLinkProject} className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Link project</button>
+                  </>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    ) : null;
+  return (
+    <section className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-4" data-meeting-recap-draft>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-semibold text-[var(--ledger-text-primary)]">Recap draft</p>
+          <p className="text-[10px] text-[var(--ledger-text-muted)]">Review the evidence before accepting · {tier === 'fast' ? 'Fast' : 'Balanced'}</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={onRegenerate} disabled={isBusy} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40">Regenerate</button>
+          <button type="button" onClick={onAskMeeting} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)]">Ask this meeting</button>
+          <button type="button" onClick={onAccept} disabled={isBusy} className="rounded-md bg-[var(--ledger-accent)] px-2.5 py-1 text-[10px] font-medium text-white disabled:opacity-40">Accept recap</button>
+        </div>
+      </div>
+      <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-3">
+        <h3 className="text-[11px] font-semibold text-[var(--ledger-text-primary)]">Recap</h3>
+        <p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{draft.overview || 'No supported overview was found.'}</p>
+        {identitySuggestions.length > 0 && (
+          <section className="mt-5">
+            <h3 className="mb-1.5 text-[11px] font-semibold text-[var(--ledger-text-primary)]">People to review</h3>
+            <div className="space-y-1.5 text-sm text-[var(--ledger-text-secondary)]">
+              {identitySuggestions.map((suggestion, index) => (
+                <div key={`${suggestion.rawSpeakerId ?? 'unknown'}:${index}`} className="flex items-center justify-between gap-2 rounded-md bg-[var(--ledger-surface-hover)] px-2 py-1.5">
+                  <span>{suggestion.displayName ? `${suggestion.displayName}?` : 'Unknown speaker'} <span className="text-[10px] text-[var(--ledger-text-muted)]">suggested</span></span>
+                  {suggestion.displayName && suggestion.rawSpeakerId && <button type="button" onClick={() => onConfirmIdentity(suggestion)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Confirm</button>}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {section('Decisions', draft.decisions)}
+        {section('Next actions', draft.actions, true)}
+        {section('Open threads', draft.openThreads)}
+      </div>
+    </section>
+  );
+};
+
 export const NotesWindow = ({ focusContext, initialView }: { focusContext?: string; initialView?: 'write' | 'outline' | 'map' | 'transcribe' } = {}) => {
   const platform = usePlatform();
   const { user } = useAuthContext();
@@ -2334,6 +2458,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const initialTryActionHandledRef = useRef(false);
   const noteViewerPollingDisabledForNoteRef = useRef<string | null>(null);
   const shownTranscriptionFailureIdsRef = useRef(new Set<string>());
+  const meetingPrepCacheRef = useRef<Map<string, MeetingPrepResult>>(new Map());
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([]);
@@ -2369,6 +2494,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const transcriptSpeakerDraftsRef = useRef<Record<string, string>>({});
   const transcriptCommitVersionRef = useRef<Record<string, number>>({});
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [meetingRecapDraft, setMeetingRecapDraft] = useState<MeetingRecapDraft | null>(null);
+  const [meetingRecapStatus, setMeetingRecapStatus] = useState<'idle' | 'generating' | 'ready' | 'unavailable'>('idle');
+  const [meetingRecapStage, setMeetingRecapStage] = useState('Reviewing the conversation…');
+  const [meetingRecapError, setMeetingRecapError] = useState<string | null>(null);
+  const [meetingRecapTier, setMeetingRecapTier] = useState<'balanced' | 'fast' | null>(null);
+  const [meetingIdentitySuggestions, setMeetingIdentitySuggestions] = useState<MeetingIdentitySuggestion[]>([]);
+  const [meetingPrep, setMeetingPrep] = useState<MeetingPrepResult | null>(null);
+  const [meetingPrepStatus, setMeetingPrepStatus] = useState<'idle' | 'generating' | 'ready'>('idle');
   const [transcriptMutation, setTranscriptMutation] = useState<'split' | 'merge' | null>(null);
   const transcriptMutationRef = useRef(false);
   const transcriptUndoRef = useRef<{ noteId: string; undo: () => Promise<void> } | null>(null);
@@ -2378,6 +2511,23 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   useEffect(() => {
     transcriptSpeakerDraftsRef.current = transcriptSpeakerDrafts;
   }, [transcriptSpeakerDrafts]);
+  useEffect(() => {
+    if (meetingRecapStatus !== 'generating') return;
+    const stages = [
+      'Reviewing the conversation…',
+      'Connecting your notes…',
+      'Looking for decisions…',
+      'Finding follow-ups…',
+      'Preparing your recap…',
+    ];
+    let index = 0;
+    setMeetingRecapStage(stages[0]);
+    const timer = window.setInterval(() => {
+      index = (index + 1) % stages.length;
+      setMeetingRecapStage(stages[index]);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [meetingRecapStatus]);
   const [isLoadingTranscript, setIsLoadingTranscript] = useState(false);
   const [audioPermissions, setAudioPermissions] = useState<MeetingAudioPermissions | null>(null);
   const [audioDevices, setAudioDevices] = useState<MeetingAudioDeviceInfo>({
@@ -2564,6 +2714,23 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const { pins, toggleObjectPin } = usePins();
   const { openSearch } = useSearch();
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
+  const resolvedTranscriptSegments = useMemo(
+    () =>
+      transcriptSegments.map((segment) => {
+        if (segment.speaker_identity?.confirmedByUser) return segment;
+        const member = user?.id ? workspaceMembers.find((item) => item.user_id === user.id) : null;
+        return {
+          ...segment,
+          speaker_identity: resolveDeterministicSpeakerIdentity({
+            segment,
+            metadata: meetingMetadata,
+            currentUser: user ? { id: user.id, email: user.email } : null,
+            currentUserName: member?.full_name || member?.email || user?.email || null,
+          }),
+        };
+      }),
+    [meetingMetadata, transcriptSegments, user, workspaceMembers]
+  );
   const quickTemplates = QUICK_TEMPLATE_DEFINITIONS.map(({ name }) => ({
     id: name.toLowerCase().replace(/\s+/g, '-'),
     name,
@@ -2877,6 +3044,94 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       return true;
     });
   }, [selectedNoteId, workspaceProjectNoteLinks]);
+
+  const buildMeetingIntelligenceContext = useCallback((): MeetingIntelligenceContext | null => {
+    if (!selectedNote || !activeWorkspaceId || !meetingMetadata) return null;
+    return {
+      workspaceId: activeWorkspaceId,
+      noteId: selectedNote.id,
+      meeting: {
+        title: selectedNote.title,
+        calendarEventId: meetingMetadata.calendar_event_id,
+        calendarSeriesId: meetingMetadata.calendar_series_id,
+        scheduledStart: meetingMetadata.scheduled_start_at,
+        scheduledEnd: meetingMetadata.scheduled_end_at,
+        actualStart: meetingMetadata.meeting_start_at,
+        actualEnd: meetingMetadata.meeting_end_at,
+        attendees: meetingMetadata.attendees ?? [],
+        calendarProvider: meetingMetadata.calendar_provider,
+        calendarEventKey: meetingMetadata.calendar_event_key,
+        calendarSeriesKey: meetingMetadata.calendar_series_key,
+        template: meetingMetadata.meeting_template ?? 'auto',
+        templateInstructions: meetingMetadata.meeting_template_instructions,
+      },
+      humanNotes: {
+        contentHtml: normalizeEditorHtml(draftContent),
+        contentText: htmlToPlainText(draftContent),
+      },
+      transcriptSegments: resolvedTranscriptSegments,
+      transcriptLinks,
+      relatedContext: {
+        project: selectedNoteProjectLinks[0]
+          ? {
+              id: selectedNoteProjectLinks[0].project_id,
+              title: selectedNoteProjectLinks[0].project_name ?? null,
+            }
+          : undefined,
+        event: meetingMetadata.calendar_event_id
+          ? {
+              id: meetingMetadata.calendar_event_id,
+              title: meetingMetadata.calendar_event_title,
+            }
+          : undefined,
+      },
+    };
+  }, [activeWorkspaceId, draftContent, meetingMetadata, selectedNote, selectedNoteProjectLinks, transcriptLinks, resolvedTranscriptSegments]);
+
+  const enhanceMeetingNote = useCallback(async () => {
+    const context = buildMeetingIntelligenceContext();
+    if (!context || meetingMetadata?.transcription_status !== 'complete') return;
+    if (!window.askLedger?.generateMeetingRecap) {
+      setMeetingRecapStatus('unavailable');
+      setMeetingRecapError('Local meeting intelligence is unavailable in this client.');
+      return;
+    }
+    setMeetingRecapStatus('generating');
+    setMeetingRecapError(null);
+    try {
+      const result = (await window.askLedger.generateMeetingRecap(context)) as MeetingRecapGenerationResult;
+      if (result.status !== 'ready') {
+        setMeetingRecapStatus('unavailable');
+        setMeetingRecapError(
+          result.reason === 'model_unavailable'
+            ? 'Install the Balanced or Fast local model to enhance this meeting.'
+            : 'Ledger could not produce a grounded recap from this transcript.'
+        );
+        return;
+      }
+      setMeetingRecapDraft(result.draft);
+      setMeetingRecapTier(result.tier);
+      setMeetingRecapStatus('ready');
+      if (window.askLedger.generateMeetingPeople) {
+        const people = (await window.askLedger.generateMeetingPeople(context)) as { suggestions?: MeetingIdentitySuggestion[]; status?: string };
+        setMeetingIdentitySuggestions(Array.isArray(people?.suggestions) ? people.suggestions : []);
+      }
+    } catch (error) {
+      setMeetingRecapStatus('unavailable');
+      setMeetingRecapError(error instanceof Error ? error.message : 'Could not enhance the meeting note.');
+    }
+  }, [buildMeetingIntelligenceContext, meetingMetadata?.transcription_status]);
+
+  const focusTranscriptSegment = useCallback((segmentId: string) => {
+    setMeetingCenterView('transcript');
+    window.setTimeout(() => {
+      const node = document.querySelector(`[data-transcript-segment="${CSS.escape(segmentId)}"]`);
+      if (!(node instanceof HTMLElement)) return;
+      node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      node.classList.add('ring-2', 'ring-[var(--ledger-accent)]');
+      window.setTimeout(() => node.classList.remove('ring-2', 'ring-[var(--ledger-accent)]'), 1800);
+    }, 80);
+  }, []);
 
   const openLinkProjectModal = useCallback(
     async (noteId: string | null = selectedNoteId) => {
@@ -4122,6 +4377,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setTranscriptDrafts({});
     setTranscriptSpeakerDrafts({});
     setTranscriptError(null);
+    setMeetingRecapDraft(null);
+    setMeetingIdentitySuggestions([]);
+    setMeetingPrep(null);
+    setMeetingPrepStatus('idle');
+    setMeetingRecapStatus('idle');
+    setMeetingRecapError(null);
+    setMeetingRecapTier(null);
     if (!shouldLoad || !noteId) {
       setIsLoadingMeetingMetadata(false);
       setIsLoadingTranscript(false);
@@ -4242,6 +4504,46 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   ]);
 
   useEffect(() => {
+    const generatePrep = window.askLedger?.generateMeetingPrep;
+    if (!isMeetingNote || !selectedNoteId || !meetingMetadata || meetingMetadata.transcription_status !== 'idle' || !activeWorkspaceId || !generatePrep) return;
+    const cached = meetingPrepCacheRef.current.get(selectedNoteId);
+    if (cached) { setMeetingPrep(cached); setMeetingPrepStatus(cached.status === 'ready' ? 'ready' : 'idle'); return; }
+    let cancelled = false;
+    setMeetingPrepStatus('generating');
+    const loadPrep = async () => {
+      try {
+        const prior = meetingSeriesOccurrences
+          .filter((occurrence) => occurrence.note_id !== selectedNoteId && !occurrence.calendar_event_deleted)
+          .filter((occurrence) => !meetingMetadata.scheduled_start_at || !occurrence.scheduled_start_at || occurrence.scheduled_start_at < meetingMetadata.scheduled_start_at)
+          .slice(-3);
+        const priorNotes = await Promise.all(prior.map(async (occurrence) => {
+          try {
+            const note = (await api.getNoteById(occurrence.note_id)) as { id?: string; title?: string; content_html?: string; content?: string };
+            const text = htmlToPlainText(note.content_html ?? note.content ?? '').slice(0, 1800);
+            return { noteId: occurrence.note_id, title: note.title ?? occurrence.note?.title ?? 'Previous meeting', scheduledStart: occurrence.scheduled_start_at, summary: text, actions: text.match(/next actions?([\s\S]{0,500})/i)?.[1] ? [text.match(/next actions?([\s\S]{0,500})/i)?.[1] ?? ''] : [], decisions: text.match(/decisions?([\s\S]{0,500})/i)?.[1] ? [text.match(/decisions?([\s\S]{0,500})/i)?.[1] ?? ''] : [] };
+          } catch { return { noteId: occurrence.note_id, title: occurrence.note?.title ?? 'Previous meeting', scheduledStart: occurrence.scheduled_start_at, summary: '' }; }
+        }));
+        const [projectsPayload, tasksPayload, remindersPayload] = await Promise.all([api.getProjects(), api.getTasks(), api.getReminders({ scope: 'current_workspace' })]);
+        const projectIds = new Set(selectedNoteProjectLinks.map((link) => link.project_id));
+        const projects = Array.isArray(projectsPayload) ? projectsPayload as Array<Record<string, unknown>> : [];
+        const tasks = Array.isArray(tasksPayload) ? tasksPayload as Array<Record<string, unknown>> : [];
+        const reminders = Array.isArray(remindersPayload) ? remindersPayload as Array<Record<string, unknown>> : [];
+        const linkedProjects = projects.filter((project) => projectIds.has(String(project.id))).map((project) => ({ id: String(project.id), title: String(project.name ?? project.title ?? 'Project'), status: project.status == null ? null : String(project.status), completeness: typeof project.completeness === 'number' ? project.completeness : null }));
+        const context: MeetingPrepContext = { workspaceId: activeWorkspaceId, noteId: selectedNoteId, currentMeeting: { title: selectedNote.title, scheduledStart: meetingMetadata.scheduled_start_at, attendees: meetingMetadata.attendees ?? [], calendarSeriesId: meetingMetadata.calendar_series_id, calendarSeriesKey: meetingMetadata.calendar_series_key }, priorMeetings: priorNotes, linkedProjects, currentProjectState: linkedProjects.map((project) => ({ ...project, openActions: tasks.filter((task) => String(task.project_id ?? '') === project.id && String(task.status ?? '') !== 'completed').length, overdueActions: tasks.filter((task) => String(task.project_id ?? '') === project.id && String(task.status ?? '') !== 'completed' && task.due_date && String(task.due_date) < new Date().toISOString().slice(0, 10)).length })), tasks: tasks.map((task) => ({ id: String(task.id), title: String(task.title ?? ''), status: task.status == null ? null : String(task.status), dueDate: task.due_date == null ? null : String(task.due_date), projectId: task.project_id == null ? null : String(task.project_id) })), reminders: reminders.map((reminder) => ({ id: String(reminder.id), title: String(reminder.title ?? ''), isDone: reminder.is_done === true, remindAt: reminder.remind_at == null ? null : String(reminder.remind_at), projectId: reminder.project_id == null ? null : String(reminder.project_id) })), unresolvedThreads: [] };
+        const result = (await generatePrep(context)) as MeetingPrepResult;
+        if (cancelled) return;
+        meetingPrepCacheRef.current.set(selectedNoteId, result);
+        setMeetingPrep(result);
+        setMeetingPrepStatus(result.status === 'ready' ? 'ready' : 'idle');
+      } catch {
+        if (!cancelled) setMeetingPrepStatus('idle');
+      }
+    };
+    void loadPrep();
+    return () => { cancelled = true; };
+  }, [activeWorkspaceId, api, isMeetingNote, meetingMetadata, meetingSeriesOccurrences, selectedNote, selectedNoteId, selectedNoteProjectLinks]);
+
+  useEffect(() => {
     if (meetingMetadata?.transcription_status !== 'recording') return;
     const timer = window.setInterval(() => setMeetingTimerTick((current) => current + 1), 1000);
     return () => window.clearInterval(timer);
@@ -4282,6 +4584,19 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     },
     [meetingMetadata, updateMeetingMetadata]
   );
+
+  const selectMeetingTemplate = useCallback(async (template: NonNullable<MeetingNoteMetadata['meeting_template']>) => {
+    const instructions = template === 'custom'
+      ? window.prompt('What should this meeting recap focus on?', meetingMetadata?.meeting_template_instructions ?? '')
+      : meetingMetadata?.meeting_template_instructions ?? null;
+    if (template === 'custom' && instructions === null) return;
+    const payload = { meeting_template: template, ...(template === 'custom' ? { meeting_template_instructions: instructions } : {}) };
+    await updateMeetingMetadata(payload);
+    if (selectedNote?.parent_id) {
+      await api.updateMeetingMetadata(selectedNote.parent_id, payload);
+    }
+    meetingPrepCacheRef.current.delete(selectedNoteId ?? '');
+  }, [api, meetingMetadata?.meeting_template_instructions, selectedNote, selectedNoteId, updateMeetingMetadata]);
 
   const enableMeetingMode = useCallback(async () => {
     if (!selectedNote || isMeetingNote) return;
@@ -4839,7 +5154,22 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         transcriptSpeakerDraftsRef.current[segment.id] ??
         segment.speaker_label ??
         '';
-      if (nextText === segment.transcript_text && nextSpeaker === (segment.speaker_label ?? ''))
+      const normalizedSpeaker = nextSpeaker.trim();
+      const currentUserMember = user?.id ? workspaceMemberById.get(user.id) : null;
+      const currentUserName = currentUserMember?.full_name || currentUserMember?.email || user?.email || null;
+      const matchingMember = workspaceMembers.find(
+        (member) => displayUserName(member).toLowerCase() === normalizedSpeaker.toLowerCase() || member.email?.toLowerCase() === normalizedSpeaker.toLowerCase()
+      );
+      const nextIdentity: MeetingSpeakerIdentity = {
+        rawSpeakerId: segment.speaker_identity?.rawSpeakerId || `source:${segment.audio_source}`,
+        personId: matchingMember?.user_id || (normalizedSpeaker === currentUserName ? user?.id : undefined),
+        displayName: normalizedSpeaker || undefined,
+        state: normalizedSpeaker && normalizedSpeaker !== 'Unknown speaker' ? 'known' : 'unknown',
+        confidence: 1,
+        source: 'user_confirmed',
+        confirmedByUser: true,
+      };
+      if (nextText === segment.transcript_text && nextSpeaker === (segment.speaker_label ?? '') && JSON.stringify(segment.speaker_identity ?? null) === JSON.stringify(nextIdentity))
         return;
       if (!selectedNoteIdRef.current) return;
       if (!nextText.trim()) {
@@ -4855,7 +5185,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       try {
         const updated = (await api.updateTranscriptSegment(noteId, segment.id, {
           transcript_text: nextText,
-          speaker_label: nextSpeaker.trim() || null,
+          speaker_label: normalizedSpeaker || null,
+          speaker_identity: nextIdentity,
         })) as TranscriptSegment;
         if (!isRenderableTranscriptSegment(updated)) {
           throw new Error(
@@ -4881,8 +5212,30 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         setTranscriptError(error instanceof Error ? error.message : 'Could not update transcript.');
       }
     },
-    [api]
+    [api, user, workspaceMemberById, workspaceMembers]
   );
+
+  const confirmMeetingIdentity = useCallback(async (suggestion: MeetingIdentitySuggestion) => {
+    if (!suggestion.rawSpeakerId || !suggestion.displayName) return;
+    const matching = resolvedTranscriptSegments.filter((segment) => segment.speaker_identity?.rawSpeakerId === suggestion.rawSpeakerId);
+    for (const segment of matching) await commitTranscriptSegment(segment, suggestion.displayName);
+    setMeetingIdentitySuggestions((current) => current.filter((item) => item !== suggestion));
+  }, [commitTranscriptSegment, resolvedTranscriptSegments]);
+
+  const openMeetingActionComposer = useCallback((kind: NotesSelectionComposerKind, action: MeetingActionSuggestion) => {
+    const source = action.sourceRefs[0];
+    const segment = transcriptSegments.find((item) => item.id === source?.transcriptSegmentId);
+    if (!segment || !selectedNoteId) return;
+    openEditorOverviewComposer(kind, action.text, {
+      projectId: selectedNoteProjectLinks[0]?.project_id ?? null,
+      assigneeId: user?.id ?? null,
+      transcriptSegmentId: segment.id,
+      transcriptTimestampMs: source.timestampMs,
+      transcriptSpeakerLabel: segment.speaker_label,
+      transcriptAudioSource: segment.audio_source,
+      sourceLabel: `Created from meeting “${selectedNote?.title ?? selectedNoteId}”`,
+    });
+  }, [openEditorOverviewComposer, selectedNote, selectedNoteId, selectedNoteProjectLinks, transcriptSegments, user?.id]);
 
   const deleteTranscriptSegment = useCallback(
     async (segment: TranscriptSegment) => {
@@ -6184,6 +6537,68 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       notes,
     ]
   );
+
+  const acceptMeetingRecap = useCallback(async () => {
+    if (!selectedNote || !meetingRecapDraft) return;
+    const escapeHtml = (value: string) =>
+      value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] ?? character));
+    const renderInsight = (item: MeetingInsight) => {
+      const action = item as MeetingActionSuggestion;
+      const prefix = action.ownerText ? `${action.ownerText} — ` : '';
+      const due = action.dueDateText ? ` · ${action.dueDateText}` : '';
+      return `<li>${escapeHtml(`${prefix}${item.text}${due}`)}</li>`;
+    };
+    const recapHtml = [
+      '<h2>Recap</h2>',
+      `<p>${escapeHtml(meetingRecapDraft.overview)}</p>`,
+      meetingRecapDraft.decisions.length
+        ? `<h2>Decisions</h2><ul>${meetingRecapDraft.decisions.map((item) => renderInsight(item)).join('')}</ul>`
+        : '',
+      meetingRecapDraft.actions.length
+        ? `<h2>Next actions</h2><ul>${meetingRecapDraft.actions.map((item) => renderInsight(item)).join('')}</ul>`
+        : '',
+      meetingRecapDraft.openThreads.length
+        ? `<h2>Open threads</h2><ul>${meetingRecapDraft.openThreads.map((item) => renderInsight(item)).join('')}</ul>`
+        : '',
+      '<hr><h2>Your notes</h2>',
+      normalizeEditorHtml(draftContent) || '<p></p>',
+    ].join('');
+    setDraftContent(recapHtml);
+    draftContentRef.current = recapHtml;
+    setIsDirty(true);
+    isDirtyRef.current = true;
+    const saved = await flushAutosave({ content: recapHtml });
+    if (!saved) return;
+    const linkGroups: Array<{ kind: 'meeting_note' | 'decision' | 'action_item' | 'key_point'; items: MeetingInsight[] }> = [
+      { kind: 'meeting_note', items: [{ text: meetingRecapDraft.overview, sourceRefs: meetingRecapDraft.decisions.flatMap((item) => item.sourceRefs).slice(0, 4) }] },
+      { kind: 'decision', items: meetingRecapDraft.decisions },
+      { kind: 'action_item', items: meetingRecapDraft.actions },
+      { kind: 'key_point', items: meetingRecapDraft.openThreads },
+    ];
+    const segmentById = new Map(transcriptSegments.map((segment) => [segment.id, segment]));
+    try {
+      await Promise.all(
+        linkGroups.flatMap(({ kind, items }) => items.flatMap((item) => item.sourceRefs.map(async (ref) => {
+          const segment = segmentById.get(ref.transcriptSegmentId);
+          if (!segment) return;
+          await api.createMeetingTranscriptLink(selectedNote.id, segment.id, {
+            link_type: kind,
+            quoted_text: segment.transcript_text,
+            timestamp_ms: ref.timestampMs,
+            speaker_label: segment.speaker_label,
+            audio_source: segment.audio_source,
+          });
+        })))
+      );
+      const links = await api.getMeetingTranscriptLinks(selectedNote.id);
+      setTranscriptLinks(Array.isArray(links) ? (links as MeetingTranscriptLink[]) : []);
+    } catch (error) {
+      toast.show('Recap saved, but some transcript references could not be attached.', { variant: 'error' });
+    }
+    setMeetingRecapDraft(null);
+    setMeetingRecapStatus('idle');
+    toast.show('Meeting recap added to your note.', { variant: 'success' });
+  }, [api, draftContent, flushAutosave, meetingRecapDraft, selectedNote, toast, transcriptSegments]);
 
   const saveCurrentNoteAndRefresh = useCallback(async () => {
     const currentNoteId = selectedNoteIdRef.current;
@@ -8805,6 +9220,127 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         className="block w-full resize-none overflow-hidden break-words bg-transparent py-1 text-[2.5rem] font-bold leading-[1.14] tracking-[-0.035em] text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-text-muted)] outline-none [field-sizing:content]"
                       />
                     </div>
+                    {isMeetingNote && meetingCenterView === 'write' && (
+                      <div
+                        className="mt-3 flex min-h-10 items-center gap-2 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-1.5"
+                        data-meeting-recording-controls
+                      >
+                        <select
+                          value={meetingMetadata?.meeting_template ?? 'auto'}
+                          onChange={(event) => void selectMeetingTemplate(event.target.value as NonNullable<MeetingNoteMetadata['meeting_template']>)}
+                          disabled={meetingMetadata?.transcription_status !== 'idle'}
+                          className="max-w-28 rounded-md border border-[color:var(--ledger-border-subtle)] bg-transparent px-1.5 py-1 text-[10px] text-[var(--ledger-text-secondary)] disabled:opacity-50"
+                          aria-label="Meeting template"
+                        >
+                          <option value="auto">Auto</option><option value="one_on_one">1:1</option><option value="team_sync">Team sync</option><option value="project_review">Project review</option><option value="customer_sales">Customer / sales</option><option value="interview">Interview</option><option value="custom">Custom…</option>
+                        </select>
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${meetingStatusTone(
+                            meetingMetadata?.transcription_status
+                          )}`}
+                        >
+                          {meetingMetadata?.transcription_status === 'recording' ? (
+                            <CircleDot size={12} />
+                          ) : meetingMetadata?.transcription_status === 'processing' ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : meetingMetadata?.transcription_status === 'failed' ? (
+                            <AlertCircle size={12} />
+                          ) : (
+                            <Mic size={12} />
+                          )}
+                          {isLoadingMeetingMetadata
+                            ? 'Loading meeting…'
+                            : meetingBusyAction === 'stop'
+                            ? 'Stopping…'
+                            : meetingStatusLabel(meetingMetadata?.transcription_status)}
+                        </span>
+                        <span className="text-[11px] tabular-nums text-[var(--ledger-text-muted)]">
+                          {formatMeetingDuration(meetingElapsedSeconds)}
+                        </span>
+                        <div className="ml-auto flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => void startMeeting()}
+                            disabled={
+                              meetingMetadata?.transcription_status !== 'idle' ||
+                              Boolean(meetingBusyAction)
+                            }
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[var(--ledger-accent)] text-white disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label="Start recording"
+                            title="Start recording"
+                          >
+                            <Play size={10} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void pauseMeeting()}
+                            disabled={
+                              meetingMetadata?.transcription_status !== 'recording' ||
+                              Boolean(meetingBusyAction)
+                            }
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label="Pause recording"
+                            title="Pause recording"
+                          >
+                            <Pause size={11} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void resumeMeeting()}
+                            disabled={
+                              meetingMetadata?.transcription_status !== 'paused' ||
+                              Boolean(meetingBusyAction)
+                            }
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label="Resume recording"
+                            title="Resume recording"
+                          >
+                            <Play size={10} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void stopMeeting()}
+                            disabled={
+                              !['recording', 'paused'].includes(
+                                meetingMetadata?.transcription_status ?? ''
+                              ) || Boolean(meetingBusyAction)
+                            }
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)] disabled:cursor-not-allowed disabled:opacity-35"
+                            aria-label="Stop recording"
+                            title="Stop recording"
+                            aria-busy={meetingBusyAction === 'stop'}
+                          >
+                            <Square size={10} />
+                          </button>
+                        </div>
+                        {audioError && (
+                          <span className="max-w-[45%] truncate text-[10px] text-amber-700" role="status">
+                            {audioError}
+                          </span>
+                        )}
+                        {meetingMetadata?.transcription_status === 'complete' &&
+                          transcriptSegments.length > 0 &&
+                          meetingRecapStatus === 'idle' && (
+                            <button
+                              type="button"
+                              onClick={() => void enhanceMeetingNote()}
+                              className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                            >
+                              Enhance meeting note
+                            </button>
+                          )}
+                        {meetingRecapStatus === 'generating' && (
+                          <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-[var(--ledger-text-muted)]" role="status">
+                            <Loader2 size={11} className="animate-spin" /> {meetingRecapStage}
+                          </span>
+                        )}
+                        {meetingRecapStatus === 'unavailable' && meetingRecapError && (
+                          <span className="ml-1 max-w-[42%] truncate text-[10px] text-amber-700" role="status" title={meetingRecapError}>
+                            {meetingRecapError}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {isMeetingNote && meetingCenterView === 'transcript' && (
                       <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5">
                       <div
@@ -9111,7 +9647,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       <MeetingTranscriptErrorBoundary>
                         <MeetingTranscriptSection
                           metadata={meetingMetadata}
-                          segments={transcriptSegments}
+                          segments={resolvedTranscriptSegments}
                           drafts={transcriptDrafts}
                           speakerDrafts={transcriptSpeakerDrafts}
                           isLoading={isLoadingTranscript}
@@ -9150,6 +9686,16 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         />
                       </MeetingTranscriptErrorBoundary>
                     ) : draftMode !== 'mind_map' ? (
+                      <>
+                      {isMeetingNote && meetingMetadata?.transcription_status === 'idle' && (meetingPrepStatus === 'generating' || meetingPrep?.points?.length) && (
+                        <section className="rounded-lg border-b border-[color:var(--ledger-border-subtle)] pb-4" data-meeting-prep>
+                          <div className="flex items-center justify-between gap-3">
+                            <h2 className="text-[11px] font-semibold text-[var(--ledger-text-primary)]">Prep</h2>
+                            {meetingPrep?.points?.length ? <button type="button" onClick={() => selectedNote && activeWorkspaceId && openAskLedgerWithContext({ resourceType: 'note', resourceId: selectedNote.id, title: selectedNote.title, contextType: 'meeting', workspaceId: activeWorkspaceId, meetingNoteId: selectedNote.id, calendarSeriesId: meetingMetadata?.calendar_series_id ?? undefined, linkedProjectId: selectedNoteProjectLinks[0]?.project_id ?? undefined, initialQuestion: 'What should I remember before this meeting?' })} className="text-[10px] font-medium text-[var(--ledger-accent)]">Ask Ledger →</button> : null}
+                          </div>
+                          {meetingPrepStatus === 'generating' ? <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Preparing for this meeting…</p> : <ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{meetingPrep?.points.map((point) => <li key={point}>• {point}</li>)}</ul>}
+                        </section>
+                      )}
                       <RichTextEditor
                         editorKey={`${selectedNote.id}:${editorRefreshTick}`}
                         noteId={selectedNote.id}
@@ -9230,6 +9776,67 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           void flushAutosave();
                         }}
                       />
+                      {isMeetingNote && meetingRecapStatus === 'ready' && meetingRecapDraft && (
+                        <MeetingRecapDraftSection
+                          draft={meetingRecapDraft}
+                          tier={meetingRecapTier}
+                          onCitation={focusTranscriptSegment}
+                          onRegenerate={() => void enhanceMeetingNote()}
+                          onAccept={() => void acceptMeetingRecap()}
+                          identitySuggestions={meetingIdentitySuggestions}
+                          onConfirmIdentity={(suggestion) => void confirmMeetingIdentity(suggestion)}
+                          onAskMeeting={() => selectedNote && activeWorkspaceId && openAskLedgerWithContext({ resourceType: 'note', resourceId: selectedNote.id, title: selectedNote.title, contextType: 'meeting', workspaceId: activeWorkspaceId, meetingNoteId: selectedNote.id, calendarSeriesId: meetingMetadata?.calendar_series_id ?? undefined, linkedProjectId: selectedNoteProjectLinks[0]?.project_id ?? undefined, initialQuestion: 'What did we decide in this meeting?' })}
+                          onCreateAction={(action) => openMeetingActionComposer('task', action)}
+                          onCreateReminder={(action) => openMeetingActionComposer('reminder', action)}
+                          onCreateEvent={(action) => openMeetingActionComposer('event', action)}
+                          onLinkProject={() => void openLinkProjectModal(selectedNoteId)}
+                          isBusy={false}
+                        />
+                      )}
+                      {isMeetingNote && (
+                        <MeetingTranscriptErrorBoundary>
+                          <MeetingTranscriptSection
+                            metadata={meetingMetadata}
+                            segments={resolvedTranscriptSegments}
+                            drafts={transcriptDrafts}
+                            speakerDrafts={transcriptSpeakerDrafts}
+                            isLoading={isLoadingTranscript}
+                            isExpanded={false}
+                            onToggle={() => {}}
+                            onDraftChange={(segmentId, value) => {
+                              transcriptDraftsRef.current = {
+                                ...transcriptDraftsRef.current,
+                                [segmentId]: value,
+                              };
+                              setTranscriptDrafts((current) => ({ ...current, [segmentId]: value }));
+                            }}
+                            onCommit={(segment) => void commitTranscriptSegment(segment)}
+                            onSpeakerChange={(segment, speakerLabel) =>
+                              setTranscriptSpeakerDrafts((current) => ({
+                                ...current,
+                                [segment.id]: speakerLabel,
+                              }))
+                            }
+                            onSpeakerSelect={(segment, speakerLabel) =>
+                              void commitTranscriptSegment(segment, speakerLabel)
+                            }
+                            onDelete={(segment) => void deleteTranscriptSegment(segment)}
+                            onMerge={(segment, next, speakerLabel) =>
+                              void mergeTranscriptSegments(segment, next, speakerLabel)
+                            }
+                            onSplit={(segment, position) =>
+                              void splitTranscriptSegment(segment, position)
+                            }
+                            isMutationBusy={Boolean(transcriptMutation || meetingBusyAction)}
+                            deletedSegments={deletedTranscriptSegments}
+                            onRestore={(segment) => void restoreTranscriptSegment(segment)}
+                            onCreateLedgerItem={createTranscriptLedgerItem}
+                            onAddMeetingReference={addTranscriptMeetingReference}
+                            transcriptLinks={transcriptLinks}
+                          />
+                        </MeetingTranscriptErrorBoundary>
+                      )}
+                      </>
                     ) : (
                       <div
                         className="mt-4 h-[calc(100vh-330px)] min-h-[420px] w-full"

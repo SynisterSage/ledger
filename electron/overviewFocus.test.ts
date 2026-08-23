@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { LocalAIRequest, LocalAIStreamEvent } from './localAIService.ts';
 import { buildOverviewFocusFallbackResult, buildOverviewFocusPrompt, deriveOverviewFocusSignals, OverviewFocusService, validateOverviewFocusResult, type OverviewFocusSnapshot } from './overviewFocus.ts';
-import { buildOverviewFocusSnapshot, getOverviewFocusPrimaryResource } from '../src/types/overviewFocus.ts';
+import { buildOverviewFocusFingerprint, buildOverviewFocusSnapshot, getOverviewFocusPrimaryResource } from '../src/types/overviewFocus.ts';
 
 const snapshot: OverviewFocusSnapshot = {
   generatedAt: '2026-08-18T12:00:00.000Z',
@@ -32,6 +32,12 @@ test('normalizes Overview data without changing domain records', () => {
   assert.equal(result.projects[0].progress, 12);
   assert.equal(result.events.length, 2);
   assert.equal('content' in result.recentNotes[0], false);
+});
+
+test('builds a reload-stable Lens fingerprint when resource order changes', () => {
+  const first = buildOverviewFocusSnapshot('workspace-a', { todayTasks: [], workspaceTasks: [], projects: [{ id: 'project-a', name: 'A' }, { id: 'project-b', name: 'B' }], events: [], reminders: [], notes: [] });
+  const second = { ...first, projects: [...first.projects].reverse() };
+  assert.equal(buildOverviewFocusFingerprint(first), buildOverviewFocusFingerprint(second));
 });
 
 test('derives overdue, approaching, concentrated, and deadline/progress context', () => {

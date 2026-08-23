@@ -24,9 +24,12 @@ export const decodeAskLedgerContext = (value: string | null | undefined): AskLed
       resourceType: parsed.resourceType,
       resourceId: parsed.resourceId,
       title: parsed.title,
-      ...(parsed.contextType === 'project' ? { contextType: 'project' as const } : {}),
+      ...(parsed.contextType === 'project' ? { contextType: 'project' as const } : parsed.contextType === 'meeting' ? { contextType: 'meeting' as const } : {}),
       ...(typeof parsed.workspaceId === 'string' && parsed.workspaceId.trim() ? { workspaceId: parsed.workspaceId.slice(0, 200) } : {}),
       ...(typeof parsed.projectId === 'string' && parsed.projectId.trim() ? { projectId: parsed.projectId.slice(0, 200) } : {}),
+      ...(typeof parsed.meetingNoteId === 'string' && parsed.meetingNoteId.trim() ? { meetingNoteId: parsed.meetingNoteId.slice(0, 200) } : {}),
+      ...(typeof parsed.calendarSeriesId === 'string' && parsed.calendarSeriesId.trim() ? { calendarSeriesId: parsed.calendarSeriesId.slice(0, 200) } : {}),
+      ...(typeof parsed.linkedProjectId === 'string' && parsed.linkedProjectId.trim() ? { linkedProjectId: parsed.linkedProjectId.slice(0, 200) } : {}),
       ...(parsed.origin === 'projects' ? { origin: 'projects' as const } : {}),
       ...(typeof parsed.initialQuestion === 'string' && parsed.initialQuestion.trim() ? { initialQuestion: parsed.initialQuestion.slice(0, 400) } : {}),
       ...(handoff?.workspaceId && handoff.overviewDate ? { handoff } : {}),
@@ -41,6 +44,17 @@ export const readPendingAskLedgerContext = () => {
     const value = sessionStorage.getItem(CONTEXT_STORAGE_KEY);
     sessionStorage.removeItem(CONTEXT_STORAGE_KEY);
     return decodeAskLedgerContext(value);
+  } catch {
+    return null;
+  }
+};
+
+// Read the handoff without consuming it. New Ask Ledger windows can render
+// before the desktop route event arrives, so the initial render needs a
+// synchronous way to preserve the selected resource anchor.
+export const peekPendingAskLedgerContext = () => {
+  try {
+    return decodeAskLedgerContext(sessionStorage.getItem(CONTEXT_STORAGE_KEY));
   } catch {
     return null;
   }

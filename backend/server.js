@@ -969,6 +969,16 @@ const normalizeMeetingMetadataPayload = (body = {}, existing = null) => {
     }
     payload.attendees = body.attendees;
   }
+  if (has('meeting_template')) {
+    const value = normalizeNullableText(body.meeting_template)?.toLowerCase() ?? null;
+    if (value && !['auto', 'one_on_one', 'team_sync', 'project_review', 'customer_sales', 'interview', 'custom'].includes(value)) throw meetingValidationError('Invalid meeting_template');
+    payload.meeting_template = value;
+  }
+  if (has('meeting_template_instructions')) {
+    const value = normalizeNullableText(body.meeting_template_instructions);
+    if (value && value.length > 1000) throw meetingValidationError('meeting_template_instructions is too long');
+    payload.meeting_template_instructions = value;
+  }
   if (has('transcription_error')) {
     payload.transcription_error = normalizeNullableText(body.transcription_error);
     if (payload.transcription_error && payload.transcription_error.length > 4000) {
@@ -1077,9 +1087,27 @@ const normalizeTranscriptSegment = (body = {}, { allowId = false } = {}) => {
   if (speakerLabel && speakerLabel.length > 255) {
     throw meetingValidationError('speaker_label is too long');
   }
+  let speakerIdentity = null;
+  if (body.speaker_identity !== undefined && body.speaker_identity !== null) {
+    const identity = body.speaker_identity;
+    if (typeof identity !== 'object' || Array.isArray(identity)) throw meetingValidationError('speaker_identity must be an object');
+    if (!['known', 'suggested', 'unknown'].includes(String(identity.state ?? ''))) throw meetingValidationError('Invalid speaker identity state');
+    if (identity.source != null && !['current_user', 'calendar_attendee', 'transcript_context', 'user_confirmed'].includes(String(identity.source))) throw meetingValidationError('Invalid speaker identity source');
+    if (identity.confidence != null && (!Number.isFinite(Number(identity.confidence)) || Number(identity.confidence) < 0 || Number(identity.confidence) > 1)) throw meetingValidationError('Invalid speaker identity confidence');
+    speakerIdentity = {
+      rawSpeakerId: normalizeNullableText(identity.rawSpeakerId),
+      personId: normalizeNullableText(identity.personId),
+      displayName: normalizeNullableText(identity.displayName),
+      state: String(identity.state),
+      confidence: identity.confidence == null ? null : Number(identity.confidence),
+      source: identity.source == null ? null : String(identity.source),
+      confirmedByUser: identity.confirmedByUser === true,
+    };
+  }
   const segment = {
     audio_source: audioSource,
     speaker_label: speakerLabel,
+    speaker_identity: speakerIdentity,
     start_ms: startMs,
     end_ms: endMs,
     transcript_text: transcriptText,
@@ -23334,9 +23362,13 @@ app.post('/api/meeting-notes/from-calendar', authMiddleware, rateLimit('write'),
 
     const parent = parentId ? await supabase.from('notes').select('depth').eq('workspace_id', workspaceId).eq('id', parentId).maybeSingle() : null;
     if (parent?.error) throw parent.error;
+    const inheritedTemplate = parentId
+      ? await supabase.from('meeting_note_metadata').select('meeting_template, meeting_template_instructions').eq('workspace_id', workspaceId).eq('note_id', parentId).maybeSingle()
+      : { data: null, error: null };
+    if (inheritedTemplate.error) throw inheritedTemplate.error;
     const inserted = await supabase.from('notes').insert({ workspace_id: workspaceId, user_id: req.authUser.id, updated_by: req.authUser.id, title, content: '', content_html: meetingNoteAgendaHtml, date: scheduledStart ? new Date(scheduledStart).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10), source: 'meeting', mode: 'meeting_note', parent_id: parentId || null, section_id: null, sort_order: 0, depth: parentId ? Number(parent.data?.depth ?? 0) + 1 : 0 }).select(noteSelectColumns).single();
     if (inserted.error) throw inserted.error;
-    const metadata = await initializeMeetingMetadata(workspaceId, inserted.data.id, { calendar_event_id: event?.id ?? null, calendar_series_id: event?.series_id ?? null, calendar_provider: provider, calendar_event_key: eventKey, calendar_series_key: seriesKey, calendar_source_name: event?.source_platform ?? req.body?.calendar_source_name ?? null, calendar_event_title: title, scheduled_start_at: scheduledStart, scheduled_end_at: scheduledEnd, attendees: event?.attendees ?? req.body?.attendees ?? null, microphone_enabled: req.body?.microphone_enabled !== false, system_audio_enabled: req.body?.system_audio_enabled !== false, audio_retention: req.body?.audio_retention ?? 'delete_after_transcription' });
+    const metadata = await initializeMeetingMetadata(workspaceId, inserted.data.id, { calendar_event_id: event?.id ?? null, calendar_series_id: event?.series_id ?? null, calendar_provider: provider, calendar_event_key: eventKey, calendar_series_key: seriesKey, calendar_source_name: event?.source_platform ?? req.body?.calendar_source_name ?? null, calendar_event_title: title, scheduled_start_at: scheduledStart, scheduled_end_at: scheduledEnd, attendees: event?.attendees ?? req.body?.attendees ?? null, meeting_template: inheritedTemplate.data?.meeting_template ?? 'auto', meeting_template_instructions: inheritedTemplate.data?.meeting_template_instructions ?? null, microphone_enabled: req.body?.microphone_enabled !== false, system_audio_enabled: req.body?.system_audio_enabled !== false, audio_retention: req.body?.audio_retention ?? 'delete_after_transcription' });
     if (event) {
       const updatedEvent = await supabase.from('events').update({ note_id: inserted.data.id, updated_by: req.authUser.id }).eq('workspace_id', workspaceId).eq('id', event.id).select(eventSelectColumns).single();
       if (updatedEvent.error) throw updatedEvent.error;

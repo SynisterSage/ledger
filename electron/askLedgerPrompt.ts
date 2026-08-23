@@ -71,9 +71,9 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
     : primaryContext?.length
     ? [
       'PRIMARY CONTEXT — answer the user’s request from these resources first:',
-      new LedgerContextBuilder().normalize(primaryContext, { maxContextTokens: 3200, maxItemTokens: 1000, sortByFreshness: false }).text,
+      new LedgerContextBuilder().normalize(primaryContext, { maxContextTokens: 2600, maxItemTokens: 800, sortByFreshness: false }).text,
       supportingContext?.length
-        ? `SUPPORTING CONTEXT — use only when directly relevant to the primary resources:\n${new LedgerContextBuilder().normalize(supportingContext, { maxContextTokens: 1000, maxItemTokens: 500, sortByFreshness: false }).text}`
+        ? `SUPPORTING CONTEXT — use only when directly relevant to the primary resources:\n${new LedgerContextBuilder().normalize(supportingContext, { maxContextTokens: 700, maxItemTokens: 360, sortByFreshness: false }).text}`
         : '',
     ].filter(Boolean).join('\n\n')
     : normalized.text || '(No Ledger context was supplied.)';

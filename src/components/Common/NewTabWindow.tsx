@@ -11,7 +11,7 @@ import { WebSearchNewTab } from './WebSearchNewTab';
 import { usePlatform } from '../../platform';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
 const DesktopAskLedgerPanel = lazy(() => import('./AskLedgerPanel').then((module) => ({ default: module.AskLedgerPanel })));
-import { decodeAskLedgerContext, readPendingAskLedgerContext } from './askLedgerContext';
+import { decodeAskLedgerContext, peekPendingAskLedgerContext, readPendingAskLedgerContext } from './askLedgerContext';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import type { AskLedgerCustomSkill } from '../../types/askLedgerSkills';
 
@@ -62,7 +62,11 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const conversationMenuPopupRef = useRef<HTMLDivElement>(null);
   const footerHistoryPositionRef = useRef(false);
   const [conversationMenuPosition, setConversationMenuPosition] = useState<CSSProperties | null>(null);
-  const [askInitialContext, setAskInitialContext] = useState<AskLedgerInitialContext | null>(null);
+  const initialAskContextRef = useRef<AskLedgerInitialContext | null>(null);
+  if (initialAskContextRef.current === null) {
+    initialAskContextRef.current = decodeAskLedgerContext(new URLSearchParams(window.location.search).get('focusContext')) ?? peekPendingAskLedgerContext();
+  }
+  const [askInitialContext, setAskInitialContext] = useState<AskLedgerInitialContext | null>(() => initialAskContextRef.current);
   const [customSkills, setCustomSkills] = useState<AskLedgerCustomSkill[]>([]);
   const [skillEditor, setSkillEditor] = useState<{ skill?: AskLedgerCustomSkill } | null>(null);
   const [skillName, setSkillName] = useState('');
@@ -171,6 +175,17 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   }, []);
 
   useEffect(() => {
+    const incomingFocusContext = decodeAskLedgerContext(new URLSearchParams(window.location.search).get('focusContext'));
+    let pendingContext = false;
+    try {
+      pendingContext = sessionStorage.getItem('ledger:ask-ledger:pending-context')?.startsWith('ask-ledger-context:') ?? false;
+    } catch {
+      pendingContext = false;
+    }
+    // The context reader below must see the handoff before this workspace
+    // reset rewrites the route to a generic browser tab. This matters when a
+    // Project Lens opens Ask Ledger in a fresh desktop tab.
+    if (incomingFocusContext || pendingContext) return;
     setSelectedAskSession(null);
     setAskInitialContext(null);
     setAskConversationActive(false);

@@ -69,14 +69,14 @@ export const GENERATION_MODEL_REGISTRY: GenerationModelManifest[] = [
     fileName: 'qwen3-1.7b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_GENERATION_URL,
     expectedSize: Number(process.env.LEDGER_LOCAL_AI_GENERATION_SIZE) || undefined,
     sha256: process.env.LEDGER_LOCAL_AI_GENERATION_SHA256?.trim().toLowerCase() || undefined,
-    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, runtimeArgs: ['--reasoning', 'off'], reasoningMode: 'off',
+    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 8192, runtimeArgs: ['--reasoning', 'off'], reasoningMode: 'off',
   },
   {
     id: 'qwen3-4b-q4-k-m', tier: 'balanced', displayName: 'Qwen3 4B Q4_K_M', description: 'Balanced and Thinking use this same model', modelFamily: 'Qwen3', role: 'generation', version: '1',
     fileName: 'qwen3-4b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_BALANCED_URL || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.url,
     expectedSize: Number(process.env.LEDGER_LOCAL_AI_BALANCED_SIZE) || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.size,
     sha256: process.env.LEDGER_LOCAL_AI_BALANCED_SHA256?.trim().toLowerCase() || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.balanced.sha256,
-    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 4096, maxTokens: 512, runtimeArgs: ['--n-gpu-layers', 'all', '--no-mmproj', '--reasoning', 'off', '--parallel', '1'], reasoningMode: 'off',
+    minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 8192, maxTokens: 512, runtimeArgs: ['--n-gpu-layers', 'all', '--no-mmproj', '--reasoning', 'off', '--parallel', '1'], reasoningMode: 'off',
   },
 ];
 

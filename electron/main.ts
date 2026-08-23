@@ -37,6 +37,9 @@ import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
 import { OverviewFocusService, type OverviewFocusResult, type OverviewFocusSnapshot } from './overviewFocus';
 import { ProjectLensService } from './projectLensService';
+import { MeetingRecapService } from './meetingRecapService.ts';
+import { MeetingPeopleService } from './meetingPeopleService.ts';
+import { MeetingPrepService } from './meetingPrepService.ts';
 import { buildSkillResult, getAskLedgerSkill, listAskLedgerSkills } from './askLedgerSkills';
 import type { AskLedgerSkillDefinition, AskLedgerSkillId } from '../src/types/askLedgerSkills.ts';
 import type { AskLedgerConversationState } from '../src/types/askLedgerConversationState.ts';
@@ -78,6 +81,9 @@ const localAIService = createLocalAIService(localAIAssets);
 const askLedgerService = createAskLedgerService(localAIService, localAIAssets, path.join(app.getPath('userData'), 'ask-ledger-attachments'));
 const overviewFocusService = new OverviewFocusService(localAIService);
 const projectLensService = new ProjectLensService(localAIService, askLedgerService.getRetrievalService());
+const meetingRecapService = new MeetingRecapService(localAIService);
+const meetingPeopleService = new MeetingPeopleService(localAIService);
+const meetingPrepService = new MeetingPrepService(localAIService);
 localAIService.onGenerationRuntimeState((state) => {
   BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed()) window.webContents.send('ask-ledger:generation-runtime-state', state);
@@ -288,6 +294,10 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
     resourceType: String((payload.explicitContext as Record<string, unknown>).resourceType ?? ''),
     resourceId: String((payload.explicitContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
     title: String((payload.explicitContext as Record<string, unknown>).title ?? '').slice(0, 300),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting'].includes(String((payload.explicitContext as Record<string, unknown>).contextType)) ? { contextType: String((payload.explicitContext as Record<string, unknown>).contextType) as 'project' | 'meeting' } : {}),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).meetingNoteId === 'string' ? { meetingNoteId: String((payload.explicitContext as Record<string, unknown>).meetingNoteId).slice(0, 200) } : {}),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).calendarSeriesId === 'string' ? { calendarSeriesId: String((payload.explicitContext as Record<string, unknown>).calendarSeriesId).slice(0, 200) } : {}),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).linkedProjectId === 'string' ? { linkedProjectId: String((payload.explicitContext as Record<string, unknown>).linkedProjectId).slice(0, 200) } : {}),
     ...(typeof (payload.explicitContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((payload.explicitContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
     ...(sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) } : {}),
   } : undefined;
@@ -312,6 +322,10 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
       resourceType: String((conversation.initialContext as Record<string, unknown>).resourceType ?? 'external') as never,
       resourceId: String((conversation.initialContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
       title: String((conversation.initialContext as Record<string, unknown>).title ?? 'Ledger context').slice(0, 300),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting'].includes(String((conversation.initialContext as Record<string, unknown>).contextType)) ? { contextType: String((conversation.initialContext as Record<string, unknown>).contextType) as 'project' | 'meeting' } : {}),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).meetingNoteId === 'string' ? { meetingNoteId: String((conversation.initialContext as Record<string, unknown>).meetingNoteId).slice(0, 200) } : {}),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).calendarSeriesId === 'string' ? { calendarSeriesId: String((conversation.initialContext as Record<string, unknown>).calendarSeriesId).slice(0, 200) } : {}),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).linkedProjectId === 'string' ? { linkedProjectId: String((conversation.initialContext as Record<string, unknown>).linkedProjectId).slice(0, 200) } : {}),
       ...(typeof (conversation.initialContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((conversation.initialContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
       ...(sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) } : {}),
     } : undefined,
@@ -455,6 +469,19 @@ ipcMain.handle('project-lens:generate', async (_event, payload: unknown) => {
 ipcMain.handle('project-lens:action', async (_event, payload: unknown) => {
   if (!payload || typeof payload !== 'object') return { status: 'unavailable', reason: 'invalid_context' };
   return projectLensService.generateAction(payload as never);
+});
+
+ipcMain.handle('meeting-recap:generate', async (_event, payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return { status: 'unavailable', reason: 'invalid_context' };
+  return meetingRecapService.generate(payload as never);
+});
+ipcMain.handle('meeting-people:suggest', async (_event, payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return { status: 'unavailable', suggestions: [] };
+  return meetingPeopleService.suggest(payload as never);
+});
+ipcMain.handle('meeting-prep:generate', async (_event, payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return { status: 'unavailable', points: [] };
+  return meetingPrepService.generate(payload as never);
 });
 
 ipcMain.handle('ask-ledger:local-ai-status', () => localAIAssets.status());

@@ -1353,7 +1353,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
   }, []);
 
   useEffect(() => {
-    if (!selectedProjectIntelligenceContext || !projectLensFingerprint || isLoadingLinkedNotes || isLoadingProjectCalendarItems || isLoadingProjectActivity || isLoadingTasks) {
+    if (!selectedProjectIntelligenceContext || !projectLensFingerprint || isLoadingProjects || isLoadingLinkedNotes || isLoadingProjectCalendarItems || isLoadingProjectActivity || isLoadingTasks) {
       projectLensRequestRef.current += 1;
       projectLensActionRequestRef.current += 1;
       setProjectLensResult(null);
@@ -1370,6 +1370,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     }
     void requestProjectLens(selectedProjectIntelligenceContext, projectLensFingerprint);
   }, [
+    isLoadingProjects,
     isLoadingLinkedNotes,
     isLoadingProjectActivity,
     isLoadingProjectCalendarItems,

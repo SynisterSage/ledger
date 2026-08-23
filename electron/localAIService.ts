@@ -805,7 +805,12 @@ export type GenerationModelSwitchResult =
   | { ok: false; state: 'failed'; tier: GenerationTier; modelId: string; error: { code: string; message: string } };
 
 export const createLocalAIService = (assets = new LocalAIAssetManager(), overrides: { contextSize?: number; runtimeArgs?: string[] } = {}) => {
-  const port = Number(process.env.LEDGER_LOCAL_AI_PORT || DEFAULT_PORT);
+  // Dev Electron restarts can leave an older llama-server alive on the
+  // default port. Reusing it silently preserves its old --ctx-size and makes
+  // the new runtime configuration ineffective. Use a process-scoped port by
+  // default; explicit ports remain available for packaged/integration setups.
+  const configuredPort = process.env.LEDGER_LOCAL_AI_PORT ? Number(process.env.LEDGER_LOCAL_AI_PORT) : undefined;
+  const port = configuredPort ?? DEFAULT_PORT + (process.pid % 1000);
   const runtimeFactory = (modelId: string) => {
     const model = assets.generationModel(modelId);
     if (!model) throw new Error('Invalid generation model.');

@@ -102,9 +102,45 @@ const resourceCatalog = (context: ProjectIntelligenceContext) => {
 const parseJsonObject = (value: string) => {
   const fenced = value.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim() ?? value.trim();
   try { return JSON.parse(fenced) as unknown; } catch {}
-  const start = fenced.indexOf('{'); const end = fenced.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try { return JSON.parse(fenced.slice(start, end + 1)) as unknown; } catch { return null; }
+
+  // Local models sometimes add a short preamble, end markers, or more than one
+  // brace-delimited fragment around the requested JSON. Walk balanced objects
+  // and try each complete candidate instead of trusting the first/last brace.
+  let firstCandidate: unknown = null;
+  for (let start = 0; start < fenced.length; start += 1) {
+    if (fenced[start] !== '{') continue;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let end = start; end < fenced.length; end += 1) {
+      const character = fenced[end];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') quoted = false;
+        continue;
+      }
+      if (character === '"') {
+        quoted = true;
+        continue;
+      }
+      if (character === '{') depth += 1;
+      if (character === '}') depth -= 1;
+      if (depth === 0) {
+        try {
+          const candidate = JSON.parse(fenced.slice(start, end + 1)) as unknown;
+          if (candidate && typeof candidate === 'object') {
+            firstCandidate ??= candidate;
+            if (typeof (candidate as Record<string, unknown>).summary === 'string') return candidate;
+          }
+        } catch {
+          // Try the next balanced candidate; validation remains authoritative.
+        }
+        break;
+      }
+    }
+  }
+  return firstCandidate;
 };
 
 const positiveClaim = (value: string, term: RegExp) => term.test(value) && !new RegExp(`(?:no|not|without|none|isn't|is not)\\s+(?:\\w+\\s+){0,2}${term.source}`, 'i').test(value);

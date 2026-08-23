@@ -11,6 +11,23 @@ export type MeetingTranscriptionStatus =
 export type MeetingAudioRetention = 'delete_after_transcription' | 'retain';
 export type MeetingAudioSource = 'user_microphone' | 'system_audio';
 
+export type MeetingSpeakerIdentityState = 'known' | 'suggested' | 'unknown';
+export type MeetingSpeakerIdentitySource =
+  | 'current_user'
+  | 'calendar_attendee'
+  | 'transcript_context'
+  | 'user_confirmed';
+
+export type MeetingSpeakerIdentity = {
+  rawSpeakerId?: string;
+  personId?: string;
+  displayName?: string;
+  state: MeetingSpeakerIdentityState;
+  confidence?: number;
+  source?: MeetingSpeakerIdentitySource;
+  confirmedByUser: boolean;
+};
+
 export type MeetingNoteMetadata = {
   id: string;
   note_id: string;
@@ -33,6 +50,8 @@ export type MeetingNoteMetadata = {
   system_audio_enabled: boolean;
   audio_retention: MeetingAudioRetention;
   attendees: unknown[] | null;
+  meeting_template?: 'auto' | 'one_on_one' | 'team_sync' | 'project_review' | 'customer_sales' | 'interview' | 'custom' | null;
+  meeting_template_instructions?: string | null;
   transcription_error: string | null;
   created_at: string;
   updated_at: string;
@@ -50,6 +69,7 @@ export type TranscriptSegment = {
   workspace_id: string;
   audio_source: MeetingAudioSource;
   speaker_label: string | null;
+  speaker_identity?: MeetingSpeakerIdentity | null;
   start_ms: number;
   end_ms: number;
   transcript_text: string;
@@ -57,6 +77,7 @@ export type TranscriptSegment = {
   segment_order: number;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 };
 
 export type TranscriptSegmentInput = Omit<
@@ -85,4 +106,40 @@ export type MeetingTranscriptLink = {
   audio_source: MeetingAudioSource;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * Bounded, evidence-first input contract for future meeting intelligence.
+ * Phase 1 only defines the shape; it must not trigger generation or mutate
+ * the note body.
+ */
+export type MeetingIntelligenceContext = {
+  workspaceId: string;
+  noteId: string;
+  meeting: {
+    title: string;
+    calendarEventId?: string | null;
+    calendarSeriesId?: string | null;
+    scheduledStart?: string | null;
+    scheduledEnd?: string | null;
+    actualStart?: string | null;
+    actualEnd?: string | null;
+    attendees: unknown[];
+    calendarProvider?: string | null;
+    calendarEventKey?: string | null;
+    calendarSeriesKey?: string | null;
+    template?: MeetingNoteMetadata['meeting_template'];
+    templateInstructions?: string | null;
+  };
+  humanNotes: {
+    contentHtml: string;
+    contentText?: string;
+  };
+  transcriptSegments: TranscriptSegment[];
+  transcriptLinks: MeetingTranscriptLink[];
+  relatedContext?: {
+    project?: unknown;
+    event?: unknown;
+    priorMeeting?: unknown;
+  };
 };

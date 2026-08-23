@@ -40,6 +40,14 @@ test('rejects unsupported source IDs and structured fact conflicts', () => {
   assert.deepEqual(conflict.rejectionReasons, ['structured_fact_conflict']);
 });
 
+test('accepts valid JSON wrapped in local-model preamble or trailing markers', () => {
+  const request = buildProjectLensRequest(context());
+  const wrapped = 'Here is the project lens:\n{"summary":"The open action needs movement.","nextStep":{"text":"Continue the open action.","sources":[{"resourceType":"task","resourceId":"task-a"}]},"sources":[{"resourceType":"project","resourceId":"project-a"}]}\n<|endoftext|>';
+  const validation = validateProjectLensResult(wrapped, request, context());
+  assert.equal(validation.result?.summary, 'The open action needs movement.');
+  assert.deepEqual(validation.rejectionReasons, []);
+});
+
 test('sparse projects get a deterministic, grounded fallback', () => {
   const sparse = context({ project: { id: 'project-a', workspace_id: 'workspace-a', name: 'New project', status: 'not_started', completeness: 0 } , tasks: [], milestones: [] });
   const result = buildProjectLensFallback(sparse);

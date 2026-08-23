@@ -295,6 +295,9 @@ type AskLedgerStreamEvent = {
 
 const askLedgerDocumentScope = (question: string) => {
   const value = question.toLowerCase().replace(/[’']/g, '').trim();
+  // State questions need related records even when the selected resource
+  // attachment was not preserved across a tab/session transition.
+  if (askLedgerNeedsRelatedWorkspaceContext(question)) return undefined;
   // Notes are a first-class retrieval target. Keep the full document set for
   // note requests so the backend planner can resolve folders and expand only
   // directly related events/tasks afterward; an events-only scope would make
@@ -326,6 +329,12 @@ const askLedgerDocumentScope = (question: string) => {
   if (/\b(status|progress|current state)\b/.test(value)) return 'status_context';
   if (/\b(today|todays|tomorrow|upcoming|planned|plan|this week|next week)\b/.test(value)) return 'time_window';
   return undefined;
+};
+
+const askLedgerNeedsRelatedWorkspaceContext = (question: string) => {
+  const value = question.toLowerCase().replace(/[’']/g, '').trim();
+  return /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/.test(value)
+    && /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/.test(value);
 };
 
 const askLedgerDateWindow = (question: string) => {
@@ -985,8 +994,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     activeRequestIdRef.current = null;
     conversationRef.current = null;
     conversationIdRef.current = newAskLedgerConversationId();
-    initialContextRef.current = null;
-    setActiveInitialContext(null);
+    // A context handoff and resetKey are intentionally delivered together
+    // when Lens opens a fresh Ask Ledger tab. Preserve that incoming context;
+    // only clear it when the parent actually starts an unanchored chat.
+    initialContextRef.current = initialContext ?? null;
+    setActiveInitialContext(initialContext ?? null);
     recentTurnsRef.current = [];
     messagesRef.current = [];
     sessionIdRef.current = null;
@@ -1247,10 +1259,11 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           const partialResponse = liveResponseRef.current;
           const currentState = stateRef.current;
           if ((currentState.status === 'streaming' || currentState.status === 'submitting') && partialResponse.answer.trim()) {
+            const timedOut = value.error?.code === 'request_timeout';
             const partialMessage: AskLedgerMessage = {
               id: newAskLedgerMessageId(), role: 'assistant',
               content: partialResponse.answer.trim(), createdAt: new Date().toISOString(),
-              sources: partialResponse.sources, interrupted: true,
+              sources: partialResponse.sources, ...(timedOut ? {} : { interrupted: true }),
               activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
             };
             const nextMessages = [...messagesRef.current, partialMessage];
@@ -1354,20 +1367,21 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const effectiveQuestion = trimmedQuestion || (composerAttachments.length ? 'Review this attachment.' : '');
     onQuestionSubmitted?.(effectiveQuestion);
     const submittedAttachments = composerAttachments;
-    const submittedInitialContext = activeInitialContext;
+    const submittedInitialContext = activeInitialContext ?? initialContextRef.current ?? initialContext ?? null;
     const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext
       ? [...submittedAttachments, { kind: 'resource', resource: { id: submittedInitialContext.resourceId, resourceId: submittedInitialContext.resourceId, title: submittedInitialContext.title, type: submittedInitialContext.resourceType, sourceLabel: sourceTypeLabels[submittedInitialContext.resourceType] } }]
       : submittedAttachments;
     const attachmentIds = submittedAttachments.flatMap((item) => item.kind === 'file' ? [item.attachment.id] : []);
 
     const customSkill = customSkills.find((skill) => skill.id === selectedSkillForRequest);
-    const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, customSkill, explicitContext: initialContextRef.current ?? undefined, attachmentIds, reasoningMode };
+    const submittedContext = activeInitialContext ?? initialContextRef.current ?? initialContext ?? undefined;
+    const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, customSkill, explicitContext: submittedContext, attachmentIds, reasoningMode };
     const route = routeAskLedgerMessage(effectiveQuestion, {
       previousQuestion: conversationRef.current?.previousQuestion,
       previousAnswer: conversationRef.current?.previousAnswer,
       previousSources: conversationRef.current?.previousSources,
       recentExchanges: conversationRef.current?.recentExchanges,
-      explicitContext: initialContextRef.current ?? undefined,
+      explicitContext: submittedContext,
       hasSelectedSkill: Boolean(selectedSkillForRequest),
       attachmentCount: attachmentIds.length,
       previousProductArea: conversationRef.current?.productArea,
@@ -1458,8 +1472,28 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     }
     requestInitializingRef.current = true;
     const preflightStartedAt = Date.now();
+    const projectAnchoredRequest = submittedContext?.resourceType === 'project';
+    const relatedWorkspaceRequest = projectAnchoredRequest || askLedgerNeedsRelatedWorkspaceContext(effectiveQuestion);
+    const projectRequestOptions = relatedWorkspaceRequest
+      ? {
+        // A project handoff needs its exact work records, not just the
+        // project row. Do not apply the question's meeting date window to
+        // tasks/milestones that may be undated or due outside that meeting.
+        scope: 'all',
+        project: submittedContext?.title,
+        integrationQuery: effectiveQuestion,
+      }
+      : {
+        scope: askLedgerDocumentScope(effectiveQuestion),
+        ...askLedgerDateWindow(effectiveQuestion),
+        openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion),
+        project: askLedgerProjectReference(effectiveQuestion),
+        taskHorizon: askLedgerTaskHorizon(effectiveQuestion),
+        assignedToMe: askLedgerAssignedToMe(effectiveQuestion, askLedgerDocumentScope(effectiveQuestion)),
+        integrationQuery: effectiveQuestion,
+      };
     void Promise.all(route.retrievalRequired ? [
-      api.getAskLedgerDocuments(workspaceId, { scope: askLedgerDocumentScope(effectiveQuestion), ...askLedgerDateWindow(effectiveQuestion), openOnly: /\b(open|todo|to-do|to do|need to do)\b/i.test(effectiveQuestion), project: askLedgerProjectReference(effectiveQuestion), taskHorizon: askLedgerTaskHorizon(effectiveQuestion), assignedToMe: askLedgerAssignedToMe(effectiveQuestion, askLedgerDocumentScope(effectiveQuestion)), integrationQuery: effectiveQuestion }) as Promise<{
+      api.getAskLedgerDocuments(workspaceId, projectRequestOptions) as Promise<{
         workspaceId?: string;
         documents?: Array<Record<string, unknown>>;
       }>,
@@ -1510,7 +1544,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           conversation: conversationRef.current ?? { id: conversationIdRef.current, previousQuestion: '', previousAnswer: '', previousSources: [], recentExchanges: [] },
           skillId: request.skillId,
           customSkill: request.customSkill,
-          explicitContext: request.explicitContext,
+          explicitContext: submittedContext,
           attachmentIds: request.attachmentIds,
           reasoningMode: request.reasoningMode,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,

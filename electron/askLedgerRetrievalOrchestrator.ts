@@ -108,6 +108,7 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const integrationProviders = base.integrationProviders ?? [];
   const hasInternalLedger = integrationProviders.length > 0 && /\bledger\b/.test(normalized);
   const includesProjectContext = hasProjects || hasInternalLedger;
+  const projectWorkIntent = includesProjectContext && /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|stuck|needs? to happen|needs? attention)\b/.test(normalized);
   const objectives: RetrievalObjective[] = [];
 
   integrationProviders.forEach((provider) => addObjective(objectives, {
@@ -199,14 +200,14 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const projectEntityQuery = includesProjectContext && !hasMeetings ? base.entityQuery : undefined;
   const projectEntity = projectEntityQuery ? { entityQuery: projectEntityQuery } : {};
   if (hasMilestones || includesProjectContext || hasMeetings) {
-    addObjective(objectives, { id: 'project-milestones', purpose: 'Retrieve milestones for discovered projects', resourceTypes: ['milestone'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectDependency });
+    addObjective(objectives, { id: 'project-milestones', purpose: 'Retrieve milestones for discovered projects', resourceTypes: ['milestone'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectWorkIntent ? [] : projectDependency });
   }
   if ((hasTasks && !hasTeamWorkload) || includesProjectContext || hasMeetings) {
     const constraints = { ...base.structuredConstraints, openOnly: true };
-    addObjective(objectives, { id: 'project-open-tasks', purpose: 'Retrieve open project tasks and horizons', resourceTypes: ['task'], ...projectEntity, constraints, expandRelationships: false, dependsOn: projectDependency });
+    addObjective(objectives, { id: 'project-open-tasks', purpose: 'Retrieve open project tasks and horizons', resourceTypes: ['task'], ...projectEntity, constraints, expandRelationships: false, dependsOn: projectWorkIntent ? [] : projectDependency });
   }
   if (hasReminders || includesProjectContext || hasMeetings) {
-    addObjective(objectives, { id: 'linked-reminders', purpose: 'Retrieve reminders and follow-up context', resourceTypes: ['reminder'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectDependency });
+    addObjective(objectives, { id: 'linked-reminders', purpose: 'Retrieve reminders and follow-up context', resourceTypes: ['reminder'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectWorkIntent ? [] : projectDependency });
   }
   if (hasAttention) {
     addObjective(objectives, { id: 'attention-tasks', purpose: 'Find overdue, blocked, and today work requiring attention', resourceTypes: ['task', 'milestone'], constraints: { ...base.structuredConstraints, attentionOnly: true }, expandRelationships: false, dependsOn: projectDependency });
@@ -355,9 +356,24 @@ export class AskLedgerRetrievalOrchestrator {
 
     const limits = { ...DEFAULT_LIMITS, ...this.limits };
     const customSkillResourceTypes = options?.customSkillResourceTypes?.length ? [...new Set(options.customSkillResourceTypes)] : undefined;
-    const objectives = customSkillResourceTypes
+    let objectives = customSkillResourceTypes
       ? [{ id: 'custom-skill-context', purpose: 'Retrieve the workspace context allowed by the custom skill', resourceTypes: customSkillResourceTypes, constraints: {}, expandRelationships: false, dependsOn: [] }]
       : decomposeRetrievalObjectives(orchestrationQuestion).slice(0, limits.maxObjectives);
+    const explicitProjectIds = (options?.resolvedResourceKeys ?? [])
+      .filter((key) => key.startsWith('project:'))
+      .map((key) => key.slice('project:'.length))
+      .filter(Boolean);
+    if (explicitProjectIds.length && !customSkillResourceTypes) {
+      const projectWorkObjectives = objectives
+        .filter((objective) => objective.id !== 'linked-projects' && objective.resourceTypes.some((type) => ['project', 'task', 'milestone', 'reminder'].includes(type)))
+        .map((objective) => ({ ...objective, dependsOn: [] }));
+      const otherObjectives = objectives.filter((objective) => !projectWorkObjectives.some((candidate) => candidate.id === objective.id) && objective.id !== 'linked-projects');
+      objectives = [
+        { id: 'explicit-project', purpose: 'Retrieve the selected project record as authoritative context', resourceTypes: ['project'] as AskLedgerResourceType[], constraints: { projectIds: explicitProjectIds }, expandRelationships: true, dependsOn: [], graphRelationshipTypes: ['has_milestone', 'has_task', 'has_note', 'has_event', 'has_reminder'] as AskLedgerRelationshipType[] },
+        ...projectWorkObjectives,
+        ...otherObjectives,
+      ].slice(0, limits.maxObjectives);
+    }
     if (options?.skillId === 'project_health_check' || options?.skillId === 'meeting_follow_up' || options?.skillId === 'prepare_for_meeting') {
       // The selected resource ID is the authoritative seed. Synthetic skill
       // wording must not turn words such as "project work" into a title filter.

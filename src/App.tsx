@@ -105,7 +105,7 @@ import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { NewTabWindow } from './components/Common/NewTabWindow';
 import { PageFindBar } from './components/Common/PageFindBar';
-import { buildOverviewFocusSnapshot, getOverviewFocusPrimaryResource, type OverviewFocusResult, type OverviewFocusSnapshot } from './types/overviewFocus';
+import { buildOverviewFocusFingerprint, buildOverviewFocusSnapshot, getOverviewFocusPrimaryResource, type OverviewFocusResult, type OverviewFocusSnapshot } from './types/overviewFocus';
 import { LensCache } from './features/lens/lensCache';
 import { LensRequestRegistry } from './features/lens/lensRequestRegistry';
 import { openAskLedgerWithContext } from './components/Common/askLedgerContext';
@@ -2002,7 +2002,7 @@ export function DashboardContent({
 
   const overviewFocusSnapshotKey = useMemo(() => {
     if (!overviewFocusSnapshot) return '';
-    return JSON.stringify({ ...overviewFocusSnapshot, generatedAt: '' });
+    return buildOverviewFocusFingerprint(overviewFocusSnapshot);
   }, [overviewFocusSnapshot]);
   overviewFocusSnapshotKeyRef.current = overviewFocusSnapshotKey;
 

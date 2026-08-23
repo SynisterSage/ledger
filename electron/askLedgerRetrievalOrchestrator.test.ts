@@ -186,3 +186,22 @@ test('applies resolved conversation project IDs to fresh follow-up retrieval', a
   assert.equal(result.items.some((entry) => entry.resourceId === 'task-other'), false);
   await index.shutdown();
 });
+
+test('keeps an explicitly selected project authoritative when the question also asks about meetings', async () => {
+  const project = item({ resourceType: 'project', resourceId: 'project-selected', title: 'Watercolor Exhibition', content: 'Exhibition project.', status: 'in_progress' });
+  const task = item({ resourceType: 'task', resourceId: 'task-selected', title: 'Confirm gallery venue', content: 'Next action for the exhibition.', projectId: 'project-selected', status: 'open', dueAt: '2026-08-27' });
+  const milestone = item({ resourceType: 'milestone', resourceId: 'milestone-selected', title: 'Artwork list', content: 'Finalize the artwork list.', projectId: 'project-selected', status: 'open' });
+  const meeting = item({ resourceType: 'event', resourceId: 'event-unrelated', title: 'Team meeting', content: 'General team meeting.' });
+  const documents = [project, task, milestone, meeting];
+  const { orchestrator, index } = await buildOrchestrator(documents);
+  const result = await orchestrator.retrieve('workspace-a', 'What is the next action and status for this project? I have a team meeting soon.', [], 20, {
+    documents,
+    resolvedResourceKeys: ['project:project-selected'],
+  });
+
+  assert.equal(result.items.some((entry) => entry.resourceId === 'project-selected'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'task-selected'), true);
+  assert.equal(result.items.some((entry) => entry.resourceId === 'milestone-selected'), true);
+  assert.equal(result.orchestration.objectives[0]?.id, 'explicit-project');
+  await index.shutdown();
+});

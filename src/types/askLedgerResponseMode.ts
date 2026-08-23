@@ -102,6 +102,8 @@ const productSkillHelpSignals = /\b(?:what|how)\s+(?:does|do)\s+(?:the\s+)?plan\
 const notesPeopleCapabilitySignals = /\b(?:mention|mentions|people|ppl|person)\b[\s\S]*\bnotes?\b|\bnotes?\b[\s\S]*\b(?:mention|mentions|people|ppl|person)\b/i;
 const notesDateCapabilitySignals = /\bhow\s+does\s+(?:that\s+)?date\s+thing\s+work\b/i;
 const workspaceDataIntentSignals = /\b(?:my|mine|our|today|yesterday|tomorrow|this\s+(?:task|project|meeting|note|event|reminder)|on my|show|list|find|due|overdue|have i|what did i\s+(?:write|put|save|capture|say|do)|(?:what|which) .* (?:do i have|is due))\b/i;
+const workspaceResourceWords = /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/i;
+const workspaceResourceStateSignals = /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|remaining|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/i;
 const researchSignals = /\b(?:across (?:all|the workspace|Atlas)|look through|actually blocking|where .* really stand\b|where .* really stands\b|connect|analy[sz]e .*dependencies|dependencies|compare .* and|compare .* evidence|all the context|contradictions?|cross[- ]resource|biggest .* risks?|keeping .* from moving)\b/i;
 const freshFollowUpSignals = /^(?:what happened\b|did (?:she|he|they|it|[a-z][a-z]+)\s+(?:ever\s+)?(?:respond|reply|answer)|what did we say\b|what about\b|when is that due\b)/i;
 const responseFactSignals = /\b(?:did|has)\s+(?:she|he|they|[A-Z][a-z]+)\s+(?:ever\s+)?(?:respond|reply|answer)/;
@@ -158,6 +160,20 @@ export const routeAskLedgerMessage = (
   const workspaceDataIntentDetected = workspaceDataIntentSignals.test(normalized);
   const previousProductHelpContextReusable = previousProductHelpContext(context);
   const productHelpDetected = isLedgerProductHelpQuestion(message, context);
+  // Product-area words can appear in a request for workspace facts. Keep
+  // project/task work questions grounded even if the previous turn was
+  // product help or the resource handoff was only partially preserved.
+  const workspaceResourceStateQuestion = workspaceResourceWords.test(normalized)
+    && workspaceResourceStateSignals.test(normalized)
+    && (
+      workspaceDataIntentDetected
+      || namedWorkspaceEntity(message)
+      || possessiveWorkspaceSignals.test(normalized)
+      || factualQuestionSignals.test(normalized)
+      || context.explicitContext
+      || Boolean(context.hasSelectedSkill)
+      || (context.attachmentCount ?? 0) > 0
+    );
   const previousExecutionMode = context.previousExecutionMode;
   const depthFor = (options: { conversational?: boolean } = {}) =>
     inferAskLedgerAnswerDepth(message, options);
@@ -282,7 +298,7 @@ export const routeAskLedgerMessage = (
       reason: 'workspace_fact_or_entity',
     });
   }
-  if (productHelpDetected) {
+  if (productHelpDetected && !workspaceResourceStateQuestion) {
     const productRoute = withDepth({
       mode: previousProductHelpContextReusable ? 'follow_up' : 'conversational',
       executionMode: 'ledger_product_help',

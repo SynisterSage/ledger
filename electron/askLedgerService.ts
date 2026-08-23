@@ -265,7 +265,7 @@ const expandRelatedProjectContext = (items: AskLedgerContextItem[], documents: A
 
 const meetingContextTokens = (value: string) => new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2));
 
-const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefined, candidates: AskLedgerContextItem[], documents: AskLedgerContextItem[]) => {
+export const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefined, candidates: AskLedgerContextItem[], documents: AskLedgerContextItem[], explicitContext?: AskLedgerInitialContext) => {
   if (!explicitItem) return candidates.slice(0, 10);
   const selected = new Map<string, AskLedgerContextItem>();
   const add = (item: AskLedgerContextItem | undefined) => {
@@ -278,6 +278,13 @@ const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefined, ca
     ? explicitItem.parentResourceId
     : explicitItem.resourceType === 'note' ? explicitItem.resourceId : undefined;
   const projectId = explicitItem.projectId;
+  const seriesId = explicitContext?.calendarSeriesId;
+  const linkedProjectId = explicitContext?.linkedProjectId;
+  const scopedDocuments = documents.filter((item) => !explicitContext?.workspaceId || !item.workspaceId || item.workspaceId === explicitContext.workspaceId);
+  const seriesNoteIds = new Set(scopedDocuments.filter((item) => {
+    const itemSeriesId = String(item.metadata?.calendarSeriesId ?? item.metadata?.calendar_series_id ?? item.metadata?.calendarSeriesKey ?? item.metadata?.calendar_series_key ?? '');
+    return Boolean(seriesId && itemSeriesId === seriesId && item.resourceType === 'note');
+  }).map((item) => item.resourceId));
   const titleTokens = meetingContextTokens(`${explicitItem.title} ${explicitItem.content}`);
   const titleRelated = (item: AskLedgerContextItem) => {
     const overlap = [...meetingContextTokens(`${item.title} ${item.content}`)].filter((token) => titleTokens.has(token));
@@ -288,18 +295,25 @@ const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefined, ca
   // The selected meeting is the anchor. Pull its note/transcript first, then
   // work records that explicitly point to the same meeting or project.
   documents
-    .filter((item) => (noteId && (item.resourceId === noteId || item.parentResourceId === noteId)) || (projectId && item.projectId === projectId && ['note', 'transcript'].includes(item.resourceType)) || (['note', 'transcript'].includes(item.resourceType) && titleRelated(item)))
+    .filter((item) => {
+      const itemSeriesId = String(item.metadata?.calendarSeriesId ?? item.metadata?.calendar_series_id ?? item.metadata?.calendarSeriesKey ?? item.metadata?.calendar_series_key ?? '');
+      const sameSeries = Boolean(seriesId && itemSeriesId && itemSeriesId === seriesId);
+      return (noteId && (item.resourceId === noteId || item.parentResourceId === noteId)) || (seriesNoteIds.has(item.parentResourceId ?? '') && item.resourceType === 'transcript') || (linkedProjectId && item.projectId === linkedProjectId && ['note', 'transcript'].includes(item.resourceType)) || (projectId && item.projectId === projectId && ['note', 'transcript'].includes(item.resourceType)) || sameSeries || (!seriesId && ['note', 'transcript'].includes(item.resourceType) && titleRelated(item));
+    })
     .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
     .forEach(add);
   documents
     .filter((item) => ['task', 'reminder', 'milestone'].includes(item.resourceType))
-    .filter((item) => (projectId && item.projectId === projectId) || titleRelated(item) || (explicitItem.title && `${item.provenance ?? ''} ${item.content}`.toLowerCase().includes(explicitItem.title.toLowerCase())))
+    .filter((item) => {
+      const itemSeriesId = String(item.metadata?.calendarSeriesId ?? item.metadata?.calendar_series_id ?? item.metadata?.calendarSeriesKey ?? item.metadata?.calendar_series_key ?? '');
+      return (linkedProjectId && item.projectId === linkedProjectId) || (projectId && item.projectId === projectId) || (seriesId && itemSeriesId === seriesId) || (!seriesId && titleRelated(item)) || (explicitItem.title && `${item.provenance ?? ''} ${item.content}`.toLowerCase().includes(explicitItem.title.toLowerCase()));
+    })
     .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
     .forEach(add);
   // If the event has no linked note or project, a few recent notes/tasks make
   // the absence of meeting history visible and still give the skill something
   // grounded to compare against instead of returning an empty-context error.
-  return [...selected.values()].slice(0, 16);
+  return [...selected.values()].filter((item) => !explicitContext?.workspaceId || !item.workspaceId || item.workspaceId === explicitContext.workspaceId).slice(0, 16);
 };
 
 export type AskLedgerRetrievalRequest = {
@@ -440,7 +454,12 @@ export class AskLedgerService {
       skillId: skill?.id,
       ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources } : {}),
       boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys],
-      resolvedResourceKeys: conversationResolution.resourceKeys,
+      resolvedResourceKeys: [
+        ...conversationResolution.resourceKeys,
+        ...(request.explicitContext?.resourceType === 'project'
+          ? [`project:${request.explicitContext.projectId ?? request.explicitContext.resourceId}`]
+          : []),
+      ],
     });
     const allowedItems = skill ? retrieval.items.filter((item) => skill.allowedContextTypes.includes(item.resourceType)) : retrieval.items;
     const explicitItem = explicitContext ? request.documents.find((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId) : undefined;
@@ -793,7 +812,7 @@ export class AskLedgerService {
         activeGenerationDepth = generationDepth;
         const promptConversation = route.reason === 'casual_conversation' ? undefined : conversationForCurrentTurn;
         this.localAI.start(
-          { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, recentConversation: promptConversation, responseMode: route.mode, executionMode: route.executionMode, productKnowledgeContext: productKnowledge?.context, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: shouldRetrieve, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
+          { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, request.explicitContext?.resourceType === 'project' ? `Selected project anchor: "${request.explicitContext.title}". Answer this request about this project and its directly linked records only.` : '', overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, recentConversation: promptConversation, responseMode: route.mode, executionMode: route.executionMode, productKnowledgeContext: productKnowledge?.context, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason, capabilityDescription: route.reason === 'capability_question' ? ASK_LEDGER_CAPABILITY_DESCRIPTION : undefined }), timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: shouldRetrieve, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
           { onEvent: emit },
           requestId,
         );
@@ -819,10 +838,19 @@ export class AskLedgerService {
       performanceTrace.mark('indexingCompleted');
       indexingMs = semanticIndexRequired ? Date.now() - indexingStartedAt : 0;
       emit({ type: 'activity', requestId, activity: { type: 'searching' } });
+      const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
+      const projectAnchorInstruction = explicitContext?.resourceType === 'project'
+        ? `Selected project anchor: "${explicitContext.title}" (${explicitContext.projectId ?? explicitContext.resourceId}). Use this project and records explicitly linked to its project ID as the authoritative scope. Do not use similarly titled or unrelated workspace records as project work.`
+        : '';
+      const meetingAnchorInstruction = explicitContext?.contextType === 'meeting'
+        ? `Selected meeting anchor: "${explicitContext.title}". Scope meeting questions to the current meeting note, explicit calendar series, linked project, confirmed attendees, related meeting records, and their exact transcript evidence. Transcript answers what was said; current task/project state answers what is true now. Never use a same-title meeting from another series or workspace.`
+        : '';
       const retrievalQuestion = [
         request.question,
+        meetingAnchorInstruction,
         skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
         conversationForCurrentTurn?.initialContext ? `Current Ledger context: ${conversationForCurrentTurn.initialContext.title}` : '',
+        projectAnchorInstruction,
         overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext),
         ...(conversationForCurrentTurn?.recentExchanges ?? []).slice(-2).flatMap((exchange) => [
           exchange.question ? `Recent question: ${exchange.question.slice(0, 600)}` : '',
@@ -838,11 +866,16 @@ export class AskLedgerService {
       const attachmentFocusKeys = genericAttachmentQuestion
         ? request.documents.filter((item) => item.resourceType === 'attachment').map((item) => `${item.resourceType}:${item.resourceId}`)
         : [];
-      const explicitContext = request.explicitContext ?? request.conversation?.initialContext;
       const isCustomSkill = Boolean(skill && !getAskLedgerSkill(skill.id));
       const intent = detectAskLedgerQueryIntent(request.question);
       const retrievalLimit = skill?.id === 'plan_my_week' || intent.kind === 'weekly_overview' ? 32 : 20;
-      const retrievalDocuments = semanticIndexRequired ? undefined : request.documents;
+      // The renderer's document snapshot can be intentionally small (for
+      // example, a project handoff may contain only the selected project).
+      // Project questions must read the workspace index as well so exact
+      // tasks, milestones, reminders, and events are available. The index is
+      // still workspace-scoped by LedgerRetrievalService.
+      const projectAnchoredRequest = Boolean(explicitContext?.resourceType === 'project');
+      const retrievalDocuments = semanticIndexRequired || projectAnchoredRequest ? undefined : request.documents;
       const retrievalStartedAt = Date.now();
       performanceTrace.mark('retrievalStarted');
       // Custom skills can intentionally submit an empty question. Give the
@@ -859,7 +892,12 @@ export class AskLedgerService {
         boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
         attachmentFocus: genericAttachmentQuestion,
         skipSemantic: genericAttachmentQuestion || route.mode === 'follow_up' || route.executionMode === 'workspace_lookup',
-        resolvedResourceKeys: conversationResolution.resourceKeys,
+        resolvedResourceKeys: [
+          ...conversationResolution.resourceKeys,
+          ...(explicitContext?.resourceType === 'project'
+            ? [`project:${explicitContext.projectId ?? explicitContext.resourceId}`]
+            : []),
+        ],
         onObjectiveTiming: (timing) => askLedgerDiagnostic('[local-ai] Ask Ledger retrieval objective', { requestId, messageId: request.messageId, skillId: skill?.id, ...timing }),
       });
       performanceTrace.mark('retrievalCompleted');
@@ -888,18 +926,35 @@ export class AskLedgerService {
           .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
           .slice(0, 3)
         : [];
+      const projectScopedSkillItems = projectAnchoredRequest && explicitContext
+        ? [
+          ...(explicitItem ? [explicitItem] : []),
+          ...skillItems.filter((item) => item.resourceType === 'project'
+            ? item.resourceId === (explicitContext.projectId ?? explicitContext.resourceId)
+            : item.projectId === (explicitContext.projectId ?? explicitContext.resourceId)),
+        ].filter((item, index, all) => all.findIndex((candidate) => candidate.resourceType === item.resourceType && candidate.resourceId === item.resourceId) === index)
+        : skillItems;
+      const meetingScopedRequest = explicitContext?.contextType === 'meeting';
       const selectedRetrievalItems = retrieval.mode === 'research'
-        ? skill?.id === 'meeting_follow_up' || skill?.id === 'prepare_for_meeting'
-          ? expandMeetingContext(explicitItem, skillItems, request.documents)
+        ? projectAnchoredRequest
+          ? expandRelatedProjectContext(projectScopedSkillItems, request.documents)
+          : skill?.id === 'meeting_follow_up' || skill?.id === 'prepare_for_meeting'
+            ? expandMeetingContext(explicitItem, skillItems, request.documents, explicitContext)
+          : meetingScopedRequest
+            ? expandMeetingContext(explicitItem, skillItems, request.documents, explicitContext)
           : skill?.id === 'project_health_check'
             ? expandRelatedProjectContext(skillItems, request.documents)
             : skillItems
+        : meetingScopedRequest
+        ? expandMeetingContext(explicitItem, skillItems, request.documents, explicitContext)
         : retrieval.primaryItems?.length
         ? [...retrieval.primaryItems, ...(retrieval.relatedItems ?? [])]
         : continuationItems.length
         ? continuationItems
+        : projectAnchoredRequest
+        ? expandRelatedProjectContext(projectScopedSkillItems, request.documents)
         : (skill?.id === 'meeting_follow_up' || skill?.id === 'prepare_for_meeting') && explicitContext
-        ? expandMeetingContext(explicitItem, skillItems, request.documents)
+        ? expandMeetingContext(explicitItem, skillItems, request.documents, explicitContext)
         : (intent.kind === 'blockers' || intent.kind === 'status')
         ? expandRelatedProjectContext(skillItems.slice(0, 8), request.documents)
         : intent.kind === 'project_review'
@@ -918,9 +973,9 @@ export class AskLedgerService {
       performanceTrace.mark('evidenceBuildStarted');
       const customSkill = Boolean(skill && !skill.outputSections);
       const evidenceBudget = {
-        maxResources: customSkill ? 6 : skill ? 10 : retrieval.mode === 'research' ? 12 : 10,
-        maxTokens: customSkill ? 1200 : skill ? 1800 : retrieval.mode === 'research' ? 2600 : 2200,
-        maxItemTokens: customSkill ? 240 : skill ? 300 : 520,
+        maxResources: customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
+        maxTokens: customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
+        maxItemTokens: customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520,
       };
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems, budget: evidenceBudget, timeZone: request.timeZone, timeFormat: request.timeFormat });
       performanceTrace.mark('evidenceBuildCompleted');
@@ -944,7 +999,7 @@ export class AskLedgerService {
         question: request.question,
         skillReasoningPolicy: skill?.reasoningPolicy,
       });
-      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: customSkill ? 1600 : skill ? 2200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: customSkill ? 300 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
+      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: customSkill ? 1600 : skill ? 2200 : projectAnchoredRequest ? 1200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: customSkill ? 300 : projectAnchoredRequest ? 360 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
       emit({ type: 'activity', requestId, activity: { type: 'sources_found', count: normalized.items.length, sources: previewSources(normalized.items) } });
       emit({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();
@@ -1214,7 +1269,7 @@ export class AskLedgerService {
             },
           };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
+        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, projectAnchorInstruction, meetingAnchorInstruction, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
         generationCallbacks,
         requestId,
       );

@@ -10,6 +10,23 @@ export type OverviewFocusSnapshot = {
 };
 
 export type OverviewFocusInsight = { id: string; title: string; summary: string; importance: 'normal' | 'attention'; resourceRefs: Array<{ type: OverviewFocusResourceType; id: string }> };
+
+/**
+ * A reload-stable cache fingerprint for Overview Lens.
+ * API result order is not meaningful, so each resource collection is sorted
+ * by ID before it is serialized. Only fields that can change the Lens answer
+ * are included; generatedAt is intentionally excluded.
+ */
+export const buildOverviewFocusFingerprint = (snapshot: OverviewFocusSnapshot): string => {
+  const byId = <T extends { id: string }>(items: T[]) => [...items].sort((left, right) => left.id.localeCompare(right.id));
+  return JSON.stringify({
+    workspaceId: snapshot.workspaceId,
+    tasks: byId(snapshot.tasks),
+    projects: byId(snapshot.projects),
+    events: byId(snapshot.events),
+    recentNotes: byId(snapshot.recentNotes),
+  });
+};
 export type OverviewFocusResult = { insights: OverviewFocusInsight[] };
 
 export const getOverviewFocusPrimaryResource = (insight: OverviewFocusInsight, snapshot: OverviewFocusSnapshot | null) => {
