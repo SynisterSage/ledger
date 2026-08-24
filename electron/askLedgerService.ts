@@ -285,6 +285,20 @@ export const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefi
   const projectId = explicitItem.projectId;
   const seriesId = explicitContext?.calendarSeriesId;
   const linkedProjectId = explicitContext?.linkedProjectId;
+  const linkedProjectIds = new Set(
+    [
+      projectId,
+      linkedProjectId,
+      ...(explicitItem.relationships ?? [])
+        .filter((relationship) => relationship.resourceType === 'project')
+        .map((relationship) => relationship.resourceId),
+    ].filter((value): value is string => Boolean(value))
+  );
+  const directlyLinkedKeys = new Set(
+    (explicitItem.relationships ?? []).map(
+      (relationship) => `${relationship.resourceType}:${relationship.resourceId}`
+    )
+  );
   const scopedDocuments = documents.filter((item) => !explicitContext?.workspaceId || !item.workspaceId || item.workspaceId === explicitContext.workspaceId);
   const seriesNoteIds = new Set(scopedDocuments.filter((item) => {
     const itemSeriesId = String(item.metadata?.calendarSeriesId ?? item.metadata?.calendar_series_id ?? item.metadata?.calendarSeriesKey ?? item.metadata?.calendar_series_key ?? '');
@@ -303,7 +317,7 @@ export const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefi
     .filter((item) => {
       const itemSeriesId = String(item.metadata?.calendarSeriesId ?? item.metadata?.calendar_series_id ?? item.metadata?.calendarSeriesKey ?? item.metadata?.calendar_series_key ?? '');
       const sameSeries = Boolean(seriesId && itemSeriesId && itemSeriesId === seriesId);
-      return (noteId && (item.resourceId === noteId || item.parentResourceId === noteId)) || (seriesNoteIds.has(item.parentResourceId ?? '') && item.resourceType === 'transcript') || (linkedProjectId && item.projectId === linkedProjectId && ['note', 'transcript'].includes(item.resourceType)) || (projectId && item.projectId === projectId && ['note', 'transcript'].includes(item.resourceType)) || sameSeries || (!seriesId && ['note', 'transcript'].includes(item.resourceType) && titleRelated(item));
+      return (noteId && (item.resourceId === noteId || item.parentResourceId === noteId)) || (seriesNoteIds.has(item.parentResourceId ?? '') && item.resourceType === 'transcript') || (linkedProjectIds.has(String(item.projectId ?? '')) && ['note', 'transcript'].includes(item.resourceType)) || sameSeries || (!noteId && !seriesId && ['note', 'transcript'].includes(item.resourceType) && titleRelated(item));
     })
     .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
     .forEach(add);
@@ -311,13 +325,13 @@ export const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefi
     .filter((item) => ['task', 'reminder', 'milestone'].includes(item.resourceType))
     .filter((item) => {
       const itemSeriesId = String(item.metadata?.calendarSeriesId ?? item.metadata?.calendar_series_id ?? item.metadata?.calendarSeriesKey ?? item.metadata?.calendar_series_key ?? '');
-      return (linkedProjectId && item.projectId === linkedProjectId) || (projectId && item.projectId === projectId) || (seriesId && itemSeriesId === seriesId) || (!seriesId && titleRelated(item)) || (explicitItem.title && `${item.provenance ?? ''} ${item.content}`.toLowerCase().includes(explicitItem.title.toLowerCase()));
+      return directlyLinkedKeys.has(`${item.resourceType}:${item.resourceId}`) || linkedProjectIds.has(String(item.projectId ?? '')) || (seriesId && itemSeriesId === seriesId) || (!noteId && !seriesId && titleRelated(item)) || (!noteId && explicitItem.title && `${item.provenance ?? ''} ${item.content}`.toLowerCase().includes(explicitItem.title.toLowerCase()));
     })
     .sort((left, right) => Date.parse(right.updatedAt ?? '') - Date.parse(left.updatedAt ?? ''))
     .forEach(add);
-  // If the event has no linked note or project, a few recent notes/tasks make
-  // the absence of meeting history visible and still give the skill something
-  // grounded to compare against instead of returning an empty-context error.
+  // Title similarity is only a safe fallback when the anchor is an event with
+  // no note identity. For a selected meeting note, same-title records are not
+  // evidence of the current meeting ("Untitled Note" is especially common).
   return [...selected.values()].filter((item) => !explicitContext?.workspaceId || !item.workspaceId || item.workspaceId === explicitContext.workspaceId).slice(0, 16);
 };
 
@@ -857,7 +871,7 @@ export class AskLedgerService {
         ? `Selected project anchor: "${explicitContext.title}" (${explicitContext.projectId ?? explicitContext.resourceId}). Use this project and records explicitly linked to its project ID as the authoritative scope. Do not use similarly titled or unrelated workspace records as project work.`
         : '';
       const meetingAnchorInstruction = explicitContext?.contextType === 'meeting'
-        ? `Selected meeting anchor: "${explicitContext.title}". Scope meeting questions to the current meeting note, explicit calendar series, linked project, confirmed attendees, related meeting records, and their exact transcript evidence. Transcript answers what was said; current task/project state answers what is true now. Never use a same-title meeting from another series or workspace.`
+        ? `Selected meeting anchor: "${explicitContext.title}". Scope meeting questions to the current meeting note, explicit calendar series, linked project, confirmed attendees, related meeting records, and their exact transcript evidence. For questions about what was said, mentioned, discussed, or happened, treat transcript segment text as the primary evidence and summarize those segments directly; do not substitute meeting dates, status, project metadata, or generic note fields for transcript content. Use current task/project state only for what is true now. Never use a same-title meeting from another series or workspace.`
         : '';
       const notesHomeInstruction = notesHomeScopeInstruction(explicitContext);
       const retrievalQuestion = [

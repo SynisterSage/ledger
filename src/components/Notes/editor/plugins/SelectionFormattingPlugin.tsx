@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bold,
   Check,
@@ -102,14 +103,13 @@ const readSelection = (editor: LexicalEditor): SelectionState | null => {
     )
       return;
     const nativeSelection = window.getSelection();
-    const range = nativeSelection?.rangeCount
-      ? nativeSelection.getRangeAt(0).getBoundingClientRect()
-      : null;
+    const nativeRange = nativeSelection?.rangeCount ? nativeSelection.getRangeAt(0) : null;
+    const range = nativeRange?.getClientRects()[0] ?? nativeRange?.getBoundingClientRect() ?? null;
     if (!range) return;
     state = {
       selection: selection.clone(),
       top: Math.max(8, range.top - 48),
-      left: Math.max(8, Math.min(range.left + range.width / 2 - 170, window.innerWidth - 352)),
+      left: Math.max(8, Math.min(range.left, window.innerWidth - 360)),
       width: range.width,
       linkUrl: closestLinkUrl(selection),
       formats: {
@@ -329,7 +329,7 @@ export const SelectionFormattingPlugin = ({
     </button>
   );
 
-  return (
+  return createPortal((
     <div
       className="ledger-selection-menu fixed z-[90]"
       style={{ top: state.top, left: state.left }}
@@ -469,5 +469,5 @@ export const SelectionFormattingPlugin = ({
         </form>
       )}
     </div>
-  );
+  ), document.body);
 };

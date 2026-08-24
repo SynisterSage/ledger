@@ -25,3 +25,13 @@ test('meeting context never crosses workspace boundaries', () => {
   const result = expandMeetingContext(current, [current], [current, distractor], context);
   assert.equal(result.some((candidate) => candidate.workspaceId === 'workspace-b'), false);
 });
+
+test('selected meeting notes do not expand to unrelated same-title notes', () => {
+  const current = item('note', 'note-current', { title: 'Untitled Note' });
+  const transcript = item('transcript', 'segment-current', { parentResourceId: 'note-current', content: 'The team approved the launch.' });
+  const unrelated = item('note', 'note-unrelated', { title: 'Untitled Note', content: 'A different meeting with unrelated content.' });
+  const unrelatedTranscript = item('transcript', 'segment-unrelated', { parentResourceId: 'note-unrelated', content: 'A different conversation.' });
+  const context: AskLedgerInitialContext = { resourceType: 'note', resourceId: 'note-current', title: 'Untitled Note', contextType: 'meeting', workspaceId: 'workspace-a', meetingNoteId: 'note-current' };
+  const result = expandMeetingContext(current, [current], [current, transcript, unrelated, unrelatedTranscript], context);
+  assert.deepEqual(result.map((candidate) => candidate.resourceId), ['note-current', 'segment-current']);
+});

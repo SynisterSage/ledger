@@ -18,10 +18,18 @@ test('meeting notes keep Write as the primary surface with compact recording con
   assert.match(notesWindow, /Stop recording/);
 });
 
-test('meeting notes mount the existing transcript section below the editor collapsed', () => {
-  assert.match(notesWindow, /<RichTextEditor[\s\S]*MeetingTranscriptSection/);
-  assert.match(notesWindow, /isExpanded=\{false\}/);
+test('meeting notes keep the live transcript out of the default Write canvas', () => {
+  assert.match(notesWindow, /meetingCenterView === 'transcript'[\s\S]*MeetingTranscriptSection/);
+  assert.doesNotMatch(notesWindow, /isExpanded=\{false\}/);
+  assert.doesNotMatch(notesWindow, /resolvedTranscriptSegments\) && \(/);
   assert.match(notesWindow, /getTranscriptSegments/);
+});
+
+test('meeting notes use the normal Lexical writing surface while recording', () => {
+  assert.match(notesWindow, /<RichTextEditor[\s\S]*showToolbar/);
+  assert.match(notesWindow, /onChange=\{\(nextHtml\) =>/);
+  assert.match(notesWindow, /void flushAutosave\(\)/);
+  assert.match(notesWindow, /data-meeting-floating-controls/);
 });
 
 test('meeting intelligence remains an evidence-first type contract without generated fields', () => {
