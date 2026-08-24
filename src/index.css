@@ -828,8 +828,27 @@ button:focus {
   animation: ledger-meeting-transcript-in 160ms ease-out both;
 }
 
+@keyframes ledger-meeting-waveform-bar {
+  from { transform: scaleY(0.72); }
+  to { transform: scaleY(1); }
+}
+
+.ledger-meeting-waveform-bar-active {
+  transform-origin: bottom;
+  animation: ledger-meeting-waveform-bar 720ms ease-in-out infinite alternate;
+}
+
+.ledger-meeting-waveform-bar-active:nth-child(2) { animation-delay: 120ms; }
+.ledger-meeting-waveform-bar-active:nth-child(3) { animation-delay: 240ms; }
+.ledger-meeting-waveform-bar-active:nth-child(4) { animation-delay: 80ms; }
+
 [data-reduce-motion='true'] .ledger-meeting-live-transcript {
   animation: none;
+}
+
+[data-reduce-motion='true'] .ledger-meeting-waveform-bar-active {
+  animation: none;
+  transform: none;
 }
 
 @container (max-width: 620px) {

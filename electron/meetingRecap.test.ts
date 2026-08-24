@@ -38,8 +38,38 @@ test('long meeting evidence represents the beginning, middle, and end', () => {
 test('meeting recap prompt prioritizes human notes and grounding rules', () => {
   const prompt = buildMeetingRecapPrompt(context(), buildMeetingEvidenceChunks(context()));
   assert.match(prompt, /budget depends on Sarah/);
+  assert.match(prompt, /Human notes are user-authored context/);
+  assert.match(prompt, /original human notes must remain preserved separately under Your notes/);
   assert.match(prompt, /Never fabricate citations/);
   assert.match(prompt, /segment-1\|1000/);
+});
+
+test('selected meeting templates change recap emphasis', () => {
+  const cases = [
+    ['one_on_one', 'feedback, commitments'],
+    ['team_sync', 'blockers, ownership'],
+    ['project_review', 'risks, milestones'],
+    ['customer_sales', 'pain points, objections'],
+    ['interview', 'notable responses, evidence/examples'],
+  ] as const;
+  for (const [template, emphasis] of cases) {
+    const prompt = buildMeetingRecapPrompt(
+      context({ meeting: { ...context().meeting, template } }),
+      buildMeetingEvidenceChunks(context()),
+    );
+    assert.match(prompt, new RegExp(`Template: ${template}`));
+    assert.match(prompt, new RegExp(emphasis.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')));
+  }
+});
+
+test('custom meeting instructions are bounded and used as recap emphasis', () => {
+  const instructions = 'Focus on customer risks and explicit follow-ups.';
+  const prompt = buildMeetingRecapPrompt(
+    context({ meeting: { ...context().meeting, template: 'custom', templateInstructions: instructions } }),
+    buildMeetingEvidenceChunks(context()),
+  );
+  assert.match(prompt, /Template: custom/);
+  assert.match(prompt, /Focus on customer risks and explicit follow-ups/);
 });
 
 test('recap validation rejects unknown transcript citations', () => {

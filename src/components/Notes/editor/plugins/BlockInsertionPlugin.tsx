@@ -19,6 +19,9 @@ import {
   INSERT_TABLE_COMMAND,
   $deleteTableColumnAtSelection,
   $deleteTableRowAtSelection,
+  $computeTableMapSkipCellCheck,
+  $isTableNode,
+  $isTableSelection,
   $insertTableColumnAtSelection,
   $insertTableRowAtSelection,
 } from '@lexical/table';
@@ -33,6 +36,8 @@ import {
   $isElementNode,
   COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_LOW,
+  KEY_BACKSPACE_COMMAND,
+  KEY_DELETE_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_ESCAPE_COMMAND,
   PASTE_COMMAND,
@@ -95,6 +100,39 @@ const findAncestor = <T extends LexicalNode>(
     node = node.getParent();
   }
   return null;
+};
+
+const removeEmptyCalloutAtBoundary = (event: KeyboardEvent) => {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection) || !selection.isCollapsed() || selection.anchor.offset !== 0) return false;
+  const callout = findAncestor(selection, $isCalloutNode);
+  if (!callout || callout.getTextContent().trim()) return false;
+  const parent = callout.getParent();
+  if (!parent || !$isElementNode(parent)) return false;
+  event.preventDefault();
+  const previous = callout.getPreviousSibling();
+  const next = callout.getNextSibling();
+  callout.remove();
+  if (next) next.selectStart();
+  else if (previous) previous.selectEnd();
+  else {
+    const paragraph = $createParagraphNode();
+    parent.append(paragraph);
+    paragraph.selectStart();
+  }
+  return true;
+};
+
+const removeTableBeforeCaret = (event: KeyboardEvent) => {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection) || !selection.isCollapsed() || selection.anchor.offset !== 0) return false;
+  const block = selection.anchor.getNode().getTopLevelElementOrThrow();
+  if (block.getParent() !== $getRoot()) return false;
+  const previous = block.getPreviousSibling();
+  if (!previous || !$isTableNode(previous)) return false;
+  event.preventDefault();
+  previous.remove();
+  return true;
 };
 
 const getUsableSelection = () => $getSelection() || $getPreviousSelection();
@@ -557,6 +595,39 @@ export const BlockInsertionPlugin = ({
       },
       COMMAND_PRIORITY_LOW
     );
+    const deleteFullTable = (event: KeyboardEvent) => {
+      const selection = $getSelection();
+      if (!$isTableSelection(selection)) return false;
+      const table = $getNodeByKey(selection.tableKey);
+      if (!table || !$isTableNode(table)) return false;
+      const shape = selection.getShape();
+      const [tableMap] = $computeTableMapSkipCellCheck(table, null, null);
+      const lastRow = tableMap.length - 1;
+      const lastColumn = tableMap[0]?.length - 1;
+      if (shape.fromX !== 0 || shape.fromY !== 0 || shape.toX !== lastColumn || shape.toY !== lastRow) return false;
+      event.preventDefault();
+      const previous = table.getPreviousSibling();
+      const next = table.getNextSibling();
+      table.remove();
+      if (next) next.selectStart();
+      else if (previous) previous.selectEnd();
+      else {
+        const paragraph = $createParagraphNode();
+        $getRoot().append(paragraph);
+        paragraph.selectStart();
+      }
+      return true;
+    };
+    const unregisterDeleteTableBackspace = editor.registerCommand(
+      KEY_BACKSPACE_COMMAND,
+      (event) => removeEmptyCalloutAtBoundary(event) || removeTableBeforeCaret(event) || deleteFullTable(event),
+      COMMAND_PRIORITY_HIGH
+    );
+    const unregisterDeleteTableDelete = editor.registerCommand(
+      KEY_DELETE_COMMAND,
+      deleteFullTable,
+      COMMAND_PRIORITY_HIGH
+    );
     return () => {
       unregister();
       unregisterCallout();
@@ -568,6 +639,8 @@ export const BlockInsertionPlugin = ({
       unregisterRemoveRow();
       unregisterAddColumn();
       unregisterRemoveColumn();
+      unregisterDeleteTableBackspace();
+      unregisterDeleteTableDelete();
     };
   }, [editor]);
 

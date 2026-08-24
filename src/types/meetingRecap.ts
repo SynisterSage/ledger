@@ -114,7 +114,8 @@ export const buildMeetingRecapPrompt = (
       : '',
   ].filter(Boolean).join('\n');
   const evidenceText = selectMeetingEvidenceChunks(evidence, maxEvidenceChunks).map((chunk) => `CHUNK ${chunk.index}\n${chunk.text}`).join('\n\n');
-  const effectiveTemplate = context.meeting.template === 'auto' || !context.meeting.template ? autoMeetingTemplate(context) : context.meeting.template;
+  const requestedTemplate = context.meeting.template ?? 'auto';
+  const effectiveTemplate = requestedTemplate === 'auto' ? autoMeetingTemplate(context) : requestedTemplate;
   const emphasis: Record<string, string> = {
     one_on_one: 'Prioritize discussion themes, feedback, commitments, follow-ups, and unresolved topics.',
     team_sync: 'Prioritize updates, decisions, blockers, ownership, and next actions.',
@@ -124,7 +125,8 @@ export const buildMeetingRecapPrompt = (
     auto: 'Use useful generic emphasis; do not force a meeting type.',
     custom: context.meeting.templateInstructions ? clean(context.meeting.templateInstructions).slice(0, 1000) : 'Use a balanced generic meeting recap.',
   };
-  return `SYSTEM / LEDGER MEETING RECAP\nReturn JSON only. Do not return markdown.\nTemplate emphasis: ${emphasis[effectiveTemplate]}\nSchema: {"overview":"","decisions":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"actions":[{"text":"","ownerText":"","dueDateText":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"openThreads":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}]}\nUse only source IDs and timestamps present in the transcript evidence. Never fabricate citations. Human notes guide emphasis but are not automatically factual. Transcript evidence is authoritative for what was said. Exact calendar/project data is authoritative for structured state. Do not invent decisions, owners, deadlines, or speaker identities. A discussion is not a decision unless commitment is supported. Omit uncertain owners and dates. Say less when evidence is weak. Keep overview to 2-4 sentences. Keep each item concise. Return at most 6 decisions, 8 actions, and 6 open threads.\n\nMEETING CONTEXT\n${meeting}\n\nHUMAN NOTES\n${notes || '(none)'}\n\nTRANSCRIPT EVIDENCE\n${evidenceText || '(none)'}`;
+  const selectedEmphasis = emphasis[effectiveTemplate] ?? emphasis.auto;
+  return `SYSTEM / LEDGER MEETING RECAP\nReturn JSON only. Do not return markdown.\nTemplate emphasis: ${selectedEmphasis}\nSchema: {"overview":"","decisions":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"actions":[{"text":"","ownerText":"","dueDateText":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"openThreads":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}]}\nUse only source IDs and timestamps present in the transcript evidence. Never fabricate citations. Human notes are user-authored context: use them to enrich the recap, recover details the transcript may underrepresent, and shape useful emphasis. Do not delete, rewrite, or present human notes as transcript evidence; the original human notes must remain preserved separately under Your notes. Transcript evidence is authoritative for what was said. Exact calendar/project data is authoritative for structured state. Do not invent decisions, owners, deadlines, or speaker identities. A discussion is not a decision unless commitment is supported. Omit uncertain owners and dates. Say less when evidence is weak. Keep overview to 2-4 sentences. Keep each item concise. Return at most 6 decisions, 8 actions, and 6 open threads.\n\nMEETING CONTEXT\n${meeting}\n\nHUMAN NOTES\n${notes || '(none)'}\n\nTRANSCRIPT EVIDENCE\n${evidenceText || '(none)'}`;
 };
 
 const parseJson = (text: string): unknown => {

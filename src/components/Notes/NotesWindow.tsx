@@ -104,6 +104,7 @@ import type { NotesHomeTemplate, NotesHomeUpcomingMeeting } from './NotesHome';
 import { createNotesHomeAskContext } from './notesHomeAskContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
+import { LensCache } from '../../features/lens/lensCache';
 import type {
   MeetingNoteMetadata,
   MeetingTranscriptionStatus,
@@ -265,6 +266,28 @@ const formatDownloadSpeed = (bytesPerSecond: number) => {
   return `${(bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s`;
 };
 
+const meetingRecapCacheKey = (workspaceId: string, noteId: string) =>
+  `${workspaceId}:${noteId}`;
+
+const meetingRecapCacheFingerprint = (
+  noteUpdatedAt: string | null | undefined,
+  segments: TranscriptSegment[],
+  template: MeetingNoteMetadata['meeting_template'],
+  templateInstructions: string | null | undefined,
+) =>
+  JSON.stringify({
+    noteUpdatedAt: noteUpdatedAt ?? null,
+    template: template ?? 'auto',
+    templateInstructions: templateInstructions ?? null,
+    segments: segments.map((segment) => ({
+      id: segment.id,
+      updatedAt: segment.updated_at,
+      startMs: segment.start_ms,
+      endMs: segment.end_ms,
+      text: segment.transcript_text,
+    })),
+  });
+
 type WorkspaceMember = {
   user_id: string;
   email: string | null;
@@ -314,6 +337,11 @@ type WorkspaceProjectNoteLink = {
   created_at: string;
 };
 
+type MeetingRecapDraftCacheEntry = {
+  draft: MeetingRecapDraft;
+  tier: 'balanced' | 'fast' | null;
+};
+
 const POLL_INTERVAL_MS = 60000;
 const NOTE_VIEWERS_POLL_MS = 30_000;
 const LEFT_PANE_MIN_WIDTH = 260;
@@ -321,6 +349,11 @@ const LEFT_PANE_MAX_WIDTH = 380;
 const RIGHT_PANE_MIN_WIDTH = 250;
 const RIGHT_PANE_MAX_WIDTH = 360;
 const NOTE_CONTEXT_MENU_HEIGHT = 352;
+const meetingRecapDraftCache = new LensCache<MeetingRecapDraftCacheEntry>({
+  storageKey: 'ledger:meeting-recap-draft-cache:v1',
+  maxEntries: 24,
+  maxAgeMs: 30 * 60 * 1000,
+});
 type NoteContextMenuState = {
   x: number;
   y: number;
@@ -2421,32 +2454,24 @@ const RecordingRecoveryNotice = ({
 
 const MeetingRecapDraftSection = ({
   draft,
-  tier,
   onCitation,
-  onRegenerate,
-  onAccept,
   onCreateAction,
   onCreateReminder,
   onCreateEvent,
   onLinkProject,
   identitySuggestions,
   onConfirmIdentity,
-  onAskMeeting,
-  isBusy,
+  showWorkActions = false,
 }: {
   draft: MeetingRecapDraft;
-  tier: 'balanced' | 'fast' | null;
   onCitation: (segmentId: string) => void;
-  onRegenerate: () => void;
-  onAccept: () => void;
   onCreateAction: (action: MeetingActionSuggestion) => void;
   onCreateReminder: (action: MeetingActionSuggestion) => void;
   onCreateEvent: (action: MeetingActionSuggestion) => void;
   onLinkProject: () => void;
   identitySuggestions: MeetingIdentitySuggestion[];
   onConfirmIdentity: (suggestion: MeetingIdentitySuggestion) => void;
-  onAskMeeting: () => void;
-  isBusy: boolean;
+  showWorkActions?: boolean;
 }) => {
   const citation = (item: MeetingInsight) =>
     item.sourceRefs.map((ref) => (
@@ -2474,7 +2499,7 @@ const MeetingRecapDraftSection = ({
                   {actionItem?.ownerText ? `${actionItem.ownerText} — ` : ''}{item.text}
                   {actionItem?.dueDateText ? ` · ${actionItem.dueDateText}` : ''}
                   {citation(item)}
-                  {actionItem && (
+                  {showWorkActions && actionItem && (
                     <button
                       type="button"
                       onClick={() => onCreateAction(actionItem)}
@@ -2483,7 +2508,7 @@ const MeetingRecapDraftSection = ({
                       Create task
                     </button>
                   )}
-                  {actionItem && <>
+                  {showWorkActions && actionItem && <>
                     <button type="button" onClick={() => onCreateReminder(actionItem)} className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Reminder</button>
                     <button type="button" onClick={() => onCreateEvent(actionItem)} className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Event</button>
                     <button type="button" onClick={onLinkProject} className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Link project</button>
@@ -2496,31 +2521,20 @@ const MeetingRecapDraftSection = ({
       </section>
     ) : null;
   return (
-    <section className="border-b border-[color:var(--ledger-border-subtle)] pb-5" data-meeting-recap-draft>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-[11px] font-semibold text-[var(--ledger-text-primary)]">Recap draft</p>
-          <p className="text-[10px] text-[var(--ledger-text-muted)]">Review the evidence before accepting · {tier === 'fast' ? 'Fast' : 'Balanced'}</p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button type="button" onClick={onRegenerate} disabled={isBusy} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40">Regenerate</button>
-          <button type="button" onClick={onAskMeeting} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)]">Ask this meeting</button>
-          <button type="button" onClick={onAccept} disabled={isBusy} className="rounded-md bg-[var(--ledger-accent)] px-2.5 py-1 text-[10px] font-medium text-white disabled:opacity-40">Accept recap</button>
-        </div>
-      </div>
-      <div className="mt-4">
+    <section className="mb-6 space-y-5 text-[var(--ledger-text-secondary)]" data-meeting-recap-draft>
+      <div className="space-y-5">
         {draft.overview.trim() && (
           <section>
-            <h3 className="text-[11px] font-semibold text-[var(--ledger-text-primary)]">Recap</h3>
+            <h3 className="text-sm font-medium text-[var(--ledger-text-primary)]">Recap</h3>
             <p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{draft.overview}</p>
           </section>
         )}
         {identitySuggestions.length > 0 && (
-          <section className="mt-5">
-            <h3 className="mb-1.5 text-[11px] font-semibold text-[var(--ledger-text-primary)]">People to review</h3>
+          <section className="border-l-2 border-[color:var(--ledger-border-subtle)] pl-3">
+            <h3 className="mb-1.5 text-xs font-medium text-[var(--ledger-text-primary)]">People to review</h3>
             <div className="space-y-1.5 text-sm text-[var(--ledger-text-secondary)]">
               {identitySuggestions.map((suggestion, index) => (
-                <div key={`${suggestion.rawSpeakerId ?? 'unknown'}:${index}`} className="flex items-center justify-between gap-2 rounded-md bg-[var(--ledger-surface-hover)] px-2 py-1.5">
+                <div key={`${suggestion.rawSpeakerId ?? 'unknown'}:${index}`} className="flex items-center justify-between gap-2 py-1">
                   <span>{suggestion.displayName ? `${suggestion.displayName}?` : 'Unknown speaker'} <span className="text-[10px] text-[var(--ledger-text-muted)]">suggested</span></span>
                   {suggestion.displayName && suggestion.rawSpeakerId && <button type="button" onClick={() => onConfirmIdentity(suggestion)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Confirm</button>}
                 </div>
@@ -2535,6 +2549,24 @@ const MeetingRecapDraftSection = ({
     </section>
   );
 };
+
+const MeetingRecapReviewBar = ({
+  tier,
+  onRegenerate,
+  onAccept,
+  isBusy,
+}: {
+  tier: 'balanced' | 'fast' | null;
+  onRegenerate: () => void;
+  onAccept: () => void;
+  isBusy: boolean;
+}) => (
+  <div className="mt-2 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] pt-2 text-[10px]" data-meeting-recap-review-bar>
+    <span className="mr-auto text-[var(--ledger-text-muted)]">Draft · {tier === 'fast' ? 'Fast' : 'Balanced'}</span>
+    <button type="button" onClick={onRegenerate} disabled={isBusy} className="rounded px-1.5 py-1 text-[var(--ledger-text-muted)] transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-40">Regenerate</button>
+    <button type="button" onClick={onAccept} disabled={isBusy} className="rounded bg-[var(--ledger-accent)] px-2 py-1 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40">Accept</button>
+  </div>
+);
 
 export const NotesWindow = ({ focusContext, initialView }: { focusContext?: string; initialView?: 'write' | 'outline' | 'map' | 'transcribe' } = {}) => {
   const platform = usePlatform();
@@ -2616,6 +2648,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [meetingRecapStage, setMeetingRecapStage] = useState('Reviewing the conversation…');
   const [meetingRecapError, setMeetingRecapError] = useState<string | null>(null);
   const [meetingRecapTier, setMeetingRecapTier] = useState<'balanced' | 'fast' | null>(null);
+  const [meetingRecapHasRun, setMeetingRecapHasRun] = useState(false);
+  const [meetingRecapTemplateChanged, setMeetingRecapTemplateChanged] = useState(false);
   const [meetingIdentitySuggestions, setMeetingIdentitySuggestions] = useState<MeetingIdentitySuggestion[]>([]);
   const [meetingPrep, setMeetingPrep] = useState<MeetingPrepResult | null>(null);
   const [meetingPrepStatus, setMeetingPrepStatus] = useState<'idle' | 'generating' | 'ready'>('idle');
@@ -2959,14 +2993,57 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   );
   const isMeetingNote = selectedNote?.mode === 'meeting_note';
   const isMeetingComplete = isMeetingNote && meetingMetadata?.transcription_status === 'complete';
+  const acceptedMeetingContent = `${draftContent}\n${selectedNote?.content_html ?? ''}\n${selectedNote?.content ?? ''}`;
   const hasAcceptedMeetingRecap = Boolean(
-    isMeetingComplete && /<h2[^>]*>\s*Recap\s*<\/h2>/i.test(draftContent)
+    isMeetingComplete && (
+      /<h[1-3][^>]*>\s*Recap\s*<\/h[1-3]>/i.test(acceptedMeetingContent) ||
+      /(?:^|\n)\s*Recap\s*(?:\n|$)/i.test(acceptedMeetingContent)
+    )
   );
-  const hasMeetingRecap = hasAcceptedMeetingRecap || meetingRecapStatus === 'ready';
+  useEffect(() => {
+    if (
+      !isMeetingNote ||
+      !activeWorkspaceId ||
+      !selectedNoteId ||
+      meetingMetadata?.transcription_status !== 'complete' ||
+      !transcriptSegments.length ||
+      meetingRecapDraft ||
+      meetingRecapStatus !== 'idle'
+    )
+      return;
+    const cached = meetingRecapDraftCache.get(
+      meetingRecapCacheKey(activeWorkspaceId, selectedNoteId),
+      meetingRecapCacheFingerprint(
+        selectedNote?.updated_at,
+        transcriptSegments,
+        meetingMetadata?.meeting_template,
+        meetingMetadata?.meeting_template_instructions,
+      )
+    );
+    if (!cached) return;
+    setMeetingRecapDraft(cached.draft);
+    setMeetingRecapTier(cached.tier);
+    setMeetingRecapHasRun(true);
+    setMeetingRecapStatus('ready');
+  }, [
+    activeWorkspaceId,
+    isMeetingNote,
+    meetingMetadata?.transcription_status,
+    meetingMetadata?.meeting_template,
+    meetingMetadata?.meeting_template_instructions,
+    meetingRecapDraft,
+    meetingRecapStatus,
+    selectedNote?.updated_at,
+    selectedNoteId,
+    transcriptSegments,
+  ]);
   const liveTranscriptAvailable = Boolean(
     isMeetingNote &&
       meetingMetadata &&
       ['recording', 'paused', 'processing'].includes(meetingMetadata.transcription_status)
+  );
+  const isMeetingTranscriptionActive = Boolean(
+    meetingMetadata && ['recording', 'processing'].includes(meetingMetadata.transcription_status)
   );
   useEffect(() => {
     if (!isLiveTranscriptOpen) return;
@@ -3285,6 +3362,19 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       }
       setMeetingRecapDraft(result.draft);
       setMeetingRecapTier(result.tier);
+      setMeetingRecapHasRun(true);
+      if (activeWorkspaceId && selectedNoteId) {
+        meetingRecapDraftCache.set(
+          meetingRecapCacheKey(activeWorkspaceId, selectedNoteId),
+          meetingRecapCacheFingerprint(
+            selectedNote?.updated_at,
+            transcriptSegments,
+            meetingMetadata?.meeting_template,
+            meetingMetadata?.meeting_template_instructions,
+          ),
+          { draft: result.draft, tier: result.tier }
+        );
+      }
       setMeetingRecapStatus('ready');
       if (window.askLedger.generateMeetingPeople) {
         const people = (await window.askLedger.generateMeetingPeople(context)) as { suggestions?: MeetingIdentitySuggestion[]; status?: string };
@@ -3294,7 +3384,16 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       setMeetingRecapStatus('unavailable');
       setMeetingRecapError(error instanceof Error ? error.message : 'Could not enhance the meeting note.');
     }
-  }, [buildMeetingIntelligenceContext, meetingMetadata?.transcription_status]);
+  }, [
+    activeWorkspaceId,
+    buildMeetingIntelligenceContext,
+    meetingMetadata?.transcription_status,
+    meetingMetadata?.meeting_template,
+    meetingMetadata?.meeting_template_instructions,
+    selectedNote?.updated_at,
+    selectedNoteId,
+    transcriptSegments,
+  ]);
 
   const focusTranscriptSegment = useCallback((segmentId: string) => {
     setMeetingCenterView('transcript');
@@ -4585,6 +4684,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setMeetingRecapStatus('idle');
     setMeetingRecapError(null);
     setMeetingRecapTier(null);
+    setMeetingRecapHasRun(false);
+    setMeetingRecapTemplateChanged(false);
     if (!shouldLoad || !noteId) {
       setIsLoadingMeetingMetadata(false);
       setIsLoadingTranscript(false);
@@ -4823,6 +4924,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     try {
       const updated = await updateMeetingMetadata(payload);
       if (!updated && previousMetadata) setMeetingMetadata(previousMetadata);
+      if (updated && activeWorkspaceId && selectedNoteId) {
+        meetingRecapDraftCache.invalidate(meetingRecapCacheKey(activeWorkspaceId, selectedNoteId));
+        setMeetingRecapDraft(null);
+        setMeetingRecapTier(null);
+        setMeetingRecapStatus('idle');
+        setMeetingIdentitySuggestions([]);
+        if (hasAcceptedMeetingRecap || meetingRecapHasRun) setMeetingRecapTemplateChanged(true);
+      }
       if (selectedNote?.parent_id) {
         try {
           await api.updateMeetingMetadata(selectedNote.parent_id, payload);
@@ -4834,7 +4943,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     } finally {
       setIsMeetingTemplateSaving(false);
     }
-  }, [api, meetingMetadata, selectedNote, selectedNoteId, updateMeetingMetadata]);
+  }, [activeWorkspaceId, api, hasAcceptedMeetingRecap, meetingMetadata, meetingRecapHasRun, selectedNote, selectedNoteId, updateMeetingMetadata]);
 
   const enableMeetingMode = useCallback(async () => {
     if (!selectedNote || isMeetingNote) return;
@@ -6817,6 +6926,10 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       const due = action.dueDateText ? ` · ${action.dueDateText}` : '';
       return `<li>${escapeHtml(`${prefix}${item.text}${due}`)}</li>`;
     };
+    const existingHumanNotesMarker = draftContent.match(/<hr[^>]*>\s*<h2[^>]*>\s*Your notes\s*<\/h2>/i);
+    const existingHumanNotes = existingHumanNotesMarker
+      ? draftContent.slice((existingHumanNotesMarker.index ?? 0) + existingHumanNotesMarker[0].length)
+      : draftContent;
     const recapHtml = [
       '<h2>Recap</h2>',
       `<p>${escapeHtml(meetingRecapDraft.overview)}</p>`,
@@ -6829,15 +6942,30 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       meetingRecapDraft.openThreads.length
         ? `<h2>Open threads</h2><ul>${meetingRecapDraft.openThreads.map((item) => renderInsight(item)).join('')}</ul>`
         : '',
-      '<hr><h2>Your notes</h2>',
-      normalizeEditorHtml(draftContent) || '<p></p>',
+      '<h2>Your notes</h2>',
+      normalizeEditorHtml(existingHumanNotes) || '<p></p>',
     ].join('');
+    // Remove the temporary preview before replacing the editor content so
+    // acceptance never renders the draft and the imported recap together.
+    setMeetingRecapDraft(null);
+    setMeetingRecapStatus('idle');
+    setMeetingRecapHasRun(true);
+    setMeetingRecapTemplateChanged(false);
     setDraftContent(recapHtml);
     draftContentRef.current = recapHtml;
+    // The Lexical editor loads HTML by editorKey. Refresh it immediately so
+    // accepted recap content appears without requiring a note reload; the
+    // autosave below remains the canonical persistence path.
+    setEditorRefreshTick((current) => current + 1);
     setIsDirty(true);
     isDirtyRef.current = true;
     const saved = await flushAutosave({ content: recapHtml });
     if (!saved) return;
+    if (activeWorkspaceId) {
+      meetingRecapDraftCache.invalidate(
+        meetingRecapCacheKey(activeWorkspaceId, selectedNote.id)
+      );
+    }
     const linkGroups: Array<{ kind: 'meeting_note' | 'decision' | 'action_item' | 'key_point'; items: MeetingInsight[] }> = [
       { kind: 'meeting_note', items: [{ text: meetingRecapDraft.overview, sourceRefs: meetingRecapDraft.decisions.flatMap((item) => item.sourceRefs).slice(0, 4) }] },
       { kind: 'decision', items: meetingRecapDraft.decisions },
@@ -6864,10 +6992,17 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     } catch (error) {
       toast.show('Recap saved, but some transcript references could not be attached.', { variant: 'error' });
     }
-    setMeetingRecapDraft(null);
-    setMeetingRecapStatus('idle');
     toast.show('Meeting recap added to your note.', { variant: 'success' });
-  }, [api, draftContent, flushAutosave, meetingRecapDraft, selectedNote, toast, transcriptSegments]);
+  }, [
+    activeWorkspaceId,
+    api,
+    draftContent,
+    flushAutosave,
+    meetingRecapDraft,
+    selectedNote,
+    toast,
+    transcriptSegments,
+  ]);
 
   const saveCurrentNoteAndRefresh = useCallback(async () => {
     const currentNoteId = selectedNoteIdRef.current;
@@ -9612,17 +9747,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                             {audioError}
                           </span>
                         )}
-                        {meetingMetadata?.transcription_status === 'complete' &&
-                          transcriptSegments.length > 0 &&
-                          meetingRecapStatus === 'idle' && (
-                            <button
-                              type="button"
-                              onClick={() => void enhanceMeetingNote()}
-                              className="ml-1 rounded-md border border-[color:var(--ledger-border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                            >
-                              Enhance meeting note
-                            </button>
-                          )}
                         {meetingRecapStatus === 'generating' && (
                           <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-[var(--ledger-text-muted)]" role="status">
                             <Loader2 size={11} className="animate-spin" /> {meetingRecapStage}
@@ -9990,23 +10114,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           {meetingPrepStatus === 'generating' ? <p className="mt-2 text-sm text-[var(--ledger-text-muted)]">Preparing for this meeting…</p> : <ul className="mt-2 space-y-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{meetingPrep?.points.map((point) => <li key={point}>• {point}</li>)}</ul>}
                         </section>
                       )}
-                      {isMeetingNote && meetingRecapStatus === 'ready' && meetingRecapDraft && (
-                        <MeetingRecapDraftSection
-                          draft={meetingRecapDraft}
-                          tier={meetingRecapTier}
-                          onCitation={focusTranscriptSegment}
-                          onRegenerate={() => void enhanceMeetingNote()}
-                          onAccept={() => void acceptMeetingRecap()}
-                          identitySuggestions={meetingIdentitySuggestions}
-                          onConfirmIdentity={(suggestion) => void confirmMeetingIdentity(suggestion)}
-                          onAskMeeting={() => openMeetingAskInRightPane('What did we decide in this meeting?')}
-                          onCreateAction={(action) => openMeetingActionComposer('task', action)}
-                          onCreateReminder={(action) => openMeetingActionComposer('reminder', action)}
-                          onCreateEvent={(action) => openMeetingActionComposer('event', action)}
-                          onLinkProject={() => void openLinkProjectModal(selectedNoteId)}
-                          isBusy={false}
-                        />
-                      )}
                       <RichTextEditor
                         editorKey={`${selectedNote.id}:${editorRefreshTick}`}
                         noteId={selectedNote.id}
@@ -10056,6 +10163,21 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         }}
                         onUploadAttachment={uploadEditorAttachment}
                         onRemoveAttachment={removeEditorAttachment}
+                        beforeContent={
+                          isMeetingNote && meetingRecapStatus === 'ready' && meetingRecapDraft ? (
+                            <MeetingRecapDraftSection
+                              draft={meetingRecapDraft}
+                              onCitation={focusTranscriptSegment}
+                              identitySuggestions={meetingIdentitySuggestions}
+                              onConfirmIdentity={(suggestion) => void confirmMeetingIdentity(suggestion)}
+                              onCreateAction={(action) => openMeetingActionComposer('task', action)}
+                              onCreateReminder={(action) => openMeetingActionComposer('reminder', action)}
+                              onCreateEvent={(action) => openMeetingActionComposer('event', action)}
+                              onLinkProject={() => void openLinkProjectModal(selectedNoteId)}
+                              showWorkActions={false}
+                            />
+                          ) : null
+                        }
                         showToolbar
                         onChange={(nextHtml) => {
                           // The old Lexical editor can emit a final change while
@@ -10088,18 +10210,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           void flushAutosave();
                         }}
                       />
-                      {isMeetingComplete && transcriptSegments.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setMeetingCenterView('transcript')}
-                          className="mt-3 flex w-full items-center justify-between py-3 text-left text-xs text-[var(--ledger-text-muted)] transition-colors hover:text-[var(--ledger-text-primary)]"
-                          data-meeting-transcript-disclosure
-                          aria-label={`Open transcript, ${formatMeetingDuration(meetingElapsedSeconds)}`}
-                        >
-                          <span>Transcript · {formatMeetingDuration(meetingElapsedSeconds)}</span>
-                          <ChevronRight size={14} aria-hidden="true" />
-                        </button>
-                      )}
                       </>
                     ) : (
                       <div
@@ -10130,6 +10240,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   meetingMetadata && (
                   <div className="ledger-meeting-dock pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4 sm:bottom-5" data-meeting-floating-controls>
                     <div className="pointer-events-auto flex w-full max-w-[760px] flex-col items-stretch justify-center gap-2">
+                      {isMeetingNote && meetingRecapStatus === 'ready' && meetingRecapDraft && (
+                        <MeetingRecapReviewBar
+                          tier={meetingRecapTier}
+                          onRegenerate={() => void enhanceMeetingNote()}
+                          onAccept={() => void acceptMeetingRecap()}
+                          isBusy={false}
+                        />
+                      )}
                       {isLiveTranscriptOpen && (
                         <MeetingLiveTranscriptPanel
                           segments={resolvedTranscriptSegments}
@@ -10139,34 +10257,45 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       <div className="ledger-meeting-dock-row flex w-full min-w-0 items-end justify-center gap-2">
                       <div className="relative shrink-0">
                         {isMeetingComplete ? (
+                          meetingRecapStatus === 'ready' && meetingRecapDraft ? null :
+                          (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged ? null : (
                           <div className="flex h-12 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 shadow-sm">
                             <button
                               type="button"
                               onClick={() => {
-                                if (hasMeetingRecap) {
-                                  setMeetingCenterView('write');
+                                if ((hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged) {
+                                  setMeetingCenterView('transcript');
                                 } else {
                                   void enhanceMeetingNote();
                                 }
                               }}
                               disabled={meetingRecapStatus === 'generating' || transcriptSegments.length === 0}
                               className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-45"
-                              aria-label={hasMeetingRecap ? 'Show recap' : 'Enhance meeting'}
+                              aria-label={
+                                (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged
+                                  ? 'Open transcript'
+                                  : meetingRecapTemplateChanged
+                                  ? 'Regenerate recap'
+                                  : 'Enhance meeting'
+                              }
                             >
                               {meetingRecapStatus === 'generating' ? (
                                 <Loader2 size={12} className="animate-spin" />
-                              ) : hasMeetingRecap ? (
-                                <CheckCircle2 size={12} />
+                              ) : (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged ? (
+                                <FileText size={12} />
                               ) : (
                                 <Zap size={12} />
                               )}
                               {meetingRecapStatus === 'generating'
                                 ? meetingRecapStage
-                                : hasMeetingRecap
-                                ? 'Recap ✓'
+                                : (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged
+                                ? 'Transcript'
+                                : meetingRecapTemplateChanged
+                                ? 'Regenerate'
                                 : 'Enhance'}
                             </button>
                           </div>
+                          )
                         ) : meetingMetadata?.transcription_status === 'processing' ? (
                           <div className="flex h-12 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-[11px] text-[var(--ledger-text-secondary)] shadow-sm" role="status">
                             <Loader2 size={12} className="animate-spin text-[var(--ledger-text-muted)]" />
@@ -10186,7 +10315,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           </div>
                         )}
                         <div className="flex h-12 items-center gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 shadow-sm">
-                          <button type="button" onClick={() => setIsMeetingRecorderExpanded((current) => !current)} className="flex h-9 min-w-16 items-center justify-center gap-1.5 rounded-full px-2 text-[var(--ledger-text-secondary)] transition-colors hover:bg-[color:var(--ledger-accent)]/10 hover:text-[var(--ledger-text-primary)]" aria-label="Recording controls" aria-expanded={isMeetingRecorderExpanded}><span className="flex h-3 items-end gap-0.5" aria-hidden="true"><span className={`w-1 rounded-full bg-[var(--ledger-accent)] ${meetingMetadata?.transcription_status === 'recording' ? 'h-2 animate-pulse' : 'h-1'}`} /><span className={`w-1 rounded-full bg-[var(--ledger-accent)] ${meetingMetadata?.transcription_status === 'recording' ? 'h-3 animate-pulse' : 'h-2'}`} /><span className={`w-1 rounded-full bg-[var(--ledger-accent)] ${meetingMetadata?.transcription_status === 'recording' ? 'h-1.5 animate-pulse' : 'h-1'}`} /></span><span className="text-[10px] tabular-nums">{meetingMetadata?.transcription_status === 'idle' ? 'Start' : formatMeetingDuration(meetingElapsedSeconds)}</span><ChevronDown size={12} className={`transition-transform duration-200 ${isMeetingRecorderExpanded ? 'rotate-180' : ''}`} /></button>
+                          <button type="button" onClick={() => setIsMeetingRecorderExpanded((current) => !current)} className="flex h-9 min-w-16 items-center justify-center gap-1.5 rounded-full px-2 text-[var(--ledger-text-secondary)] transition-colors hover:bg-[color:var(--ledger-accent)]/10 hover:text-[var(--ledger-text-primary)]" aria-label="Recording controls" aria-expanded={isMeetingRecorderExpanded}><span className="flex h-3 items-end gap-0.5" aria-hidden="true"><span className={`ledger-meeting-waveform-bar w-1 rounded-full bg-[var(--ledger-accent)] ${meetingMetadata?.transcription_status === 'recording' ? 'ledger-meeting-waveform-bar-active h-2' : 'h-1'}`} /><span className={`ledger-meeting-waveform-bar w-1 rounded-full bg-[var(--ledger-accent)] ${meetingMetadata?.transcription_status === 'recording' ? 'ledger-meeting-waveform-bar-active h-3' : 'h-2'}`} /><span className={`ledger-meeting-waveform-bar w-1 rounded-full bg-[var(--ledger-accent)] ${meetingMetadata?.transcription_status === 'recording' ? 'ledger-meeting-waveform-bar-active h-1.5' : 'h-1'}`} /></span><span className="text-[10px] tabular-nums">{meetingMetadata?.transcription_status === 'idle' ? 'Start' : formatMeetingDuration(meetingElapsedSeconds)}</span><ChevronDown size={12} className={`transition-transform duration-200 ${isMeetingRecorderExpanded ? 'rotate-180' : ''}`} /></button>
                           <button type="button" onClick={() => void (['recording', 'paused'].includes(meetingMetadata?.transcription_status ?? '') ? stopMeeting() : startMeeting())} disabled={Boolean(meetingBusyAction) || ['processing', 'complete', 'failed'].includes(meetingMetadata?.transcription_status ?? '')} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition-colors hover:bg-[var(--ledger-accent)] hover:text-white disabled:cursor-not-allowed disabled:opacity-40" aria-label={['recording', 'paused'].includes(meetingMetadata?.transcription_status ?? '') ? 'Stop recording' : 'Start recording'}>{['recording', 'paused'].includes(meetingMetadata?.transcription_status ?? '') ? <Square size={11} /> : <Play size={11} />}</button>
                           <button
                             type="button"
@@ -10198,10 +10327,10 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                             title={liveTranscriptAvailable ? 'Live transcript' : 'Transcript unavailable'}
                           >
                             <span className="flex h-3 items-end gap-0.5" aria-hidden="true">
-                              <span className="h-1.5 w-0.5 rounded-full bg-current" />
-                              <span className="h-3 w-0.5 rounded-full bg-current" />
-                              <span className="h-2 w-0.5 rounded-full bg-current" />
-                              <span className="h-1 w-0.5 rounded-full bg-current" />
+                              <span className={`ledger-meeting-waveform-bar w-0.5 rounded-full bg-current h-1.5 ${isMeetingTranscriptionActive ? 'ledger-meeting-waveform-bar-active' : ''}`} />
+                              <span className={`ledger-meeting-waveform-bar w-0.5 rounded-full bg-current h-3 ${isMeetingTranscriptionActive ? 'ledger-meeting-waveform-bar-active' : ''}`} />
+                              <span className={`ledger-meeting-waveform-bar w-0.5 rounded-full bg-current h-2 ${isMeetingTranscriptionActive ? 'ledger-meeting-waveform-bar-active' : ''}`} />
+                              <span className={`ledger-meeting-waveform-bar w-0.5 rounded-full bg-current h-1 ${isMeetingTranscriptionActive ? 'ledger-meeting-waveform-bar-active' : ''}`} />
                             </span>
                           </button>
                         </div>

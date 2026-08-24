@@ -150,6 +150,7 @@ type Props = {
   onLinkedExternalReferenceInserted?: () => void;
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
   onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
+  beforeContent?: React.ReactNode;
   showToolbar?: boolean;
 };
 
@@ -1782,6 +1783,7 @@ export function RichTextEditor({
   onLinkedExternalReferenceInserted,
   onUploadAttachment,
   onRemoveAttachment,
+  beforeContent,
   showToolbar = true,
 }: Props) {
   const lastChangeTimeRef = React.useRef(0);
@@ -1900,6 +1902,11 @@ export function RichTextEditor({
               onLinkPerson={onLinkPerson}
               onSearch={onSearch}
             />
+            {beforeContent && (
+              <div className="relative z-10" data-editor-before-content>
+                {beforeContent}
+              </div>
+            )}
             <RichTextPlugin
               contentEditable={
                 <ContentEditable
@@ -1908,11 +1915,11 @@ export function RichTextEditor({
                   className="notes-rich-text-editor min-h-[calc(100vh-390px)] px-0 py-2 text-[16px] font-normal text-[var(--ledger-text-primary)] outline-none"
                 />
               }
-              placeholder={
+              placeholder={beforeContent ? null : (
                 <div className="pointer-events-none absolute left-0 right-0 top-0 flex items-start px-0 py-2 text-[16px] leading-[1.7] text-[var(--ledger-text-muted)]">
                   Type / for commands
                 </div>
-              }
+              )}
               ErrorBoundary={() => null}
             />
             <HistoryPlugin />
