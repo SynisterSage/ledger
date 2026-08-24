@@ -116,7 +116,16 @@ export const resolveDeterministicSpeakerIdentity = ({
   }
   const attendees = normalizeMeetingAttendees(metadata?.attendees);
   const external = attendees.filter((attendee) => !samePerson(attendee, { name: currentUserName, email: currentUser?.email }));
-  if (external.length === 1) {
+  // A manually started recording may have attendee text without a reliable
+  // audio-to-person relationship. Require an actual calendar identity before
+  // treating the sole external attendee as known.
+  const hasScheduledCalendarIdentity = Boolean(
+    metadata?.calendar_event_id ||
+      metadata?.calendar_event_key ||
+      metadata?.calendar_series_id ||
+      metadata?.calendar_series_key
+  );
+  if (hasScheduledCalendarIdentity && external.length === 1) {
     const attendee = external[0];
     return {
       rawSpeakerId,

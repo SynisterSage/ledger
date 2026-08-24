@@ -4,6 +4,7 @@ import {
   buildMeetingEvidenceChunks,
   buildMeetingRecapPrompt,
   parseMeetingRecapDraft,
+  selectMeetingEvidenceChunks,
 } from '../src/types/meetingRecap.ts';
 import type { MeetingIntelligenceContext } from '../src/types/notes.ts';
 import { MeetingRecapService } from './meetingRecapService.ts';
@@ -26,6 +27,12 @@ test('meeting evidence chunks preserve segment IDs and timestamps', () => {
   assert.equal(chunks.length, 2);
   assert.match(chunks[0].text, /segment-1\|1000/);
   assert.deepEqual(chunks[1].segmentIds, ['segment-2']);
+});
+
+test('long meeting evidence represents the beginning, middle, and end', () => {
+  const chunks = Array.from({ length: 10 }, (_, index) => ({ index, segmentIds: [`segment-${index}`], text: `chunk-${index}` }));
+  assert.deepEqual(selectMeetingEvidenceChunks(chunks, 4).map((chunk) => chunk.index), [0, 3, 6, 9]);
+  assert.deepEqual(selectMeetingEvidenceChunks(chunks, 1).map((chunk) => chunk.index), [0]);
 });
 
 test('meeting recap prompt prioritizes human notes and grounding rules', () => {

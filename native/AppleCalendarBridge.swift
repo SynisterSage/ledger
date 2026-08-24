@@ -71,6 +71,13 @@ func dateValue(_ input: Any?) -> Date? {
     return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
 }
 
+func queryRange(_ input: [String: Any]) -> (Date, Date)? {
+    guard let start = dateValue(input["start"]),
+          let end = dateValue(input["end"]),
+          end > start else { return nil }
+    return (start, end)
+}
+
 func calendarFor(_ id: Any?) -> EKCalendar? {
     guard let id = id as? String, !id.isEmpty else { return nil }
     return store.calendars(for: .event).first { $0.calendarIdentifier == id }
@@ -278,10 +285,16 @@ func handleReminders(_ input: [String: Any]) async {
         return
     }
     if command == "fetch-reminders" || command == "refresh" {
-        let start = ISO8601DateFormatter().date(from: input["start"] as? String ?? "") ?? Date()
-        let end = ISO8601DateFormatter().date(from: input["end"] as? String ?? "") ?? Date()
+        guard let (start, end) = queryRange(input) else {
+            emit(normalizedError("invalid_range", "Apple Reminders needs a valid start and end time."))
+            return
+        }
         let ids = Set((input["listIds"] as? [String]) ?? [])
         let lists = store.calendars(for: .reminder).filter { ids.contains($0.calendarIdentifier) }
+        if lists.isEmpty {
+            emit(["ok": true, "reminders": []])
+            return
+        }
         let predicate = store.predicateForReminders(in: lists)
         store.fetchReminders(matching: predicate) { reminders in
             var calendar = Calendar(identifier: .gregorian)
@@ -316,10 +329,16 @@ func handle(_ input: [String: Any]) async {
         emit(["ok": true, "event": eventPayload(event)]); return
     }
     if command == "events" || command == "refresh-range" {
-        let start = ISO8601DateFormatter().date(from: input["start"] as? String ?? "") ?? Date()
-        let end = ISO8601DateFormatter().date(from: input["end"] as? String ?? "") ?? Date()
+        guard let (start, end) = queryRange(input) else {
+            emit(normalizedError("invalid_range", "Apple Calendar needs a valid start and end time."))
+            return
+        }
         let ids = Set((input["calendarIds"] as? [String]) ?? [])
         let calendars = store.calendars(for: .event).filter { ids.contains($0.calendarIdentifier) }
+        if calendars.isEmpty {
+            emit(["ok": true, "events": []])
+            return
+        }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
         emit(["ok": true, "events": store.events(matching: predicate).map(eventPayload)])
         return

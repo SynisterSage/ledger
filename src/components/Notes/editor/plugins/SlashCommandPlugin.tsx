@@ -281,10 +281,19 @@ export const SlashCommandPlugin = ({
         if (!match) return setOpen(false);
         const dom = editor.getElementByKey(block.getKey());
         if (!dom) return;
+        // Use the active paragraph's line box. A browser Selection range can
+        // briefly report a stale or oversized rect while Lexical is updating,
+        // which makes the menu float far below the slash the user just typed.
         const rect = dom.getBoundingClientRect();
+        const menuWidth = 224;
+        const menuHeight = 288;
+        const anchorBottom = rect.top + Math.min(Math.max(rect.height, 20), 28);
+        const opensBelow = window.innerHeight - anchorBottom >= menuHeight + 12;
         setPosition({
-          top: Math.min(rect.bottom + 4, Math.max(8, window.innerHeight - 300)),
-          left: Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 240)),
+          top: opensBelow
+            ? anchorBottom + 6
+            : Math.max(8, rect.top - menuHeight - 6),
+          left: Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - menuWidth - 8)),
         });
         setQuery(match[1]);
         setActiveIndex(0);

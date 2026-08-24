@@ -54,7 +54,7 @@ const autoMeetingTemplate = (context: MeetingIntelligenceContext) => {
 };
 export const buildMeetingEvidenceChunks = (
   context: MeetingIntelligenceContext,
-  maxChars = 3600,
+  maxChars = 2200,
 ): MeetingEvidenceChunk[] => {
   const segments = [...context.transcriptSegments]
     .filter((segment) => !segment.deleted_at)
@@ -72,6 +72,25 @@ export const buildMeetingEvidenceChunks = (
   }
   if (current.text) chunks.push(current);
   return chunks;
+};
+
+/**
+ * Keep the final local-model packet bounded without making a long meeting
+ * look like only its opening minutes. The selected chunks remain intact so
+ * every citation still points to the original segment and timestamp.
+ */
+export const selectMeetingEvidenceChunks = (
+  chunks: MeetingEvidenceChunk[],
+  maxChunks: number,
+): MeetingEvidenceChunk[] => {
+  if (maxChunks <= 0 || chunks.length <= maxChunks) return chunks;
+  if (maxChunks === 1) return [chunks[0]];
+
+  const selectedIndexes = new Set<number>();
+  for (let index = 0; index < maxChunks; index += 1) {
+    selectedIndexes.add(Math.round((index * (chunks.length - 1)) / (maxChunks - 1)));
+  }
+  return [...selectedIndexes].sort((left, right) => left - right).map((index) => chunks[index]);
 };
 
 export const buildMeetingRecapPrompt = (
@@ -94,7 +113,7 @@ export const buildMeetingRecapPrompt = (
       ? `Related event: ${clean((context.relatedContext.event as Record<string, unknown>).title)}`
       : '',
   ].filter(Boolean).join('\n');
-  const evidenceText = evidence.slice(0, maxEvidenceChunks).map((chunk) => `CHUNK ${chunk.index}\n${chunk.text}`).join('\n\n');
+  const evidenceText = selectMeetingEvidenceChunks(evidence, maxEvidenceChunks).map((chunk) => `CHUNK ${chunk.index}\n${chunk.text}`).join('\n\n');
   const effectiveTemplate = context.meeting.template === 'auto' || !context.meeting.template ? autoMeetingTemplate(context) : context.meeting.template;
   const emphasis: Record<string, string> = {
     one_on_one: 'Prioritize discussion themes, feedback, commitments, follow-ups, and unresolved topics.',

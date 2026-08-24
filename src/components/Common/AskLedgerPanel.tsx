@@ -580,7 +580,7 @@ const askLedgerActivityLabel = (value?: AskLedgerStreamEvent['activity']) => {
 const GENERATION_PHRASES = [
   'Thinking through this…',
   'Reading your workspace…',
-  'Connecting the relevant pieces…',
+  'Connecting context…',
   'Checking project context…',
   'Looking for recent changes…',
   'Comparing what moved…',
@@ -675,7 +675,7 @@ const attachmentKindLabel = (attachment: AskLedgerAttachment) => attachment.exte
 
 const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}` : name;
 
-export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, onQuestionChange, onQuestionSubmitted, onGenerationActiveChange, compact = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; onQuestionChange?: (question: string) => void; onQuestionSubmitted?: (question: string) => void; onGenerationActiveChange?: (active: boolean) => void; compact?: boolean }) => {
+export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, onQuestionChange, onQuestionSubmitted, onGenerationActiveChange, compact = false, meetingChat = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; onQuestionChange?: (question: string) => void; onQuestionSubmitted?: (question: string) => void; onGenerationActiveChange?: (active: boolean) => void; compact?: boolean; meetingChat?: boolean }) => {
   const api = useApi();
   const platform = usePlatform();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1400,7 +1400,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       request.productArea = productSelection.area;
       request.productFeature = productSelection.feature;
     }
-    request.retrievalRequired = route.retrievalRequired;
+    // A meeting handoff is an anchored workspace question, not a generic
+    // conversational embed. Load the bounded meeting evidence before asking
+    // the local model so the first question cannot run with empty documents.
+    request.retrievalRequired = route.retrievalRequired || submittedContext?.contextType === 'meeting';
     request.answerDepth = route.answerDepth;
     pendingSkillIdRef.current = undefined;
     setSelectedSkillId(null);
@@ -2075,8 +2078,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       ? `agent-ask-ledger-content flex h-full min-h-0 w-full flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
       : conversationActive ? 'flex h-full min-h-0 w-full flex-col' : 'mt-5'}>
       {conversationActive && (
-        <section
-          className="order-1 min-h-0 w-full flex-1 space-y-10 overflow-y-auto pb-32 pt-8"
+          <section
+          className={`order-1 min-h-0 w-full flex-1 overflow-y-auto ${meetingChat ? 'space-y-4 px-3 pb-44 pt-6' : compact ? 'space-y-4 px-3 pb-32 pt-8' : 'pb-32 pt-8 space-y-10'}`}
           style={!compact ? {
             marginLeft: 'calc(50% - 50vw)',
             width: '100vw',
@@ -2086,7 +2089,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           aria-live="polite"
         >
           {messages.map((message, messageIndex) => (
-            <article key={message.id} ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined} className={message.role === 'user' ? 'group flex justify-end' : 'group max-w-[640px]'}>
+            <article key={message.id} ref={messageIndex === messages.length - 1 ? latestMessageRef : undefined} className={message.role === 'user' ? 'group flex justify-end' : `group ${meetingChat ? 'max-w-full' : 'max-w-[640px]'}`}>
               {message.role === 'user' ? (
                 <div className="flex max-w-[78%] flex-col items-end gap-1">
                   {message.skillId && <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)]"><Boxes size={12} />{skillCatalog.find((skill) => skill.id === message.skillId)?.name}</span>}
@@ -2103,7 +2106,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                   {message.interrupted ? <div className="mb-3 inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800" role="status"><Square size={11} aria-hidden="true" />Chat interrupted</div> : null}
                   {message.activity?.steps?.length ? <AskLedgerActivityTrace steps={message.activity.steps} durationMs={message.activity.durationMs} expanded={Boolean(expandedActivity[message.id])} onToggle={() => setExpandedActivity((current) => ({ ...current, [message.id]: !current[message.id] }))} /> : null}
                   {message.structured?.sections?.length ? (
-                    <div className="ask-ledger-answer text-[15px] text-[var(--ledger-text-secondary)]">
+                    <div className={`ask-ledger-answer ${meetingChat ? 'text-[13px]' : 'text-[15px]'} text-[var(--ledger-text-secondary)]`}>
                       {message.structured.sections.map((section) => (
                         <section key={`${message.id}-${section.title}`}>
                           <h3 className="ask-ledger-answer__heading ask-ledger-answer__heading--3">{section.title}</h3>
@@ -2112,7 +2115,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                       ))}
                     </div>
                   ) : (
-                    <div className="ask-ledger-answer text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(message.content).answer, { sources: message.sources, onOpenSource: openSource })}</div>
+                    <div className={`ask-ledger-answer ${meetingChat ? 'text-[13px]' : 'text-[15px]'} text-[var(--ledger-text-secondary)]`}>{renderAnswerContent(sanitizeAskLedgerOutput(message.content).answer, { sources: message.sources, onOpenSource: openSource })}</div>
                   )}
                   {message.actions && message.actions.length > 0 && (
                     <div className="mt-5 space-y-2">
@@ -2166,7 +2169,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           {(state.status === 'submitting' || state.status === 'streaming') && (
             <article className="max-w-[640px]">
               <AskLedgerActivityTrace steps={activitySteps} durationMs={liveActivityDurationMs} active expanded={activityExpanded} onToggle={() => setActivityExpanded((current) => !current)} generationPhrase={requestWatchdogStatus === 'slow' ? 'Still working — Cancel is available.' : generationPhrase} />
-              {state.status === 'streaming' && state.response.answer ? <div className="ask-ledger-answer mt-4 text-[15px] text-[var(--ledger-text-secondary)]">{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, { sources: state.response.sources, onOpenSource: openSource, streaming: true })}</div> : null}
+              {state.status === 'streaming' && state.response.answer ? <div className={`ask-ledger-answer mt-4 ${meetingChat ? 'text-[13px]' : 'text-[15px]'} text-[var(--ledger-text-secondary)]`}>{renderAnswerContent(sanitizeAskLedgerOutput(state.response.answer).answer, { sources: state.response.sources, onOpenSource: openSource, streaming: true })}</div> : null}
               {state.status === 'streaming' && state.response.sources.length > 0 && (
                 <div className="mt-4">
                   <button
@@ -2196,12 +2199,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       )}
       <div
         ref={skillPickerRef}
-        className={`ask-ledger-composer ${conversationActive ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'mx-auto min-h-[104px] max-w-[620px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${localAIUnavailable ? 'cursor-pointer' : ''}`}
+        className={`ask-ledger-composer ${conversationActive || compact ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'mx-auto min-h-[104px] max-w-[620px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${meetingChat ? 'meeting-chat-composer !absolute !inset-x-2 !bottom-3 !z-20 !mx-0 !w-auto !min-h-[128px] !rounded-md !px-3 !py-3' : compact ? '!mx-3 !w-[calc(100%-1.5rem)] !min-h-[72px] !rounded-none !px-3 !py-2' : ''} ${localAIUnavailable ? 'cursor-pointer' : ''}`}
         onClick={() => {
           if (localAIUnavailable) setSetupModalOpen(true);
         }}
       >
-        {conversationActive && <div aria-hidden="true" className="ask-ledger-composer-fade pointer-events-none absolute inset-x-0 bottom-[calc(100%+1px)] z-0 h-12" />}
+        {conversationActive && <div aria-hidden="true" className={`ask-ledger-composer-fade pointer-events-none absolute inset-x-0 z-0 ${meetingChat ? 'bottom-[-16px] h-16' : compact ? 'bottom-[-10px] h-10' : 'bottom-[calc(100%+1px)] h-12'}`} />}
         {(activeInitialContext || selectedSkill || composerAttachments.length > 0 || attachmentIndexing) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
             {composerAttachments.map((attachment) => (
@@ -2261,7 +2264,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             }
           }}
           rows={3}
-          placeholder={skillPlaceholder(selectedSkill) ?? (conversationActive ? 'Reply...' : 'Ask Ledger...')}
+          placeholder={skillPlaceholder(selectedSkill) ?? (conversationActive ? 'Reply...' : meetingChat && activeInitialContext?.contextType === 'meeting' ? 'Ask about this meeting…' : 'Ask Ledger...')}
           aria-label="Ask Ledger"
           aria-disabled={localAIUnavailable}
           aria-describedby={localAIUnavailable ? 'ask-ledger-setup-help' : undefined}
@@ -2358,10 +2361,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 <Paperclip size={15} />
               </button>
               {attachmentMenuOpen && (
-                <div role="menu" aria-label="Add Ask Ledger context" className="absolute bottom-9 right-0 z-40 w-56 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 shadow-[var(--ledger-shadow)]">
+                <div role="menu" aria-label="Add Ask Ledger context" className={`absolute bottom-9 right-0 z-40 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)] ${meetingChat ? 'w-40 p-1' : 'w-56 p-1.5'}`}>
                   {!resourcePickerOpen ? <>
-                    <button type="button" role="menuitem" onClick={() => void uploadAttachments()} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Paperclip size={14} />Upload file</button>
-                    <button type="button" role="menuitem" onClick={() => void openResourcePicker()} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><FolderKanban size={14} />Add Ledger resource</button>
+                    <button type="button" role="menuitem" onClick={() => void uploadAttachments()} className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}`}><Paperclip size={meetingChat ? 13 : 14} />Upload file</button>
+                    <button type="button" role="menuitem" onClick={() => void openResourcePicker()} className={`flex w-full items-center gap-2 rounded-lg text-left text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] ${meetingChat ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-2 text-sm'}`}><FolderKanban size={meetingChat ? 13 : 14} />Add Ledger resource</button>
                   </> : <>
                     <button type="button" onClick={() => setResourcePickerOpen(false)} className="w-full px-3 py-2 text-left text-xs text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">← Back</button>
                     <div className="max-h-56 overflow-y-auto border-t border-[color:var(--ledger-border-subtle)] pt-1">{resourcePickerLoading ? <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">Loading Ledger resources…</p> : resourcePickerOptions.map((resource) => <button key={`${resource.type}:${resource.resourceId}`} type="button" onClick={() => addResourceAttachment(resource)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><span className="min-w-0 flex-1 truncate">{resource.title}</span><span className="text-[10px] text-[var(--ledger-text-muted)]">{sourceTypeLabels[resource.type]}</span></button>)}{!resourcePickerLoading && !resourcePickerOptions.length && <p className="px-3 py-3 text-xs text-[var(--ledger-text-muted)]">No Ledger resources available.</p>}</div>
@@ -2373,7 +2376,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             <button type="button" onClick={() => submit()} disabled={(!question.trim() && !selectedSkillId && !composerAttachments.length) || !localAIReady || isSubmitting} aria-label="Submit question" className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)] disabled:opacity-35">
               {isSubmitting ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
-          {localAIReady && (
+          {localAIReady && !meetingChat && (
             <div className="ledger-ask-model-control relative order-first">
               <button
                 ref={advancedButtonRef}
@@ -2424,7 +2427,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           </div>
         </div>
       </div>
-      {!conversationActive && (
+      {!conversationActive && !meetingChat && (
         <section className="mt-7" aria-labelledby="ask-ledger-examples-heading">
           <h2 id="ask-ledger-examples-heading" className="mb-2 px-1 text-xs font-medium text-[var(--ledger-text-muted)]">Get started with some examples</h2>
           <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">

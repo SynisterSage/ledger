@@ -3,6 +3,7 @@ import {
   buildMeetingEvidenceChunks,
   buildMeetingRecapPrompt,
   parseMeetingRecapDraft,
+  selectMeetingEvidenceChunks,
   type MeetingRecapGenerationResult,
 } from '../src/types/meetingRecap.ts';
 import type { MeetingIntelligenceContext } from '../src/types/notes.ts';
@@ -23,12 +24,13 @@ export class MeetingRecapService {
       return { status: 'unavailable', reason: 'invalid_context' };
     }
     if (this.activeRequestId) this.localAI.cancel(this.activeRequestId);
-    const chunks = buildMeetingEvidenceChunks(context);
+    const chunks = buildMeetingEvidenceChunks(context, 2200);
     const startedAt = Date.now();
     for (const tier of ['balanced', 'fast'] as const) {
       const switched = await this.localAI.switchGenerationTier(tier).catch(() => ({ ok: false }));
       if (!switched || switched.ok !== true) continue;
-      const prompt = buildMeetingRecapPrompt(context, chunks, tier === 'fast' ? 8 : 12);
+      const maxEvidenceChunks = tier === 'fast' ? 3 : 4;
+      const prompt = buildMeetingRecapPrompt(context, chunks, maxEvidenceChunks);
       const requestId = `meeting-recap-${Date.now()}`;
       this.activeRequestId = requestId;
       const answer = await new Promise<{ text: string; failed: boolean }>((resolve) => {
@@ -58,8 +60,8 @@ export class MeetingRecapService {
         requestedTier: 'balanced' as const,
         actualTier: tier,
         transcriptLength: context.transcriptSegments.reduce((sum, segment) => sum + segment.transcript_text.length, 0),
-        chunkCount: chunks.length,
-        evidenceCount: context.transcriptSegments.length,
+        chunkCount: selectMeetingEvidenceChunks(chunks, maxEvidenceChunks).length,
+        evidenceCount: selectMeetingEvidenceChunks(chunks, maxEvidenceChunks).reduce((count, chunk) => count + chunk.segmentIds.length, 0),
         promptChars: prompt.length,
         generationMs: Date.now() - startedAt,
       };

@@ -812,7 +812,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'week' | 'day' | 'agenda'; date?: string; event?: string; reminder?: string } } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
-  const { workspaceShellLayout } = useSidebar();
+  const { workspaceShellLayout, reduceMotion } = useSidebar();
   const api = useApi();
   const platform = usePlatform();
   const viewportWidth = useViewportWidth();
@@ -4607,11 +4607,14 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         onEnable={() => void updateCalendarSubscriptionLifecycle('enable')}
       />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div
+        className="relative flex-1 flex overflow-hidden"
+        data-reduce-motion={reduceMotion ? 'true' : 'false'}
+      >
         {!isLeftPaneCollapsed ? (
           <>
             <aside
-              className="shrink-0 overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4"
+              className="ledger-pane-surface ledger-pane-left shrink-0 overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4"
               style={{ width: `${leftPaneWidth}px` }}
             >
               <div className="flex items-center justify-between mb-3">
@@ -4824,7 +4827,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             />
           </>
         ) : (
-          <div className="flex w-10 shrink-0 items-start justify-center border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
+          <div className="ledger-pane-toggle absolute left-2 top-4 z-30">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
@@ -5589,7 +5592,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             />
 
             <aside
-              className="overflow-auto border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-6"
+              className="ledger-pane-surface ledger-pane-right overflow-auto border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-6"
               style={{ width: `${rightPaneWidth}px` }}
             >
               <div className="flex items-start justify-between gap-3">
@@ -5942,7 +5945,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
           </>
         )}
         {isRightPaneCollapsed && (
-          <div className="flex w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
+          <div className="ledger-pane-toggle ledger-pane-toggle-right absolute right-2 top-4 z-30">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"

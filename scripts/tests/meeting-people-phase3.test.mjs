@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { resolveDeterministicSpeakerIdentity } from '../../src/types/meetingPeople.ts';
 
 const segment = (audio_source) => ({ id: 'segment-1', audio_source, speaker_label: null, start_ms: 0, end_ms: 1000, transcript_text: 'hello', confidence: 1, segment_order: 0 });
-const metadata = (attendees) => ({ attendees });
+const metadata = (attendees, identity = {}) => ({ attendees, ...identity });
 
 test('microphone maps deterministically to the current user', () => {
   const identity = resolveDeterministicSpeakerIdentity({ segment: segment('user_microphone'), metadata: metadata([]), currentUser: { id: 'user-1', email: 'lex@example.com' }, currentUserName: 'Lex' });
@@ -11,12 +11,18 @@ test('microphone maps deterministically to the current user', () => {
 });
 
 test('one external attendee maps system audio, but group audio stays unknown', () => {
-  const one = resolveDeterministicSpeakerIdentity({ segment: segment('system_audio'), metadata: metadata([{ id: 'person-1', name: 'Sam', email: 'sam@example.com' }]), currentUser: { id: 'user-1', email: 'lex@example.com' }, currentUserName: 'Lex' });
+  const one = resolveDeterministicSpeakerIdentity({ segment: segment('system_audio'), metadata: metadata([{ id: 'person-1', name: 'Sam', email: 'sam@example.com' }], { calendar_event_id: 'event-1' }), currentUser: { id: 'user-1', email: 'lex@example.com' }, currentUserName: 'Lex' });
   assert.equal(one.displayName, 'Sam');
   assert.equal(one.state, 'known');
   const group = resolveDeterministicSpeakerIdentity({ segment: segment('system_audio'), metadata: metadata([{ name: 'Sam' }, { name: 'Jordan' }]), currentUserName: 'Lex' });
   assert.equal(group.state, 'unknown');
   assert.equal(group.displayName, undefined);
+});
+
+test('standalone recording with typed attendee stays unresolved', () => {
+  const identity = resolveDeterministicSpeakerIdentity({ segment: segment('system_audio'), metadata: metadata([{ name: 'Sam' }]), currentUserName: 'Lex' });
+  assert.equal(identity.state, 'unknown');
+  assert.equal(identity.displayName, undefined);
 });
 
 test('user-confirmed identity is preserved over deterministic resolution', () => {

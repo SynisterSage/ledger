@@ -176,7 +176,7 @@ const circleTheme = {
     'flex h-full w-[250px] min-w-[220px] max-w-[280px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]',
   leftPaneHeader:
     'border-b border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-muted)]',
-  leftList: 'min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 py-2',
+  leftList: 'ledger-pane-scrollbar min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 py-2',
   row: 'group flex w-full items-start gap-2 rounded-xl px-2.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)]',
   rowSelected: 'bg-[var(--ledger-surface-hover)] hover:bg-[var(--ledger-surface-hover)]',
   rowTitle: 'text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]',

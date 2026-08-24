@@ -150,6 +150,7 @@ type Props = {
   onLinkedExternalReferenceInserted?: () => void;
   onUploadAttachment?: (request: AttachmentUploadRequest) => Promise<AttachmentUploadResult>;
   onRemoveAttachment?: (request: AttachmentRemoveRequest) => void | Promise<void>;
+  showToolbar?: boolean;
 };
 
 const getSelectedContentPayload = (
@@ -1781,6 +1782,7 @@ export function RichTextEditor({
   onLinkedExternalReferenceInserted,
   onUploadAttachment,
   onRemoveAttachment,
+  showToolbar = true,
 }: Props) {
   const lastChangeTimeRef = React.useRef(0);
   const pendingHtmlRef = React.useRef<string | null>(null);
@@ -1860,7 +1862,7 @@ export function RichTextEditor({
     <LexicalComposer initialConfig={editorConfig}>
       <ExternalEmbedProvider targetType={targetType} targetId={noteId ?? null} canEdit>
         <div>
-          <ToolbarPlugin
+          {showToolbar && <ToolbarPlugin
             onAutoCorrect={onAutoCorrect}
             noteId={noteId}
             targetType={targetType}
@@ -1868,7 +1870,7 @@ export function RichTextEditor({
             onOpenLinkedResources={onOpenLinkedResources}
             onUploadAttachment={onUploadAttachment}
             onRemoveAttachment={onRemoveAttachment}
-          />
+          />}
           <div className="relative">
             <RichTextBehaviorPlugin />
             {/* Meeting notes use the transcript as their separate capture surface.

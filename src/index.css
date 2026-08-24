@@ -47,6 +47,81 @@ body {
   animation: ledgerAskAdvancedViewIn 160ms ease-out both;
 }
 
+@keyframes ledgerPaneSimpleIn {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--ledger-pane-enter-offset, -8px), 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes ledgerPaneToggleSimpleIn {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--ledger-pane-toggle-offset, -8px), 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-reduce-motion='false'] .ledger-pane-surface {
+  animation: ledgerPaneSimpleIn 120ms ease-out both;
+}
+
+[data-reduce-motion='false'] .ledger-pane-toggle {
+  animation: ledgerPaneToggleSimpleIn 120ms ease-out both;
+}
+
+[data-reduce-motion='false'] .ledger-pane-right {
+  --ledger-pane-enter-offset: 8px;
+}
+
+[data-reduce-motion='false'] .ledger-pane-toggle-right {
+  --ledger-pane-toggle-offset: 8px;
+}
+
+[data-reduce-motion='true'] .ledger-pane-surface,
+[data-reduce-motion='true'] .ledger-pane-toggle {
+  animation: none;
+  transition: none;
+}
+
+/* Keep module side panes visually consistent across native scrollbar engines. */
+.ledger-pane-surface,
+.ledger-pane-scrollbar {
+  scrollbar-color: var(--ledger-pane-scrollbar-thumb, rgb(80 80 80)) transparent;
+  scrollbar-width: thin;
+}
+
+.ledger-pane-surface::-webkit-scrollbar,
+.ledger-pane-scrollbar::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.ledger-pane-surface::-webkit-scrollbar-track,
+.ledger-pane-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ledger-pane-surface::-webkit-scrollbar-thumb,
+.ledger-pane-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--ledger-pane-scrollbar-thumb, rgb(80 80 80));
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+
+.ledger-pane-surface::-webkit-scrollbar-thumb:hover,
+.ledger-pane-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ledger-pane-scrollbar-thumb-hover, rgb(110 110 110));
+}
+
 .ledger-ask-generating {
   background: linear-gradient(100deg, var(--ledger-text-muted) 0%, var(--ledger-text-muted) 42%, var(--ledger-text-primary) 50%, var(--ledger-text-muted) 58%, var(--ledger-text-muted) 100%);
   background-size: 220% 100%;
@@ -726,6 +801,24 @@ button:focus {
   box-shadow: none !important;
 }
 
+/* Embedded Electron webviews can promote pointer focus to :focus-visible.
+   Notes controls already provide their own surface treatment, so keep the
+   global focus ring from drawing a rectangular outline over the canvas. */
+.notes-document-canvas :is(input, textarea, select):focus-visible {
+  outline: none !important;
+  outline-offset: 0;
+  box-shadow: none !important;
+}
+
+@keyframes ledger-meeting-suggestion-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ledger-meeting-suggestion {
+  animation: ledger-meeting-suggestion-in 260ms ease-out both;
+}
+
 input:focus-visible,
 button:focus-visible,
 a:focus-visible,
@@ -1347,6 +1440,7 @@ textarea:focus-visible,
 /* The shared Agent launcher uses the real Ask Ledger panel in a compact shell. */
 .agent-ask-ledger-popover > .flex-1 {
   min-height: 0;
+  padding-bottom: 8px;
 }
 .agent-ask-ledger-popover {
   transform: translateY(calc(-100% - 8px));
@@ -1418,9 +1512,9 @@ textarea:focus-visible,
   min-height: 84px;
   max-width: none;
   margin-top: auto;
-  margin-bottom: 8px;
+  margin-bottom: 2px;
   padding: 9px 10px;
-  border-radius: 10px;
+  border-radius: 6px !important;
 }
 .agent-ask-ledger-popover .ask-ledger-composer textarea {
   min-height: 34px;
@@ -1620,4 +1714,21 @@ textarea:focus-visible,
 .agent-ask-ledger-popover .ask-ledger-composer [aria-label="Add attachment"],
 .agent-ask-ledger-popover .ledger-ask-model-control {
   display: none;
+}
+
+/* Keep the meeting composer controls usable in a narrow inspector pane. */
+.meeting-chat-composer > .mt-2 {
+  min-width: 0;
+  gap: 6px;
+}
+.meeting-chat-composer > .mt-2 > div:last-child {
+  flex-shrink: 0;
+  gap: 0;
+}
+.meeting-chat-composer > .mt-2 > div:last-child > button {
+  flex-shrink: 0;
+}
+.meeting-chat-composer > :not(.ask-ledger-composer-fade) {
+  position: relative;
+  z-index: 1;
 }

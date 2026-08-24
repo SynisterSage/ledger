@@ -633,7 +633,7 @@ const settingsTheme = {
     'relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-[0_24px_80px_rgba(15,23,42,0.08)]',
   root: 'flex-1 overflow-hidden bg-[var(--ledger-background)]',
   aside:
-    'overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 pb-3 pt-8',
+    'ledger-pane-scrollbar overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 pb-3 pt-8',
   main: 'overflow-auto bg-[var(--ledger-background)] px-8 py-8 lg:px-10',
   sectionTitle: 'text-[13px] font-semibold text-[var(--ledger-text-primary)]',
   sectionSubtitle: 'text-sm text-[var(--ledger-text-secondary)]',

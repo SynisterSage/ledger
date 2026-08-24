@@ -631,7 +631,16 @@ export class AskLedgerService {
       performanceTrace.mark('routingStarted');
       const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
       const conversationResolution = resolveAskLedgerConversation(request.question, request.conversation?.state, request.workspaceId);
-      const embeddedContextOnly = Boolean(request.explicitContext?.initialQuestion && !request.conversation?.previousQuestion && !request.conversation?.recentExchanges?.length);
+      // Meeting handoffs carry an anchor, but the answer still depends on the
+      // persisted note/transcript/project evidence. Do not treat them like a
+      // lightweight conversational embed or we will skip document loading and
+      // ask the model to answer with an empty context.
+      const embeddedContextOnly = Boolean(
+        request.explicitContext?.initialQuestion
+        && request.explicitContext.contextType !== 'meeting'
+        && !request.conversation?.previousQuestion
+        && !request.conversation?.recentExchanges?.length
+      );
       const routed = routeAskLedgerMessage(request.question, {
         previousQuestion: request.conversation?.previousQuestion,
         previousAnswer: request.conversation?.previousAnswer,

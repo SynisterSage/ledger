@@ -594,7 +594,7 @@ type ProjectDraft = {
 export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; taskId?: string } } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
-  const { workspaceShellLayout } = useSidebar();
+  const { workspaceShellLayout, reduceMotion } = useSidebar();
   const api = useApi();
   const platform = usePlatform();
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
@@ -7180,11 +7180,14 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
 
       {renderTaskComposer()}
 
-      <div className="flex-1 flex overflow-hidden">
+      <div
+        className="relative flex-1 flex overflow-hidden"
+        data-reduce-motion={reduceMotion ? 'true' : 'false'}
+      >
         {!isLeftPaneCollapsed ? (
           <>
             <aside
-              className="flex shrink-0 flex-col overflow-hidden border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
+              className="ledger-pane-surface ledger-pane-left flex shrink-0 flex-col overflow-hidden border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
               style={{ width: `${leftPaneWidth}px` }}
             >
               <div
@@ -7255,7 +7258,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
               </div>
 
               <div
-                className={`flex-1 overflow-auto ${isCompactLayout ? 'p-2' : 'p-2.5'} space-y-1`}
+                  className={`ledger-pane-scrollbar flex-1 overflow-auto ${isCompactLayout ? 'p-2' : 'p-2.5'} space-y-1`}
               >
                 {isLoadingProjects ? (
                   <div className="space-y-2">
@@ -7362,7 +7365,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             />
           </>
         ) : (
-          <div className="flex w-10 shrink-0 items-start justify-center border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
+          <div className="ledger-pane-toggle absolute left-2 top-4 z-30">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
@@ -7555,10 +7558,10 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             />
 
             <aside
-              className="flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
+              className="ledger-pane-surface ledger-pane-right flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
               style={{ width: `${rightPaneWidth}px` }}
             >
-              <div className="flex-1 overflow-auto p-4">
+              <div className="ledger-pane-scrollbar flex-1 overflow-auto p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
@@ -7925,7 +7928,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             </aside>
           </>
         ) : showCollapsedRightPane ? (
-          <div className="flex w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-4">
+          <div className="ledger-pane-toggle ledger-pane-toggle-right absolute right-2 top-4 z-30">
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"

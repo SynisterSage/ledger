@@ -8,6 +8,10 @@ const migration = fs.readFileSync('migrations/118_meeting_notes_phase1.sql', 'ut
 
 test('meeting notes keep Write as the primary surface with compact recording controls', () => {
   assert.match(notesWindow, /meetingCenterView === 'write'/);
+  assert.match(notesWindow, /pendingMeetingViewRef\.current = \{ noteId: selectedNote\.id, view: 'write' \}/);
+  assert.match(notesWindow, /setDraftMode\('meeting_note'\)/);
+  assert.match(notesWindow, /aria-label="Open transcript"/);
+  assert.match(notesWindow, /Boolean\(meetingPrep\?\.points\?\.length\)/);
   assert.match(notesWindow, /data-meeting-recording-controls/);
   assert.match(notesWindow, /Start recording/);
   assert.match(notesWindow, /Pause recording/);
