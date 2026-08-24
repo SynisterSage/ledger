@@ -27,6 +27,7 @@ export class LocalTranscriptionService {
   private readonly jobs = new TranscriptionJobStore();
   private readonly sessions: RecordingSessionStore;
   private process: ChildProcess | null = null;
+  private processJobId: string | null = null;
   private cancelRequested = false;
   private progressListeners = new Set<(value: TranscriptionProgress) => void>();
 
@@ -50,8 +51,13 @@ export class LocalTranscriptionService {
     const chunks = this.validChunks(session.sessionId, session.chunks);
     if (!chunks.length) throw new Error('No finalized audio chunks are available for transcription.');
     if (!this.modelManager.status().installed) throw new Error('Install the local Whisper model before starting transcription.');
-    if (this.process) throw new Error('Another transcription is already running.');
     const existing = this.jobs.list().find((job) => job.sessionId === input.sessionId && job.status !== 'cancelled');
+    // Stop can be retried while the renderer is still settling recording
+    // metadata. Starting the same active session again is idempotent.
+    if (existing && !input.force && ['queued', 'preparing', 'transcribing', 'merging'].includes(existing.status)) {
+      return this.publicJob(existing.jobId);
+    }
+    if (this.process) throw new Error('Another transcription is already running.');
     if (existing?.status === 'complete' && !input.force) return this.publicJob(existing.jobId);
     // Validate the platform-specific Whisper executable before creating a
     // job or putting the meeting into its processing state. The
@@ -67,7 +73,7 @@ export class LocalTranscriptionService {
   cancel(jobId: string) {
     const job = this.jobs.get(jobId);
     if (!job) throw new Error('Transcription job was not found.');
-    if (this.process) { this.cancelRequested = true; this.process.kill('SIGTERM'); }
+    if (this.process && (!this.processJobId || this.processJobId === jobId)) { this.cancelRequested = true; this.process.kill('SIGTERM'); }
     this.updateJob(jobId, { status: 'cancelled', error: 'Transcription cancelled.' }, 'job_cancelled');
     return this.publicJob(jobId);
   }
@@ -84,7 +90,7 @@ export class LocalTranscriptionService {
 
   fail(jobId: string, error: string) { return this.updateJob(jobId, { status: 'failed', error: error.slice(0, 500), completedAt: new Date().toISOString() }, 'job_failed'); }
 
-  async shutdown() { this.cancelRequested = true; this.process?.kill('SIGTERM'); this.process = null; }
+  async shutdown() { this.cancelRequested = true; this.process?.kill('SIGTERM'); this.process = null; this.processJobId = null; }
 
   private async run(jobId: string) {
     const job = this.jobs.get(jobId); if (!job) return;
@@ -108,7 +114,13 @@ export class LocalTranscriptionService {
       if (this.jobs.get(jobId)?.status === 'cancelled') return;
       this.fail(jobId, error instanceof Error ? error.message : String(error));
       this.emit(jobId);
-    } finally { this.process = null; this.cancelRequested = false; }
+    } finally {
+      if (this.processJobId === jobId) {
+        this.process = null;
+        this.processJobId = null;
+      }
+      this.cancelRequested = false;
+    }
   }
 
   private transcribeChunk(job: TranscriptionJob, chunk: RecordingChunk, sessionStartedAt: number) {
@@ -126,6 +138,7 @@ export class LocalTranscriptionService {
       const gpuArgs = process.env.LEDGER_WHISPER_USE_METAL === '1' ? [] : ['-ng'];
       const child = spawn(executable, [...gpuArgs, '-m', this.modelManager.modelPath(), '-f', input, '-l', 'en', '-ojf', '-of', outputBase, '-np'], { stdio: ['ignore', 'ignore', 'pipe'] });
       this.process = child;
+      this.processJobId = job.jobId;
       let stderr = '';
       child.stderr.on('data', (data) => { stderr += String(data).slice(-2000); });
       const timeoutMs = process.platform === 'win32' ? 5 * 60 * 1000 : 15 * 60 * 1000;
@@ -136,7 +149,10 @@ export class LocalTranscriptionService {
       child.once('error', (error) => { clearTimeout(timeout); reject(error); });
       child.once('exit', (code) => {
         clearTimeout(timeout);
-        this.process = null;
+        if (this.process === child) {
+          this.process = null;
+          this.processJobId = null;
+        }
         if (this.cancelRequested) return reject(new Error('Transcription cancelled.'));
         if (code !== 0) return reject(new Error(stderr.trim() || `Whisper exited with code ${code ?? 'unknown'}.`));
         try {

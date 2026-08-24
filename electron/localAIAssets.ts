@@ -56,6 +56,11 @@ export type GenerationModelManifest = LocalAIAssetManifest & {
 // environment variables remain supported for development/release overrides,
 // but production no longer depends on an external .env file to verify them.
 const VERIFIED_OPTIONAL_GENERATION_ARTIFACTS = {
+  fast: {
+    url: 'https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/daeb8e2d528a760970442092f6bf1e55c3b659eb/Qwen3-1.7B-Q4_K_M.gguf?download=true',
+    size: 1282439264,
+    sha256: 'd2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5',
+  },
   balanced: {
     url: 'https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf?download=true',
     size: 2497280640,
@@ -66,9 +71,9 @@ const VERIFIED_OPTIONAL_GENERATION_ARTIFACTS = {
 export const GENERATION_MODEL_REGISTRY: GenerationModelManifest[] = [
   {
     id: 'qwen3-1.7b-q4-k-m', tier: 'fast', displayName: 'Qwen3 1.7B', description: 'Fast everyday answers', modelFamily: 'Qwen3', role: 'generation', version: '1',
-    fileName: 'qwen3-1.7b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_GENERATION_URL,
-    expectedSize: Number(process.env.LEDGER_LOCAL_AI_GENERATION_SIZE) || undefined,
-    sha256: process.env.LEDGER_LOCAL_AI_GENERATION_SHA256?.trim().toLowerCase() || undefined,
+    fileName: 'qwen3-1.7b-q4_k_m.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_GENERATION_URL || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.fast.url,
+    expectedSize: Number(process.env.LEDGER_LOCAL_AI_GENERATION_SIZE) || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.fast.size,
+    sha256: process.env.LEDGER_LOCAL_AI_GENERATION_SHA256?.trim().toLowerCase() || VERIFIED_OPTIONAL_GENERATION_ARTIFACTS.fast.sha256,
     minimumRam: 8 * 1024 ** 3, recommendedRam: 16 * 1024 ** 3, contextSize: 8192, runtimeArgs: ['--reasoning', 'off'], reasoningMode: 'off',
   },
   {
@@ -82,9 +87,9 @@ export const GENERATION_MODEL_REGISTRY: GenerationModelManifest[] = [
 
 const EMBEDDING_MODEL: LocalAIAssetManifest = {
   id: 'ledger-embedding', displayName: 'Ledger semantic search', role: 'embedding', version: '1',
-  fileName: 'ledger-embedding.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_EMBEDDING_URL,
-  expectedSize: Number(process.env.LEDGER_LOCAL_AI_EMBEDDING_SIZE) || undefined,
-  sha256: process.env.LEDGER_LOCAL_AI_EMBEDDING_SHA256?.trim().toLowerCase() || undefined,
+  fileName: 'ledger-embedding.gguf', downloadUrl: process.env.LEDGER_LOCAL_AI_EMBEDDING_URL || 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/0188c9bf409793f810680a5a431e7b899c46104c/nomic-embed-text-v1.5.Q4_K_M.gguf?download=true',
+  expectedSize: Number(process.env.LEDGER_LOCAL_AI_EMBEDDING_SIZE) || 84106624,
+  sha256: process.env.LEDGER_LOCAL_AI_EMBEDDING_SHA256?.trim().toLowerCase() || 'd4e388894e09cf3816e8b0896d81d265b55e7a9fff9ab03fe8bf4ef5e11295ac',
   minimumRam: 4 * 1024 ** 3, recommendedRam: 8 * 1024 ** 3,
 };
 

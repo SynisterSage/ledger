@@ -47,6 +47,19 @@ test('Fast and Balanced are the only generation tiers; Thinking reuses Balanced'
   assert.equal(GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'powerful'), undefined);
 });
 
+test('release manifests include verified Fast and embedding metadata without env overrides', () => {
+  const fast = GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'fast');
+  assert.match(fast?.downloadUrl ?? '', /^https:\/\/huggingface\.co\//);
+  assert.equal(fast?.expectedSize, 1282439264);
+  assert.match(fast?.sha256 ?? '', /^[a-f0-9]{64}$/);
+
+  const assets = new LocalAIAssetManager();
+  const embedding = assets.status().embedding;
+  assert.match(embedding.downloadUrl ?? '', /^https:\/\/huggingface\.co\//);
+  assert.equal(embedding.expectedSize, 84106624);
+  assert.match(embedding.sha256 ?? '', /^[a-f0-9]{64}$/);
+});
+
 test('generation model status is independent and embedding remains separate', () => {
   const assets = new LocalAIAssetManager();
   const status = assets.status();

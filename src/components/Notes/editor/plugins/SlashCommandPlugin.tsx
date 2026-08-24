@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CheckSquare,
   Code2,
@@ -284,7 +285,11 @@ export const SlashCommandPlugin = ({
         // Use the active paragraph's line box. A browser Selection range can
         // briefly report a stale or oversized rect while Lexical is updating,
         // which makes the menu float far below the slash the user just typed.
-        const rect = dom.getBoundingClientRect();
+        const blockRect = dom.getBoundingClientRect();
+        const nativeSelection = window.getSelection();
+        const nativeRange = nativeSelection?.rangeCount ? nativeSelection.getRangeAt(0) : null;
+        const caretRect = nativeRange?.getBoundingClientRect();
+        const rect = caretRect && caretRect.height > 0 && caretRect.height < 80 ? caretRect : blockRect;
         const menuWidth = 224;
         const menuHeight = 288;
         const anchorBottom = rect.top + Math.min(Math.max(rect.height, 20), 28);
@@ -393,7 +398,7 @@ export const SlashCommandPlugin = ({
   }, [editor]);
 
   if (!open) return null;
-  return (
+  return createPortal((
     <div
       ref={menuRef}
       role="menu"
@@ -436,5 +441,5 @@ export const SlashCommandPlugin = ({
         })
       )}
     </div>
-  );
+  ), document.body);
 };

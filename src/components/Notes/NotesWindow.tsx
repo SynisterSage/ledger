@@ -5085,12 +5085,28 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
             workspaceId: recordingWorkspaceId,
           })) as TranscriptionJobStatus;
           setTranscriptionJob(job);
-          await updateMeetingMetadata({
+          // The job is accepted before the metadata write. Keep the local
+          // state in processing immediately so a second Stop cannot start the
+          // same recording again if that write is slow or fails.
+          setMeetingMetadata((current) =>
+            current
+              ? {
+                  ...current,
+                  transcription_status: 'processing',
+                  duration_seconds:
+                    capture?.durationSeconds || getMeetingElapsedSeconds(current),
+                  meeting_end_at: meetingEndAt,
+                  transcription_error: null,
+                }
+              : current
+          );
+          const updated = await updateMeetingMetadata({
             transcription_status: 'processing',
             duration_seconds: capture?.durationSeconds || getMeetingElapsedSeconds(meetingMetadata),
             meeting_end_at: meetingEndAt,
             transcription_error: null,
           });
+          if (!updated) setAudioError('Transcription started, but meeting status could not be saved.');
         } catch (transcriptionError) {
           const message =
             transcriptionError instanceof Error
