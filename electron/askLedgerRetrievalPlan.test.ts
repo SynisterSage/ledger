@@ -28,6 +28,10 @@ test('extracts an explicit folder before a count question', () => {
 test('builds resource-aware plans for common constrained requests', () => {
   assert.deepEqual(buildRetrievalPlan('Summarize my last 3 notes').primaryResourceTypes, ['note']);
   assert.equal(buildRetrievalPlan('Summarize my last 3 notes').requestedCount, 3);
+  const boundedMeetingPrep = buildRetrievalPlan('can u help me prep for next meeting, look through last three notes, and help me plan out actions');
+  assert.deepEqual(boundedMeetingPrep.primaryResourceTypes, ['note']);
+  assert.equal(boundedMeetingPrep.requestedCount, 3);
+  assert.equal(boundedMeetingPrep.containerQuery, undefined);
   assert.deepEqual(buildRetrievalPlan('What happened in my last 3 meetings with Zhou?').primaryResourceTypes, ['event']);
   assert.equal(buildRetrievalPlan('What happened in my last 3 meetings with Zhou?').entityQuery, 'Zhou');
   assert.deepEqual(buildRetrievalPlan('Look at my newest reminders for Project X').primaryResourceTypes, ['reminder']);

@@ -637,16 +637,6 @@ export class AskLedgerService {
       performanceTrace.mark('routingStarted');
       const skill = request.skillDefinition ?? getAskLedgerSkill(request.skillId);
       const conversationResolution = resolveAskLedgerConversation(request.question, request.conversation?.state, request.workspaceId);
-      // Meeting handoffs carry an anchor, but the answer still depends on the
-      // persisted note/transcript/project evidence. Do not treat them like a
-      // lightweight conversational embed or we will skip document loading and
-      // ask the model to answer with an empty context.
-      const embeddedContextOnly = Boolean(
-        request.explicitContext?.initialQuestion
-        && request.explicitContext.contextType !== 'meeting'
-        && !request.conversation?.previousQuestion
-        && !request.conversation?.recentExchanges?.length
-      );
       const routed = routeAskLedgerMessage(request.question, {
         previousQuestion: request.conversation?.previousQuestion,
         previousAnswer: request.conversation?.previousAnswer,
@@ -660,9 +650,10 @@ export class AskLedgerService {
         previousProductFeature: request.conversation?.productFeature,
         previousSkill: request.conversation?.previousSkill,
       });
-      const route = embeddedContextOnly
-        ? { ...routed, retrievalRequired: false, answerDepth: 'standard' as const, reason: 'embedded_context' }
-        : routed;
+      // An explicit context is an anchor, not evidence. Workspace questions
+      // from Notes, projects, transcripts, and other contextual entry points
+      // must still load the bounded records needed to answer them.
+      const route = routed;
       const conversationForCurrentTurn = route.diagnostics.contextReset || route.executionMode === 'ledger_product_help'
         ? undefined
         : request.conversation;
@@ -835,20 +826,28 @@ export class AskLedgerService {
       }
       if (request.conversation?.id) await this.restoreAttachments(request.workspaceId, request.conversation.id);
       const structuredSkillRetrieval = skill?.executionContract?.retrieval === 'structured';
+      const boundedRecentNotesRequest = retrievalPlan.primaryResourceTypes.length === 1
+        && retrievalPlan.primaryResourceTypes[0] === 'note'
+        && retrievalPlan.requestedCount !== undefined
+        && retrievalPlan.ordering === 'newest';
       const structuredLookup = route.executionMode === 'workspace_lookup'
         && retrievalPlan.operation === 'lookup'
         && retrievalPlan.primaryResourceTypes.length > 0
         && !retrievalPlan.expandRelatedContext;
-      const semanticIndexRequired = !structuredSkillRetrieval && !structuredLookup && route.mode !== 'follow_up' && !['conversation', 'ledger_product_help', 'workspace_lookup'].includes(route.executionMode);
+      const semanticIndexRequired = !boundedRecentNotesRequest
+        && !structuredSkillRetrieval
+        && !structuredLookup
+        && route.mode !== 'follow_up'
+        && !['conversation', 'ledger_product_help', 'workspace_lookup'].includes(route.executionMode);
       performanceTrace.set('semanticIndexRequired', semanticIndexRequired);
-      if (!semanticIndexRequired) performanceTrace.set('semanticIndexSkippedReason', structuredSkillRetrieval ? 'skill_structured_contract' : structuredLookup ? 'structured_lookup' : 'route_does_not_require_semantic_retrieval');
+      if (!semanticIndexRequired) performanceTrace.set('semanticIndexSkippedReason', boundedRecentNotesRequest ? 'bounded_recent_notes' : structuredSkillRetrieval ? 'skill_structured_contract' : structuredLookup ? 'structured_lookup' : 'route_does_not_require_semantic_retrieval');
       const indexingStartedAt = Date.now();
       performanceTrace.mark('indexingStarted');
       if (semanticIndexRequired) {
         await this.retrieval.indexWorkspace(request.workspaceId, request.documents, { performance: performanceTrace, semantic: true });
       } else {
         performanceTrace.set('indexingSkipped', true);
-        performanceTrace.set('indexingSkippedReason', structuredSkillRetrieval ? 'skill_structured_contract' : structuredLookup ? 'structured_lookup' : 'semantic_retrieval_not_required');
+        performanceTrace.set('indexingSkippedReason', boundedRecentNotesRequest ? 'bounded_recent_notes' : structuredSkillRetrieval ? 'skill_structured_contract' : structuredLookup ? 'structured_lookup' : 'semantic_retrieval_not_required');
       }
       performanceTrace.mark('indexingCompleted');
       indexingMs = semanticIndexRequired ? Date.now() - indexingStartedAt : 0;
@@ -889,10 +888,12 @@ export class AskLedgerService {
       // The renderer's document snapshot can be intentionally small (for
       // example, a project handoff may contain only the selected project).
       // Project questions must read the workspace index as well so exact
-      // tasks, milestones, reminders, and events are available. The index is
-      // still workspace-scoped by LedgerRetrievalService.
+      // tasks, milestones, reminders, and events are available. Notes Home is
+      // different: its workspace corpus is supplied by the renderer and its
+      // structured lookup intentionally skips semantic indexing, so pass that
+      // corpus directly into the retrieval pipeline.
       const projectAnchoredRequest = Boolean(explicitContext?.resourceType === 'project');
-      const retrievalDocuments = semanticIndexRequired || projectAnchoredRequest || explicitContext?.contextType === 'notes_home' ? undefined : request.documents;
+      const retrievalDocuments = semanticIndexRequired || projectAnchoredRequest ? undefined : request.documents;
       const retrievalStartedAt = Date.now();
       performanceTrace.mark('retrievalStarted');
       // Custom skills can intentionally submit an empty question. Give the

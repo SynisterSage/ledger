@@ -218,6 +218,41 @@ test('expands project reviews with linked work records', async () => {
   assert.match(generationPrompt, /blocked or stalled/);
 });
 
+test('passes the Notes Home workspace corpus directly into structured retrieval', async () => {
+  const events: LocalAIStreamEvent[] = [];
+  const note: AskLedgerContextItem = { workspaceId: 'workspace-a', resourceType: 'note', resourceId: 'note-brief', title: 'Workday notes', content: 'Prepare the client follow-up.' };
+  const meeting: AskLedgerContextItem = { workspaceId: 'workspace-a', resourceType: 'event', resourceId: 'event-brief', title: 'Client follow-up', content: 'Discuss next steps.' };
+  let retrievalDocuments: AskLedgerContextItem[] | undefined;
+  const retrieval = {
+    indexWorkspace: async () => undefined,
+    retrieve: async (_workspaceId: string, _question: string, _lexicalResults: unknown[], _limit: number, options?: { documents?: AskLedgerContextItem[] }) => {
+      retrievalDocuments = options?.documents;
+      return { items: [note, meeting], debug: [] };
+    },
+    shutdown: async () => undefined,
+  } as unknown as LedgerRetrievalService;
+  const localAI = {
+    start: (_request: unknown, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+    shutdown: async () => undefined,
+  } as unknown as LocalAIService;
+  const service = new AskLedgerService(retrieval, localAI);
+
+  service.start({
+    workspaceId: 'workspace-a',
+    question: 'Make me a meeting brief for my next workday using my notes.',
+    documents: [note, meeting],
+    lexicalResults: [],
+    explicitContext: { resourceType: 'note', resourceId: 'notes-home:workspace-a', title: 'Notes workspace', contextType: 'notes_home', workspaceId: 'workspace-a' },
+  }, { onEvent: (event) => events.push(event) });
+  await waitForEvents(events);
+
+  assert.deepEqual(retrievalDocuments?.map((item) => item.resourceId), ['note-brief', 'event-brief']);
+});
+
 test('abstains before generation when retrieval evidence is insufficient', async () => {
   const events: LocalAIStreamEvent[] = [];
   let generationCalled = false;

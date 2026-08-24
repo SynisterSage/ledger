@@ -53,6 +53,12 @@ test('keeps narrow questions on the quick retrieval path', async () => {
   ]);
 });
 
+test('bounds compound meeting-prep wording to the requested recent notes', () => {
+  const objectives = decomposeRetrievalObjectives('can u help me prep for next meeting, look through last three notes, and help me plan out actions');
+  assert.deepEqual(objectives.map((objective) => objective.id), ['notes']);
+  assert.deepEqual(objectives[0]?.resourceTypes, ['note']);
+});
+
 test('retrieves teamspaces, people, and their open workload for Circle questions', async () => {
   const design = item({ resourceType: 'team', resourceId: 'team-design', title: 'Design', content: 'Design teamspace.' });
   const alex = item({ resourceType: 'person', resourceId: 'person-alex', title: 'Alex', content: 'Alex is in the Design team.', teamId: 'team-design', relationships: [{ relationshipType: 'belongs_to_team', resourceType: 'team', resourceId: 'team-design' }] });

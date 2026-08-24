@@ -375,7 +375,17 @@ export class LedgerRetrievalService {
   async retrieve(workspaceId: string, question: string, lexicalResults: LexicalCandidate[] = [], limit = 8, options?: { boostResourceKeys?: string[]; conversationId?: string; plan?: RetrievalPlan; graphLimits?: AskLedgerRelationshipLimits; graphRelationshipTypes?: readonly AskLedgerRelationshipType[]; skipSemantic?: boolean; attachmentFocus?: boolean; documents?: AskLedgerContextItem[] }): Promise<LedgerRetrievalResult> {
     const suppliedDocuments = options?.documents?.filter((document) => !document.workspaceId || document.workspaceId === workspaceId) ?? [];
     const indexedDocuments = this.index.documents(workspaceId, options?.conversationId).filter((document) => document.workspaceId === workspaceId);
-    const documents = suppliedDocuments.length ? suppliedDocuments : indexedDocuments;
+    // Context documents supplied for a one-shot retrieval are not indexed
+    // documents yet, but the ranking pipeline consumes the index shape. Give
+    // them stable structural fields without pretending they have embeddings.
+    const documents: LedgerIndexDocument[] = suppliedDocuments.length
+      ? suppliedDocuments.map((document, index) => ({
+        ...document,
+        workspaceId,
+        chunkId: `${document.resourceType}:${document.resourceId}:${index}`,
+        contentHash: hash(`${document.title}\n${document.content}`),
+      }))
+      : indexedDocuments;
     const resourceDocuments = suppliedDocuments.length ? [...new Map(suppliedDocuments.map((document) => [`${document.resourceType}:${document.resourceId}`, document])).values()] : this.index.resourceDocuments(workspaceId, options?.conversationId);
     const plan = options?.plan;
     const intent = detectAskLedgerQueryIntent(question);

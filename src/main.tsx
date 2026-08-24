@@ -43,6 +43,19 @@ const applyDesktopThemeFromPreference = () => {
 if (typeof document !== 'undefined') {
   applyDesktopThemeFromPreference();
 
+  // Chromium/Electron can promote pointer focus to :focus-visible. Track the
+  // interaction modality so the shared fallback focus ring is keyboard-only.
+  const root = document.documentElement;
+  const handleKeyboardNavigation = (event: KeyboardEvent) => {
+    if (!['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    root.classList.add('ledger-keyboard-navigation');
+  };
+  const handlePointerNavigation = () => root.classList.remove('ledger-keyboard-navigation');
+  window.addEventListener('keydown', handleKeyboardNavigation, true);
+  window.addEventListener('pointerdown', handlePointerNavigation, true);
+
   const handleThemeBroadcast = (
     _event: unknown,
     payload: { theme?: 'light' | 'dark' | 'system' } | null

@@ -819,12 +819,16 @@ button:focus {
   animation: ledger-meeting-suggestion-in 260ms ease-out both;
 }
 
-input:focus-visible,
-button:focus-visible,
-a:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
+/* Electron can report pointer-focused controls as :focus-visible. Keep the
+   shared fallback ring for keyboard navigation without leaving a rectangle
+   behind after ordinary clicks. Components with intentional focus treatment
+   continue to own their own focus-visible styles. */
+.ledger-keyboard-navigation input:focus-visible,
+.ledger-keyboard-navigation button:focus-visible,
+.ledger-keyboard-navigation a:focus-visible,
+.ledger-keyboard-navigation select:focus-visible,
+.ledger-keyboard-navigation textarea:focus-visible,
+.ledger-keyboard-navigation [tabindex]:focus-visible {
   outline: 1px solid var(--ledger-focus-ring);
   outline-offset: 2px;
 }
@@ -1495,6 +1499,7 @@ textarea:focus-visible,
   display: block;
   margin: 6px 2px 0;
   padding: 6px 7px;
+  text-align: left;
   border: 1px solid color-mix(in srgb, var(--ledger-border-subtle) 78%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--ledger-surface-muted) 55%, transparent);
@@ -1503,6 +1508,11 @@ textarea:focus-visible,
 .agent-ask-ledger-popover .ask-ledger-activity > p {
   font-size: 11px;
   line-height: 1.25rem;
+  text-align: left;
+}
+.agent-ask-ledger-popover .ask-ledger-activity button {
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 .agent-ask-ledger-popover .ask-ledger-activity .space-y-3 {
   margin-top: 5px;
@@ -1734,10 +1744,40 @@ textarea:focus-visible,
 }
 
 /* Keep the full Ask Ledger footer usable in the narrow Notes inspector too. */
+.notes-ask-ledger-pane .ask-ledger-composer {
+  min-height: 84px !important;
+  margin-top: auto;
+  margin-bottom: 2px;
+  padding: 9px 10px;
+  border-radius: 6px !important;
+}
+.notes-ask-ledger-pane .ask-ledger-composer textarea {
+  min-height: 34px;
+  max-height: 68px;
+  font-size: 12px;
+  line-height: 1.35rem;
+}
+.notes-ask-ledger-pane .ledger-ask-model-control {
+  display: none;
+}
+.notes-ask-ledger-pane [aria-labelledby='ask-ledger-examples-heading'] {
+  display: none;
+}
+.notes-ask-ledger-pane .ask-ledger-composer [role='menu'] {
+  width: 150px !important;
+  padding: 3px;
+}
+.notes-ask-ledger-pane .ask-ledger-composer [role='menu'] button {
+  padding: 6px;
+  font-size: 11px;
+}
 .notes-ask-ledger-pane .ask-ledger-composer > .mt-2 {
   min-width: 0;
   flex-wrap: wrap;
   row-gap: 4px;
+}
+.notes-ask-ledger-pane .ask-ledger-composer-fade {
+  display: none;
 }
 .notes-ask-ledger-pane .ask-ledger-composer > .mt-2 > :first-child {
   min-width: 0;

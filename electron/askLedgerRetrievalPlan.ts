@@ -44,7 +44,8 @@ export type RetrievalPlan = {
 };
 
 const normalize = (value: string) => value.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-const countWords = /\b(?:last|latest|newest|recent|first|oldest|past)\s+(\d+|few|several)\b/i;
+const countWords = /\b(?:last|latest|newest|recent|first|oldest|past)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)\b/i;
+const countWordValues: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const lastWorkdaySignals = /\b(?:last|final)\s+(?:day|workday)\b|\blast\s+day\s+(?:working|at work)\b/i;
 
 const startOfDay = (date: Date) => {
@@ -72,6 +73,7 @@ const requestedCountFor = (question: string) => {
   const match = question.match(countWords);
   if (!match) return undefined;
   if (match[1] === 'few' || match[1] === 'several') return 3;
+  if (countWordValues[match[1].toLowerCase()]) return countWordValues[match[1].toLowerCase()];
   const count = Number(match[1]);
   return Number.isFinite(count) ? Math.max(1, Math.min(20, count)) : undefined;
 };
@@ -92,6 +94,9 @@ const integrationProvidersFor = (question: string): AskLedgerIntegrationSource[]
 
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  // A bounded recent-note request is authoritative even when the same
+  // sentence also mentions meeting preparation or actions.
+  if (/\b(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/.test(normalized)) return ['note'];
   const linkedTeamContext = /\b(?:teamspaces?|teams?|circle)\b/.test(normalized)
     && /\b(?:notes?|tasks?|actions?|projects?|milestones?|reminders?|events?|activity|work)\b/.test(normalized)
     && /\b(?:tied|linked|connected|associated|related|belong|with|for)\b/.test(normalized);
@@ -124,6 +129,9 @@ const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
 
 const containerQueryFor = (question: string, primaryResourceTypes: AskLedgerResourceType[]) => {
   if (!primaryResourceTypes.includes('note') || !/\bnotes?\b|\bfolder\b|\bcollection\b/i.test(question)) return undefined;
+  // "look through the last three notes" is a recency/count request, not a
+  // folder or collection query.
+  if (/\b(?:through|in|from|within|inside)\s+(?:my\s+)?(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/i.test(question)) return undefined;
   const explicitFolder = question.match(
     /\bfolder\s+(?:called\s+|named\s+)?([a-z0-9][a-z0-9_-]*(?:\s+[a-z0-9][a-z0-9_-]*){0,4})(?=\s*(?:[,.;?]|\band\b|\bhow\s+many\b|\b(?:last|latest|newest|recent|first|oldest|past)\b|$))/i
   );

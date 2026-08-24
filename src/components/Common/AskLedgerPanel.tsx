@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertCircle,
@@ -675,7 +675,7 @@ const attachmentKindLabel = (attachment: AskLedgerAttachment) => attachment.exte
 
 const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice(0, 24)}…${name.slice(name.lastIndexOf('.') || name.length)}` : name;
 
-export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, onQuestionChange, onQuestionSubmitted, onGenerationActiveChange, compact = false, meetingChat = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; onQuestionChange?: (question: string) => void; onQuestionSubmitted?: (question: string) => void; onGenerationActiveChange?: (active: boolean) => void; compact?: boolean; meetingChat?: boolean }) => {
+export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, onQuestionChange, onQuestionSubmitted, onGenerationActiveChange, preferredGenerationTier, compact = false, meetingChat = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; onQuestionChange?: (question: string) => void; onQuestionSubmitted?: (question: string) => void; onGenerationActiveChange?: (active: boolean) => void; preferredGenerationTier?: GenerationTier; compact?: boolean; meetingChat?: boolean }) => {
   const api = useApi();
   const platform = usePlatform();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -695,6 +695,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const activityStepsRef = useRef<NonNullable<AskLedgerStreamEvent['activity']>[]>([]);
   const [activityNow, setActivityNow] = useState(() => Date.now());
   const [messages, setMessages] = useState<AskLedgerMessage[]>([]);
+  const [loadedCustomSkills, setLoadedCustomSkills] = useState<AskLedgerCustomSkill[]>([]);
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
   const [expandedActivity, setExpandedActivity] = useState<Record<string, boolean>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -733,8 +734,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   } | null>(null);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [generationModels, setGenerationModels] = useState<GenerationModelView[]>([]);
-  const [selectedGenerationTier, setSelectedGenerationTier] = useState<GenerationTier>('balanced');
-  const [generationMode, setGenerationMode] = useState<GenerationMode>('balanced');
+  const [selectedGenerationTier, setSelectedGenerationTier] = useState<GenerationTier>(preferredGenerationTier ?? 'balanced');
+  const [generationMode, setGenerationMode] = useState<GenerationMode>(preferredGenerationTier ?? 'balanced');
   const [reasoningMode, setReasoningMode] = useState<'off' | 'thinking'>('off');
   const [generationRuntimeState, setGenerationRuntimeState] = useState<{ selectedTier?: GenerationTier; loadedTier?: GenerationTier | null; switching?: boolean; targetTier?: GenerationTier | null; ready?: boolean; failure?: unknown } | null>(null);
   const [localAICapability, setLocalAICapability] = useState<LocalAICapabilityView | null>(null);
@@ -908,7 +909,37 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   };
 
   useEffect(() => {
-    const customMetadata: AskLedgerSkillMetadata[] = customSkills.map((skill) => ({
+    if (!workspaceId) {
+      setLoadedCustomSkills([]);
+      return;
+    }
+    let cancelled = false;
+    const loadCustomSkills = async () => {
+      try {
+        const payload = await api.getAskLedgerSkills(workspaceId) as { skills?: unknown[] };
+        if (cancelled) return;
+        const skills = Array.isArray(payload?.skills) ? payload.skills : [];
+        setLoadedCustomSkills(skills.filter((skill): skill is AskLedgerCustomSkill => Boolean(skill && typeof skill === 'object' && typeof (skill as Record<string, unknown>).id === 'string' && typeof (skill as Record<string, unknown>).name === 'string' && typeof (skill as Record<string, unknown>).instructions === 'string')));
+      } catch {
+        if (!cancelled) setLoadedCustomSkills([]);
+      }
+    };
+    void loadCustomSkills();
+    const handleSkillsUpdated = () => { void loadCustomSkills(); };
+    window.addEventListener('ledger:ask-ledger-skills-updated', handleSkillsUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('ledger:ask-ledger-skills-updated', handleSkillsUpdated);
+    };
+  }, [api, workspaceId]);
+
+  const availableCustomSkills = useMemo(
+    () => [...new Map([...loadedCustomSkills, ...customSkills].map((skill) => [skill.id, skill])).values()],
+    [customSkills, loadedCustomSkills]
+  );
+
+  useEffect(() => {
+    const customMetadata: AskLedgerSkillMetadata[] = availableCustomSkills.map((skill) => ({
       id: skill.id,
       name: skill.name,
       description: skill.description ?? 'A custom Ledger workflow.',
@@ -920,7 +951,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       instructions: skill.instructions,
     }));
     setSkillCatalog((current) => [...current.filter((skill) => !skill.isCustom), ...customMetadata]);
-  }, [customSkills]);
+  }, [availableCustomSkills]);
 
   useEffect(() => {
     if (!actionReview?.actions.some((action) => action.type === 'create_task') || !workspaceId) return;
@@ -1367,14 +1398,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const effectiveQuestion = trimmedQuestion || (composerAttachments.length ? 'Review this attachment.' : '');
     onQuestionSubmitted?.(effectiveQuestion);
     const submittedAttachments = composerAttachments;
-    const submittedInitialContext = activeInitialContext ?? initialContextRef.current ?? initialContext ?? null;
-    const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext && submittedInitialContext.contextType !== 'notes_home'
+    const submittedInitialContext = activeInitialContext ?? initialContextRef.current ?? (!conversationActive ? initialContext : null);
+    const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext
       ? [...submittedAttachments, { kind: 'resource', resource: { id: submittedInitialContext.resourceId, resourceId: submittedInitialContext.resourceId, title: submittedInitialContext.title, type: submittedInitialContext.resourceType, sourceLabel: sourceTypeLabels[submittedInitialContext.resourceType] } }]
       : submittedAttachments;
     const attachmentIds = submittedAttachments.flatMap((item) => item.kind === 'file' ? [item.attachment.id] : []);
 
-    const customSkill = customSkills.find((skill) => skill.id === selectedSkillForRequest);
-    const submittedContext = activeInitialContext ?? initialContextRef.current ?? initialContext ?? undefined;
+    const customSkill = availableCustomSkills.find((skill) => skill.id === selectedSkillForRequest);
+    const submittedContext = activeInitialContext ?? initialContextRef.current ?? (!conversationActive ? initialContext ?? undefined : undefined);
     const request: AskLedgerRequest = { question: effectiveQuestion, workspaceId, skillId: selectedSkillForRequest, customSkill, explicitContext: submittedContext, attachmentIds, reasoningMode };
     const route = routeAskLedgerMessage(effectiveQuestion, {
       previousQuestion: conversationRef.current?.previousQuestion,
@@ -1562,9 +1593,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           messageId: nextMessages[nextMessages.length - 1]?.id,
           performance: { uiSubmitStartedAt, preflightStartedAt, preflightCompletedAt: Date.now() },
         });
-        // The selected Ledger resource was attached to this request. Keep it
-        // in the sent message, but remove it from the composer so it does not
-        // look like an unsent attachment on the next turn.
+        // Move the selected context into the sent message and clear it from
+        // the composer so it behaves like a one-time attachment.
         initialContextRef.current = null;
         setActiveInitialContext(null);
         return startResult;
@@ -1727,6 +1757,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setTierSwitchError(detail ? `Couldn't switch to ${generationTierLabels[tier]}: ${detail}` : `Couldn't switch to ${generationTierLabels[tier]}.`);
     return false;
   };
+
+  useEffect(() => {
+    if (!preferredGenerationTier || selectedGenerationTier === preferredGenerationTier) return;
+    const model = modelForTier(preferredGenerationTier);
+    const ready = Boolean(model?.installed && model.state !== 'failed' && model.state !== 'unavailable' && model.available !== false);
+    if (ready) void switchToTier(preferredGenerationTier);
+  }, [generationModels, preferredGenerationTier, selectedGenerationTier]);
 
   const selectGenerationMode = async (mode: GenerationMode) => {
     if (tierSwitchInProgress || isSubmitting) return;
@@ -2340,7 +2377,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                         <span className="block text-xs font-medium text-[var(--ledger-text-primary)]">{skill.name}</span>
                         <span className="mt-0.5 block truncate text-[11px] leading-4 text-[var(--ledger-text-muted)]">{requirement ?? skill.description}</span>
                       </span>
-                      {skill.isCustom && <span role="button" tabIndex={0} aria-label={`Edit ${skill.name}`} title={`Edit ${skill.name}`} onClick={(event) => { event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); const custom = customSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); } }} className="px-1 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">⋯</span>}
+                      {skill.isCustom && <span role="button" tabIndex={0} aria-label={`Edit ${skill.name}`} title={`Edit ${skill.name}`} onClick={(event) => { event.stopPropagation(); const custom = availableCustomSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); const custom = availableCustomSkills.find((item) => item.id === skill.id); if (custom) onEditCustomSkill?.(custom); } }} className="px-1 text-sm text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">⋯</span>}
                     </button>
                   );
                 })}

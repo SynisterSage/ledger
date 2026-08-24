@@ -10362,6 +10362,7 @@ function AgentMockupPopover() {
   const [sessionTitle, setSessionTitle] = useState('New chat');
   const [questionDraft, setQuestionDraft] = useState('');
   const [hasMounted, setHasMounted] = useState(false);
+  const [openGeneration, setOpenGeneration] = useState(0);
   const [activeQuestion, setActiveQuestion] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -10376,6 +10377,7 @@ function AgentMockupPopover() {
         top: Math.max(8, y),
       });
       setIsMinimized(false);
+      setOpenGeneration((current) => current + 1);
       setHasMounted(true);
       setIsOpen(true);
     };
@@ -10424,7 +10426,7 @@ function AgentMockupPopover() {
     <section
       data-agent-mockup-panel
       aria-label="Agent preview"
-      className={`${isOpen ? '' : 'hidden'} agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_18px_60px_rgba(0,0,0,0.36)] ${isMinimized ? 'h-10' : 'h-[400px]'}`}
+      className={`${isOpen ? '' : 'hidden'} agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_12px_32px_rgba(0,0,0,0.22)] ${isMinimized ? 'h-10' : 'h-[400px]'}`}
       style={{ left: position.left, top: position.top }}
     >
       <header className="flex h-10 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-3">
@@ -10438,6 +10440,7 @@ function AgentMockupPopover() {
       <div className={`${isMinimized ? 'hidden' : ''} min-h-0 flex-1 overflow-hidden px-2`}>
         <Suspense fallback={<div className="flex h-full items-end p-2 text-xs text-[var(--ledger-text-muted)]">Ask Ledger…</div>}>
           <AgentAskLedgerPanel
+            key={`${activeWorkspaceId ?? 'workspace'}:${openGeneration}`}
             workspaceId={activeWorkspaceId}
             resetKey={resetKey}
             compact

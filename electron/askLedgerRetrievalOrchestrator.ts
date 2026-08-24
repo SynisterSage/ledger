@@ -96,6 +96,8 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
   const hasMilestones = /\bmilestones?\b/.test(normalized);
   const hasTasks = /\b(?:tasks?|next actions?)\b/.test(normalized);
   const hasNotes = /\bnotes?|transcripts?\b/.test(normalized);
+  const boundedRecentNotes = /\b(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/.test(normalized);
+  const meetingEvidenceRequest = hasMeetings && !boundedRecentNotes;
   const hasReminders = /\breminders?\b/.test(normalized);
   const hasActivity = /\b(?:activity|what changed|changes|happening)\b/.test(normalized);
   const hasNotifications = /\bnotifications?\b/.test(normalized);
@@ -175,7 +177,7 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
     });
   }
 
-  if (hasMeetings) {
+  if (meetingEvidenceRequest) {
     addObjective(objectives, {
       id: 'meetings', purpose: 'Find relevant meetings and calendar evidence', resourceTypes: ['event'], entityQuery: base.entityQuery,
       constraints: base.structuredConstraints, expandRelationships: true, dependsOn: [],
@@ -188,31 +190,31 @@ export const decomposeRetrievalObjectives = (question: string): RetrievalObjecti
     });
   }
 
-  if (includesProjectContext && !hasMeetings) {
+  if (includesProjectContext && !meetingEvidenceRequest) {
     addObjective(objectives, { id: 'projects', purpose: 'Find authoritative project records', resourceTypes: ['project'], entityQuery: base.entityQuery, expandRelationships: true, dependsOn: [] });
-  } else if (hasMeetings || /\bwhat(?:'s| is) going on\b|\bconnect .*project\b/.test(normalized)) {
-    addObjective(objectives, { id: 'linked-projects', purpose: 'Retrieve projects discovered through meeting evidence', resourceTypes: ['project'], expandRelationships: true, dependsOn: hasMeetings ? ['meetings', 'meeting-context'] : [], graphRelationshipTypes: ['linked_project', 'belongs_to_project', 'has_milestone', 'has_task', 'has_note', 'has_event', 'has_reminder', 'has_external_resource'] });
+  } else if (meetingEvidenceRequest || /\bwhat(?:'s| is) going on\b|\bconnect .*project\b/.test(normalized)) {
+    addObjective(objectives, { id: 'linked-projects', purpose: 'Retrieve projects discovered through meeting evidence', resourceTypes: ['project'], expandRelationships: true, dependsOn: meetingEvidenceRequest ? ['meetings', 'meeting-context'] : [], graphRelationshipTypes: ['linked_project', 'belongs_to_project', 'has_milestone', 'has_task', 'has_note', 'has_event', 'has_reminder', 'has_external_resource'] });
   }
 
   const projectDependency = objectives.some((objective) => ['projects', 'linked-projects'].includes(objective.id)) ? [objectives.some((objective) => objective.id === 'linked-projects') ? 'linked-projects' : 'projects'] : [];
   // Meeting names are anchors for the meeting objective, not project names.
   // Dependent project work is constrained by discovered project IDs instead.
-  const projectEntityQuery = includesProjectContext && !hasMeetings ? base.entityQuery : undefined;
+  const projectEntityQuery = includesProjectContext && !meetingEvidenceRequest ? base.entityQuery : undefined;
   const projectEntity = projectEntityQuery ? { entityQuery: projectEntityQuery } : {};
-  if (hasMilestones || includesProjectContext || hasMeetings) {
+  if (hasMilestones || includesProjectContext || meetingEvidenceRequest) {
     addObjective(objectives, { id: 'project-milestones', purpose: 'Retrieve milestones for discovered projects', resourceTypes: ['milestone'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectWorkIntent ? [] : projectDependency });
   }
-  if ((hasTasks && !hasTeamWorkload) || includesProjectContext || hasMeetings) {
+  if ((hasTasks && !hasTeamWorkload) || includesProjectContext || meetingEvidenceRequest) {
     const constraints = { ...base.structuredConstraints, openOnly: true };
     addObjective(objectives, { id: 'project-open-tasks', purpose: 'Retrieve open project tasks and horizons', resourceTypes: ['task'], ...projectEntity, constraints, expandRelationships: false, dependsOn: projectWorkIntent ? [] : projectDependency });
   }
-  if (hasReminders || includesProjectContext || hasMeetings) {
+  if (hasReminders || includesProjectContext || meetingEvidenceRequest) {
     addObjective(objectives, { id: 'linked-reminders', purpose: 'Retrieve reminders and follow-up context', resourceTypes: ['reminder'], ...projectEntity, constraints: base.structuredConstraints, expandRelationships: false, dependsOn: projectWorkIntent ? [] : projectDependency });
   }
   if (hasAttention) {
     addObjective(objectives, { id: 'attention-tasks', purpose: 'Find overdue, blocked, and today work requiring attention', resourceTypes: ['task', 'milestone'], constraints: { ...base.structuredConstraints, attentionOnly: true }, expandRelationships: false, dependsOn: projectDependency });
   }
-  if (hasNotes && !hasMeetings && !hasTeamLinkedContext) addObjective(objectives, { id: 'notes', purpose: 'Find requested notes and transcripts', resourceTypes: ['note'], entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: true, dependsOn: [] });
+  if (hasNotes && !meetingEvidenceRequest && !hasTeamLinkedContext) addObjective(objectives, { id: 'notes', purpose: 'Find requested notes and transcripts', resourceTypes: ['note'], entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: true, dependsOn: [] });
   if (!objectives.length) addObjective(objectives, { id: 'primary', purpose: 'Retrieve the primary workspace evidence', resourceTypes: base.primaryResourceTypes, entityQuery: base.entityQuery, constraints: base.structuredConstraints, expandRelationships: base.expandRelatedContext, dependsOn: [] });
   return objectives;
 };

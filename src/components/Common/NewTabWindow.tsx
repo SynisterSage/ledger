@@ -374,6 +374,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     try {
       await api.deleteAskLedgerSkill(activeWorkspaceId, skill.id);
       setCustomSkills((current) => current.filter((item) => item.id !== skill.id));
+      window.dispatchEvent(new Event('ledger:ask-ledger-skills-updated'));
       return true;
     } catch {
       // Keep the skill visible when the delete request fails.
@@ -397,6 +398,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       if (skillEditor?.skill) await api.updateAskLedgerSkill(activeWorkspaceId, skillEditor.skill.id, { name: skillName.trim(), instructions: skillInstructions.trim() });
       else await api.createAskLedgerSkill(activeWorkspaceId, { name: skillName.trim(), instructions: skillInstructions.trim() });
       await loadCustomSkills();
+      window.dispatchEvent(new Event('ledger:ask-ledger-skills-updated'));
       setSkillEditor(null);
     } finally { setSkillSaving(false); }
   };

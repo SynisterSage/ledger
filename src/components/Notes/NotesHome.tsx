@@ -22,6 +22,36 @@ import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { useToast } from '../Common/ToastProvider';
 import type { PinRecord } from '../../utils/pins';
 
+export const notesAskSuggestions = [
+  'What did I miss?',
+  'What decisions have we made?',
+  'What are the action items?',
+  'What should I follow up on?',
+  'What remains unresolved?',
+  'Who owns the next steps?',
+  'What concerns came up?',
+  'What changed during this meeting?',
+  'What should I remember from this?',
+  'Can you summarize the key points?',
+  'What needs to happen next?',
+  'Which parts need my attention?',
+];
+
+export const notesHomeAskSuggestions = [
+  'What changed in my notes recently?',
+  'Summarize my last three notes.',
+  'Make me a meeting brief for my next workday using my notes.',
+  'Summarize my latest notes.',
+  'Which notes need my attention?',
+  'What decisions have I recorded?',
+  'What follow-ups are still open?',
+  'Find unresolved items across my notes.',
+  'What themes are coming up in my notes?',
+  'Which notes are related to this?',
+  'What should I revisit this week?',
+  'Show me my recent workday notes.',
+];
+
 export type NotesHomeNote = {
   id: string;
   title: string;
@@ -159,7 +189,7 @@ const NotesHomeListRow = ({
     type="button"
     onClick={onClick}
     onContextMenu={onContextMenu}
-    className="group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
+    className="group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
   >
     <span className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)]">
       {note.mode === 'meeting_note' ? (
@@ -218,6 +248,16 @@ export const NotesHome = ({
   onDuplicateTemplate,
 }: Props) => {
   const toast = useToast();
+  const [askSuggestionIndex, setAskSuggestionIndex] = useState(0);
+  const askSuggestion = notesHomeAskSuggestions[askSuggestionIndex % notesHomeAskSuggestions.length];
+
+  useEffect(() => {
+    if (askLedgerOpen) return;
+    const timer = window.setInterval(() => {
+      setAskSuggestionIndex((current) => (current + 1) % notesHomeAskSuggestions.length);
+    }, 7000);
+    return () => window.clearInterval(timer);
+  }, [askLedgerOpen]);
   const [askQuestion, setAskQuestion] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try {
@@ -711,17 +751,9 @@ export const NotesHome = ({
           )}
         </div>
         {!askLedgerOpen && (
-          <div className="relative sticky bottom-5 z-10 mx-auto mt-auto flex h-28 w-[min(520px,calc(100%-32px))] items-end">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-[-72px] bottom-0 h-28 rounded-[50%] blur-2xl"
-              style={{
-                background:
-                  'linear-gradient(to top, var(--ledger-surface-card) 0%, color-mix(in srgb, var(--ledger-surface-card) 76%, transparent) 48%, transparent 100%)',
-              }}
-            />
+          <div className="relative sticky bottom-5 z-10 mt-auto flex h-28 w-full items-end">
             <form
-              className="relative flex h-11 w-full items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]/95 pl-4 pr-1.5 shadow-[var(--ledger-shadow)] backdrop-blur-md transition focus-within:border-[color:var(--ledger-border-strong)]"
+              className="relative mx-auto flex h-12 w-[min(520px,calc(100%-32px))] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] pl-4 pr-1.5 shadow-[var(--ledger-shadow)]"
               onSubmit={(event) => {
                 event.preventDefault();
                 const question = askQuestion.trim();
@@ -737,6 +769,15 @@ export const NotesHome = ({
                 placeholder="Ask anything…"
                 aria-label="Ask Ledger about Notes"
               />
+              <button
+                type="button"
+                onClick={() => setAskQuestion(askSuggestion)}
+                className="hidden max-w-[45%] shrink-0 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)] px-3 py-2 text-[11px] text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] sm:block"
+              >
+                <span key={askSuggestion} className="ledger-meeting-suggestion block truncate">
+                  {askSuggestion}
+                </span>
+              </button>
               <button
                 type="submit"
                 disabled={!askQuestion.trim()}

@@ -100,7 +100,7 @@ import {
 } from './NotesSelectionComposerModal';
 import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
 import { isTeamOrientedTemplate, QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
-import NotesHome from './NotesHome';
+import NotesHome, { notesAskSuggestions } from './NotesHome';
 import type { NotesHomeTemplate, NotesHomeUpcomingMeeting } from './NotesHome';
 import { createNotesHomeAskContext } from './notesHomeAskContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
@@ -812,21 +812,6 @@ const meetingAttendeeLabel = (attendees: unknown[] | null | undefined) => {
   if (!names.length) return null;
   return names.length === 1 ? names[0] : `${names[0]} + ${names.length - 1}`;
 };
-
-const meetingAskSuggestions = [
-  'What did I miss?',
-  'What decisions have we made?',
-  'What are the action items?',
-  'What should I follow up on?',
-  'What remains unresolved?',
-  'Who owns the next steps?',
-  'What concerns came up?',
-  'What changed during this meeting?',
-  'What should I remember from this?',
-  'Can you summarize the key points?',
-  'What needs to happen next?',
-  'Which parts need my attention?',
-];
 
 const formatTranscriptTimestamp = (milliseconds: number) => {
   const seconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
@@ -2634,7 +2619,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [isMeetingRecorderExpanded, setIsMeetingRecorderExpanded] = useState(false);
   const [meetingAskDraft, setMeetingAskDraft] = useState('');
   const [meetingAskSuggestionIndex, setMeetingAskSuggestionIndex] = useState(0);
-  const meetingAskSuggestion = meetingAskSuggestions[meetingAskSuggestionIndex % meetingAskSuggestions.length];
+  const meetingAskSuggestion = notesAskSuggestions[meetingAskSuggestionIndex % notesAskSuggestions.length];
   useEffect(() => {
     if (!isMeetingRecorderExpanded) return;
     const handleOutsidePointer = (event: PointerEvent) => {
@@ -2892,7 +2877,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   useEffect(() => {
     if (!isMeetingNote || !hasHydratedNote || isHydratingNote) return;
     const timer = window.setInterval(() => {
-      setMeetingAskSuggestionIndex((current) => (current + 1) % meetingAskSuggestions.length);
+      setMeetingAskSuggestionIndex((current) => (current + 1) % notesAskSuggestions.length);
     }, 7000);
     return () => window.clearInterval(timer);
   }, [hasHydratedNote, isHydratingNote, isMeetingNote]);
@@ -9826,7 +9811,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   </div>
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto bg-[var(--ledger-surface)] px-6 pb-16 pt-2 sm:px-10 sm:pb-20">
+                <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto bg-[var(--ledger-surface)] px-6 pb-16 pt-0 sm:px-10 sm:pb-20">
                   <div className="mx-auto max-w-[800px] space-y-6">
                     {isMeetingNote && meetingCenterView === 'transcript' ? (
                       <MeetingTranscriptErrorBoundary>
@@ -10364,6 +10349,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       workspaceId={activeWorkspaceId}
                       resetKey={askPaneResetKey}
                       initialContext={meetingAskContext}
+                      preferredGenerationTier="fast"
                       compact
                       meetingChat={meetingAskContext?.contextType === 'meeting'}
                     />
