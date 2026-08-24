@@ -1,17 +1,12 @@
 import {
-  BookOpen,
-  Briefcase,
-  CalendarDays,
-  ChevronDown,
   Copy,
+  ChevronRight,
   Eye,
   FileText,
   Folder,
   FolderInput,
   FolderPlus,
-  FolderKanban,
   Link2,
-  Lightbulb,
   Mic,
   MoreHorizontal,
   Plus,
@@ -20,17 +15,9 @@ import {
   PinOff,
   StickyNote,
   Trash2,
-  Users,
   FilePlus2,
 } from 'lucide-react';
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-} from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
 import { useToast } from '../Common/ToastProvider';
 import type { PinRecord } from '../../utils/pins';
@@ -94,6 +81,8 @@ type Props = {
     | null;
   onOpenNote: (note: NotesHomeNote) => void;
   onNewNote: (sectionId?: string | null) => void;
+  onAskLedger: (question: string) => void;
+  askLedgerOpen?: boolean;
   onStartMeetingNotes: (sectionId?: string | null) => void;
   upcomingMeetings?: NotesHomeUpcomingMeeting[];
   onStartMeetingFromEvent?: (event: NotesHomeUpcomingMeeting) => void;
@@ -122,269 +111,78 @@ type Props = {
 const storageKey = (workspaceId: string | null | undefined, userId?: string | null) =>
   `notes-home-collapsed:v2:${userId ?? 'anonymous'}:${workspaceId ?? 'none'}`;
 
-const relativeTime = (value: string) => {
-  const age = Math.max(0, Date.now() - new Date(value).getTime());
-  const minutes = Math.floor(age / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const homeDateKey = (value: string) => {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toDateString() : 'unknown';
 };
 
-const uncheckedActions = (content: string) => {
-  const html = String(content ?? '');
-  const matches = html.match(/(?:\[ \]|☐|data-checked=["']false["'])/gi);
-  return matches?.length ?? 0;
+const homeDateLabel = (value: string) => {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Earlier';
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  const daysAgo = Math.floor((today.getTime() - date.getTime()) / 86400000);
+  if (daysAgo >= 0 && daysAgo < 7) {
+    return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined,
+  });
 };
 
-const HomeSection = ({
-  id,
-  title,
-  count,
-  collapsed,
-  onToggle,
-  children,
-}: {
-  id: string;
-  title: string;
-  count: number;
-  collapsed: boolean;
-  onToggle: (id: string) => void;
-  children: ReactNode;
-}) => (
-  <section className="overflow-hidden">
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onToggle(id)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onToggle(id);
-        }
-      }}
-      className="flex h-8 cursor-pointer select-none items-center justify-between rounded-lg bg-[var(--ledger-surface-muted)] px-3"
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        <ChevronDown
-          size={14}
-          className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
-            collapsed ? '-rotate-90' : ''
-          }`}
-        />
-        <span className="truncate text-[12px] font-medium text-[var(--ledger-text-secondary)]">
-          {title}
-        </span>
-        <span className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-1.5 py-0.5 text-[10px] leading-none text-[var(--ledger-text-muted)]">
-          {count}
-        </span>
-      </div>
-    </div>
-    {!collapsed && <div className="space-y-0.5 pb-1 pt-1">{children}</div>}
-  </section>
-);
-
-const UpcomingMeetingsSection = ({
-  meetings,
-  collapsed,
-  onToggle,
-  onStart,
-  onOpenEvent,
-}: {
-  meetings: NotesHomeUpcomingMeeting[];
-  collapsed: boolean;
-  onToggle: (id: string) => void;
-  onStart?: (event: NotesHomeUpcomingMeeting) => void;
-  onOpenEvent?: (event: NotesHomeUpcomingMeeting) => void;
-}) => {
-  if (!meetings.length) return null;
-  return (
-    <HomeSection
-      id="upcoming-meetings"
-      title="Upcoming meetings"
-      count={meetings.length}
-      collapsed={collapsed}
-      onToggle={onToggle}
-    >
-      {meetings.slice(0, 5).map((meeting) => {
-        const date = new Date(meeting.start_at);
-        const time = meeting.all_day ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : date.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-        return (
-          <div key={meeting.id} className="flex items-center gap-2 rounded-lg px-3 py-1.5 hover:bg-[var(--ledger-surface-muted)]">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)]"><CalendarDays size={13} /></span>
-            <button
-              type="button"
-              onClick={() => (meeting.note_id ? onOpenEvent?.(meeting) : onStart?.(meeting))}
-              className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-[var(--ledger-text-primary)]"
-            >
-              {meeting.title}
-            </button>
-            <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{time}</span>
-          </div>
-        );
-      })}
-    </HomeSection>
-  );
+const homeTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : '';
 };
 
-const ResourceRow = ({
-  icon,
-  title,
-  meta,
-  end,
-  tone = 'default',
+const NotesHomeListRow = ({
+  note,
+  sectionName,
+  active,
   onClick,
   onContextMenu,
 }: {
-  icon: ReactNode;
-  title: string;
-  meta?: string;
-  end?: string;
-  tone?: 'default' | 'attention' | 'pinned';
-  onClick?: () => void;
-  onContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  note: NotesHomeNote;
+  sectionName?: string;
+  active?: boolean;
+  onClick: () => void;
+  onContextMenu: (event: ReactMouseEvent<HTMLButtonElement>) => void;
 }) => (
   <button
     type="button"
     onClick={onClick}
     onContextMenu={onContextMenu}
-    className="group grid min-h-10 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-3 py-1.5 text-left transition hover:bg-[var(--ledger-surface-muted)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
+    className="group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
   >
-    <span
-      className={`relative flex h-6 w-6 items-center justify-center rounded-md border bg-[var(--ledger-surface-card)] text-[13px] ${
-        tone === 'attention'
-          ? 'border-[color:var(--ledger-accent)] text-[var(--ledger-accent)]'
-          : tone === 'pinned'
-          ? 'border-[color:var(--ledger-border-strong)] text-[var(--ledger-accent)]'
-          : 'border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)]'
-      }`}
-    >
-      {icon}
-      {tone === 'attention' && (
-        <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[color:var(--ledger-surface-card)] bg-[var(--ledger-accent)] text-[8px] font-semibold leading-none text-white">
-          !
-        </span>
+    <span className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)]">
+      {note.mode === 'meeting_note' ? (
+        <Mic size={15} strokeWidth={1.8} />
+      ) : (
+        <FileText size={15} strokeWidth={1.8} />
+      )}
+      {active && (
+        <span className="absolute ml-5 mt-[-18px] h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
       )}
     </span>
-    <span className="min-w-0 truncate text-[13px] font-medium text-[var(--ledger-text-primary)]">
-      {title}
+    <span className="min-w-0">
+      <span className="block truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
+        {note.title || 'Untitled note'}
+      </span>
+      <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
+        {note.mode === 'meeting_note' ? 'Meeting note' : sectionName ?? 'Unsorted'}
+      </span>
     </span>
-    <span className="flex min-w-0 items-center gap-2">
-      {meta && (
-        <span className="hidden max-w-52 truncate text-[11px] leading-4 text-[var(--ledger-text-muted)] sm:inline">
-          {meta}
-        </span>
-      )}
-      {end && (
-        <span className="shrink-0 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
-          {end}
-        </span>
-      )}
+    <span className="shrink-0 self-start pt-0.5 text-[11px] tabular-nums text-[var(--ledger-text-muted)]">
+      {homeTime(note.updated_at)}
     </span>
   </button>
-);
-
-const TemplateTypeIcon = ({ template }: { template: NotesHomeTemplate }) => {
-  const category = String(template.category ?? 'personal').toLowerCase();
-  if (category === 'meeting') return <CalendarDays size={13} />;
-  if (category === 'internship') return <Briefcase size={13} />;
-  if (category === 'team') return <Users size={13} />;
-  if (category === 'project') return <FolderKanban size={13} />;
-  if (category === 'reading') return <BookOpen size={13} />;
-  if (template.name.toLowerCase().includes('reflection')) return <Lightbulb size={13} />;
-  return <FileText size={13} />;
-};
-
-const TemplateLauncher = ({
-  templates,
-  onNewNote,
-  onStartMeetingNotes,
-  onBrowseTemplates,
-  onOpenTemplate,
-  onNewNoteContextMenu,
-  onTemplateContextMenu,
-}: {
-  templates: NotesHomeTemplate[];
-  onNewNote: () => void;
-  onStartMeetingNotes: () => void;
-  onBrowseTemplates: () => void;
-  onOpenTemplate: (templateId: string) => void;
-  onNewNoteContextMenu: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  onTemplateContextMenu: (template: NotesHomeTemplate, event: ReactMouseEvent<HTMLButtonElement>) => void;
-}) => (
-  <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-2">
-    <div className="flex gap-1.5 overflow-x-auto pb-2">
-      <button
-        type="button"
-        onClick={onNewNote}
-        onContextMenu={onNewNoteContextMenu}
-        className="group flex h-[76px] min-w-[124px] flex-1 basis-0 flex-col justify-between rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2.5 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
-      >
-        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)]">
-          <Plus size={14} />
-        </span>
-        <span className="mt-auto block w-full truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
-          New note
-        </span>
-      </button>
-      <button
-        type="button"
-        onClick={onStartMeetingNotes}
-        className="group flex h-[76px] min-w-[124px] flex-1 basis-0 flex-col justify-between rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2.5 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
-      >
-        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-accent)]">
-          <Mic size={14} />
-        </span>
-        <span className="mt-auto block w-full truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
-          Start meeting notes
-        </span>
-      </button>
-      {templates.map((template) => (
-        <button
-          key={template.id}
-          type="button"
-          onClick={() => onOpenTemplate(template.id)}
-          onContextMenu={(event) => onTemplateContextMenu(template, event)}
-          className="group flex h-[76px] min-w-[124px] flex-1 basis-0 flex-col justify-between rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-2.5 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
-        >
-          <span
-            className={`flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] ${
-              template.pinned
-                ? 'text-[var(--ledger-accent)]'
-                : 'text-[var(--ledger-text-secondary)]'
-            }`}
-          >
-            <TemplateTypeIcon template={template} />
-          </span>
-          <span className="mt-auto block w-full min-w-0">
-            <span className="block max-w-full truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
-              {template.name}
-            </span>
-            {!template.is_system && (
-              <span className="block truncate text-[10px] text-[var(--ledger-text-muted)]">
-                {template.pinned ? 'Pinned' : 'Recent'}
-              </span>
-            )}
-          </span>
-        </button>
-      ))}
-      <button
-        type="button"
-        onClick={onBrowseTemplates}
-        className="group flex h-[76px] min-w-[124px] flex-1 basis-0 flex-col justify-between rounded-lg border border-dashed border-[color:var(--ledger-border-subtle)] bg-transparent p-2.5 text-left transition hover:border-[color:var(--ledger-border-strong)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
-      >
-        <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-secondary)]">
-          <Search size={13} />
-        </span>
-        <span className="mt-auto block w-full truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
-          View all templates
-        </span>
-      </button>
-    </div>
-  </div>
 );
 
 export const NotesHome = ({
@@ -396,14 +194,10 @@ export const NotesHome = ({
   userId,
   currentSectionId,
   activeMeetingNoteId,
-  activeMeetingStatus,
   onOpenNote,
   onNewNote,
-  onStartMeetingNotes,
-  upcomingMeetings = [],
-  onStartMeetingFromEvent,
-  onOpenCalendarEvent,
-  onBrowseTemplates,
+  onAskLedger,
+  askLedgerOpen = false,
   onOpenTemplate,
   onUseTemplate,
   onViewAllRecent,
@@ -424,6 +218,7 @@ export const NotesHome = ({
   onDuplicateTemplate,
 }: Props) => {
   const toast = useToast();
+  const [askQuestion, setAskQuestion] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem(storageKey(workspaceId, userId)) ?? '[]'));
@@ -457,83 +252,6 @@ export const NotesHome = ({
     () => new Map(sections.map((section) => [section.id, section.name])),
     [sections]
   );
-  const recent = useMemo(
-    () => [...notes].sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at)).slice(0, 7),
-    [notes]
-  );
-  const pinned = useMemo(() => {
-    const ids = new Set(
-      pins.filter((pin) => pin.object_type === 'note').map((pin) => pin.object_id)
-    );
-    return notes
-      .filter((note) => ids.has(note.id))
-      .sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at));
-  }, [notes, pins]);
-  const attention = useMemo(
-    () =>
-      notes
-        .map((note) => ({ note, count: uncheckedActions(note.content) }))
-        .filter((item) => item.count > 0)
-        .slice(0, 7),
-    [notes]
-  );
-  const recentFolders = useMemo(() => {
-    const groups = new Map<string, NotesHomeNote[]>();
-    recent.forEach((note) => {
-      const id = note.section_id ?? '__unsorted__';
-      groups.set(id, [...(groups.get(id) ?? []), note]);
-    });
-    return [...groups.entries()].slice(0, 5).map(([id, folderNotes]) => ({
-      id,
-      name: id === '__unsorted__' ? 'Unsorted' : sectionName.get(id) ?? 'Folder',
-      section: id === '__unsorted__' ? null : sections.find((section) => section.id === id) ?? null,
-      notes: folderNotes.slice(0, 3),
-    }));
-  }, [recent, sectionName, sections]);
-
-  useEffect(() => {
-    const key = storageKey(workspaceId, userId);
-    if (
-      hasStoredCollapsedStateRef.current ||
-      folderDefaultsAppliedRef.current === key ||
-      recentFolders.length === 0
-    ) {
-      return;
-    }
-
-    folderDefaultsAppliedRef.current = key;
-    setCollapsed((current) => {
-      const next = new Set(current);
-      recentFolders.forEach((folder) => next.add(`folder:${folder.id}`));
-      return next;
-    });
-  }, [recentFolders, userId, workspaceId]);
-  const templateShortcuts = useMemo(() => {
-    const ranked = [...templates].sort((a, b) => {
-      const rank = (template: NotesHomeTemplate) => {
-        if (template.pinned) return 0;
-        if (template.last_used_at || (template.usage_count ?? 0) > 0) return 1;
-        if (template.is_system && template.category?.toLowerCase() === 'team') return 2;
-        if (template.is_system) return 3;
-        return 4;
-      };
-      return (
-        rank(a) - rank(b) ||
-        +new Date(b.last_used_at ?? 0) - +new Date(a.last_used_at ?? 0) ||
-        (b.usage_count ?? 0) - (a.usage_count ?? 0) ||
-        a.name.localeCompare(b.name)
-      );
-    });
-    const seen = new Set<string>();
-    return ranked
-      .filter((template) => {
-        const key = template.name.trim().toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .slice(0, 3);
-  }, [templates]);
   const sectionById = useMemo(
     () => new Map(sections.map((section) => [section.id, section])),
     [sections]
@@ -603,27 +321,21 @@ export const NotesHome = ({
     () => new Set(templates.filter((template) => template.pinned).map((template) => template.id)),
     [templates]
   );
-  const [menuState, setMenuState] = useState<
-    | null
-    | {
-        kind: 'note' | 'folder' | 'template' | 'blank' | 'recent';
-        x: number;
-        y: number;
-        note?: NotesHomeNote;
-        folder?: NotesHomeRecentFolder;
-        template?: NotesHomeTemplate;
-      }
-  >(null);
-  const [moveMenuState, setMoveMenuState] = useState<
-    | null
-    | {
-        kind: 'note' | 'folder';
-        x: number;
-        y: number;
-        note?: NotesHomeNote;
-        folder?: NotesHomeRecentFolder;
-      }
-  >(null);
+  const [menuState, setMenuState] = useState<null | {
+    kind: 'note' | 'folder' | 'template' | 'blank' | 'recent';
+    x: number;
+    y: number;
+    note?: NotesHomeNote;
+    folder?: NotesHomeRecentFolder;
+    template?: NotesHomeTemplate;
+  }>(null);
+  const [moveMenuState, setMoveMenuState] = useState<null | {
+    kind: 'note' | 'folder';
+    x: number;
+    y: number;
+    note?: NotesHomeNote;
+    folder?: NotesHomeRecentFolder;
+  }>(null);
   const closeMenus = () => {
     setMenuState(null);
     setMoveMenuState(null);
@@ -642,7 +354,11 @@ export const NotesHome = ({
     closeMenus();
     setMenuState({ ...next, x: event.clientX, y: event.clientY } as typeof menuState);
   };
-  const copyText = async (text: string, success = 'Link copied.', failure = 'Could not copy link.') => {
+  const copyText = async (
+    text: string,
+    success = 'Link copied.',
+    failure = 'Could not copy link.'
+  ) => {
     try {
       await navigator.clipboard.writeText(text);
       toast.show(success, { variant: 'success' });
@@ -864,35 +580,6 @@ export const NotesHome = ({
       else next.add(id);
       return next;
     });
-  const row = (
-    note: NotesHomeNote,
-    end?: string,
-    tone: 'default' | 'attention' | 'pinned' = 'default'
-  ) => (
-    <ResourceRow
-      key={note.id}
-      icon={
-        <span className="relative flex items-center">
-          {note.mode === 'meeting_note' ? <Mic size={14} /> : <FileText size={14} />}
-          {note.id === activeMeetingNoteId &&
-            (activeMeetingStatus === 'recording' || activeMeetingStatus === 'processing') && (
-              <span
-                className={`absolute -right-1.5 -top-1 h-2 w-2 rounded-full border border-[var(--ledger-surface-card)] ${
-                  activeMeetingStatus === 'recording' ? 'bg-[var(--ledger-accent)]' : 'bg-amber-500'
-                }`}
-                aria-label={activeMeetingStatus === 'recording' ? 'Recording' : 'Processing'}
-              />
-            )}
-        </span>
-      }
-      title={note.title || 'Untitled note'}
-      meta={sectionName.get(note.section_id ?? '') ?? 'Unsorted'}
-      end={end ?? relativeTime(note.updated_at)}
-      tone={tone}
-      onClick={() => onOpenNote(note)}
-      onContextMenu={(event) => openMenuAt({ kind: 'note', note }, event)}
-    />
-  );
   const activeMenuGroups =
     menuState?.kind === 'note'
       ? noteActions(menuState.note!)
@@ -942,7 +629,9 @@ export const NotesHome = ({
       moveMenuState.kind === 'folder' && targetSectionId
         ? new Set([targetSectionId, ...Array.from(descendantSectionIds.get(targetSectionId) ?? [])])
         : new Set<string>();
-    const options = sectionMoveTargets.filter((section) => !invalidSectionIds.has(section.id ?? ''));
+    const options = sectionMoveTargets.filter(
+      (section) => !invalidSectionIds.has(section.id ?? '')
+    );
     return options.length
       ? [
           {
@@ -963,189 +652,102 @@ export const NotesHome = ({
       : null;
   })();
 
-  if (notes.length === 0) {
-    return (
-      <div className="flex-1 overflow-auto bg-[var(--ledger-surface-card)] p-6">
-        <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
-          <h1 className="text-lg font-semibold text-[var(--ledger-text-primary)]">Notes Home</h1>
-          <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-            Start writing in this workspace.
-          </p>
-        </div>
-        <div className="mt-4 space-y-2">
-          <p className="text-[12px] font-medium text-[var(--ledger-text-secondary)]">
-            Start a note
-          </p>
-          <TemplateLauncher
-            templates={templateShortcuts}
-            onNewNote={() => onNewNote(currentSectionId)}
-            onStartMeetingNotes={() => onStartMeetingNotes(currentSectionId)}
-            onBrowseTemplates={onBrowseTemplates}
-            onOpenTemplate={onOpenTemplate}
-            onNewNoteContextMenu={(event) => openMenuAt({ kind: 'blank' }, event)}
-            onTemplateContextMenu={(template, event) =>
-              openMenuAt({ kind: 'template', template }, event)
-            }
-          />
-        </div>
-        <UpcomingMeetingsSection
-          meetings={upcomingMeetings}
-          collapsed={collapsed.has('upcoming-meetings')}
-          onToggle={toggle}
-          onStart={onStartMeetingFromEvent}
-          onOpenEvent={onOpenCalendarEvent}
-        />
-        <div className="flex min-h-[260px] items-center justify-center px-6 py-8">
-          <div className="w-full max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
-              <StickyNote size={15} />
-            </div>
-            <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
-              Nothing to show yet
-            </p>
-            <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
-              Create a note to start filling this workspace.
-            </p>
-          </div>
-        </div>
-        {activeMenuGroups && menuState && (
-          <ContextMenu
-            open
-            x={menuState.x}
-            y={menuState.y}
-            width={244}
-            groups={activeMenuGroups}
-            onClose={closeMenus}
-            ariaLabel="Notes home actions"
-          />
-        )}
-        {activeMoveGroups && moveMenuState && (
-          <ContextMenu
-            open
-            x={moveMenuState.x}
-            y={moveMenuState.y}
-            width={272}
-            groups={activeMoveGroups}
-            onClose={closeMenus}
-            ariaLabel="Move to folder"
-          />
-        )}
-      </div>
-    );
-  }
+  const dateGroups = useMemo(() => {
+    const groups = new Map<string, { label: string; notes: NotesHomeNote[]; timestamp: number }>();
+    [...notes]
+      .sort((a, b) => +new Date(b.updated_at) - +new Date(a.updated_at))
+      .forEach((note) => {
+        const key = homeDateKey(note.updated_at);
+        const existing = groups.get(key);
+        if (existing) existing.notes.push(note);
+        else
+          groups.set(key, {
+            label: homeDateLabel(note.updated_at),
+            notes: [note],
+            timestamp: +new Date(note.updated_at),
+          });
+      });
+    return [...groups.values()].sort((a, b) => b.timestamp - a.timestamp);
+  }, [notes]);
 
   return (
-    <div className="flex-1 overflow-auto bg-[var(--ledger-surface-card)]">
-      <div className="mx-auto max-w-4xl space-y-4 p-6">
-        <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
-          <p className="mt-1 text-sm text-[var(--ledger-text-secondary)]">
-            Everything happening across your notes in the active workspace.
-          </p>
-          <p className="mt-3 text-xs text-[var(--ledger-text-muted)]">
-            {notes.length} notes ·{' '}
-            {notes.filter((note) => Date.now() - +new Date(note.updated_at) < 604800000).length}{' '}
-            updated this week · {pinned.length} pinned
-          </p>
-        </div>
-        <div className="space-y-2">
-          <TemplateLauncher
-            templates={templateShortcuts}
-            onNewNote={() => onNewNote(currentSectionId)}
-            onStartMeetingNotes={() => onStartMeetingNotes(currentSectionId)}
-            onBrowseTemplates={onBrowseTemplates}
-            onOpenTemplate={onOpenTemplate}
-            onNewNoteContextMenu={(event) => openMenuAt({ kind: 'blank' }, event)}
-            onTemplateContextMenu={(template, event) =>
-              openMenuAt({ kind: 'template', template }, event)
-            }
-          />
-        </div>
-        <div className="space-y-1.5">
-          <UpcomingMeetingsSection
-            meetings={upcomingMeetings}
-            collapsed={collapsed.has('upcoming-meetings')}
-            onToggle={toggle}
-            onStart={onStartMeetingFromEvent}
-            onOpenEvent={onOpenCalendarEvent}
-          />
-          <HomeSection
-            id="continue"
-            title="Continue writing"
-            count={recent.length}
-            collapsed={collapsed.has('continue')}
-            onToggle={toggle}
+    <div className="relative flex-1 overflow-auto bg-[var(--ledger-surface-card)]">
+      <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-8 pb-28 pt-7 sm:px-12">
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => onNewNote(currentSectionId)}
+            onContextMenu={(event) => openMenuAt({ kind: 'blank' }, event)}
+            className="text-[12px] font-medium text-[var(--ledger-text-secondary)] transition-colors hover:text-[var(--ledger-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-border-strong)]"
           >
-            {recent.map((note) => row(note))}
-            {notes.length > recent.length && (
-              <ResourceRow
-                icon={<Search size={14} />}
-                title="View all recent notes"
-                onClick={onViewAllRecent}
-                onContextMenu={(event) => openMenuAt({ kind: 'recent' }, event)}
-              />
-            )}
-          </HomeSection>
-          {attention.length > 0 && (
-            <HomeSection
-              id="attention"
-              title="Needs attention"
-              count={attention.length}
-              collapsed={collapsed.has('attention')}
-              onToggle={toggle}
-            >
-              {attention.map(({ note, count }) =>
-                row(note, `${count} unchecked action${count === 1 ? '' : 's'}`, 'attention')
-              )}
-            </HomeSection>
-          )}
-          {pinned.length > 0 && (
-            <HomeSection
-              id="pinned"
-              title="Pinned notes"
-              count={pinned.length}
-              collapsed={collapsed.has('pinned')}
-              onToggle={toggle}
-            >
-              {pinned.slice(0, 7).map((note) => row(note, undefined, 'pinned'))}
-            </HomeSection>
-          )}
-          {recentFolders.length > 0 && (
-            <HomeSection
-              id="folders"
-              title="Recent by folder"
-              count={recentFolders.length}
-              collapsed={collapsed.has('folders')}
-              onToggle={toggle}
-            >
-              {recentFolders.map((folder) => (
-                <div key={folder.id} className="space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => toggle(`folder:${folder.id}`)}
-                    onContextMenu={(event) => openMenuAt({ kind: 'folder', folder }, event)}
-                    className={`flex h-8 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] focus:outline-none ${
-                      collapsed.has(`folder:${folder.id}`) ? '' : 'bg-[var(--ledger-surface-muted)]'
-                    }`}
-                    aria-expanded={!collapsed.has(`folder:${folder.id}`)}
-                  >
-                    <ChevronDown
-                      size={13}
-                      className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
-                        collapsed.has(`folder:${folder.id}`) ? '-rotate-90' : ''
-                      }`}
+            <Plus size={13} className="mr-1 inline-block" /> New note
+          </button>
+        </div>
+        <div className="mt-9 space-y-8">
+          {dateGroups.length ? (
+            dateGroups.map((group) => (
+              <section key={`${group.label}-${group.timestamp}`}>
+                <h2 className="mb-2 px-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                  {group.label}
+                </h2>
+                <div className="space-y-0.5">
+                  {group.notes.map((note) => (
+                    <NotesHomeListRow
+                      key={note.id}
+                      note={note}
+                      sectionName={sectionName.get(note.section_id ?? '')}
+                      active={note.id === activeMeetingNoteId}
+                      onClick={() => onOpenNote(note)}
+                      onContextMenu={(event) => openMenuAt({ kind: 'note', note }, event)}
                     />
-                    <Folder size={13} className="text-[var(--ledger-text-muted)]" />
-                    {folder.name}
-                    <span className="text-[var(--ledger-text-muted)]">{folder.notes.length}</span>
-                  </button>
-                  {!collapsed.has(`folder:${folder.id}`) && (
-                    <div className="space-y-0.5">{folder.notes.map((note) => row(note))}</div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </HomeSection>
+              </section>
+            ))
+          ) : (
+            <div className="px-2 py-12 text-[13px] text-[var(--ledger-text-muted)]">
+              No notes yet. Create one when you are ready.
+            </div>
           )}
         </div>
+        {!askLedgerOpen && (
+          <div className="relative sticky bottom-5 z-10 mx-auto mt-auto flex h-28 w-[min(520px,calc(100%-32px))] items-end">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-[-72px] bottom-0 h-28 rounded-[50%] blur-2xl"
+              style={{
+                background:
+                  'linear-gradient(to top, var(--ledger-surface-card) 0%, color-mix(in srgb, var(--ledger-surface-card) 76%, transparent) 48%, transparent 100%)',
+              }}
+            />
+            <form
+              className="relative flex h-11 w-full items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]/95 pl-4 pr-1.5 shadow-[var(--ledger-shadow)] backdrop-blur-md transition focus-within:border-[color:var(--ledger-border-strong)]"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const question = askQuestion.trim();
+                if (!question) return;
+                onAskLedger(question);
+                setAskQuestion('');
+              }}
+            >
+              <input
+                value={askQuestion}
+                onChange={(event) => setAskQuestion(event.target.value)}
+                className="min-w-0 flex-1 appearance-none border-0 bg-transparent text-[12px] text-[var(--ledger-text-primary)] outline-none ring-0 placeholder:text-[var(--ledger-text-muted)] focus:border-0 focus:outline-none focus:ring-0"
+                placeholder="Ask anything…"
+                aria-label="Ask Ledger about Notes"
+              />
+              <button
+                type="submit"
+                disabled={!askQuestion.trim()}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--ledger-accent)] text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35"
+                aria-label="Ask Ledger"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </form>
+          </div>
+        )}
         {activeMenuGroups && menuState && (
           <ContextMenu
             open

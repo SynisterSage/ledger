@@ -1368,7 +1368,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     onQuestionSubmitted?.(effectiveQuestion);
     const submittedAttachments = composerAttachments;
     const submittedInitialContext = activeInitialContext ?? initialContextRef.current ?? initialContext ?? null;
-    const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext
+    const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext && submittedInitialContext.contextType !== 'notes_home'
       ? [...submittedAttachments, { kind: 'resource', resource: { id: submittedInitialContext.resourceId, resourceId: submittedInitialContext.resourceId, title: submittedInitialContext.title, type: submittedInitialContext.resourceType, sourceLabel: sourceTypeLabels[submittedInitialContext.resourceType] } }]
       : submittedAttachments;
     const attachmentIds = submittedAttachments.flatMap((item) => item.kind === 'file' ? [item.attachment.id] : []);

@@ -265,6 +265,11 @@ const expandRelatedProjectContext = (items: AskLedgerContextItem[], documents: A
 
 const meetingContextTokens = (value: string) => new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length > 2));
 
+const notesHomeScopeInstruction = (context?: AskLedgerInitialContext | null) =>
+  context?.contextType === 'notes_home'
+    ? 'Notes Home scope: answer across the active workspace Notes memory, including normal notes, meeting notes, recaps, transcript evidence, folders, and directly linked projects, tasks, events, and reminders. Keep every record workspace-scoped; do not treat the Notes Home screen list as the retrieval boundary.'
+    : '';
+
 export const expandMeetingContext = (explicitItem: AskLedgerContextItem | undefined, candidates: AskLedgerContextItem[], documents: AskLedgerContextItem[], explicitContext?: AskLedgerInitialContext) => {
   if (!explicitItem) return candidates.slice(0, 10);
   const selected = new Map<string, AskLedgerContextItem>();
@@ -435,6 +440,7 @@ export class AskLedgerService {
     const retrievalQuestion = [
       request.question,
       skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
+      notesHomeScopeInstruction(request.explicitContext ?? request.conversation?.initialContext),
       request.conversation?.initialContext ? `Current Ledger context: ${request.conversation.initialContext.title}` : '',
       overviewFocusHandoffText(request.explicitContext ?? request.conversation?.initialContext),
       ...(request.conversation?.recentExchanges ?? []).slice(-2).flatMap((exchange) => [
@@ -854,8 +860,10 @@ export class AskLedgerService {
       const meetingAnchorInstruction = explicitContext?.contextType === 'meeting'
         ? `Selected meeting anchor: "${explicitContext.title}". Scope meeting questions to the current meeting note, explicit calendar series, linked project, confirmed attendees, related meeting records, and their exact transcript evidence. Transcript answers what was said; current task/project state answers what is true now. Never use a same-title meeting from another series or workspace.`
         : '';
+      const notesHomeInstruction = notesHomeScopeInstruction(explicitContext);
       const retrievalQuestion = [
         request.question,
+        notesHomeInstruction,
         meetingAnchorInstruction,
         skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
         conversationForCurrentTurn?.initialContext ? `Current Ledger context: ${conversationForCurrentTurn.initialContext.title}` : '',
@@ -884,7 +892,7 @@ export class AskLedgerService {
       // tasks, milestones, reminders, and events are available. The index is
       // still workspace-scoped by LedgerRetrievalService.
       const projectAnchoredRequest = Boolean(explicitContext?.resourceType === 'project');
-      const retrievalDocuments = semanticIndexRequired || projectAnchoredRequest ? undefined : request.documents;
+      const retrievalDocuments = semanticIndexRequired || projectAnchoredRequest || explicitContext?.contextType === 'notes_home' ? undefined : request.documents;
       const retrievalStartedAt = Date.now();
       performanceTrace.mark('retrievalStarted');
       // Custom skills can intentionally submit an empty question. Give the

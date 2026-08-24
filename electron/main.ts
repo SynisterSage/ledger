@@ -294,15 +294,18 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
     resourceType: String((payload.explicitContext as Record<string, unknown>).resourceType ?? ''),
     resourceId: String((payload.explicitContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
     title: String((payload.explicitContext as Record<string, unknown>).title ?? '').slice(0, 300),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting'].includes(String((payload.explicitContext as Record<string, unknown>).contextType)) ? { contextType: String((payload.explicitContext as Record<string, unknown>).contextType) as 'project' | 'meeting' } : {}),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).workspaceId === 'string' ? { workspaceId: String((payload.explicitContext as Record<string, unknown>).workspaceId).slice(0, 200) } : {}),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting', 'notes_home'].includes(String((payload.explicitContext as Record<string, unknown>).contextType)) ? { contextType: String((payload.explicitContext as Record<string, unknown>).contextType) as 'project' | 'meeting' | 'notes_home' } : {}),
     ...(typeof (payload.explicitContext as Record<string, unknown>).meetingNoteId === 'string' ? { meetingNoteId: String((payload.explicitContext as Record<string, unknown>).meetingNoteId).slice(0, 200) } : {}),
     ...(typeof (payload.explicitContext as Record<string, unknown>).calendarSeriesId === 'string' ? { calendarSeriesId: String((payload.explicitContext as Record<string, unknown>).calendarSeriesId).slice(0, 200) } : {}),
     ...(typeof (payload.explicitContext as Record<string, unknown>).linkedProjectId === 'string' ? { linkedProjectId: String((payload.explicitContext as Record<string, unknown>).linkedProjectId).slice(0, 200) } : {}),
     ...(typeof (payload.explicitContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((payload.explicitContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
+    ...(typeof (payload.explicitContext as Record<string, unknown>).origin === 'string' && ['projects', 'notes_home'].includes(String((payload.explicitContext as Record<string, unknown>).origin)) ? { origin: String((payload.explicitContext as Record<string, unknown>).origin) as 'projects' | 'notes_home' } : {}),
     ...(sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) } : {}),
   } : undefined;
   if (skill && skill.requiresContext && !explicitContext) throw new Error(`${skill.name} needs explicit Ledger context.`);
   if (explicitContext && (!explicitContext.resourceType || !explicitContext.resourceId || !explicitContext.title)) throw new Error('Skill context is incomplete.');
+  if (explicitContext?.workspaceId && explicitContext.workspaceId !== payload.workspaceId) throw new Error('Ask Ledger context workspace mismatch.');
   if (skill && explicitContext && !skill.supportedContextTypes.includes(explicitContext.resourceType as never)) throw new Error(`${skill.name} does not support this context.`);
   if (skill && explicitContext && !documents.some((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId)) throw new Error('Skill context was not found in the current workspace context.');
   const conversation = payload.conversation && typeof payload.conversation === 'object' ? payload.conversation as Record<string, unknown> : undefined;
@@ -322,11 +325,13 @@ ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; quest
       resourceType: String((conversation.initialContext as Record<string, unknown>).resourceType ?? 'external') as never,
       resourceId: String((conversation.initialContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
       title: String((conversation.initialContext as Record<string, unknown>).title ?? 'Ledger context').slice(0, 300),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting'].includes(String((conversation.initialContext as Record<string, unknown>).contextType)) ? { contextType: String((conversation.initialContext as Record<string, unknown>).contextType) as 'project' | 'meeting' } : {}),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).workspaceId === 'string' ? { workspaceId: String((conversation.initialContext as Record<string, unknown>).workspaceId).slice(0, 200) } : {}),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting', 'notes_home'].includes(String((conversation.initialContext as Record<string, unknown>).contextType)) ? { contextType: String((conversation.initialContext as Record<string, unknown>).contextType) as 'project' | 'meeting' | 'notes_home' } : {}),
       ...(typeof (conversation.initialContext as Record<string, unknown>).meetingNoteId === 'string' ? { meetingNoteId: String((conversation.initialContext as Record<string, unknown>).meetingNoteId).slice(0, 200) } : {}),
       ...(typeof (conversation.initialContext as Record<string, unknown>).calendarSeriesId === 'string' ? { calendarSeriesId: String((conversation.initialContext as Record<string, unknown>).calendarSeriesId).slice(0, 200) } : {}),
       ...(typeof (conversation.initialContext as Record<string, unknown>).linkedProjectId === 'string' ? { linkedProjectId: String((conversation.initialContext as Record<string, unknown>).linkedProjectId).slice(0, 200) } : {}),
       ...(typeof (conversation.initialContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((conversation.initialContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
+      ...(typeof (conversation.initialContext as Record<string, unknown>).origin === 'string' && ['projects', 'notes_home'].includes(String((conversation.initialContext as Record<string, unknown>).origin)) ? { origin: String((conversation.initialContext as Record<string, unknown>).origin) as 'projects' | 'notes_home' } : {}),
       ...(sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) } : {}),
     } : undefined,
     previousQuestion: typeof conversation.previousQuestion === 'string' ? conversation.previousQuestion.slice(0, 800) : undefined,

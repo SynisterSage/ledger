@@ -56,13 +56,13 @@ export type AskLedgerInitialContext = {
   resourceType: AskLedgerResourceType;
   resourceId: string;
   title: string;
-  contextType?: 'project' | 'meeting';
+  contextType?: 'project' | 'meeting' | 'notes_home';
   workspaceId?: string;
   projectId?: string;
   meetingNoteId?: string;
   calendarSeriesId?: string;
   linkedProjectId?: string;
-  origin?: 'projects';
+  origin?: 'projects' | 'notes_home';
   /** Optional one-shot question for contextual entry points. */
   initialQuestion?: string;
   handoff?: {

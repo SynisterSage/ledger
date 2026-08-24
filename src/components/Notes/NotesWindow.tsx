@@ -102,6 +102,7 @@ import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
 import { isTeamOrientedTemplate, QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
 import NotesHome from './NotesHome';
 import type { NotesHomeTemplate, NotesHomeUpcomingMeeting } from './NotesHome';
+import { createNotesHomeAskContext } from './notesHomeAskContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
 import type {
@@ -2693,6 +2694,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
   const [rightPaneMode, setRightPaneMode] = useState<'inspector' | 'ask'>('inspector');
   const [meetingAskContext, setMeetingAskContext] = useState<AskLedgerInitialContext | null>(null);
+  const [askPaneResetKey, setAskPaneResetKey] = useState(0);
   useEffect(() => {
     setRightPaneMode('inspector');
     setMeetingAskContext(null);
@@ -3231,7 +3233,17 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     });
     setRightPaneMode('ask');
     setIsRightPaneCollapsed(false);
+    setAskPaneResetKey((current) => current + 1);
   }, [activeWorkspaceId, meetingMetadata?.calendar_series_id, selectedNote, selectedNoteProjectLinks]);
+
+  const openNotesHomeAsk = useCallback((question: string) => {
+    const context = createNotesHomeAskContext(activeWorkspaceId, question);
+    if (!context) return;
+    setMeetingAskContext(context);
+    setRightPaneMode('ask');
+    setIsRightPaneCollapsed(false);
+    setAskPaneResetKey((current) => current + 1);
+  }, [activeWorkspaceId]);
 
   const openLinkProjectModal = useCallback(
     async (noteId: string | null = selectedNoteId) => {
@@ -10080,6 +10092,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                 onOpenNote={(note) => {
                   void openNote(note as NoteRow);
                 }}
+                onAskLedger={openNotesHomeAsk}
+                askLedgerOpen={rightPaneMode === 'ask' && !isRightPaneCollapsed}
                 onNewNote={(sectionId) => {
                   setNoteCreationSectionId(sectionId ?? noteCreationSectionId);
                   setShowCreateNoteModal(true);
@@ -10175,7 +10189,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                 <div className={`flex items-start justify-between gap-3 ${rightPaneMode === 'ask' ? 'border-b border-[color:var(--ledger-border-subtle)] pb-3' : 'pb-1'}`}>
                   <div className="min-w-0 flex-1">
                     <p className="whitespace-nowrap text-xs font-medium text-[var(--ledger-text-muted)]">{rightPaneMode === 'ask' ? 'Ask Ledger' : 'Inspector'}</p>
-                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{rightPaneMode === 'ask' ? 'Meeting chat' : selectedNote?.title || (selectedNote ? 'Untitled note' : 'Quick actions')}</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{rightPaneMode === 'ask' ? (meetingAskContext?.contextType === 'notes_home' ? 'Notes workspace' : 'Meeting chat') : selectedNote?.title || (selectedNote ? 'Untitled note' : 'Quick actions')}</p>
                     {rightPaneMode === 'ask' && selectedNote?.title && <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">{selectedNote.title}</p>}
                     {rightPaneMode !== 'ask' && <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
                       {selectedNote
@@ -10345,13 +10359,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                 </div>
 
                 {rightPaneMode === 'ask' && (
-                  <div className="absolute inset-x-0 bottom-0 top-[82px] z-10 overflow-hidden bg-[var(--ledger-surface-muted)] [&_.agent-ask-ledger-content]:gap-0 [&_.ask-ledger-composer]:min-h-[76px] [&_.ask-ledger-composer]:rounded-xl [&_.ask-ledger-composer]:px-3 [&_.ask-ledger-composer]:py-2 [&_textarea]:text-[13px] [&_textarea]:leading-5 [&_.ask-ledger-answer]:text-[13px]">
+                  <div className="notes-ask-ledger-pane absolute inset-x-0 bottom-0 top-[82px] z-10 overflow-hidden bg-[var(--ledger-surface-muted)] [&_.agent-ask-ledger-content]:gap-0 [&_.ask-ledger-composer]:min-h-[76px] [&_.ask-ledger-composer]:rounded-xl [&_.ask-ledger-composer]:px-3 [&_.ask-ledger-composer]:py-2 [&_textarea]:text-[13px] [&_textarea]:leading-5 [&_.ask-ledger-answer]:text-[13px]">
                     <AskLedgerPanel
                       workspaceId={activeWorkspaceId}
-                      resetKey={selectedNoteId ? selectedNoteId.length : 0}
+                      resetKey={askPaneResetKey}
                       initialContext={meetingAskContext}
                       compact
-                      meetingChat
+                      meetingChat={meetingAskContext?.contextType === 'meeting'}
                     />
                   </div>
                 )}
