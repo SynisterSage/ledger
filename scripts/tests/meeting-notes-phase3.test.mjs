@@ -8,6 +8,9 @@ const recapDraftSection = notesWindow.slice(
   notesWindow.indexOf('const MeetingRecapDraftSection'),
   notesWindow.indexOf('export const NotesWindow')
 );
+const recapReviewBar = recapDraftSection.slice(
+  recapDraftSection.indexOf('const MeetingRecapReviewBar'),
+);
 
 test('completed meetings stay on the normal Write canvas and promote recap content', () => {
   assert.match(notesWindow, /const isMeetingComplete = isMeetingNote && meetingMetadata\?\.transcription_status === 'complete'/);
@@ -49,7 +52,16 @@ test('completed meeting dock switches from Enhance to transcript access', () => 
 
 test('accepting recap refreshes Lexical immediately before autosave completes', () => {
   assert.match(notesWindow, /setMeetingRecapDraft\(null\);[\s\S]*setMeetingRecapStatus\('idle'\);[\s\S]*setDraftContent\(recapHtml\);[\s\S]*draftContentRef\.current = recapHtml;[\s\S]*setEditorRefreshTick\(\(current\) => current \+ 1\);/);
+  assert.match(notesWindow, /setEditorRefreshTick\(\(current\) => current \+ 1\);[\s\S]*toast\.show\('Recap added to your note\.'/);
+  assert.match(notesWindow, /toast\.show\('Recap added to your note\.'/);
   assert.match(notesWindow, /editorKey=\{`\$\{selectedNote\.id\}:\$\{editorRefreshTick\}`\}/);
+});
+
+test('regenerating replaces prior recap content and preserves only the final user notes section', () => {
+  assert.match(notesWindow, /draftContent\.matchAll/);
+  assert.match(notesWindow, /Your notes\\s\*<\\\/h\[1-3\]>/);
+  assert.match(notesWindow, /humanNotesMarkers\.at\(-1\)/);
+  assert.match(notesWindow, /existingHumanNotesMarker[\s\S]*\?[\s\S]*draftContent\.slice/);
 });
 
 test('normal notes remain outside completed-meeting presentation branches', () => {
@@ -62,8 +74,11 @@ test('recap draft review stays inline with one quiet review bar', () => {
   assert.doesNotMatch(recapDraftSection, /Recap draft|Review the evidence before accepting|Ask this meeting/);
   assert.match(recapDraftSection, /data-meeting-recap-review-bar/);
   assert.match(recapDraftSection, /Draft ·/);
-  assert.match(recapDraftSection, />Regenerate<\/button>/);
-  assert.match(recapDraftSection, />Accept<\/button>/);
+  assert.match(recapDraftSection, /aria-label="Regenerate recap"/);
+  assert.match(recapDraftSection, /aria-label="Accept recap"/);
+  assert.match(recapDraftSection, /onPointerDown=\{\(event\) => event\.preventDefault\(\)\}/);
+  assert.doesNotMatch(recapReviewBar, /border-t/);
+  assert.doesNotMatch(recapReviewBar, /bg-\[var\(--ledger-accent\)\]/);
   assert.match(recapDraftSection, /showWorkActions && actionItem/);
   assert.match(notesWindow, /beforeContent=\{[\s\S]*MeetingRecapDraftSection/);
   assert.match(richTextEditor, /data-editor-before-content/);

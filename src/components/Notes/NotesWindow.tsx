@@ -2561,10 +2561,14 @@ const MeetingRecapReviewBar = ({
   onAccept: () => void;
   isBusy: boolean;
 }) => (
-  <div className="mt-2 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] pt-2 text-[10px]" data-meeting-recap-review-bar>
-    <span className="mr-auto text-[var(--ledger-text-muted)]">Draft · {tier === 'fast' ? 'Fast' : 'Balanced'}</span>
-    <button type="button" onClick={onRegenerate} disabled={isBusy} className="rounded px-1.5 py-1 text-[var(--ledger-text-muted)] transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-40">Regenerate</button>
-    <button type="button" onClick={onAccept} disabled={isBusy} className="rounded bg-[var(--ledger-accent)] px-2 py-1 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40">Accept</button>
+  <div className="flex h-12 items-center gap-1 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 text-[10px] shadow-sm" data-meeting-recap-review-bar>
+    <span className="px-2 text-[var(--ledger-text-muted)]">Draft · {tier === 'fast' ? 'Fast' : 'Balanced'}</span>
+    <button type="button" onPointerDown={(event) => event.preventDefault()} onClick={onRegenerate} disabled={isBusy} aria-label="Regenerate recap" title="Regenerate recap" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-40">
+      <RotateCcw size={13} aria-hidden="true" />
+    </button>
+    <button type="button" onPointerDown={(event) => event.preventDefault()} onClick={onAccept} disabled={isBusy} aria-label="Accept recap" title="Accept recap" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--ledger-text-primary)] transition-colors hover:bg-[var(--ledger-surface-hover)] disabled:opacity-40">
+      <CheckCircle2 size={14} aria-hidden="true" />
+    </button>
   </div>
 );
 
@@ -6926,7 +6930,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       const due = action.dueDateText ? ` · ${action.dueDateText}` : '';
       return `<li>${escapeHtml(`${prefix}${item.text}${due}`)}</li>`;
     };
-    const existingHumanNotesMarker = draftContent.match(/<hr[^>]*>\s*<h2[^>]*>\s*Your notes\s*<\/h2>/i);
+    // On regeneration, keep only the actual user-authored content after the
+    // final Your notes heading. Using the final marker also repairs notes that
+    // were duplicated by the earlier recap replacement bug.
+    const humanNotesMarkers = Array.from(
+      draftContent.matchAll(/(?:<hr[^>]*>\s*)?<h[1-3][^>]*>\s*Your notes\s*<\/h[1-3]>/gi),
+    );
+    const existingHumanNotesMarker = humanNotesMarkers.at(-1);
     const existingHumanNotes = existingHumanNotesMarker
       ? draftContent.slice((existingHumanNotesMarker.index ?? 0) + existingHumanNotesMarker[0].length)
       : draftContent;
@@ -6959,8 +6969,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setEditorRefreshTick((current) => current + 1);
     setIsDirty(true);
     isDirtyRef.current = true;
+    // Confirm the visible Lexical update immediately; persistence and citation
+    // linking can finish after the user has already returned to the note.
+    toast.show('Recap added to your note.', { variant: 'success' });
     const saved = await flushAutosave({ content: recapHtml });
-    if (!saved) return;
+    if (!saved) {
+      toast.show('The recap is visible, but could not be saved yet.', { variant: 'error' });
+      return;
+    }
     if (activeWorkspaceId) {
       meetingRecapDraftCache.invalidate(
         meetingRecapCacheKey(activeWorkspaceId, selectedNote.id)
@@ -6992,7 +7008,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     } catch (error) {
       toast.show('Recap saved, but some transcript references could not be attached.', { variant: 'error' });
     }
-    toast.show('Meeting recap added to your note.', { variant: 'success' });
   }, [
     activeWorkspaceId,
     api,
@@ -9400,7 +9415,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                 <div className="bg-[var(--ledger-surface)] px-6 pb-2 pt-6 sm:px-10 sm:pt-8">
                   <div className="mx-auto max-w-[800px]">
                     <div className="flex items-center justify-between gap-4">
-                      <p className="min-w-0 truncate text-[11px] text-[var(--ledger-text-muted)]">
+                      <p className="flex h-7 min-w-0 items-center truncate text-[11px] leading-none text-[var(--ledger-text-muted)]">
                         <button
                           type="button"
                           onClick={() => void goToNotesHome()}
@@ -9420,7 +9435,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         )}
                       </p>
                       <div className="flex shrink-0 items-center gap-1">
-                        <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                        <span className="flex h-7 items-center text-[11px] leading-none text-[var(--ledger-text-muted)]">
                           {saveStatus}
                         </span>
                         <div className="ml-1 flex items-center" aria-label="Note view">
@@ -10240,14 +10255,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   meetingMetadata && (
                   <div className="ledger-meeting-dock pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4 sm:bottom-5" data-meeting-floating-controls>
                     <div className="pointer-events-auto flex w-full max-w-[760px] flex-col items-stretch justify-center gap-2">
-                      {isMeetingNote && meetingRecapStatus === 'ready' && meetingRecapDraft && (
-                        <MeetingRecapReviewBar
-                          tier={meetingRecapTier}
-                          onRegenerate={() => void enhanceMeetingNote()}
-                          onAccept={() => void acceptMeetingRecap()}
-                          isBusy={false}
-                        />
-                      )}
                       {isLiveTranscriptOpen && (
                         <MeetingLiveTranscriptPanel
                           segments={resolvedTranscriptSegments}
@@ -10257,7 +10264,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       <div className="ledger-meeting-dock-row flex w-full min-w-0 items-end justify-center gap-2">
                       <div className="relative shrink-0">
                         {isMeetingComplete ? (
-                          meetingRecapStatus === 'ready' && meetingRecapDraft ? null :
+                          meetingRecapStatus === 'ready' && meetingRecapDraft ? (
+                            <MeetingRecapReviewBar
+                              tier={meetingRecapTier}
+                              onRegenerate={() => void enhanceMeetingNote()}
+                              onAccept={() => void acceptMeetingRecap()}
+                              isBusy={false}
+                            />
+                          ) :
                           (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged ? null : (
                           <div className="flex h-12 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 shadow-sm">
                             <button
