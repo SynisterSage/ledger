@@ -10,7 +10,8 @@ test('meeting dock has stable lifecycle surfaces for recording, processing, and 
   assert.match(notesWindow, /Processing…/);
   assert.match(notesWindow, /'Start'/);
   assert.match(notesWindow, /'Enhance'/);
-  assert.match(notesWindow, /'Recap ✓'/);
+  assert.match(notesWindow, /'Enhance'/);
+  assert.match(notesWindow, /'Transcript'/);
   assert.match(notesWindow, /ledger-meeting-dock-row/);
 });
 

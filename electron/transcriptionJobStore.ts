@@ -22,6 +22,44 @@ export type LocalTranscriptSegment = {
   segmentOrder: number;
 };
 
+export type TranscriptionChunkState = 'queued' | 'processing' | 'completed' | 'failed';
+
+export type TranscriptionChunkRecord = {
+  key: string;
+  sessionId: string;
+  noteId: string;
+  workspaceId: string;
+  audioSource: 'user_microphone' | 'system_audio';
+  sequence: number;
+  filePath: string;
+  startAt: string;
+  endAt: string | null;
+  durationSeconds: number;
+  finalized: boolean;
+  state: TranscriptionChunkState;
+  queuedAt: string;
+  processingAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  error: string | null;
+};
+
+export type TranscriptionWindowRecord = TranscriptionChunkRecord & {
+  kind?: 'live-window';
+  speechDurationMs?: number;
+  silenceSkippedMs?: number;
+  overlapMs?: number;
+};
+
+export type TranscriptionCoverageRange = {
+  key: string;
+  audioSource: 'user_microphone' | 'system_audio';
+  startAt: string;
+  endAt: string | null;
+  state: 'covered' | 'pending' | 'failed';
+  kind: 'live-window' | 'archive-fallback';
+};
+
 export type TranscriptionJob = {
   jobId: string;
   sessionId: string;
@@ -38,8 +76,12 @@ export type TranscriptionJob = {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  finalizing: boolean;
   skippedChunks: number[];
   segments: LocalTranscriptSegment[];
+  chunkRecords: Record<string, TranscriptionChunkRecord>;
+  liveWindowRecords: Record<string, TranscriptionWindowRecord>;
+  coverage: Record<string, TranscriptionCoverageRange>;
 };
 
 type StoreFile = { version: 1; jobs: TranscriptionJob[] };
@@ -59,7 +101,7 @@ export class TranscriptionJobStore {
   list() { return [...this.jobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
   active() { return this.list().find((job) => ['queued', 'preparing', 'transcribing', 'merging'].includes(job.status)) ?? null; }
 
-  create(input: Omit<TranscriptionJob, 'createdAt' | 'startedAt' | 'completedAt' | 'error' | 'progress' | 'currentSource' | 'currentChunkSequence' | 'completedChunks' | 'skippedChunks' | 'segments'>) {
+  create(input: Omit<TranscriptionJob, 'createdAt' | 'startedAt' | 'completedAt' | 'error' | 'progress' | 'currentSource' | 'currentChunkSequence' | 'completedChunks' | 'finalizing' | 'skippedChunks' | 'segments' | 'chunkRecords' | 'liveWindowRecords' | 'coverage'>) {
     const job: TranscriptionJob = {
       ...input,
       progress: 0,
@@ -70,8 +112,12 @@ export class TranscriptionJobStore {
       createdAt: new Date().toISOString(),
       startedAt: null,
       completedAt: null,
+      finalizing: false,
       skippedChunks: [],
       segments: [],
+      chunkRecords: {},
+      liveWindowRecords: {},
+      coverage: {},
     };
     this.jobs.set(job.jobId, job);
     this.persist('job_created', job.jobId);
@@ -99,7 +145,15 @@ export class TranscriptionJobStore {
       if (data?.version !== 1 || !Array.isArray(data.jobs)) return;
       data.jobs.forEach((job) => {
         if (!job?.jobId || !job.noteId || !job.workspaceId || !Array.isArray(job.segments)) return;
-        if (['preparing', 'transcribing', 'merging'].includes(job.status)) job.status = 'queued';
+        if (['preparing', 'transcribing'].includes(job.status)) job.status = 'queued';
+        if (job.status === 'merging') {
+          job.status = 'failed';
+          job.error = 'Transcript merge was interrupted. The durable transcript and recording are preserved; retry to finish this meeting.';
+        }
+        job.finalizing = job.finalizing === true;
+        job.chunkRecords = job.chunkRecords && typeof job.chunkRecords === 'object' ? job.chunkRecords : {};
+        job.liveWindowRecords = job.liveWindowRecords && typeof job.liveWindowRecords === 'object' ? job.liveWindowRecords : {};
+        job.coverage = job.coverage && typeof job.coverage === 'object' ? job.coverage : {};
         this.jobs.set(job.jobId, job);
       });
     } catch {}

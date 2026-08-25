@@ -4,7 +4,7 @@ import { ipcMain, shell, webContents } from 'electron';
 import { AudioCaptureError, type AudioCaptureAdapter, type AudioCaptureEvent, type AudioCaptureStartOptions, type AudioCaptureSession, type AudioDeviceInfo, type AudioPermissionStatus, type AudioCaptureStopResult, type AudioSourceName } from '../types';
 
   type WindowsEvent = {
-  event: 'started' | 'paused' | 'resumed' | 'stopped' | 'error' | 'level' | 'devices-changed' | 'flushed' | 'health';
+    event: 'started' | 'paused' | 'resumed' | 'stopped' | 'error' | 'level' | 'audio-data' | 'devices-changed' | 'flushed' | 'health';
   sessionId: string;
   sources?: AudioCaptureSession['sources'];
   warnings?: AudioCaptureSession['warnings'];
@@ -13,6 +13,11 @@ import { AudioCaptureError, type AudioCaptureAdapter, type AudioCaptureEvent, ty
   durationSeconds?: number;
   source?: AudioSourceName;
   level?: number;
+  sampleRate?: number;
+  channels?: number;
+  format?: 'f32le-interleaved';
+  data?: string;
+  capturedAt?: string;
   healthy?: boolean;
   error?: string;
   code?: string;
@@ -150,6 +155,7 @@ export class WindowsAudioCaptureAdapter implements AudioCaptureAdapter {
       return;
     }
     if (value.event === 'level' && value.source) this.emit({ type: 'level', source: value.source, level: Math.max(0, Math.min(1, Number(value.level) || 0)) });
+    if (value.event === 'audio-data' && value.source && typeof value.data === 'string') this.emit({ type: 'audio-data', sessionId: value.sessionId, source: value.source, sampleRate: Number(value.sampleRate) || 16_000, channels: Number(value.channels) || 1, format: 'f32le-interleaved', data: value.data, capturedAt: String(value.capturedAt || new Date().toISOString()), durationSeconds: Math.max(0, Number(value.durationSeconds) || 0) });
   }
 
   private async handleChunk(value: { sessionId?: unknown; source?: unknown; sequence?: unknown; startAt?: unknown; endAt?: unknown; durationSeconds?: unknown; data?: unknown }) {

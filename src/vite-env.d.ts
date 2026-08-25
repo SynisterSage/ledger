@@ -96,6 +96,7 @@ interface Window {
     downloadModel: () => Promise<unknown>;
     cancelModelDownload: () => Promise<unknown>;
     deleteModel: () => Promise<unknown>;
+    prepare: (payload: { sessionId: string; noteId: string; workspaceId: string }) => Promise<unknown>;
     status: (jobId?: string) => Promise<unknown>;
     start: (payload: { sessionId: string; noteId: string; workspaceId: string; force?: boolean }) => Promise<unknown>;
     cancel: (jobId: string) => Promise<unknown>;
@@ -103,6 +104,7 @@ interface Window {
     complete: (payload: { jobId: string; retention: 'delete_after_transcription' | 'retain' }) => Promise<unknown>;
     fail: (payload: { jobId: string; error: string }) => Promise<unknown>;
     onProgress: (listener: (event: unknown) => void) => () => void;
+    onSegments: (listener: (event: unknown) => void) => () => void;
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
   askLedger?: {

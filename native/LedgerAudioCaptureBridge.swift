@@ -10,6 +10,7 @@ import ScreenCaptureKit
 
 final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
     private var microphoneRecorder: AVAudioRecorder?
+    private var microphoneEngine: AVAudioEngine?
     private var systemStream: SCStream?
     private var systemAudioFile: AVAudioFile?
     private var systemAudioFormat: AVAudioFormat?
@@ -29,6 +30,9 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
     private var microphoneLevelTimer: DispatchSourceTimer?
     private var originalDefaultInputDevice: AudioDeviceID?
     private var lastSystemLevelAt = Date.distantPast
+    private var liveAudioSamples: [String: [Float]] = [:]
+    private var liveAudioSampleRate: [String: Double] = [:]
+    private var liveAudioChannels: [String: Int] = [:]
     private let outputLock = NSLock()
 
     private let workQueue = DispatchQueue(label: "com.ledger.audio-capture", qos: .userInitiated)
@@ -219,12 +223,18 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         microphoneChunkStartAt = nil
         systemChunkStartAt = nil
         systemAudioFormat = nil
+        liveAudioSamples = [:]
+        liveAudioSampleRate = [:]
+        liveAudioChannels = [:]
         microphoneSequence = 0
         systemSequence = 0
         startedAt = Date()
         pausedAt = nil
         accumulatedPause = 0
         isPaused = false
+        liveAudioSamples = [:]
+        liveAudioSampleRate = [:]
+        liveAudioChannels = [:]
 
         if wantMicrophone, let deviceId = input["microphoneDeviceId"] as? String, let error = selectInputDevice(deviceId) {
             cleanupSession()
@@ -240,6 +250,7 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
                 recorder.isMeteringEnabled = true
                 guard recorder.record() else { throw NSError(domain: "LedgerAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Microphone recording could not start."]) }
                 microphoneRecorder = recorder
+                try? startMicrophoneLiveTap()
                 let levelTimer = DispatchSource.makeTimerSource(queue: workQueue)
                 levelTimer.schedule(deadline: .now(), repeating: .milliseconds(100))
                 levelTimer.setEventHandler { [weak self] in
@@ -332,6 +343,23 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         return recorder
     }
 
+    private func startMicrophoneLiveTap() throws {
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
+            guard let self, !self.isPaused else { return }
+            self.emitAudioData(buffer, source: "user_microphone")
+        }
+        do {
+            engine.prepare()
+            try engine.start()
+            microphoneEngine = engine
+        } catch {
+            input.removeTap(onBus: 0)
+            throw error
+        }
+    }
+
     private func rotateMicrophoneChunk() {
         guard let recorder = microphoneRecorder else { return }
         recorder.stop()
@@ -404,6 +432,10 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
     private func stop() {
         guard let activeSession = sessionId else { emit(["ok": true, "state": "idle", "sources": []]); return }
         microphoneRecorder?.stop()
+        flushLiveAudioData()
+        microphoneEngine?.inputNode.removeTap(onBus: 0)
+        microphoneEngine?.stop()
+        microphoneEngine = nil
         finalizeMicrophoneChunk(endAt: Date())
         microphoneRecorder = nil
         microphoneLevelTimer?.cancel()
@@ -428,6 +460,7 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         workQueue.async { [weak self] in
             guard let self else { return }
             self.finalizeSystemChunk(endAt: Date())
+            self.flushLiveAudioData()
             let hadSystemAudio = self.systemSequence > 0 || self.systemFileName != nil
             self.systemStream = nil
             self.systemStreamOutputAttached = false
@@ -444,6 +477,9 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
 
     private func cleanupSession() {
         microphoneRecorder = nil
+        microphoneEngine?.inputNode.removeTap(onBus: 0)
+        microphoneEngine?.stop()
+        microphoneEngine = nil
         microphoneLevelTimer?.cancel()
         microphoneLevelTimer = nil
         systemStream = nil
@@ -456,6 +492,9 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         microphoneChunkStartAt = nil
         systemChunkStartAt = nil
         systemAudioFormat = nil
+        liveAudioSamples = [:]
+        liveAudioSampleRate = [:]
+        liveAudioChannels = [:]
         startedAt = nil
         pausedAt = nil
         accumulatedPause = 0
@@ -482,6 +521,7 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
         guard let format = systemAudioFormat, let buffer = makePCMBuffer(sampleBuffer, format: format) else { return }
         if systemAudioFile == nil { startSystemChunk(format: format) }
         if let systemAudioFile { try? systemAudioFile.write(from: buffer) }
+        emitAudioData(buffer, source: "system_audio")
         if let systemChunkStartAt, Date().timeIntervalSince(systemChunkStartAt) >= chunkDuration {
             finalizeSystemChunk(endAt: Date())
             startSystemChunk(format: format)
@@ -551,6 +591,67 @@ final class AudioCaptureBridge: NSObject, SCStreamDelegate, SCStreamOutput {
             return min(1, sum / Double(count) * 4)
         }
         return 0
+    }
+
+    private func emitAudioData(_ buffer: AVAudioPCMBuffer, source: String) {
+        guard sessionId != nil, buffer.frameLength > 0 else { return }
+        let channels = max(1, Int(buffer.format.channelCount))
+        let frames = Int(buffer.frameLength)
+        var interleaved = [Float](repeating: 0, count: frames * channels)
+        if let floatChannels = buffer.floatChannelData {
+            for frame in 0..<frames { for channel in 0..<channels { interleaved[frame * channels + channel] = floatChannels[channel][frame] } }
+        } else if let int16Channels = buffer.int16ChannelData {
+            for frame in 0..<frames { for channel in 0..<channels { interleaved[frame * channels + channel] = Float(int16Channels[channel][frame]) / 32768.0 } }
+        } else {
+            let audioBuffers = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+            var cursor = 0
+            for audioBuffer in audioBuffers {
+                guard let data = audioBuffer.mData else { return }
+                let bytesPerSample = buffer.format.commonFormat == .pcmFormatInt16 ? MemoryLayout<Int16>.size : MemoryLayout<Float>.size
+                let count = min(frames * max(1, Int(audioBuffer.mNumberChannels)), Int(audioBuffer.mDataByteSize) / bytesPerSample)
+                if buffer.format.commonFormat == .pcmFormatFloat32 {
+                    let values = data.assumingMemoryBound(to: Float.self)
+                    for index in 0..<count where cursor + index < interleaved.count { interleaved[cursor + index] = values[index] }
+                } else if buffer.format.commonFormat == .pcmFormatInt16 {
+                    let values = data.assumingMemoryBound(to: Int16.self)
+                    for index in 0..<count where cursor + index < interleaved.count { interleaved[cursor + index] = Float(values[index]) / 32768.0 }
+                } else { return }
+                cursor += count
+            }
+            if cursor == 0 { return }
+        }
+        let outputFrames = max(1, Int((Double(frames) * 16_000.0 / max(1, buffer.format.sampleRate)).rounded()))
+        var mono16k = [Float](repeating: 0, count: outputFrames)
+        for frame in 0..<outputFrames {
+            let sourcePosition = Double(frame) * buffer.format.sampleRate / 16_000.0
+            let sourceFrame = min(frames - 1, Int(sourcePosition))
+            var value: Float = 0
+            for channel in 0..<channels { value += interleaved[sourceFrame * channels + channel] }
+            mono16k[frame] = value / Float(channels)
+        }
+        liveAudioSamples[source, default: []].append(contentsOf: mono16k)
+        liveAudioSampleRate[source] = 16_000
+        liveAudioChannels[source] = 1
+        let threshold = 16_000 * 5
+        if liveAudioSamples[source, default: []].count >= threshold { emitLiveAudio(source: source, sampleCount: threshold) }
+    }
+
+    private func flushLiveAudioData() {
+        for source in liveAudioSamples.keys {
+            let channels = liveAudioChannels[source] ?? 1
+            let count = liveAudioSamples[source]?.count ?? 0
+            if count >= channels { emitLiveAudio(source: source, sampleCount: count - (count % channels)) }
+        }
+    }
+
+    private func emitLiveAudio(source: String, sampleCount: Int) {
+        guard let sessionId, let samples = liveAudioSamples[source], sampleCount > 0 else { return }
+        let sampleRate = liveAudioSampleRate[source] ?? 16_000
+        let channels = liveAudioChannels[source] ?? 1
+        let selected = Array(samples.prefix(sampleCount))
+        liveAudioSamples[source] = Array(samples.dropFirst(sampleCount))
+        let data = selected.withUnsafeBytes { Data($0) }
+        emit(["event": "audio-data", "sessionId": sessionId, "source": source, "sampleRate": sampleRate, "channels": channels, "format": "f32le-interleaved", "data": data.base64EncodedString(), "capturedAt": ISO8601DateFormatter().string(from: Date()), "durationSeconds": Double(sampleCount / channels) / max(1, sampleRate)])
     }
 }
 

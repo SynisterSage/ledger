@@ -25,7 +25,7 @@
     entitlementsInherit: 'entitlements.mac.plist',
     binaries: ['native/LedgerAudioCaptureBridge'],
     extraResources: [
-      { from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli'] },
+      { from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli', 'whisper-server'] },
       { from: 'native/local-ai-runtime', to: 'local-ai-runtime' },
     ],
     artifactName: '${productName}-Mac-${version}-Installer.${ext}',
@@ -48,6 +48,7 @@
     artifactName: '${productName}-Windows-${version}-Setup.${ext}',
     extraResources: [
       { from: 'native/whisper-cli.exe', to: 'whisper-cli.exe' },
+      { from: 'native/whisper-server.exe', to: 'whisper-server.exe' },
       { from: 'native/local-ai-runtime', to: 'local-ai-runtime' },
     ],
     // Windows capture is renderer/Electron based; no macOS native helpers are shipped.

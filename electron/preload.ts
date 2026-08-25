@@ -28,6 +28,9 @@ type WindowsCaptureSourceRuntime = {
   sequence: number;
   chunkStartedAt: number;
   flushing: Promise<void>;
+  liveBuffers: Float32Array[][];
+  liveFrameCount: number;
+  liveStartedAt: number;
   trackListeners: Array<{ track: MediaStreamTrack; listener: () => void }>;
 };
 const windowsCaptureRuntimes = new Map<string, WindowsCaptureRuntime>();
@@ -58,7 +61,34 @@ async function flushWindowsSource(runtime: WindowsCaptureRuntime, source: Window
   await source.flushing;
 }
 
+function encodeFloat32InterleavedBase64(buffers: Float32Array[][], frameCount: number) {
+  const channels = Math.max(1, buffers.length);
+  const flattened = buffers.map((blocks) => {
+    const output = new Float32Array(frameCount); let offset = 0;
+    for (const block of blocks) { const length = Math.min(block.length, frameCount - offset); if (length > 0) output.set(block.subarray(0, length), offset); offset += block.length; if (offset >= frameCount) break; }
+    return output;
+  });
+  const bytes = new Uint8Array(frameCount * channels * 4);
+  const view = new DataView(bytes.buffer);
+  for (let frame = 0; frame < frameCount; frame += 1) for (let channel = 0; channel < channels; channel += 1) view.setFloat32((frame * channels + channel) * 4, flattened[channel]?.[frame] ?? 0, true);
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + 0x8000)));
+  return btoa(binary);
+}
+
+function flushWindowsLiveSource(runtime: WindowsCaptureRuntime, source: WindowsCaptureSourceRuntime) {
+  if (!source.liveFrameCount) return;
+  const buffers = source.liveBuffers;
+  const frameCount = source.liveFrameCount;
+  const durationSeconds = frameCount / source.context.sampleRate;
+  source.liveBuffers = Array.from({ length: buffers.length }, () => []);
+  source.liveFrameCount = 0;
+  source.liveStartedAt = Date.now();
+  ipcRenderer.send('meeting-audio:windows-event', { event: 'audio-data', sessionId: runtime.sessionId, source: source.source, sampleRate: source.context.sampleRate, channels: buffers.length, format: 'f32le-interleaved', data: encodeFloat32InterleavedBase64(buffers, frameCount), capturedAt: new Date().toISOString(), durationSeconds });
+}
+
 async function stopWindowsRuntime(runtime: WindowsCaptureRuntime) {
+  runtime.sources.forEach((source) => flushWindowsLiveSource(runtime, source));
   const pending = [...runtime.sources.values()].map((source) => flushWindowsSource(runtime, source));
   await Promise.allSettled(pending);
   runtime.sources.forEach((source) => {
@@ -103,17 +133,20 @@ async function startWindowsRuntime(command: { sessionId: string; microphone: boo
       const processor = context.createScriptProcessor(4096, Math.max(1, stream.getAudioTracks()[0]?.getSettings().channelCount || 1), Math.max(1, stream.getAudioTracks()[0]?.getSettings().channelCount || 1));
       const gain = context.createGain();
       gain.gain.value = 0;
-      const source: WindowsCaptureSourceRuntime = { source: sourceName, stream, context, processor, gain, buffers: Array.from({ length: processor.channelCount }, () => []), frameCount: 0, sequence: 0, chunkStartedAt: Date.now(), flushing: Promise.resolve(), trackListeners: [] };
+      const source: WindowsCaptureSourceRuntime = { source: sourceName, stream, context, processor, gain, buffers: Array.from({ length: processor.channelCount }, () => []), frameCount: 0, sequence: 0, chunkStartedAt: Date.now(), flushing: Promise.resolve(), liveBuffers: Array.from({ length: processor.channelCount }, () => []), liveFrameCount: 0, liveStartedAt: Date.now(), trackListeners: [] };
       processor.onaudioprocess = (event) => {
         if (runtime.paused) return;
         const input = event.inputBuffer;
         source.frameCount += input.length;
         for (let channel = 0; channel < source.buffers.length; channel += 1) source.buffers[channel].push(new Float32Array(input.getChannelData(Math.min(channel, input.numberOfChannels - 1))));
+        source.liveFrameCount += input.length;
+        for (let channel = 0; channel < source.liveBuffers.length; channel += 1) source.liveBuffers[channel].push(new Float32Array(input.getChannelData(Math.min(channel, input.numberOfChannels - 1))));
         let energy = 0;
         const samples = input.getChannelData(0);
         for (let index = 0; index < samples.length; index += 1) energy += samples[index] * samples[index];
         ipcRenderer.send('meeting-audio:windows-event', { event: 'level', sessionId: runtime.sessionId, source: sourceName, level: Math.min(1, Math.sqrt(energy / Math.max(1, samples.length)) * 4) });
         if (source.frameCount >= context.sampleRate * 30) void flushWindowsSource(runtime, source);
+        if (source.liveFrameCount >= context.sampleRate * 5) flushWindowsLiveSource(runtime, source);
       };
       const onEnded = () => ipcRenderer.send('meeting-audio:windows-event', windowsCaptureError('device_disconnected', `${sourceName === 'system_audio' ? 'System audio' : 'Microphone'} capture ended.`, sourceName));
       stream.getTracks().forEach((track) => { track.addEventListener('ended', onEnded); source.trackListeners.push({ track, listener: onEnded }); });
@@ -375,6 +408,7 @@ contextBridge.exposeInMainWorld('meetingTranscription', {
   downloadModel() { return ipcRenderer.invoke('meeting-transcription:download-model'); },
   cancelModelDownload() { return ipcRenderer.invoke('meeting-transcription:cancel-model-download'); },
   deleteModel() { return ipcRenderer.invoke('meeting-transcription:delete-model'); },
+  prepare(payload: { sessionId: string; noteId: string; workspaceId: string }) { return ipcRenderer.invoke('meeting-transcription:prepare', payload); },
   status(jobId?: string) { return ipcRenderer.invoke('meeting-transcription:status', jobId); },
   start(payload: { sessionId: string; noteId: string; workspaceId: string; force?: boolean }) { return ipcRenderer.invoke('meeting-transcription:start', payload); },
   cancel(jobId: string) { return ipcRenderer.invoke('meeting-transcription:cancel', jobId); },
@@ -385,6 +419,11 @@ contextBridge.exposeInMainWorld('meetingTranscription', {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
     ipcRenderer.on('meeting-transcription:progress', wrapped);
     return () => ipcRenderer.off('meeting-transcription:progress', wrapped);
+  },
+  onSegments(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('meeting-transcription:segments', wrapped);
+    return () => ipcRenderer.off('meeting-transcription:segments', wrapped);
   },
   onModelChange(listener: (event: unknown) => void) {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);

@@ -129,8 +129,20 @@ ipcMain.on('device-session:get-id', (event, legacyDeviceId: unknown) => {
 meetingAudioCaptureService.onLevel((event) => broadcastMeetingAudioEvent('meeting-audio:level', event));
 meetingAudioCaptureService.onError((event) => broadcastMeetingAudioEvent('meeting-audio:error', event));
 meetingAudioCaptureService.onDevicesChanged(() => broadcastMeetingAudioEvent('meeting-audio:devices-changed', {}));
+meetingAudioCaptureService.onAudioData((event) => localTranscriptionService.ingestAudioData(event));
+meetingAudioCaptureService.onChunk((chunk) => {
+  try {
+    localTranscriptionService.enqueueFinalizedChunk(chunk);
+  } catch (error) {
+    console.error('[transcription]', JSON.stringify({ event: 'chunk_enqueue_failed', sessionId: chunk.sessionId, source: chunk.source, sequence: chunk.sequence, error: error instanceof Error ? error.message : String(error) }));
+  }
+});
 localTranscriptionService.onProgress((event) => broadcastMeetingAudioEvent('meeting-transcription:progress', event));
-localTranscriptionService.modelManager.onChange((event) => broadcastMeetingAudioEvent('meeting-transcription:model', event));
+localTranscriptionService.onSegments((event) => broadcastMeetingAudioEvent('meeting-transcription:segments', event));
+localTranscriptionService.modelManager.onChange((event) => {
+  broadcastMeetingAudioEvent('meeting-transcription:model', event);
+  if (event.installed) localTranscriptionService.resumePendingJobs();
+});
 
 const validAudioSource = (value: unknown): value is AudioSourceName => value === 'user_microphone' || value === 'system_audio';
 
@@ -188,9 +200,21 @@ ipcMain.handle('meeting-audio:test-source', (event, payload: { source?: unknown;
   if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
   return meetingAudioCaptureService.testSource(source, payload.microphoneDeviceId as string | null | undefined);
 });
-ipcMain.handle('meeting-audio:pause', (event) => { bindMeetingAudioRenderer(event); return meetingAudioCaptureService.pause(); });
+ipcMain.handle('meeting-audio:pause', async (event) => {
+  bindMeetingAudioRenderer(event);
+  const sessionId = meetingAudioCaptureService.status().sessionId;
+  const result = await meetingAudioCaptureService.pause();
+  if (sessionId) localTranscriptionService.flushLiveAudio(sessionId);
+  return result;
+});
 ipcMain.handle('meeting-audio:resume', (event) => { bindMeetingAudioRenderer(event); return meetingAudioCaptureService.resume(); });
-ipcMain.handle('meeting-audio:stop', (event) => { bindMeetingAudioRenderer(event); return meetingAudioCaptureService.stop(); });
+ipcMain.handle('meeting-audio:stop', async (event) => {
+  bindMeetingAudioRenderer(event);
+  const sessionId = meetingAudioCaptureService.status().sessionId;
+  const result = await meetingAudioCaptureService.stop();
+  if (sessionId) localTranscriptionService.flushLiveAudio(sessionId);
+  return result;
+});
 ipcMain.handle('meeting-audio:reveal', (_event, payload: { sessionId?: unknown }) => {
   if (typeof payload?.sessionId !== 'string') throw new Error('Invalid recording session.');
   return meetingAudioCaptureService.reveal(payload.sessionId);
@@ -208,6 +232,10 @@ ipcMain.handle('meeting-transcription:model-status', () => localTranscriptionSer
 ipcMain.handle('meeting-transcription:download-model', () => localTranscriptionService.downloadModel());
 ipcMain.handle('meeting-transcription:cancel-model-download', () => localTranscriptionService.cancelModelDownload());
 ipcMain.handle('meeting-transcription:delete-model', () => localTranscriptionService.deleteModel());
+ipcMain.handle('meeting-transcription:prepare', (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown }) => {
+  if (typeof payload?.sessionId !== 'string' || typeof payload.noteId !== 'string' || typeof payload.workspaceId !== 'string') throw new Error('Invalid transcription preparation request.');
+  return localTranscriptionService.prepare({ sessionId: payload.sessionId, noteId: payload.noteId, workspaceId: payload.workspaceId });
+});
 ipcMain.handle('meeting-transcription:status', (_event, jobId?: unknown) => {
   if (jobId !== undefined && typeof jobId !== 'string') throw new Error('Invalid transcription job.');
   return localTranscriptionService.status(jobId);

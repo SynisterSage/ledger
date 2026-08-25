@@ -60,6 +60,8 @@ export class MeetingAudioCaptureService {
   private readonly sessionStore: RecordingSessionStore;
   private diskTimer: NodeJS.Timeout | null = null;
   private stopInFlight: Promise<AudioCaptureStatus> | null = null;
+  private chunkListeners = new Set<(chunk: RecordingChunk) => void>();
+  private audioDataListeners = new Set<(event: Extract<AudioCaptureEvent, { type: 'audio-data' }>) => void>();
 
   constructor(sessionStore = new RecordingSessionStore(), adapter = createAudioCaptureAdapter()) {
     this.sessionStore = sessionStore;
@@ -87,6 +89,16 @@ export class MeetingAudioCaptureService {
   onDevicesChanged(listener: () => void) {
     this.deviceChangeListeners.add(listener);
     return () => this.deviceChangeListeners.delete(listener);
+  }
+
+  onChunk(listener: (chunk: RecordingChunk) => void) {
+    this.chunkListeners.add(listener);
+    return () => this.chunkListeners.delete(listener);
+  }
+
+  onAudioData(listener: (event: Extract<AudioCaptureEvent, { type: 'audio-data' }>) => void) {
+    this.audioDataListeners.add(listener);
+    return () => this.audioDataListeners.delete(listener);
   }
 
   async permissions() {
@@ -420,6 +432,10 @@ export class MeetingAudioCaptureService {
       this.levelListeners.forEach((listener) => listener({ source: event.source, level: event.level }));
       return;
     }
+    if (event.type === 'audio-data') {
+      if (this.activeSession && event.sessionId === this.activeSession.sessionId) this.audioDataListeners.forEach((listener) => listener(event));
+      return;
+    }
     if (event.type === 'error') {
       if (this.activeSession) {
         this.sessionStore.addSourceError(this.activeSession.sessionId, event.source, event.error);
@@ -438,6 +454,7 @@ export class MeetingAudioCaptureService {
     if (chunk.fileName && chunk.sessionId === session.sessionId) {
       this.sessionStore.addChunk(session.sessionId, chunk);
       session.chunkCount = this.sessionStore.get(session.sessionId)?.chunks.length ?? session.chunkCount + 1;
+      this.chunkListeners.forEach((listener) => listener(chunk));
     }
   }
 

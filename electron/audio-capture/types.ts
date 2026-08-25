@@ -64,6 +64,17 @@ export type AudioCaptureStopResult = {
 export type AudioCaptureEvent =
   | { type: 'level'; source: AudioSourceName; level: number }
   | { type: 'devices-changed' }
+  | {
+      type: 'audio-data';
+      sessionId: string;
+      source: AudioSourceName;
+      sampleRate: number;
+      channels: number;
+      format: 'f32le-interleaved';
+      data: string;
+      capturedAt: string;
+      durationSeconds: number;
+    }
   | { type: 'error'; source: AudioSourceName; error: string; code?: AudioCaptureErrorCode }
   | {
       type: 'chunk-finalized';

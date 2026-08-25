@@ -248,6 +248,7 @@ type TranscriptionJobStatus = {
   totalChunks: number;
   error: string | null;
   segmentCount: number;
+  queueDepth?: number;
 };
 
 const formatModelBytes = (bytes: number) => {
@@ -2722,6 +2723,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [transcriptionBusy, setTranscriptionBusy] = useState(false);
   const [isTranscriptionSetupOpen, setIsTranscriptionSetupOpen] = useState(false);
   const meetingRequestRef = useRef(0);
+  const persistedLiveTranscriptChunksRef = useRef(new Set<string>());
   const pendingMeetingViewRef = useRef<{ noteId: string; view: 'write' | 'transcript' } | null>(
     null
   );
@@ -3185,7 +3187,9 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     const offProgress = transcription.onProgress((event) => {
       const progress = event as TranscriptionJobStatus;
       if (progress.noteId && progress.noteId !== selectedNoteIdRef.current) return;
-      setTranscriptionJob((current) => (current ? { ...current, ...progress } : current));
+      setTranscriptionJob((current) =>
+        current ? { ...current, ...progress } : (progress as TranscriptionJobStatus)
+      );
       if (
         progress.status === 'failed' &&
         progress.jobId &&
@@ -3207,6 +3211,69 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       offModel();
     };
   }, [activeWorkspaceId, refreshTranscriptionState, selectedNoteId, toast]);
+
+  useEffect(() => {
+    const transcription = window.meetingTranscription;
+    if (!transcription) return;
+    const offSegments = transcription.onSegments((value) => {
+      const event = value as {
+        sessionId?: string;
+        noteId?: string;
+        workspaceId?: string;
+        chunkKey?: string;
+        finalizedAt?: string | null;
+        segments?: Array<{
+          id: string;
+          audioSource: 'user_microphone' | 'system_audio';
+          speakerLabel: string;
+          startMs: number;
+          endMs: number;
+          text: string;
+          confidence: number | null;
+          segmentOrder: number;
+        }>;
+        metrics?: { audioDurationSeconds?: number; queueWaitMs?: number; whisperWallMs?: number; rtf?: number; queueDepth?: number };
+      };
+      if (!event.noteId || event.workspaceId !== activeWorkspaceId || (meetingAudioSessionId && event.sessionId !== meetingAudioSessionId) || event.noteId !== selectedNoteIdRef.current || !Array.isArray(event.segments) || !event.segments.length) return;
+      const chunkKey = `${event.noteId}:${event.chunkKey || event.segments[0]?.id || ''}`;
+      if (persistedLiveTranscriptChunksRef.current.has(chunkKey)) return;
+      persistedLiveTranscriptChunksRef.current.add(chunkKey);
+      const segments = event.segments.map((row) => ({
+        id: row.id,
+        audio_source: row.audioSource,
+        speaker_label: row.speakerLabel,
+        start_ms: row.startMs,
+        end_ms: row.endMs,
+        transcript_text: row.text,
+        confidence: row.confidence,
+        segment_order: row.segmentOrder,
+      }));
+      const persistStartedAt = Date.now();
+      void api.bulkCreateTranscriptSegments(event.noteId!, segments)
+        .then(async () => {
+          const visibleAt = Date.now();
+          console.info('[transcription]', JSON.stringify({
+            event: 'segments_visible',
+            noteId: event.noteId,
+            chunkKey: event.chunkKey,
+            persistenceMs: visibleAt - persistStartedAt,
+            finalizedToVisibleMs: event.finalizedAt ? Math.max(0, visibleAt - Date.parse(event.finalizedAt)) : null,
+            queueDepth: event.metrics?.queueDepth ?? null,
+          }));
+          if (selectedNoteIdRef.current !== event.noteId) return;
+          const stored = (await api.getTranscriptSegments(event.noteId!)) as TranscriptSegment[];
+          const safeStored = Array.isArray(stored) ? stored : [];
+          setTranscriptSegments(safeStored);
+          setTranscriptDrafts(Object.fromEntries(safeStored.map((segment) => [segment.id, segment.transcript_text])));
+          setTranscriptSpeakerDrafts(Object.fromEntries(safeStored.map((segment) => [segment.id, segment.speaker_label ?? ''])));
+        })
+        .catch((error) => {
+          persistedLiveTranscriptChunksRef.current.delete(chunkKey);
+          console.error('[transcription]', JSON.stringify({ event: 'incremental_persistence_failed', noteId: event.noteId, chunkKey: event.chunkKey, error: error instanceof Error ? error.message : String(error) }));
+        });
+    });
+    return () => offSegments();
+  }, [activeWorkspaceId, api, meetingAudioSessionId]);
 
   useEffect(() => {
     const audio = window.meetingAudio;
@@ -5182,6 +5249,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         microphoneDeviceId,
       })) as MeetingAudioStatus;
       setAudioCaptureStatus(capture);
+      if (window.meetingTranscription && capture.sessionId && selectedNoteIdRef.current && activeWorkspaceId) {
+        void window.meetingTranscription
+          .prepare({ sessionId: capture.sessionId, noteId: selectedNoteIdRef.current, workspaceId: activeWorkspaceId })
+          .catch((error) => console.warn('[transcription] runtime preparation failed', error));
+      }
       const sources = new Set(capture.sources.map((source) => source.source));
       const updated = await updateMeetingMetadata({
         transcription_status: 'recording',
@@ -5478,7 +5550,12 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           confidence: row.confidence,
           segment_order: row.segmentOrder,
         }));
-        if (segments.length) await api.bulkCreateTranscriptSegments(job.noteId, segments);
+        const existingBeforeMerge = (await api.getTranscriptSegments(job.noteId)) as TranscriptSegment[];
+        const existingIds = new Set(
+          (Array.isArray(existingBeforeMerge) ? existingBeforeMerge : []).map((segment) => segment.id)
+        );
+        const missingSegments = segments.filter((segment) => !existingIds.has(segment.id));
+        if (missingSegments.length) await api.bulkCreateTranscriptSegments(job.noteId, missingSegments);
         const stored = (await api.getTranscriptSegments(job.noteId)) as TranscriptSegment[];
         const safeStored = Array.isArray(stored) ? stored : [];
         if (segments.length && safeStored.length === 0) {

@@ -162,6 +162,8 @@ export class MacAudioCaptureAdapter implements AudioCaptureAdapter {
       try { payload = JSON.parse(line); } catch { continue; }
       if (payload.event === 'level' && SOURCE_NAMES.has(payload.source)) {
         this.emit({ type: 'level', source: payload.source, level: Math.max(0, Math.min(1, Number(payload.level) || 0)) });
+      } else if (payload.event === 'audio-data' && SOURCE_NAMES.has(payload.source) && typeof payload.data === 'string') {
+        this.emit({ type: 'audio-data', sessionId: String(payload.sessionId || ''), source: payload.source, sampleRate: Number(payload.sampleRate) || 16_000, channels: Number(payload.channels) || 1, format: 'f32le-interleaved', data: payload.data, capturedAt: String(payload.capturedAt || new Date().toISOString()), durationSeconds: Math.max(0, Number(payload.durationSeconds) || 0) });
       } else if (payload.event === 'error' && SOURCE_NAMES.has(payload.source)) {
         this.emit({ type: 'error', source: payload.source, error: String(payload.error || 'Audio capture failed.'), code: payload.code as any });
       } else if (payload.event === 'chunk-finalized' && SOURCE_NAMES.has(payload.source)) {
