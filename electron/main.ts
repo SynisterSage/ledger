@@ -10177,7 +10177,9 @@ function getTouchBarWindowRole(win: BrowserWindow | null): LedgerTouchBarWindowC
 }
 
 function touchBarWindowKey(win: BrowserWindow) {
-  return String(win.webContents.id);
+  // `closed` can fire after Electron has destroyed webContents. Use the
+  // stable window identity instead of reading webContents.id at teardown.
+  return getLedgerWindowId(win);
 }
 
 function syncTouchBarMeetingContext() {
