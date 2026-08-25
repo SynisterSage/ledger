@@ -425,6 +425,7 @@ type ParsedIcsEvent = {
   title: string;
   startAt: string;
   endAt: string;
+  componentType: 'VEVENT' | 'VTODO' | 'VJOURNAL';
   notes?: string;
   location?: string;
 };
@@ -770,10 +771,11 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
     }
 
     const baseEvent = {
-      title: summary || 'Imported Event',
-      notes: description || undefined,
-      location: location || undefined,
-    };
+        title: summary || 'Imported Event',
+        componentType: blockType,
+        notes: description || undefined,
+        location: location || undefined,
+      };
 
     // Expand recurring events
     if (rrule) {
@@ -4155,7 +4157,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
       const selectedCalendar = getPreferredCalendar('workspace');
       if (!selectedCalendar) return;
-      const payload = parsed.map((evt) => ({
+      const eventPayload = parsed.filter((evt) => evt.componentType !== 'VTODO').map((evt) => ({
         calendar_id: selectedCalendar.id,
         workspace_id: selectedCalendar.workspace_id,
         created_by: user.id,
@@ -4167,6 +4169,13 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         color: selectedCalendar.color,
         status: 'planned',
       }));
+      const reminderPayload = parsed.filter((evt) => evt.componentType === 'VTODO').map((evt) => ({
+        calendar_id: selectedCalendar.id,
+        title: evt.title,
+        notes: evt.notes ?? null,
+        remind_at: evt.startAt,
+        color: selectedCalendar.color,
+      }));
 
       // Deduplicate: check if events already exist in the calendar
       const existingEventKeys = new Set<string>();
@@ -4175,81 +4184,29 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         existingEventKeys.add(key);
       }
 
-      const payloadToImport = payload.filter((item) => {
+      const payloadToImport = eventPayload.filter((item) => {
         const key = `${item.title}|${item.start_at}|${item.end_at}`;
         return !existingEventKeys.has(key);
       });
 
-      if (payloadToImport.length < payload.length) {
+      if (payloadToImport.length < eventPayload.length) {
         console.log(
-          `[ICS Import] Deduplicated ${payload.length - payloadToImport.length} duplicate events`
+          `[ICS Import] Deduplicated ${eventPayload.length - payloadToImport.length} duplicate events`
         );
       }
 
       const importedEvents = [] as EventRow[];
-      const failedEvents = [] as Array<{ title: string; startAt: string; error: string }>;
-
-      for (let i = 0; i < payloadToImport.length; i++) {
-        const item = payloadToImport[i];
-        try {
-          // Validate before submitting
-          if (!item.title?.trim()) {
-            failedEvents.push({
-              title: 'Untitled',
-              startAt: item.start_at,
-              error: 'Missing title',
-            });
-            continue;
-          }
-          if (!item.start_at || !item.end_at) {
-            failedEvents.push({
-              title: item.title,
-              startAt: item.start_at,
-              error: 'Missing date/time',
-            });
-            continue;
-          }
-
-          console.log(`[ICS Import] Creating event ${i + 1}/${payload.length}:`, {
-            title: item.title,
-            start_at: item.start_at,
-          });
-
-          const created = (await api.createEvent({
-            title: item.title,
-            start_at: item.start_at,
-            end_at: item.end_at,
-            calendar_id: item.calendar_id,
-            color: item.color,
+      const eventResponse = payloadToImport.length > 0
+        ? await api.importCalendarEvents({ events: payloadToImport.map((item) => ({
+            ...item,
             status: item.status || (calendarPreferences.defaultEventStatus ?? 'planned'),
-            recurrence_rule: 'none',
-            notes: item.notes ?? null,
-            location: item.location ?? null,
-          })) as EventRow | null;
+          })) }) as { created?: EventRow[] }
+        : { created: [] };
+      importedEvents.push(...(eventResponse.created ?? []));
 
-          if (created) {
-            importedEvents.push(created);
-            console.log(`[ICS Import] ✓ Created event ${i + 1}/${payloadToImport.length}`);
-          } else {
-            failedEvents.push({
-              title: item.title,
-              startAt: item.start_at,
-              error: 'API returned null',
-            });
-            console.warn(
-              `[ICS Import] ✗ Failed to create event ${i + 1}/${
-                payloadToImport.length
-              }: API returned null`
-            );
-          }
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-          failedEvents.push({ title: item.title, startAt: item.start_at, error: errorMsg });
-          console.error(
-            `[ICS Import] ✗ Failed to create event ${i + 1}/${payloadToImport.length}:`,
-            err
-          );
-        }
+      if (reminderPayload.length > 0) {
+        const reminderResponse = await api.importCalendarReminders({ reminders: reminderPayload }) as { created?: ReminderRow[] };
+        setReminders((prev) => [...prev, ...(reminderResponse.created ?? [])]);
       }
 
       setEvents((prev) =>
@@ -4258,16 +4215,8 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         )
       );
 
-      let message = `Imported ${importedEvents.length} of ${payloadToImport.length} events`;
-      if (failedEvents.length > 0) {
-        message += ` (${failedEvents.length} failed)`;
-        const failureDetails = failedEvents
-          .slice(0, 3)
-          .map((f) => `${f.title} (${f.error})`)
-          .join('; ');
-        message += `. Failed: ${failureDetails}${failedEvents.length > 3 ? '...' : ''}`;
-        console.warn('[ICS Import] Failed events:', failedEvents);
-      }
+      let message = `Imported ${importedEvents.length} events${reminderPayload.length ? ` and ${reminderPayload.length} reminders` : ''}`;
+      if (payloadToImport.length < eventPayload.length) message += ` (${eventPayload.length - payloadToImport.length} duplicate events skipped)`;
       setImportMessage(message);
     } catch (importErr) {
       const message = importErr instanceof Error ? importErr.message : 'Import failed';

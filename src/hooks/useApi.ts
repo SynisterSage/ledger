@@ -1244,6 +1244,17 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify(payload),
         }),
+      importCalendarEvents: (payload: { events: Array<{
+        title: string;
+        start_at: string;
+        end_at?: string | null;
+        calendar_id?: string;
+        notes?: string | null;
+        location?: string | null;
+        color?: string;
+        status?: string;
+        all_day?: boolean;
+      }> }) => request('/api/events/import', { method: 'POST', body: JSON.stringify(payload) }),
       updateEvent: (id: string, update: Record<string, unknown>) =>
         request(`/api/events/${id}`, {
           method: 'PATCH',
@@ -1285,6 +1296,13 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify(payload),
         }),
+      importCalendarReminders: (payload: { reminders: Array<{
+        title: string;
+        remind_at: string;
+        calendar_id?: string;
+        notes?: string | null;
+        color?: string;
+      }> }) => request('/api/reminders/import', { method: 'POST', body: JSON.stringify(payload) }),
       updateReminder: (id: string, update: Record<string, unknown>) =>
         request(`/api/reminders/${id}`, {
           method: 'PATCH',

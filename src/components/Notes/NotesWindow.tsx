@@ -2388,23 +2388,27 @@ const MeetingRecapDraftSection = ({
   return (
     <section className="mb-6 space-y-5 text-[var(--ledger-text-secondary)]" data-meeting-recap-draft>
       <div className="space-y-5">
-        {draft.overview.trim() && (
+        {(draft.overview.trim() || identitySuggestions.length > 0) && (
           <section>
-            <h3 className="text-sm font-medium text-[var(--ledger-text-primary)]">Recap</h3>
-            <p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{draft.overview}</p>
-          </section>
-        )}
-        {identitySuggestions.length > 0 && (
-          <section className="border-l-2 border-[color:var(--ledger-border-subtle)] pl-3">
-            <h3 className="mb-1.5 text-xs font-medium text-[var(--ledger-text-primary)]">People to review</h3>
-            <div className="space-y-1.5 text-sm text-[var(--ledger-text-secondary)]">
-              {identitySuggestions.map((suggestion, index) => (
-                <div key={`${suggestion.rawSpeakerId ?? 'unknown'}:${index}`} className="flex items-center justify-between gap-2 py-1">
-                  <span>{suggestion.displayName ? `${suggestion.displayName}?` : 'Unknown speaker'} <span className="text-[10px] text-[var(--ledger-text-muted)]">suggested</span></span>
-                  {suggestion.displayName && suggestion.rawSpeakerId && <button type="button" onClick={() => onConfirmIdentity(suggestion)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Confirm</button>}
+            {draft.overview.trim() && (
+              <>
+                <h3 className="text-sm font-medium text-[var(--ledger-text-primary)]">Recap</h3>
+                <p className="mt-1 text-sm leading-6 text-[var(--ledger-text-secondary)]">{draft.overview}</p>
+              </>
+            )}
+            {identitySuggestions.length > 0 && (
+              <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-3">
+                <h3 className="mb-1.5 text-xs font-medium text-[var(--ledger-text-primary)]">Speaker tags</h3>
+                <div className="space-y-1.5 text-sm text-[var(--ledger-text-secondary)]">
+                  {identitySuggestions.map((suggestion, index) => (
+                    <div key={`${suggestion.rawSpeakerId ?? 'unknown'}:${index}`} className="flex items-center justify-between gap-2 py-1">
+                      <span>{suggestion.displayName ? `${suggestion.displayName}?` : 'Unknown speaker'} <span className="text-[10px] text-[var(--ledger-text-muted)]">suggested</span></span>
+                      {suggestion.displayName && suggestion.rawSpeakerId && <button type="button" onClick={() => onConfirmIdentity(suggestion)} className="rounded-md border border-[color:var(--ledger-border-subtle)] px-1.5 py-0.5 text-[10px] font-medium">Confirm</button>}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </section>
         )}
         {section('Decisions', draft.decisions)}

@@ -94,7 +94,9 @@ app.use((req, res, next) => {
 });
 
 const TIER_LIMITS = {
-  free: { projects: 5, events: 100, notes: 100, reminders: 100 },
+  // Calendar events and reminders are core Ledger data, not metered features.
+  // Keep them unlimited for every tier; calendar/ICS use must never be capped.
+  free: { projects: 5, events: Infinity, notes: 100, reminders: Infinity },
   pro: { projects: Infinity, events: Infinity, notes: Infinity, reminders: Infinity },
 };
 
@@ -20669,11 +20671,73 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
   }
 });
 
+app.post('/api/events/import', authMiddleware, async (req, res) => {
+    try {
+    const items = Array.isArray(req.body?.events) ? req.body.events : [];
+    if (items.length === 0) return res.status(400).json({ error: 'Import at least one event.' });
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const requestedCalendarId = normalizeNullableText(items[0]?.calendar_id);
+    let calendarId = null;
+    let calendarColor = null;
+    if (requestedCalendarId) {
+      if (!isUuidLike(requestedCalendarId)) return res.status(400).json({ error: 'Invalid calendar_id' });
+      const calendar = await getCalendarById(requestedCalendarId);
+      if (!calendar) return res.status(404).json({ error: 'Calendar not found' });
+      await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
+      if (calendar.workspace_id !== workspaceId) return res.status(400).json({ error: 'Calendar workspace mismatch' });
+      calendarId = calendar.id;
+      calendarColor = calendar.color ?? null;
+    } else {
+      const personalCalendar = await getPersonalCalendar(workspaceId, req.authUser.id);
+      calendarId = personalCalendar.id;
+      calendarColor = personalCalendar.color ?? null;
+    }
+    const existing = await supabase.from('events').select('title, start_at, end_at').eq('workspace_id', workspaceId).eq('calendar_id', calendarId);
+    if (existing.error) throw existing.error;
+    const existingKeys = new Set((existing.data ?? []).map((row) => `${row.title}|${row.start_at}|${row.end_at}`));
+    const itemsToInsert = items.filter((item) => !existingKeys.has(`${String(item?.title ?? '').trim()}|${item?.start_at ?? ''}|${item?.end_at ?? ''}`));
+    if (itemsToInsert.length === 0) return res.status(201).json({ created: [] });
+    const nowIso = new Date().toISOString();
+    const rows = itemsToInsert.map((item) => {
+      const title = String(item?.title ?? '').trim();
+      const startAt = String(item?.start_at ?? '');
+      const start = new Date(startAt);
+      if (!title || title.length > 300) throw Object.assign(new Error('Every imported event needs a title of 300 characters or fewer.'), { statusCode: 400 });
+      if (!startAt || Number.isNaN(start.getTime())) throw Object.assign(new Error('Every imported event needs a valid start time.'), { statusCode: 400 });
+      const endAt = item?.end_at ? String(item.end_at) : new Date(start.getTime() + 60 * 60 * 1000).toISOString();
+      if (Number.isNaN(new Date(endAt).getTime())) throw Object.assign(new Error('Every imported event needs a valid end time.'), { statusCode: 400 });
+      return {
+        workspace_id: workspaceId,
+        calendar_id: calendarId,
+        created_by: req.authUser.id,
+        updated_by: req.authUser.id,
+        title,
+        start_at: startAt,
+        end_at: endAt,
+        all_day: Boolean(item?.all_day ?? false),
+        color: item?.color || calendarColor || '#93C5FD',
+        status: item?.status || 'planned',
+        visibility: 'workspace',
+        recurrence_rule: null,
+        notes: item?.notes || null,
+        location: item?.location || null,
+        source: 'calendar',
+        source_platform: 'ics',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+    });
+    const { data, error } = await supabase.from('events').insert(rows).select(eventSelectColumns);
+    if (error) throw error;
+    return res.status(201).json({ created: Array.isArray(data) ? data : [] });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.post(
   '/api/events',
   authMiddleware,
-  rateLimit('write'),
-  quotaGuard('events'),
   async (req, res) => {
     try {
       let workspaceId = req.workspaceId ?? (await resolveWorkspaceIdForRequest(req));
@@ -22444,11 +22508,71 @@ app.get('/api/reminders/today', authMiddleware, rateLimit('read'), async (req, r
   }
 });
 
+app.post('/api/reminders/import', authMiddleware, async (req, res) => {
+    try {
+    const items = Array.isArray(req.body?.reminders) ? req.body.reminders : [];
+    if (items.length === 0) return res.status(400).json({ error: 'Import at least one reminder.' });
+    const workspaceId = await resolveWorkspaceIdForRequest(req);
+    const requestedCalendarId = normalizeNullableText(items[0]?.calendar_id);
+    let calendarId = null;
+    let calendarColor = null;
+    if (requestedCalendarId) {
+      if (!isUuidLike(requestedCalendarId)) return res.status(400).json({ error: 'Invalid calendar_id' });
+      const calendar = await getCalendarById(requestedCalendarId);
+      if (!calendar) return res.status(404).json({ error: 'Calendar not found' });
+      await requireWorkspaceAccess(req.authUser.id, calendar.workspace_id, 'member');
+      if (calendar.workspace_id !== workspaceId) return res.status(400).json({ error: 'Calendar workspace mismatch' });
+      calendarId = calendar.id;
+      calendarColor = calendar.color ?? null;
+    } else {
+      const personalCalendar = await getPersonalCalendar(workspaceId, req.authUser.id);
+      calendarId = personalCalendar.id;
+      calendarColor = personalCalendar.color ?? null;
+    }
+    const nowIso = new Date().toISOString();
+    const rows = items.map((item) => {
+      const title = String(item?.title ?? '').trim();
+      const remindAt = String(item?.remind_at ?? '');
+      if (!title || title.length > 300) throw Object.assign(new Error('Every imported reminder needs a title of 300 characters or fewer.'), { statusCode: 400 });
+      if (!remindAt || Number.isNaN(new Date(remindAt).getTime())) throw Object.assign(new Error('Every imported reminder needs a valid reminder time.'), { statusCode: 400 });
+      const body = normalizeNullableText(item?.notes);
+      return {
+        workspace_id: workspaceId,
+        user_id: req.authUser.id,
+        created_by: req.authUser.id,
+        title,
+        body,
+        notes: body,
+        remind_at: remindAt,
+        status: 'active',
+        is_done: false,
+        calendar_id: calendarId,
+        color: item?.color || calendarColor || '#F59E0B',
+        linked_type: null,
+        linked_id: null,
+        completed_at: null,
+        dismissed_at: null,
+        snoozed_until: null,
+        recurrence_rule: null,
+        series_id: null,
+        series_type: null,
+        source: 'calendar',
+        source_platform: 'ics',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+    });
+    const { data, error } = await supabase.from('reminders').insert(rows).select(reminderSelectColumns);
+    if (error) throw error;
+    return res.status(201).json({ created: Array.isArray(data) ? data.map((row) => mapReminderRow(row)) : [] });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.post(
   '/api/reminders',
   authMiddleware,
-  rateLimit('write'),
-  quotaGuard('reminders'),
   async (req, res) => {
     try {
       let workspaceId = req.workspaceId ?? (await resolveReminderWorkspaceIdForRequest(req));
