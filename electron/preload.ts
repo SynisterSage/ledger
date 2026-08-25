@@ -530,6 +530,14 @@ type LedgerTabSession = {
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   platform: process.platform,
+  meetingIndicatorClick() {
+    return ipcRenderer.invoke('meeting-indicator:click');
+  },
+  onMeetingIndicatorState(listener: (state: { recording: boolean; paused: boolean; activity: 'silent' | 'low' | 'medium' | 'high' }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, state: { recording: boolean; paused: boolean; activity: 'silent' | 'low' | 'medium' | 'high' }) => listener(state);
+    ipcRenderer.on('floating-meeting-indicator:state', wrapped);
+    return () => ipcRenderer.off('floating-meeting-indicator:state', wrapped);
+  },
   getDeviceSessionId(legacyDeviceId?: string) {
     return ipcRenderer.sendSync('device-session:get-id', legacyDeviceId) as string;
   },

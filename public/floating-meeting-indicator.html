@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ledger recording</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+      body { display: grid; place-items: center; }
+      button {
+        width: 52px; height: 88px; padding: 0; border: 1px solid rgba(255,255,255,.14);
+        border-radius: 27px; color: #f4f3ef; background: #292a29;
+        box-shadow: 0 8px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08);
+        cursor: pointer; -webkit-app-region: no-drag;
+      }
+      button:focus-visible { outline: 2px solid #b9cf38; outline-offset: 2px; }
+      .dot { width: 20px; height: 20px; margin: 0 auto 12px; border: 3px solid #f4f3ef; border-radius: 50%; position: relative; }
+      .dot::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: #b9cf38; }
+      .bars { display: flex; align-items: end; justify-content: center; gap: 3px; height: 15px; }
+      .bars i { display: block; width: 3px; border-radius: 2px; background: #b9cf38; }
+      .bars i:nth-child(1) { height: 8px; } .bars i:nth-child(2) { height: 15px; } .bars i:nth-child(3) { height: 11px; }
+      .bars i { transition: height 120ms ease, opacity 120ms ease; }
+      body[data-activity="silent"] .bars i { height: 5px; opacity: .65; }
+      body[data-activity="low"] .bars i:nth-child(1) { height: 6px; }
+      body[data-activity="low"] .bars i:nth-child(2) { height: 9px; }
+      body[data-activity="low"] .bars i:nth-child(3) { height: 7px; }
+      body[data-activity="medium"] .bars i:nth-child(1) { height: 9px; }
+      body[data-activity="medium"] .bars i:nth-child(2) { height: 13px; }
+      body[data-activity="medium"] .bars i:nth-child(3) { height: 11px; }
+      body[data-activity="high"] .bars i:nth-child(1) { animation: live-bars 520ms ease-in-out infinite alternate; }
+      body[data-activity="high"] .bars i:nth-child(2) { animation: live-bars 430ms ease-in-out infinite alternate-reverse; }
+      body[data-activity="high"] .bars i:nth-child(3) { animation: live-bars 610ms ease-in-out infinite alternate; }
+      body[data-paused="true"] .dot::after { background: #a9a99f; }
+      body[data-paused="true"] .bars i { height: 5px; opacity: .5; animation: none; }
+      .drag-handle { position: absolute; left: 17px; right: 17px; bottom: 7px; height: 7px; border-radius: 5px; background: rgba(255,255,255,.32); -webkit-app-region: drag; }
+      @keyframes live-bars { from { height: 6px; } to { height: 15px; } }
+    </style>
+  </head>
+  <body>
+    <button type="button" aria-label="Return to active meeting note">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="drag-handle" aria-hidden="true"></span>
+    </button>
+    <script>
+      const applyState = (state) => {
+        document.body.dataset.activity = state.activity;
+        document.body.dataset.paused = String(state.paused);
+      };
+      window.desktopWindow?.onMeetingIndicatorState(applyState);
+      applyState({ recording: true, paused: false, activity: 'silent' });
+      document.querySelector('button').addEventListener('click', (event) => {
+        if (event.target.closest('.drag-handle')) return;
+        void window.desktopWindow?.meetingIndicatorClick();
+      });
+    </script>
+  </body>
+</html>

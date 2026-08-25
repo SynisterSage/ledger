@@ -226,12 +226,10 @@ export function AddLinkedContextModal({
     <ModalOverlay
       isOpen={isOpen}
       onClose={onClose}
-      backdropBorderRadius="inherit"
-      disablePortal
-      manageWindowChrome={false}
-      classNameContainer="w-full max-w-[760px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      backdropBorderRadius="var(--ledger-window-radius)"
+      classNameContainer="w-full max-w-[620px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
     >
-      <div className="flex h-[min(620px,calc(100vh-48px))] flex-col">
+      <div className="flex h-[min(640px,calc(100vh-56px))] flex-col">
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">Add linked context</h2>

@@ -49,6 +49,19 @@ import {
   SidebarMaterialController,
   type SidebarMaterialControllerSnapshot,
 } from './sidebarMaterialController';
+import {
+  FloatingMeetingIndicatorController,
+  type FloatingMeetingIndicatorActivity,
+} from './floatingMeetingIndicator';
+import {
+  activityFromLevel,
+  restoreIndicatorPosition,
+  saveIndicatorPosition,
+  type IndicatorDisplay,
+  type SavedIndicatorPosition,
+} from './floatingMeetingIndicatorPosition';
+import { resolveFloatingMeetingIndicatorRenderer } from './floatingMeetingIndicatorAssets';
+import { getFloatingMeetingIndicatorPlatformOptions } from './floatingMeetingIndicatorPlatform';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -115,8 +128,11 @@ const getOrCreateDesktopDeviceId = (legacyDeviceId?: string) => {
 };
 
 function broadcastMeetingAudioEvent(channel: string, payload: unknown) {
+  const indicatorWindow = channel === 'meeting-audio:level'
+    ? floatingMeetingIndicator.getWindow()
+    : null;
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+    if (!win.isDestroyed() && win !== indicatorWindow) win.webContents.send(channel, payload);
   }
 }
 
@@ -126,8 +142,21 @@ ipcMain.on('device-session:get-id', (event, legacyDeviceId: unknown) => {
   );
 });
 
-meetingAudioCaptureService.onLevel((event) => broadcastMeetingAudioEvent('meeting-audio:level', event));
-meetingAudioCaptureService.onError((event) => broadcastMeetingAudioEvent('meeting-audio:error', event));
+let latestMeetingActivity: FloatingMeetingIndicatorActivity = 'silent';
+const meetingAudioLevels = new Map<string, number>();
+meetingAudioCaptureService.onLevel((event) => {
+  broadcastMeetingAudioEvent('meeting-audio:level', event);
+  const status = meetingAudioCaptureService.status() as { state?: string };
+  if (status.state === 'recording') {
+    meetingAudioLevels.set(event.source, event.level);
+    latestMeetingActivity = activityFromLevel(Math.max(...meetingAudioLevels.values(), 0));
+    floatingMeetingIndicator.setActivity(latestMeetingActivity);
+  }
+});
+meetingAudioCaptureService.onError((event) => {
+  broadcastMeetingAudioEvent('meeting-audio:error', event);
+  syncFloatingMeetingIndicator();
+});
 meetingAudioCaptureService.onDevicesChanged(() => broadcastMeetingAudioEvent('meeting-audio:devices-changed', {}));
 meetingAudioCaptureService.onAudioData((event) => localTranscriptionService.ingestAudioData(event));
 meetingAudioCaptureService.onChunk((chunk) => {
@@ -182,7 +211,7 @@ ipcMain.handle('meeting-audio:devices', (event) => {
   bindMeetingAudioRenderer(event);
   return meetingAudioCaptureService.devices();
 });
-ipcMain.handle('meeting-audio:start', (event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown }) => {
+ipcMain.handle('meeting-audio:start', async (event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown }) => {
   bindMeetingAudioRenderer(event);
   if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Meeting recording identity is invalid.');
   if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
@@ -191,7 +220,11 @@ ipcMain.handle('meeting-audio:start', (event, payload: { noteId?: unknown; works
     // capture itself reports a bounded native error if access is unavailable.
     return meetingAudioCaptureService.start({ noteId: payload.noteId as string, workspaceId: payload.workspaceId as string, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined });
   };
-  return start();
+  const result = await start();
+  meetingAudioLevels.clear();
+  latestMeetingActivity = 'silent';
+  syncFloatingMeetingIndicator();
+  return result;
 });
 ipcMain.handle('meeting-audio:test-source', (event, payload: { source?: unknown; microphoneDeviceId?: unknown }) => {
   bindMeetingAudioRenderer(event);
@@ -205,15 +238,26 @@ ipcMain.handle('meeting-audio:pause', async (event) => {
   const sessionId = meetingAudioCaptureService.status().sessionId;
   const result = await meetingAudioCaptureService.pause();
   if (sessionId) localTranscriptionService.flushLiveAudio(sessionId);
+  meetingAudioLevels.clear();
+  latestMeetingActivity = 'silent';
+  syncFloatingMeetingIndicator();
   return result;
 });
-ipcMain.handle('meeting-audio:resume', (event) => { bindMeetingAudioRenderer(event); return meetingAudioCaptureService.resume(); });
+ipcMain.handle('meeting-audio:resume', async (event) => { bindMeetingAudioRenderer(event); const result = await meetingAudioCaptureService.resume(); meetingAudioLevels.clear(); latestMeetingActivity = 'silent'; syncFloatingMeetingIndicator(); return result; });
 ipcMain.handle('meeting-audio:stop', async (event) => {
   bindMeetingAudioRenderer(event);
   const sessionId = meetingAudioCaptureService.status().sessionId;
   const result = await meetingAudioCaptureService.stop();
   if (sessionId) localTranscriptionService.flushLiveAudio(sessionId);
+  meetingAudioLevels.clear();
+  latestMeetingActivity = 'silent';
+  syncFloatingMeetingIndicator();
   return result;
+});
+ipcMain.handle('meeting-indicator:click', (event) => {
+  if (BrowserWindow.fromWebContents(event.sender) !== floatingMeetingIndicator.getWindow()) return false;
+  floatingMeetingIndicator.click();
+  return true;
 });
 ipcMain.handle('meeting-audio:reveal', (_event, payload: { sessionId?: unknown }) => {
   if (typeof payload?.sessionId !== 'string') throw new Error('Invalid recording session.');
@@ -1564,6 +1608,183 @@ const workspaceModuleRecentRoutes: WorkspaceModuleRoute[] = [];
 // closed. Keep those late broadcasts from putting the closed route back into
 // navigation history until the user explicitly selects it again.
 const workspaceModuleClosedRouteKeys = new Set<string>();
+
+const FLOATING_MEETING_INDICATOR_WIDTH = 56;
+const FLOATING_MEETING_INDICATOR_HEIGHT = 92;
+const floatingMeetingIndicatorPositionPath = path.join(
+  app.getPath('userData'),
+  'floating-meeting-indicator-position.json',
+);
+let savedFloatingMeetingIndicatorPosition: SavedIndicatorPosition | null = null;
+
+function loadFloatingMeetingIndicatorPosition() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(floatingMeetingIndicatorPositionPath, 'utf8')) as Partial<SavedIndicatorPosition>;
+    if (typeof parsed.displayId === 'string' && typeof parsed.relativeX === 'number' && Number.isFinite(parsed.relativeX) && typeof parsed.relativeY === 'number' && Number.isFinite(parsed.relativeY)) {
+      savedFloatingMeetingIndicatorPosition = {
+        displayId: parsed.displayId,
+        relativeX: parsed.relativeX,
+        relativeY: parsed.relativeY,
+      };
+    }
+  } catch {}
+}
+
+function getFloatingMeetingIndicatorDisplay(): Electron.Display {
+  const displays = screen.getAllDisplays();
+  const savedDisplay = savedFloatingMeetingIndicatorPosition
+    ? displays.find((display) => String(display.id) === savedFloatingMeetingIndicatorPosition?.displayId)
+    : null;
+  if (savedDisplay) return savedDisplay;
+  const source = workspaceModuleWin && !workspaceModuleWin.isDestroyed()
+    ? workspaceModuleWin
+    : sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin : null;
+  return screen.getDisplayMatching(source?.getBounds() ?? screen.getPrimaryDisplay().bounds);
+}
+
+function persistFloatingMeetingIndicatorPosition(bounds: Electron.Rectangle) {
+  const display = screen.getDisplayMatching(bounds) as IndicatorDisplay;
+  savedFloatingMeetingIndicatorPosition = saveIndicatorPosition(bounds, display);
+  try {
+    fs.mkdirSync(path.dirname(floatingMeetingIndicatorPositionPath), { recursive: true });
+    fs.writeFileSync(
+      floatingMeetingIndicatorPositionPath,
+      JSON.stringify(savedFloatingMeetingIndicatorPosition),
+      'utf8',
+    );
+  } catch (error) {
+    console.warn('[electron] Failed to persist floating meeting indicator position:', error);
+  }
+}
+
+const floatingMeetingIndicator = new FloatingMeetingIndicatorController(
+  {
+    create: (_onClick) => {
+      const bounds = getFloatingMeetingIndicatorBounds();
+      const indicator = new BrowserWindow({
+        ...bounds,
+        show: false,
+        frame: false,
+        transparent: true,
+        resizable: false,
+        minimizable: false,
+        maximizable: false,
+        closable: false,
+        ...getFloatingMeetingIndicatorPlatformOptions(process.platform),
+        ...(process.platform === 'darwin' ? { hasShadow: true } : {}),
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.mjs'),
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: false,
+        },
+      });
+      indicator.setAlwaysOnTop(true, 'floating');
+      if (process.platform === 'darwin') {
+        try {
+          (indicator as any).setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        } catch {}
+      }
+      try {
+        (indicator as any).setContentProtection(true);
+      } catch {}
+      indicator.setMenuBarVisibility(false);
+      indicator.setMenu(null);
+      indicator.on('closed', () => {
+        floatingMeetingIndicator.destroy();
+        if (!isQuittingApp) setTimeout(syncFloatingMeetingIndicator, 0);
+      });
+      indicator.webContents.on('render-process-gone', () => {
+        if (!indicator.isDestroyed()) indicator.close();
+      });
+      indicator.webContents.on('did-fail-load', () => {
+        if (!indicator.isDestroyed()) indicator.close();
+      });
+      indicator.on('moved', () => {
+        if (!indicator.isDestroyed()) persistFloatingMeetingIndicatorPosition(indicator.getBounds());
+      });
+      indicator.webContents.on('did-finish-load', () => {
+        if (!indicator.isDestroyed()) {
+          indicator.setBounds(getFloatingMeetingIndicatorBounds());
+          indicator.webContents.send('floating-meeting-indicator:state', floatingMeetingIndicator.getRenderState());
+        }
+      });
+      const indicatorWindow = indicator as BrowserWindow & {
+        sendState: (state: { recording: boolean; paused: boolean; activity: FloatingMeetingIndicatorActivity }) => void;
+      };
+      indicatorWindow.sendState = (state) => {
+        if (!indicator.isDestroyed() && !indicator.webContents.isDestroyed()) {
+          try {
+            indicator.webContents.send('floating-meeting-indicator:state', state);
+          } catch {}
+        }
+      };
+      const rendererPath = resolveFloatingMeetingIndicatorRenderer({
+        devServerUrl: VITE_DEV_SERVER_URL,
+        rendererDist: RENDERER_DIST,
+      });
+      const loadPromise = VITE_DEV_SERVER_URL
+        ? indicator.loadURL(rendererPath)
+        : indicator.loadFile(rendererPath);
+      void loadPromise.catch(() => {
+        if (!indicator.isDestroyed()) indicator.close();
+      });
+      return indicatorWindow;
+    },
+  },
+  (noteId) => {
+    try {
+      openModuleWindow('notes', null, null, noteId);
+    } catch {
+      // The recording remains authoritative if the note/window is unavailable.
+    }
+  },
+);
+
+function getFloatingMeetingIndicatorBounds(): Electron.Rectangle {
+  const display = getFloatingMeetingIndicatorDisplay();
+  return restoreIndicatorPosition(
+    savedFloatingMeetingIndicatorPosition,
+    display,
+    { width: FLOATING_MEETING_INDICATOR_WIDTH, height: FLOATING_MEETING_INDICATOR_HEIGHT },
+  );
+}
+
+function reclampFloatingMeetingIndicator() {
+  const indicator = floatingMeetingIndicator.getWindow();
+  if (!indicator || indicator.isDestroyed() || !indicator.setBounds) return;
+  try {
+    indicator.setBounds(getFloatingMeetingIndicatorBounds(), false);
+  } catch {}
+}
+
+function getLedgerWindows(): BrowserWindow[] {
+  return [
+    sidebarWin,
+    workspaceModuleWin,
+    ...Array.from(moduleWins.values()),
+    ...Array.from(detachedWindows.values(), (record) => record.win),
+  ].filter((win): win is BrowserWindow => Boolean(win && !win.isDestroyed()));
+}
+
+function syncFloatingMeetingIndicator() {
+  const status = meetingAudioCaptureService.status() as { state?: string; noteId?: string | null };
+  const paused = status.state === 'paused';
+  floatingMeetingIndicator.update({
+    recording: status.state === 'recording' || paused,
+    paused,
+    ledgerFocused: getLedgerWindows().some((win) => win.isFocused()),
+    noteId: typeof status.noteId === 'string' ? status.noteId : null,
+    activity: paused ? 'silent' : latestMeetingActivity,
+  });
+}
+
+function watchLedgerWindowFocus(win: BrowserWindow) {
+  win.on('focus', syncFloatingMeetingIndicator);
+  win.on('blur', syncFloatingMeetingIndicator);
+  win.on('minimize', syncFloatingMeetingIndicator);
+  win.on('restore', syncFloatingMeetingIndicator);
+}
 
 function getLedgerWindowId(win: BrowserWindow) {
   const existing = ledgerWindowIds.get(win);
@@ -6319,6 +6540,7 @@ function createSidebarWindow() {
     },
   });
   hardenRendererWindow(sidebarWin);
+  watchLedgerWindowFocus(sidebarWin);
 
   sidebarWin.setMenuBarVisibility(false);
   sidebarWin.setMenu(null);
@@ -6350,6 +6572,7 @@ function createSidebarWindow() {
       if (!moduleWin.isDestroyed()) moduleWin.close();
       moduleWins.delete(kind);
     }
+    syncFloatingMeetingIndicator();
   });
 
   sidebarWin.on('close', (event) => {
@@ -7048,6 +7271,7 @@ function openModuleWindow(
     },
   });
   hardenRendererWindow(moduleWin);
+  watchLedgerWindowFocus(moduleWin);
 
   moduleWin.setMenuBarVisibility(false);
   moduleWin.setMenu(null);
@@ -7164,6 +7388,7 @@ function openModuleWindow(
       sidebarWin?.webContents.send('sidebar:state-changed', { state: 'minimized' });
       applySidebarWindowMode('minimized', true);
     }
+    syncFloatingMeetingIndicator();
   });
 
   let resizeShadowRestoreTimer: NodeJS.Timeout | null = null;
@@ -7438,6 +7663,7 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   isQuittingApp = true;
+  floatingMeetingIndicator.destroy();
   stopAppleCalendarWatcher();
   if (tray) {
     tray.destroy();
@@ -8633,6 +8859,7 @@ function syncTouchBar() {
 }
 
 app.whenReady().then(() => {
+  loadFloatingMeetingIndicatorPosition();
   nativeTheme.on('updated', () => {
     sendSidebarAccessibilityState();
     syncSidebarMaterial();
@@ -8646,11 +8873,16 @@ app.whenReady().then(() => {
   // current display layout without touching the sidebar's docking geometry.
   screen.on('display-removed', () => {
     clampOpenModuleWindowsToDisplays();
+    reclampFloatingMeetingIndicator();
     syncSidebarMaterial();
   });
-  screen.on('display-added', syncSidebarMaterial);
+  screen.on('display-added', () => {
+    reclampFloatingMeetingIndicator();
+    syncSidebarMaterial();
+  });
   screen.on('display-metrics-changed', () => {
     clampOpenModuleWindowsToDisplays();
+    reclampFloatingMeetingIndicator();
     syncSidebarMaterial();
   });
   createSidebarWindow();

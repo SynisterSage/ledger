@@ -941,8 +941,6 @@ type MeetingTranscriptSectionProps = {
   drafts: Record<string, string>;
   speakerDrafts: Record<string, string>;
   isLoading: boolean;
-  isExpanded: boolean;
-  onToggle: () => void;
   onDraftChange: (segmentId: string, value: string) => void;
   onCommit: (segment: TranscriptSegment) => void;
   onSpeakerChange: (segment: TranscriptSegment, speakerLabel: string) => void;
@@ -972,8 +970,6 @@ const MeetingTranscriptSection = ({
   drafts,
   speakerDrafts,
   isLoading,
-  isExpanded,
-  onToggle,
   onDraftChange,
   onCommit,
   onSpeakerChange,
@@ -986,10 +982,8 @@ const MeetingTranscriptSection = ({
   onRestore,
   onCreateLedgerItem,
   onAddMeetingReference,
-  transcriptLinks,
 }: MeetingTranscriptSectionProps) => {
-  const [filter, setFilter] = useState<'all' | 'user_microphone' | 'system_audio'>('all');
-  const [showTimestamps, setShowTimestamps] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectionById, setSelectionById] = useState<Record<string, number>>({});
   const [openSpeakerId, setOpenSpeakerId] = useState<string | null>(null);
   const [customSpeakers, setCustomSpeakers] = useState<string[]>([]);
@@ -1011,12 +1005,16 @@ const MeetingTranscriptSection = ({
     segment: TranscriptSegment;
     value: string;
   } | null>(null);
-  const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(isExpanded);
   const [openSubmenu, setOpenSubmenu] = useState<'create' | 'meeting' | null>(null);
   const [selectionRangeById, setSelectionRangeById] = useState<
     Record<string, { start: number; end: number }>
   >({});
   const transcriptTextareasRef = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const resizeTranscriptTextarea = (element: HTMLTextAreaElement | null) => {
+    if (!element) return;
+    element.style.height = 'auto';
+    element.style.height = `${element.scrollHeight}px`;
+  };
   const attendeeNames = useMemo(() => {
     const names = (metadata?.attendees ?? [])
       .map((attendee) => {
@@ -1079,36 +1077,17 @@ const MeetingTranscriptSection = ({
     () => segments.filter(isRenderableTranscriptSegment),
     [segments]
   );
-  const visibleSegments = useMemo(
-    () =>
-      renderableSegments
-        .filter((segment) => filter === 'all' || segment.audio_source === filter)
-        .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order),
-    [filter, renderableSegments]
-  );
-  const chronologicalSegments = useMemo(
-    () =>
-      [...renderableSegments].sort(
-        (a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order
-      ),
-    [renderableSegments]
-  );
-  const segmentCounts = useMemo(
-    () => ({
-      all: renderableSegments.length,
-      user_microphone: renderableSegments.filter(
-        (segment) => segment.audio_source === 'user_microphone'
-      ).length,
-      system_audio: renderableSegments.filter((segment) => segment.audio_source === 'system_audio')
-        .length,
-    }),
-    [renderableSegments]
-  );
   useEffect(() => {
-    setMergePreviewId(null);
-    setMergeConfirmation(null);
-    setSplitPreview(null);
-  }, [filter]);
+    Object.values(transcriptTextareasRef.current).forEach(resizeTranscriptTextarea);
+  }, [drafts, renderableSegments]);
+  const visibleSegments = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return renderableSegments;
+    return renderableSegments.filter((segment) => {
+      const text = drafts[segment.id] ?? segment.transcript_text;
+      return `${speakerLabelFor(segment)} ${text}`.toLowerCase().includes(query);
+    });
+  }, [drafts, renderableSegments, searchQuery]);
   useEffect(() => {
     if (!openActionsId) return;
 
@@ -1183,6 +1162,17 @@ const MeetingTranscriptSection = ({
     }
     onMerge(segment, next, speakerLabelFor(segment));
   };
+  const copyAllTranscript = () => {
+    const text = renderableSegments
+      .map(
+        (segment) =>
+          `[${formatTranscriptTimestamp(segment.start_ms)}] ${speakerLabelFor(segment)}: ${
+            drafts[segment.id] ?? segment.transcript_text
+          }`.trim()
+      )
+      .join('\n\n');
+    void navigator.clipboard?.writeText(text);
+  };
   const status = metadata?.transcription_status ?? 'idle';
   const statusMessage =
     status === 'recording'
@@ -1194,42 +1184,9 @@ const MeetingTranscriptSection = ({
       : status === 'complete'
       ? 'No transcript segments yet.'
       : 'No transcript yet.';
-
   return (
-    <section className="overflow-visible rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
-      <button
-        type="button"
-        onClick={() => {
-          setIsTranscriptExpanded((current) => !current);
-          onToggle();
-        }}
-        className="flex w-full rounded-t-xl items-center gap-2 px-3 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
-        aria-expanded={isTranscriptExpanded}
-      >
-        <ChevronDown
-          size={14}
-          className={`shrink-0 text-[var(--ledger-text-muted)] transition ${
-            isTranscriptExpanded ? '' : '-rotate-90'
-          }`}
-        />
-        <span className="text-xs font-semibold text-[var(--ledger-text-primary)]">Transcript</span>
-        <span className="text-[11px] text-[var(--ledger-text-muted)]">
-          {status === 'recording' ? 'Live' : renderableSegments.length ? formatMeetingDuration(getMeetingElapsedSeconds(metadata)) : 'Ready'}
-        </span>
-        <span
-          className={`ml-auto inline-flex items-center gap-1 text-[11px] ${meetingStatusTone(
-            status
-          )}`}
-        >
-          {status === 'recording' && <CircleDot size={11} />}
-          {status === 'processing' && <Loader2 size={11} className="animate-spin" />}
-          {status === 'failed' && <AlertCircle size={11} />}
-          {meetingStatusLabel(status)}
-        </span>
-      </button>
-
-      {isTranscriptExpanded && (
-        <div className="border-t border-[color:var(--ledger-border-subtle)] px-3 py-3">
+    <section className="overflow-visible rounded-2xl bg-[var(--ledger-surface-card)]" aria-label="Transcript">
+      <div className="px-1 pb-3 pt-2">
           {isLoading ? (
             <div className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
               <Loader2 size={13} className="animate-spin" /> Loading transcript…
@@ -1237,41 +1194,26 @@ const MeetingTranscriptSection = ({
           ) : segments.length === 0 ? (
             <p className="text-xs leading-5 text-[var(--ledger-text-muted)]">{statusMessage}</p>
           ) : (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-1.5 border-b border-[color:var(--ledger-border-subtle)] pb-2">
-                {(['all', 'user_microphone', 'system_audio'] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setFilter(value)}
-                    aria-pressed={filter === value}
-                    aria-label={`${
-                      value === 'all'
-                        ? 'All'
-                        : value === 'user_microphone'
-                        ? 'Microphone'
-                        : 'System audio'
-                    } ${segmentCounts[value]}`}
-                    className={`rounded-md px-2 py-1 text-[10px] ${
-                      filter === value
-                        ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]'
-                        : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]'
-                    }`}
-                  >
-                    {value === 'all'
-                      ? 'All'
-                      : value === 'user_microphone'
-                      ? 'Microphone'
-                      : 'System audio'}{' '}
-                    {segmentCounts[value]}
-                  </button>
-                ))}
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 px-1 text-[10px] text-[var(--ledger-text-muted)]">
+                <label className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none">
+                  <Search size={11} aria-hidden="true" />
+                  <input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search transcript…"
+                    aria-label="Search transcript"
+                    className="w-32 border-b border-[color:var(--ledger-border-subtle)]/60 bg-transparent py-0.5 outline-none placeholder:text-[var(--ledger-text-muted)] sm:w-40"
+                  />
+                </label>
                 <button
                   type="button"
-                  onClick={() => setShowTimestamps((current) => !current)}
-                  className="ml-auto rounded-md px-2 py-1 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"
+                  onClick={copyAllTranscript}
+                  aria-label="Copy all transcript"
+                  title="Copy all transcript"
+                  className="rounded p-1 hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
-                  {showTimestamps ? 'Hide times' : 'Show times'}
+                  <Copy size={12} aria-hidden="true" />
                 </button>
               </div>
               {deletedSegments.length > 0 && (
@@ -1370,57 +1312,39 @@ const MeetingTranscriptSection = ({
                   role="status"
                 >
                   <p className="text-xs font-medium text-[var(--ledger-text-secondary)]">
-                    {filter === 'user_microphone'
-                      ? 'No microphone audio captured'
-                      : 'No system audio captured'}
+                    {searchQuery.trim() ? 'No matching transcript segments' : 'No transcript segments yet'}
                   </p>
                   <p className="mt-1 max-w-xs text-[10px] leading-4 text-[var(--ledger-text-muted)]">
-                    {filter === 'user_microphone'
-                      ? 'This meeting does not contain transcript segments recorded from the microphone.'
-                      : 'This meeting does not contain transcript segments recorded from computer audio.'}
+                    {searchQuery.trim()
+                      ? 'Try a different word or phrase.'
+                      : 'Transcript segments will appear here when they are available.'}
                   </p>
                 </div>
               ) : (
                 visibleSegments.map((segment, visibleIndex) => {
                   const sourceLabel = speakerLabelFor(segment);
+                  const isMicrophoneSegment = segment.audio_source === 'user_microphone';
                   const nextSegment = visibleSegments[visibleIndex + 1];
-                  const chronologicalIndex = chronologicalSegments.findIndex(
-                    (item) => item.id === segment.id
-                  );
-                  const chronologicalNext =
-                    chronologicalIndex >= 0 ? chronologicalSegments[chronologicalIndex + 1] : null;
-                  const mergeBlockedByFilter = Boolean(
-                    filter !== 'all' && nextSegment && chronologicalNext?.id !== nextSegment.id
-                  );
+                  const mergeBlockedByFilter = false;
                   const isMergeTarget = mergePreviewId === segment.id;
                   const isMergeSource = Boolean(nextSegment && mergePreviewId === nextSegment.id);
                   return (
                     <div
                       key={segment.id}
                       data-transcript-segment={segment.id}
-                      className="relative group grid grid-cols-[auto_minmax(0,1fr)] gap-2"
+                      className={`group relative flex flex-col gap-1 ${
+                        isMicrophoneSegment ? 'items-end' : 'items-start'
+                      }`}
                       tabIndex={0}
                       aria-label={`Transcript segment ${visibleIndex + 1}`}
                     >
-                      <div className="relative min-w-0 pt-2 text-[10px] text-[var(--ledger-text-muted)]">
-                        {showTimestamps && (
-                          <span className={isMergeTarget ? 'invisible' : undefined}>
-                            {formatTranscriptTimestamp(segment.start_ms)}
-                          </span>
-                        )}
-                        {isMergeSource && (
-                          <span
-                            className="pointer-events-none absolute left-1/2 top-5 bottom-[-1.25rem] z-10 w-7 -translate-x-1/2 opacity-60"
-                            role="status"
-                            aria-label="Merge with next segment"
-                          >
-                            <span className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 border-l border-[color:var(--ledger-border-strong)]" />
-                            <span className="absolute bottom-0 left-1/2 h-2 w-4 border-b border-[color:var(--ledger-border-strong)]" />
-                            <span className="absolute bottom-[-2px] left-[calc(50%+0.6rem)] h-1.5 w-1.5 rotate-[-45deg] border-b border-r border-[color:var(--ledger-border-strong)]" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="min-w-0 rounded-lg bg-[var(--ledger-surface-muted)] px-2.5 py-1.5">
+                      <div
+                        className={`relative w-fit min-w-0 max-w-[65%] rounded-2xl px-3 py-2 ${
+                          isMicrophoneSegment
+                            ? 'bg-[var(--ledger-surface-selected)]'
+                            : 'bg-[var(--ledger-surface-muted)]'
+                        } ${isMergeTarget || isMergeSource ? 'ring-1 ring-[var(--ledger-accent)]/40' : ''}`}
+                      >
                         <div className="relative mb-0.5 flex min-h-6 items-center gap-1.5 text-[10px] text-[var(--ledger-text-muted)]">
                           <span
                             title={
@@ -1428,7 +1352,7 @@ const MeetingTranscriptSection = ({
                                 ? 'Captured from microphone'
                                 : 'Captured from system audio'
                             }
-                            className="inline-flex shrink-0"
+                            className="inline-flex shrink-0 opacity-70"
                             aria-label={
                               segment.audio_source === 'user_microphone'
                                 ? 'Captured from microphone'
@@ -1557,7 +1481,7 @@ const MeetingTranscriptSection = ({
                             )}
                           </div>
                           <div
-                            className="relative ml-auto flex items-center gap-0.5"
+                            className="relative ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                             data-transcript-actions
                           >
                             <button
@@ -1755,22 +1679,18 @@ const MeetingTranscriptSection = ({
                                 </button>
                               </div>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => onDelete(segment)}
-                              className="rounded p-1 text-[var(--ledger-text-muted)] opacity-60 hover:text-[var(--ledger-danger)] focus:opacity-100 focus:outline-none group-hover:opacity-100"
-                              aria-label="Delete transcript segment"
-                            >
-                              <Trash2 size={11} />
-                            </button>
                           </div>
                         </div>
                         <textarea
                           ref={(element) => {
                             transcriptTextareasRef.current[segment.id] = element;
+                            resizeTranscriptTextarea(element);
                           }}
                           value={drafts[segment.id] ?? segment.transcript_text}
-                          onChange={(event) => onDraftChange(segment.id, event.target.value)}
+                          onChange={(event) => {
+                            resizeTranscriptTextarea(event.currentTarget);
+                            onDraftChange(segment.id, event.target.value);
+                          }}
                           onKeyDown={(event) => {
                             // Transcript editing is a native textarea interaction. Keep
                             // Backspace/Delete and caret navigation away from any
@@ -1807,7 +1727,7 @@ const MeetingTranscriptSection = ({
                           }}
                           onBlur={() => onCommit(segment)}
                           rows={1}
-                          className="w-full resize-y bg-transparent text-xs leading-5 text-[var(--ledger-text-primary)] outline-none"
+                          className="min-h-[1.25rem] w-full resize-none overflow-hidden bg-transparent text-xs leading-5 text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
                           aria-label={`Transcript from ${sourceLabel}`}
                         />
                         {splitInstructionId === segment.id && (
@@ -1847,57 +1767,10 @@ const MeetingTranscriptSection = ({
                             </div>
                           </div>
                         )}
-                        <div className="mt-0.5 flex flex-wrap gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                          <button
-                            type="button"
-                            onClick={() => requestSplit(segment)}
-                            disabled={isMutationBusy}
-                            className="rounded px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)] disabled:opacity-40"
-                          >
-                            Split
-                          </button>
-                          {nextSegment && (
-                            <button
-                              type="button"
-                              title={
-                                mergeBlockedByFilter
-                                  ? 'Switch to All to merge across the full transcript'
-                                  : undefined
-                              }
-                              onMouseEnter={() => setMergePreviewId(nextSegment.id)}
-                              onFocus={() => setMergePreviewId(nextSegment.id)}
-                              onMouseLeave={() => setMergePreviewId(null)}
-                              onBlur={() => setMergePreviewId(null)}
-                              onClick={() => {
-                                if (!mergeBlockedByFilter) requestMerge(segment, nextSegment);
-                              }}
-                              disabled={mergeBlockedByFilter || isMutationBusy}
-                              className="rounded px-1.5 py-0.5 text-[10px] text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] focus:outline-none focus:ring-1 focus:ring-[var(--ledger-accent)] disabled:opacity-40"
-                            >
-                              Merge next
-                            </button>
-                          )}
-                        </div>
-                        {transcriptLinks.filter((link) => link.transcript_segment_id === segment.id)
-                          .length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {transcriptLinks
-                              .filter((link) => link.transcript_segment_id === segment.id)
-                              .map((link) => (
-                                <span
-                                  key={link.id}
-                                  className="rounded bg-[var(--ledger-surface-hover)] px-1.5 py-0.5 text-[9px] text-[var(--ledger-text-muted)]"
-                                >
-                                  {link.link_type === 'ledger_item'
-                                    ? `${link.ledger_item_type} created`
-                                    : link.link_type === 'meeting_note'
-                                    ? 'Added to meeting notes'
-                                    : `Marked ${link.link_type.replace('_', ' ')}`}
-                                </span>
-                              ))}
-                          </div>
-                        )}
                       </div>
+                      <span className="px-1 text-[10px] tabular-nums text-[var(--ledger-text-muted)]">
+                        {formatTranscriptTimestamp(segment.start_ms)}
+                      </span>
                     </div>
                   );
                 })
@@ -1905,7 +1778,6 @@ const MeetingTranscriptSection = ({
             </div>
           )}
         </div>
-      )}
     </section>
   );
 };
@@ -1950,89 +1822,6 @@ class MeetingTranscriptErrorBoundary extends Component<
     return this.props.children;
   }
 }
-
-const MeetingLiveTranscriptPanel = ({
-  segments,
-  onClose,
-}: {
-  segments: TranscriptSegment[];
-  onClose: () => void;
-}) => {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const shouldFollowRef = useRef(true);
-  const orderedSegments = useMemo(
-    () =>
-      segments
-        .filter(isRenderableTranscriptSegment)
-        .slice()
-        .sort((left, right) => left.start_ms - right.start_ms || left.segment_order - right.segment_order),
-    [segments]
-  );
-
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (!node || !shouldFollowRef.current) return;
-    node.scrollTop = node.scrollHeight;
-  }, [orderedSegments.length]);
-
-  return (
-    <section
-      className="ledger-meeting-live-transcript pointer-events-auto flex max-h-60 min-h-0 w-full flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]/95 shadow-sm backdrop-blur-sm"
-      data-meeting-live-transcript
-      aria-label="Live transcript"
-    >
-      <div className="flex shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-4 py-2.5">
-        <div className="flex items-center gap-2 text-[11px] font-medium text-[var(--ledger-text-secondary)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" aria-hidden="true" />
-          Transcript · Live
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[var(--ledger-text-muted)] transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-          aria-label="Close live transcript"
-        >
-          <X size={13} />
-        </button>
-      </div>
-      <div
-        ref={scrollRef}
-        onScroll={(event) => {
-          const node = event.currentTarget;
-          shouldFollowRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
-        }}
-        className="min-h-0 overflow-y-auto px-4 py-2.5"
-        data-meeting-live-transcript-scroll
-      >
-        {orderedSegments.length ? (
-          <div className="space-y-3">
-            {orderedSegments.map((segment) => (
-              <article key={segment.id} className="grid grid-cols-[42px_minmax(0,1fr)] gap-2 text-xs" data-meeting-live-transcript-segment={segment.id}>
-                <span className="pt-0.5 text-[10px] tabular-nums text-[var(--ledger-text-muted)]">
-                  {formatTranscriptTimestamp(segment.start_ms)}
-                </span>
-                <div className="min-w-0">
-                  <div className="mb-0.5 flex items-center gap-1.5 text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                    <span className="text-[var(--ledger-text-secondary)]">
-                      {transcriptSpeakerLabel(segment)}
-                    </span>
-                  </div>
-                  <p className="whitespace-pre-wrap break-words leading-5 text-[var(--ledger-text-primary)]">
-                    {segment.transcript_text}
-                  </p>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="py-5 text-center text-xs text-[var(--ledger-text-muted)]">
-            Transcript segments will appear here when available.
-          </p>
-        )}
-      </div>
-    </section>
-  );
-};
 
 const permissionLabel = (state: MeetingAudioPermissionState) => {
   switch (state) {
@@ -2744,6 +2533,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [meetingCenterView, setMeetingCenterView] = useState<'write' | 'transcript'>('write');
   const [isMeetingRecorderExpanded, setIsMeetingRecorderExpanded] = useState(false);
   const [isLiveTranscriptOpen, setIsLiveTranscriptOpen] = useState(false);
+  const transcriptDrawerScrollRef = useRef<HTMLDivElement | null>(null);
+  const transcriptDrawerShouldFollowRef = useRef(true);
   const [meetingAskDraft, setMeetingAskDraft] = useState('');
   const [meetingAskSuggestionIndex, setMeetingAskSuggestionIndex] = useState(0);
   const meetingAskSuggestion = notesAskSuggestions[meetingAskSuggestionIndex % notesAskSuggestions.length];
@@ -3046,7 +2837,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const liveTranscriptAvailable = Boolean(
     isMeetingNote &&
       meetingMetadata &&
-      ['recording', 'paused', 'processing'].includes(meetingMetadata.transcription_status)
+      (['recording', 'paused', 'processing'].includes(meetingMetadata.transcription_status) ||
+        (meetingMetadata.transcription_status === 'complete' && resolvedTranscriptSegments.length > 0))
   );
   const isMeetingTranscriptionActive = Boolean(
     meetingMetadata && ['recording', 'processing'].includes(meetingMetadata.transcription_status)
@@ -3055,6 +2847,19 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     if (!isLiveTranscriptOpen) return;
     if (!liveTranscriptAvailable) setIsLiveTranscriptOpen(false);
   }, [isLiveTranscriptOpen, liveTranscriptAvailable]);
+  useEffect(() => {
+    if (!isLiveTranscriptOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsLiveTranscriptOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [isLiveTranscriptOpen]);
+  useEffect(() => {
+    if (!isLiveTranscriptOpen || !transcriptDrawerShouldFollowRef.current) return;
+    const node = transcriptDrawerScrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [isLiveTranscriptOpen, resolvedTranscriptSegments.length]);
   useEffect(() => {
     setIsLiveTranscriptOpen(false);
   }, [selectedNoteId]);
@@ -3467,7 +3272,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   ]);
 
   const focusTranscriptSegment = useCallback((segmentId: string) => {
-    setMeetingCenterView('transcript');
+    setIsLiveTranscriptOpen(true);
     window.setTimeout(() => {
       const node = document.querySelector(`[data-transcript-segment="${CSS.escape(segmentId)}"]`);
       if (!(node instanceof HTMLElement)) return;
@@ -3494,6 +3299,21 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setIsRightPaneCollapsed(false);
     setAskPaneResetKey((current) => current + 1);
   }, [activeWorkspaceId, meetingMetadata?.calendar_series_id, selectedNote, selectedNoteProjectLinks]);
+
+  const openNoteAskInRightPane = useCallback((question: string) => {
+    if (!selectedNote || !activeWorkspaceId) return;
+    setMeetingAskContext({
+      resourceType: 'note',
+      resourceId: selectedNote.id,
+      title: selectedNote.title,
+      workspaceId: activeWorkspaceId,
+      linkedProjectId: selectedNoteProjectLinks[0]?.project_id ?? undefined,
+      initialQuestion: question,
+    });
+    setRightPaneMode('ask');
+    setIsRightPaneCollapsed(false);
+    setAskPaneResetKey((current) => current + 1);
+  }, [activeWorkspaceId, selectedNote, selectedNoteProjectLinks]);
 
   const openNotesHomeAsk = useCallback((question: string) => {
     const context = createNotesHomeAskContext(activeWorkspaceId, question);
@@ -8416,6 +8236,46 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     };
   }, [sortMenu]);
 
+  const transcriptPanel = (
+    <MeetingTranscriptErrorBoundary>
+      <MeetingTranscriptSection
+        metadata={meetingMetadata}
+        segments={resolvedTranscriptSegments}
+        drafts={transcriptDrafts}
+        speakerDrafts={transcriptSpeakerDrafts}
+        isLoading={isLoadingTranscript}
+        onDraftChange={(segmentId, value) => {
+          transcriptDraftsRef.current = {
+            ...transcriptDraftsRef.current,
+            [segmentId]: value,
+          };
+          setTranscriptDrafts((current) => ({ ...current, [segmentId]: value }));
+        }}
+        onCommit={(segment) => void commitTranscriptSegment(segment)}
+        onSpeakerChange={(segment, speakerLabel) =>
+          setTranscriptSpeakerDrafts((current) => ({
+            ...current,
+            [segment.id]: speakerLabel,
+          }))
+        }
+        onSpeakerSelect={(segment, speakerLabel) =>
+          void commitTranscriptSegment(segment, speakerLabel)
+        }
+        onDelete={(segment) => void deleteTranscriptSegment(segment)}
+        onMerge={(segment, next, speakerLabel) =>
+          void mergeTranscriptSegments(segment, next, speakerLabel)
+        }
+        onSplit={(segment, position) => void splitTranscriptSegment(segment, position)}
+        isMutationBusy={Boolean(transcriptMutation || meetingBusyAction)}
+        deletedSegments={deletedTranscriptSegments}
+        onRestore={(segment) => void restoreTranscriptSegment(segment)}
+        onCreateLedgerItem={createTranscriptLedgerItem}
+        onAddMeetingReference={addTranscriptMeetingReference}
+        transcriptLinks={transcriptLinks}
+      />
+    </MeetingTranscriptErrorBoundary>
+  );
+
   return (
     <div
       className="ledger-notes-shell relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
@@ -9520,6 +9380,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           type="button"
                           onClick={() => {
                             if (isMeetingNote) setMeetingCenterView('write');
+                            if (isMeetingNote) setIsLiveTranscriptOpen(false);
                             if (draftMode === 'mind_map') {
                               setDraftMode('text');
                               isDirtyRef.current = true;
@@ -9545,6 +9406,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           type="button"
                           onClick={() => {
                             if (isMeetingNote) setMeetingCenterView('write');
+                            if (isMeetingNote) setIsLiveTranscriptOpen(false);
                             setDraftMode('mind_map');
                             isDirtyRef.current = true;
                             setIsDirty(true);
@@ -9560,22 +9422,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         >
                           <Network size={13} />
                         </button>
-                        {isMeetingNote ? (
-                          <button
-                            type="button"
-                            onClick={() => setMeetingCenterView('transcript')}
-                            className={`flex h-7 w-7 items-center justify-center rounded-md transition ${
-                              meetingCenterView === 'transcript'
-                                ? 'bg-[var(--ledger-surface-selected)] text-[var(--ledger-text-primary)]'
-                                : 'text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
-                            }`}
-                            aria-label="Open transcript"
-                            aria-pressed={meetingCenterView === 'transcript'}
-                            title="Open transcript evidence"
-                          >
-                            <FileText size={13} />
-                          </button>
-                        ) : (
+                        {!isMeetingNote && (
                           <button
                             type="button"
                             onClick={() => void enableMeetingMode()}
@@ -10153,49 +10000,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
                 <div className="flex-1 min-h-0 overflow-x-hidden overflow-y-auto bg-[var(--ledger-surface)] px-6 pb-24 pt-0 sm:px-10 sm:pb-28">
                   <div className="mx-auto max-w-[800px] space-y-6">
-                    {isMeetingNote && meetingCenterView === 'transcript' ? (
-                      <MeetingTranscriptErrorBoundary>
-                        <MeetingTranscriptSection
-                          metadata={meetingMetadata}
-                          segments={resolvedTranscriptSegments}
-                          drafts={transcriptDrafts}
-                          speakerDrafts={transcriptSpeakerDrafts}
-                          isLoading={isLoadingTranscript}
-                          isExpanded
-                          onToggle={() => {}}
-                          onDraftChange={(segmentId, value) => {
-                            transcriptDraftsRef.current = {
-                              ...transcriptDraftsRef.current,
-                              [segmentId]: value,
-                            };
-                            setTranscriptDrafts((current) => ({ ...current, [segmentId]: value }));
-                          }}
-                          onCommit={(segment) => void commitTranscriptSegment(segment)}
-                          onSpeakerChange={(segment, speakerLabel) =>
-                            setTranscriptSpeakerDrafts((current) => ({
-                              ...current,
-                              [segment.id]: speakerLabel,
-                            }))
-                          }
-                          onSpeakerSelect={(segment, speakerLabel) =>
-                            void commitTranscriptSegment(segment, speakerLabel)
-                          }
-                          onDelete={(segment) => void deleteTranscriptSegment(segment)}
-                          onMerge={(segment, next, speakerLabel) =>
-                            void mergeTranscriptSegments(segment, next, speakerLabel)
-                          }
-                          onSplit={(segment, position) =>
-                            void splitTranscriptSegment(segment, position)
-                          }
-                          isMutationBusy={Boolean(transcriptMutation || meetingBusyAction)}
-                          deletedSegments={deletedTranscriptSegments}
-                          onRestore={(segment) => void restoreTranscriptSegment(segment)}
-                          onCreateLedgerItem={createTranscriptLedgerItem}
-                          onAddMeetingReference={addTranscriptMeetingReference}
-                          transcriptLinks={transcriptLinks}
-                        />
-                      </MeetingTranscriptErrorBoundary>
-                    ) : draftMode !== 'mind_map' ? (
+                    {draftMode !== 'mind_map' ? (
                       <>
                       {isMeetingNote && meetingMetadata?.transcription_status === 'idle' && (meetingPrepStatus === 'generating' || Boolean(meetingPrep?.points?.length)) && (
                         <section className="rounded-lg border-b border-[color:var(--ledger-border-subtle)] pb-4" data-meeting-prep>
@@ -10331,12 +10136,22 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   !isHydratingNote &&
                   meetingMetadata && (
                   <div className="ledger-meeting-dock pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4 sm:bottom-5" data-meeting-floating-controls>
-                    <div className="pointer-events-auto flex w-full max-w-[760px] flex-col items-stretch justify-center gap-2">
+                    <div className="pointer-events-auto relative flex w-full max-w-[760px] flex-col items-stretch justify-center gap-2">
                       {isLiveTranscriptOpen && (
-                        <MeetingLiveTranscriptPanel
-                          segments={resolvedTranscriptSegments}
-                          onClose={() => setIsLiveTranscriptOpen(false)}
-                        />
+                        <div
+                          ref={transcriptDrawerScrollRef}
+                          onScroll={(event) => {
+                            const node = event.currentTarget;
+                            transcriptDrawerShouldFollowRef.current =
+                              node.scrollHeight - node.scrollTop - node.clientHeight < 24;
+                          }}
+                          className="ledger-meeting-live-transcript pointer-events-auto absolute bottom-[calc(100%+0.5rem)] left-0 right-0 z-30 h-[min(52vh,640px)] min-h-0 overflow-y-auto rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]/95 p-3 shadow-[var(--ledger-shadow)] backdrop-blur-sm"
+                          data-meeting-transcript-drawer
+                          role="dialog"
+                          aria-label="Transcript"
+                        >
+                          {transcriptPanel}
+                        </div>
                       )}
                       <div className="ledger-meeting-dock-row flex w-full min-w-0 items-end justify-center gap-2">
                       <div className="relative shrink-0">
@@ -10355,7 +10170,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                               type="button"
                               onClick={() => {
                                 if ((hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged) {
-                                  setMeetingCenterView('transcript');
+                                  setIsLiveTranscriptOpen(true);
                                 } else {
                                   void enhanceMeetingNote();
                                 }
@@ -10427,14 +10242,62 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         </div>
                           </>
                         )}
+                        {isMeetingComplete && (
+                          <button
+                            type="button"
+                            onClick={() => setIsLiveTranscriptOpen((current) => !current)}
+                            disabled={!liveTranscriptAvailable}
+                            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)] shadow-sm transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-35 ${isLiveTranscriptOpen ? 'text-[var(--ledger-text-primary)]' : ''}`}
+                            aria-label={isLiveTranscriptOpen ? 'Close transcript' : 'Open transcript'}
+                            aria-pressed={isLiveTranscriptOpen}
+                            title={isLiveTranscriptOpen ? 'Close transcript' : 'Open transcript'}
+                          >
+                            <span className="flex h-4 items-end gap-0.5" aria-hidden="true">
+                              <span className="h-2 w-0.5 rounded-full bg-current" />
+                              <span className="h-4 w-0.5 rounded-full bg-current" />
+                              <span className="h-3 w-0.5 rounded-full bg-current" />
+                              <span className="h-1.5 w-0.5 rounded-full bg-current" />
+                            </span>
+                          </button>
+                        )}
                       </div>
                       <form className="ledger-meeting-ask-form flex min-w-0 flex-1 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 pl-4 shadow-sm" onSubmit={(event) => { event.preventDefault(); openMeetingAskInRightPane(meetingAskDraft.trim() || meetingAskSuggestion); setMeetingAskDraft(''); }}>
-                        <input value={meetingAskDraft} onChange={(event) => setMeetingAskDraft(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]" placeholder={meetingMetadata?.transcription_status === 'idle' || meetingMetadata?.transcription_status === 'recording' || meetingMetadata?.transcription_status === 'paused' ? 'Ask anything…' : 'Ask about this meeting…'} aria-label="Ask about this meeting" />
+                        <input value={meetingAskDraft} onChange={(event) => setMeetingAskDraft(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]" placeholder="Ask about this meeting…" aria-label="Ask about this meeting" />
                         <button type="button" onClick={() => setMeetingAskDraft(meetingAskSuggestion)} className="hidden max-w-[45%] shrink-0 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)] px-3 py-2 text-[11px] text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)] sm:block"><span key={meetingAskSuggestion} className="ledger-meeting-suggestion block truncate">{meetingAskSuggestion}</span></button>
                         <button type="submit" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--ledger-accent)] text-white shadow-sm transition-colors hover:brightness-110" aria-label="Ask Ledger"><ChevronRight size={15} /></button>
                       </form>
                       </div>
                     </div>
+                  </div>
+                )}
+                {!isMeetingNote &&
+                  draftMode !== 'mind_map' &&
+                  hasHydratedNote &&
+                  !isHydratingNote && (
+                  <div className="ledger-meeting-dock pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4 sm:bottom-5" data-note-ask-dock>
+                    <form
+                      className="ledger-meeting-ask-form pointer-events-auto flex w-full max-w-[760px] min-w-0 items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1.5 pl-4 shadow-sm"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        openNoteAskInRightPane(meetingAskDraft.trim() || '');
+                        setMeetingAskDraft('');
+                      }}
+                    >
+                      <input
+                        value={meetingAskDraft}
+                        onChange={(event) => setMeetingAskDraft(event.target.value)}
+                        className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
+                        placeholder="Ask about this note…"
+                        aria-label="Ask about this note"
+                      />
+                      <button
+                        type="submit"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--ledger-accent)] text-white shadow-sm transition-colors hover:brightness-110"
+                        aria-label="Ask Ledger about this note"
+                      >
+                        <ChevronRight size={15} />
+                      </button>
+                    </form>
                   </div>
                 )}
               </div>

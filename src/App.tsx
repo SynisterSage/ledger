@@ -10481,7 +10481,6 @@ function App() {
       <ToastProvider>
         <NotificationCenterProvider>
           {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
-          {user && !isModuleWindow ? <MeetingRecordingIndicator /> : null}
           {user && !isModuleWindow ? <TranscriptionFailureToast /> : null}
           <AuthSessionToastReset />
           {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? (
@@ -10512,80 +10511,6 @@ function App() {
         </NotificationCenterProvider>
       </ToastProvider>
     </SearchProvider>
-  );
-}
-
-function MeetingRecordingIndicator() {
-  const [status, setStatus] = useState<{
-    state?: string;
-    noteId?: string | null;
-    durationSeconds?: number;
-    transcriptionStatus?: string;
-  } | null>(null);
-
-  useEffect(() => {
-    const audio = window.meetingAudio;
-    if (!audio) return;
-    let cancelled = false;
-    const refresh = () => {
-      void Promise.all([
-        audio.status(),
-        window.meetingTranscription?.status() ?? Promise.resolve([]),
-      ])
-        .then(([nextAudio, nextJobs]) => {
-          if (cancelled) return;
-          const jobs = Array.isArray(nextJobs)
-            ? (nextJobs as Array<{ noteId?: string; status?: string }>)
-            : [];
-          const activeJob = jobs.find((job) =>
-            ['queued', 'preparing', 'transcribing', 'merging', 'failed'].includes(
-              String(job.status)
-            )
-          );
-          setStatus({
-            ...(nextAudio as { state?: string; noteId?: string | null; durationSeconds?: number }),
-            noteId: (nextAudio as { noteId?: string | null }).noteId ?? activeJob?.noteId ?? null,
-            transcriptionStatus: activeJob?.status,
-          });
-        })
-        .catch(() => undefined);
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  const isRecording = status?.state === 'recording' || status?.state === 'paused';
-  // Transcription processing/failure is reported through the shared top-center
-  // toast. The sidebar indicator is reserved for an active recording only.
-  if (!status || !isRecording) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (status.noteId)
-          void window.desktopWindow?.openModule('notes', {
-            kind: 'notes',
-            focusNoteId: status.noteId,
-          });
-      }}
-      className="fixed bottom-3 left-3 z-[80] inline-flex items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
-      title="Return to the active meeting note"
-    >
-      <span
-        className={`h-2 w-2 rounded-full ${
-          status.state === 'recording'
-            ? 'bg-[var(--ledger-accent)]'
-            : status.transcriptionStatus === 'failed'
-            ? 'bg-[var(--ledger-danger)]'
-            : 'bg-amber-500'
-        }`}
-      />
-      {status.state === 'recording' ? 'Meeting recording' : 'Meeting paused'}
-    </button>
   );
 }
 

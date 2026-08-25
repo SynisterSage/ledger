@@ -144,6 +144,8 @@ interface Window {
   };
   desktopWindow?: {
     platform?: string;
+    meetingIndicatorClick: () => Promise<boolean>;
+    onMeetingIndicatorState: (listener: (state: { recording: boolean; paused: boolean; activity: 'silent' | 'low' | 'medium' | 'high' }) => void) => () => void;
     getDeviceSessionId: (legacyDeviceId?: string) => string;
     getRenderingSettings: () => Promise<{
       mode: 'auto' | 'high_quality' | 'compatibility';

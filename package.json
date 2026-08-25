@@ -30,6 +30,7 @@
     "format:check": "prettier --check .",
     "test:write-mode": "node --test scripts/tests/write-mode-regressions.mjs",
     "test:meeting-notes-phase1": "node --test scripts/tests/meeting-notes-phase1.test.mjs",
+    "test:floating-meeting-indicator": "node --experimental-strip-types --test scripts/tests/floating-meeting-indicator.test.mjs",
     "test:meeting-notes-phase2": "node --test scripts/tests/meeting-notes-phase2.test.mjs",
     "test:meeting-notes-phase3": "node --test scripts/tests/meeting-notes-phase3.test.mjs",
     "test:meeting-notes-phase4": "node --test scripts/tests/meeting-notes-phase4.test.mjs",
