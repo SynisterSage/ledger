@@ -10481,7 +10481,7 @@ function App() {
       <ToastProvider>
         <NotificationCenterProvider>
           {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
-          {user && !isModuleWindow ? <TranscriptionFailureToast /> : null}
+          {user && isModuleWindow && moduleKind === 'notes' ? <TranscriptionFailureToast /> : null}
           {user && !isModuleWindow ? <MeetingAutoStopToast /> : null}
           <AuthSessionToastReset />
           {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? (
@@ -10521,20 +10521,33 @@ function TranscriptionFailureToast() {
 
   useEffect(() => {
     const transcription = window.meetingTranscription;
-    if (!transcription) return;
-    const unsubscribe = transcription.onProgress((value) => {
-      const event = value as { jobId?: unknown; status?: unknown; error?: unknown } | null;
-      const jobId = String(event?.jobId ?? '').trim();
-      if (event?.status !== 'failed' || !jobId || shownJobIdsRef.current.has(jobId)) return;
+    const showFailure = (jobId: string, detail: string) => {
+      if (!jobId || shownJobIdsRef.current.has(jobId)) return;
       shownJobIdsRef.current.add(jobId);
       toast.show('Transcription failed', {
-        detail:
-          String(event?.error ?? '').trim() || 'Open the meeting note to retry transcription.',
+        detail: detail || 'Open the meeting note to retry transcription.',
         variant: 'error',
         duration: 7000,
       });
-    });
-    return unsubscribe;
+    };
+    const unsubscribe = transcription?.onProgress((value) => {
+      const event = value as { jobId?: unknown; status?: unknown; error?: unknown } | null;
+      const jobId = String(event?.jobId ?? '').trim();
+      if (event?.status === 'failed') {
+        showFailure(jobId, String(event?.error ?? '').trim());
+      }
+    }) ?? (() => {});
+    const onLocalFailure = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: unknown; jobId?: unknown }>).detail;
+      const message = String(detail?.message ?? '').trim();
+      const jobId = String(detail?.jobId ?? `local-${Date.now()}`).trim();
+      showFailure(jobId, message);
+    };
+    window.addEventListener('ledger:transcription-failure', onLocalFailure);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('ledger:transcription-failure', onLocalFailure);
+    };
   }, [toast]);
 
   return null;

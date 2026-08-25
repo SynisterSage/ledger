@@ -36,7 +36,16 @@ export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxToke
   // Fast skill plans need a little more room to complete their required
   // sections. Keep ordinary answers at the existing ceiling so this does not
   // become an unrestricted output increase across the app.
-  const visibleCeiling = tier === 'fast' && signals?.hasSkill ? 768 : 640;
+  // Meeting recaps are a structured JSON response. The ordinary Fast answer
+  // ceiling is too small for the schema plus citations and commonly ends in
+  // truncated JSON, which cannot be reviewed or parsed by the Notes UI.
+  const visibleCeiling = tier === 'fast'
+    ? signals?.routeReason === 'meeting_recap'
+      ? 900
+      : signals?.hasSkill
+        ? 768
+        : 640
+    : 1400;
   const visible = Math.min(visibleCeiling, Math.max(448, configuredMaxTokens ?? 512));
   const reasoning = thinking ? 384 : 0;
   const initial = thinking ? reasoning + visible : visible;

@@ -2405,9 +2405,9 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const localNoteNavigationRef = useRef<{ noteId: string; at: number } | null>(null);
   const initialTryActionHandledRef = useRef(false);
   const noteViewerPollingDisabledForNoteRef = useRef<string | null>(null);
-  const shownTranscriptionFailureIdsRef = useRef(new Set<string>());
   const meetingPrepCacheRef = useRef<Map<string, MeetingPrepResult>>(new Map());
   const meetingPrepInFlightRef = useRef<Set<string>>(new Set());
+  const meetingRecapInFlightRef = useRef(false);
 
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteTree, setNoteTree] = useState<NoteTreeNode[]>([]);
@@ -2428,6 +2428,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [isLoadingMeetingMetadata, setIsLoadingMeetingMetadata] = useState(false);
   const [meetingBusyAction, setMeetingBusyAction] = useState<string | null>(null);
   const [isMeetingTemplateSaving, setIsMeetingTemplateSaving] = useState(false);
+  const [customMeetingTemplateInstructions, setCustomMeetingTemplateInstructions] = useState('');
   const meetingStopInFlightRef = useRef(false);
   const transcriptionMergeInFlightRef = useRef<Set<string>>(new Set());
   const [meetingTimerTick, setMeetingTimerTick] = useState(0);
@@ -2458,6 +2459,19 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [transcriptMutation, setTranscriptMutation] = useState<'split' | 'merge' | null>(null);
   const transcriptMutationRef = useRef(false);
   const transcriptUndoRef = useRef<{ noteId: string; undo: () => Promise<void> } | null>(null);
+  useEffect(() => {
+    if (!error) return;
+    const message = error;
+    const timeout = window.setTimeout(() => {
+      setError((current) => (current === message ? null : current));
+    }, 5000);
+    return () => window.clearTimeout(timeout);
+  }, [error]);
+  useEffect(() => {
+    if (meetingMetadata?.meeting_template === 'custom') {
+      setCustomMeetingTemplateInstructions(meetingMetadata.meeting_template_instructions ?? '');
+    }
+  }, [selectedNoteId, meetingMetadata?.meeting_template, meetingMetadata?.meeting_template_instructions]);
   useEffect(() => {
     transcriptDraftsRef.current = transcriptDrafts;
   }, [transcriptDrafts]);
@@ -2689,13 +2703,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const toast = useToast();
   const reportTranscriptionError = useCallback(
     (message: string) => {
-      toast.show('Transcription failed', {
-        detail: message || 'The recording is preserved so you can retry transcription.',
-        variant: 'error',
-        duration: 7000,
-      });
+      window.dispatchEvent(
+        new CustomEvent('ledger:transcription-failure', {
+          detail: {
+            message: message || 'The recording is preserved so you can retry transcription.',
+          },
+        })
+      );
     },
-    [toast]
+    []
   );
   const { pins, toggleObjectPin } = usePins();
   const { openSearch } = useSearch();
@@ -3003,18 +3019,6 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       setTranscriptionJob((current) =>
         current ? { ...current, ...progress } : (progress as TranscriptionJobStatus)
       );
-      if (
-        progress.status === 'failed' &&
-        progress.jobId &&
-        !shownTranscriptionFailureIdsRef.current.has(progress.jobId)
-      ) {
-        shownTranscriptionFailureIdsRef.current.add(progress.jobId);
-        toast.show('Transcription failed', {
-          detail: progress.error || 'The recording is preserved so you can retry transcription.',
-          variant: 'error',
-          duration: 7000,
-        });
-      }
     });
     const offModel = transcription.onModelChange((event) =>
       setTranscriptionModel(event as TranscriptionModelStatus)
@@ -3244,6 +3248,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   }, [activeWorkspaceId, draftContent, meetingMetadata, selectedNote, selectedNoteProjectLinks, transcriptLinks, resolvedTranscriptSegments]);
 
   const enhanceMeetingNote = useCallback(async () => {
+    if (meetingRecapInFlightRef.current) return;
     const context = buildMeetingIntelligenceContext();
     if (!context || meetingMetadata?.transcription_status !== 'complete') return;
     if (!window.askLedger?.generateMeetingRecap) {
@@ -3251,6 +3256,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       setMeetingRecapError('Local meeting intelligence is unavailable in this client.');
       return;
     }
+    meetingRecapInFlightRef.current = true;
     setMeetingRecapStatus('generating');
     setMeetingRecapError(null);
     try {
@@ -3280,13 +3286,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         );
       }
       setMeetingRecapStatus('ready');
-      if (window.askLedger.generateMeetingPeople) {
-        const people = (await window.askLedger.generateMeetingPeople(context)) as { suggestions?: MeetingIdentitySuggestion[]; status?: string };
-        setMeetingIdentitySuggestions(Array.isArray(people?.suggestions) ? people.suggestions : []);
-      }
     } catch (error) {
       setMeetingRecapStatus('unavailable');
       setMeetingRecapError(error instanceof Error ? error.message : 'Could not enhance the meeting note.');
+    } finally {
+      meetingRecapInFlightRef.current = false;
     }
   }, [
     activeWorkspaceId,
@@ -4833,6 +4837,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     // without throwing from the native renderer; its instructions can be
     // edited through the existing meeting-intelligence flow later.
     const instructions = meetingMetadata?.meeting_template_instructions ?? null;
+    if (template === 'custom') setCustomMeetingTemplateInstructions(instructions ?? '');
     const payload = { meeting_template: template, ...(template === 'custom' ? { meeting_template_instructions: instructions } : {}) };
     setIsMeetingTemplateSaving(true);
     setMeetingMetadata((current) => current ? {
@@ -4863,6 +4868,31 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       setIsMeetingTemplateSaving(false);
     }
   }, [activeWorkspaceId, api, hasAcceptedMeetingRecap, meetingMetadata, meetingRecapHasRun, selectedNote, selectedNoteId, updateMeetingMetadata]);
+
+  const saveCustomMeetingTemplateInstructions = useCallback(async () => {
+    if (!meetingMetadata || meetingMetadata.meeting_template !== 'custom') return;
+    const instructions = customMeetingTemplateInstructions.trim() || null;
+    if ((meetingMetadata.meeting_template_instructions ?? null) === instructions) return;
+    setIsMeetingTemplateSaving(true);
+    try {
+      const payload = { meeting_template: 'custom' as const, meeting_template_instructions: instructions };
+      const updated = await updateMeetingMetadata(payload);
+      if (updated && selectedNote?.parent_id) {
+        try {
+          await api.updateMeetingMetadata(selectedNote.parent_id, payload);
+        } catch (error) {
+          console.warn('[meeting-notes] parent custom template update failed', error);
+        }
+      }
+      if (updated && activeWorkspaceId && selectedNoteId) {
+        meetingRecapDraftCache.invalidate(meetingRecapCacheKey(activeWorkspaceId, selectedNoteId));
+        setMeetingRecapDraft(null);
+        setMeetingRecapStatus('idle');
+      }
+    } finally {
+      setIsMeetingTemplateSaving(false);
+    }
+  }, [activeWorkspaceId, api, customMeetingTemplateInstructions, meetingMetadata, selectedNote, selectedNoteId, updateMeetingMetadata]);
 
   const enableMeetingMode = useCallback(async () => {
     if (!selectedNote || isMeetingNote) return;
@@ -9728,6 +9758,36 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           </select>
                           <ChevronDown size={10} aria-hidden="true" />
                         </label>
+                        {meetingMetadata?.meeting_template === 'custom' && (
+                          <div className="basis-full flex min-w-0 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1">
+                            <textarea
+                              value={customMeetingTemplateInstructions}
+                              onChange={(event) => setCustomMeetingTemplateInstructions(event.target.value.slice(0, 1000))}
+                              onKeyDown={(event) => {
+                                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                                  event.preventDefault();
+                                  void saveCustomMeetingTemplateInstructions();
+                                }
+                              }}
+                              placeholder="What should this recap focus on?"
+                              rows={1}
+                              maxLength={1000}
+                              disabled={isMeetingTemplateSaving}
+                              aria-label="Custom meeting template instructions"
+                              className="min-h-7 min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-[11px] leading-5 text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] disabled:opacity-50"
+                            />
+                            {customMeetingTemplateInstructions.trim() !== (meetingMetadata.meeting_template_instructions ?? '').trim() && (
+                              <button
+                                type="button"
+                                onClick={() => void saveCustomMeetingTemplateInstructions()}
+                                disabled={isMeetingTemplateSaving}
+                                className="shrink-0 rounded-md px-1.5 py-1 text-[10px] font-medium text-[var(--ledger-accent)] hover:bg-[color:var(--ledger-accent)]/10 disabled:opacity-50"
+                              >
+                                {isMeetingTemplateSaving ? 'Saving…' : 'Save'}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                     {isMeetingNote && meetingCenterView === 'write' && (
@@ -10296,9 +10356,19 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         </div>
                       )}
                       <div className="ledger-meeting-dock-row flex w-full min-w-0 items-end justify-center gap-2">
-                      <div className="relative shrink-0">
+                      <div className="relative flex shrink-0 items-center gap-2">
                         {isMeetingComplete ? (
-                          meetingRecapStatus === 'ready' && meetingRecapDraft ? (
+                          meetingRecapStatus === 'generating' ? (
+                            <div
+                              className="flex h-12 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-[11px] text-[var(--ledger-text-secondary)] shadow-sm"
+                              role="status"
+                              aria-label="Enhancing meeting"
+                              data-meeting-recap-processing
+                            >
+                              <Loader2 size={12} className="animate-spin text-[var(--ledger-text-muted)]" />
+                              {meetingRecapStage || 'Enhancing…'}
+                            </div>
+                          ) : meetingRecapStatus === 'ready' && meetingRecapDraft ? (
                             <MeetingRecapReviewBar
                               tier={meetingRecapTier}
                               onRegenerate={() => void enhanceMeetingNote()}
@@ -10317,7 +10387,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                                   void enhanceMeetingNote();
                                 }
                               }}
-                              disabled={meetingRecapStatus === 'generating' || transcriptSegments.length === 0}
+                              disabled={transcriptSegments.length === 0}
                               className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-45"
                               aria-label={
                                 (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged
@@ -10327,16 +10397,12 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                                   : 'Enhance meeting'
                               }
                             >
-                              {meetingRecapStatus === 'generating' ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged ? (
+                              {(hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged ? (
                                 <FileText size={12} />
                               ) : (
                                 <Zap size={12} />
                               )}
-                              {meetingRecapStatus === 'generating'
-                                ? meetingRecapStage
-                                : (hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged
+                              {(hasAcceptedMeetingRecap || meetingRecapHasRun) && !meetingRecapTemplateChanged
                                 ? 'Transcript'
                                 : meetingRecapTemplateChanged
                                 ? 'Regenerate'

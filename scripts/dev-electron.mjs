@@ -31,7 +31,6 @@ const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5173/'
 const require = createRequire(import.meta.url);
 const electronBinary = require('electron');
 const loadedEnv = loadDotEnv(path.join(process.cwd(), '.env.local'));
-
 const child = spawn(electronBinary, ['.'], {
   stdio: 'inherit',
   env: {

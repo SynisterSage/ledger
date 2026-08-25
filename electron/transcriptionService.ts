@@ -219,14 +219,16 @@ export class LocalTranscriptionService {
           const updatedRecords = { ...latest.chunkRecords, ...(next.liveWindow ? {} : { [key]: completedRecord }) };
           const updatedLiveRecords = { ...(latest.liveWindowRecords ?? {}), ...(next.liveWindow ? { [key]: completedRecord } : {}) };
           const merged = [...latest.segments, ...attributedRows].sort((a, b) => a.startMs - b.startMs || a.audioSource.localeCompare(b.audioSource) || a.segmentOrder - b.segmentOrder);
+          const deduped = dedupeSegments(merged);
+          const visibleRows = attributedRows.filter((row) => deduped.some((candidate) => candidate.id === row.id) && !latest.segments.some((previous) => areDuplicateSegments(previous, row)));
           const coverage = this.coverageForRecords(updatedRecords, updatedLiveRecords);
-          this.updateJob(jobId, { segments: dedupeSegments(merged), chunkRecords: updatedRecords, liveWindowRecords: updatedLiveRecords, coverage, completedChunks: this.completedCount({ ...updatedRecords, ...updatedLiveRecords }), progress: this.progress({ ...updatedRecords, ...updatedLiveRecords }), error: null }, next.liveWindow ? 'speech_window_complete' : 'chunk_complete');
+          this.updateJob(jobId, { segments: deduped, chunkRecords: updatedRecords, liveWindowRecords: updatedLiveRecords, coverage, completedChunks: this.completedCount({ ...updatedRecords, ...updatedLiveRecords }), progress: this.progress({ ...updatedRecords, ...updatedLiveRecords }), error: null }, next.liveWindow ? 'speech_window_complete' : 'chunk_complete');
           if (next.liveWindow) fs.rmSync(next.fileName, { force: true });
           const audioDuration = Math.max(0.001, Number(next.durationSeconds) || 0); const queueDepth = this.queuedCount({ ...updatedRecords, ...updatedLiveRecords }); const queueWaitMs = Math.max(0, Date.parse(processingAt) - Date.parse(currentRecord.queuedAt)); const metrics = { audioDurationSeconds: audioDuration, queueWaitMs, preprocessingMs: parsed.preprocessingMs, runtimeStartupMs: parsed.runtimeStartupMs, whisperWallMs: parsed.whisperWallMs, finalizedToVisibleMs: next.endAt ? Math.max(0, Date.now() - Date.parse(next.endAt)) : 0, rtf: parsed.whisperWallMs / 1000 / audioDuration, queueDepth, speechWindowDurationMs: next.liveWindow ? audioDuration * 1000 : 0, silenceSkippedMs: next.liveWindow?.silenceSkippedMs ?? 0, captureToWindowFinalizedMs: next.liveWindow?.endAt ? Math.max(0, Date.parse(processingAt) - Date.parse(next.liveWindow.endAt)) : 0, windowToWhisperStartMs: next.liveWindow ? queueWaitMs : 0, overlapMs: next.liveWindow?.overlapMs ?? 0, dedupEvents: 0 };
           const meeting = this.meetingMetrics.get(jobId) ?? emptyMeetingMetrics();
           meeting.audioDurationSeconds += audioDuration; meeting.chunks += 1; if (next.liveWindow) meeting.liveWindows = Math.max(meeting.liveWindows, 1); else meeting.archivalFallbackWindows += 1; meeting.inferenceMs += parsed.whisperWallMs; meeting.preprocessingMs += parsed.preprocessingMs; meeting.rtfs.push(metrics.rtf); meeting.visibleLatenciesMs.push(metrics.finalizedToVisibleMs); meeting.maxQueueDepth = Math.max(meeting.maxQueueDepth, queueDepth); this.meetingMetrics.set(jobId, meeting);
           console.info('[transcription]', JSON.stringify({ event: 'chunk_metrics', jobId, sessionId: session.sessionId, source: next.source, sequence: next.sequence, runtimeMode: parsed.runtimeMode, finalizedAt: currentRecord.queuedAt, ...metrics }));
-          if (attributedParsed.rows.length) this.emitSegments(jobId, session, next, attributedParsed.rows, metrics);
+          if (visibleRows.length) this.emitSegments(jobId, session, next, visibleRows, { ...metrics, dedupEvents: Math.max(0, attributedParsed.rows.length - visibleRows.length) });
         } catch (error) {
           const latest = this.jobs.get(jobId); if (!latest) return; const message = error instanceof Error ? error.message : String(error); const failedRecord = { ...processingRecord, state: 'failed' as const, failedAt: new Date().toISOString(), error: message.slice(0, 500) };
           const failedRecords = next.liveWindow ? { ...(latest.liveWindowRecords ?? {}), [key]: failedRecord } : latest.chunkRecords;
@@ -342,6 +344,45 @@ export class LocalTranscriptionService {
   private emit(jobId: string) { const job = this.jobs.get(jobId); if (!job) return; const records = { ...(job.chunkRecords ?? {}), ...(job.liveWindowRecords ?? {}) }; this.progressListeners.forEach((listener) => listener({ jobId, sessionId: job.sessionId, noteId: job.noteId, workspaceId: job.workspaceId, status: job.status, progress: job.progress, currentSource: job.currentSource, currentChunkSequence: job.currentChunkSequence, completedChunks: job.completedChunks, totalChunks: job.totalChunks, queueDepth: this.queuedCount(records), error: job.error })); }
 }
 
-function dedupeSegments(rows: LocalTranscriptSegment[]) { const seen = new Set<string>(); return rows.filter((row) => { const key = `${row.audioSource}:${row.startMs}:${row.endMs}:${row.text.toLowerCase()}`; if (seen.has(key)) return false; seen.add(key); return true; }); }
+function dedupeSegments(rows: LocalTranscriptSegment[]) {
+  const result: LocalTranscriptSegment[] = [];
+  for (const row of rows) {
+    const duplicateIndex = result.findIndex((previous) => areDuplicateSegments(previous, row));
+    if (duplicateIndex < 0) {
+      result.push(row);
+      continue;
+    }
+    // Keep the richer boundary transcription when two overlapping windows
+    // produce the same utterance with slightly different timestamps/text.
+    if (row.text.length > result[duplicateIndex].text.length) result[duplicateIndex] = row;
+  }
+  return result;
+}
+
+function areDuplicateSegments(left: LocalTranscriptSegment, right: LocalTranscriptSegment) {
+  if (left.audioSource !== right.audioSource) return false;
+  const leftText = normalizeTranscriptText(left.text);
+  const rightText = normalizeTranscriptText(right.text);
+  if (!leftText || !rightText) return false;
+  const startsNear = Math.abs(left.startMs - right.startMs) <= 1200;
+  const overlaps = left.startMs <= right.endMs && right.startMs <= left.endMs;
+  if (!startsNear && !overlaps) return false;
+  const leftWords = new Set(leftText.split(' '));
+  const rightWords = new Set(rightText.split(' '));
+  if (leftText === rightText) return true;
+  // Avoid treating a legitimate one-word acknowledgement as a duplicate of
+  // a nearby longer utterance; overlap containment is only reliable for a
+  // phrase with at least two words.
+  if (leftWords.size >= 2 && rightWords.size >= 2) {
+    const contains = (longer: string, shorter: string) => longer === shorter || longer.startsWith(`${shorter} `) || longer.endsWith(` ${shorter}`) || longer.includes(` ${shorter} `);
+    if (contains(leftText, rightText) || contains(rightText, leftText)) return true;
+  }
+  const shared = [...leftWords].filter((word) => rightWords.has(word)).length;
+  return shared >= 4 && shared / Math.max(1, Math.min(leftWords.size, rightWords.size)) >= 0.75;
+}
+
+function normalizeTranscriptText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9']+/g, ' ').replace(/\s+/g, ' ').trim();
+}
 function emptyMeetingMetrics(): MeetingMetrics { return { audioDurationSeconds: 0, chunks: 0, liveWindows: 0, archivalFallbackWindows: 0, inferenceMs: 0, preprocessingMs: 0, rtfs: [], visibleLatenciesMs: [], silenceSkippedMs: 0, speechWindowMs: 0, maxQueueDepth: 0, failures: 0, retries: 0, recoveryFallbacks: 0 }; }
 function isSilentWav(file: string) { try { const stat = fs.statSync(file); if (stat.size <= 44) return true; const handle = fs.openSync(file, 'r'); const sampleBytes = Math.min(stat.size - 44, 16000 * 2 * 5); const buffer = Buffer.alloc(sampleBytes); fs.readSync(handle, buffer, 0, sampleBytes, 44); fs.closeSync(handle); let energy = 0; let samples = 0; for (let offset = 0; offset + 1 < buffer.length; offset += 2) { energy += Math.abs(buffer.readInt16LE(offset)); samples += 1; } return samples === 0 || energy / samples < 80; } catch { return false; } }

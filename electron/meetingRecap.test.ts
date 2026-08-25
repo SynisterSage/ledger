@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildMeetingEvidenceChunks,
   buildMeetingRecapPrompt,
+  dedupeMeetingTranscriptSegments,
   parseMeetingRecapDraft,
   selectMeetingEvidenceChunks,
 } from '../src/types/meetingRecap.ts';
@@ -33,6 +34,26 @@ test('long meeting evidence represents the beginning, middle, and end', () => {
   const chunks = Array.from({ length: 10 }, (_, index) => ({ index, segmentIds: [`segment-${index}`], text: `chunk-${index}` }));
   assert.deepEqual(selectMeetingEvidenceChunks(chunks, 4).map((chunk) => chunk.index), [0, 3, 6, 9]);
   assert.deepEqual(selectMeetingEvidenceChunks(chunks, 1).map((chunk) => chunk.index), [0]);
+});
+
+test('recap evidence includes every chunk for a normal meeting', () => {
+  const chunks = Array.from({ length: 8 }, (_, index) => ({
+    index,
+    segmentIds: [`segment-${index}`],
+    text: `chunk-${index}`,
+  }));
+  assert.deepEqual(
+    selectMeetingEvidenceChunks(chunks, 12).map((chunk) => chunk.index),
+    [0, 1, 2, 3, 4, 5, 6, 7],
+  );
+});
+
+test('recap context removes overlap-window repeats without mutating the source list', () => {
+  const segments = context().transcriptSegments;
+  const duplicate = { ...segments[0], id: 'segment-duplicate', start_ms: 1100, end_ms: 3100, transcript_text: 'We decided to keep the September date.' };
+  const normalized = dedupeMeetingTranscriptSegments([...segments, duplicate]);
+  assert.equal(normalized.length, segments.length);
+  assert.equal(segments.length, 2);
 });
 
 test('meeting recap prompt prioritizes human notes and grounding rules', () => {
@@ -92,6 +113,17 @@ test('recap validation preserves valid action owners and dates', () => {
   }), context());
   assert.equal(draft?.actions[0]?.ownerText, 'Lex');
   assert.equal(draft?.actions[0]?.dueDateText, 'Friday');
+});
+
+test('recap validation keeps a grounded item when the model timestamp drifts', () => {
+  const draft = parseMeetingRecapDraft(JSON.stringify({
+    overview: 'The team aligned on timing.',
+    decisions: [{ text: 'Keep September.', sourceRefs: [{ transcriptSegmentId: 'segment-1', timestampMs: 999999 }] }],
+    actions: [],
+    openThreads: [],
+  }), context());
+  assert.equal(draft?.decisions.length, 1);
+  assert.equal(draft?.decisions[0]?.sourceRefs[0]?.timestampMs, 3000);
 });
 
 test('recap service rejects cross-workspace transcript evidence before model use', async () => {

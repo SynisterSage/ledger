@@ -1,4 +1,4 @@
-import type { MeetingIntelligenceContext } from './notes.ts';
+import type { MeetingIntelligenceContext, TranscriptSegment } from './notes.ts';
 
 export type TranscriptEvidenceRef = {
   transcriptSegmentId: string;
@@ -40,6 +40,34 @@ export type MeetingEvidenceChunk = {
   index: number;
   segmentIds: string[];
   text: string;
+};
+
+/** Remove overlap-window repeats for recap context without mutating stored transcript rows. */
+export const dedupeMeetingTranscriptSegments = (segments: TranscriptSegment[]) => {
+  const result: TranscriptSegment[] = [];
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9']+/g, ' ').replace(/\s+/g, ' ').trim();
+  const duplicate = (left: TranscriptSegment, right: TranscriptSegment) => {
+    if (left.audio_source !== right.audio_source) return false;
+    const leftText = normalize(left.transcript_text);
+    const rightText = normalize(right.transcript_text);
+    const near = Math.abs(left.start_ms - right.start_ms) <= 1200 || (left.start_ms <= right.end_ms && right.start_ms <= left.end_ms);
+    if (!near || !leftText || !rightText) return false;
+    if (leftText === rightText) return true;
+    const leftWords = new Set(leftText.split(' '));
+    const rightWords = new Set(rightText.split(' '));
+    if (leftWords.size < 2 || rightWords.size < 2) return false;
+    const longer = leftText.length >= rightText.length ? leftText : rightText;
+    const shorter = leftText.length >= rightText.length ? rightText : leftText;
+    if (longer.startsWith(`${shorter} `) || longer.endsWith(` ${shorter}`) || longer.includes(` ${shorter} `)) return true;
+    const shared = [...leftWords].filter((word) => rightWords.has(word)).length;
+    return shared >= 4 && shared / Math.max(1, Math.min(leftWords.size, rightWords.size)) >= 0.75;
+  };
+  for (const segment of [...segments].sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order)) {
+    const index = result.findIndex((previous) => duplicate(previous, segment));
+    if (index < 0) result.push(segment);
+    else if (segment.transcript_text.length > result[index].transcript_text.length) result[index] = segment;
+  }
+  return result.sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order);
 };
 
 const clean = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -126,7 +154,7 @@ export const buildMeetingRecapPrompt = (
     custom: context.meeting.templateInstructions ? clean(context.meeting.templateInstructions).slice(0, 1000) : 'Use a balanced generic meeting recap.',
   };
   const selectedEmphasis = emphasis[effectiveTemplate] ?? emphasis.auto;
-  return `SYSTEM / LEDGER MEETING RECAP\nReturn JSON only. Do not return markdown.\nTemplate emphasis: ${selectedEmphasis}\nSchema: {"overview":"","decisions":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"actions":[{"text":"","ownerText":"","dueDateText":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"openThreads":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}]}\nUse only source IDs and timestamps present in the transcript evidence. Never fabricate citations. Human notes are user-authored context: use them to enrich the recap, recover details the transcript may underrepresent, and shape useful emphasis. Do not delete, rewrite, or present human notes as transcript evidence; the original human notes must remain preserved separately under Your notes. Transcript evidence is authoritative for what was said. Exact calendar/project data is authoritative for structured state. Do not invent decisions, owners, deadlines, or speaker identities. A discussion is not a decision unless commitment is supported. Omit uncertain owners and dates. Say less when evidence is weak. Keep overview to 2-4 sentences. Keep each item concise. Return at most 6 decisions, 8 actions, and 6 open threads.\n\nMEETING CONTEXT\n${meeting}\n\nHUMAN NOTES\n${notes || '(none)'}\n\nTRANSCRIPT EVIDENCE\n${evidenceText || '(none)'}`;
+  return `SYSTEM / LEDGER MEETING RECAP\nReturn JSON only. Do not return markdown.\nTemplate emphasis: ${selectedEmphasis}\nSchema: {"overview":"","decisions":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"actions":[{"text":"","ownerText":"","dueDateText":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"openThreads":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}]}\nProduce a substantive recap, not an overview-only summary. Identify concrete decisions, commitments/next actions, and unresolved questions when the transcript supports them; include at least one concise item in each supported section. For every decision, action, or open thread, include at least one sourceRef. Copy transcriptSegmentId exactly from the evidence line and copy its timestampMs exactly; do not invent, shorten, or convert the ID or timestamp. Use only source IDs present in the transcript evidence. Never fabricate citations. Human notes are user-authored context: use them to enrich the recap, recover details the transcript may underrepresent, and shape useful emphasis. Do not delete, rewrite, or present human notes as transcript evidence; the original human notes must remain preserved separately under Your notes. Transcript evidence is authoritative for what was said. Exact calendar/project data is authoritative for structured state. Do not invent decisions, owners, deadlines, or speaker identities. A discussion is not a decision unless commitment is supported. Omit uncertain owners and dates. Keep overview to 2-4 sentences. Keep each item concise. Return at most 4 decisions, 6 actions, and 4 open threads.\n\nMEETING CONTEXT\n${meeting}\n\nHUMAN NOTES\n${notes || '(none)'}\n\nTRANSCRIPT EVIDENCE\n${evidenceText || '(none)'}`;
 };
 
 const parseJson = (text: string): unknown => {
@@ -146,9 +174,15 @@ export const parseMeetingRecapDraft = (text: string, context: MeetingIntelligenc
         const id = clean(ref.transcriptSegmentId);
         const segment = segments.get(id);
         const timestampMs = Number(ref.timestampMs);
-        return segment && Number.isFinite(timestampMs) && timestampMs >= segment.start_ms && timestampMs <= segment.end_ms
-          ? [{ transcriptSegmentId: id, timestampMs: Math.max(0, Math.floor(timestampMs)) }]
-          : [];
+        if (!segment) return [];
+        // Models sometimes preserve the correct segment ID but drift slightly
+        // on the timestamp, especially after compacting long transcripts.
+        // The ID is the authoritative grounding key; clamp a numeric timestamp
+        // to that segment instead of dropping the entire insight.
+        const safeTimestamp = Number.isFinite(timestampMs)
+          ? Math.max(segment.start_ms, Math.min(segment.end_ms, Math.floor(timestampMs)))
+          : segment.start_ms;
+        return [{ transcriptSegmentId: id, timestampMs: Math.max(0, safeTimestamp) }];
       }).slice(0, 4)
     : [];
   const insight = (item: unknown): MeetingInsight | null => {

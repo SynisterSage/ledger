@@ -1210,6 +1210,9 @@ const processPendingInviteToken = () => {
 
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
+  console.error(
+    '[electron] Another Ledger instance is already running; close the packaged app before starting development.'
+  );
   app.quit();
 }
 
