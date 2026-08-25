@@ -292,9 +292,17 @@ export function CenterEventBlock({
           style={{ backgroundColor: muted ? 'var(--ledger-text-muted)' : color }}
         />
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-normal">{titleContent ?? title}</span>
+          <span
+            className={`block min-w-0 overflow-hidden font-normal ${
+              height >= 48
+                ? 'break-words [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]'
+                : 'truncate'
+            }`}
+          >
+            {titleContent ?? title}
+          </span>
           {timeRange && height >= 62 && !compact ? (
-            <span className="mt-1 block truncate text-[10px] text-[var(--ledger-text-muted)]">
+            <span className="mt-1 block min-w-0 truncate pr-1 text-[10px] tabular-nums text-[var(--ledger-text-muted)]">
               {timeRange}
             </span>
           ) : null}

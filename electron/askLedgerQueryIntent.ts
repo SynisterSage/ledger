@@ -90,6 +90,14 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
   if (/\b(follow[- ]?ups?|came from (a )?meeting|meeting actions?)\b/.test(normalized)) {
     return { kind: 'followups' };
   }
+  const asksForScheduleOverview =
+    /\b(?:weekly|workweek|work schedule|calendar schedule|days off|day off)\b/.test(normalized) ||
+    /\b(?:schedule|calendar)\b.*\b(?:look|looking|overview|pattern|off|work)\b/.test(normalized);
+  if (asksForScheduleOverview) {
+    // This is a whole schedule question, not a current-week lookup. Leave
+    // the window open so Ledger can derive a pattern from calendar records.
+    return { kind: 'weekly_overview' };
+  }
   if (!asksAboutExistingKnowledge && (/\b(meetings?|events?)\b/.test(normalized) || /\b(calendar|schedule)\b.*\b(upcoming|today|this week|next week|event|meeting)\b/.test(normalized))) {
     return { kind: 'events' };
   }

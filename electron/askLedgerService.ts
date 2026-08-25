@@ -47,6 +47,83 @@ const formatLedgerDate = (value?: string, timeZone?: string) => {
   return value.includes('T') ? display.displayTimestamp : display.displayDueDate;
 };
 
+export const buildCalendarScheduleOverview = (
+  documents: AskLedgerContextItem[],
+  workspaceId: string,
+  timeZone?: string,
+  timeFormat?: '12h' | '24h',
+): AskLedgerContextItem | null => {
+  const events = documents
+    .filter((item) => item.resourceType === 'event' && item.timestamp && Number.isFinite(Date.parse(item.timestamp)))
+    .sort((left, right) => Date.parse(left.timestamp ?? '') - Date.parse(right.timestamp ?? ''));
+  if (!events.length) return null;
+
+  const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const dayGroups = new Map<string, Map<string, { title: string; start: string; end: string; count: number }>>();
+  const eventCounts = new Map<string, number>();
+  const dateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone });
+  const partsFor = (value: string) => new Intl.DateTimeFormat(undefined, {
+    weekday: 'long',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: timeFormat !== '24h',
+    timeZone,
+  }).formatToParts(new Date(value));
+  const part = (parts: Intl.DateTimeFormatPart[], type: string) => parts.find((entry) => entry.type === type)?.value ?? '';
+
+  for (const event of events) {
+    const startParts = partsFor(event.timestamp as string);
+    const endParts = event.endAt ? partsFor(event.endAt) : [];
+    const weekday = part(startParts, 'weekday');
+    if (!weekday) continue;
+    const start = (part(startParts, 'hour') + ':' + part(startParts, 'minute') + ' ' + part(startParts, 'dayPeriod')).trim();
+    const end = endParts.length
+      ? (part(endParts, 'hour') + ':' + part(endParts, 'minute') + ' ' + part(endParts, 'dayPeriod')).trim()
+      : '';
+    const title = event.title || 'Untitled calendar item';
+    const key = title + '|' + start + '|' + end;
+    const group = dayGroups.get(weekday) ?? new Map<string, { title: string; start: string; end: string; count: number }>();
+    const current = group.get(key) ?? { title, start, end, count: 0 };
+    current.count += 1;
+    group.set(key, current);
+    dayGroups.set(weekday, group);
+    eventCounts.set(title, (eventCounts.get(title) ?? 0) + 1);
+  }
+
+  const weeklyLines = dayOrder.map((day) => {
+    const entries = [...(dayGroups.get(day)?.values() ?? [])]
+      .sort((left, right) => left.start.localeCompare(right.start))
+      .map((entry) => entry.title + ' ' + entry.start + (entry.end ? '–' + entry.end : '') + ' (' + entry.count + ' entries)');
+    return day + ': ' + (entries.length ? entries.join('; ') : 'No calendar entries');
+  });
+  const weekdaysOff = dayOrder.slice(0, 5).filter((day) => !dayGroups.has(day));
+  const firstDate = dateFormatter.format(new Date(events[0].timestamp as string));
+  const lastDate = dateFormatter.format(new Date(events[events.length - 1].timestamp as string));
+  const itemCounts = [...eventCounts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([title, count]) => title + ': ' + count + ' entries');
+  const content = [
+    'Full imported calendar schedule: ' + events.length + ' entries across ' + eventCounts.size + ' distinct items, from ' + firstDate + ' through ' + lastDate + '.',
+    'Typical weekly pattern derived from every imported calendar entry:',
+    ...weeklyLines,
+    'Typical weekdays off: ' + (weekdaysOff.length ? weekdaysOff.join(', ') : 'None on Monday through Friday') + '.',
+    'Item totals: ' + itemCounts.join('; ') + '.',
+    'This is a pattern summary; individual dates remain authoritative for holidays, breaks, and exceptions.',
+  ].join('\n');
+
+  return {
+    workspaceId,
+    resourceType: 'event',
+    resourceId: 'calendar-schedule-overview',
+    title: 'Imported calendar schedule overview',
+    content,
+    sourceLabel: 'Calendar schedule',
+    timestamp: events[0].timestamp,
+    endAt: events[events.length - 1].endAt,
+    metadata: { scheduleEventCount: events.length, scheduleItemCount: eventCounts.size },
+  };
+};
+
 const outputMappingsFor = (items: AskLedgerContextItem[], timeZone?: string, timeFormat?: '12h' | '24h'): AskLedgerOutputMapping[] => items.flatMap((item) => {
   const display = structuredValueLinesFor(item, { timeZone, timeFormat }).display;
   const mappings: AskLedgerOutputMapping[] = [];
@@ -873,11 +950,19 @@ export class AskLedgerService {
       const meetingAnchorInstruction = explicitContext?.contextType === 'meeting'
         ? `Selected meeting anchor: "${explicitContext.title}". Scope meeting questions to the current meeting note, explicit calendar series, linked project, confirmed attendees, related meeting records, and their exact transcript evidence. For questions about what was said, mentioned, discussed, or happened, treat transcript segment text as the primary evidence and summarize those segments directly; do not substitute meeting dates, status, project metadata, or generic note fields for transcript content. Use current task/project state only for what is true now. Never use a same-title meeting from another series or workspace.`
         : '';
+      const intent = detectAskLedgerQueryIntent(request.question);
+      const scheduleOverview = intent.kind === 'weekly_overview' && !intent.window;
+      const scheduleOverviewItem = scheduleOverview
+        ? buildCalendarScheduleOverview(request.documents, request.workspaceId, request.timeZone, request.timeFormat)
+        : null;
       const notesHomeInstruction = notesHomeScopeInstruction(explicitContext);
       const retrievalQuestion = [
         request.question,
         notesHomeInstruction,
         meetingAnchorInstruction,
+        scheduleOverviewItem
+          ? 'This is a whole-calendar schedule question. Use the supplied calendar schedule overview as the authoritative summary. Explain the repeating weekly pattern, typical days off, item names, times, and any date-range caveats. Do not limit the answer to the current week.'
+          : '',
         skill ? buildSkillPromptContext(skill, request.explicitContext) : '',
         conversationForCurrentTurn?.initialContext ? `Current Ledger context: ${conversationForCurrentTurn.initialContext.title}` : '',
         projectAnchorInstruction,
@@ -897,8 +982,7 @@ export class AskLedgerService {
         ? request.documents.filter((item) => item.resourceType === 'attachment').map((item) => `${item.resourceType}:${item.resourceId}`)
         : [];
       const isCustomSkill = Boolean(skill && !getAskLedgerSkill(skill.id));
-      const intent = detectAskLedgerQueryIntent(request.question);
-      const retrievalLimit = skill?.id === 'plan_my_week' || intent.kind === 'weekly_overview' ? 32 : 20;
+      const retrievalLimit = scheduleOverviewItem ? Math.max(160, request.documents.length + 1) : skill?.id === 'plan_my_week' || intent.kind === 'weekly_overview' ? 32 : 20;
       // The renderer's document snapshot can be intentionally small (for
       // example, a project handoff may contain only the selected project).
       // Project questions must read the workspace index as well so exact
@@ -907,7 +991,9 @@ export class AskLedgerService {
       // structured lookup intentionally skips semantic indexing, so pass that
       // corpus directly into the retrieval pipeline.
       const projectAnchoredRequest = Boolean(explicitContext?.resourceType === 'project');
-      const retrievalDocuments = semanticIndexRequired || projectAnchoredRequest ? undefined : request.documents;
+      const retrievalDocuments = scheduleOverviewItem
+        ? [...request.documents, scheduleOverviewItem]
+        : semanticIndexRequired || projectAnchoredRequest ? undefined : request.documents;
       const retrievalStartedAt = Date.now();
       performanceTrace.mark('retrievalStarted');
       // Custom skills can intentionally submit an empty question. Give the
@@ -921,7 +1007,7 @@ export class AskLedgerService {
         retrievalQuestion,
         skillId: skill?.id,
         ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources } : {}),
-        boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
+        boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(scheduleOverviewItem ? ['event:calendar-schedule-overview'] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
         attachmentFocus: genericAttachmentQuestion,
         skipSemantic: genericAttachmentQuestion || route.mode === 'follow_up' || route.executionMode === 'workspace_lookup',
         resolvedResourceKeys: [
@@ -997,6 +1083,8 @@ export class AskLedgerService {
           ? [...meetingNotes, ...skillItems.filter((item) => item.resourceType !== 'note').slice(0, 13)]
         : intent.kind === 'integration'
           ? skillItems.slice(0, 16)
+        : scheduleOverviewItem
+          ? [scheduleOverviewItem]
         : intent.kind === 'weekly_overview'
           ? skillItems.slice(0, 20)
         : skillItems.slice(0, skill ? 10 : 8);
@@ -1005,9 +1093,9 @@ export class AskLedgerService {
       performanceTrace.mark('evidenceBuildStarted');
       const customSkill = Boolean(skill && !skill.outputSections);
       const evidenceBudget = {
-        maxResources: customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
-        maxTokens: customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
-        maxItemTokens: customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520,
+        maxResources: scheduleOverviewItem ? 1 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
+        maxTokens: scheduleOverviewItem ? 2600 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
+        maxItemTokens: scheduleOverviewItem ? 2400 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520,
       };
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems, budget: evidenceBudget, timeZone: request.timeZone, timeFormat: request.timeFormat });
       performanceTrace.mark('evidenceBuildCompleted');
@@ -1031,7 +1119,7 @@ export class AskLedgerService {
         question: request.question,
         skillReasoningPolicy: skill?.reasoningPolicy,
       });
-      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: customSkill ? 1600 : skill ? 2200 : projectAnchoredRequest ? 1200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: customSkill ? 300 : projectAnchoredRequest ? 360 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
+      const normalized = new LedgerContextBuilder().normalize(evidence.selectedItems, { maxContextTokens: scheduleOverviewItem ? 3200 : customSkill ? 1600 : skill ? 2200 : projectAnchoredRequest ? 1200 : retrievalPlan.primaryResourceTypes.length ? 4200 : 2400, maxItemTokens: scheduleOverviewItem ? 2400 : customSkill ? 300 : projectAnchoredRequest ? 360 : retrievalPlan.primaryResourceTypes.length ? 1000 : 700, sortByFreshness: retrievalPlan.primaryResourceTypes.length ? false : intent.kind === 'recent_updates' || intent.kind === 'meeting_prep' || intent.kind === 'integration' || intent.kind === 'weekly_overview', timeZone: request.timeZone, timeFormat: request.timeFormat });
       emit({ type: 'activity', requestId, activity: { type: 'sources_found', count: normalized.items.length, sources: previewSources(normalized.items) } });
       emit({ type: 'activity', requestId, activity: { type: 'reading_context', count: normalized.items.length, sources: previewSources(normalized.items) } });
       const sourceByKey = new Map<string, AskLedgerSource>();

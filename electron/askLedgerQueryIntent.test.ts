@@ -59,3 +59,8 @@ test('broad weekly overview includes workspace context beyond schedule items', (
   assert.equal(intent.kind, 'weekly_overview');
   assert.deepEqual(resourceTypesForAskLedgerIntent(intent), ['project', 'task', 'milestone', 'reminder', 'event', 'person', 'team', 'note', 'transcript', 'intake', 'external']);
 });
+
+test('routes broad work or imported calendar schedule questions to a whole-schedule overview', () => {
+  assert.deepEqual(detectAskLedgerQueryIntent('I imported my work schedule; how does my weekly schedule look and what days are off?'), { kind: 'weekly_overview' });
+  assert.deepEqual(detectAskLedgerQueryIntent('What events are on my weekly schedule?'), { kind: 'weekly_overview' });
+});
