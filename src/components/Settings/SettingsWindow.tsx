@@ -1,5 +1,6 @@
 import {
   Bell,
+  Bug,
   BriefcaseBusiness,
   ChevronLeft,
   ChevronRight,
@@ -230,6 +231,16 @@ type AccountSessionsResponse = {
   sessions: AccountSessionRow[];
 };
 
+const accountSessionIdentity = (session: Pick<AccountSessionRow, 'device_name' | 'platform'>) =>
+  `${session.platform}:${(session.device_name?.trim() || formatLedgerSessionPlatformLabel(session.platform)).toLowerCase().replace(/\s+/g, ' ')}`;
+
+const preferAccountSession = (candidate: AccountSessionRow, current: AccountSessionRow) => {
+  if (candidate.is_current !== current.is_current) return candidate.is_current;
+  const candidateTime = candidate.last_seen_at ? Date.parse(candidate.last_seen_at) : 0;
+  const currentTime = current.last_seen_at ? Date.parse(current.last_seen_at) : 0;
+  return candidateTime > currentTime;
+};
+
 const getSessionIcon = (session: Pick<AccountSessionRow, 'device_name' | 'platform'>) => {
   const deviceName = session.device_name?.toLowerCase() ?? '';
   if (deviceName.includes('windows')) return '/windows.svg';
@@ -279,7 +290,8 @@ type SettingsSectionId =
   | 'accessibility'
   | 'meeting_notes'
   | 'local_ai'
-  | 'speaker_tags';
+  | 'speaker_tags'
+  | 'report_bug';
 type SettingsNavGroupId = 'account' | 'workspace' | 'preferences';
 
 type SettingsNavSection = {
@@ -412,6 +424,12 @@ const settingsNavGroups: Array<{
         description: 'Local audio, transcription, and privacy',
         icon: Mic,
       },
+      {
+        id: 'report_bug',
+        label: 'Report a bug',
+        description: 'Send a problem report to Ledger',
+        icon: Bug,
+      },
     ],
   },
 ];
@@ -434,6 +452,7 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
     section === 'meeting_notes' ||
     section === 'local_ai'
     || section === 'speaker_tags'
+    || section === 'report_bug'
   );
 };
 
@@ -933,7 +952,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     setActiveSection(section);
     if (window.desktopWindow) return;
 
-    if (section === 'account' || section === 'sessions' || section === 'accessibility' || section === 'shortcuts') {
+    if (section === 'account' || section === 'sessions' || section === 'accessibility' || section === 'shortcuts' || section === 'report_bug') {
       platform.navigation.openRoute({ kind: 'app', page: 'settings', section });
       return;
     }
@@ -1235,6 +1254,11 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
 
   const [fullName, setFullName] = useState('');
   const [isEditingFullName, setIsEditingFullName] = useState(false);
+  const [bugReportTitle, setBugReportTitle] = useState('');
+  const [bugReportDescription, setBugReportDescription] = useState('');
+  const [bugReportStatus, setBugReportStatus] = useState<string | null>(null);
+  const [bugReportError, setBugReportError] = useState<string | null>(null);
+  const [isSubmittingBugReport, setIsSubmittingBugReport] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -1610,13 +1634,22 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     Boolean(activeSection)
   );
 
+  const uniqueAccountSessions = useMemo(() => {
+    const sessionsByDevice = new Map<string, AccountSessionRow>();
+    for (const session of accountSessions) {
+      const key = accountSessionIdentity(session);
+      const existing = sessionsByDevice.get(key);
+      if (!existing || preferAccountSession(session, existing)) sessionsByDevice.set(key, session);
+    }
+    return Array.from(sessionsByDevice.values());
+  }, [accountSessions]);
   const currentAccountSession = useMemo(
-    () => accountSessions.find((session) => session.is_current) ?? null,
-    [accountSessions]
+    () => uniqueAccountSessions.find((session) => session.is_current) ?? null,
+    [uniqueAccountSessions]
   );
   const otherAccountSessions = useMemo(
-    () => accountSessions.filter((session) => !session.is_current),
-    [accountSessions]
+    () => uniqueAccountSessions.filter((session) => !session.is_current),
+    [uniqueAccountSessions]
   );
   const handleRevokeAccountSession = async (session: AccountSessionRow) => {
     const deviceLabel =
@@ -1643,6 +1676,39 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const currentSessionPlatformLabel = formatLedgerSessionPlatformLabel(
     currentAccountSession?.platform ?? getLedgerSessionPlatform()
   );
+
+  const submitBugReport = async () => {
+    const title = bugReportTitle.trim();
+    const description = bugReportDescription.trim();
+    if (!title || !description) {
+      setBugReportError('Add a short summary and describe what happened.');
+      return;
+    }
+    setIsSubmittingBugReport(true);
+    setBugReportError(null);
+    setBugReportStatus(null);
+    try {
+      await api.createBugReport({
+        title,
+        description,
+        workspace_id: activeWorkspaceId ?? null,
+        page: window.location.pathname,
+        settings_section: activeSection,
+        platform: window.desktopWindow ? 'desktop' : 'web',
+        metadata: {
+          user_agent: navigator.userAgent,
+          viewport: `${window.innerWidth}x${window.innerHeight}`,
+        },
+      });
+      setBugReportTitle('');
+      setBugReportDescription('');
+      setBugReportStatus('Thanks — your bug report was sent.');
+    } catch (error) {
+      setBugReportError(error instanceof Error ? error.message : 'Could not send the bug report.');
+    } finally {
+      setIsSubmittingBugReport(false);
+    }
+  };
 
   const handleResetSidebarSettings = () => {
     setPosition(defaultSidebarPreferences.position);
@@ -2908,7 +2974,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                     </p>
                   </header>
 
-                  <div className="mt-8 space-y-9">
+                  <div className="mt-8 space-y-7">
                     <section aria-labelledby="settings-profile">
                       <h3 id="settings-profile" className={settingsTheme.sectionTitle}>
                         Profile
@@ -3005,7 +3071,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         </div>
                       </div>
 
-                      <div className="mt-5 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
+                      <div className={settingsTheme.sectionRows + ' mt-5'}>
                         <div className="flex flex-col gap-1 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                           <div className="min-w-0">
                             <p className={settingsTheme.label}>Email address</p>
@@ -3022,7 +3088,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       <h3 id="settings-security" className={settingsTheme.sectionTitle}>
                         Security
                       </h3>
-                      <div className="mt-4 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
+                      <div className={settingsTheme.sectionRows}>
                         <div className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                           <div className="min-w-0">
                             <p className={settingsTheme.label}>Password</p>
@@ -3134,7 +3200,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       <h3 id="settings-account-actions" className={settingsTheme.sectionTitle}>
                         Account actions
                       </h3>
-                      <div className="mt-4 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]">
+                      <div className={settingsTheme.sectionRows}>
                         <div className="flex flex-col gap-3 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                           <div className="min-w-0">
                             <p className={settingsTheme.label}>Sign out</p>
@@ -3155,11 +3221,9 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       </div>
                     </section>
 
-                    <section
-                      className="border-t border-[color:var(--ledger-border-strong)] pt-7"
-                      aria-labelledby="settings-account-danger-zone"
-                    >
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                    <section aria-labelledby="settings-account-danger-zone">
+                      <div className="mt-7 rounded-xl border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.025)] p-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                         <div className="space-y-1">
                           <h3 id="settings-account-danger-zone" className={settingsTheme.sectionTitle}>
                             Danger zone
@@ -3176,8 +3240,68 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         >
                           Delete account
                         </button>
+                        </div>
                       </div>
                     </section>
+                  </div>
+                </section>
+              )}
+
+              {activeSection === 'report_bug' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-report-bug">
+                  <header className="space-y-2">
+                    <h2 id="settings-report-bug" className={settingsTheme.pageTitle}>
+                      Report a bug
+                    </h2>
+                    <p className={settingsTheme.pageSubtitle}>
+                      Tell us what went wrong and where you saw it. We’ll use the details to investigate.
+                    </p>
+                  </header>
+
+                  <div className="mt-8 space-y-4">
+                    <div className={settingsTheme.sectionRows}>
+                      <div className="space-y-2.5">
+                        <label htmlFor="settings-bug-title" className={settingsTheme.label}>
+                          Short summary
+                        </label>
+                        <input
+                          id="settings-bug-title"
+                          value={bugReportTitle}
+                          onChange={(event) => setBugReportTitle(event.target.value)}
+                          placeholder="What went wrong?"
+                          maxLength={200}
+                          className={settingsTheme.input}
+                        />
+                      </div>
+                      <div className="space-y-2.5">
+                        <label htmlFor="settings-bug-description" className={settingsTheme.label}>
+                          What happened?
+                        </label>
+                        <textarea
+                          id="settings-bug-description"
+                          value={bugReportDescription}
+                          onChange={(event) => setBugReportDescription(event.target.value)}
+                          placeholder="Include the steps that led to the problem and what you expected to happen."
+                          maxLength={10000}
+                          rows={7}
+                          className="w-full resize-y rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div aria-live="polite">
+                        {bugReportError ? <p className="text-xs text-[var(--ledger-danger)]">{bugReportError}</p> : null}
+                        {bugReportStatus ? <p className="text-xs text-[var(--ledger-success)]">{bugReportStatus}</p> : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void submitBugReport()}
+                        disabled={isSubmittingBugReport}
+                        className={settingsTheme.primaryButton + ' shrink-0'}
+                      >
+                        {isSubmittingBugReport ? 'Sending…' : 'Send report'}
+                      </button>
+                    </div>
                   </div>
                 </section>
               )}
@@ -5761,6 +5885,25 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 </section>
               )}
 
+                <footer className="mt-8 pb-2 text-center text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                  <a
+                    href="https://ledgerworkspace.com/terms"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2 transition hover:text-[var(--ledger-text-secondary)]"
+                  >
+                    Terms
+                  </a>
+                  <span className="px-1.5">·</span>
+                  <a
+                    href="https://ledgerworkspace.com/privacy"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2 transition hover:text-[var(--ledger-text-secondary)]"
+                  >
+                    Privacy Policy
+                  </a>
+                </footer>
               </SettingsPage>
               <ModalOverlay
                 isOpen={isMeetingModelDownloadOpen && !isMeetingModelDownloadMinimized}

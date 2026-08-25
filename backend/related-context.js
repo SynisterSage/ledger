@@ -107,10 +107,22 @@ const targetKey = (target) => `${target.type}:${target.id}`;
 
 const externalReferenceTarget = (workspaceId, reference, extra = {}) => {
   const metadata = reference.metadata && typeof reference.metadata === 'object' ? reference.metadata : {};
+  const metadataTitle = [
+    metadata.title,
+    metadata.name,
+    metadata.nodeName,
+    metadata.fileName,
+    metadata.pageName,
+    metadata.documentName,
+    metadata.repositoryFullName,
+  ].find((value) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized && !['unknown', 'untitled', 'external resource'].includes(normalized);
+  });
   return {
     type: 'external_reference',
     id: String(reference.id),
-    title: asText(metadata.title ?? metadata.name ?? metadata.repositoryFullName, reference.external_type || 'External resource'),
+    title: asText(metadataTitle, reference.external_type === 'unknown' ? 'External resource' : reference.external_type || 'External resource'),
     workspace_id: workspaceId,
     provider: reference.provider,
     url: reference.normalized_url ?? reference.external_url ?? null,
@@ -231,20 +243,32 @@ const createReader = ({ supabase, ensureWorkspaceResource }) => {
       ['workspace_id', workspaceId],
       ['id', referenceIds],
     ]);
+    let intakeFallbackTitle = null;
+    if (resourceType === 'intake') {
+      const intakeRows = await query('inbox_items', 'title, raw_payload', [['workspace_id', workspaceId], ['id', resourceId]]);
+      const intake = intakeRows[0];
+      const rawPayload = intake?.raw_payload && typeof intake.raw_payload === 'object' ? intake.raw_payload : {};
+      intakeFallbackTitle = [rawPayload.node_name, rawPayload.file_name, intake?.title].find((value) => {
+        const normalized = String(value ?? '').trim().toLowerCase();
+        return normalized && !['unknown', 'untitled', 'figma design'].includes(normalized);
+      }) ?? null;
+    }
     const byId = new Map(references.map((reference) => [String(reference.id), reference]));
     for (const link of links) {
       const reference = byId.get(String(link.external_reference_id));
       if (!reference) continue;
+      const target = externalReferenceTarget(workspaceId, reference);
+      if (intakeFallbackTitle && ['external resource', 'unknown', 'file', 'node'].includes(String(target.title).trim().toLowerCase())) target.title = String(intakeFallbackTitle).trim();
       addItem(items, {
         relationship: 'references',
         direction: 'outgoing',
         source: 'external_reference',
-        target: externalReferenceTarget(workspaceId, reference),
+        target,
         provenance: {
           source_type: reference.provider,
           source_id: reference.id,
           source_url: reference.normalized_url ?? reference.external_url ?? null,
-          source_label: externalReferenceTarget(workspaceId, reference).title,
+          source_label: target.title,
           link_sources: link.sources ?? [],
         },
         created_at: link.created_at ?? null,
@@ -329,7 +353,7 @@ const createReader = ({ supabase, ensureWorkspaceResource }) => {
 
   const addConvertedExternalReference = async (workspaceId, resourceType, resourceId, items) => {
     if (resourceType !== 'intake') return;
-    const rows = await query('inbox_items', 'id, workspace_id, title, source, source_id, source_url, source_provider, converted_type, converted_id, converted_at, created_at', [
+    const rows = await query('inbox_items', 'id, workspace_id, title, raw_payload, source, source_id, source_url, source_provider, converted_type, converted_id, converted_at, created_at', [
       ['workspace_id', workspaceId],
       ['id', resourceId],
     ]);
@@ -341,16 +365,23 @@ const createReader = ({ supabase, ensureWorkspaceResource }) => {
     ]);
     const reference = references[0];
     if (!reference) return;
+    const rawPayload = intake.raw_payload && typeof intake.raw_payload === 'object' ? intake.raw_payload : {};
+    const intakeTitle = [rawPayload.node_name, rawPayload.file_name, intake.title].find((value) => {
+      const normalized = String(value ?? '').trim().toLowerCase();
+      return normalized && !['unknown', 'untitled', 'figma design'].includes(normalized);
+    });
+    const target = externalReferenceTarget(workspaceId, reference);
+    if (intakeTitle && ['external resource', 'unknown', 'file', 'node'].includes(String(target.title).trim().toLowerCase())) target.title = String(intakeTitle).trim();
     addItem(items, {
       relationship: 'converted_from',
       direction: 'incoming',
       source: 'provenance',
-      target: externalReferenceTarget(workspaceId, reference),
+      target,
       provenance: {
         source_type: reference.provider,
         source_id: reference.id,
         source_url: reference.normalized_url ?? reference.external_url ?? null,
-        source_label: externalReferenceTarget(workspaceId, reference).title,
+        source_label: target.title,
         captured_at: intake.converted_at ?? intake.created_at ?? null,
       },
       created_at: intake.converted_at ?? intake.created_at ?? null,
@@ -434,7 +465,9 @@ const createReader = ({ supabase, ensureWorkspaceResource }) => {
         query('meeting_note_metadata', 'id, note_id, workspace_id, calendar_event_id, calendar_provider, calendar_event_key, calendar_event_title, calendar_source_name, scheduled_start_at, scheduled_end_at', [['workspace_id', workspaceId], ['note_id', resourceId]]),
         query('meeting_transcript_links', 'id, meeting_note_id, transcript_segment_id, link_type, ledger_item_type, ledger_item_id, quoted_text, timestamp_ms, speaker_label, audio_source, created_at', [['workspace_id', workspaceId], ['meeting_note_id', resourceId]]),
       ]);
+      const linkedProjectIds = unique(projectLinks.map((link) => link.project_id));
       for (const link of projectLinks) addItem(items, { relationship: 'belongs_to', direction: 'outgoing', source: 'join', target: await queryOne('project', link.project_id, workspaceId), created_at: link.created_at ?? null });
+      for (const projectId of linkedProjectIds) await addProjectContext(workspaceId, projectId, items);
       for (const event of events) addItem(items, { relationship: 'related_to', direction: 'outgoing', source: 'foreign_key', target: targetFromRow(workspaceId, 'event', event), created_at: event.updated_at ?? event.created_at ?? null });
       for (const reminder of reminders) addItem(items, { relationship: 'related_to', direction: 'outgoing', source: 'foreign_key', target: targetFromRow(workspaceId, 'reminder', reminder), created_at: reminder.updated_at ?? reminder.created_at ?? null });
       for (const meeting of metadata) {

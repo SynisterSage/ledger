@@ -1,5 +1,18 @@
 /// <reference types="vite/client" />
 
+type LedgerTouchBarContextBridgePayload = {
+  page: 'notes' | 'projects' | 'calendar' | 'dashboard' | 'search' | 'settings' | 'other';
+  surface: 'list' | 'detail' | 'editor' | 'unknown';
+  authenticated: boolean;
+  appReady: boolean;
+  workspaceId?: string;
+  resource?: { type: 'note' | 'project' | 'event' | 'task'; id: string };
+  noteMode?: 'write' | 'mind-map' | 'transcribe';
+  calendarView?: 'day' | 'week' | 'month';
+  meeting?: { active: boolean; state?: 'recording' | 'paused' | 'processing' | 'completed'; noteId?: string; eventId?: string; workspaceId?: string; canPause?: boolean; canResume?: boolean; canStop?: boolean; transcriptAvailable?: boolean };
+  windowContext: 'sidebar' | 'workspace' | 'module' | 'unknown';
+};
+
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen';
 type ModuleWindowKind =
   | 'new-tab'
@@ -52,14 +65,25 @@ interface ImportMeta {
 
 interface Window {
   speakerTags?: {
-    status: () => Promise<{ platform: string; state: 'authorized' | 'not_authorized' | 'unsupported' }>;
-    setup: () => Promise<{ platform: string; state: 'authorized' | 'not_authorized' | 'unsupported' }>;
+    status: () => Promise<{
+      platform: string;
+      state: 'authorized' | 'not_authorized' | 'unsupported';
+    }>;
+    setup: () => Promise<{
+      platform: string;
+      state: 'authorized' | 'not_authorized' | 'unsupported';
+    }>;
     start: () => Promise<unknown>;
     onEvent: (listener: (event: unknown) => void) => () => void;
   };
   ledgerIpc?: {
-    events?: Record<string, (listenerOrSubscription: ((...args: any[]) => void) | string) => string | void>;
-    commands?: Record<string, (payload?: any) => Promise<unknown> | void>;
+    events?: Record<
+      string,
+      (listenerOrSubscription: ((...args: any[]) => void) | string) => string | void
+    >;
+    commands?: Record<string, (payload?: any) => Promise<unknown> | void> & {
+      setTouchBarContext?: (context: LedgerTouchBarContextBridgePayload) => void;
+    };
   };
   __LEDGER_RUNTIME__?: {
     apiUrl?: string;
@@ -68,14 +92,50 @@ interface Window {
     supabasePublishableKey?: string;
   };
   meetingAudio?: {
-    devices: () => Promise<{ devices: Array<{ id: string; name: string; kind: 'input'; available: boolean; isBluetooth: boolean; isDefault: boolean; isOutputDefault: boolean; channelCount: number }>; outputDevice: { id: string; name: string; isBluetooth: boolean } | null }>;
+    devices: () => Promise<{
+      devices: Array<{
+        id: string;
+        name: string;
+        kind: 'input';
+        available: boolean;
+        isBluetooth: boolean;
+        isDefault: boolean;
+        isOutputDefault: boolean;
+        channelCount: number;
+      }>;
+      outputDevice: { id: string; name: string; isBluetooth: boolean } | null;
+    }>;
     permissions: () => Promise<{
-      microphone: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
-      systemAudio: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
+      microphone:
+        | 'not_requested'
+        | 'granted'
+        | 'denied'
+        | 'restricted'
+        | 'requires_restart'
+        | 'unavailable';
+      systemAudio:
+        | 'not_requested'
+        | 'granted'
+        | 'denied'
+        | 'restricted'
+        | 'requires_restart'
+        | 'unavailable';
     }>;
     requestPermissions: () => Promise<{
-      microphone: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
-      systemAudio: 'not_requested' | 'granted' | 'denied' | 'restricted' | 'requires_restart' | 'unavailable';
+      microphone:
+        | 'not_requested'
+        | 'granted'
+        | 'denied'
+        | 'restricted'
+        | 'requires_restart'
+        | 'unavailable';
+      systemAudio:
+        | 'not_requested'
+        | 'granted'
+        | 'denied'
+        | 'restricted'
+        | 'requires_restart'
+        | 'unavailable';
     }>;
     openSystemSettings: (area: 'microphone' | 'screen-recording') => Promise<boolean>;
     status: () => Promise<unknown>;
@@ -83,25 +143,52 @@ interface Window {
     openStoragePath: () => Promise<{ ok: boolean; error?: string }>;
     recoveries: () => Promise<unknown>;
     inspect: (sessionId?: string) => Promise<unknown>;
-    recover: (payload: { sessionId: string; noteId: string; workspaceId: string }) => Promise<unknown>;
+    recover: (payload: {
+      sessionId: string;
+      noteId: string;
+      workspaceId: string;
+    }) => Promise<unknown>;
     discardRecovery: (sessionId: string) => Promise<unknown>;
-    start: (payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null; scheduledEndAt?: string | null; transcriptOffsetMs?: number }) => Promise<unknown>;
-    testSource: (source: 'user_microphone' | 'system_audio', microphoneDeviceId?: string | null) => Promise<unknown>;
+    start: (payload: {
+      noteId: string;
+      workspaceId: string;
+      microphone: boolean;
+      systemAudio: boolean;
+      microphoneDeviceId?: string | null;
+      scheduledEndAt?: string | null;
+      transcriptOffsetMs?: number;
+    }) => Promise<unknown>;
+    testSource: (
+      source: 'user_microphone' | 'system_audio',
+      microphoneDeviceId?: string | null
+    ) => Promise<unknown>;
     pause: () => Promise<unknown>;
     resume: () => Promise<unknown>;
     stop: () => Promise<unknown>;
     reveal: (payload: { sessionId: string }) => Promise<unknown>;
-    deleteAudio: (payload: { sessionId: string; source?: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
-    play: (payload: { sessionId: string; source: 'user_microphone' | 'system_audio' }) => Promise<unknown>;
-    onLevel: (listener: (event: { source: 'user_microphone' | 'system_audio'; level: number }) => void) => () => void;
-    onError: (listener: (event: { source: 'user_microphone' | 'system_audio'; error: string }) => void) => () => void;
+    deleteAudio: (payload: {
+      sessionId: string;
+      source?: 'user_microphone' | 'system_audio';
+    }) => Promise<unknown>;
+    play: (payload: {
+      sessionId: string;
+      source: 'user_microphone' | 'system_audio';
+    }) => Promise<unknown>;
+    onLevel: (
+      listener: (event: { source: 'user_microphone' | 'system_audio'; level: number }) => void
+    ) => () => void;
+    onError: (
+      listener: (event: { source: 'user_microphone' | 'system_audio'; error: string }) => void
+    ) => () => void;
     onDevicesChanged: (listener: () => void) => () => void;
   };
   meetingAutoStop?: {
     keepRecording: () => Promise<unknown>;
     signalCallEnded: (noteId: string) => Promise<unknown>;
     signalNewMeeting: (payload: { noteId: string; title?: string }) => Promise<unknown>;
-    onGrace: (listener: (event: { active: boolean; noteId: string; reason?: string }) => void) => () => void;
+    onGrace: (
+      listener: (event: { active: boolean; noteId: string; reason?: string }) => void
+    ) => () => void;
     onStopRequested: (listener: (event: { noteId: string; reason: string }) => void) => () => void;
     onCompleted: (listener: (event: { noteId: string; sessionId: string }) => void) => () => void;
     onNewMeeting: (listener: (event: { noteId: string; title?: string }) => void) => () => void;
@@ -111,28 +198,51 @@ interface Window {
     downloadModel: () => Promise<unknown>;
     cancelModelDownload: () => Promise<unknown>;
     deleteModel: () => Promise<unknown>;
-    prepare: (payload: { sessionId: string; noteId: string; workspaceId: string }) => Promise<unknown>;
+    prepare: (payload: {
+      sessionId: string;
+      noteId: string;
+      workspaceId: string;
+    }) => Promise<unknown>;
     status: (jobId?: string) => Promise<unknown>;
-    start: (payload: { sessionId: string; noteId: string; workspaceId: string; force?: boolean }) => Promise<unknown>;
+    start: (payload: {
+      sessionId: string;
+      noteId: string;
+      workspaceId: string;
+      force?: boolean;
+    }) => Promise<unknown>;
     cancel: (jobId: string) => Promise<unknown>;
     results: (jobId: string) => Promise<unknown>;
-    complete: (payload: { jobId: string; retention: 'delete_after_transcription' | 'retain' }) => Promise<unknown>;
+    complete: (payload: {
+      jobId: string;
+      retention: 'delete_after_transcription' | 'retain';
+    }) => Promise<unknown>;
     fail: (payload: { jobId: string; error: string }) => Promise<unknown>;
     onProgress: (listener: (event: unknown) => void) => () => void;
     onSegments: (listener: (event: unknown) => void) => () => void;
     onModelChange: (listener: (event: unknown) => void) => () => void;
   };
   askLedger?: {
-    generateOverviewFocus: (snapshot: unknown, options?: { previousResult?: unknown }) => Promise<{ insights: unknown[] }>;
+    generateOverviewFocus: (
+      snapshot: unknown,
+      options?: { previousResult?: unknown }
+    ) => Promise<{ insights: unknown[] }>;
     generateProjectLens: (payload: unknown) => Promise<unknown>;
     generateProjectLensAction: (payload: unknown) => Promise<unknown>;
     generateMeetingRecap: (payload: unknown) => Promise<unknown>;
     generateMeetingPeople: (payload: unknown) => Promise<unknown>;
     generateMeetingPrep: (payload: unknown) => Promise<unknown>;
     listSkills: () => Promise<unknown[]>;
-    selectAttachments: (payload: { workspaceId: string; conversationId: string; existingCount?: number; existingSizeBytes?: number }) => Promise<unknown>;
+    selectAttachments: (payload: {
+      workspaceId: string;
+      conversationId: string;
+      existingCount?: number;
+      existingSizeBytes?: number;
+    }) => Promise<unknown>;
     openAttachment: (attachmentId: string) => Promise<{ ok: boolean; error?: string }>;
-    removeAttachments: (payload: { conversationId: string; attachmentIds: string[] }) => Promise<{ ok: boolean }>;
+    removeAttachments: (payload: {
+      conversationId: string;
+      attachmentIds: string[];
+    }) => Promise<{ ok: boolean }>;
     localAIStatus: () => Promise<unknown>;
     localAIHardware: () => Promise<unknown>;
     localAICapability: () => Promise<unknown>;
@@ -152,15 +262,49 @@ interface Window {
     removeLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
     onLocalAIStatus: (listener: (event: unknown) => void) => () => void;
     onGenerationRuntimeState: (listener: (event: unknown) => void) => () => void;
-    start: (payload: { requestId?: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; skillId?: string; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: string[]; reasoningMode?: 'off' | 'thinking'; timeZone?: string; timeFormat?: '12h' | '24h'; messageId?: string; performance?: { uiSubmitStartedAt?: number; preflightStartedAt?: number; preflightCompletedAt?: number } }) => Promise<{ requestId: string }>;
-    executeSkill: (payload: { skillId: string; question: string; workspaceId: string; documents: unknown[]; lexicalResults: unknown[]; conversation?: unknown; explicitContext?: unknown }) => Promise<{ requestId: string }>;
+    start: (payload: {
+      requestId?: string;
+      question: string;
+      workspaceId: string;
+      documents: unknown[];
+      lexicalResults: unknown[];
+      conversation?: unknown;
+      skillId?: string;
+      customSkill?: unknown;
+      explicitContext?: unknown;
+      attachmentIds?: string[];
+      reasoningMode?: 'off' | 'thinking';
+      timeZone?: string;
+      timeFormat?: '12h' | '24h';
+      messageId?: string;
+      performance?: {
+        uiSubmitStartedAt?: number;
+        preflightStartedAt?: number;
+        preflightCompletedAt?: number;
+      };
+    }) => Promise<{ requestId: string }>;
+    executeSkill: (payload: {
+      skillId: string;
+      question: string;
+      workspaceId: string;
+      documents: unknown[];
+      lexicalResults: unknown[];
+      conversation?: unknown;
+      explicitContext?: unknown;
+    }) => Promise<{ requestId: string }>;
     cancel: (requestId: string) => Promise<{ ok: boolean }>;
     onStream: (listener: (event: unknown) => void) => () => void;
   };
   desktopWindow?: {
     platform?: string;
     meetingIndicatorClick: () => Promise<boolean>;
-    onMeetingIndicatorState: (listener: (state: { recording: boolean; paused: boolean; activity: 'silent' | 'low' | 'medium' | 'high' }) => void) => () => void;
+    onMeetingIndicatorState: (
+      listener: (state: {
+        recording: boolean;
+        paused: boolean;
+        activity: 'silent' | 'low' | 'medium' | 'high';
+      }) => void
+    ) => () => void;
     getDeviceSessionId: (legacyDeviceId?: string) => string;
     getRenderingSettings: () => Promise<{
       mode: 'auto' | 'high_quality' | 'compatibility';
@@ -200,7 +344,9 @@ interface Window {
       transparencyEffectsAvailable?: boolean;
       failure?: string;
     }>;
-    setSidebarMaterialDevelopmentSelection?: (enabled: boolean | 'under-window' | 'sidebar' | 'hud' | 'mica' | 'mica-alt' | 'acrylic') => Promise<{
+    setSidebarMaterialDevelopmentSelection?: (
+      enabled: boolean | 'under-window' | 'sidebar' | 'hud' | 'mica' | 'mica-alt' | 'acrylic'
+    ) => Promise<{
       enabled: boolean;
       engine:
         | 'solid'

@@ -90,6 +90,7 @@ import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { routeForCalendarEvent, routeForHome, routeForNote, usePlatform } from '../../platform';
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { AskLedgerPanel } from '../Common/AskLedgerPanel';
+import { LocalAIUnavailableState } from '../Common/LocalAIUnavailableState';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import { CreateNoteModal } from './CreateNoteModal';
 import { BulkExportModal } from './BulkExportModal';
@@ -290,6 +291,19 @@ const meetingRecapCacheFingerprint = (
       text: segment.transcript_text,
     })),
   });
+
+const meetingTemplateOptions: Array<{ value: NonNullable<MeetingNoteMetadata['meeting_template']>; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'one_on_one', label: '1:1' },
+  { value: 'team_sync', label: 'Team sync' },
+  { value: 'project_review', label: 'Project review' },
+  { value: 'customer_sales', label: 'Customer / sales' },
+  { value: 'interview', label: 'Interview' },
+  { value: 'custom', label: 'Custom…' },
+];
+
+const meetingTemplateLabel = (value: MeetingNoteMetadata['meeting_template']) =>
+  meetingTemplateOptions.find((option) => option.value === (value ?? 'auto'))?.label ?? 'Auto';
 
 type WorkspaceMember = {
   user_id: string;
@@ -2500,7 +2514,9 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [isLoadingMeetingMetadata, setIsLoadingMeetingMetadata] = useState(false);
   const [meetingBusyAction, setMeetingBusyAction] = useState<string | null>(null);
   const [isMeetingTemplateSaving, setIsMeetingTemplateSaving] = useState(false);
+  const [isMeetingTemplateMenuOpen, setIsMeetingTemplateMenuOpen] = useState(false);
   const [customMeetingTemplateInstructions, setCustomMeetingTemplateInstructions] = useState('');
+  const meetingTemplateMenuRef = useRef<HTMLDivElement | null>(null);
   const meetingStopInFlightRef = useRef(false);
   const transcriptionMergeInFlightRef = useRef<Set<string>>(new Set());
   const [meetingTimerTick, setMeetingTimerTick] = useState(0);
@@ -2544,6 +2560,23 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       setCustomMeetingTemplateInstructions(meetingMetadata.meeting_template_instructions ?? '');
     }
   }, [selectedNoteId, meetingMetadata?.meeting_template, meetingMetadata?.meeting_template_instructions]);
+  useEffect(() => {
+    if (!isMeetingTemplateMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !meetingTemplateMenuRef.current?.contains(event.target)) {
+        setIsMeetingTemplateMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMeetingTemplateMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMeetingTemplateMenuOpen]);
   useEffect(() => {
     transcriptDraftsRef.current = transcriptDrafts;
   }, [transcriptDrafts]);
@@ -2766,6 +2799,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     WorkspaceProjectNoteLink[]
   >([]);
   const [linkedContextOpenRequest, setLinkedContextOpenRequest] = useState(0);
+  const [relatedContextRefreshKey, setRelatedContextRefreshKey] = useState(0);
   const [selectionComposerContext, setSelectionComposerContext] =
     useState<NotesSelectionComposerContext | null>(null);
   const [linkProjectTargetNoteId, setLinkProjectTargetNoteId] = useState<string | null>(null);
@@ -4011,7 +4045,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     {
       kind: 'notes',
       focusNoteId: selectedNoteId,
-      focusContext: selectedNoteId ? (initialView ? `note-view:${initialView}` : null) : 'home',
+      focusContext: selectedNoteId
+        ? isMeetingNote && meetingCenterView === 'transcript'
+          ? 'note-view:transcribe'
+          : draftMode === 'mind_map'
+            ? 'note-view:map'
+            : 'note-view:write'
+        : 'home',
     },
     true
   );
@@ -5010,6 +5050,37 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     }
   }, [api, isMeetingNote, selectedNote]);
 
+  useEffect(() => {
+    const handleTouchBarAction = (event: Event) => {
+      const actionId = (event as CustomEvent<{ actionId?: unknown }>).detail?.actionId;
+      if (typeof actionId !== 'string' || !selectedNote) return;
+      if (actionId === 'note.mode.write') {
+        setMeetingCenterView('write');
+        setIsLiveTranscriptOpen(false);
+        if (draftMode === 'mind_map') {
+          setDraftMode('text');
+          isDirtyRef.current = true;
+          setIsDirty(true);
+        }
+      } else if (actionId === 'note.mode.mind-map') {
+        setMeetingCenterView('write');
+        setIsLiveTranscriptOpen(false);
+        setDraftMode('mind_map');
+        isDirtyRef.current = true;
+        setIsDirty(true);
+      } else if (actionId === 'note.mode.transcribe') {
+        if (isMeetingNote) {
+          setMeetingCenterView('transcript');
+          setIsLiveTranscriptOpen(true);
+        } else {
+          void enableMeetingMode();
+        }
+      }
+    };
+    window.addEventListener('ledger:touchbar-action', handleTouchBarAction);
+    return () => window.removeEventListener('ledger:touchbar-action', handleTouchBarAction);
+  }, [draftMode, enableMeetingMode, isMeetingNote, selectedNote]);
+
   const requestAudioPermissions = useCallback(async () => {
     if (platform.kind === 'web') {
       const microphone = await platform.meetingAudio.requestMicrophone();
@@ -5431,6 +5502,25 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       setMeetingBusyAction(null);
     }
   }, [activeWorkspaceId, audioCaptureStatus?.sessionId, meetingMetadata, reportTranscriptionError, updateMeetingMetadata]);
+
+  useEffect(() => {
+    const handleTouchBarMeetingAction = (event: Event) => {
+      const actionId = (event as CustomEvent<{ actionId?: unknown }>).detail?.actionId;
+      if (typeof actionId !== 'string' || !isMeetingNote) return;
+      if (actionId === 'meeting.transcript.open') {
+        setMeetingCenterView('transcript');
+        setIsLiveTranscriptOpen(true);
+      } else if (actionId === 'meeting.pause') {
+        void pauseMeeting();
+      } else if (actionId === 'meeting.resume') {
+        void resumeMeeting();
+      } else if (actionId === 'meeting.stop') {
+        void stopMeeting();
+      }
+    };
+    window.addEventListener('ledger:touchbar-action', handleTouchBarMeetingAction);
+    return () => window.removeEventListener('ledger:touchbar-action', handleTouchBarMeetingAction);
+  }, [isMeetingNote, pauseMeeting, resumeMeeting, stopMeeting]);
 
   useEffect(() => {
     const autoStop = window.meetingAutoStop;
@@ -9822,18 +9912,43 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         {meetingAttendeeLabel(meetingMetadata?.attendees) && selectedNoteProjectLinks[0]?.project_name && <span aria-hidden="true">·</span>}
                         {selectedNoteProjectLinks[0]?.project_name && <span className="max-w-52 truncate">{selectedNoteProjectLinks[0].project_name}</span>}
                         {(meetingDateLabel(meetingMetadata?.scheduled_start_at) || meetingAttendeeLabel(meetingMetadata?.attendees) || selectedNoteProjectLinks[0]?.project_name) && <span aria-hidden="true">·</span>}
-                        <label className="inline-flex min-w-0 items-center text-[var(--ledger-text-secondary)] transition-colors hover:text-[var(--ledger-text-primary)]">
-                          <select
-                            value={meetingMetadata?.meeting_template ?? 'auto'}
-                            onChange={(event) => void selectMeetingTemplate(event.target.value as NonNullable<MeetingNoteMetadata['meeting_template']>)}
+                        <div ref={meetingTemplateMenuRef} className="relative inline-flex min-w-0 items-center text-[var(--ledger-text-secondary)]">
+                          <button
+                            type="button"
+                            onClick={() => setIsMeetingTemplateMenuOpen((open) => !open)}
                             disabled={isMeetingTemplateSaving}
-                            className="max-w-36 cursor-pointer appearance-none bg-transparent pr-1 text-[11px] text-inherit outline-none disabled:cursor-wait disabled:opacity-50"
                             aria-label="Meeting template"
+                            aria-haspopup="menu"
+                            aria-expanded={isMeetingTemplateMenuOpen}
+                            className="inline-flex max-w-36 items-center gap-0.5 truncate text-[11px] text-inherit outline-none disabled:cursor-wait disabled:opacity-50"
                           >
-                            <option value="auto">Auto</option><option value="one_on_one">1:1</option><option value="team_sync">Team sync</option><option value="project_review">Project review</option><option value="customer_sales">Customer / sales</option><option value="interview">Interview</option><option value="custom">Custom…</option>
-                          </select>
-                          <ChevronDown size={10} aria-hidden="true" />
-                        </label>
+                            <span className="truncate">{meetingTemplateLabel(meetingMetadata?.meeting_template)}</span>
+                            <ChevronDown size={10} aria-hidden="true" />
+                          </button>
+                          {isMeetingTemplateMenuOpen && (
+                            <div role="menu" aria-label="Meeting template options" className="absolute left-0 top-full z-50 mt-1 min-w-44 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]">
+                              {meetingTemplateOptions.map((option) => {
+                                const selected = (meetingMetadata?.meeting_template ?? 'auto') === option.value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={selected}
+                                    onClick={() => {
+                                      setIsMeetingTemplateMenuOpen(false);
+                                      void selectMeetingTemplate(option.value);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[11px] text-[var(--ledger-text-primary)] outline-none hover:bg-[var(--ledger-surface-hover)] focus-visible:bg-[var(--ledger-surface-hover)]"
+                                  >
+                                    <span className="w-3 text-center text-[var(--ledger-text-secondary)]">{selected ? '✓' : ''}</span>
+                                    <span>{option.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                         {meetingMetadata?.meeting_template === 'custom' && (
                           <div className="basis-full flex min-w-0 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1">
                             <textarea
@@ -9970,9 +10085,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                           </span>
                         )}
                         {meetingRecapStatus === 'unavailable' && meetingRecapError && (
-                          <span className="ml-1 max-w-[42%] truncate text-[10px] text-amber-700" role="status" title={meetingRecapError}>
-                            {meetingRecapError}
-                          </span>
+                          /local model|install the balanced|install.*fast/i.test(meetingRecapError) ? (
+                            <LocalAIUnavailableState title="Local AI model required" detail="Download a model to enhance this meeting." />
+                          ) : (
+                            <span className="ml-1 max-w-[42%] truncate text-[10px] text-amber-700" role="status" title={meetingRecapError}>
+                              {meetingRecapError}
+                            </span>
+                          )
                         )}
                       </div>
                     )}
@@ -10938,6 +11057,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       if (project) setLinkedResourceBadge({ resourceType: 'project', resourceId: project.id, title: project.name, url: `#project-${project.id}` });
                     }}
                     onLoadProjects={loadProjectsForLinkedContext}
+                    onRelatedContextChanged={() => setRelatedContextRefreshKey((current) => current + 1)}
                     openRequest={{ source: 'projects', token: linkedContextOpenRequest }}
                   />
                 ) : null}
@@ -10950,6 +11070,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                     title={isMeetingNote ? 'Meeting context' : 'Related context'}
                     emptyMessage={isMeetingNote ? 'No linked meeting context yet.' : 'No linked context yet.'}
                     maxItems={10}
+                    targetTypes={['task', 'event', 'reminder', 'milestone', 'intake']}
+                    refreshKey={relatedContextRefreshKey}
                     className="border-t border-[color:var(--ledger-border-subtle)] pt-4"
                   />
                 ) : null}

@@ -12795,6 +12795,36 @@ app.patch('/api/user/profile', authMiddleware, rateLimit('write'), async (req, r
   }
 });
 
+app.post('/api/bug-reports', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const title = String(req.body?.title ?? '').trim().slice(0, 200);
+    const description = String(req.body?.description ?? '').trim().slice(0, 10000);
+    if (!title || !description) return res.status(400).json({ error: 'A summary and description are required.' });
+
+    const workspaceId = normalizeNullableText(req.body?.workspace_id);
+    if (workspaceId) await requireWorkspaceAccess(req.authUser.id, workspaceId, 'viewer');
+
+    const metadata = req.body?.metadata && typeof req.body.metadata === 'object' && !Array.isArray(req.body.metadata)
+      ? req.body.metadata
+      : {};
+    const { data, error } = await supabase.from('bug_reports').insert({
+      user_id: req.authUser.id,
+      workspace_id: workspaceId,
+      title,
+      description,
+      page: normalizeNullableText(req.body?.page)?.slice(0, 500) ?? null,
+      settings_section: normalizeNullableText(req.body?.settings_section)?.slice(0, 100) ?? null,
+      app_version: normalizeNullableText(req.body?.app_version)?.slice(0, 100) ?? null,
+      platform: normalizeNullableText(req.body?.platform)?.slice(0, 100) ?? null,
+      metadata,
+    }).select('id, created_at').single();
+    if (error) throw error;
+    res.status(201).json({ id: data.id, created_at: data.created_at });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.patch('/api/user/settings', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const fullNameInput = req.body?.full_name;

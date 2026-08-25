@@ -10,6 +10,14 @@
     'node_modules/electron-acrylic-window/**/*',
   ],
   productName: 'Ledger',
+  publish: [
+    {
+      provider: 'github',
+      owner: 'SynisterSage',
+      repo: 'ledger',
+      releaseType: 'prerelease',
+    },
+  ],
   // Never ship a macOS build with ad-hoc signing. The audio helper must be
   // signed under the same Developer ID team as Ledger.app for TCC access.
   forceCodeSigning: true,

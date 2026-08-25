@@ -140,6 +140,16 @@ export const useApi = () => {
       getUserProfile: () => request('/api/user/profile'),
       updateUserProfile: (payload: { full_name?: string | null; avatar_url?: string | null }) =>
         request('/api/user/profile', { method: 'PATCH', body: JSON.stringify(payload) }),
+      createBugReport: (payload: {
+        title: string;
+        description: string;
+        workspace_id?: string | null;
+        page?: string | null;
+        settings_section?: string | null;
+        app_version?: string | null;
+        platform?: string | null;
+        metadata?: Record<string, unknown>;
+      }) => request('/api/bug-reports', { method: 'POST', body: JSON.stringify(payload), skipWorkspaceHeader: true }),
       deleteAccount: () =>
         request('/api/account', {
           method: 'DELETE',

@@ -31,6 +31,11 @@
     "test:write-mode": "node --test scripts/tests/write-mode-regressions.mjs",
     "test:meeting-notes-phase1": "node --test scripts/tests/meeting-notes-phase1.test.mjs",
     "test:speaker-tags": "node --experimental-strip-types --test electron/speakerTags.test.ts",
+    "test:touch-bar": "node --experimental-strip-types --test electron/touchBar/touchBarController.test.ts",
+    "test:touch-bar-layout": "node --experimental-strip-types --test electron/touchBar/touchBarLayoutResolver.test.ts",
+    "test:touch-bar-context": "node --experimental-strip-types --test electron/touchBar/touchBarContext.test.ts src/components/Common/touchBarContext.test.ts",
+    "test:touch-bar-ui": "node --experimental-strip-types --test electron/touchBar/touchBarControls.test.ts",
+    "test:ledger-actions": "node --experimental-strip-types --test electron/actions/ledgerActionDispatcher.test.ts",
     "test:zoom-speaker-attribution": "node --experimental-strip-types --test electron/speakerTags.test.ts electron/speakerTagsRuntime.test.ts electron/zoomSpeakerAttribution.test.ts src/types/meetingPeople.zoom.test.ts scripts/tests/meeting-people-phase3.test.mjs",
     "test:floating-meeting-indicator": "node --experimental-strip-types --test scripts/tests/floating-meeting-indicator.test.mjs",
     "test:meeting-auto-stop": "node --experimental-strip-types --test scripts/tests/meeting-auto-stop.test.mjs",
@@ -58,17 +63,17 @@
     "test:avatar-normalization": "node --test scripts/tests/avatar-normalization.test.mjs",
     "test:platform-capability-layer": "node --test scripts/tests/platform-capability-layer.test.mjs",
     "test:web-shell-phase4": "node --experimental-strip-types --test scripts/tests/web-shell-phase4.test.mjs",
-    "test:web-startup-phase5": "node --experimental-strip-types --test scripts/tests/web-startup-phase5.test.mjs"
-    ,"test:web-modules-phase6": "node --experimental-strip-types --test scripts/tests/web-modules-phase6.test.mjs"
-    ,"test:web-navigation-phase7": "node --experimental-strip-types --test scripts/tests/web-navigation-phase7.test.mjs"
-    ,"test:web-capture-phase8": "node --experimental-strip-types --test scripts/tests/web-capture-phase8.test.mjs"
-    ,"test:web-capabilities-phase9": "node --experimental-strip-types --test scripts/tests/web-capabilities-phase9.test.mjs"
-    ,"test:web-reliability-phase10": "node --experimental-strip-types --test scripts/tests/web-reliability-phase10.test.mjs"
-    ,"test:web-dev-launch-phase10-5": "node --experimental-strip-types --test scripts/tests/web-dev-launch-phase10-5.test.mjs"
-    ,"test:web-qa-phase11": "node --experimental-strip-types --test scripts/tests/web-qa-phase11.test.mjs"
-    ,"test:web-production-phase13": "node --experimental-strip-types --test scripts/tests/web-production-phase13.test.mjs"
-    ,"test:web-invite-phase15": "node --experimental-strip-types --test scripts/tests/web-invite-phase15.test.mjs"
-    ,"test:web-deployment-phase16": "node --test scripts/tests/web-deployment-phase16.test.mjs"
+    "test:web-startup-phase5": "node --experimental-strip-types --test scripts/tests/web-startup-phase5.test.mjs",
+    "test:web-modules-phase6": "node --experimental-strip-types --test scripts/tests/web-modules-phase6.test.mjs",
+    "test:web-navigation-phase7": "node --experimental-strip-types --test scripts/tests/web-navigation-phase7.test.mjs",
+    "test:web-capture-phase8": "node --experimental-strip-types --test scripts/tests/web-capture-phase8.test.mjs",
+    "test:web-capabilities-phase9": "node --experimental-strip-types --test scripts/tests/web-capabilities-phase9.test.mjs",
+    "test:web-reliability-phase10": "node --experimental-strip-types --test scripts/tests/web-reliability-phase10.test.mjs",
+    "test:web-dev-launch-phase10-5": "node --experimental-strip-types --test scripts/tests/web-dev-launch-phase10-5.test.mjs",
+    "test:web-qa-phase11": "node --experimental-strip-types --test scripts/tests/web-qa-phase11.test.mjs",
+    "test:web-production-phase13": "node --experimental-strip-types --test scripts/tests/web-production-phase13.test.mjs",
+    "test:web-invite-phase15": "node --experimental-strip-types --test scripts/tests/web-invite-phase15.test.mjs",
+    "test:web-deployment-phase16": "node --test scripts/tests/web-deployment-phase16.test.mjs"
   },
   "dependencies": {
     "@lexical/code": "^0.44.0",
@@ -82,6 +87,7 @@
     "classnames": "^2.5.1",
     "date-fns": "^4.1.0",
     "dictionary-en-us": "^2.2.1",
+    "electron-updater": "^6.8.9",
     "fflate": "^0.8.2",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",

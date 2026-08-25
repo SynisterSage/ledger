@@ -15,6 +15,7 @@ import {
   nativeTheme,
   powerMonitor,
 } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
@@ -37,7 +38,11 @@ import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
-import { OverviewFocusService, type OverviewFocusResult, type OverviewFocusSnapshot } from './overviewFocus';
+import {
+  OverviewFocusService,
+  type OverviewFocusResult,
+  type OverviewFocusSnapshot,
+} from './overviewFocus';
 import { ProjectLensService } from './projectLensService';
 import { MeetingRecapService } from './meetingRecapService.ts';
 import { MeetingPeopleService } from './meetingPeopleService.ts';
@@ -65,6 +70,10 @@ import {
 } from './floatingMeetingIndicatorPosition';
 import { resolveFloatingMeetingIndicatorRenderer } from './floatingMeetingIndicatorAssets';
 import { getFloatingMeetingIndicatorPlatformOptions } from './floatingMeetingIndicatorPlatform';
+import { canExecuteLedgerAction, createLedgerActionDispatcher } from './actions/ledgerActionDispatcher';
+import { createTouchBarController, type TouchBarController } from './touchBar/touchBarController';
+import { createTouchBarContextCoordinator } from './touchBar/touchBarContextCoordinator';
+import type { LedgerTouchBarMeetingContext, LedgerTouchBarWindowContext } from './touchBar/touchBarContext';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -81,10 +90,145 @@ const SETTINGS_SECTIONS = new Set([
 
 let pendingLedgerProtocolUrl: string | null = null;
 let pendingInviteToken: string | null = null;
-let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
+let touchBarController: TouchBarController | null = null;
+let touchBarContextCoordinator: ReturnType<typeof createTouchBarContextCoordinator> | null = null;
+let touchBarMeetingContext: LedgerTouchBarMeetingContext | undefined;
 let tray: Tray | null = null;
 let isQuittingApp = false;
 let explicitQuitPromise: Promise<void> | null = null;
+type LedgerUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'unavailable'
+  | 'error';
+
+type LedgerUpdateState = {
+  status: LedgerUpdateStatus;
+  currentVersion: string;
+  version?: string;
+  releaseName?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  error?: string;
+};
+
+let ledgerUpdateState: LedgerUpdateState = {
+  status: 'idle',
+  currentVersion: app.getVersion(),
+};
+
+const sendLedgerUpdateState = () => {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) window.webContents.send('updates:status', ledgerUpdateState);
+  });
+};
+
+const setLedgerUpdateState = (state: Partial<LedgerUpdateState>) => {
+  ledgerUpdateState = {
+    ...ledgerUpdateState,
+    ...state,
+    currentVersion: app.getVersion(),
+  };
+  sendLedgerUpdateState();
+};
+
+const configureLedgerUpdater = () => {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on('checking-for-update', () =>
+    setLedgerUpdateState({ status: 'checking', error: undefined })
+  );
+  autoUpdater.on('update-available', (info) =>
+    setLedgerUpdateState({
+      status: 'available',
+      version: info.version,
+      releaseName: typeof info.releaseName === 'string' ? info.releaseName : undefined,
+      error: undefined,
+    })
+  );
+  autoUpdater.on('update-not-available', () =>
+    setLedgerUpdateState({
+      status: 'not-available',
+      version: undefined,
+      releaseName: undefined,
+      percent: undefined,
+      error: undefined,
+    })
+  );
+  autoUpdater.on('download-progress', (progress) =>
+    setLedgerUpdateState({
+      status: 'downloading',
+      percent: Number.isFinite(progress.percent) ? progress.percent : undefined,
+      transferred: progress.transferred,
+      total: progress.total,
+      error: undefined,
+    })
+  );
+  autoUpdater.on('update-downloaded', (info) =>
+    setLedgerUpdateState({
+      status: 'downloaded',
+      version: info.version,
+      releaseName: typeof info.releaseName === 'string' ? info.releaseName : undefined,
+      percent: 100,
+      error: undefined,
+    })
+  );
+  autoUpdater.on('error', (error) =>
+    setLedgerUpdateState({
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+    })
+  );
+};
+
+const checkForLedgerUpdate = async () => {
+  if (!app.isPackaged) {
+    setLedgerUpdateState({
+      status: 'unavailable',
+      error: 'Updates are available in packaged builds.',
+    });
+    return ledgerUpdateState;
+  }
+  try {
+    setLedgerUpdateState({ status: 'checking', error: undefined });
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    setLedgerUpdateState({
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return ledgerUpdateState;
+};
+
+const downloadLedgerUpdate = async () => {
+  if (ledgerUpdateState.status !== 'available') return ledgerUpdateState;
+  try {
+    setLedgerUpdateState({ status: 'downloading', percent: 0, error: undefined });
+    await autoUpdater.downloadUpdate();
+  } catch (error) {
+    setLedgerUpdateState({
+      status: 'error',
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return ledgerUpdateState;
+};
+
+const installLedgerUpdate = () => {
+  if (ledgerUpdateState.status !== 'downloaded') return false;
+  isQuittingApp = true;
+  autoUpdater.quitAndInstall(false, true);
+  return true;
+};
+
+configureLedgerUpdater();
 let appleCalendarWatcher: ReturnType<typeof spawn> | null = null;
 let zoomAccessibilityWatcher: ReturnType<typeof spawn> | null = null;
 let zoomWatcherRestartTimer: NodeJS.Timeout | null = null;
@@ -96,21 +240,32 @@ let zoomPermissionPollTimer: NodeJS.Timeout | null = null;
 const recordingSessionStore = new RecordingSessionStore();
 const meetingAudioCaptureService = new MeetingAudioCaptureService(recordingSessionStore);
 const zoomSpeakerAttribution = new ZoomSpeakerAttribution();
-const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore, zoomSpeakerAttribution);
+const localTranscriptionService = new LocalTranscriptionService(
+  recordingSessionStore,
+  zoomSpeakerAttribution
+);
 let autoStopTimer: NodeJS.Timeout | null = null;
 let autoStopRequestInFlight = false;
 const localAIAssets = new LocalAIAssetManager();
 const localAICapabilityService = new LocalAICapabilityService();
 const localAIService = createLocalAIService(localAIAssets);
-const askLedgerService = createAskLedgerService(localAIService, localAIAssets, path.join(app.getPath('userData'), 'ask-ledger-attachments'));
+const askLedgerService = createAskLedgerService(
+  localAIService,
+  localAIAssets,
+  path.join(app.getPath('userData'), 'ask-ledger-attachments')
+);
 const overviewFocusService = new OverviewFocusService(localAIService);
-const projectLensService = new ProjectLensService(localAIService, askLedgerService.getRetrievalService());
+const projectLensService = new ProjectLensService(
+  localAIService,
+  askLedgerService.getRetrievalService()
+);
 const meetingRecapService = new MeetingRecapService(localAIService);
 const meetingPeopleService = new MeetingPeopleService(localAIService);
 const meetingPrepService = new MeetingPrepService(localAIService);
 localAIService.onGenerationRuntimeState((state) => {
   BrowserWindow.getAllWindows().forEach((window) => {
-    if (!window.isDestroyed()) window.webContents.send('ask-ledger:generation-runtime-state', state);
+    if (!window.isDestroyed())
+      window.webContents.send('ask-ledger:generation-runtime-state', state);
   });
 });
 localAIAssets.onChange((status) => {
@@ -120,6 +275,11 @@ localAIAssets.onChange((status) => {
 });
 
 const desktopDeviceIdPath = () => path.join(app.getPath('userData'), 'ledger-device-id');
+
+ipcMain.handle('updates:status', () => ledgerUpdateState);
+ipcMain.handle('updates:check', () => checkForLedgerUpdate());
+ipcMain.handle('updates:download', () => downloadLedgerUpdate());
+ipcMain.handle('updates:install', () => installLedgerUpdate());
 
 const getOrCreateDesktopDeviceId = (legacyDeviceId?: string) => {
   const filePath = desktopDeviceIdPath();
@@ -139,9 +299,8 @@ const getOrCreateDesktopDeviceId = (legacyDeviceId?: string) => {
 };
 
 function broadcastMeetingAudioEvent(channel: string, payload: unknown) {
-  const indicatorWindow = channel === 'meeting-audio:level'
-    ? floatingMeetingIndicator.getWindow()
-    : null;
+  const indicatorWindow =
+    channel === 'meeting-audio:level' ? floatingMeetingIndicator.getWindow() : null;
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed() && win !== indicatorWindow) win.webContents.send(channel, payload);
   }
@@ -157,22 +316,45 @@ function requestMeetingAutoStop(reason: AutoStopReason, noteId: string) {
   const finalize = async () => {
     let stopped: ReturnType<typeof meetingAudioCaptureService.status> | null = null;
     try {
-      if (meetingAudioCaptureService.isActive && meetingAudioCaptureService.status().sessionId === sessionId) {
+      if (
+        meetingAudioCaptureService.isActive &&
+        meetingAudioCaptureService.status().sessionId === sessionId
+      ) {
         stopped = await meetingAudioCaptureService.stop();
-        broadcastMeetingAudioEvent('meeting-auto-stop:completed', { noteId, sessionId, capture: stopped });
+        broadcastMeetingAudioEvent('meeting-auto-stop:completed', {
+          noteId,
+          sessionId,
+          capture: stopped,
+        });
       }
     } catch (error) {
-      console.warn('[meeting-auto-stop]', JSON.stringify({ event: 'finalization_failed', reason, error: error instanceof Error ? error.message : String(error) }));
+      console.warn(
+        '[meeting-auto-stop]',
+        JSON.stringify({
+          event: 'finalization_failed',
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
     } finally {
-      if (meetingAudioCaptureService.status().sessionId === sessionId || !meetingAudioCaptureService.isActive) {
+      if (
+        meetingAudioCaptureService.status().sessionId === sessionId ||
+        !meetingAudioCaptureService.isActive
+      ) {
         meetingAutoStopCoordinator.stop();
         syncFloatingMeetingIndicator();
+        syncTouchBarMeetingContext();
       }
       autoStopRequestInFlight = false;
     }
   };
   // Give the Notes renderer a chance to use the normal Stop -> transcription path.
-  setTimeout(() => { void finalize(); }, reason === 'sleep' ? 0 : 1200);
+  setTimeout(
+    () => {
+      void finalize();
+    },
+    reason === 'sleep' ? 0 : 1200
+  );
 }
 
 const meetingAutoStopCoordinator = new MeetingAutoStopCoordinator({
@@ -203,25 +385,50 @@ meetingAudioCaptureService.onError((event) => {
   broadcastMeetingAudioEvent('meeting-audio:error', event);
   syncFloatingMeetingIndicator();
 });
-meetingAudioCaptureService.onDevicesChanged(() => broadcastMeetingAudioEvent('meeting-audio:devices-changed', {}));
+meetingAudioCaptureService.onDevicesChanged(() =>
+  broadcastMeetingAudioEvent('meeting-audio:devices-changed', {})
+);
 meetingAudioCaptureService.onAudioData((event) => localTranscriptionService.ingestAudioData(event));
 meetingAudioCaptureService.onChunk((chunk) => {
   try {
     localTranscriptionService.enqueueFinalizedChunk(chunk);
   } catch (error) {
-    console.error('[transcription]', JSON.stringify({ event: 'chunk_enqueue_failed', sessionId: chunk.sessionId, source: chunk.source, sequence: chunk.sequence, error: error instanceof Error ? error.message : String(error) }));
+    console.error(
+      '[transcription]',
+      JSON.stringify({
+        event: 'chunk_enqueue_failed',
+        sessionId: chunk.sessionId,
+        source: chunk.source,
+        sequence: chunk.sequence,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    );
   }
 });
-localTranscriptionService.onProgress((event) => broadcastMeetingAudioEvent('meeting-transcription:progress', event));
-localTranscriptionService.onSegments((event) => broadcastMeetingAudioEvent('meeting-transcription:segments', event));
+localTranscriptionService.onProgress((event) => {
+  broadcastMeetingAudioEvent('meeting-transcription:progress', event);
+  if (!touchBarMeetingContext || event.noteId !== touchBarMeetingContext.noteId) return;
+  const status = String(event.status);
+  if (status === 'complete') {
+    touchBarMeetingContext = { ...touchBarMeetingContext, active: false, state: 'completed', transcriptAvailable: true };
+  } else if (['queued', 'preparing', 'transcribing', 'merging'].includes(status)) {
+    touchBarMeetingContext = { ...touchBarMeetingContext, active: true, state: 'processing' };
+  }
+  syncTouchBarMeetingContext();
+});
+localTranscriptionService.onSegments((event) =>
+  broadcastMeetingAudioEvent('meeting-transcription:segments', event)
+);
 localTranscriptionService.modelManager.onChange((event) => {
   broadcastMeetingAudioEvent('meeting-transcription:model', event);
   if (event.installed) localTranscriptionService.resumePendingJobs();
 });
 
-const validAudioSource = (value: unknown): value is AudioSourceName => value === 'user_microphone' || value === 'system_audio';
+const validAudioSource = (value: unknown): value is AudioSourceName =>
+  value === 'user_microphone' || value === 'system_audio';
 
-const bindMeetingAudioRenderer = (event: Electron.IpcMainInvokeEvent) => meetingAudioCaptureService.setRequesterId(event.sender.id);
+const bindMeetingAudioRenderer = (event: Electron.IpcMainInvokeEvent) =>
+  meetingAudioCaptureService.setRequesterId(event.sender.id);
 ipcMain.handle('meeting-audio:permissions', (event) => {
   bindMeetingAudioRenderer(event);
   return meetingAudioCaptureService.permissions();
@@ -231,7 +438,8 @@ ipcMain.handle('meeting-audio:request-permissions', async (event) => {
   return meetingAudioCaptureService.requestPermissions();
 });
 ipcMain.handle('meeting-audio:open-system-settings', async (_event, area: unknown) => {
-  if (area !== 'microphone' && area !== 'screen-recording') throw new Error('Invalid audio permission area.');
+  if (area !== 'microphone' && area !== 'screen-recording')
+    throw new Error('Invalid audio permission area.');
   return meetingAudioCaptureService.openSystemSettings(area);
 });
 ipcMain.handle('meeting-audio:status', () => meetingAudioCaptureService.status());
@@ -242,13 +450,26 @@ ipcMain.handle('meeting-audio:open-storage-path', async () => {
 });
 ipcMain.handle('meeting-audio:recoveries', () => meetingAudioCaptureService.recoveries());
 ipcMain.handle('meeting-audio:inspect', (_event, sessionId?: unknown) => {
-  if (sessionId !== undefined && typeof sessionId !== 'string') throw new Error('Invalid recording session.');
+  if (sessionId !== undefined && typeof sessionId !== 'string')
+    throw new Error('Invalid recording session.');
   return meetingAudioCaptureService.inspect(sessionId);
 });
-ipcMain.handle('meeting-audio:recover', (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown }) => {
-  if (typeof payload?.sessionId !== 'string' || typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Invalid recovery request.');
-  return meetingAudioCaptureService.recover(payload.sessionId, payload.noteId, payload.workspaceId);
-});
+ipcMain.handle(
+  'meeting-audio:recover',
+  (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown }) => {
+    if (
+      typeof payload?.sessionId !== 'string' ||
+      typeof payload?.noteId !== 'string' ||
+      typeof payload?.workspaceId !== 'string'
+    )
+      throw new Error('Invalid recovery request.');
+    return meetingAudioCaptureService.recover(
+      payload.sessionId,
+      payload.noteId,
+      payload.workspaceId
+    );
+  }
+);
 ipcMain.handle('meeting-audio:discard-recovery', (_event, sessionId: unknown) => {
   if (typeof sessionId !== 'string') throw new Error('Invalid recording session.');
   return meetingAudioCaptureService.discard(sessionId);
@@ -257,34 +478,85 @@ ipcMain.handle('meeting-audio:devices', (event) => {
   bindMeetingAudioRenderer(event);
   return meetingAudioCaptureService.devices();
 });
-ipcMain.handle('meeting-audio:start', async (event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown; scheduledEndAt?: unknown; transcriptOffsetMs?: unknown }) => {
-  bindMeetingAudioRenderer(event);
-  if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Meeting recording identity is invalid.');
-  if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
-  const start = async () => {
-    // Permission prompting belongs to the adapter's explicit setup flow;
-    // capture itself reports a bounded native error if access is unavailable.
-    return meetingAudioCaptureService.start({ noteId: payload.noteId as string, workspaceId: payload.workspaceId as string, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined, transcriptOffsetMs: typeof payload.transcriptOffsetMs === 'number' && Number.isFinite(payload.transcriptOffsetMs) ? payload.transcriptOffsetMs : 0 });
-  };
-  const result = await start();
-  if (result.sessionId && result.noteId && result.workspaceId && result.startedAt) {
-    const stored = recordingSessionStore.get(result.sessionId);
-    zoomSpeakerAttribution.startSession(result.sessionId, { noteId: result.noteId, workspaceId: result.workspaceId, startedAt: stored?.startedAt ?? result.startedAt, transcriptOffsetMs: stored?.transcriptOffsetMs });
-    refreshZoomAccessibilityWatcher();
+ipcMain.handle(
+  'meeting-audio:start',
+  async (
+    event,
+    payload: {
+      noteId?: unknown;
+      workspaceId?: unknown;
+      microphone?: unknown;
+      systemAudio?: unknown;
+      microphoneDeviceId?: unknown;
+      scheduledEndAt?: unknown;
+      transcriptOffsetMs?: unknown;
+    }
+  ) => {
+    bindMeetingAudioRenderer(event);
+    if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string')
+      throw new Error('Meeting recording identity is invalid.');
+    if (
+      payload.microphoneDeviceId !== undefined &&
+      payload.microphoneDeviceId !== null &&
+      typeof payload.microphoneDeviceId !== 'string'
+    )
+      throw new Error('Invalid microphone device.');
+    const start = async () => {
+      // Permission prompting belongs to the adapter's explicit setup flow;
+      // capture itself reports a bounded native error if access is unavailable.
+      return meetingAudioCaptureService.start({
+        noteId: payload.noteId as string,
+        workspaceId: payload.workspaceId as string,
+        microphone: payload.microphone !== false,
+        systemAudio: payload.systemAudio !== false,
+        microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined,
+        transcriptOffsetMs:
+          typeof payload.transcriptOffsetMs === 'number' &&
+          Number.isFinite(payload.transcriptOffsetMs)
+            ? payload.transcriptOffsetMs
+            : 0,
+      });
+    };
+    const result = await start();
+    if (result.sessionId && result.noteId && result.workspaceId && result.startedAt) {
+      const stored = recordingSessionStore.get(result.sessionId);
+      zoomSpeakerAttribution.startSession(result.sessionId, {
+        noteId: result.noteId,
+        workspaceId: result.workspaceId,
+        startedAt: stored?.startedAt ?? result.startedAt,
+        transcriptOffsetMs: stored?.transcriptOffsetMs,
+      });
+      refreshZoomAccessibilityWatcher();
+    }
+    meetingAudioLevels.clear();
+    latestMeetingActivity = 'silent';
+    meetingAutoStopCoordinator.start({
+      noteId: payload.noteId as string,
+      scheduledEndAt: typeof payload.scheduledEndAt === 'string' ? payload.scheduledEndAt : null,
+    });
+    syncFloatingMeetingIndicator();
+    syncTouchBarMeetingContext();
+    return result;
   }
-  meetingAudioLevels.clear();
-  latestMeetingActivity = 'silent';
-  meetingAutoStopCoordinator.start({ noteId: payload.noteId as string, scheduledEndAt: typeof payload.scheduledEndAt === 'string' ? payload.scheduledEndAt : null });
-  syncFloatingMeetingIndicator();
-  return result;
-});
-ipcMain.handle('meeting-audio:test-source', (event, payload: { source?: unknown; microphoneDeviceId?: unknown }) => {
-  bindMeetingAudioRenderer(event);
-  const source = payload?.source;
-  if (!validAudioSource(source)) throw new Error('Invalid audio source.');
-  if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
-  return meetingAudioCaptureService.testSource(source, payload.microphoneDeviceId as string | null | undefined);
-});
+);
+ipcMain.handle(
+  'meeting-audio:test-source',
+  (event, payload: { source?: unknown; microphoneDeviceId?: unknown }) => {
+    bindMeetingAudioRenderer(event);
+    const source = payload?.source;
+    if (!validAudioSource(source)) throw new Error('Invalid audio source.');
+    if (
+      payload.microphoneDeviceId !== undefined &&
+      payload.microphoneDeviceId !== null &&
+      typeof payload.microphoneDeviceId !== 'string'
+    )
+      throw new Error('Invalid microphone device.');
+    return meetingAudioCaptureService.testSource(
+      source,
+      payload.microphoneDeviceId as string | null | undefined
+    );
+  }
+);
 ipcMain.handle('meeting-audio:pause', async (event) => {
   bindMeetingAudioRenderer(event);
   const sessionId = meetingAudioCaptureService.status().sessionId;
@@ -294,30 +566,56 @@ ipcMain.handle('meeting-audio:pause', async (event) => {
   meetingAudioLevels.clear();
   latestMeetingActivity = 'silent';
   syncFloatingMeetingIndicator();
+  syncTouchBarMeetingContext();
   return result;
 });
-ipcMain.handle('meeting-audio:resume', async (event) => { bindMeetingAudioRenderer(event); const result = await meetingAudioCaptureService.resume(); meetingAutoStopCoordinator.resume(); meetingAudioLevels.clear(); latestMeetingActivity = 'silent'; syncFloatingMeetingIndicator(); return result; });
+ipcMain.handle('meeting-audio:resume', async (event) => {
+  bindMeetingAudioRenderer(event);
+  const result = await meetingAudioCaptureService.resume();
+  meetingAutoStopCoordinator.resume();
+  meetingAudioLevels.clear();
+  latestMeetingActivity = 'silent';
+  syncFloatingMeetingIndicator();
+  syncTouchBarMeetingContext();
+  return result;
+});
 ipcMain.handle('meeting-audio:stop', async (event) => {
   bindMeetingAudioRenderer(event);
   const sessionId = meetingAudioCaptureService.status().sessionId;
+  if (touchBarMeetingContext?.noteId) {
+    touchBarMeetingContext = { ...touchBarMeetingContext, active: true, state: 'processing', canPause: false, canResume: false, canStop: false };
+  }
   const result = await meetingAudioCaptureService.stop();
   meetingAutoStopCoordinator.stop();
   if (sessionId) localTranscriptionService.flushLiveAudio(sessionId);
   meetingAudioLevels.clear();
   latestMeetingActivity = 'silent';
   syncFloatingMeetingIndicator();
+  syncTouchBarMeetingContext();
   return result;
 });
-ipcMain.handle('meeting-auto-stop:keep-recording', () => meetingAutoStopCoordinator.keepRecording());
+ipcMain.handle('meeting-auto-stop:keep-recording', () =>
+  meetingAutoStopCoordinator.keepRecording()
+);
 ipcMain.handle('meeting-auto-stop:call-ended', (_event, payload: { noteId?: unknown }) => {
-  return typeof payload?.noteId === 'string' && meetingAutoStopCoordinator.signalCallEnded(payload.noteId);
+  return (
+    typeof payload?.noteId === 'string' &&
+    meetingAutoStopCoordinator.signalCallEnded(payload.noteId)
+  );
 });
-ipcMain.handle('meeting-auto-stop:new-meeting', (_event, payload: { noteId?: unknown; title?: unknown }) => {
-  if (typeof payload?.noteId !== 'string') return false;
-  return meetingAutoStopCoordinator.signalNewMeeting({ noteId: payload.noteId, title: typeof payload.title === 'string' ? payload.title : undefined });
-});
+  ipcMain.handle(
+  'meeting-auto-stop:new-meeting',
+  (_event, payload: { noteId?: unknown; title?: unknown }) => {
+    if (typeof payload?.noteId !== 'string') return false;
+    return meetingAutoStopCoordinator.signalNewMeeting({
+      noteId: payload.noteId,
+      title: typeof payload.title === 'string' ? payload.title : undefined,
+    });
+  }
+);
 ipcMain.handle('meeting-indicator:click', (event) => {
-  if (BrowserWindow.fromWebContents(event.sender) !== floatingMeetingIndicator.getWindow()) return false;
+  if (BrowserWindow.fromWebContents(event.sender) !== floatingMeetingIndicator.getWindow())
+    return false;
   floatingMeetingIndicator.click();
   return true;
 });
@@ -325,31 +623,80 @@ ipcMain.handle('meeting-audio:reveal', (_event, payload: { sessionId?: unknown }
   if (typeof payload?.sessionId !== 'string') throw new Error('Invalid recording session.');
   return meetingAudioCaptureService.reveal(payload.sessionId);
 });
-ipcMain.handle('meeting-audio:delete-audio', (_event, payload: { sessionId?: unknown; source?: unknown }) => {
-  if (typeof payload?.sessionId !== 'string' || (payload.source !== undefined && payload.source !== 'user_microphone' && payload.source !== 'system_audio')) throw new Error('Invalid audio deletion request.');
-  return meetingAudioCaptureService.deleteAudio(payload.sessionId, payload.source);
-});
-ipcMain.handle('meeting-audio:play', (_event, payload: { sessionId?: unknown; source?: unknown }) => {
-  if (typeof payload?.sessionId !== 'string' || (payload.source !== 'user_microphone' && payload.source !== 'system_audio')) throw new Error('Invalid audio playback request.');
-  return meetingAudioCaptureService.play(payload.sessionId, payload.source);
-});
+ipcMain.handle(
+  'meeting-audio:delete-audio',
+  (_event, payload: { sessionId?: unknown; source?: unknown }) => {
+    if (
+      typeof payload?.sessionId !== 'string' ||
+      (payload.source !== undefined &&
+        payload.source !== 'user_microphone' &&
+        payload.source !== 'system_audio')
+    )
+      throw new Error('Invalid audio deletion request.');
+    return meetingAudioCaptureService.deleteAudio(payload.sessionId, payload.source);
+  }
+);
+ipcMain.handle(
+  'meeting-audio:play',
+  (_event, payload: { sessionId?: unknown; source?: unknown }) => {
+    if (
+      typeof payload?.sessionId !== 'string' ||
+      (payload.source !== 'user_microphone' && payload.source !== 'system_audio')
+    )
+      throw new Error('Invalid audio playback request.');
+    return meetingAudioCaptureService.play(payload.sessionId, payload.source);
+  }
+);
 
 ipcMain.handle('meeting-transcription:model-status', () => localTranscriptionService.modelStatus());
-ipcMain.handle('meeting-transcription:download-model', () => localTranscriptionService.downloadModel());
-ipcMain.handle('meeting-transcription:cancel-model-download', () => localTranscriptionService.cancelModelDownload());
+ipcMain.handle('meeting-transcription:download-model', () =>
+  localTranscriptionService.downloadModel()
+);
+ipcMain.handle('meeting-transcription:cancel-model-download', () =>
+  localTranscriptionService.cancelModelDownload()
+);
 ipcMain.handle('meeting-transcription:delete-model', () => localTranscriptionService.deleteModel());
-ipcMain.handle('meeting-transcription:prepare', (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown }) => {
-  if (typeof payload?.sessionId !== 'string' || typeof payload.noteId !== 'string' || typeof payload.workspaceId !== 'string') throw new Error('Invalid transcription preparation request.');
-  return localTranscriptionService.prepare({ sessionId: payload.sessionId, noteId: payload.noteId, workspaceId: payload.workspaceId });
-});
+ipcMain.handle(
+  'meeting-transcription:prepare',
+  (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown }) => {
+    if (
+      typeof payload?.sessionId !== 'string' ||
+      typeof payload.noteId !== 'string' ||
+      typeof payload.workspaceId !== 'string'
+    )
+      throw new Error('Invalid transcription preparation request.');
+    return localTranscriptionService.prepare({
+      sessionId: payload.sessionId,
+      noteId: payload.noteId,
+      workspaceId: payload.workspaceId,
+    });
+  }
+);
 ipcMain.handle('meeting-transcription:status', (_event, jobId?: unknown) => {
-  if (jobId !== undefined && typeof jobId !== 'string') throw new Error('Invalid transcription job.');
+  if (jobId !== undefined && typeof jobId !== 'string')
+    throw new Error('Invalid transcription job.');
   return localTranscriptionService.status(jobId);
 });
-ipcMain.handle('meeting-transcription:start', (_event, payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown; force?: unknown }) => {
-  if (typeof payload?.sessionId !== 'string' || typeof payload.noteId !== 'string' || typeof payload.workspaceId !== 'string') throw new Error('Invalid transcription request.');
-  return localTranscriptionService.start({ sessionId: payload.sessionId, noteId: payload.noteId, workspaceId: payload.workspaceId, force: payload.force === true });
-});
+ipcMain.handle(
+  'meeting-transcription:start',
+  (
+    _event,
+    payload: { sessionId?: unknown; noteId?: unknown; workspaceId?: unknown; force?: unknown }
+  ) => {
+    if (
+      typeof payload?.sessionId !== 'string' ||
+      typeof payload.noteId !== 'string' ||
+      typeof payload.workspaceId !== 'string'
+    )
+      throw new Error('Invalid transcription request.');
+    return localTranscriptionService.start({
+      sessionId: payload.sessionId,
+      noteId: payload.noteId,
+      workspaceId: payload.workspaceId,
+      force: payload.force === true,
+    });
+  }
+);
 ipcMain.handle('meeting-transcription:cancel', (_event, jobId: unknown) => {
   if (typeof jobId !== 'string') throw new Error('Invalid transcription job.');
   const job = localTranscriptionService.status(jobId) as { sessionId?: string };
@@ -361,266 +708,825 @@ ipcMain.handle('meeting-transcription:results', (_event, jobId: unknown) => {
   if (typeof jobId !== 'string') throw new Error('Invalid transcription job.');
   return localTranscriptionService.results(jobId);
 });
-ipcMain.handle('meeting-transcription:complete', (_event, payload: { jobId?: unknown; retention?: unknown }) => {
-  if (typeof payload?.jobId !== 'string' || (payload.retention !== 'retain' && payload.retention !== 'delete_after_transcription')) throw new Error('Invalid transcription completion request.');
-  const job = localTranscriptionService.status(payload.jobId) as { sessionId?: string };
-  const result = localTranscriptionService.complete(payload.jobId, payload.retention);
-  if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
-  return result;
-});
-ipcMain.handle('meeting-transcription:fail', (_event, payload: { jobId?: unknown; error?: unknown }) => {
-  if (typeof payload?.jobId !== 'string' || typeof payload.error !== 'string') throw new Error('Invalid transcription failure request.');
-  const job = localTranscriptionService.status(payload.jobId) as { sessionId?: string };
-  const result = localTranscriptionService.fail(payload.jobId, payload.error);
-  if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
-  return result;
-});
+ipcMain.handle(
+  'meeting-transcription:complete',
+  (_event, payload: { jobId?: unknown; retention?: unknown }) => {
+    if (
+      typeof payload?.jobId !== 'string' ||
+      (payload.retention !== 'retain' && payload.retention !== 'delete_after_transcription')
+    )
+      throw new Error('Invalid transcription completion request.');
+    const job = localTranscriptionService.status(payload.jobId) as { sessionId?: string };
+    const result = localTranscriptionService.complete(payload.jobId, payload.retention);
+    if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
+    if (touchBarMeetingContext && touchBarMeetingContext.state === 'processing') {
+      touchBarMeetingContext = { ...touchBarMeetingContext, active: false, state: 'completed', transcriptAvailable: true };
+      syncTouchBarMeetingContext();
+    }
+    return result;
+  }
+);
+ipcMain.handle(
+  'meeting-transcription:fail',
+  (_event, payload: { jobId?: unknown; error?: unknown }) => {
+    if (typeof payload?.jobId !== 'string' || typeof payload.error !== 'string')
+      throw new Error('Invalid transcription failure request.');
+    const job = localTranscriptionService.status(payload.jobId) as { sessionId?: string };
+    const result = localTranscriptionService.fail(payload.jobId, payload.error);
+    if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
+    return result;
+  }
+);
 
 ipcMain.handle('ask-ledger:list-skills', () => listAskLedgerSkills());
 
-ipcMain.handle('ask-ledger:select-attachments', async (_event, payload: { workspaceId?: unknown; conversationId?: unknown; existingCount?: unknown; existingSizeBytes?: unknown }) => {
-  if (typeof payload?.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
-  if (typeof payload?.conversationId !== 'string' || !payload.conversationId.trim()) throw new Error('Ask Ledger conversation is required.');
-  const selection = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'Ask Ledger attachments', extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'] }] });
-  if (selection.canceled || !selection.filePaths.length) return { canceled: true, attachments: [] };
-  return { canceled: false, attachments: await askLedgerService.ingestAttachments(payload.workspaceId, payload.conversationId, selection.filePaths, { count: typeof payload.existingCount === 'number' ? payload.existingCount : 0, sizeBytes: typeof payload.existingSizeBytes === 'number' ? payload.existingSizeBytes : 0 }) };
-});
+ipcMain.handle(
+  'ask-ledger:select-attachments',
+  async (
+    _event,
+    payload: {
+      workspaceId?: unknown;
+      conversationId?: unknown;
+      existingCount?: unknown;
+      existingSizeBytes?: unknown;
+    }
+  ) => {
+    if (typeof payload?.workspaceId !== 'string' || !payload.workspaceId.trim())
+      throw new Error('Ask Ledger workspace is required.');
+    if (typeof payload?.conversationId !== 'string' || !payload.conversationId.trim())
+      throw new Error('Ask Ledger conversation is required.');
+    const selection = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Ask Ledger attachments', extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'] },
+      ],
+    });
+    if (selection.canceled || !selection.filePaths.length)
+      return { canceled: true, attachments: [] };
+    return {
+      canceled: false,
+      attachments: await askLedgerService.ingestAttachments(
+        payload.workspaceId,
+        payload.conversationId,
+        selection.filePaths,
+        {
+          count: typeof payload.existingCount === 'number' ? payload.existingCount : 0,
+          sizeBytes: typeof payload.existingSizeBytes === 'number' ? payload.existingSizeBytes : 0,
+        }
+      ),
+    };
+  }
+);
 
 ipcMain.handle('ask-ledger:open-attachment', async (_event, attachmentId: unknown) => {
-  if (typeof attachmentId !== 'string' || !attachmentId.trim()) throw new Error('Invalid Ask Ledger attachment.');
+  if (typeof attachmentId !== 'string' || !attachmentId.trim())
+    throw new Error('Invalid Ask Ledger attachment.');
   const filePath = askLedgerService.attachmentPath(attachmentId);
   if (!filePath) return { ok: false, error: 'This temporary attachment is no longer available.' };
   const error = await shell.openPath(filePath);
   return error ? { ok: false, error } : { ok: true };
 });
 
-ipcMain.handle('ask-ledger:remove-attachments', async (_event, payload: { conversationId?: unknown; attachmentIds?: unknown }) => {
-  if (typeof payload?.conversationId !== 'string' || !payload.conversationId.trim() || !Array.isArray(payload.attachmentIds)) throw new Error('Invalid Ask Ledger attachment cleanup request.');
-  const ids = payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5);
-  await askLedgerService.removeAttachments(payload.conversationId, ids);
-  return { ok: true };
-});
+ipcMain.handle(
+  'ask-ledger:remove-attachments',
+  async (_event, payload: { conversationId?: unknown; attachmentIds?: unknown }) => {
+    if (
+      typeof payload?.conversationId !== 'string' ||
+      !payload.conversationId.trim() ||
+      !Array.isArray(payload.attachmentIds)
+    )
+      throw new Error('Invalid Ask Ledger attachment cleanup request.');
+    const ids = payload.attachmentIds
+      .filter((id): id is string => typeof id === 'string')
+      .slice(0, 5);
+    await askLedgerService.removeAttachments(payload.conversationId, ids);
+    return { ok: true };
+  }
+);
 
 const sanitizeAskLedgerHandoff = (value: unknown) => {
   if (!value || typeof value !== 'object') return undefined;
   const handoff = value as Record<string, unknown>;
   if (handoff.kind !== 'overview_focus') return undefined;
   const insights = Array.isArray(handoff.insights)
-    ? handoff.insights.slice(0, 3).flatMap((item) => item && typeof item === 'object' && typeof (item as Record<string, unknown>).title === 'string' && typeof (item as Record<string, unknown>).summary === 'string'
-      ? [{ title: String((item as Record<string, unknown>).title).slice(0, 120), summary: String((item as Record<string, unknown>).summary).slice(0, 300) }]
-      : [])
+    ? handoff.insights
+        .slice(0, 3)
+        .flatMap((item) =>
+          item &&
+          typeof item === 'object' &&
+          typeof (item as Record<string, unknown>).title === 'string' &&
+          typeof (item as Record<string, unknown>).summary === 'string'
+            ? [
+                {
+                  title: String((item as Record<string, unknown>).title).slice(0, 120),
+                  summary: String((item as Record<string, unknown>).summary).slice(0, 300),
+                },
+              ]
+            : []
+        )
     : [];
   const resourceRefs = Array.isArray(handoff.resourceRefs)
-    ? handoff.resourceRefs.slice(0, 16).flatMap((item) => item && typeof item === 'object' && typeof (item as Record<string, unknown>).resourceType === 'string' && typeof (item as Record<string, unknown>).resourceId === 'string'
-      ? [{ resourceType: String((item as Record<string, unknown>).resourceType) as never, resourceId: String((item as Record<string, unknown>).resourceId).slice(0, 200), title: String((item as Record<string, unknown>).title ?? 'Ledger resource').slice(0, 200) }]
-      : [])
+    ? handoff.resourceRefs
+        .slice(0, 16)
+        .flatMap((item) =>
+          item &&
+          typeof item === 'object' &&
+          typeof (item as Record<string, unknown>).resourceType === 'string' &&
+          typeof (item as Record<string, unknown>).resourceId === 'string'
+            ? [
+                {
+                  resourceType: String((item as Record<string, unknown>).resourceType) as never,
+                  resourceId: String((item as Record<string, unknown>).resourceId).slice(0, 200),
+                  title: String((item as Record<string, unknown>).title ?? 'Ledger resource').slice(
+                    0,
+                    200
+                  ),
+                },
+              ]
+            : []
+        )
     : [];
-  const workspaceId = typeof handoff.workspaceId === 'string' ? handoff.workspaceId.slice(0, 200) : '';
-  const overviewDate = typeof handoff.overviewDate === 'string' ? handoff.overviewDate.slice(0, 80) : '';
-  return workspaceId && overviewDate ? { kind: 'overview_focus' as const, workspaceId, overviewDate, insights, resourceRefs } : undefined;
+  const workspaceId =
+    typeof handoff.workspaceId === 'string' ? handoff.workspaceId.slice(0, 200) : '';
+  const overviewDate =
+    typeof handoff.overviewDate === 'string' ? handoff.overviewDate.slice(0, 80) : '';
+  return workspaceId && overviewDate
+    ? { kind: 'overview_focus' as const, workspaceId, overviewDate, insights, resourceRefs }
+    : undefined;
 };
 
-ipcMain.handle('ask-ledger:start', (event, payload: { requestId?: unknown; question?: unknown; workspaceId?: unknown; documents?: unknown; lexicalResults?: unknown; conversation?: unknown; skillId?: unknown; customSkill?: unknown; explicitContext?: unknown; attachmentIds?: unknown; messageId?: unknown; timeZone?: unknown; timeFormat?: unknown; performance?: { uiSubmitStartedAt?: unknown; preflightStartedAt?: unknown; preflightCompletedAt?: unknown } }) => {
-  if (typeof payload?.question !== 'string' || (!payload.question.trim() && payload.skillId === undefined)) throw new Error('Ask Ledger question is required.');
-  if (typeof payload.workspaceId !== 'string' || !payload.workspaceId.trim()) throw new Error('Ask Ledger workspace is required.');
-  if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults)) throw new Error('Ask Ledger retrieval context is invalid.');
-  const documents = payload.documents.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
-  if (documents.some((item) => item.workspaceId !== undefined && item.workspaceId !== payload.workspaceId)) throw new Error('Ask Ledger context workspace mismatch.');
-  const builtinSkill = payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
-  const customPayload = payload.customSkill && typeof payload.customSkill === 'object' ? payload.customSkill as Record<string, unknown> : undefined;
-  const customSkill = !builtinSkill && customPayload && typeof customPayload.id === 'string' && customPayload.id === String(payload.skillId ?? '') && typeof customPayload.name === 'string' && typeof customPayload.instructions === 'string'
-    ? { id: customPayload.id as AskLedgerSkillId, name: String(customPayload.name).slice(0, 100), description: 'A custom Ledger workflow.', icon: 'Boxes', instructions: String(customPayload.instructions).slice(0, 12000), supportedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedContextTypes: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], allowedActions: [], requiresContext: false, requiresConfirmation: false, executionContract: { resources: ['project', 'task', 'milestone', 'note', 'event', 'reminder', 'transcript', 'intake', 'person', 'team', 'external'], timeRange: 'workspace', retrieval: 'structured', reasoning: 'bounded', maxOutput: 640 } } as AskLedgerSkillDefinition
-    : undefined;
-  const skill = builtinSkill ?? customSkill;
-  if (payload.skillId !== undefined && !skill) throw new Error('Unknown Ask Ledger skill.');
-  const explicitContext = payload.explicitContext && typeof payload.explicitContext === 'object' ? {
-    resourceType: String((payload.explicitContext as Record<string, unknown>).resourceType ?? ''),
-    resourceId: String((payload.explicitContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
-    title: String((payload.explicitContext as Record<string, unknown>).title ?? '').slice(0, 300),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).workspaceId === 'string' ? { workspaceId: String((payload.explicitContext as Record<string, unknown>).workspaceId).slice(0, 200) } : {}),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting', 'notes_home'].includes(String((payload.explicitContext as Record<string, unknown>).contextType)) ? { contextType: String((payload.explicitContext as Record<string, unknown>).contextType) as 'project' | 'meeting' | 'notes_home' } : {}),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).meetingNoteId === 'string' ? { meetingNoteId: String((payload.explicitContext as Record<string, unknown>).meetingNoteId).slice(0, 200) } : {}),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).calendarSeriesId === 'string' ? { calendarSeriesId: String((payload.explicitContext as Record<string, unknown>).calendarSeriesId).slice(0, 200) } : {}),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).linkedProjectId === 'string' ? { linkedProjectId: String((payload.explicitContext as Record<string, unknown>).linkedProjectId).slice(0, 200) } : {}),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((payload.explicitContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
-    ...(typeof (payload.explicitContext as Record<string, unknown>).origin === 'string' && ['projects', 'notes_home'].includes(String((payload.explicitContext as Record<string, unknown>).origin)) ? { origin: String((payload.explicitContext as Record<string, unknown>).origin) as 'projects' | 'notes_home' } : {}),
-    ...(sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((payload.explicitContext as Record<string, unknown>).handoff) } : {}),
-  } : undefined;
-  if (skill && skill.requiresContext && !explicitContext) throw new Error(`${skill.name} needs explicit Ledger context.`);
-  if (explicitContext && (!explicitContext.resourceType || !explicitContext.resourceId || !explicitContext.title)) throw new Error('Skill context is incomplete.');
-  if (explicitContext?.workspaceId && explicitContext.workspaceId !== payload.workspaceId) throw new Error('Ask Ledger context workspace mismatch.');
-  if (skill && explicitContext && !skill.supportedContextTypes.includes(explicitContext.resourceType as never)) throw new Error(`${skill.name} does not support this context.`);
-  if (skill && explicitContext && !documents.some((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId)) throw new Error('Skill context was not found in the current workspace context.');
-  const conversation = payload.conversation && typeof payload.conversation === 'object' ? payload.conversation as Record<string, unknown> : undefined;
-  const rawState = conversation?.state && typeof conversation.state === 'object' ? conversation.state as Record<string, unknown> : undefined;
-  const safeState: AskLedgerConversationState | undefined = rawState && String(rawState.workspaceId ?? '') === payload.workspaceId ? {
-    workspaceId: payload.workspaceId,
-    activeEntities: Array.isArray(rawState.activeEntities) ? rawState.activeEntities.filter((entity): entity is Record<string, unknown> => Boolean(entity) && typeof entity === 'object').slice(0, 12).map((entity) => ({ resourceType: String(entity.resourceType ?? 'external') as never, resourceId: String(entity.resourceId ?? '').slice(0, 200), title: String(entity.title ?? 'Untitled').slice(0, 300), projectId: typeof entity.projectId === 'string' ? entity.projectId.slice(0, 200) : undefined, integrationProvider: typeof entity.integrationProvider === 'string' ? entity.integrationProvider.slice(0, 80) : undefined, updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : undefined })) : [],
-    activeResources: Array.isArray(rawState.activeResources) ? rawState.activeResources.filter((entity): entity is Record<string, unknown> => Boolean(entity) && typeof entity === 'object').slice(0, 16).map((entity) => ({ resourceType: String(entity.resourceType ?? 'external') as never, resourceId: String(entity.resourceId ?? '').slice(0, 200), title: String(entity.title ?? 'Untitled').slice(0, 300), projectId: typeof entity.projectId === 'string' ? entity.projectId.slice(0, 200) : undefined, integrationProvider: typeof entity.integrationProvider === 'string' ? entity.integrationProvider.slice(0, 80) : undefined, updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : undefined })) : [],
-    activeTopics: Array.isArray(rawState.activeTopics) ? rawState.activeTopics.filter((topic): topic is string => typeof topic === 'string').slice(0, 8).map((topic) => topic.slice(0, 120)) : [],
-    previousRequest: typeof rawState.previousRequest === 'string' ? rawState.previousRequest.slice(0, 800) : undefined,
-    previousEvidenceSourceIds: Array.isArray(rawState.previousEvidenceSourceIds) ? rawState.previousEvidenceSourceIds.filter((id): id is string => typeof id === 'string').slice(0, 16) : [],
-    updatedAt: typeof rawState.updatedAt === 'string' ? rawState.updatedAt : new Date().toISOString(),
-  } : undefined;
-  const safeConversation = conversation ? {
-    id: typeof conversation.id === 'string' ? conversation.id.slice(0, 200) : undefined,
-    initialContext: conversation.initialContext && typeof conversation.initialContext === 'object' ? {
-      resourceType: String((conversation.initialContext as Record<string, unknown>).resourceType ?? 'external') as never,
-      resourceId: String((conversation.initialContext as Record<string, unknown>).resourceId ?? '').slice(0, 200),
-      title: String((conversation.initialContext as Record<string, unknown>).title ?? 'Ledger context').slice(0, 300),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).workspaceId === 'string' ? { workspaceId: String((conversation.initialContext as Record<string, unknown>).workspaceId).slice(0, 200) } : {}),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).contextType === 'string' && ['project', 'meeting', 'notes_home'].includes(String((conversation.initialContext as Record<string, unknown>).contextType)) ? { contextType: String((conversation.initialContext as Record<string, unknown>).contextType) as 'project' | 'meeting' | 'notes_home' } : {}),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).meetingNoteId === 'string' ? { meetingNoteId: String((conversation.initialContext as Record<string, unknown>).meetingNoteId).slice(0, 200) } : {}),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).calendarSeriesId === 'string' ? { calendarSeriesId: String((conversation.initialContext as Record<string, unknown>).calendarSeriesId).slice(0, 200) } : {}),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).linkedProjectId === 'string' ? { linkedProjectId: String((conversation.initialContext as Record<string, unknown>).linkedProjectId).slice(0, 200) } : {}),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).initialQuestion === 'string' ? { initialQuestion: String((conversation.initialContext as Record<string, unknown>).initialQuestion).slice(0, 400) } : {}),
-      ...(typeof (conversation.initialContext as Record<string, unknown>).origin === 'string' && ['projects', 'notes_home'].includes(String((conversation.initialContext as Record<string, unknown>).origin)) ? { origin: String((conversation.initialContext as Record<string, unknown>).origin) as 'projects' | 'notes_home' } : {}),
-      ...(sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) ? { handoff: sanitizeAskLedgerHandoff((conversation.initialContext as Record<string, unknown>).handoff) } : {}),
-    } : undefined,
-    previousQuestion: typeof conversation.previousQuestion === 'string' ? conversation.previousQuestion.slice(0, 800) : undefined,
-    previousAnswer: typeof conversation.previousAnswer === 'string' ? conversation.previousAnswer.slice(0, 1200) : undefined,
-    previousExecutionMode: ['conversation', 'ledger_product_help', 'workspace_lookup', 'workspace_synthesis', 'workspace_research', 'skills'].includes(String(conversation.previousExecutionMode)) ? String(conversation.previousExecutionMode) as AskLedgerExecutionMode : undefined,
-    productArea: typeof conversation.productArea === 'string' ? conversation.productArea.slice(0, 80) : undefined,
-    productFeature: typeof conversation.productFeature === 'string' ? conversation.productFeature.slice(0, 120) : undefined,
-    previousSkill: typeof conversation.previousSkill === 'string' ? conversation.previousSkill.slice(0, 120) : undefined,
-    state: safeState,
-    previousSources: Array.isArray(conversation.previousSources) ? conversation.previousSources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 8).map((source) => ({
-      resourceType: String(source.resourceType ?? 'external') as never,
-      resourceId: String(source.resourceId ?? source.id ?? ''),
-      title: String(source.title ?? 'Untitled'),
-      route: source.route as never,
-    })) : undefined,
-    recentExchanges: Array.isArray(conversation.recentExchanges) ? conversation.recentExchanges.filter((exchange): exchange is Record<string, unknown> => Boolean(exchange) && typeof exchange === 'object').slice(-2).map((exchange) => ({
-      question: typeof exchange.question === 'string' ? exchange.question.slice(0, 600) : undefined,
-      answer: typeof exchange.answer === 'string' ? exchange.answer.slice(0, 900) : undefined,
-      executionMode: ['conversation', 'ledger_product_help', 'workspace_lookup', 'workspace_synthesis', 'workspace_research', 'skills'].includes(String(exchange.executionMode)) ? String(exchange.executionMode) as AskLedgerExecutionMode : undefined,
-      productArea: typeof exchange.productArea === 'string' ? exchange.productArea.slice(0, 80) : undefined,
-      productFeature: typeof exchange.productFeature === 'string' ? exchange.productFeature.slice(0, 120) : undefined,
-      sources: Array.isArray(exchange.sources) ? exchange.sources.filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === 'object').slice(0, 6).map((source) => ({
-        resourceType: String(source.resourceType ?? 'external') as never,
-        resourceId: String(source.resourceId ?? source.id ?? ''),
-        title: String(source.title ?? 'Untitled'),
-        route: source.route as never,
-      })) : [],
-    })) : undefined,
-  } : undefined;
-  const sender = event.sender;
-  const correlationId = typeof payload.requestId === 'string' && payload.requestId.trim() ? payload.requestId.slice(0, 120) : undefined;
-  const ipcStartReceivedAt = Date.now();
-  const preflight = payload.performance && typeof payload.performance === 'object' ? {
-    uiSubmitStartedAt: typeof payload.performance.uiSubmitStartedAt === 'number' ? payload.performance.uiSubmitStartedAt : undefined,
-    preflightStartedAt: typeof payload.performance.preflightStartedAt === 'number' ? payload.performance.preflightStartedAt : undefined,
-    preflightCompletedAt: typeof payload.performance.preflightCompletedAt === 'number' ? payload.performance.preflightCompletedAt : undefined,
-  } : undefined;
-  let ipcFirstDeltaSentAt: number | undefined;
-  let answer = '';
-  let skillSourceCount = 0;
-  let skillSelectedSources: string[] = [];
-  const requestId = askLedgerService.start(
-    {
-      requestId: correlationId,
-      question: payload.question,
-      workspaceId: payload.workspaceId,
-      documents: documents as never,
-      lexicalResults: payload.lexicalResults as never,
-      skillId: skill?.id,
-      skillDefinition: skill,
-      explicitContext: explicitContext as never,
-      attachmentIds: Array.isArray(payload.attachmentIds) ? payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5) : undefined,
-      messageId: typeof payload.messageId === 'string' ? payload.messageId.slice(0, 200) : undefined,
-      timeZone: typeof payload.timeZone === 'string' ? payload.timeZone.slice(0, 100) : undefined,
-      timeFormat: payload.timeFormat === '24h' ? '24h' : '12h',
-      conversation: safeConversation,
-    },
-    { onEvent: (streamEvent) => {
-      if (streamEvent.type === 'error') {
-        console.error('[local-ai] Ask Ledger stream error', {
-          requestId: streamEvent.requestId,
-          code: streamEvent.error?.code,
-          message: streamEvent.error?.message,
-        });
-      }
-      if (streamEvent.type === 'delta') answer += streamEvent.text ?? '';
-      if (streamEvent.type === 'replace') answer = streamEvent.text ?? '';
-      if (streamEvent.type === 'delta' && ipcFirstDeltaSentAt === undefined) ipcFirstDeltaSentAt = Date.now();
-      if (streamEvent.type === 'sources') {
-        skillSourceCount = streamEvent.sources?.length ?? 0;
-        skillSelectedSources = (streamEvent.sources ?? []).map((source) => `${source.resourceType}:${source.resourceId}`);
-      }
-      if (streamEvent.type === 'done' && streamEvent.metrics) {
-        if (process.env.NODE_ENV !== 'production') console.info('[local-ai] Ask Ledger generation diagnostics', { ...streamEvent.metrics, answerChars: answer.length });
-      }
-      if (!sender.isDestroyed()) {
-        const eventWithSkill = streamEvent.type === 'done'
-          ? {
-              ...streamEvent,
-              metrics: {
+ipcMain.handle(
+  'ask-ledger:start',
+  (
+    event,
+    payload: {
+      requestId?: unknown;
+      question?: unknown;
+      workspaceId?: unknown;
+      documents?: unknown;
+      lexicalResults?: unknown;
+      conversation?: unknown;
+      skillId?: unknown;
+      customSkill?: unknown;
+      explicitContext?: unknown;
+      attachmentIds?: unknown;
+      messageId?: unknown;
+      timeZone?: unknown;
+      timeFormat?: unknown;
+      performance?: {
+        uiSubmitStartedAt?: unknown;
+        preflightStartedAt?: unknown;
+        preflightCompletedAt?: unknown;
+      };
+    }
+  ) => {
+    if (
+      typeof payload?.question !== 'string' ||
+      (!payload.question.trim() && payload.skillId === undefined)
+    )
+      throw new Error('Ask Ledger question is required.');
+    if (typeof payload.workspaceId !== 'string' || !payload.workspaceId.trim())
+      throw new Error('Ask Ledger workspace is required.');
+    if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults))
+      throw new Error('Ask Ledger retrieval context is invalid.');
+    const documents = payload.documents.filter(
+      (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object'
+    );
+    if (
+      documents.some(
+        (item) => item.workspaceId !== undefined && item.workspaceId !== payload.workspaceId
+      )
+    )
+      throw new Error('Ask Ledger context workspace mismatch.');
+    const builtinSkill =
+      payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
+    const customPayload =
+      payload.customSkill && typeof payload.customSkill === 'object'
+        ? (payload.customSkill as Record<string, unknown>)
+        : undefined;
+    const customSkill =
+      !builtinSkill &&
+      customPayload &&
+      typeof customPayload.id === 'string' &&
+      customPayload.id === String(payload.skillId ?? '') &&
+      typeof customPayload.name === 'string' &&
+      typeof customPayload.instructions === 'string'
+        ? ({
+            id: customPayload.id as AskLedgerSkillId,
+            name: String(customPayload.name).slice(0, 100),
+            description: 'A custom Ledger workflow.',
+            icon: 'Boxes',
+            instructions: String(customPayload.instructions).slice(0, 12000),
+            supportedContextTypes: [
+              'project',
+              'task',
+              'milestone',
+              'note',
+              'event',
+              'reminder',
+              'transcript',
+              'intake',
+              'person',
+              'team',
+              'external',
+            ],
+            allowedContextTypes: [
+              'project',
+              'task',
+              'milestone',
+              'note',
+              'event',
+              'reminder',
+              'transcript',
+              'intake',
+              'person',
+              'team',
+              'external',
+            ],
+            allowedActions: [],
+            requiresContext: false,
+            requiresConfirmation: false,
+            executionContract: {
+              resources: [
+                'project',
+                'task',
+                'milestone',
+                'note',
+                'event',
+                'reminder',
+                'transcript',
+                'intake',
+                'person',
+                'team',
+                'external',
+              ],
+              timeRange: 'workspace',
+              retrieval: 'structured',
+              reasoning: 'bounded',
+              maxOutput: 640,
+            },
+          } as AskLedgerSkillDefinition)
+        : undefined;
+    const skill = builtinSkill ?? customSkill;
+    if (payload.skillId !== undefined && !skill) throw new Error('Unknown Ask Ledger skill.');
+    const explicitContext =
+      payload.explicitContext && typeof payload.explicitContext === 'object'
+        ? {
+            resourceType: String(
+              (payload.explicitContext as Record<string, unknown>).resourceType ?? ''
+            ),
+            resourceId: String(
+              (payload.explicitContext as Record<string, unknown>).resourceId ?? ''
+            ).slice(0, 200),
+            title: String((payload.explicitContext as Record<string, unknown>).title ?? '').slice(
+              0,
+              300
+            ),
+            ...(typeof (payload.explicitContext as Record<string, unknown>).workspaceId === 'string'
+              ? {
+                  workspaceId: String(
+                    (payload.explicitContext as Record<string, unknown>).workspaceId
+                  ).slice(0, 200),
+                }
+              : {}),
+            ...(typeof (payload.explicitContext as Record<string, unknown>).contextType ===
+              'string' &&
+            ['project', 'meeting', 'notes_home'].includes(
+              String((payload.explicitContext as Record<string, unknown>).contextType)
+            )
+              ? {
+                  contextType: String(
+                    (payload.explicitContext as Record<string, unknown>).contextType
+                  ) as 'project' | 'meeting' | 'notes_home',
+                }
+              : {}),
+            ...(typeof (payload.explicitContext as Record<string, unknown>).meetingNoteId ===
+            'string'
+              ? {
+                  meetingNoteId: String(
+                    (payload.explicitContext as Record<string, unknown>).meetingNoteId
+                  ).slice(0, 200),
+                }
+              : {}),
+            ...(typeof (payload.explicitContext as Record<string, unknown>).calendarSeriesId ===
+            'string'
+              ? {
+                  calendarSeriesId: String(
+                    (payload.explicitContext as Record<string, unknown>).calendarSeriesId
+                  ).slice(0, 200),
+                }
+              : {}),
+            ...(typeof (payload.explicitContext as Record<string, unknown>).linkedProjectId ===
+            'string'
+              ? {
+                  linkedProjectId: String(
+                    (payload.explicitContext as Record<string, unknown>).linkedProjectId
+                  ).slice(0, 200),
+                }
+              : {}),
+            ...(typeof (payload.explicitContext as Record<string, unknown>).initialQuestion ===
+            'string'
+              ? {
+                  initialQuestion: String(
+                    (payload.explicitContext as Record<string, unknown>).initialQuestion
+                  ).slice(0, 400),
+                }
+              : {}),
+            ...(typeof (payload.explicitContext as Record<string, unknown>).origin === 'string' &&
+            ['projects', 'notes_home'].includes(
+              String((payload.explicitContext as Record<string, unknown>).origin)
+            )
+              ? {
+                  origin: String((payload.explicitContext as Record<string, unknown>).origin) as
+                    | 'projects'
+                    | 'notes_home',
+                }
+              : {}),
+            ...(sanitizeAskLedgerHandoff(
+              (payload.explicitContext as Record<string, unknown>).handoff
+            )
+              ? {
+                  handoff: sanitizeAskLedgerHandoff(
+                    (payload.explicitContext as Record<string, unknown>).handoff
+                  ),
+                }
+              : {}),
+          }
+        : undefined;
+    if (skill && skill.requiresContext && !explicitContext)
+      throw new Error(`${skill.name} needs explicit Ledger context.`);
+    if (
+      explicitContext &&
+      (!explicitContext.resourceType || !explicitContext.resourceId || !explicitContext.title)
+    )
+      throw new Error('Skill context is incomplete.');
+    if (explicitContext?.workspaceId && explicitContext.workspaceId !== payload.workspaceId)
+      throw new Error('Ask Ledger context workspace mismatch.');
+    if (
+      skill &&
+      explicitContext &&
+      !skill.supportedContextTypes.includes(explicitContext.resourceType as never)
+    )
+      throw new Error(`${skill.name} does not support this context.`);
+    if (
+      skill &&
+      explicitContext &&
+      !documents.some(
+        (item) =>
+          item.resourceType === explicitContext.resourceType &&
+          item.resourceId === explicitContext.resourceId
+      )
+    )
+      throw new Error('Skill context was not found in the current workspace context.');
+    const conversation =
+      payload.conversation && typeof payload.conversation === 'object'
+        ? (payload.conversation as Record<string, unknown>)
+        : undefined;
+    const rawState =
+      conversation?.state && typeof conversation.state === 'object'
+        ? (conversation.state as Record<string, unknown>)
+        : undefined;
+    const safeState: AskLedgerConversationState | undefined =
+      rawState && String(rawState.workspaceId ?? '') === payload.workspaceId
+        ? {
+            workspaceId: payload.workspaceId,
+            activeEntities: Array.isArray(rawState.activeEntities)
+              ? rawState.activeEntities
+                  .filter(
+                    (entity): entity is Record<string, unknown> =>
+                      Boolean(entity) && typeof entity === 'object'
+                  )
+                  .slice(0, 12)
+                  .map((entity) => ({
+                    resourceType: String(entity.resourceType ?? 'external') as never,
+                    resourceId: String(entity.resourceId ?? '').slice(0, 200),
+                    title: String(entity.title ?? 'Untitled').slice(0, 300),
+                    projectId:
+                      typeof entity.projectId === 'string'
+                        ? entity.projectId.slice(0, 200)
+                        : undefined,
+                    integrationProvider:
+                      typeof entity.integrationProvider === 'string'
+                        ? entity.integrationProvider.slice(0, 80)
+                        : undefined,
+                    updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : undefined,
+                  }))
+              : [],
+            activeResources: Array.isArray(rawState.activeResources)
+              ? rawState.activeResources
+                  .filter(
+                    (entity): entity is Record<string, unknown> =>
+                      Boolean(entity) && typeof entity === 'object'
+                  )
+                  .slice(0, 16)
+                  .map((entity) => ({
+                    resourceType: String(entity.resourceType ?? 'external') as never,
+                    resourceId: String(entity.resourceId ?? '').slice(0, 200),
+                    title: String(entity.title ?? 'Untitled').slice(0, 300),
+                    projectId:
+                      typeof entity.projectId === 'string'
+                        ? entity.projectId.slice(0, 200)
+                        : undefined,
+                    integrationProvider:
+                      typeof entity.integrationProvider === 'string'
+                        ? entity.integrationProvider.slice(0, 80)
+                        : undefined,
+                    updatedAt: typeof entity.updatedAt === 'string' ? entity.updatedAt : undefined,
+                  }))
+              : [],
+            activeTopics: Array.isArray(rawState.activeTopics)
+              ? rawState.activeTopics
+                  .filter((topic): topic is string => typeof topic === 'string')
+                  .slice(0, 8)
+                  .map((topic) => topic.slice(0, 120))
+              : [],
+            previousRequest:
+              typeof rawState.previousRequest === 'string'
+                ? rawState.previousRequest.slice(0, 800)
+                : undefined,
+            previousEvidenceSourceIds: Array.isArray(rawState.previousEvidenceSourceIds)
+              ? rawState.previousEvidenceSourceIds
+                  .filter((id): id is string => typeof id === 'string')
+                  .slice(0, 16)
+              : [],
+            updatedAt:
+              typeof rawState.updatedAt === 'string'
+                ? rawState.updatedAt
+                : new Date().toISOString(),
+          }
+        : undefined;
+    const safeConversation = conversation
+      ? {
+          id: typeof conversation.id === 'string' ? conversation.id.slice(0, 200) : undefined,
+          initialContext:
+            conversation.initialContext && typeof conversation.initialContext === 'object'
+              ? {
+                  resourceType: String(
+                    (conversation.initialContext as Record<string, unknown>).resourceType ??
+                      'external'
+                  ) as never,
+                  resourceId: String(
+                    (conversation.initialContext as Record<string, unknown>).resourceId ?? ''
+                  ).slice(0, 200),
+                  title: String(
+                    (conversation.initialContext as Record<string, unknown>).title ??
+                      'Ledger context'
+                  ).slice(0, 300),
+                  ...(typeof (conversation.initialContext as Record<string, unknown>)
+                    .workspaceId === 'string'
+                    ? {
+                        workspaceId: String(
+                          (conversation.initialContext as Record<string, unknown>).workspaceId
+                        ).slice(0, 200),
+                      }
+                    : {}),
+                  ...(typeof (conversation.initialContext as Record<string, unknown>)
+                    .contextType === 'string' &&
+                  ['project', 'meeting', 'notes_home'].includes(
+                    String((conversation.initialContext as Record<string, unknown>).contextType)
+                  )
+                    ? {
+                        contextType: String(
+                          (conversation.initialContext as Record<string, unknown>).contextType
+                        ) as 'project' | 'meeting' | 'notes_home',
+                      }
+                    : {}),
+                  ...(typeof (conversation.initialContext as Record<string, unknown>)
+                    .meetingNoteId === 'string'
+                    ? {
+                        meetingNoteId: String(
+                          (conversation.initialContext as Record<string, unknown>).meetingNoteId
+                        ).slice(0, 200),
+                      }
+                    : {}),
+                  ...(typeof (conversation.initialContext as Record<string, unknown>)
+                    .calendarSeriesId === 'string'
+                    ? {
+                        calendarSeriesId: String(
+                          (conversation.initialContext as Record<string, unknown>).calendarSeriesId
+                        ).slice(0, 200),
+                      }
+                    : {}),
+                  ...(typeof (conversation.initialContext as Record<string, unknown>)
+                    .linkedProjectId === 'string'
+                    ? {
+                        linkedProjectId: String(
+                          (conversation.initialContext as Record<string, unknown>).linkedProjectId
+                        ).slice(0, 200),
+                      }
+                    : {}),
+                  ...(typeof (conversation.initialContext as Record<string, unknown>)
+                    .initialQuestion === 'string'
+                    ? {
+                        initialQuestion: String(
+                          (conversation.initialContext as Record<string, unknown>).initialQuestion
+                        ).slice(0, 400),
+                      }
+                    : {}),
+                  ...(typeof (conversation.initialContext as Record<string, unknown>).origin ===
+                    'string' &&
+                  ['projects', 'notes_home'].includes(
+                    String((conversation.initialContext as Record<string, unknown>).origin)
+                  )
+                    ? {
+                        origin: String(
+                          (conversation.initialContext as Record<string, unknown>).origin
+                        ) as 'projects' | 'notes_home',
+                      }
+                    : {}),
+                  ...(sanitizeAskLedgerHandoff(
+                    (conversation.initialContext as Record<string, unknown>).handoff
+                  )
+                    ? {
+                        handoff: sanitizeAskLedgerHandoff(
+                          (conversation.initialContext as Record<string, unknown>).handoff
+                        ),
+                      }
+                    : {}),
+                }
+              : undefined,
+          previousQuestion:
+            typeof conversation.previousQuestion === 'string'
+              ? conversation.previousQuestion.slice(0, 800)
+              : undefined,
+          previousAnswer:
+            typeof conversation.previousAnswer === 'string'
+              ? conversation.previousAnswer.slice(0, 1200)
+              : undefined,
+          previousExecutionMode: [
+            'conversation',
+            'ledger_product_help',
+            'workspace_lookup',
+            'workspace_synthesis',
+            'workspace_research',
+            'skills',
+          ].includes(String(conversation.previousExecutionMode))
+            ? (String(conversation.previousExecutionMode) as AskLedgerExecutionMode)
+            : undefined,
+          productArea:
+            typeof conversation.productArea === 'string'
+              ? conversation.productArea.slice(0, 80)
+              : undefined,
+          productFeature:
+            typeof conversation.productFeature === 'string'
+              ? conversation.productFeature.slice(0, 120)
+              : undefined,
+          previousSkill:
+            typeof conversation.previousSkill === 'string'
+              ? conversation.previousSkill.slice(0, 120)
+              : undefined,
+          state: safeState,
+          previousSources: Array.isArray(conversation.previousSources)
+            ? conversation.previousSources
+                .filter(
+                  (source): source is Record<string, unknown> =>
+                    Boolean(source) && typeof source === 'object'
+                )
+                .slice(0, 8)
+                .map((source) => ({
+                  resourceType: String(source.resourceType ?? 'external') as never,
+                  resourceId: String(source.resourceId ?? source.id ?? ''),
+                  title: String(source.title ?? 'Untitled'),
+                  route: source.route as never,
+                }))
+            : undefined,
+          recentExchanges: Array.isArray(conversation.recentExchanges)
+            ? conversation.recentExchanges
+                .filter(
+                  (exchange): exchange is Record<string, unknown> =>
+                    Boolean(exchange) && typeof exchange === 'object'
+                )
+                .slice(-2)
+                .map((exchange) => ({
+                  question:
+                    typeof exchange.question === 'string'
+                      ? exchange.question.slice(0, 600)
+                      : undefined,
+                  answer:
+                    typeof exchange.answer === 'string' ? exchange.answer.slice(0, 900) : undefined,
+                  executionMode: [
+                    'conversation',
+                    'ledger_product_help',
+                    'workspace_lookup',
+                    'workspace_synthesis',
+                    'workspace_research',
+                    'skills',
+                  ].includes(String(exchange.executionMode))
+                    ? (String(exchange.executionMode) as AskLedgerExecutionMode)
+                    : undefined,
+                  productArea:
+                    typeof exchange.productArea === 'string'
+                      ? exchange.productArea.slice(0, 80)
+                      : undefined,
+                  productFeature:
+                    typeof exchange.productFeature === 'string'
+                      ? exchange.productFeature.slice(0, 120)
+                      : undefined,
+                  sources: Array.isArray(exchange.sources)
+                    ? exchange.sources
+                        .filter(
+                          (source): source is Record<string, unknown> =>
+                            Boolean(source) && typeof source === 'object'
+                        )
+                        .slice(0, 6)
+                        .map((source) => ({
+                          resourceType: String(source.resourceType ?? 'external') as never,
+                          resourceId: String(source.resourceId ?? source.id ?? ''),
+                          title: String(source.title ?? 'Untitled'),
+                          route: source.route as never,
+                        }))
+                    : [],
+                }))
+            : undefined,
+        }
+      : undefined;
+    const sender = event.sender;
+    const correlationId =
+      typeof payload.requestId === 'string' && payload.requestId.trim()
+        ? payload.requestId.slice(0, 120)
+        : undefined;
+    const ipcStartReceivedAt = Date.now();
+    const preflight =
+      payload.performance && typeof payload.performance === 'object'
+        ? {
+            uiSubmitStartedAt:
+              typeof payload.performance.uiSubmitStartedAt === 'number'
+                ? payload.performance.uiSubmitStartedAt
+                : undefined,
+            preflightStartedAt:
+              typeof payload.performance.preflightStartedAt === 'number'
+                ? payload.performance.preflightStartedAt
+                : undefined,
+            preflightCompletedAt:
+              typeof payload.performance.preflightCompletedAt === 'number'
+                ? payload.performance.preflightCompletedAt
+                : undefined,
+          }
+        : undefined;
+    let ipcFirstDeltaSentAt: number | undefined;
+    let answer = '';
+    let skillSourceCount = 0;
+    let skillSelectedSources: string[] = [];
+    const requestId = askLedgerService.start(
+      {
+        requestId: correlationId,
+        question: payload.question,
+        workspaceId: payload.workspaceId,
+        documents: documents as never,
+        lexicalResults: payload.lexicalResults as never,
+        skillId: skill?.id,
+        skillDefinition: skill,
+        explicitContext: explicitContext as never,
+        attachmentIds: Array.isArray(payload.attachmentIds)
+          ? payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5)
+          : undefined,
+        messageId:
+          typeof payload.messageId === 'string' ? payload.messageId.slice(0, 200) : undefined,
+        timeZone: typeof payload.timeZone === 'string' ? payload.timeZone.slice(0, 100) : undefined,
+        timeFormat: payload.timeFormat === '24h' ? '24h' : '12h',
+        conversation: safeConversation,
+      },
+      {
+        onEvent: (streamEvent) => {
+          if (streamEvent.type === 'error') {
+            console.error('[local-ai] Ask Ledger stream error', {
+              requestId: streamEvent.requestId,
+              code: streamEvent.error?.code,
+              message: streamEvent.error?.message,
+            });
+          }
+          if (streamEvent.type === 'delta') answer += streamEvent.text ?? '';
+          if (streamEvent.type === 'replace') answer = streamEvent.text ?? '';
+          if (streamEvent.type === 'delta' && ipcFirstDeltaSentAt === undefined)
+            ipcFirstDeltaSentAt = Date.now();
+          if (streamEvent.type === 'sources') {
+            skillSourceCount = streamEvent.sources?.length ?? 0;
+            skillSelectedSources = (streamEvent.sources ?? []).map(
+              (source) => `${source.resourceType}:${source.resourceId}`
+            );
+          }
+          if (streamEvent.type === 'done' && streamEvent.metrics) {
+            if (process.env.NODE_ENV !== 'production')
+              console.info('[local-ai] Ask Ledger generation diagnostics', {
                 ...streamEvent.metrics,
-                performance: {
-                  ...streamEvent.metrics?.performance,
-                  ipcStartReceivedAt,
-                  ipcFirstDeltaSentAt,
-                  ipcDoneSentAt: Date.now(),
-                  preflightMs: preflight?.preflightStartedAt && preflight?.preflightCompletedAt ? preflight.preflightCompletedAt - preflight.preflightStartedAt : undefined,
-                  corpusPreparationMs: preflight?.preflightStartedAt && preflight?.preflightCompletedAt ? preflight.preflightCompletedAt - preflight.preflightStartedAt : undefined,
-                  uiToIpcStartMs: preflight?.uiSubmitStartedAt ? ipcStartReceivedAt - preflight.uiSubmitStartedAt : undefined,
-                  totalRequestMs: preflight?.uiSubmitStartedAt ? Date.now() - preflight.uiSubmitStartedAt : undefined,
-                },
-              },
-              ...(skill ? { skillResult: buildSkillResult(skill, answer, explicitContext as never) } : {}),
+                answerChars: answer.length,
+              });
+          }
+          if (!sender.isDestroyed()) {
+            const eventWithSkill =
+              streamEvent.type === 'done'
+                ? {
+                    ...streamEvent,
+                    metrics: {
+                      ...streamEvent.metrics,
+                      performance: {
+                        ...streamEvent.metrics?.performance,
+                        ipcStartReceivedAt,
+                        ipcFirstDeltaSentAt,
+                        ipcDoneSentAt: Date.now(),
+                        preflightMs:
+                          preflight?.preflightStartedAt && preflight?.preflightCompletedAt
+                            ? preflight.preflightCompletedAt - preflight.preflightStartedAt
+                            : undefined,
+                        corpusPreparationMs:
+                          preflight?.preflightStartedAt && preflight?.preflightCompletedAt
+                            ? preflight.preflightCompletedAt - preflight.preflightStartedAt
+                            : undefined,
+                        uiToIpcStartMs: preflight?.uiSubmitStartedAt
+                          ? ipcStartReceivedAt - preflight.uiSubmitStartedAt
+                          : undefined,
+                        totalRequestMs: preflight?.uiSubmitStartedAt
+                          ? Date.now() - preflight.uiSubmitStartedAt
+                          : undefined,
+                      },
+                    },
+                    ...(skill
+                      ? { skillResult: buildSkillResult(skill, answer, explicitContext as never) }
+                      : {}),
+                  }
+                : streamEvent;
+            if (streamEvent.type === 'done' && skill) {
+              if (process.env.NODE_ENV !== 'production')
+                console.info('[local-ai] Ask Ledger skill diagnostics', {
+                  skillId: skill.id,
+                  explicitContext,
+                  retrievalSourceCount: skillSourceCount,
+                  selectedSources: skillSelectedSources,
+                  durationMs: eventWithSkill.metrics?.totalMs,
+                  proposedActionTypes:
+                    eventWithSkill.skillResult?.actionProposals.map((action) => action.type) ?? [],
+                });
             }
-          : streamEvent;
-        if (streamEvent.type === 'done' && skill) {
-          if (process.env.NODE_ENV !== 'production') console.info('[local-ai] Ask Ledger skill diagnostics', {
-            skillId: skill.id,
-            explicitContext,
-            retrievalSourceCount: skillSourceCount,
-            selectedSources: skillSelectedSources,
-            durationMs: eventWithSkill.metrics?.totalMs,
-            proposedActionTypes: eventWithSkill.skillResult?.actionProposals.map((action) => action.type) ?? [],
-          });
-        }
-        if (streamEvent.type === 'done') {
-          console.info('[local-ai] Ask Ledger performance', {
-            requestId: streamEvent.requestId,
-            messageId: typeof payload.messageId === 'string' ? payload.messageId : undefined,
-            skillId: skill?.id,
-            ...eventWithSkill.metrics?.performance,
-          });
-        }
-        sender.send('ask-ledger:stream', eventWithSkill);
+            if (streamEvent.type === 'done') {
+              console.info('[local-ai] Ask Ledger performance', {
+                requestId: streamEvent.requestId,
+                messageId: typeof payload.messageId === 'string' ? payload.messageId : undefined,
+                skillId: skill?.id,
+                ...eventWithSkill.metrics?.performance,
+              });
+            }
+            sender.send('ask-ledger:stream', eventWithSkill);
+          }
+        },
       }
-    } },
-  );
-  if (typeof conversation?.id === 'string' && typeof payload.messageId === 'string' && Array.isArray(payload.attachmentIds)) void askLedgerService.persistAttachments(conversation.id, payload.messageId, payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5));
-  return { requestId };
-});
+    );
+    if (
+      typeof conversation?.id === 'string' &&
+      typeof payload.messageId === 'string' &&
+      Array.isArray(payload.attachmentIds)
+    )
+      void askLedgerService.persistAttachments(
+        conversation.id,
+        payload.messageId,
+        payload.attachmentIds.filter((id): id is string => typeof id === 'string').slice(0, 5)
+      );
+    return { requestId };
+  }
+);
 
 ipcMain.handle('ask-ledger:cancel', (_event, requestId: unknown) => {
   if (typeof requestId !== 'string' || !requestId) throw new Error('Invalid Ask Ledger request.');
-  console.info('[local-ai] Ask Ledger cancellation requested', { requestId, requestIdAvailable: true, requestedAt: Date.now() });
+  console.info('[local-ai] Ask Ledger cancellation requested', {
+    requestId,
+    requestIdAvailable: true,
+    requestedAt: Date.now(),
+  });
   return askLedgerService.cancel(requestId);
 });
 
 ipcMain.handle('overview-focus:generate', async (_event, payload: unknown) => {
-  const snapshot = payload && typeof payload === 'object' && 'snapshot' in payload ? (payload as { snapshot?: unknown }).snapshot : payload;
-  const previousResult = payload && typeof payload === 'object' && 'previousResult' in payload ? (payload as { previousResult?: unknown }).previousResult : undefined;
+  const snapshot =
+    payload && typeof payload === 'object' && 'snapshot' in payload
+      ? (payload as { snapshot?: unknown }).snapshot
+      : payload;
+  const previousResult =
+    payload && typeof payload === 'object' && 'previousResult' in payload
+      ? (payload as { previousResult?: unknown }).previousResult
+      : undefined;
   if (!snapshot || typeof snapshot !== 'object') return { insights: [] };
-  return overviewFocusService.generate(snapshot as OverviewFocusSnapshot, previousResult && typeof previousResult === 'object' ? { previousResult: previousResult as OverviewFocusResult } : undefined);
+  return overviewFocusService.generate(
+    snapshot as OverviewFocusSnapshot,
+    previousResult && typeof previousResult === 'object'
+      ? { previousResult: previousResult as OverviewFocusResult }
+      : undefined
+  );
 });
 
 ipcMain.handle('project-lens:generate', async (_event, payload: unknown) => {
-  if (!payload || typeof payload !== 'object') return { status: 'unavailable', reason: 'invalid_context' };
+  if (!payload || typeof payload !== 'object')
+    return { status: 'unavailable', reason: 'invalid_context' };
   return projectLensService.generate(payload as never);
 });
 
 ipcMain.handle('project-lens:action', async (_event, payload: unknown) => {
-  if (!payload || typeof payload !== 'object') return { status: 'unavailable', reason: 'invalid_context' };
+  if (!payload || typeof payload !== 'object')
+    return { status: 'unavailable', reason: 'invalid_context' };
   return projectLensService.generateAction(payload as never);
 });
 
 ipcMain.handle('meeting-recap:generate', async (_event, payload: unknown) => {
-  if (!payload || typeof payload !== 'object') return { status: 'unavailable', reason: 'invalid_context' };
+  if (!payload || typeof payload !== 'object')
+    return { status: 'unavailable', reason: 'invalid_context' };
   return meetingRecapService.generate(payload as never);
 });
 ipcMain.handle('meeting-people:suggest', async (_event, payload: unknown) => {
@@ -635,12 +1541,26 @@ ipcMain.handle('meeting-prep:generate', async (_event, payload: unknown) => {
 ipcMain.handle('ask-ledger:local-ai-status', () => localAIAssets.status());
 ipcMain.handle('ask-ledger:local-ai-hardware', () => localAIAssets.hardware());
 ipcMain.handle('ask-ledger:local-ai-capability', () => localAICapabilityService.getCapability());
-ipcMain.handle('ask-ledger:local-ai-acknowledge-tier', (_event, tier: unknown) => localAICapabilityService.acknowledgeTier(tier));
-ipcMain.handle('ask-ledger:generation-models', () => localAIAssets.getAvailableGenerationModels().map((model) => ({ ...model, status: localAIAssets.getGenerationModelStatus(model.id) })));
-ipcMain.handle('ask-ledger:selected-generation-tier', () => localAIAssets.getSelectedGenerationTier());
-ipcMain.handle('ask-ledger:generation-runtime-state', () => localAIService.getGenerationRuntimeState());
-ipcMain.handle('ask-ledger:switch-generation-tier', (_event, tier: unknown) => localAIService.switchGenerationTier(tier));
-ipcMain.handle('ask-ledger:set-selected-generation-tier', (_event, tier: unknown) => localAIService.switchGenerationTier(tier));
+ipcMain.handle('ask-ledger:local-ai-acknowledge-tier', (_event, tier: unknown) =>
+  localAICapabilityService.acknowledgeTier(tier)
+);
+ipcMain.handle('ask-ledger:generation-models', () =>
+  localAIAssets
+    .getAvailableGenerationModels()
+    .map((model) => ({ ...model, status: localAIAssets.getGenerationModelStatus(model.id) }))
+);
+ipcMain.handle('ask-ledger:selected-generation-tier', () =>
+  localAIAssets.getSelectedGenerationTier()
+);
+ipcMain.handle('ask-ledger:generation-runtime-state', () =>
+  localAIService.getGenerationRuntimeState()
+);
+ipcMain.handle('ask-ledger:switch-generation-tier', (_event, tier: unknown) =>
+  localAIService.switchGenerationTier(tier)
+);
+ipcMain.handle('ask-ledger:set-selected-generation-tier', (_event, tier: unknown) =>
+  localAIService.switchGenerationTier(tier)
+);
 ipcMain.handle('ask-ledger:generation-model-status', (_event, modelId: unknown) => {
   if (typeof modelId !== 'string') throw new Error('Invalid generation model.');
   return localAIAssets.getGenerationModelStatus(modelId);
@@ -677,62 +1597,128 @@ function appleCalendarBridgePath() {
 }
 
 function zoomAccessibilityBridgePath() {
-  return resolveZoomAccessibilityBridgePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
+  return resolveZoomAccessibilityBridgePath({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  });
 }
 
 function speakerTagsPermission() {
-  if (process.platform !== 'darwin') return { platform: process.platform, state: 'unsupported' as const };
+  if (process.platform !== 'darwin')
+    return { platform: process.platform, state: 'unsupported' as const };
   const trusted = systemPreferences.isTrustedAccessibilityClient(false);
   console.info('[speaker-tags]', JSON.stringify({ event: 'accessibility', authorized: trusted }));
-  return { platform: process.platform, state: trusted ? 'authorized' as const : 'not_authorized' as const };
+  return {
+    platform: process.platform,
+    state: trusted ? ('authorized' as const) : ('not_authorized' as const),
+  };
 }
 
 function startZoomAccessibilityWatcher() {
-  if (process.platform !== 'darwin' || zoomAccessibilityWatcher || zoomWatcherRestartAttempts >= 3 || speakerTagsPermission().state !== 'authorized') return;
-  if (zoomWatcherRestartTimer) { clearTimeout(zoomWatcherRestartTimer); zoomWatcherRestartTimer = null; }
+  if (
+    process.platform !== 'darwin' ||
+    zoomAccessibilityWatcher ||
+    zoomWatcherRestartAttempts >= 3 ||
+    speakerTagsPermission().state !== 'authorized'
+  )
+    return;
+  if (zoomWatcherRestartTimer) {
+    clearTimeout(zoomWatcherRestartTimer);
+    zoomWatcherRestartTimer = null;
+  }
   try {
-    const watcher = spawn(zoomAccessibilityBridgePath(), ['--watch'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const watcher = spawn(zoomAccessibilityBridgePath(), ['--watch'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
     zoomAccessibilityWatcher = watcher;
     zoomWatcherRestartAttempts += 1;
     let buffer = '';
     watcher.stdout.on('data', (chunk) => {
       buffer += String(chunk);
-      const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
-      for (const line of lines) { try {
-        const event = JSON.parse(line);
-        console.info('[speaker-tags]', JSON.stringify(event));
-        if (event?.type === 'state' && event.state !== 'not-authorized') zoomWatcherRestartAttempts = 0;
-        if (event?.type === 'observer' && event.state === 'rediscovering') {
-          const recording = meetingAudioCaptureService.status();
-          if (recording.sessionId) zoomSpeakerAttribution.noteRediscovery(recording.sessionId);
-        }
-        if (event?.type === 'speaker-change' && typeof event.displayName === 'string' && Number.isFinite(event.observedAtMs)) {
-          const recording = meetingAudioCaptureService.status();
-          if (recording.sessionId) {
-            const accepted = zoomSpeakerAttribution.record(recording.sessionId, { displayName: event.displayName, observedAtMs: event.observedAtMs, ambiguous: event.ambiguous === true });
-            console.info('[speaker-tags]', JSON.stringify({ event: accepted ? 'speaker_change_recorded' : 'speaker_change_ignored', sessionId: recording.sessionId, metrics: zoomSpeakerAttribution.metrics(recording.sessionId) }));
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        try {
+          const event = JSON.parse(line);
+          console.info('[speaker-tags]', JSON.stringify(event));
+          if (event?.type === 'state' && event.state !== 'not-authorized')
+            zoomWatcherRestartAttempts = 0;
+          if (event?.type === 'observer' && event.state === 'rediscovering') {
+            const recording = meetingAudioCaptureService.status();
+            if (recording.sessionId) zoomSpeakerAttribution.noteRediscovery(recording.sessionId);
           }
-        }
-        for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('speaker-tags:event', event);
-      } catch {} }
-    });
-    watcher.once('error', (error) => console.warn('[speaker-tags]', JSON.stringify({ event: 'observer_failure', error: error.message })));
-    watcher.once('exit', (code, signal) => {
-      zoomAccessibilityWatcher = null;
-      if (!isQuittingApp && speakerTagsPermission().state === 'authorized' && zoomWatcherRestartAttempts < 3) {
-        console.warn('[speaker-tags]', JSON.stringify({ event: 'helper_exited', code, signal, action: 'rediscover_scheduled' }));
-        zoomWatcherRestartTimer = setTimeout(() => { zoomWatcherRestartTimer = null; startZoomAccessibilityWatcher(); }, Math.min(30_000, 1000 * zoomWatcherRestartAttempts));
-      } else if (zoomWatcherRestartAttempts >= 3) {
-        console.warn('[speaker-tags]', JSON.stringify({ event: 'helper_unavailable', action: 'fallback_to_meeting' }));
+          if (
+            event?.type === 'speaker-change' &&
+            typeof event.displayName === 'string' &&
+            Number.isFinite(event.observedAtMs)
+          ) {
+            const recording = meetingAudioCaptureService.status();
+            if (recording.sessionId) {
+              const accepted = zoomSpeakerAttribution.record(recording.sessionId, {
+                displayName: event.displayName,
+                observedAtMs: event.observedAtMs,
+                ambiguous: event.ambiguous === true,
+              });
+              console.info(
+                '[speaker-tags]',
+                JSON.stringify({
+                  event: accepted ? 'speaker_change_recorded' : 'speaker_change_ignored',
+                  sessionId: recording.sessionId,
+                  metrics: zoomSpeakerAttribution.metrics(recording.sessionId),
+                })
+              );
+            }
+          }
+          for (const win of BrowserWindow.getAllWindows())
+            if (!win.isDestroyed()) win.webContents.send('speaker-tags:event', event);
+        } catch {}
       }
     });
-  } catch (error) { console.warn('[speaker-tags]', JSON.stringify({ event: 'observer_unavailable', error: String(error) })); }
+    watcher.once('error', (error) =>
+      console.warn(
+        '[speaker-tags]',
+        JSON.stringify({ event: 'observer_failure', error: error.message })
+      )
+    );
+    watcher.once('exit', (code, signal) => {
+      zoomAccessibilityWatcher = null;
+      if (
+        !isQuittingApp &&
+        speakerTagsPermission().state === 'authorized' &&
+        zoomWatcherRestartAttempts < 3
+      ) {
+        console.warn(
+          '[speaker-tags]',
+          JSON.stringify({ event: 'helper_exited', code, signal, action: 'rediscover_scheduled' })
+        );
+        zoomWatcherRestartTimer = setTimeout(() => {
+          zoomWatcherRestartTimer = null;
+          startZoomAccessibilityWatcher();
+        }, Math.min(30_000, 1000 * zoomWatcherRestartAttempts));
+      } else if (zoomWatcherRestartAttempts >= 3) {
+        console.warn(
+          '[speaker-tags]',
+          JSON.stringify({ event: 'helper_unavailable', action: 'fallback_to_meeting' })
+        );
+      }
+    });
+  } catch (error) {
+    console.warn(
+      '[speaker-tags]',
+      JSON.stringify({ event: 'observer_unavailable', error: String(error) })
+    );
+  }
 }
 
 function stopZoomAccessibilityWatcher() {
-  if (zoomWatcherRestartTimer) { clearTimeout(zoomWatcherRestartTimer); zoomWatcherRestartTimer = null; }
+  if (zoomWatcherRestartTimer) {
+    clearTimeout(zoomWatcherRestartTimer);
+    zoomWatcherRestartTimer = null;
+  }
   if (!zoomAccessibilityWatcher) return;
-  zoomAccessibilityWatcher.kill(); zoomAccessibilityWatcher = null;
+  zoomAccessibilityWatcher.kill();
+  zoomAccessibilityWatcher = null;
   console.info('[speaker-tags]', JSON.stringify({ event: 'observer_detached' }));
 }
 
@@ -752,26 +1738,40 @@ ipcMain.handle('speaker-tags:setup', () => {
   if (process.platform !== 'darwin') return speakerTagsPermission();
   zoomWatcherRestartAttempts = 0;
   const trusted = systemPreferences.isTrustedAccessibilityClient(true);
-  if (!trusted) void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+  if (!trusted)
+    void shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+    );
   setTimeout(startZoomAccessibilityWatcher, 500);
   return speakerTagsPermission();
 });
-ipcMain.handle('speaker-tags:start', () => { startZoomAccessibilityWatcher(); return speakerTagsPermission(); });
+ipcMain.handle('speaker-tags:start', () => {
+  startZoomAccessibilityWatcher();
+  return speakerTagsPermission();
+});
 
 async function runAppleCalendarBridge(payload: Record<string, unknown>) {
-  if (process.platform !== 'darwin') return { ok: false, error: 'Apple Calendar is only available in the macOS app.' };
+  if (process.platform !== 'darwin')
+    return { ok: false, error: 'Apple Calendar is only available in the macOS app.' };
   return await new Promise<Record<string, unknown>>((resolve) => {
     const child = spawn(appleCalendarBridgePath(), [], { stdio: ['pipe', 'pipe', 'ignore'] });
     let stdout = '';
-    child.stdout.on('data', (chunk) => { stdout += String(chunk); });
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
     child.once('error', (error) => {
       console.warn('[electron] Apple Calendar bridge unavailable', error.message);
       resolve({ ok: false, error: 'Apple Calendar is unavailable in this build.' });
     });
     child.once('close', () => {
       const line = stdout.trim().split('\n').filter(Boolean).pop();
-      try { resolve(line ? JSON.parse(line) : { ok: false, error: 'Apple Calendar returned no response.' }); }
-      catch { resolve({ ok: false, error: 'Apple Calendar returned an invalid response.' }); }
+      try {
+        resolve(
+          line ? JSON.parse(line) : { ok: false, error: 'Apple Calendar returned no response.' }
+        );
+      } catch {
+        resolve({ ok: false, error: 'Apple Calendar returned an invalid response.' });
+      }
     });
     child.stdin.write(`${JSON.stringify(payload)}\n`);
     child.stdin.end();
@@ -781,7 +1781,9 @@ async function runAppleCalendarBridge(payload: Record<string, unknown>) {
 function startAppleCalendarWatcher() {
   if (process.platform !== 'darwin' || appleCalendarWatcher) return;
   try {
-    const watcher = spawn(appleCalendarBridgePath(), ['--watch'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const watcher = spawn(appleCalendarBridgePath(), ['--watch'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
     appleCalendarWatcher = watcher;
     let buffer = '';
     watcher.stdout.on('data', (chunk) => {
@@ -789,12 +1791,18 @@ function startAppleCalendarWatcher() {
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
       if (lines.some((line) => line.includes('"changed":true'))) {
-        for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('apple-calendar:changed');
+        for (const win of BrowserWindow.getAllWindows())
+          if (!win.isDestroyed()) win.webContents.send('apple-calendar:changed');
       }
     });
-    watcher.once('exit', () => { appleCalendarWatcher = null; });
+    watcher.once('exit', () => {
+      appleCalendarWatcher = null;
+    });
   } catch (error) {
-    console.warn('[electron] Could not start Apple Calendar watcher', error instanceof Error ? error.message : 'unknown error');
+    console.warn(
+      '[electron] Could not start Apple Calendar watcher',
+      error instanceof Error ? error.message : 'unknown error'
+    );
   }
 }
 
@@ -805,47 +1813,117 @@ function stopAppleCalendarWatcher() {
 }
 
 ipcMain.handle('apple-calendar:status', () => runAppleCalendarBridge({ command: 'status' }));
-ipcMain.handle('apple-calendar:request-access', () => runAppleCalendarBridge({ command: 'request' }));
-ipcMain.handle('apple-calendar:list-calendars', () => runAppleCalendarBridge({ command: 'calendars' }));
-ipcMain.handle('apple-calendar:events', (_event, payload: { start?: string; end?: string; calendarIds?: string[] }) =>
-  runAppleCalendarBridge({ command: 'events', start: payload?.start, end: payload?.end, calendarIds: payload?.calendarIds ?? [] })
+ipcMain.handle('apple-calendar:request-access', () =>
+  runAppleCalendarBridge({ command: 'request' })
 );
-ipcMain.handle('apple-calendar:refresh-range', (_event, payload: { start?: string; end?: string; calendarIds?: string[] }) =>
-  runAppleCalendarBridge({ command: 'refresh-range', start: payload?.start, end: payload?.end, calendarIds: payload?.calendarIds ?? [] })
+ipcMain.handle('apple-calendar:list-calendars', () =>
+  runAppleCalendarBridge({ command: 'calendars' })
 );
-ipcMain.handle('apple-calendar:get-event', (_event, payload: { eventId?: string }) => runAppleCalendarBridge({ command: 'get-event', eventId: payload?.eventId }));
-ipcMain.handle('apple-calendar:connection-status', () => runAppleCalendarBridge({ command: 'connection-status' }));
-ipcMain.handle('apple-calendar:writable-calendars', () => runAppleCalendarBridge({ command: 'writable-calendars' }));
-ipcMain.handle('apple-calendar:create-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'create' }));
-ipcMain.handle('apple-calendar:update-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'update' }));
-ipcMain.handle('apple-calendar:delete-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'delete' }));
-ipcMain.handle('apple-calendar:move-event', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'move' }));
+ipcMain.handle(
+  'apple-calendar:events',
+  (_event, payload: { start?: string; end?: string; calendarIds?: string[] }) =>
+    runAppleCalendarBridge({
+      command: 'events',
+      start: payload?.start,
+      end: payload?.end,
+      calendarIds: payload?.calendarIds ?? [],
+    })
+);
+ipcMain.handle(
+  'apple-calendar:refresh-range',
+  (_event, payload: { start?: string; end?: string; calendarIds?: string[] }) =>
+    runAppleCalendarBridge({
+      command: 'refresh-range',
+      start: payload?.start,
+      end: payload?.end,
+      calendarIds: payload?.calendarIds ?? [],
+    })
+);
+ipcMain.handle('apple-calendar:get-event', (_event, payload: { eventId?: string }) =>
+  runAppleCalendarBridge({ command: 'get-event', eventId: payload?.eventId })
+);
+ipcMain.handle('apple-calendar:connection-status', () =>
+  runAppleCalendarBridge({ command: 'connection-status' })
+);
+ipcMain.handle('apple-calendar:writable-calendars', () =>
+  runAppleCalendarBridge({ command: 'writable-calendars' })
+);
+ipcMain.handle('apple-calendar:create-event', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'create' })
+);
+ipcMain.handle('apple-calendar:update-event', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'update' })
+);
+ipcMain.handle('apple-calendar:delete-event', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'delete' })
+);
+ipcMain.handle('apple-calendar:move-event', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'move' })
+);
 ipcMain.handle('apple-calendar:open-system-settings', async () => {
   if (process.platform !== 'darwin') return false;
-  await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars');
+  await shell.openExternal(
+    'x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars'
+  );
   return true;
 });
-ipcMain.handle('apple-reminders:permission-status', () => runAppleCalendarBridge({ command: 'permission-status' }));
-ipcMain.handle('apple-reminders:connection-status', () => runAppleCalendarBridge({ command: 'get-connection-status' }));
-ipcMain.handle('apple-reminders:request-access', () => runAppleCalendarBridge({ command: 'request-access' }));
-ipcMain.handle('apple-reminders:get-lists', () => runAppleCalendarBridge({ command: 'lists' }));
-ipcMain.handle('apple-reminders:get-writable-lists', () => runAppleCalendarBridge({ command: 'get-writable-lists' }));
-ipcMain.handle('apple-reminders:get-reminder', (_event, payload: { reminderId?: string }) => runAppleCalendarBridge({ command: 'get-reminder', reminderId: payload?.reminderId }));
-ipcMain.handle('apple-reminders:create-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'create-reminder' }));
-ipcMain.handle('apple-reminders:update-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'update-reminder' }));
-ipcMain.handle('apple-reminders:set-completed', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'set-completed' }));
-ipcMain.handle('apple-reminders:move-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'move-reminder' }));
-ipcMain.handle('apple-reminders:delete-reminder', (_event, payload: Record<string, unknown>) => runAppleCalendarBridge({ ...payload, command: 'delete-reminder' }));
-ipcMain.handle('apple-reminders:fetch-reminders', (_event, payload: { start?: string; end?: string; listIds?: string[] }) =>
-  runAppleCalendarBridge({ command: 'fetch-reminders', start: payload?.start, end: payload?.end, listIds: payload?.listIds ?? [] })
+ipcMain.handle('apple-reminders:permission-status', () =>
+  runAppleCalendarBridge({ command: 'permission-status' })
 );
-ipcMain.handle('apple-reminders:refresh', (_event, payload: { start?: string; end?: string; listIds?: string[] }) =>
-  runAppleCalendarBridge({ command: 'refresh', start: payload?.start, end: payload?.end, listIds: payload?.listIds ?? [] })
+ipcMain.handle('apple-reminders:connection-status', () =>
+  runAppleCalendarBridge({ command: 'get-connection-status' })
+);
+ipcMain.handle('apple-reminders:request-access', () =>
+  runAppleCalendarBridge({ command: 'request-access' })
+);
+ipcMain.handle('apple-reminders:get-lists', () => runAppleCalendarBridge({ command: 'lists' }));
+ipcMain.handle('apple-reminders:get-writable-lists', () =>
+  runAppleCalendarBridge({ command: 'get-writable-lists' })
+);
+ipcMain.handle('apple-reminders:get-reminder', (_event, payload: { reminderId?: string }) =>
+  runAppleCalendarBridge({ command: 'get-reminder', reminderId: payload?.reminderId })
+);
+ipcMain.handle('apple-reminders:create-reminder', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'create-reminder' })
+);
+ipcMain.handle('apple-reminders:update-reminder', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'update-reminder' })
+);
+ipcMain.handle('apple-reminders:set-completed', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'set-completed' })
+);
+ipcMain.handle('apple-reminders:move-reminder', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'move-reminder' })
+);
+ipcMain.handle('apple-reminders:delete-reminder', (_event, payload: Record<string, unknown>) =>
+  runAppleCalendarBridge({ ...payload, command: 'delete-reminder' })
+);
+ipcMain.handle(
+  'apple-reminders:fetch-reminders',
+  (_event, payload: { start?: string; end?: string; listIds?: string[] }) =>
+    runAppleCalendarBridge({
+      command: 'fetch-reminders',
+      start: payload?.start,
+      end: payload?.end,
+      listIds: payload?.listIds ?? [],
+    })
+);
+ipcMain.handle(
+  'apple-reminders:refresh',
+  (_event, payload: { start?: string; end?: string; listIds?: string[] }) =>
+    runAppleCalendarBridge({
+      command: 'refresh',
+      start: payload?.start,
+      end: payload?.end,
+      listIds: payload?.listIds ?? [],
+    })
 );
 ipcMain.handle('apple-reminders:disconnect', () => true);
 ipcMain.handle('apple-reminders:open-system-settings', async () => {
   if (process.platform !== 'darwin') return false;
-  await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders');
+  await shell.openExternal(
+    'x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders'
+  );
   return true;
 });
 
@@ -1019,8 +2097,9 @@ async function updateAutomaticRenderingRecommendation() {
   const hardwareAccelerationEnabled =
     typeof (app as Electron.App & { isHardwareAccelerationEnabled?: () => boolean })
       .isHardwareAccelerationEnabled === 'function'
-      ? (app as Electron.App & { isHardwareAccelerationEnabled: () => boolean })
-          .isHardwareAccelerationEnabled()
+      ? (
+          app as Electron.App & { isHardwareAccelerationEnabled: () => boolean }
+        ).isHardwareAccelerationEnabled()
       : true;
 
   if (!hardwareAccelerationEnabled || hasDisabledCriticalFeature) {
@@ -1128,7 +2207,11 @@ const handleLedgerProtocolUrl = (url: string) => {
       if (githubResult) {
         const sendGithubCallback = () => {
           const settingsWindow = moduleWins.get('settings');
-          if (!settingsWindow || settingsWindow.isDestroyed() || settingsWindow.webContents.isLoading()) {
+          if (
+            !settingsWindow ||
+            settingsWindow.isDestroyed() ||
+            settingsWindow.webContents.isLoading()
+          ) {
             setTimeout(sendGithubCallback, 150);
             return;
           }
@@ -1159,7 +2242,10 @@ const handleLedgerProtocolUrl = (url: string) => {
       return;
     }
 
-    const targetRoutes: Record<string, { kind: ModuleWindowKind; focus: 'task' | 'project' | 'note' | 'inbox' | 'none' }> = {
+    const targetRoutes: Record<
+      string,
+      { kind: ModuleWindowKind; focus: 'task' | 'project' | 'note' | 'inbox' | 'none' }
+    > = {
       task: { kind: 'projects', focus: 'task' },
       project: { kind: 'projects', focus: 'project' },
       note: { kind: 'notes', focus: 'note' },
@@ -1769,14 +2855,22 @@ const FLOATING_MEETING_INDICATOR_WIDTH = 56;
 const FLOATING_MEETING_INDICATOR_HEIGHT = 92;
 const floatingMeetingIndicatorPositionPath = path.join(
   app.getPath('userData'),
-  'floating-meeting-indicator-position.json',
+  'floating-meeting-indicator-position.json'
 );
 let savedFloatingMeetingIndicatorPosition: SavedIndicatorPosition | null = null;
 
 function loadFloatingMeetingIndicatorPosition() {
   try {
-    const parsed = JSON.parse(fs.readFileSync(floatingMeetingIndicatorPositionPath, 'utf8')) as Partial<SavedIndicatorPosition>;
-    if (typeof parsed.displayId === 'string' && typeof parsed.relativeX === 'number' && Number.isFinite(parsed.relativeX) && typeof parsed.relativeY === 'number' && Number.isFinite(parsed.relativeY)) {
+    const parsed = JSON.parse(
+      fs.readFileSync(floatingMeetingIndicatorPositionPath, 'utf8')
+    ) as Partial<SavedIndicatorPosition>;
+    if (
+      typeof parsed.displayId === 'string' &&
+      typeof parsed.relativeX === 'number' &&
+      Number.isFinite(parsed.relativeX) &&
+      typeof parsed.relativeY === 'number' &&
+      Number.isFinite(parsed.relativeY)
+    ) {
       savedFloatingMeetingIndicatorPosition = {
         displayId: parsed.displayId,
         relativeX: parsed.relativeX,
@@ -1789,12 +2883,17 @@ function loadFloatingMeetingIndicatorPosition() {
 function getFloatingMeetingIndicatorDisplay(): Electron.Display {
   const displays = screen.getAllDisplays();
   const savedDisplay = savedFloatingMeetingIndicatorPosition
-    ? displays.find((display) => String(display.id) === savedFloatingMeetingIndicatorPosition?.displayId)
+    ? displays.find(
+        (display) => String(display.id) === savedFloatingMeetingIndicatorPosition?.displayId
+      )
     : null;
   if (savedDisplay) return savedDisplay;
-  const source = workspaceModuleWin && !workspaceModuleWin.isDestroyed()
-    ? workspaceModuleWin
-    : sidebarWin && !sidebarWin.isDestroyed() ? sidebarWin : null;
+  const source =
+    workspaceModuleWin && !workspaceModuleWin.isDestroyed()
+      ? workspaceModuleWin
+      : sidebarWin && !sidebarWin.isDestroyed()
+      ? sidebarWin
+      : null;
   return screen.getDisplayMatching(source?.getBounds() ?? screen.getPrimaryDisplay().bounds);
 }
 
@@ -1806,7 +2905,7 @@ function persistFloatingMeetingIndicatorPosition(bounds: Electron.Rectangle) {
     fs.writeFileSync(
       floatingMeetingIndicatorPositionPath,
       JSON.stringify(savedFloatingMeetingIndicatorPosition),
-      'utf8',
+      'utf8'
     );
   } catch (error) {
     console.warn('[electron] Failed to persist floating meeting indicator position:', error);
@@ -1857,16 +2956,24 @@ const floatingMeetingIndicator = new FloatingMeetingIndicatorController(
         if (!indicator.isDestroyed()) indicator.close();
       });
       indicator.on('moved', () => {
-        if (!indicator.isDestroyed()) persistFloatingMeetingIndicatorPosition(indicator.getBounds());
+        if (!indicator.isDestroyed())
+          persistFloatingMeetingIndicatorPosition(indicator.getBounds());
       });
       indicator.webContents.on('did-finish-load', () => {
         if (!indicator.isDestroyed()) {
           indicator.setBounds(getFloatingMeetingIndicatorBounds());
-          indicator.webContents.send('floating-meeting-indicator:state', floatingMeetingIndicator.getRenderState());
+          indicator.webContents.send(
+            'floating-meeting-indicator:state',
+            floatingMeetingIndicator.getRenderState()
+          );
         }
       });
       const indicatorWindow = indicator as BrowserWindow & {
-        sendState: (state: { recording: boolean; paused: boolean; activity: FloatingMeetingIndicatorActivity }) => void;
+        sendState: (state: {
+          recording: boolean;
+          paused: boolean;
+          activity: FloatingMeetingIndicatorActivity;
+        }) => void;
       };
       indicatorWindow.sendState = (state) => {
         if (!indicator.isDestroyed() && !indicator.webContents.isDestroyed()) {
@@ -1894,16 +3001,15 @@ const floatingMeetingIndicator = new FloatingMeetingIndicatorController(
     } catch {
       // The recording remains authoritative if the note/window is unavailable.
     }
-  },
+  }
 );
 
 function getFloatingMeetingIndicatorBounds(): Electron.Rectangle {
   const display = getFloatingMeetingIndicatorDisplay();
-  return restoreIndicatorPosition(
-    savedFloatingMeetingIndicatorPosition,
-    display,
-    { width: FLOATING_MEETING_INDICATOR_WIDTH, height: FLOATING_MEETING_INDICATOR_HEIGHT },
-  );
+  return restoreIndicatorPosition(savedFloatingMeetingIndicatorPosition, display, {
+    width: FLOATING_MEETING_INDICATOR_WIDTH,
+    height: FLOATING_MEETING_INDICATOR_HEIGHT,
+  });
 }
 
 function reclampFloatingMeetingIndicator() {
@@ -1936,8 +3042,16 @@ function syncFloatingMeetingIndicator() {
 }
 
 function watchLedgerWindowFocus(win: BrowserWindow) {
-  win.on('focus', syncFloatingMeetingIndicator);
-  win.on('blur', syncFloatingMeetingIndicator);
+  win.on('focus', () => {
+    syncFloatingMeetingIndicator();
+    touchBarContextCoordinator?.setFocused(touchBarWindowKey(win), true);
+    touchBarController?.onWindowFocusChanged();
+  });
+  win.on('blur', () => {
+    syncFloatingMeetingIndicator();
+    touchBarContextCoordinator?.setFocused(touchBarWindowKey(win), false);
+    touchBarController?.onWindowFocusChanged();
+  });
   win.on('minimize', syncFloatingMeetingIndicator);
   win.on('restore', syncFloatingMeetingIndicator);
 }
@@ -2775,7 +3889,10 @@ const runNotificationScheduler = async () => {
     notificationScheduler429Streak = 0;
   } catch (error) {
     const errorStatus = Number((error as { status?: number } | null)?.status ?? 0);
-    if (errorStatus === 401 || /invalid token|missing token/i.test(String((error as Error)?.message ?? ''))) {
+    if (
+      errorStatus === 401 ||
+      /invalid token|missing token/i.test(String((error as Error)?.message ?? ''))
+    ) {
       // Do not keep retrying the same expired/rejected token. The renderer
       // owns Supabase refresh tokens, so ask it for a fresh access token.
       notificationAccessToken = null;
@@ -2788,9 +3905,7 @@ const runNotificationScheduler = async () => {
       }
       return;
     }
-    if (
-      errorStatus === 429
-    ) {
+    if (errorStatus === 429) {
       const retryAfterMs = Number((error as { retryAfterMs?: number } | null)?.retryAfterMs ?? 0);
       notificationScheduler429Streak = Math.min(notificationScheduler429Streak + 1, 6);
       const exponentialBackoffMs = Math.min(
@@ -3754,8 +4869,7 @@ function enterModuleWindowFullscreen(kind: ModuleWindowKind, win: BrowserWindow)
     sendModuleFullscreenState(kind, win, true);
     return;
   }
-  const shouldAttachSidebar =
-    kind === workspaceModuleKind && isWorkspaceWindowAttachedToSidebar();
+  const shouldAttachSidebar = kind === workspaceModuleKind && isWorkspaceWindowAttachedToSidebar();
   if (shouldAttachSidebar) {
     pauseWorkspaceDockRefresh(260);
   }
@@ -3862,10 +4976,7 @@ function getSidebarBoundsInsideFullscreenTarget(targetBounds: Rect): Rect | null
       : MIN_DOCK_HEIGHT.expanded;
   const verticalHeight = isWorkspaceDockTarget()
     ? Math.max(1, targetBounds.height)
-    : Math.max(
-        Math.min(baseVerticalHeight, maxHeight),
-        Math.min(targetBounds.height, maxHeight)
-      );
+    : Math.max(Math.min(baseVerticalHeight, maxHeight), Math.min(targetBounds.height, maxHeight));
   const horizontalWidth = Math.min(
     currentSidebarMode === 'minimized' ? HORIZONTAL_COLLAPSED_WIDTH : HORIZONTAL_DOCK_WIDTH,
     maxWidth
@@ -3957,10 +5068,7 @@ function getFloatingDockStatePayload(
   };
 }
 
-function normalizeWorkspaceDockTarget(
-  target: FloatingDockTarget | null,
-  bounds: Rect | null
-) {
+function normalizeWorkspaceDockTarget(target: FloatingDockTarget | null, bounds: Rect | null) {
   if (
     !target?.isLedgerWindow ||
     !bounds ||
@@ -6013,7 +7121,8 @@ async function dockFloatingSidebarToTarget() {
     return null;
   }
 
-  const normalizedTarget = normalizeWorkspaceDockTarget(target.target, target.bounds) ?? target.target;
+  const normalizedTarget =
+    normalizeWorkspaceDockTarget(target.target, target.bounds) ?? target.target;
   target = { ...target, target: normalizedTarget };
   const side =
     target.target.side === 'left' || target.target.side === 'right'
@@ -6746,6 +7855,8 @@ function createSidebarWindow() {
     stopFloatingDockTracking();
     clearCurrentFloatingDockTarget();
     stopMacDockHelper();
+    if (sidebarWin) touchBarContextCoordinator?.remove(touchBarWindowKey(sidebarWin));
+    touchBarController?.onWindowDestroyed();
     sidebarWin = null;
     for (const [kind, moduleWin] of moduleWins.entries()) {
       if (!moduleWin.isDestroyed()) moduleWin.close();
@@ -6846,6 +7957,8 @@ function createSidebarWindow() {
   } catch (err) {
     console.error('[electron] Error while loading sidebar renderer:', err);
   }
+
+  syncTouchBar();
 }
 
 function sendModuleFocus(
@@ -7425,12 +8538,8 @@ function openModuleWindow(
     };
   }
 
-  const minWidth = isQuickCapture
-    ? QUICK_CAPTURE_WIDTH
-    : MODULE_MIN_WIDTH;
-  const minHeight = isQuickCapture
-    ? QUICK_CAPTURE_HEIGHT
-    : MODULE_MIN_HEIGHT;
+  const minWidth = isQuickCapture ? QUICK_CAPTURE_WIDTH : MODULE_MIN_WIDTH;
+  const minHeight = isQuickCapture ? QUICK_CAPTURE_HEIGHT : MODULE_MIN_HEIGHT;
 
   const moduleWin = new BrowserWindow({
     ...initialBounds,
@@ -7509,8 +8618,7 @@ function openModuleWindow(
       sidebarWin?.webContents.send('module:state-changed', { kind, state: 'minimized' });
       return;
     }
-    const wasDockedWorkspaceShell =
-      moduleWin === workspaceModuleWin && isWorkspaceDockTarget();
+    const wasDockedWorkspaceShell = moduleWin === workspaceModuleWin && isWorkspaceDockTarget();
     if (wasDockedWorkspaceShell) {
       minimizeSidebarWithWorkspaceShell();
       suspendWorkspaceWindowDockTarget();
@@ -7525,6 +8633,8 @@ function openModuleWindow(
   });
 
   moduleWin.on('closed', () => {
+    touchBarContextCoordinator?.remove(touchBarWindowKey(moduleWin));
+    touchBarController?.onWindowDestroyed();
     const detachedRecord = getDetachedWindowRecord(moduleWin);
     if (detachedRecord) {
       detachedWindows.delete(detachedRecord.id);
@@ -7847,13 +8957,21 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   isQuittingApp = true;
+  touchBarContextCoordinator?.reset();
+  touchBarContextCoordinator = null;
+  touchBarMeetingContext = undefined;
+  touchBarController?.dispose();
+  touchBarController = null;
   if (autoStopTimer) clearInterval(autoStopTimer);
   autoStopTimer = null;
   meetingAutoStopCoordinator.stop();
   floatingMeetingIndicator.destroy();
   stopAppleCalendarWatcher();
   stopZoomAccessibilityWatcher();
-  if (zoomPermissionPollTimer) { clearInterval(zoomPermissionPollTimer); zoomPermissionPollTimer = null; }
+  if (zoomPermissionPollTimer) {
+    clearInterval(zoomPermissionPollTimer);
+    zoomPermissionPollTimer = null;
+  }
   if (tray) {
     tray.destroy();
     tray = null;
@@ -7866,19 +8984,21 @@ app.on('before-quit', (event) => {
   if (audioShutdownInProgress) return;
   if (meetingAudioCaptureService.isActive && !isQuittingApp) {
     event.preventDefault();
-    void dialog.showMessageBox({
-      type: 'question',
-      buttons: ['Stop and save', 'Cancel'],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-      message: 'A recording is in progress. Stop and save before closing?',
-    }).then((result) => {
-      if (result.response === 0) {
-        isQuittingApp = true;
-        app.quit();
-      }
-    });
+    void dialog
+      .showMessageBox({
+        type: 'question',
+        buttons: ['Stop and save', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+        message: 'A recording is in progress. Stop and save before closing?',
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          isQuittingApp = true;
+          app.quit();
+        }
+      });
     return;
   }
   audioShutdownInProgress = true;
@@ -7904,22 +9024,48 @@ app.on('before-quit', (event) => {
 });
 
 powerMonitor.on('suspend', () => {
-  void meetingAudioCaptureService.prepareForSuspend().then(() => {
-    meetingAutoStopCoordinator.sleep();
-  }).catch((error) => {
-    console.warn('[meeting-audio]', JSON.stringify({ event: 'suspend_checkpoint_failed', error: error instanceof Error ? error.message : String(error) }));
-    // A failed checkpoint is ambiguous: retain the session for recovery, but
-    // still request the same idempotent stop path so it cannot run forever.
-    meetingAutoStopCoordinator.sleep();
-  });
+  void meetingAudioCaptureService
+    .prepareForSuspend()
+    .then(() => {
+      meetingAutoStopCoordinator.sleep();
+    })
+    .catch((error) => {
+      console.warn(
+        '[meeting-audio]',
+        JSON.stringify({
+          event: 'suspend_checkpoint_failed',
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
+      // A failed checkpoint is ambiguous: retain the session for recovery, but
+      // still request the same idempotent stop path so it cannot run forever.
+      meetingAutoStopCoordinator.sleep();
+    });
 });
 powerMonitor.on('resume', () => {
   syncSidebarMaterial();
-  void meetingAudioCaptureService.checkAfterResume().then((healthy) => {
-    console.info('[meeting-audio]', JSON.stringify({ event: 'resume_checked', healthy, platform: process.platform, active: meetingAudioCaptureService.isActive }));
-  }).catch((error) => {
-    console.warn('[meeting-audio]', JSON.stringify({ event: 'resume_check_failed', error: error instanceof Error ? error.message : String(error) }));
-  });
+  void meetingAudioCaptureService
+    .checkAfterResume()
+    .then((healthy) => {
+      console.info(
+        '[meeting-audio]',
+        JSON.stringify({
+          event: 'resume_checked',
+          healthy,
+          platform: process.platform,
+          active: meetingAudioCaptureService.isActive,
+        })
+      );
+    })
+    .catch((error) => {
+      console.warn(
+        '[meeting-audio]',
+        JSON.stringify({
+          event: 'resume_check_failed',
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
+    });
 });
 
 app.on('activate', () => {
@@ -8017,12 +9163,15 @@ ipcMain.handle('window:set-sidebar-material-development-selection', (_event, ena
   };
 });
 
-ipcMain.handle('window:set-sidebar-material-development-visual-effect-state', (_event, state: unknown) => {
-  if (state !== 'followWindow' && state !== 'active') return { supported: false };
-  const supported = sidebarMaterialController.setDevelopmentVisualEffectState(state);
-  if (supported) syncSidebarMaterial();
-  return { supported };
-});
+ipcMain.handle(
+  'window:set-sidebar-material-development-visual-effect-state',
+  (_event, state: unknown) => {
+    if (state !== 'followWindow' && state !== 'active') return { supported: false };
+    const supported = sidebarMaterialController.setDevelopmentVisualEffectState(state);
+    if (supported) syncSidebarMaterial();
+    return { supported };
+  }
+);
 
 ipcMain.handle('window:reset-sidebar-material-diagnostics', () => {
   const snapshot = sidebarMaterialController.resetDiagnostics();
@@ -8365,7 +9514,11 @@ ipcMain.handle('window:toggle-module', (event, payload: ModuleWindowKind | Modul
     // A focused module navigation must update the shared workspace route
     // immediately. Waiting for the renderer to publish its selected resource
     // leaves the tab group one route behind until the page finishes updating.
-    if (existing === workspaceModuleWin && typeof payload !== 'string' && isWorkspaceModuleKind(kind)) {
+    if (
+      existing === workspaceModuleWin &&
+      typeof payload !== 'string' &&
+      isWorkspaceModuleKind(kind)
+    ) {
       navigateWorkspaceModuleWindow(
         routeFromModuleArgs(
           kind,
@@ -8465,10 +9618,7 @@ ipcMain.handle('window:open-module', (event, payload: ModuleWindowKind | ModuleF
   );
   if (detachedRecord) {
     senderWindow?.webContents.send('workspace:route-requested', { ...requestedRoute });
-    navigateDetachedWindow(
-      detachedRecord,
-      requestedRoute
-    );
+    navigateDetachedWindow(detachedRecord, requestedRoute);
     senderWindow?.show();
     senderWindow?.focus();
     return;
@@ -8555,8 +9705,7 @@ ipcMain.handle('window:minimize-module', (event, kind: ModuleWindowKind) => {
   }
   const existing = moduleWins.get(kind);
   if (!existing || existing.isDestroyed()) return;
-  const shouldMinimizeDockedSidebar =
-    existing === workspaceModuleWin && isWorkspaceDockTarget();
+  const shouldMinimizeDockedSidebar = existing === workspaceModuleWin && isWorkspaceDockTarget();
   suspendCurrentFloatingDockTarget('suspended_minimized');
   existing.minimize();
   if (shouldMinimizeDockedSidebar) {
@@ -8868,8 +10017,10 @@ ipcMain.handle('window:open-external', async (_event, url: string) => {
         return { ok: true };
       } catch (fallbackError) {
         console.warn('[electron] Could not open Apple Calendar subscription', {
-          calendarError: calendarError instanceof Error ? calendarError.message : String(calendarError),
-          fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          calendarError:
+            calendarError instanceof Error ? calendarError.message : String(calendarError),
+          fallbackError:
+            fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
         });
         return { ok: false, error: 'macOS could not open the calendar subscription.' };
       }
@@ -8879,7 +10030,10 @@ ipcMain.handle('window:open-external', async (_event, url: string) => {
     await shell.openExternal(safeUrl);
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Could not open the external link.' };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Could not open the external link.',
+    };
   }
 });
 
@@ -9013,56 +10167,123 @@ ipcMain.on(
 );
 
 // Touch Bar setup for macOS
+function getTouchBarWindowRole(win: BrowserWindow | null): LedgerTouchBarWindowContext {
+  if (!win || win.isDestroyed()) return 'unknown';
+  if (win === sidebarWin) return 'sidebar';
+  if (win === workspaceModuleWin) return 'workspace';
+  if ([...moduleWins.values()].some((candidate) => candidate === win)) return 'module';
+  if ([...detachedWindows.values()].some((record) => record.win === win)) return 'module';
+  return 'unknown';
+}
+
+function touchBarWindowKey(win: BrowserWindow) {
+  return String(win.webContents.id);
+}
+
+function syncTouchBarMeetingContext() {
+  const status = meetingAudioCaptureService.status() as { state?: string };
+  if (status.state === 'recording' || status.state === 'paused') {
+    const audioStatus = meetingAudioCaptureService.status() as { noteId?: string | null; workspaceId?: string | null };
+    touchBarMeetingContext = {
+      active: true,
+      state: status.state,
+      noteId: audioStatus.noteId ?? undefined,
+      workspaceId: audioStatus.workspaceId ?? undefined,
+      canPause: status.state === 'recording',
+      canResume: status.state === 'paused',
+      canStop: true,
+    };
+  }
+  touchBarContextCoordinator?.setMeeting(touchBarMeetingContext);
+}
+
+ipcMain.on('touchbar:set-context', (event, payload: unknown) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!sender || sender.isDestroyed() || !touchBarContextCoordinator) return;
+  touchBarContextCoordinator.update(
+    touchBarWindowKey(sender),
+    getTouchBarWindowRole(sender),
+    payload,
+    sender.isFocused()
+  );
+});
+
 function syncTouchBar() {
-  if (process.platform !== 'darwin' || !sidebarWin || sidebarWin.isDestroyed()) return;
+  touchBarController?.sync({
+    mode:
+      currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen' ? 'hidden' : 'default',
+  });
+}
 
-  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') {
-    sidebarWin.setTouchBar(null);
-    return;
-  }
+function getTouchBarTargetWindow(): BrowserWindow | null {
+  if (currentSidebarMode === 'auth' || currentSidebarMode === 'fullscreen') return null;
+  const windows = getLedgerWindows();
+  const focusedWorkspace = workspaceModuleWin && !workspaceModuleWin.isDestroyed() && workspaceModuleWin.isFocused()
+    ? workspaceModuleWin
+    : null;
+  if (focusedWorkspace) return focusedWorkspace;
+  const focusedModule = windows.find((window) => getTouchBarWindowRole(window) === 'module' && window.isFocused());
+  if (focusedModule) return focusedModule;
+  const focusedSidebar = sidebarWin && !sidebarWin.isDestroyed() && sidebarWin.isFocused()
+    ? sidebarWin
+    : null;
+  return focusedSidebar;
+}
 
-  const { TouchBarButton, TouchBarSpacer } = TouchBar;
+function getTouchBarActionWindow(): BrowserWindow | null {
+  return getTouchBarTargetWindow();
+}
 
-  if (!sidebarTouchBar) {
-    sidebarTouchBar = new TouchBar({
-      items: [
-        new TouchBarButton({
-          label: '+ Task',
-          backgroundColor: '#FF5F40',
-          click: () => {
-            console.log('[touchbar] Opening quick-task');
-            openModuleWindow('quick-task');
-          },
-        }),
-        new TouchBarButton({
-          label: '+ Note',
-          backgroundColor: '#FF5F40',
-          click: () => {
-            console.log('[touchbar] Opening quick-note');
-            openModuleWindow('quick-note');
-          },
-        }),
-        new TouchBarButton({
-          label: '+ Event',
-          backgroundColor: '#FF5F40',
-          click: () => {
-            console.log('[touchbar] Opening quick-event');
-            openModuleWindow('quick-event');
-          },
-        }),
-        new TouchBarSpacer({ size: 'small' }),
-        new TouchBarButton({
-          label: 'Search',
-          backgroundColor: '#FF5F40',
-          click: () => {
-            sidebarWin?.webContents.send('touchbar:open-search');
-          },
-        }),
-      ],
-    });
-  }
+function dispatchTouchBarRendererAction(actionId: string) {
+  const target = getTouchBarActionWindow();
+  if (!target || target.isDestroyed() || target.webContents.isDestroyed()) return;
+  target.webContents.send('touchbar:action', { actionId });
+}
 
-  sidebarWin.setTouchBar(sidebarTouchBar);
+function initializeTouchBarController() {
+  touchBarController?.dispose();
+  touchBarContextCoordinator = createTouchBarContextCoordinator((context) => {
+    touchBarController?.setContext(context);
+  });
+  const actionDispatcher = createLedgerActionDispatcher({
+    openModuleWindow: (kind) => {
+      console.log(`[touchbar] Opening ${kind}`);
+      openModuleWindow(kind);
+    },
+    openSearch: () => {
+      sidebarWin?.webContents.send('touchbar:open-search');
+    },
+    openMeeting: (context) => {
+      const meeting = context.touchBarContext?.meeting;
+      if (!meeting?.noteId) return;
+      openModuleWindow('notes', null, null, meeting.noteId);
+    },
+    dispatchRendererAction: (actionId) => dispatchTouchBarRendererAction(actionId),
+  });
+  touchBarController = createTouchBarController({
+    platform: process.platform,
+    getSidebarWindow: () => sidebarWin,
+    getTouchBarWindow: getTouchBarTargetWindow,
+    native: {
+      createTouchBar: (options) => new TouchBar(options),
+      createButton: (options) => new TouchBar.TouchBarButton(options),
+      createSpacer: (options) => new TouchBar.TouchBarSpacer(options),
+      createSegmented: (options) => new TouchBar.TouchBarSegmentedControl(options),
+      createPopover: (options) => new TouchBar.TouchBarPopover(options),
+      createIcon: (asset) => nativeImage.createFromDataURL(asset),
+    },
+    dispatchAction: (action, context) => {
+      actionDispatcher.dispatchLedgerAction(action, {
+        ...context,
+        authenticated: currentSidebarMode !== 'auth',
+        appReady: Boolean(sidebarWin && !sidebarWin.isDestroyed()),
+        touchBarContext: touchBarController?.getContext(),
+      });
+    },
+    canExecuteAction: (action, context) => canExecuteLedgerAction(action, context),
+  });
+  syncTouchBarMeetingContext();
+  syncTouchBar();
 }
 
 app.whenReady().then(() => {
@@ -9080,7 +10301,8 @@ app.whenReady().then(() => {
   startZoomAccessibilityWatcher();
   if (process.platform === 'darwin') {
     zoomPermissionPollTimer = setInterval(() => {
-      if (!zoomAccessibilityWatcher && systemPreferences.isTrustedAccessibilityClient(false)) startZoomAccessibilityWatcher();
+      if (!zoomAccessibilityWatcher && systemPreferences.isTrustedAccessibilityClient(false))
+        startZoomAccessibilityWatcher();
     }, 2000);
   }
   loadNotificationDeliveryState();
@@ -9105,6 +10327,13 @@ app.whenReady().then(() => {
   createSidebarWindow();
   syncTray();
   processPendingLedgerProtocolUrl();
+  // Do one quiet packaged-build check so the renderer can surface the update
+  // indicator. Repeated polling and an explicit Settings action come later.
+  if (app.isPackaged) {
+    setTimeout(() => {
+      void checkForLedgerUpdate();
+    }, 5000);
+  }
   ipcMain.on(
     'tray:update-state',
     (
@@ -9151,8 +10380,9 @@ app.whenReady().then(() => {
     queueNotificationSchedulerRun(NOTIFICATION_SCHEDULER_REFRESH_MIN_DELAY_MS);
   });
 
-  // Setup Touch Bar for macOS
-  setTimeout(() => syncTouchBar(), 500);
+  // The sidebar exists at this point, so the controller can initialize
+  // immediately without racing BrowserWindow creation.
+  initializeTouchBarController();
 
   notificationSchedulerTimer = setInterval(() => {
     queueNotificationSchedulerRun(0);

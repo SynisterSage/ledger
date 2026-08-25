@@ -78,7 +78,7 @@ export type LedgerWorkspaceRoute =
 
 export type LedgerAppRoute =
   | { kind: 'app'; page: 'onboarding' | 'workspaces' }
-  | { kind: 'app'; page: 'settings'; section: 'account' | 'sessions' | 'accessibility' | 'shortcuts' | 'browser-extension' };
+  | { kind: 'app'; page: 'settings'; section: 'account' | 'sessions' | 'accessibility' | 'shortcuts' | 'browser-extension' | 'report_bug' };
 
 export type LedgerRoute = LedgerAppRoute | LedgerWorkspaceRoute;
 

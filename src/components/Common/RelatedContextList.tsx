@@ -37,6 +37,7 @@ type RelatedContextListProps = {
   targetTypes?: RelatedContextResourceType[];
   showEmpty?: boolean;
   className?: string;
+  refreshKey?: string | number;
 };
 
 const typeLabels: Record<string, string> = {
@@ -103,6 +104,7 @@ export function RelatedContextList({
   targetTypes,
   showEmpty = true,
   className = '',
+  refreshKey = 0,
 }: RelatedContextListProps) {
   const api = useApi();
   const platform = usePlatform();
@@ -126,7 +128,7 @@ export function RelatedContextList({
     } finally {
       setIsLoading(false);
     }
-  }, [api, resourceId, resourceType, workspaceId]);
+  }, [api, refreshKey, resourceId, resourceType, workspaceId]);
 
   useEffect(() => {
     void load();
@@ -134,9 +136,17 @@ export function RelatedContextList({
 
   const items = useMemo(() => {
     const allowedTypes = targetTypes?.length ? new Set(targetTypes) : null;
-    return (response?.items ?? [])
-      .filter((item) => !allowedTypes || allowedTypes.has(item.target.type))
-      .slice(0, maxItems);
+    const uniqueItems = new Map<string, RelatedContextItem>();
+    for (const item of response?.items ?? []) {
+      if (allowedTypes && !allowedTypes.has(item.target.type)) continue;
+      if (item.target.type === 'external_reference') {
+        const title = String(item.target.title ?? '').trim().toLowerCase();
+        if (!title || ['unknown', 'untitled', 'external resource', 'file', 'node'].includes(title)) continue;
+      }
+      const key = `${item.target.type}:${item.target.id}`;
+      if (!uniqueItems.has(key)) uniqueItems.set(key, item);
+    }
+    return Array.from(uniqueItems.values()).slice(0, maxItems);
   }, [maxItems, response?.items, targetTypes]);
 
   const openItem = (item: RelatedContextItem) => {

@@ -50,7 +50,7 @@ export const WebModuleHost = ({ route }: { route: LedgerWorkspaceRoute }) => {
     case 'slack': return <SlackWindow routeWorkspaceId={route.workspaceId} />;
     case 'notifications': return <NotificationCenterWindow mode="window" initialFilter={route.query?.filter} initialItem={route.query?.item} />;
     case 'search': return <WebSearchRoute query={route.query.q} />;
-    case 'settings': return <SettingsWindow initialSection={(route.section === 'meeting-notes' ? 'meeting_notes' : route.section === 'local-ai' ? 'local_ai' : ['google-drive', 'github', 'slack', 'figma'].includes(route.section) ? 'integrations' : route.section) as 'workspace' | 'members' | 'calendar' | 'notifications' | 'sidebar' | 'meeting_notes' | 'local_ai' | 'integrations'} />;
+    case 'settings': return <SettingsWindow initialSection={(route.section === 'meeting-notes' ? 'meeting_notes' : route.section === 'local-ai' ? 'local_ai' : ['google-drive', 'github', 'slack', 'figma'].includes(route.section) ? 'integrations' : route.section) as 'workspace' | 'members' | 'calendar' | 'notifications' | 'sidebar' | 'meeting_notes' | 'local_ai' | 'integrations' | 'report_bug'} />;
     case 'task': return <ProjectsWindow key={`task:${route.taskId}`} webQuery={{ taskId: route.taskId }} />;
     case 'event': return <CalendarWindow webQuery={{ event: route.eventId, view: 'day' }} />;
     default: return <NotMounted label="This Ledger route" />;

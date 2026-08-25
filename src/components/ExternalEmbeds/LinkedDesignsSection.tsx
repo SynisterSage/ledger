@@ -8,7 +8,7 @@ import {
   Link2,
   Loader2,
   MoreHorizontal,
-  X,
+  Trash2,
   LockKeyhole,
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
@@ -29,12 +29,15 @@ import { installGooglePickerStyles } from '../Common/googlePickerStyles';
 import {
   routeForCalendarEvent,
   routeForCalendarReminder,
+  routeForInboxItem,
   routeForNote,
   routeForProject,
   routeForTask,
   routeForWorkspaceSettings,
   usePlatform,
 } from '../../platform';
+import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { ModalOverlay } from '../Common/ModalOverlay';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
@@ -118,6 +121,7 @@ export function LinkedDesignsSection({
   selectedProjectIds,
   onToggleProject,
   onLinkProjects,
+  onRelatedContextChanged,
   openRequest,
 }: {
   target: LinkedDesignTarget;
@@ -147,6 +151,7 @@ export function LinkedDesignsSection({
   selectedCalendarItemIds?: string[];
   onToggleCalendarItem?: (itemId: string) => void;
   onLinkCalendarItems?: (itemIds: string[]) => void | Promise<void>;
+  onRelatedContextChanged?: () => void;
   tasks?: LinkedTask[];
   openRequest?: { source: LinkedContextSource; token: number };
 }) {
@@ -167,8 +172,9 @@ export function LinkedDesignsSection({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showResourceActivity, setShowResourceActivity] = useState(false);
   const [locations, setLocations] = useState<
-    { target_type: string; target_id: string; title: string }[] | null
+    { id?: string; target_type: string; target_id: string; title: string }[] | null
   >(null);
+  const [locationsSourceTitle, setLocationsSourceTitle] = useState<string | null>(null);
   const [menuLink, setMenuLink] = useState<Link | null>(null);
   const [driveAction, setDriveAction] = useState<{ action: GoogleDriveAction; link: Link; reference: Reference } | null>(null);
   const [consentReference, setConsentReference] = useState<Reference | null>(null);
@@ -192,6 +198,48 @@ export function LinkedDesignsSection({
   const [isLoadingSlackContexts, setIsLoadingSlackContexts] = useState(false);
   const optimisticUnlinkedIds = useRef(new Set<string>());
   const githubType = 'issue' as const;
+
+  const linkedLocationType = (type: string) => {
+    switch (type) {
+      case 'project': return 'Project';
+      case 'task': return 'Task';
+      case 'note':
+      case 'meetingNote': return 'Note';
+      case 'event': return 'Event';
+      case 'reminder': return 'Reminder';
+      case 'intake': return 'Intake';
+      default: return 'Ledger item';
+    }
+  };
+
+  const linkedLocationIcon = (type: string) => {
+    switch (type) {
+      case 'project': return Folder;
+      case 'task': return ListChecks;
+      case 'event': return CalendarDays;
+      case 'reminder': return CalendarDays;
+      case 'intake': return FileText;
+      default: return FileText;
+    }
+  };
+
+  const openLinkedLocation = (location: { target_type: string; target_id: string }) => {
+    const { target_type: type, target_id: id } = location;
+    const route = type === 'project'
+      ? routeForProject(target.workspaceId, id)
+      : type === 'task'
+        ? routeForTask(target.workspaceId, id)
+        : type === 'note' || type === 'meetingNote'
+          ? routeForNote(target.workspaceId, id)
+          : type === 'event'
+            ? routeForCalendarEvent(target.workspaceId, id)
+            : type === 'reminder'
+              ? routeForCalendarReminder(target.workspaceId, id)
+              : type === 'intake'
+                ? routeForInboxItem(target.workspaceId, id)
+                : null;
+    if (route) platform.navigation.openRoute(route);
+  };
 
   useEffect(() => {
     if (busyId) {
@@ -811,15 +859,17 @@ export function LinkedDesignsSection({
     } catch (error) { toast.show(error instanceof Error ? error.message : `Could not ${action} this Drive item.`, { variant: 'error' }); }
     finally { setBusyId(null); }
   };
-  const showLocations = async (referenceId: string) => {
+  const showLocations = async (referenceId: string, sourceTitle: string) => {
     try {
       setLocations(
         (await api.getExternalReferenceLinkedTargets(referenceId)) as {
+          id?: string;
           target_type: string;
           target_id: string;
           title: string;
         }[]
       );
+      setLocationsSourceTitle(sourceTitle);
     } catch {
       toast.show('Could not load linked locations.', { variant: 'error' });
     }
@@ -864,6 +914,7 @@ export function LinkedDesignsSection({
       }
       setSelectedCalendarItemIds([]);
       await load();
+      onRelatedContextChanged?.();
     } catch (error) {
       toast.show(error instanceof Error ? error.message : 'Could not link calendar items.', { variant: 'error' });
     } finally {
@@ -937,7 +988,7 @@ export function LinkedDesignsSection({
         .map((link) => [`${link.resource.type}:${link.resource.id}`, link])
     ).values()
   );
-  const visibleCalendarItems = compactExternalOnly ? [] : calendarItems;
+  const visibleCalendarItems = compactExternalOnly || target.targetType === 'meetingNote' ? [] : calendarItems;
   const hasConnectedFolders = target.targetType === 'project' && connectedFolders.length > 0;
   return (
     <section
@@ -957,8 +1008,8 @@ export function LinkedDesignsSection({
               <Loader2 size={11} className="animate-spin" /> Updating
             </span>
           )}
-          {(rows.length > 0 || calendarItems.length > 0 || contextLinks.length > 0 || slackContexts.length > 0) && (
-            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + calendarItems.length + contextLinks.length + slackContexts.length}</span>
+          {(rows.length > 0 || visibleCalendarItems.length > 0 || visibleContextLinks.length > 0 || slackContexts.length > 0 || connectedFolders.length > 0) && (
+            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + visibleCalendarItems.length + visibleContextLinks.length + slackContexts.length + connectedFolders.length}</span>
           )}
           {target.targetType === 'project' && hasGithubWork && (
             <span className="text-[11px] text-[var(--ledger-text-muted)]">{githubIssues} open issues · {githubPullRequests} open PRs{githubAttention ? ` · ${githubAttention} needs attention` : ''}</span>
@@ -1027,14 +1078,14 @@ export function LinkedDesignsSection({
             return <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : isIntakeTarget ? 'relative flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]">{isNote ? <FileText size={14} /> : <Folder size={14} />}</span>
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => platform.navigation.openRoute(isNote ? routeForNote(target.workspaceId, link.resource.id) : routeForProject(target.workspaceId, link.resource.id))}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{isNote ? 'Note' : 'Project'}</p>}</button>
-              {canEdit && <button type="button" aria-label={`Unlink ${isNote ? 'note' : 'project'}`} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" onClick={() => void unlinkContextLink(link.id)}><MoreHorizontal size={14} /></button>}
+              {canEdit && <button type="button" aria-label={`Remove linked ${isNote ? 'note' : 'project'}`} title={`Remove linked ${isNote ? 'note' : 'project'}`} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-danger)]" onClick={() => void unlinkContextLink(link.id)}><Trash2 size={14} /></button>}
             </div>;
           })}
           {visibleContextLinks.filter((link) => link.resource.type === 'task').map((link) => (
             <div key={`context-${link.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
               <ListChecks size={compact ? 13 : 15} className="shrink-0 text-[var(--ledger-text-muted)]" />
               <button type="button" className="min-w-0 flex-1 text-left" onClick={() => platform.navigation.openRoute(routeForTask(target.workspaceId, link.resource.id))}><p className={`truncate text-xs font-medium text-[var(--ledger-text-primary)] ${link.resource.status === 'completed' ? 'line-through opacity-70' : ''}`}>{link.resource.title}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Task{link.resource.dueDate ? ` · Due ${link.resource.dueDate}` : ''}{link.resource.assignee ? ` · ${link.resource.assignee}` : ''}{link.resource.status === 'completed' ? ' · Completed' : ''}</p>}</button>
-              {canEdit && <button type="button" aria-label="Unlink task" className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]" onClick={() => void unlinkContextLink(link.id)}><MoreHorizontal size={14} /></button>}
+              {canEdit && <button type="button" aria-label="Remove linked task" title="Remove linked task" className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-danger)]" onClick={() => void unlinkContextLink(link.id)}><Trash2 size={14} /></button>}
             </div>
           ))}
           {visibleCalendarItems.map((item) => (
@@ -1044,7 +1095,7 @@ export function LinkedDesignsSection({
                 <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{item.title}</p>
                 {!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">{new Date(item.startsAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · {item.kind === 'event' ? 'Event' : 'Reminder'}{item.status ? ` · ${item.status}` : ''}{item.projectName ? ` · ${item.projectName}` : ''}</p>}
               </button>
-              {canEdit && <button type="button" aria-label={`Unlink ${item.kind}`} onClick={() => { void (item.kind === 'event' ? api.updateEvent(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null }) : api.updateReminder(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null })).then(load); }} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>}
+              {canEdit && <button type="button" aria-label={`Remove linked ${item.kind}`} title={`Remove linked ${item.kind}`} onClick={() => { void (async () => { await (item.kind === 'event' ? api.updateEvent(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null }) : api.updateReminder(item.id, target.targetType === 'project' ? { project_id: null } : { note_id: null })); await load(); onRelatedContextChanged?.(); })(); }} className="rounded-md p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-danger)]"><Trash2 size={14} /></button>}
             </div>
           ))}
           {visibleRows.map(({ link, reference }) => {
@@ -1218,7 +1269,7 @@ export function LinkedDesignsSection({
                       type="button"
                       className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]"
                       onClick={() => {
-                        void showLocations(reference!.id);
+                        void showLocations(reference!.id, referenceTitle(reference!));
                         setMenuLink(null);
                       }}
                     >
@@ -1541,38 +1592,67 @@ export function LinkedDesignsSection({
           */}
         </>
       )}
-      {locations && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 p-4"
-          role="dialog"
-          aria-label="Linked in Ledger"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setLocations(null);
-          }}
-        >
-          <div className="w-full max-w-sm rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-4 shadow-[var(--ledger-shadow)]">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Linked in Ledger</h3>
-              <button type="button" onClick={() => setLocations(null)} aria-label="Close">
-                <X size={15} />
-              </button>
+      <ModalOverlay
+        isOpen={Boolean(locations)}
+        onClose={() => {
+          setLocations(null);
+          setLocationsSourceTitle(null);
+        }}
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[620px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+      >
+        <div className="flex max-h-[min(560px,calc(100vh-48px))] flex-col">
+          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-[var(--ledger-text-primary)]">Linked locations</h2>
+              <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
+                {locationsSourceTitle ? `Where “${locationsSourceTitle}” is used in Ledger.` : 'Where this resource is used in Ledger.'}
+              </p>
             </div>
-            <div className="mt-3 space-y-1">
-              {locations.map((location) => (
-                <div
-                  key={`${location.target_type}:${location.target_id}`}
-                  className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs"
-                >
-                  <span className="truncate">{location.title}</span>
-                  <span className="ml-2 shrink-0 text-[var(--ledger-text-muted)]">
-                    {location.target_type}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <ModalCloseButton
+              onClick={() => {
+                setLocations(null);
+                setLocationsSourceTitle(null);
+              }}
+              ariaLabel="Close linked locations"
+              className="!rounded-[var(--ledger-control-radius)]"
+            />
+          </header>
+          <div className="min-h-0 overflow-y-auto p-3">
+            {locations?.length ? (
+              <div className="space-y-1">
+                {locations.map((location) => {
+                  const Icon = linkedLocationIcon(location.target_type);
+                  return (
+                    <button
+                      key={`${location.target_type}:${location.target_id}`}
+                      type="button"
+                      onClick={() => openLinkedLocation(location)}
+                      className="flex w-full items-center gap-3 rounded-[var(--ledger-control-radius)] px-3 py-2.5 text-left transition hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ledger-control-radius)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
+                        <Icon size={15} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">{location.title || 'Untitled'}</span>
+                        <span className="mt-0.5 block text-xs text-[var(--ledger-text-muted)]">{linkedLocationType(location.target_type)}</span>
+                      </span>
+                      <span className="text-xs text-[var(--ledger-text-muted)]">Open</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="px-3 py-10 text-center">
+                <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Not linked anywhere else</p>
+                <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">This resource is only attached here.</p>
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </ModalOverlay>
       {consentReference && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4"

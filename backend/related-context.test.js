@@ -195,8 +195,8 @@ test('Slack source links remain visible after conversion', async () => {
 
 test('converted external resources remain visible from Intake', async () => {
   const tables = {
-    inbox_items: [{ id: 'intake-1', workspace_id: 'workspace-1', title: 'Drive file', source: 'google_drive', source_provider: 'google_drive', converted_type: 'external_resource', converted_id: 'drive-ref-1', converted_at: '2026-08-16T12:00:00Z' }],
-    external_references: [{ id: 'drive-ref-1', workspace_id: 'workspace-1', provider: 'google_drive', external_type: 'file', normalized_url: 'https://drive.google.com/file/d/1', metadata: { name: 'Brief.docx' }, access_status: 'accessible' }],
+    inbox_items: [{ id: 'intake-1', workspace_id: 'workspace-1', title: 'unknown', raw_payload: { node_name: 'Onboarding-Tiles' }, source: 'figma', source_provider: 'figma', converted_type: 'external_resource', converted_id: 'drive-ref-1', converted_at: '2026-08-16T12:00:00Z' }],
+    external_references: [{ id: 'drive-ref-1', workspace_id: 'workspace-1', provider: 'google_drive', external_type: 'file', normalized_url: 'https://drive.google.com/file/d/1', metadata: {}, access_status: 'accessible' }],
     external_reference_links: [],
     ledger_context_links: [],
     slack_context_links: [],
@@ -207,6 +207,22 @@ test('converted external resources remain visible from Intake', async () => {
   const source = result.items.find((item) => item.target.id === 'drive-ref-1');
   assert.equal(source?.relationship, 'converted_from');
   assert.equal(source?.target.provider, 'google_drive');
+  assert.equal(source?.target.title, 'Onboarding-Tiles');
+});
+
+test('direct Intake external links use the captured Figma title', async () => {
+  const tables = {
+    inbox_items: [{ id: 'intake-1', workspace_id: 'workspace-1', title: 'unknown', raw_payload: { node_name: 'welcome-gate' } }],
+    external_references: [{ id: 'figma-ref-1', workspace_id: 'workspace-1', provider: 'figma', external_type: 'unknown', normalized_url: 'https://www.figma.com/design/file', metadata: {} }],
+    external_reference_links: [{ id: 'external-link-1', workspace_id: 'workspace-1', external_reference_id: 'figma-ref-1', target_type: 'intake', target_id: 'intake-1', sources: ['manual'] }],
+    ledger_context_links: [],
+    slack_context_links: [],
+    slack_contexts: [],
+  };
+  const reader = createRelatedContextReader({ supabase: createFakeSupabase(tables), ensureWorkspaceResource: ensureWorkspaceResource(tables) });
+  const result = await reader({ workspaceId: 'workspace-1', resourceType: 'intake', resourceId: 'intake-1' });
+  const source = result.items.find((item) => item.target.id === 'figma-ref-1');
+  assert.equal(source?.target.title, 'welcome-gate');
 });
 
 test('meeting-note external references remain visible through the canonical note reader', async () => {

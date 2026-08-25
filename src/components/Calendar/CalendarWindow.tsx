@@ -918,6 +918,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const [listContextMenu, setListContextMenu] = useState<ListContextMenuState | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventRow | null>(null);
   const [eventEditorEvent, setEventEditorEvent] = useState<EventRow | null>(null);
+  const [selectedEventActionsOpen, setSelectedEventActionsOpen] = useState(false);
   const [appleEditorSnapshot, setAppleEditorSnapshot] = useState<EventRow | null>(null);
   const previousAppleEventIdsRef = useRef<Set<string>>(new Set());
   const [selectedReminder, setSelectedReminder] = useState<ReminderRow | null>(null);
@@ -2742,6 +2743,28 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   }, [listContextMenu]);
 
   useEffect(() => {
+    if (!selectedEventActionsOpen) return;
+    const closeMenu = () => setSelectedEventActionsOpen(false);
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    window.addEventListener('mousedown', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('keydown', onEscape);
+    return () => {
+      window.removeEventListener('mousedown', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [selectedEventActionsOpen]);
+
+  useEffect(() => {
+    setSelectedEventActionsOpen(false);
+  }, [selectedEventPreview?.id]);
+
+  useEffect(() => {
     const hasOpenModal =
       isComposerOpen ||
       Boolean(eventEditorEvent) ||
@@ -3040,6 +3063,22 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     setSelectedReminder(null);
     setViewAnchor(new Date());
   };
+
+  useEffect(() => {
+    const handleTouchBarAction = (event: Event) => {
+      const actionId = (event as CustomEvent<{ actionId?: unknown }>).detail?.actionId;
+      if (typeof actionId !== 'string') return;
+      if (actionId === 'calendar.today') jumpToToday();
+      else if (actionId === 'calendar.previous') moveView(-1);
+      else if (actionId === 'calendar.next') moveView(1);
+      else if (actionId === 'calendar.view.day') setViewMode('day');
+      else if (actionId === 'calendar.view.week') setViewMode('week');
+      else if (actionId === 'calendar.view.month') setViewMode('month');
+      else if (actionId === 'event.create') openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event');
+    };
+    window.addEventListener('ledger:touchbar-action', handleTouchBarAction);
+    return () => window.removeEventListener('ledger:touchbar-action', handleTouchBarAction);
+  }, [viewAnchor, viewMode]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -5589,41 +5628,63 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                 <p className="flex-1 text-[14px] font-semibold leading-5 text-[var(--ledger-text-primary)]">
                                   {selectedEventPreview.title}
                                 </p>
-                                <div className="flex shrink-0 items-center gap-1">
+                                <div className="relative flex shrink-0 items-center gap-1">
                                   {selectedEventPreview.status === 'done' && (
                                     <span className="text-[14px] font-semibold leading-none text-[var(--ledger-success)]">
                                       ✓
                                     </span>
                                   )}
-                                {canEditEvent(selectedEventPreview) && (
-                                  <button
-                                    onClick={() => openEventEditor(selectedEventPreview)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                                    aria-label="Edit event"
-                                    title="Edit event"
-                                  >
-                                    <PencilLine size={14} />
-                                  </button>
-                                )}
-                                {!selectedEventNote && canEditEvent(selectedEventPreview) && (
                                   <button
                                     type="button"
-                                    onClick={() => void createMeetingNoteFromEvent(selectedEventPreview)}
-                                    disabled={isCreatingMeetingNote}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
-                                    aria-label="Start meeting notes"
-                                    title="Start meeting notes"
+                                    onMouseDown={(event) => event.stopPropagation()}
+                                    onClick={() => setSelectedEventActionsOpen((current) => !current)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                    aria-label="Event actions"
+                                    aria-haspopup="menu"
+                                    aria-expanded={selectedEventActionsOpen}
+                                    title="Event actions"
                                   >
-                                    <Mic size={14} />
+                                    <MoreHorizontal size={14} />
                                   </button>
-                                )}
-                                <PinActionButton
-                                  objectType="event"
-                                  objectId={selectedEventPreview.id}
-                                  showLabel={false}
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                                  iconSize={14}
-                                />
+                                  {selectedEventActionsOpen && (
+                                    <div
+                                      role="menu"
+                                      className="absolute right-0 top-8 z-30 w-48 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"
+                                      onMouseDown={(event) => event.stopPropagation()}
+                                    >
+                                      {canEditEvent(selectedEventPreview) && (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => { setSelectedEventActionsOpen(false); openEventEditor(selectedEventPreview); }}
+                                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                        >
+                                          <PencilLine size={13} />
+                                          Edit event
+                                        </button>
+                                      )}
+                                      {!selectedEventNote && canEditEvent(selectedEventPreview) && (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          onClick={() => { setSelectedEventActionsOpen(false); void createMeetingNoteFromEvent(selectedEventPreview); }}
+                                          disabled={isCreatingMeetingNote}
+                                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
+                                        >
+                                          <Mic size={13} />
+                                          Start meeting notes
+                                        </button>
+                                      )}
+                                      <PinActionButton
+                                        objectType="event"
+                                        objectId={selectedEventPreview.id}
+                                        showLabel
+                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                        iconSize={13}
+                                        onClick={() => setSelectedEventActionsOpen(false)}
+                                      />
+                                    </div>
+                                  )}
                               </div>
                               </div>
                               <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">

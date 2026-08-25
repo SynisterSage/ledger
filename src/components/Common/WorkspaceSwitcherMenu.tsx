@@ -2,6 +2,7 @@ import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useEffect
 import { createPortal } from 'react-dom';
 import {
   ArrowRight,
+  Bug,
   ChevronDown,
   ChevronUp,
   ChevronRight,
@@ -35,6 +36,13 @@ type AppRegionStyle = CSSProperties & {
 
 type SidebarMenuStyle = CSSProperties & {
   '--sidebar-material-alpha'?: string;
+};
+
+type LedgerUpdateState = {
+  status?: string;
+  version?: string;
+  percent?: number;
+  error?: string;
 };
 
 // Keep the workspace menu within the compact expanded-sidebar footprint on
@@ -90,16 +98,55 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [workspaceTeams, setWorkspaceTeams] = useState<Array<{ id: string; name: string }>>([]);
   const [workspaceLoadingTeams, setWorkspaceLoadingTeams] = useState(false);
+  const [ledgerUpdateState, setLedgerUpdateState] = useState<LedgerUpdateState>({});
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const submenuRef = useRef<HTMLDivElement | null>(null);
   const switchRowRef = useRef<HTMLButtonElement | null>(null);
   const submenuCloseTimerRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    let mounted = true;
+    const updateStatus = window.ledgerIpc?.commands?.updatesStatus;
+    const updateStatusListener = (status: LedgerUpdateState) => {
+      if (mounted) setLedgerUpdateState(status ?? {});
+    };
+
+    if (updateStatus) {
+      void Promise.resolve(updateStatus()).then((status) => updateStatusListener(status as LedgerUpdateState));
+    }
+
+    const subscribe = window.ledgerIpc?.events?.onLedgerUpdateStatus;
+    const unsubscribe = window.ledgerIpc?.events?.offLedgerUpdateStatus;
+    const subscription = subscribe?.(updateStatusListener);
+
+    return () => {
+      mounted = false;
+      if (subscription !== undefined) unsubscribe?.(subscription);
+    };
+  }, []);
+
   const resolvedWorkspace = activeWorkspace ?? workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
   const workspaceName = resolvedWorkspace?.name?.trim() || 'Workspace';
   const workspaceInitials = getWorkspaceInitials(workspaceName);
   const isPersonalWorkspace = Boolean(resolvedWorkspace?.is_personal);
+  const hasLedgerUpdate = ['available', 'downloading', 'downloaded'].includes(ledgerUpdateState.status ?? '');
+  const updateCommand = (name: 'updatesCheck' | 'updatesDownload' | 'updatesInstall') =>
+    window.ledgerIpc?.commands?.[name];
+
+  const handleUpdateAction = () => {
+    const status = ledgerUpdateState.status;
+    const commandName = status === 'downloaded'
+      ? 'updatesInstall'
+      : status === 'error'
+        ? 'updatesCheck'
+        : status === 'available'
+          ? 'updatesDownload'
+          : null;
+    if (!commandName) return;
+    const command = updateCommand(commandName);
+    if (command) void Promise.resolve(command()).catch(() => undefined);
+  };
 
   // The menu is portaled to document.body, so it cannot inherit the material
   // alpha set on SidebarContainer. Keep the header variant on its existing
@@ -134,10 +181,10 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
       : `${triggerBaseClass} ${compact ? 'max-w-52' : 'max-w-56'} px-0 text-[var(--ledger-text-secondary)]`;
 
   const openSettingsSection = (
-    focusSection: 'account' | 'workspace' | 'members' | 'integrations' | 'sidebar'
+    focusSection: 'account' | 'workspace' | 'members' | 'integrations' | 'sidebar' | 'report_bug'
   ) => {
     if (!window.desktopWindow) {
-      if (focusSection === 'account') {
+      if (focusSection === 'account' || focusSection === 'report_bug') {
         platform.navigation.openRoute({ kind: 'app', page: 'settings', section: 'account' });
       } else if (activeWorkspaceId) {
         platform.navigation.openRoute({
@@ -566,11 +613,62 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                         onClick={item.action}
                         className="flex min-h-9 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
                       >
-                        <ItemIcon size={14} className="shrink-0" />
+                        <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+                          <ItemIcon size={14} />
+                          {item.label === 'Workspace settings' && hasLedgerUpdate ? (
+                            <span
+                              data-ledger-update-indicator="true"
+                              title={ledgerUpdateState.version ? `Ledger ${ledgerUpdateState.version} is available` : 'Ledger update available'}
+                              aria-label={ledgerUpdateState.version ? `Ledger ${ledgerUpdateState.version} is available` : 'Ledger update available'}
+                              className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)] ring-2 ring-[var(--ledger-surface-card)]"
+                            />
+                          ) : null}
+                        </span>
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       </button>
                     );
                   })}
+
+                  {hasLedgerUpdate || ledgerUpdateState.status === 'error' ? (
+                    <div
+                      data-ledger-update-panel="true"
+                      className="mx-1 mt-1 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5"
+                      role="status"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-accent)]" aria-hidden="true" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-medium text-[var(--ledger-text-primary)]">
+                            {ledgerUpdateState.status === 'downloaded'
+                              ? 'Update ready to install'
+                              : ledgerUpdateState.status === 'downloading'
+                                ? 'Downloading update…'
+                                : ledgerUpdateState.status === 'error'
+                                  ? 'Could not check for updates'
+                                  : `Ledger ${ledgerUpdateState.version ?? 'update'} is available`}
+                          </p>
+                          {ledgerUpdateState.status === 'downloading' && typeof ledgerUpdateState.percent === 'number' ? (
+                            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]" aria-label={`${Math.round(ledgerUpdateState.percent)}% downloaded`}>
+                              <div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.max(0, ledgerUpdateState.percent))}%` }} />
+                            </div>
+                          ) : null}
+                          {ledgerUpdateState.status === 'error' ? (
+                            <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[var(--ledger-text-muted)]">{ledgerUpdateState.error ?? 'Try again in a moment.'}</p>
+                          ) : null}
+                        </div>
+                        {ledgerUpdateState.status !== 'downloading' ? (
+                          <button
+                            type="button"
+                            data-switcher-row="true"
+                            onClick={handleUpdateAction}
+                            className="shrink-0 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+                          >
+                            {ledgerUpdateState.status === 'downloaded' ? 'Restart' : ledgerUpdateState.status === 'error' ? 'Retry' : 'Download'}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {platform.kind === 'web' && (
                     <>
@@ -605,6 +703,19 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                     <ArrowRight size={14} className="shrink-0" />
                     <span className="min-w-0 flex-1 truncate">Switch workspace</span>
                     <ChevronRight size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                  </button>
+
+                  <button
+                    type="button"
+                    data-switcher-row="true"
+                    onClick={() => {
+                      closeAllMenus();
+                      openSettingsSection('report_bug');
+                    }}
+                    className="flex min-h-9 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+                  >
+                    <Bug size={14} className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">Report a bug</span>
                   </button>
 
                   <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />

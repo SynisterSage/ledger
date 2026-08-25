@@ -72,6 +72,7 @@ import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForHome, routeForNote, routeForProject, routeForTask, usePlatform, type LedgerRoute } from '../../platform';
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
+import { LocalAIUnavailableState } from '../Common/LocalAIUnavailableState';
 import {
   deriveWorkspaceProjectSignals,
   summarizeProjectSignals,
@@ -2353,6 +2354,30 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
       createProjectInputRef.current?.select();
     }, 60);
   }, [api, user?.id]);
+
+  useEffect(() => {
+    const handleTouchBarAction = (event: Event) => {
+      const actionId = (event as CustomEvent<{ actionId?: unknown }>).detail?.actionId;
+      if (typeof actionId !== 'string') return;
+      if (actionId === 'project.create') {
+        openCreateProjectComposer();
+        return;
+      }
+      const actionMap: Record<string, ProjectLensAction> = {
+        'project.lens.catch-up': 'catch_up',
+        'project.lens.blockers': 'find_blockers',
+        'project.lens.next-steps': 'next_steps',
+        'project.lens.prepare-actions': 'prepare_actions',
+        'project.lens.find-context': 'find_context',
+      };
+      const lensAction = actionMap[actionId];
+      if (lensAction && selectedProjectIntelligenceContext && projectLensState !== 'loading') {
+        void requestProjectLensAction(lensAction, selectedProjectIntelligenceContext);
+      }
+    };
+    window.addEventListener('ledger:touchbar-action', handleTouchBarAction);
+    return () => window.removeEventListener('ledger:touchbar-action', handleTouchBarAction);
+  }, [openCreateProjectComposer, projectLensState, requestProjectLensAction, selectedProjectIntelligenceContext]);
 
   const closeCreateProjectComposer = useCallback(() => {
     if (isCreatingProjectNow) return;
@@ -5732,10 +5757,14 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             <p className="text-[13px] leading-5 text-[var(--ledger-text-muted)]">{lensLoadingText}</p>
           </div>
         ) : projectLensState === 'unavailable' ? (
-          <button type="button" onClick={openAskLedger} className="mt-4 flex w-full items-center justify-between gap-3 text-left text-[13px] text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">
-            <span>{projectLensUnavailableReason === 'model' ? 'Local AI model required' : 'Lens could not complete this pass'}</span>
-            <span aria-hidden="true" className="text-base">›</span>
-          </button>
+          projectLensUnavailableReason === 'model' ? (
+            <LocalAIUnavailableState detail="Download a local model to use project Lens." />
+          ) : (
+            <div className="mt-4 flex items-center gap-3 text-[13px] text-[var(--ledger-text-muted)]">
+              <span>Lens could not complete this pass.</span>
+              <button type="button" onClick={openAskLedger} className="font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]">Ask Ledger →</button>
+            </div>
+          )
         ) : projectLensResult ? (
           <div className="mt-4 max-w-[820px] space-y-2">
             <p className="text-[15px] leading-6 text-[var(--ledger-text-secondary)]">{projectLensResult.summary}</p>
@@ -6635,6 +6664,55 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
     setProjectsHeaderMenu({ kind, x: rect.left, y: rect.bottom + 4 });
   };
 
+  const projectsNewHeaderAction = (
+    <div className="mr-1 flex items-center gap-1">
+      <ModuleHeaderActionButton
+        onClick={() => {
+          if (isCreatingProject) {
+            closeCreateProjectComposer();
+            return;
+          }
+          openCreateProjectComposer();
+        }}
+        title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
+        aria-label={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
+        icon={isCreatingProject ? <X size={12} /> : <Plus size={12} />}
+        variant="strip"
+      >
+        <span>{isCreatingProject ? 'Cancel' : 'New'}</span>
+      </ModuleHeaderActionButton>
+      {projectsHeaderDensity === 'wide' && (
+        <ModuleHeaderActionButton
+          onClick={startMilestonePlacement}
+          title={isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'}
+          ariaLabel={isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'}
+          icon={isMilestonePlacementActive || pendingMilestone ? <X size={12} /> : <Flag size={12} />}
+          iconOnly
+          square
+          variant="strip"
+        >
+          {null}
+        </ModuleHeaderActionButton>
+      )}
+    </div>
+  );
+  const projectsOverflowHeaderAction = (
+    <button
+      type="button"
+      ref={(element) => {
+        overflowMenuButtonRef.current = element;
+      }}
+      onClick={() => openProjectsHeaderMenu('overflow', overflowMenuButtonRef.current)}
+      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+      aria-haspopup="menu"
+      aria-expanded={projectsHeaderMenu?.kind === 'overflow'}
+      aria-label="More project actions"
+      title="More project actions"
+    >
+      <MoreHorizontal size={14} />
+    </button>
+  );
+
   return (
     <div
       className="relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none"
@@ -6708,48 +6786,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             />
           </>
         }
-        primaryActions={
-          <div className="mr-1 flex items-center gap-1">
-            <ModuleHeaderActionButton
-              onClick={() => {
-                if (isCreatingProject) {
-                  closeCreateProjectComposer();
-                  return;
-                }
-                openCreateProjectComposer();
-              }}
-              title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
-              aria-label={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
-              icon={isCreatingProject ? <X size={12} /> : <Plus size={12} />}
-              variant="strip"
-            >
-              <span>{isCreatingProject ? 'Cancel' : 'New'}</span>
-            </ModuleHeaderActionButton>
-            {projectsHeaderDensity === 'wide' && (
-              <ModuleHeaderActionButton
-                onClick={startMilestonePlacement}
-                title={
-                  isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
-                }
-                ariaLabel={
-                  isMilestonePlacementActive ? 'Cancel milestone placement' : 'Place a milestone'
-                }
-                icon={
-                  isMilestonePlacementActive || pendingMilestone ? (
-                    <X size={12} />
-                  ) : (
-                    <Flag size={12} />
-                  )
-                }
-                iconOnly
-                square
-                variant="strip"
-              >
-                {null}
-              </ModuleHeaderActionButton>
-            )}
-          </div>
-        }
+        primaryActions={projectsHeaderDensity === 'wide' ? projectsNewHeaderAction : projectsOverflowHeaderAction}
         viewControls={
           projectsHeaderDensity === 'wide' ? (
             <div className="flex items-center gap-1.5">
@@ -6833,24 +6870,7 @@ export const ProjectsWindow = ({ webQuery }: { webQuery?: { projectId?: string; 
             </button>
           )
         }
-        secondaryActions={
-          projectsHeaderDensity === 'wide' ? null : (
-            <button
-              type="button"
-              ref={(element) => {
-                overflowMenuButtonRef.current = element;
-              }}
-              onClick={() => openProjectsHeaderMenu('overflow', overflowMenuButtonRef.current)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
-              aria-haspopup="menu"
-              aria-expanded={projectsHeaderMenu?.kind === 'overflow'}
-              aria-label="More project actions"
-              title="More project actions"
-            >
-              <MoreHorizontal size={14} />
-            </button>
-          )
-        }
+        secondaryActions={projectsHeaderDensity === 'wide' ? null : projectsNewHeaderAction}
         syncStatus={
           projectsHeaderDensity === 'wide' ? (
             <ModuleHeaderStatus

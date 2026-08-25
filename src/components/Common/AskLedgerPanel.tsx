@@ -38,6 +38,7 @@ import {
 } from '../../platform';
 import { ModalCloseButton } from './ModalCloseButton';
 import { ModalOverlay } from './ModalOverlay';
+import { openLocalAISettings } from './LocalAIUnavailableState';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import { deriveAskLedgerConversationState, type AskLedgerConversationState } from '../../types/askLedgerConversationState';
 import type { AskLedgerAttachment } from '../../types/askLedgerAttachments';
@@ -2598,7 +2599,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             <>
               <p className="mt-5 text-sm leading-6 text-[var(--ledger-text-secondary)]">AI processing runs on this device. A one-time download is required.</p>
               <div className="mt-5 space-y-2 text-xs"><div className="flex items-center justify-between gap-4"><span className="text-[var(--ledger-text-muted)]">Download</span><span className="tabular-nums text-[var(--ledger-text-secondary)]">{formatLocalAIBytes(localAITotalBytes)}</span></div><div className="flex items-center justify-between gap-4"><span className="text-[var(--ledger-text-muted)]">AI processing</span><span className="text-[var(--ledger-text-secondary)]">On this device</span></div></div>
-              <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={closeSetupModal} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={startLocalAISetup} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] transition hover:opacity-85">Set up</button></div>
+              <div className="mt-5 flex items-center justify-end gap-2"><button type="button" onClick={openLocalAISettings} className="mr-auto rounded-md px-2 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Open settings</button><button type="button" onClick={closeSetupModal} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={startLocalAISetup} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] transition hover:opacity-85">Set up</button></div>
             </>
           )}
           {setupError && <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={closeSetupModal} className="rounded-md px-3 py-2 text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={startLocalAISetup} className="rounded-md bg-[var(--ledger-text-primary)] px-3 py-2 text-xs font-medium text-[var(--ledger-surface)] transition hover:opacity-85">Try again</button></div>}

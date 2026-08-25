@@ -417,6 +417,27 @@ export const LoginForm: React.FC<LoginProps> = ({ onSuccess, notice }) => {
                   </button>
                 </div>
               </form>
+              <p className="mt-4 text-center text-[11px] leading-4 text-(--ledger-text-muted)">
+                By continuing, you agree to Ledger’s{' '}
+                <a
+                  href="https://ledgerworkspace.com/terms"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  Terms
+                </a>{' '}
+                and{' '}
+                <a
+                  href="https://ledgerworkspace.com/privacy"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  Privacy Policy
+                </a>
+                .
+              </p>
             </div>
           </div>
         </div>

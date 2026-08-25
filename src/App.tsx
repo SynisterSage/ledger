@@ -62,6 +62,7 @@ import { useAuthContext } from './context/AuthContext';
 import { useWorkspaceContext } from './context/WorkspaceContext';
 import { useWorkspaceRealtimeRefresh } from './hooks/useWorkspaceRealtimeRefresh';
 import { useApi } from './hooks/useApi';
+import { resolveTouchBarContext } from './components/Common/touchBarContext';
 import { useSidebar } from './context/SidebarContext';
 import { MainLayout } from './components/Common/MainLayout';
 import {
@@ -105,10 +106,17 @@ import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { NewTabWindow } from './components/Common/NewTabWindow';
 import { PageFindBar } from './components/Common/PageFindBar';
-import { buildOverviewFocusFingerprint, buildOverviewFocusSnapshot, getOverviewFocusPrimaryResource, type OverviewFocusResult, type OverviewFocusSnapshot } from './types/overviewFocus';
+import {
+  buildOverviewFocusFingerprint,
+  buildOverviewFocusSnapshot,
+  getOverviewFocusPrimaryResource,
+  type OverviewFocusResult,
+  type OverviewFocusSnapshot,
+} from './types/overviewFocus';
 import { LensCache } from './features/lens/lensCache';
 import { LensRequestRegistry } from './features/lens/lensRequestRegistry';
 import { openAskLedgerWithContext } from './components/Common/askLedgerContext';
+import { LocalAIUnavailableState } from './components/Common/LocalAIUnavailableState';
 import type { AskLedgerInitialContext } from './types/askLedgerContext';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
 import { McpAuthorizationPage } from './components/Integrations/McpAuthorizationPage';
@@ -124,7 +132,11 @@ import {
 } from './web/browserInviteContinuation';
 import { usePlatform } from './platform';
 import { routeForHome } from './platform/routes';
-const AgentAskLedgerPanel = lazy(() => import('./components/Common/AskLedgerPanel').then((module) => ({ default: module.AskLedgerPanel })));
+const AgentAskLedgerPanel = lazy(() =>
+  import('./components/Common/AskLedgerPanel').then((module) => ({
+    default: module.AskLedgerPanel,
+  }))
+);
 const ASK_LEDGER_SESSION_PERSISTED_EVENT = 'ledger:ask-ledger-session-persisted';
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
@@ -269,9 +281,7 @@ const SharedIpcShellBottomStrip = () => {
   if (!window.desktopWindow) return null;
 
   return (
-    <div
-      className="pointer-events-none flex h-7 shrink-0 items-center justify-end rounded-b-[var(--ledger-window-radius)] border-x border-b border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3"
-    >
+    <div className="pointer-events-none flex h-7 shrink-0 items-center justify-end rounded-b-[var(--ledger-window-radius)] border-x border-b border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] px-3">
       <div className="flex items-center gap-2 text-[11px] text-[var(--ledger-text-muted)]">
         <button
           type="button"
@@ -280,9 +290,11 @@ const SharedIpcShellBottomStrip = () => {
           className="pointer-events-auto inline-flex items-center gap-1.5 text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
           onClick={(event) => {
             const bounds = event.currentTarget.getBoundingClientRect();
-            window.dispatchEvent(new CustomEvent('ledger:agent-panel-open', {
-              detail: { x: bounds.right, y: bounds.top },
-            }));
+            window.dispatchEvent(
+              new CustomEvent('ledger:agent-panel-open', {
+                detail: { x: bounds.right, y: bounds.top },
+              })
+            );
           }}
         >
           <Bot size={12} />
@@ -586,11 +598,13 @@ function AuthStatusScreen({
   subtitle,
   isExiting = false,
   simple = false,
+  action,
 }: {
   title: string;
   subtitle: string;
   isExiting?: boolean;
   simple?: boolean;
+  action?: ReactNode;
 }) {
   if (simple) {
     return (
@@ -626,11 +640,13 @@ function AuthStatusScreen({
           alt="Ledger"
           className="h-11 w-11 select-none"
         />
-        <Loader2
-          size={14}
-          className="animate-spin text-[var(--ledger-text-muted)]"
-          aria-hidden="true"
-        />
+        {action ?? (
+          <Loader2
+            size={14}
+            className="animate-spin text-[var(--ledger-text-muted)]"
+            aria-hidden="true"
+          />
+        )}
       </div>
     </div>
   );
@@ -859,7 +875,7 @@ function OnboardingFlow({
                   onClick={onSkipSetup}
                   className="inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
-                  Skip setup
+                  Use a personal workspace
                 </button>
               </div>
             </div>
@@ -868,7 +884,9 @@ function OnboardingFlow({
           {step === 'profile' ? (
             <div className="mx-auto max-w-sm" style={noDragRegionStyle}>
               <div className="mb-7">
-                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Step 1 of 5</p>
+                <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                  Step 1 of {selectedWorkspaceType === 'team' ? 5 : 4}
+                </p>
                 <h1 className="mt-3 text-[28px] font-semibold leading-tight text-[var(--ledger-text-primary)]">
                   Set up your profile
                 </h1>
@@ -921,7 +939,7 @@ function OnboardingFlow({
                   disabled={isSaving}
                   className="inline-flex h-11 items-center justify-center rounded-lg px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
                 >
-                  Skip for now
+                  Skip profile setup
                 </button>
                 <button
                   type="button"
@@ -1139,7 +1157,7 @@ function OnboardingFlow({
                   {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
                   {isSaving
                     ? mode === 'create'
-                      ? 'Creating...'
+                      ? 'Creating…'
                       : 'Joining...'
                     : mode === 'create'
                     ? 'Continue'
@@ -1279,7 +1297,7 @@ function OnboardingFlow({
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-5 text-sm font-semibold text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   {isSaving ? <Loader2 size={17} className="animate-spin" /> : null}
-                  {isSaving ? 'Sending...' : 'Continue'}
+                  {isSaving ? 'Sending…' : 'Continue'}
                 </button>
               </div>
             </div>
@@ -1597,8 +1615,12 @@ export function DashboardContent({
     }>
   >([]);
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
-  const [overviewFocusStatus, setOverviewFocusStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable' | 'error'>('idle');
-  const [overviewFocusLoadingLabel, setOverviewFocusLoadingLabel] = useState('Looking for what needs attention…');
+  const [overviewFocusStatus, setOverviewFocusStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'unavailable' | 'error'
+  >('idle');
+  const [overviewFocusLoadingLabel, setOverviewFocusLoadingLabel] = useState(
+    'Looking for what needs attention…'
+  );
   const [overviewFocusResult, setOverviewFocusResult] = useState<OverviewFocusResult | null>(null);
   const overviewFocusResultRef = useRef<OverviewFocusResult | null>(null);
   const [overviewFocusRefreshToken, setOverviewFocusRefreshToken] = useState(0);
@@ -1998,7 +2020,16 @@ export function DashboardContent({
       notes: notes as Array<Record<string, unknown>>,
       currentUserId: user?.id,
     });
-  }, [activeWorkspaceId, notes, projects, todayTasks, upcoming, upcomingReminders, user?.id, workspaceTasks]);
+  }, [
+    activeWorkspaceId,
+    notes,
+    projects,
+    todayTasks,
+    upcoming,
+    upcomingReminders,
+    user?.id,
+    workspaceTasks,
+  ]);
 
   const overviewFocusSnapshotKey = useMemo(() => {
     if (!overviewFocusSnapshot) return '';
@@ -2017,7 +2048,13 @@ export function DashboardContent({
   }, [activeWorkspaceId]);
 
   useEffect(() => {
-    if (browserMode || !activeWorkspaceId || isLoadingDashboard || !overviewFocusSnapshot || !overviewFocusSnapshotKey) {
+    if (
+      browserMode ||
+      !activeWorkspaceId ||
+      isLoadingDashboard ||
+      !overviewFocusSnapshot ||
+      !overviewFocusSnapshotKey
+    ) {
       if (browserMode || !activeWorkspaceId) {
         setOverviewFocusResult(null);
         setOverviewFocusStatus('idle');
@@ -2045,8 +2082,15 @@ export function DashboardContent({
         console.info('[overview-lens] cache', { workspaceId: activeWorkspaceId, cache: 'miss' });
         const localAIStatus = await window.askLedger?.localAIStatus();
         if (cancelled || requestGeneration !== overviewFocusRequestRef.current) return;
-        const generationStatus = (localAIStatus as { generation?: { installed?: boolean; state?: string } } | undefined)?.generation;
-        if (generationStatus && generationStatus.installed === false && generationStatus.state !== 'downloading' && generationStatus.state !== 'verifying') {
+        const generationStatus = (
+          localAIStatus as { generation?: { installed?: boolean; state?: string } } | undefined
+        )?.generation;
+        if (
+          generationStatus &&
+          generationStatus.installed === false &&
+          generationStatus.state !== 'downloading' &&
+          generationStatus.state !== 'verifying'
+        ) {
           setOverviewFocusStatus('unavailable');
           return;
         }
@@ -2059,17 +2103,23 @@ export function DashboardContent({
           const result = await window.askLedger!.generateOverviewFocus(overviewFocusSnapshot, {
             previousResult: overviewFocusResultRef.current ?? undefined,
           });
-          return { insights: Array.isArray(result?.insights) ? result.insights as OverviewFocusResult['insights'] : [] };
+          return {
+            insights: Array.isArray(result?.insights)
+              ? (result.insights as OverviewFocusResult['insights'])
+              : [],
+          };
         });
         void lensGeneration.then((result) => {
-          if (result.insights.length) overviewLensCache.set(cacheKey, overviewFocusSnapshotKey, result);
+          if (result.insights.length)
+            overviewLensCache.set(cacheKey, overviewFocusSnapshotKey, result);
         });
         const result = await lensGeneration;
         if (cancelled || requestGeneration !== overviewFocusRequestRef.current) return;
         setOverviewFocusResult(result);
         setOverviewFocusStatus('ready');
       } catch {
-        if (!cancelled && requestGeneration === overviewFocusRequestRef.current) setOverviewFocusStatus('error');
+        if (!cancelled && requestGeneration === overviewFocusRequestRef.current)
+          setOverviewFocusStatus('error');
       }
     };
 
@@ -2077,7 +2127,13 @@ export function DashboardContent({
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, browserMode, isLoadingDashboard, overviewFocusRefreshToken, overviewFocusSnapshotKey]);
+  }, [
+    activeWorkspaceId,
+    browserMode,
+    isLoadingDashboard,
+    overviewFocusRefreshToken,
+    overviewFocusSnapshotKey,
+  ]);
 
   useEffect(() => {
     if (!activeWorkspaceId || !hasLoadedDashboardRef.current || isLoadingDashboard) return;
@@ -4450,36 +4506,81 @@ export function DashboardContent({
     });
   };
 
-  const openOverviewFocusResource = (resource: { type: 'task' | 'project' | 'event' | 'note'; id: string }) => {
+  const openOverviewFocusResource = (resource: {
+    type: 'task' | 'project' | 'event' | 'note';
+    id: string;
+  }) => {
     if (!overviewFocusSnapshot) return;
-    const primary = getOverviewFocusPrimaryResource({ id: 'focus', title: '', summary: '', importance: 'normal', resourceRefs: [resource] }, overviewFocusSnapshot);
+    const primary = getOverviewFocusPrimaryResource(
+      { id: 'focus', title: '', summary: '', importance: 'normal', resourceRefs: [resource] },
+      overviewFocusSnapshot
+    );
     if (!primary) return;
-    if (primary.type === 'project') openModule('projects', { kind: 'projects', focusProjectId: primary.id });
-    else if (primary.type === 'note') openModule('notes', { kind: 'notes', focusNoteId: primary.id });
-    else if (primary.type === 'event') openModule('calendar', { kind: 'calendar', focusContext: `focus-event:${primary.id}` });
-    else void window.desktopWindow?.openModule('dashboard', { kind: 'dashboard', focusTaskId: primary.id });
+    if (primary.type === 'project')
+      openModule('projects', { kind: 'projects', focusProjectId: primary.id });
+    else if (primary.type === 'note')
+      openModule('notes', { kind: 'notes', focusNoteId: primary.id });
+    else if (primary.type === 'event')
+      openModule('calendar', { kind: 'calendar', focusContext: `focus-event:${primary.id}` });
+    else
+      void window.desktopWindow?.openModule('dashboard', {
+        kind: 'dashboard',
+        focusTaskId: primary.id,
+      });
   };
 
   const askLedgerAboutToday = () => {
     if (!activeWorkspaceId) return;
-    const insightRefs = overviewFocusResult?.insights.flatMap((insight) => insight.resourceRefs).filter((ref, index, refs) => refs.findIndex((candidate) => candidate.type === ref.type && candidate.id === ref.id) === index) ?? [];
+    const insightRefs =
+      overviewFocusResult?.insights
+        .flatMap((insight) => insight.resourceRefs)
+        .filter(
+          (ref, index, refs) =>
+            refs.findIndex(
+              (candidate) => candidate.type === ref.type && candidate.id === ref.id
+            ) === index
+        ) ?? [];
     const snapshotResources = [
-      ...((overviewFocusSnapshot?.tasks ?? []).map((item) => ({ resourceType: 'task' as const, resourceId: item.id, title: item.title }))),
-      ...((overviewFocusSnapshot?.projects ?? []).map((item) => ({ resourceType: 'project' as const, resourceId: item.id, title: item.title }))),
-      ...((overviewFocusSnapshot?.events ?? []).map((item) => ({ resourceType: 'event' as const, resourceId: item.id, title: item.title }))),
-      ...((overviewFocusSnapshot?.recentNotes ?? []).map((item) => ({ resourceType: 'note' as const, resourceId: item.id, title: item.title }))),
+      ...(overviewFocusSnapshot?.tasks ?? []).map((item) => ({
+        resourceType: 'task' as const,
+        resourceId: item.id,
+        title: item.title,
+      })),
+      ...(overviewFocusSnapshot?.projects ?? []).map((item) => ({
+        resourceType: 'project' as const,
+        resourceId: item.id,
+        title: item.title,
+      })),
+      ...(overviewFocusSnapshot?.events ?? []).map((item) => ({
+        resourceType: 'event' as const,
+        resourceId: item.id,
+        title: item.title,
+      })),
+      ...(overviewFocusSnapshot?.recentNotes ?? []).map((item) => ({
+        resourceType: 'note' as const,
+        resourceId: item.id,
+        title: item.title,
+      })),
     ];
-    const refs = insightRefs.map((ref) => snapshotResources.find((resource) => resource.resourceType === ref.type && resource.resourceId === ref.id)).filter((resource): resource is typeof snapshotResources[number] => Boolean(resource));
+    const refs = insightRefs
+      .map((ref) =>
+        snapshotResources.find(
+          (resource) => resource.resourceType === ref.type && resource.resourceId === ref.id
+        )
+      )
+      .filter((resource): resource is (typeof snapshotResources)[number] => Boolean(resource));
     const primary = refs[0] ?? snapshotResources[0];
     const context: AskLedgerInitialContext = {
       resourceType: primary?.resourceType ?? 'external',
       resourceId: primary?.resourceId ?? `overview:${activeWorkspaceId}`,
-      title: primary?.title ?? 'Today\'s Overview',
+      title: primary?.title ?? "Today's Overview",
       handoff: {
         kind: 'overview_focus',
         workspaceId: activeWorkspaceId,
         overviewDate: todayKey(),
-        insights: (overviewFocusResult?.insights ?? []).slice(0, 3).map((insight) => ({ title: insight.title, summary: insight.summary })),
+        insights: (overviewFocusResult?.insights ?? [])
+          .slice(0, 3)
+          .map((insight) => ({ title: insight.title, summary: insight.summary })),
         resourceRefs: refs.slice(0, 16),
       },
     };
@@ -5600,7 +5701,9 @@ export function DashboardContent({
     if (!initialFocusTaskId) return;
     const focusKey = `${activeWorkspaceId ?? ''}:${initialFocusTaskId}`;
     if (handledInitialFocusTaskRef.current === focusKey) return;
-    const target = visibleOverviewRows.find((row) => row.kind === 'task' && row.sourceId === initialFocusTaskId);
+    const target = visibleOverviewRows.find(
+      (row) => row.kind === 'task' && row.sourceId === initialFocusTaskId
+    );
     if (target) {
       handledInitialFocusTaskRef.current = focusKey;
       setSelectedOverviewRowId(target.id);
@@ -5883,17 +5986,21 @@ export function DashboardContent({
 
   const askLedgerAboutSelectedOverviewRow = () => {
     if (!selectedOverviewRow || !activeWorkspaceId) return;
-    const resourceType = selectedOverviewRow.kind === 'reminder'
-      ? 'reminder'
-      : selectedOverviewRow.kind === 'capture'
-      ? 'intake'
-      : selectedOverviewRow.kind;
-    openAskLedgerWithContext({
-      resourceType,
-      resourceId: selectedOverviewRow.sourceId,
-      title: selectedOverviewRow.title,
-      initialQuestion: `What should I pay attention to about ${selectedOverviewRow.title}, and what should I do next?`,
-    }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+    const resourceType =
+      selectedOverviewRow.kind === 'reminder'
+        ? 'reminder'
+        : selectedOverviewRow.kind === 'capture'
+        ? 'intake'
+        : selectedOverviewRow.kind;
+    openAskLedgerWithContext(
+      {
+        resourceType,
+        resourceId: selectedOverviewRow.sourceId,
+        title: selectedOverviewRow.title,
+        initialQuestion: `What should I pay attention to about ${selectedOverviewRow.title}, and what should I do next?`,
+      },
+      () => platform.navigation.openRoute(routeForHome(activeWorkspaceId))
+    );
   };
 
   const selectedOverviewTaskQuickActions = selectedOverviewRow
@@ -7484,72 +7591,105 @@ export function DashboardContent({
                           ))}
                       </div>
                     </div>
-                    {!browserMode ? <section className="border-t border-[color:var(--ledger-border-subtle)] pt-3" aria-labelledby="overview-lens-heading">
-                      <div className="flex items-center justify-between gap-2">
-                        <p id="overview-lens-heading" className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                          Lens
-                        </p>
-                        <button
-                          type="button"
-                          onClick={refreshOverviewFocus}
-                          disabled={overviewFocusStatus === 'loading'}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)] disabled:cursor-wait disabled:opacity-60"
-                          aria-label="Refresh Lens"
-                          title="Refresh Lens"
-                        >
-                          <RefreshCw size={12} className={overviewFocusStatus === 'loading' ? 'animate-spin' : ''} />
-                        </button>
-                      </div>
-                      {overviewFocusStatus === 'loading' && (
-                        <p className="mt-1 text-[11px] leading-4 text-[var(--ledger-text-muted)]" aria-live="polite">
-                          {overviewFocusLoadingLabel}
-                        </p>
-                      )}
-                      {overviewFocusStatus === 'loading' && !overviewFocusResult?.insights.length ? (
-                        <div className="mt-1.5 space-y-1.5" aria-label="Loading Lens">
-                          <div className="h-2.5 w-4/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
-                          <div className="h-2.5 w-full animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
-                        </div>
-                      ) : overviewFocusStatus === 'unavailable' ? (
-                        <div className="mt-1.5">
-                          <p className="text-[12px] leading-5 text-[var(--ledger-text-muted)]">Set up local AI to enable Lens.</p>
+                    {!browserMode ? (
+                      <section
+                        className="border-t border-[color:var(--ledger-border-subtle)] pt-3"
+                        aria-labelledby="overview-lens-heading"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p
+                            id="overview-lens-heading"
+                            className="text-[10px] font-medium text-[var(--ledger-text-muted)]"
+                          >
+                            Lens
+                          </p>
                           <button
                             type="button"
-                            className="mt-1 text-[11px] font-medium text-[var(--ledger-text-secondary)] underline decoration-[color:var(--ledger-border-subtle)] underline-offset-2 hover:text-[var(--ledger-text-primary)]"
-                            onClick={() => {
-                              void window.askLedger?.downloadLocalAI('generation');
-                            }}
+                            onClick={refreshOverviewFocus}
+                            disabled={overviewFocusStatus === 'loading'}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-secondary)] disabled:cursor-wait disabled:opacity-60"
+                            aria-label="Refresh Lens"
+                            title="Refresh Lens"
                           >
-                            Set up AI →
+                            <RefreshCw
+                              size={12}
+                              className={overviewFocusStatus === 'loading' ? 'animate-spin' : ''}
+                            />
                           </button>
                         </div>
-                      ) : overviewFocusStatus === 'error' ? (
-                        <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">Lens is unavailable right now.</p>
-                      ) : overviewFocusResult?.insights.length ? (
-                        <div className="mt-2 space-y-3">
-                          {overviewFocusResult.insights.map((insight) => {
-                            const primaryResource = getOverviewFocusPrimaryResource(insight, overviewFocusSnapshot);
-                            const content = (
-                              <>
-                                <p className="break-words text-left text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]">{insight.title}</p>
-                                <p className="mt-0.5 break-words text-left text-[11px] leading-4 text-[var(--ledger-text-muted)]">{insight.summary}</p>
-                              </>
-                            );
-                            const className = `min-w-0 ${primaryResource ? 'cursor-pointer rounded-md pr-1 transition hover:bg-[var(--ledger-surface-hover)]' : ''}`;
-                            return primaryResource ? (
-                              <button key={insight.id} type="button" className={`block w-full ${className}`} onClick={() => openOverviewFocusResource(primaryResource)} aria-label={`Open ${insight.title}`}>
-                                {content}
-                              </button>
-                            ) : <div key={insight.id} className={className}>{content}</div>;
-                          })}
-                        </div>
-                      ) : (
-                        <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">Nothing currently stands out.</p>
-                      )}
-                      <button type="button" onClick={askLedgerAboutToday} className="mt-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]">
-                        Ask Ledger about today →
-                      </button>
-                    </section> : null}
+                        {overviewFocusStatus === 'loading' && (
+                          <p
+                            className="mt-1 text-[11px] leading-4 text-[var(--ledger-text-muted)]"
+                            aria-live="polite"
+                          >
+                            {overviewFocusLoadingLabel}
+                          </p>
+                        )}
+                        {overviewFocusStatus === 'loading' &&
+                        !overviewFocusResult?.insights.length ? (
+                          <div className="mt-1.5 space-y-1.5" aria-label="Loading Lens">
+                            <div className="h-2.5 w-4/5 animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+                            <div className="h-2.5 w-full animate-pulse rounded bg-[var(--ledger-surface-hover)]" />
+                          </div>
+                        ) : overviewFocusStatus === 'unavailable' ? (
+                          <LocalAIUnavailableState detail="Download a local model to enable Lens on this workspace." />
+                        ) : overviewFocusStatus === 'error' ? (
+                          <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                            Lens is unavailable right now.
+                          </p>
+                        ) : overviewFocusResult?.insights.length ? (
+                          <div className="mt-2 space-y-3">
+                            {overviewFocusResult.insights.map((insight) => {
+                              const primaryResource = getOverviewFocusPrimaryResource(
+                                insight,
+                                overviewFocusSnapshot
+                              );
+                              const content = (
+                                <>
+                                  <p className="break-words text-left text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]">
+                                    {insight.title}
+                                  </p>
+                                  <p className="mt-0.5 break-words text-left text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                                    {insight.summary}
+                                  </p>
+                                </>
+                              );
+                              const className = `min-w-0 ${
+                                primaryResource
+                                  ? 'cursor-pointer rounded-md pr-1 transition hover:bg-[var(--ledger-surface-hover)]'
+                                  : ''
+                              }`;
+                              return primaryResource ? (
+                                <button
+                                  key={insight.id}
+                                  type="button"
+                                  className={`block w-full ${className}`}
+                                  onClick={() => openOverviewFocusResource(primaryResource)}
+                                  aria-label={`Open ${insight.title}`}
+                                >
+                                  {content}
+                                </button>
+                              ) : (
+                                <div key={insight.id} className={className}>
+                                  {content}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                            Nothing currently stands out.
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={askLedgerAboutToday}
+                          className="mt-3 text-[11px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                        >
+                          Ask Ledger about today →
+                        </button>
+                      </section>
+                    ) : null}
                     <div className="mt-auto space-y-2 pt-3">
                       {recentNotes[0] && (
                         <button
@@ -8794,6 +8934,8 @@ export function AppShell({
   const [uiMode, setUiMode] = useState<'auth' | 'app'>(user ? 'app' : 'auth');
   const [isAuthExiting, setIsAuthExiting] = useState(false);
   const [postAuthStage, setPostAuthStage] = useState<PostAuthStage>('idle');
+  const [onboardingStatusError, setOnboardingStatusError] = useState<string | null>(null);
+  const [onboardingStatusRetry, setOnboardingStatusRetry] = useState(0);
   const [isSavingOnboarding, setIsSavingOnboarding] = useState(false);
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() =>
     getInitialInviteToken()
@@ -8851,6 +8993,22 @@ export function AppShell({
   const [visitedModuleKeys, setVisitedModuleKeys] = useState<KeepAliveModuleKey[]>(() =>
     activeKeepAliveModuleKey ? [activeKeepAliveModuleKey] : []
   );
+
+  const touchBarContext = useMemo(
+    () =>
+      resolveTouchBarContext({
+        route: isModuleWindow ? workspaceShellRoute : { kind: null },
+        workspaceId: activeWorkspaceId,
+        authenticated: Boolean(user),
+        appReady: Boolean(user && !isLoading),
+        windowContext: isModuleWindow ? 'workspace' : 'sidebar',
+      }),
+    [activeWorkspaceId, isLoading, isModuleWindow, user, workspaceShellRoute]
+  );
+
+  useEffect(() => {
+    window.ledgerIpc?.commands?.setTouchBarContext?.(touchBarContext);
+  }, [touchBarContext]);
 
   useEffect(() => {
     if (window.location.pathname !== '/inbox') return;
@@ -9116,9 +9274,12 @@ export function AppShell({
       setIsVisible(payload.isVisible);
     };
 
-    const subscription = window.ledgerIpc?.events?.onSidebarVisibilityChanged(handleSidebarVisibilityChanged);
+    const subscription = window.ledgerIpc?.events?.onSidebarVisibilityChanged(
+      handleSidebarVisibilityChanged
+    );
     return () => {
-      if (typeof subscription === 'string') window.ledgerIpc?.events?.offSidebarVisibilityChanged(subscription);
+      if (typeof subscription === 'string')
+        window.ledgerIpc?.events?.offSidebarVisibilityChanged(subscription);
     };
   }, [setIsVisible, user]);
 
@@ -9131,7 +9292,8 @@ export function AppShell({
 
     const subscription = window.ledgerIpc?.events?.onSidebarOpenCheckin(handleOpenCheckin);
     return () => {
-      if (typeof subscription === 'string') window.ledgerIpc?.events?.offSidebarOpenCheckin(subscription);
+      if (typeof subscription === 'string')
+        window.ledgerIpc?.events?.offSidebarOpenCheckin(subscription);
     };
   }, [setIsExpanded, setIsVisible, setState]);
 
@@ -9173,9 +9335,21 @@ export function AppShell({
 
     const subscription = window.ledgerIpc?.events?.onTouchbarOpenSearch(handleTouchBarOpenSearch);
     return () => {
-      if (typeof subscription === 'string') window.ledgerIpc?.events?.offTouchbarOpenSearch(subscription);
+      if (typeof subscription === 'string')
+        window.ledgerIpc?.events?.offTouchbarOpenSearch(subscription);
     };
   }, [isLoading, openSearch, setState, state, user]);
+
+  useEffect(() => {
+    const handleTouchBarAction = (_event: unknown, payload?: { actionId?: unknown }) => {
+      if (typeof payload?.actionId !== 'string') return;
+      window.dispatchEvent(new CustomEvent('ledger:touchbar-action', { detail: payload }));
+    };
+    const subscription = window.ledgerIpc?.events?.onTouchbarAction?.(handleTouchBarAction);
+    return () => {
+      if (typeof subscription === 'string') window.ledgerIpc?.events?.offTouchbarAction?.(subscription);
+    };
+  }, []);
 
   useEffect(() => {
     if (isModuleWindow) return;
@@ -9646,24 +9820,40 @@ export function AppShell({
         user?.email?.split('@')[0] ||
         ''
     );
-    setOnboardingWorkspaceType(null);
-    setOnboardingWorkspaceId(null);
+    setOnboardingWorkspaceType(isInviteOnboarding ? 'team' : null);
+    setOnboardingWorkspaceId(isInviteOnboarding ? inviteWorkspaceId : null);
     setOnboardingInviteEmails([]);
     setOnboardingInviteRole('member');
     setOnboardingWorkspaceName('My Workspace');
-    setOnboardingMode('create');
+    setOnboardingMode(isInviteOnboarding ? 'join' : 'create');
     setOnboardingInviteValue('');
     setOnboardingSidebarPosition('floating');
     setOnboardingError(null);
     setIsSavingOnboarding(false);
   }, [
     isInviteOnboarding,
+    inviteWorkspaceId,
     postAuthStage,
     profile?.displayName,
     user?.email,
     user?.id,
     user?.user_metadata?.full_name,
   ]);
+
+  useEffect(() => {
+    if (
+      browserMode ||
+      !isInviteOnboarding ||
+      !inviteWorkspaceId ||
+      postAuthStage !== 'onboarding' ||
+      onboardingHasProfileStep
+    )
+      return;
+    setOnboardingMode('join');
+    setOnboardingWorkspaceType('team');
+    setOnboardingWorkspaceId(inviteWorkspaceId);
+    setOnboardingStep('position');
+  }, [browserMode, inviteWorkspaceId, isInviteOnboarding, onboardingHasProfileStep, postAuthStage]);
 
   useEffect(() => {
     if (!browserMode || !isInviteOnboarding || !inviteWorkspaceId || !user?.id) return;
@@ -9703,6 +9893,7 @@ export function AppShell({
     if (!userId) {
       postAuthBootstrapUserRef.current = null;
       completedInviteOnboardingRef.current = null;
+      setOnboardingStatusError(null);
       if (authTransitionTimerRef.current !== null) {
         window.clearTimeout(authTransitionTimerRef.current);
         authTransitionTimerRef.current = null;
@@ -9718,6 +9909,7 @@ export function AppShell({
     let isCancelled = false;
     postAuthBootstrapUserRef.current = userId;
     setPostAuthStage('loading');
+    setOnboardingStatusError(null);
 
     const loadPostAuthStage = async () => {
       try {
@@ -9740,22 +9932,19 @@ export function AppShell({
       } catch (error) {
         if (isCancelled) return;
         console.warn('Unexpected onboarding state error:', error);
-        setPostAuthStage('ready');
+        setOnboardingStatusError(
+          error instanceof Error ? error.message : 'Could not load onboarding.'
+        );
+        setPostAuthStage('idle');
       }
     };
 
     loadPostAuthStage();
 
-    const fallbackTimer = window.setTimeout(() => {
-      if (isCancelled) return;
-      setPostAuthStage((current) => (current === 'loading' ? 'ready' : current));
-    }, 2500);
-
     return () => {
       isCancelled = true;
-      window.clearTimeout(fallbackTimer);
     };
-  }, [effectiveUiMode, isLoading, user?.id]);
+  }, [effectiveUiMode, isLoading, onboardingStatusRetry, user?.id]);
 
   useEffect(() => {
     if (isModuleWindow) return;
@@ -9903,7 +10092,9 @@ export function AppShell({
   const startupSubtitle = 'Preparing your workspace…';
 
   if (shouldShowBootLoading) {
-    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} simple={browserMode} />;
+    return (
+      <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} simple={browserMode} />
+    );
   }
 
   if (authError) {
@@ -9925,6 +10116,28 @@ export function AppShell({
       <AuthStatusScreen
         title="Accepting invitation"
         subtitle="Joining your workspace and syncing access."
+      />
+    );
+  }
+
+  if (onboardingStatusError) {
+    return (
+      <AuthStatusScreen
+        title="Could not load onboarding"
+        subtitle={onboardingStatusError}
+        action={
+          <button
+            type="button"
+            onClick={() => {
+              postAuthBootstrapUserRef.current = null;
+              setOnboardingStatusError(null);
+              setOnboardingStatusRetry((current) => current + 1);
+            }}
+            className="rounded-md px-2 py-1 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+          >
+            Try again
+          </button>
+        }
       />
     );
   }
@@ -9974,7 +10187,9 @@ export function AppShell({
   }
 
   if (postAuthStage === 'idle' || postAuthStage === 'loading') {
-    return <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} simple={browserMode} />;
+    return (
+      <AuthStatusScreen title={startupTitle} subtitle={startupSubtitle} simple={browserMode} />
+    );
   }
 
   if (postAuthStage === 'onboarding') {
@@ -10022,6 +10237,29 @@ export function AppShell({
         }
       } catch (error) {
         setOnboardingError(error instanceof Error ? error.message : 'Could not save your profile.');
+      } finally {
+        setIsSavingOnboarding(false);
+      }
+    };
+
+    const skipProfileSetup = async () => {
+      if (!user || isSavingOnboarding) return;
+      setIsSavingOnboarding(true);
+      setOnboardingError(null);
+      try {
+        await api.completeProfileSetup();
+        if (browserMode && isInviteOnboarding && inviteWorkspaceId) {
+          await api.completeOnboarding();
+          await refreshWorkspaces();
+          setPostAuthStage('ready');
+        } else {
+          setOnboardingHasProfileStep(false);
+          setOnboardingStep('workspace-type');
+        }
+      } catch (error) {
+        setOnboardingError(
+          error instanceof Error ? error.message : 'Could not skip profile setup.'
+        );
       } finally {
         setIsSavingOnboarding(false);
       }
@@ -10169,6 +10407,11 @@ export function AppShell({
           }
         }
 
+        if (!workspaceId) {
+          throw new Error('Ledger could not determine the workspace to open. Please try again.');
+        }
+        await setActiveWorkspace(workspaceId);
+
         setPosition(position);
         saveSidebarPreferences({ ...sidebarPreferences, position });
         await window.desktopWindow?.applySidebarPreferences({ position }).catch(() => undefined);
@@ -10212,7 +10455,7 @@ export function AppShell({
           setOnboardingDisplayName(value);
         }}
         onProfileContinue={completeProfileSetup}
-        onProfileSkip={completeProfileSetup}
+        onProfileSkip={skipProfileSetup}
         onProfileSaveAvatar={saveOnboardingAvatar}
         onProfileRemoveAvatar={removeOnboardingAvatar}
         onSkipSetup={() => {
@@ -10283,24 +10526,33 @@ function AskLedgerHistoryPopover() {
   const api = useApi();
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState({ left: 16, top: 16 });
-  const [sessions, setSessions] = useState<Array<{ id: string; title?: string | null; updatedAt: string }>>([]);
+  const [sessions, setSessions] = useState<
+    Array<{ id: string; title?: string | null; updatedAt: string }>
+  >([]);
 
   useEffect(() => {
     const handleOpen = async (event: Event) => {
       const detail = (event as CustomEvent<{ x?: number; y?: number }>).detail;
       const x = Number(detail?.x ?? window.innerWidth - 40);
       const y = Number(detail?.y ?? window.innerHeight - 8);
-      setPosition({ left: Math.max(8, Math.min(x - 224, window.innerWidth - 232)), top: Math.max(8, y) });
+      setPosition({
+        left: Math.max(8, Math.min(x - 224, window.innerWidth - 232)),
+        top: Math.max(8, y),
+      });
       setIsOpen(true);
 
-      const navigation = await window.desktopWindow?.getWorkspaceNavigationState?.().catch(() => null);
+      const navigation = await window.desktopWindow
+        ?.getWorkspaceNavigationState?.()
+        .catch(() => null);
       if (navigation?.currentModule === 'new-tab') {
         setIsOpen(false);
         return;
       }
       if (activeWorkspaceId) {
         try {
-          const payload = await api.getAskLedgerSessions(activeWorkspaceId, 5) as { sessions?: Array<{ id: string; title?: string | null; updatedAt: string }> };
+          const payload = (await api.getAskLedgerSessions(activeWorkspaceId, 5)) as {
+            sessions?: Array<{ id: string; title?: string | null; updatedAt: string }>;
+          };
           setSessions(Array.isArray(payload.sessions) ? payload.sessions : []);
         } catch {
           setSessions([]);
@@ -10315,9 +10567,12 @@ function AskLedgerHistoryPopover() {
     if (!isOpen) return undefined;
     const refresh = () => {
       if (!activeWorkspaceId) return;
-      void api.getAskLedgerSessions(activeWorkspaceId, 5)
+      void api
+        .getAskLedgerSessions(activeWorkspaceId, 5)
         .then((payload) => {
-          const value = payload as { sessions?: Array<{ id: string; title?: string | null; updatedAt: string }> };
+          const value = payload as {
+            sessions?: Array<{ id: string; title?: string | null; updatedAt: string }>;
+          };
           setSessions(Array.isArray(value.sessions) ? value.sessions : []);
         })
         .catch(() => setSessions([]));
@@ -10330,23 +10585,68 @@ function AskLedgerHistoryPopover() {
     if (!isOpen) return undefined;
     const close = (event: MouseEvent | KeyboardEvent) => {
       if (event instanceof KeyboardEvent && event.key === 'Escape') setIsOpen(false);
-      if (event instanceof MouseEvent && event.target instanceof Element && !event.target.closest('[data-ask-ledger-history-popover]')) setIsOpen(false);
+      if (
+        event instanceof MouseEvent &&
+        event.target instanceof Element &&
+        !event.target.closest('[data-ask-ledger-history-popover]')
+      )
+        setIsOpen(false);
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', close);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
   return createPortal(
-    <div data-ask-ledger-history-popover role="menu" aria-label="Ask Ledger chat history" className="ask-ledger-history-menu fixed z-[9999] w-56 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-1.5 shadow-[var(--ledger-shadow)]" style={{ ...position, transform: 'translateY(calc(-100% - 8px))' }}>
-      <button type="button" onClick={() => setIsOpen(false)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">New chat</button>
-      {sessions.length > 0 ? <div className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
-        {sessions.map((session) => <button key={session.id} type="button" role="menuitem" onClick={() => { setIsOpen(false); void window.desktopWindow?.openModule('new-tab', { kind: 'new-tab', focusContext: `ask-session:${session.id}` }); }} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-[var(--ledger-surface-hover)]">
-          <span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-primary)]">{session.title || 'Ask Ledger conversation'}</span>
-          <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">{new Date(session.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-        </button>)}
-      </div> : <p className="px-2.5 py-2 text-xs text-[var(--ledger-text-muted)]">No recent chats</p>}
+    <div
+      data-ask-ledger-history-popover
+      role="menu"
+      aria-label="Ask Ledger chat history"
+      className="ask-ledger-history-menu fixed z-[9999] w-56 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-1.5 shadow-[var(--ledger-shadow)]"
+      style={{ ...position, transform: 'translateY(calc(-100% - 8px))' }}
+    >
+      <button
+        type="button"
+        onClick={() => setIsOpen(false)}
+        className="w-full rounded-md px-2.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+      >
+        New chat
+      </button>
+      {sessions.length > 0 ? (
+        <div className="mt-1 border-t border-[color:var(--ledger-border-subtle)] pt-1">
+          {sessions.map((session) => (
+            <button
+              key={session.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setIsOpen(false);
+                void window.desktopWindow?.openModule('new-tab', {
+                  kind: 'new-tab',
+                  focusContext: `ask-session:${session.id}`,
+                });
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-[var(--ledger-surface-hover)]"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm text-[var(--ledger-text-primary)]">
+                {session.title || 'Ask Ledger conversation'}
+              </span>
+              <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+                {new Date(session.updatedAt).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="px-2.5 py-2 text-xs text-[var(--ledger-text-muted)]">No recent chats</p>
+      )}
     </div>,
     document.body
   );
@@ -10394,11 +10694,19 @@ function AgentMockupPopover() {
     if (!isOpen) return undefined;
     const close = (event: MouseEvent | KeyboardEvent) => {
       if (event instanceof KeyboardEvent && event.key === 'Escape') setIsOpen(false);
-      if (event instanceof MouseEvent && event.target instanceof Element && !event.target.closest('[data-agent-mockup-panel], .agent-ask-ledger-portal')) setIsOpen(false);
+      if (
+        event instanceof MouseEvent &&
+        event.target instanceof Element &&
+        !event.target.closest('[data-agent-mockup-panel], .agent-ask-ledger-portal')
+      )
+        setIsOpen(false);
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', close);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
   }, [isOpen]);
 
   if (!hasMounted) return null;
@@ -10406,11 +10714,27 @@ function AgentMockupPopover() {
     const continuingGeneration = isGenerating && activeQuestion.trim();
     void window.desktopWindow?.openModule('new-tab', {
       kind: 'new-tab',
-      focusContext: continuingGeneration ? 'new-tab:browser' : sessionId ? `ask-session:${sessionId}` : 'new-tab:browser',
+      focusContext: continuingGeneration
+        ? 'new-tab:browser'
+        : sessionId
+        ? `ask-session:${sessionId}`
+        : 'new-tab:browser',
     });
     const questionToContinue = continuingGeneration || (!sessionId ? questionDraft.trim() : '');
     if (questionToContinue) {
-      window.setTimeout(() => window.dispatchEvent(new CustomEvent('ledger:ask-ledger-seed-question', { detail: { question: questionToContinue, submit: Boolean(continuingGeneration), source: 'fullscreen' } })), 120);
+      window.setTimeout(
+        () =>
+          window.dispatchEvent(
+            new CustomEvent('ledger:ask-ledger-seed-question', {
+              detail: {
+                question: questionToContinue,
+                submit: Boolean(continuingGeneration),
+                source: 'fullscreen',
+              },
+            })
+          ),
+        120
+      );
     }
     setIsOpen(false);
   };
@@ -10426,19 +10750,55 @@ function AgentMockupPopover() {
     <section
       data-agent-mockup-panel
       aria-label="Agent preview"
-      className={`${isOpen ? '' : 'hidden'} agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_12px_32px_rgba(0,0,0,0.22)] ${isMinimized ? 'h-10' : 'h-[400px]'}`}
+      className={`${
+        isOpen ? '' : 'hidden'
+      } agent-ask-ledger-popover fixed z-[9998] flex w-64 flex-col overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-[0_12px_32px_rgba(0,0,0,0.22)] ${
+        isMinimized ? 'h-10' : 'h-[400px]'
+      }`}
       style={{ left: position.left, top: position.top }}
     >
       <header className="flex h-10 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-3">
-        <h2 className="min-w-0 truncate text-sm font-medium text-[var(--ledger-text-primary)]">{sessionTitle}</h2>
+        <h2 className="min-w-0 truncate text-sm font-medium text-[var(--ledger-text-primary)]">
+          {sessionTitle}
+        </h2>
         <div className="flex items-center gap-2 text-[var(--ledger-text-muted)]">
-          <button type="button" aria-label="Minimize Agent" title="Minimize" onClick={() => setIsMinimized((current) => !current)} className="transition hover:text-[var(--ledger-text-primary)]"><Minus size={14} /></button>
-          <button type="button" aria-label="Open full Agent" title="Open full Agent" onClick={openFullscreen} className="transition hover:text-[var(--ledger-text-primary)]"><Maximize2 size={13} /></button>
-          <button type="button" aria-label="Close Agent preview" title="Close" onClick={closeAgent} className="transition hover:text-[var(--ledger-text-primary)]"><X size={16} /></button>
+          <button
+            type="button"
+            aria-label="Minimize Agent"
+            title="Minimize"
+            onClick={() => setIsMinimized((current) => !current)}
+            className="transition hover:text-[var(--ledger-text-primary)]"
+          >
+            <Minus size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="Open full Agent"
+            title="Open full Agent"
+            onClick={openFullscreen}
+            className="transition hover:text-[var(--ledger-text-primary)]"
+          >
+            <Maximize2 size={13} />
+          </button>
+          <button
+            type="button"
+            aria-label="Close Agent preview"
+            title="Close"
+            onClick={closeAgent}
+            className="transition hover:text-[var(--ledger-text-primary)]"
+          >
+            <X size={16} />
+          </button>
         </div>
       </header>
       <div className={`${isMinimized ? 'hidden' : ''} min-h-0 flex-1 overflow-hidden px-2`}>
-        <Suspense fallback={<div className="flex h-full items-end p-2 text-xs text-[var(--ledger-text-muted)]">Ask Ledger…</div>}>
+        <Suspense
+          fallback={
+            <div className="flex h-full items-end p-2 text-xs text-[var(--ledger-text-muted)]">
+              Ask Ledger…
+            </div>
+          }
+        >
           <AgentAskLedgerPanel
             key={`${activeWorkspaceId ?? 'workspace'}:${openGeneration}`}
             workspaceId={activeWorkspaceId}
@@ -10449,7 +10809,9 @@ function AgentMockupPopover() {
             onQuestionChange={setQuestionDraft}
             onQuestionSubmitted={setActiveQuestion}
             onGenerationActiveChange={setIsGenerating}
-            onSessionPersisted={() => window.dispatchEvent(new Event(ASK_LEDGER_SESSION_PERSISTED_EVENT))}
+            onSessionPersisted={() =>
+              window.dispatchEvent(new Event(ASK_LEDGER_SESSION_PERSISTED_EVENT))
+            }
           />
         </Suspense>
       </div>
@@ -10530,13 +10892,14 @@ function TranscriptionFailureToast() {
         duration: 7000,
       });
     };
-    const unsubscribe = transcription?.onProgress((value) => {
-      const event = value as { jobId?: unknown; status?: unknown; error?: unknown } | null;
-      const jobId = String(event?.jobId ?? '').trim();
-      if (event?.status === 'failed') {
-        showFailure(jobId, String(event?.error ?? '').trim());
-      }
-    }) ?? (() => {});
+    const unsubscribe =
+      transcription?.onProgress((value) => {
+        const event = value as { jobId?: unknown; status?: unknown; error?: unknown } | null;
+        const jobId = String(event?.jobId ?? '').trim();
+        if (event?.status === 'failed') {
+          showFailure(jobId, String(event?.error ?? '').trim());
+        }
+      }) ?? (() => {});
     const onLocalFailure = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: unknown; jobId?: unknown }>).detail;
       const message = String(detail?.message ?? '').trim();
@@ -10566,7 +10929,14 @@ function MeetingAutoStopToast() {
         toastIdRef.current = toast.show('No meeting audio detected — stopping soon', {
           detail: 'Ledger will stop this recording unless audio resumes.',
           duration: 0,
-          actions: [{ label: 'Keep recording', onClick: async () => { await autoStop.keepRecording(); } }],
+          actions: [
+            {
+              label: 'Keep recording',
+              onClick: async () => {
+                await autoStop.keepRecording();
+              },
+            },
+          ],
         });
       } else if (!event.active && toastIdRef.current) {
         toast.dismiss(toastIdRef.current);
@@ -10578,7 +10948,9 @@ function MeetingAutoStopToast() {
       if (newMeetingKeysRef.current.has(key)) return;
       newMeetingKeysRef.current.add(key);
       toast.show('New meeting detected — start a new note?', {
-        detail: event.title ? `Ledger is still recording the current note. ${event.title}` : 'Ledger is still recording the current note.',
+        detail: event.title
+          ? `Ledger is still recording the current note. ${event.title}`
+          : 'Ledger is still recording the current note.',
         duration: 7000,
       });
     });

@@ -5,7 +5,7 @@ export type ParsedWebLocation =
   | { kind: 'route'; route: LedgerRoute }
   | { kind: 'app-root' }
   | { kind: 'app-page'; page: 'onboarding' | 'workspaces' }
-  | { kind: 'app-settings'; section: 'account' | 'sessions' | 'accessibility' | 'shortcuts' | 'browser-extension' }
+  | { kind: 'app-settings'; section: 'account' | 'sessions' | 'accessibility' | 'shortcuts' | 'browser-extension' | 'report_bug' }
   | { kind: 'overlay'; route: LedgerOverlayRoute; backgroundPath?: string }
   | { kind: 'invite'; token: string }
   | { kind: 'workspace-root'; workspaceId: string }
@@ -26,8 +26,8 @@ export const parseWebLocation = (location: Pick<Location, 'pathname' | 'search'>
   // entry instead of rendering the route fallback.
   if (pathname === '/' || pathname === '/app' || pathname === '/login') return { kind: 'app-root' };
   const personalSettings = pathname.match(/^\/app\/settings\/([^/]+)$/);
-  if (personalSettings && ['account', 'sessions', 'accessibility', 'shortcuts', 'browser-extension'].includes(personalSettings[1])) {
-    return { kind: 'app-settings', section: personalSettings[1] as 'account' | 'sessions' | 'accessibility' | 'shortcuts' | 'browser-extension' };
+  if (personalSettings && ['account', 'sessions', 'accessibility', 'shortcuts', 'browser-extension', 'report_bug'].includes(personalSettings[1])) {
+    return { kind: 'app-settings', section: personalSettings[1] as 'account' | 'sessions' | 'accessibility' | 'shortcuts' | 'browser-extension' | 'report_bug' };
   }
   const inviteMatch = pathname.match(/^\/invite\/([^/]+)$/);
   if (inviteMatch) {
