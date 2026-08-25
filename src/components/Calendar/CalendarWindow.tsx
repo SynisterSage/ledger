@@ -29,7 +29,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ContextMenu } from '../Common/ContextMenu';
-import * as rruleModule from 'rrule';
+import { RRule } from 'rrule';
 import { useAuthContext } from '../../context/AuthContext';
 import { PinActionButton } from '../Common/PinActionButton';
 import { useSidebar } from '../../context/SidebarContext';
@@ -76,9 +76,6 @@ import {
   CenterItemRow,
   CenterSectionLabel,
 } from './CalendarCenterPrimitives';
-
-// Get RRule from the module - handles both ESM and CommonJS
-const RRule = (rruleModule as any).RRule || (rruleModule as any).default?.RRule || rruleModule;
 
 const preferenceColorMap: Record<
   NonNullable<CalendarPreferenceSnapshot['calendarColor']>,

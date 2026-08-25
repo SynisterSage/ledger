@@ -2,6 +2,8 @@
   "name": "ledger",
   "private": true,
   "version": "0.1.0",
+  "description": "A calm workspace for notes, projects, planning, and accountability.",
+  "author": "Ledger Workspace",
   "type": "module",
   "scripts": {
     "dev": "npm run dev:desktop",

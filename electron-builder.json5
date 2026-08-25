@@ -31,6 +31,9 @@
     icon: 'public/icon.png',
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
+    notarize: {
+      teamId: 'CAY3N8J725',
+    },
     binaries: ['native/LedgerAudioCaptureBridge', 'native/ZoomAccessibilityBridge'],
     extraResources: [
       { from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'ZoomAccessibilityBridge', 'whisper-cli', 'whisper-server'] },
