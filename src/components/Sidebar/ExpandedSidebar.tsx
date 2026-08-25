@@ -42,7 +42,6 @@ import { PinnedSidebarSection } from './PinnedSidebarSection';
 import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
-import { HoldToQuitLogo } from './HoldToQuitLogo';
 import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
 
 type FocusItem = {
@@ -363,14 +362,6 @@ export const ExpandedSidebar = ({
       return;
     }
     void window.desktopWindow?.toggleModule(kind, focus as any);
-  };
-  const handleLogoClick = () => {
-    if (platform.kind === 'web') {
-      openLegacyModule(platform.navigation, activeWorkspaceId, 'new-tab');
-      return;
-    }
-    onCollapseRequest?.();
-    collapseToRail();
   };
   const openQuickCapture = (action: 'note' | 'task' | 'event' | 'reminder' | 'follow-up', projectId?: string, date?: string, entityId?: string) => {
     if (!activeWorkspaceId) return;
@@ -2519,12 +2510,6 @@ export const ExpandedSidebar = ({
           className={`flex h-15 w-full items-center gap-2 px-2.5 ${sidebarTheme.surface}`}
         >
           <div className="flex shrink-0 items-center gap-1.5">
-            <HoldToQuitLogo
-              onClick={handleLogoClick}
-              className="flex h-8 w-8 items-center justify-center rounded-xl transition hover:bg-[var(--ledger-surface-muted)]"
-              imageClassName="h-7 w-7 opacity-100"
-              title="Ledger"
-            />
             <WorkspaceSwitcherMenu variant="sidebar" compact />
           </div>
 
@@ -2809,13 +2794,6 @@ export const ExpandedSidebar = ({
         style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5 bg-transparent text-left">
-            <HoldToQuitLogo
-              onClick={platform.kind === 'web' ? handleLogoClick : undefined}
-              imageClassName="h-7 w-7 shrink-0"
-              title="Ledger"
-            />
-          </div>
           <button
             type="button"
             onMouseDown={(e) => e.stopPropagation()}

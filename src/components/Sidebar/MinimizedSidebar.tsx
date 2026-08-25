@@ -14,7 +14,6 @@ import type React from 'react';
 import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
-import { HoldToQuitLogo } from './HoldToQuitLogo';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
 import { runtimeConfig } from '../../config/runtime';
@@ -24,7 +23,7 @@ export const MinimizedSidebar = ({
 }: {
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
 }) => {
-  const { collapseSidebar, setState, position } = useSidebar();
+  const { setState, position } = useSidebar();
   const { activeWorkspaceId } = useWorkspaceContext();
   const platform = usePlatform();
   const toggleModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
@@ -34,13 +33,6 @@ export const MinimizedSidebar = ({
   const openModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
     if (platform.kind === 'web') return openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
     return window.desktopWindow?.openModule(kind, focus as any);
-  };
-  const handleLogoClick = () => {
-    if (platform.kind === 'web') {
-      openLegacyModule(platform.navigation, activeWorkspaceId, 'new-tab');
-      return;
-    }
-    collapseSidebar();
   };
   const handleExit = () => {
     if (platform.kind === 'web') {
@@ -80,13 +72,6 @@ export const MinimizedSidebar = ({
             : 'mx-auto flex h-full w-10 flex-col items-center justify-between'
         } shrink-0`}
       >
-        <HoldToQuitLogo
-          onClick={handleLogoClick}
-          className="flex h-10 w-10 items-center justify-center bg-transparent transition-opacity duration-150 hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-          imageClassName="h-7 w-7 opacity-100"
-          title="Ledger"
-        />
-
         <div className={`flex ${isHorizontal ? 'flex-row gap-3' : 'flex-col gap-3 self-center'}`}>
           <button
             aria-label="Open search"

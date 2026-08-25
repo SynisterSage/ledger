@@ -21,6 +21,10 @@ function requestTimeoutMs() {
 }
 
 export class PersistentWhisperRuntime {
+  private readonly executable: string;
+  private readonly modelPath: string;
+  private readonly log: (event: string, detail?: Record<string, unknown>) => void;
+  private readonly backend: WhisperBackend;
   private process: ChildProcess | null = null;
   private port: number | null = null;
   private readyPromise: Promise<void> | null = null;
@@ -30,7 +34,12 @@ export class PersistentWhisperRuntime {
   private lastStartupMsValue = 0;
   private healthy = false;
 
-  constructor(private readonly executable: string, private readonly modelPath: string, private readonly log: (event: string, detail?: Record<string, unknown>) => void = () => {}, private readonly backend: WhisperBackend = 'cpu') {}
+  constructor(executable: string, modelPath: string, log: (event: string, detail?: Record<string, unknown>) => void = () => {}, backend: WhisperBackend = 'cpu') {
+    this.executable = executable;
+    this.modelPath = modelPath;
+    this.log = log;
+    this.backend = backend;
+  }
 
   get available() { return Boolean(this.executable && fs.existsSync(this.executable)); }
   stats() { return { backend: this.backend, executable: this.executable, startupCount: this.startupCountValue, totalStartupMs: this.totalStartupMsValue, lastStartupMs: this.lastStartupMsValue, healthy: this.healthy, port: this.port }; }
@@ -40,16 +49,46 @@ export class PersistentWhisperRuntime {
     if (this.readyPromise) { await this.readyPromise; return this.lastStartupMsValue; }
     if (!this.available) throw new Error('The persistent Whisper runtime is not installed.');
     const startedAt = Date.now();
-    this.port = await findFreePort();
+    const port = await findFreePort();
+    this.port = port;
     this.readyPromise = new Promise<void>((resolve, reject) => {
       const backendArgs = this.backend === 'cpu' ? ['-ng'] : [];
-      const child = spawn(this.executable, [...backendArgs, '-m', this.modelPath, '--host', '127.0.0.1', '--port', String(this.port)], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(this.executable, [...backendArgs, '-m', this.modelPath, '--host', '127.0.0.1', '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'] });
       this.process = child;
       let diagnostics = '';
-      const collect = (chunk: Buffer) => { diagnostics = `${diagnostics}${String(chunk)}`.slice(-4000); if (/whisper server listening at http:\/\/127\.0\.0\.1:/i.test(diagnostics)) { this.healthy = true; this.lastStartupMsValue = Date.now() - startedAt; this.totalStartupMsValue += this.lastStartupMsValue; this.startupCountValue += 1; this.log('runtime_ready', { startupMs: this.lastStartupMsValue, startupCount: this.startupCountValue }); resolve(); } };
+      let settled = false;
+      const markReady = (source: 'port' | 'stdout') => {
+        if (settled || this.process !== child) return;
+        settled = true;
+        this.healthy = true;
+        this.lastStartupMsValue = Date.now() - startedAt;
+        this.totalStartupMsValue += this.lastStartupMsValue;
+        this.startupCountValue += 1;
+        this.log('runtime_ready', { startupMs: this.lastStartupMsValue, startupCount: this.startupCountValue, source });
+        resolve();
+      };
+      const failBeforeReady = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        this.healthy = false;
+        this.readyPromise = null;
+        reject(error);
+      };
+      const collect = (chunk: Buffer) => {
+        diagnostics = `${diagnostics}${String(chunk)}`.slice(-4000);
+        if (/whisper server listening at http:\/\/127\.0\.0\.1:/i.test(diagnostics)) markReady('stdout');
+      };
       child.stdout.on('data', collect); child.stderr.on('data', collect);
-      child.once('error', (error) => { this.healthy = false; this.readyPromise = null; reject(error); });
-      child.once('exit', (code, signal) => { const wasReady = this.healthy; this.healthy = false; this.readyPromise = null; this.process = null; if (!wasReady) reject(new Error(diagnostics.trim() || `Whisper runtime exited with code ${code ?? signal ?? 'unknown'}.`)); else this.log('runtime_exit', { code, signal }); });
+      child.once('error', (error) => { failBeforeReady(error); });
+      child.once('exit', (code, signal) => {
+        const wasReady = this.healthy;
+        this.healthy = false;
+        this.readyPromise = null;
+        this.process = null;
+        if (!wasReady) failBeforeReady(new Error(diagnostics.trim() || `Whisper runtime exited with code ${code ?? signal ?? 'unknown'}.`));
+        else this.log('runtime_exit', { code, signal });
+      });
+      void waitForTcpPort(port, 30_000).then(() => markReady('port'), failBeforeReady);
     });
     try { await this.readyPromise; return this.lastStartupMsValue; } finally { this.readyPromise = null; }
   }
@@ -69,13 +108,13 @@ export class PersistentWhisperRuntime {
         let response: Response;
         try {
           response = await fetch(`http://127.0.0.1:${this.port}/inference`, { method: 'POST', body: form, signal: this.abortController.signal });
+          if (!response.ok) throw new Error(`Whisper runtime returned HTTP ${response.status}.`);
+          const payload = await response.json() as { segments?: ServerSegment[] };
+          this.abortController = null;
+          return { segments: Array.isArray(payload.segments) ? payload.segments : [], runtimeStartupMs, inferenceWallMs: Date.now() - startedAt };
         } finally {
           clearTimeout(timeout);
         }
-        if (!response.ok) throw new Error(`Whisper runtime returned HTTP ${response.status}.`);
-        const payload = await response.json() as { segments?: ServerSegment[] };
-        this.abortController = null;
-        return { segments: Array.isArray(payload.segments) ? payload.segments : [], runtimeStartupMs, inferenceWallMs: Date.now() - startedAt };
       } catch (error) {
         this.abortController = null;
         const aborted = error instanceof Error && error.name === 'AbortError';
@@ -100,4 +139,27 @@ async function findFreePort() {
   const server = net.createServer();
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolve()); });
   const address = server.address(); const port = typeof address === 'object' && address ? address.port : 0; await new Promise<void>((resolve) => server.close(() => resolve())); if (!port) throw new Error('Could not allocate a loopback port for Whisper.'); return port;
+}
+
+async function waitForTcpPort(port: number, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  await new Promise<void>((resolve, reject) => {
+    const attempt = () => {
+      const socket = net.createConnection({ host: '127.0.0.1', port });
+      let finished = false;
+      const finish = (error?: Error) => {
+        if (finished) return;
+        finished = true;
+        socket.destroy();
+        if (error) {
+          if (Date.now() >= deadline) reject(error);
+          else setTimeout(attempt, 50);
+        } else resolve();
+      };
+      socket.once('connect', () => finish());
+      socket.once('error', (error) => finish(error));
+      socket.setTimeout(Math.min(250, Math.max(1, deadline - Date.now())), () => finish(new Error('Whisper runtime did not start listening before the startup timeout.')));
+    };
+    attempt();
+  });
 }

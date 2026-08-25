@@ -1823,7 +1823,7 @@ const floatingMeetingIndicator = new FloatingMeetingIndicatorController(
         maximizable: false,
         closable: false,
         ...getFloatingMeetingIndicatorPlatformOptions(process.platform),
-        ...(process.platform === 'darwin' ? { hasShadow: true } : {}),
+        ...(process.platform === 'darwin' ? { hasShadow: false } : {}),
         webPreferences: {
           preload: path.join(__dirname, 'preload.mjs'),
           contextIsolation: true,
@@ -6733,6 +6733,11 @@ function createSidebarWindow() {
       applySidebarVisibility(false);
       return;
     }
+    // An explicit Quit request must be allowed through even when the sidebar
+    // is using the macOS fullscreen/panel close protection below. That
+    // protection is for ordinary window closes only; otherwise packaged
+    // fullscreen builds minimize the sidebar and keep the app process alive.
+    if (isQuittingApp) return;
     if (process.platform !== 'darwin') return;
     if (currentSidebarMode !== 'fullscreen') return;
 

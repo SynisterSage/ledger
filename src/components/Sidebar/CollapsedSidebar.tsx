@@ -3,7 +3,6 @@ import { useSidebar } from '../../context/SidebarContext';
 import { CircleUserRound, Search, BarChart3, CalendarDays, Folder, StickyNote, Funnel, ChevronUp, ChevronDown, Power, Sparkles } from 'lucide-react';
 import { useSearch } from '../../context/SearchContext';
 import { sidebarTheme } from './sidebarTheme';
-import { HoldToQuitLogo } from './HoldToQuitLogo';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
 import { runtimeConfig } from '../../config/runtime';
@@ -64,13 +63,6 @@ export const CollapsedSidebar = ({
       {isHorizontal ? (
         <>
           <div className="flex items-center gap-3">
-            <HoldToQuitLogo
-              onClick={handleClick}
-              className="flex h-9 w-9 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-              imageClassName="block h-8 w-8 opacity-100"
-              title="Ledger"
-            />
-
             <button
               aria-label="Open search"
               onClick={() => {
@@ -172,12 +164,14 @@ export const CollapsedSidebar = ({
           </div>
         </>
       ) : (
-        <HoldToQuitLogo
+        <button
           onClick={handleClick}
-          className="flex h-10 w-10 items-center justify-center bg-transparent transition-opacity duration-200 ease-out hover:opacity-80 focus:outline-none focus-visible:outline-none focus-visible:ring-0"
-          imageClassName="block h-7 w-7 opacity-100"
-          title="Ledger"
-        />
+          onMouseDown={(e) => e.stopPropagation()}
+          aria-label="Expand sidebar"
+          className={iconButtonClass}
+        >
+          <ExpandChevron size={18} />
+        </button>
       )}
       
     </div>
