@@ -138,19 +138,24 @@ export function createTouchBarControls(options: TouchBarControlBuildOptions) {
         })),
         change: (nextIndex) => {
           const segment = item.items[nextIndex];
-          if (segment && segment.enabled !== false)
+          if (
+            segment &&
+            segment.enabled !== false &&
+            options.canExecuteAction(segment.actionId, actionContext(currentContext))
+          ) {
             options.dispatchAction(segment.actionId, actionContext(currentContext));
+          }
         },
       });
       segmentBindings.push((next) => {
         if ('segments' in control) {
-          (control as { segments: Array<{ enabled?: boolean }> }).segments = item.items.map(
-            (segment) => ({
-              enabled:
-                segment.enabled !== false &&
-                options.canExecuteAction(segment.actionId, actionContext(next)),
-            })
-          );
+          (control as { segments: Array<{ label?: string; icon?: NativeImage; enabled?: boolean }> }).segments = item.items.map((segment) => ({
+            label: segment.label,
+            icon: iconFor(options.native, segment.icon),
+            enabled:
+              segment.enabled !== false &&
+              options.canExecuteAction(segment.actionId, actionContext(next)),
+          }));
         }
         if ('selectedIndex' in control) {
           const selected = selectedSegmentId(item, next);

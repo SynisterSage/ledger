@@ -92,16 +92,6 @@ export const MinimizedSidebar = ({
           >
             <Search size={18} />
           </button>
-          <button
-            aria-label="Open overview"
-            onClick={() => {
-              toggleModule('dashboard');
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className={neutralIcon}
-          >
-            <BarChart3 size={18} />
-          </button>
           {platform.kind === 'desktop' && (
             <button
               aria-label="Open Ask Ledger"
@@ -112,6 +102,16 @@ export const MinimizedSidebar = ({
               <Sparkles size={18} />
             </button>
           )}
+          <button
+            aria-label="Open overview"
+            onClick={() => {
+              toggleModule('dashboard');
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className={neutralIcon}
+          >
+            <BarChart3 size={18} />
+          </button>
           <button
             aria-label="Open calendar"
               onClick={() => openModule('calendar')}

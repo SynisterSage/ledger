@@ -10270,7 +10270,11 @@ function initializeTouchBarController() {
       createSpacer: (options) => new TouchBar.TouchBarSpacer(options),
       createSegmented: (options) => new TouchBar.TouchBarSegmentedControl(options),
       createPopover: (options) => new TouchBar.TouchBarPopover(options),
-      createIcon: (asset) => nativeImage.createFromDataURL(asset),
+      createIcon: (asset) => {
+        const image = nativeImage.createFromDataURL(asset);
+        image.setTemplateImage(true);
+        return image;
+      },
     },
     dispatchAction: (action, context) => {
       actionDispatcher.dispatchLedgerAction(action, {

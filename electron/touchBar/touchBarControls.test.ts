@@ -93,6 +93,10 @@ test('segmented controls preserve selection, mapping, and disabled states', () =
   );
   assert.equal(fixture.segmented[0].selectedIndex, 1);
   assert.equal(fixture.segmented[0].segments[2].enabled, false);
+  assert.deepEqual(
+    fixture.segmented[0].segments.map((segment: { label?: string }) => segment.label),
+    ['Day', 'Week', 'Month']
+  );
   fixture.segmented[0].change(1, true);
   assert.deepEqual(fixture.dispatched, ['calendar.view.week']);
 });

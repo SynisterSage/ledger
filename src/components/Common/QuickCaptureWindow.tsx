@@ -1,4 +1,4 @@
-import { ArrowRight, Bell, Calendar, Check, FileText, Maximize2, Minus, X } from 'lucide-react';
+import { Maximize2, Minus, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
 import { useAuthContext } from '../../context/AuthContext';
@@ -157,28 +157,12 @@ const QuickCaptureHeader = ({
   onMinimize: () => void;
   onToggleFullscreen: () => void;
 }) => {
-  const icon =
-    kind === 'quick-follow-up' ? (
-      <ArrowRight size={15} />
-    ) : kind === 'quick-task' ? (
-      <Check size={15} />
-    ) : kind === 'quick-note' ? (
-      <FileText size={15} />
-    ) : kind === 'quick-reminder' ? (
-      <Bell size={15} />
-    ) : (
-      <Calendar size={15} />
-    );
-
   const iconButton =
     'inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20';
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-3.5">
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-accent-soft)] text-[var(--ledger-accent)]">
-          {icon}
-        </span>
         <h1 className="truncate text-[13px] font-semibold text-[var(--ledger-text-primary)]">
           {quickCaptureTitle(kind)}
         </h1>

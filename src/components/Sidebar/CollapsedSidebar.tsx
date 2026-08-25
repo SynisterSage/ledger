@@ -85,14 +85,6 @@ export const CollapsedSidebar = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              aria-label="Open overview"
-              onClick={() => toggleModule('dashboard')}
-              onMouseDown={(e) => e.stopPropagation()}
-              className={iconButtonClass}
-            >
-              <BarChart3 size={18} />
-            </button>
             {platform.kind === 'desktop' && (
               <button
                 aria-label="Open Ask Ledger"
@@ -103,6 +95,14 @@ export const CollapsedSidebar = ({
                 <Sparkles size={18} />
               </button>
             )}
+            <button
+              aria-label="Open overview"
+              onClick={() => toggleModule('dashboard')}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={iconButtonClass}
+            >
+              <BarChart3 size={18} />
+            </button>
             <button
               aria-label="Open circle"
               onClick={() => toggleModule('circle')}

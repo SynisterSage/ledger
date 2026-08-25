@@ -2534,11 +2534,6 @@ export const ExpandedSidebar = ({
                 icon: Bell,
                 action: () => openSidebarModule('notifications'),
               },
-              {
-                label: 'Overview',
-                icon: BarChart3,
-                action: () => toggleSidebarModule('dashboard'),
-              },
               ...(platform.kind === 'desktop'
                 ? [{
                     label: 'Ask Ledger',
@@ -2546,6 +2541,11 @@ export const ExpandedSidebar = ({
                     action: () => openSidebarModule('new-tab'),
                   }]
                 : []),
+              {
+                label: 'Overview',
+                icon: BarChart3,
+                action: () => toggleSidebarModule('dashboard'),
+              },
               ...(!isPersonalWorkspace
                 ? [
                     {
@@ -2848,11 +2848,6 @@ export const ExpandedSidebar = ({
           </p>
           <div className="space-y-1">
             {[
-              {
-                label: 'Overview',
-                icon: BarChart3,
-                action: () => toggleSidebarModule('dashboard'),
-              },
               ...(platform.kind === 'desktop'
                 ? [{
                     label: 'Ask Ledger',
@@ -2860,6 +2855,11 @@ export const ExpandedSidebar = ({
                     action: () => openSidebarModule('new-tab'),
                   }]
                 : []),
+              {
+                label: 'Overview',
+                icon: BarChart3,
+                action: () => toggleSidebarModule('dashboard'),
+              },
               {
                 label: 'Projects',
                 icon: Folder,

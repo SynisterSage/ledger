@@ -37,8 +37,8 @@ test('meeting state takes priority for the active meeting note', () => {
     resource: { type: 'note', id: 'meeting-note' },
     meeting: { active: true, state: 'recording', noteId: 'meeting-note' },
   });
-  assert.equal(resolveTouchBarLayout(base).id, 'notes.meeting');
-  assert.equal(resolveTouchBarLayout({ ...base, meeting: { ...base.meeting!, state: 'paused' } }).id, 'notes.meeting');
+  assert.equal(resolveTouchBarLayout(base).id, 'notes.meeting.recording');
+  assert.equal(resolveTouchBarLayout({ ...base, meeting: { ...base.meeting!, state: 'paused' } }).id, 'notes.meeting.paused');
   assert.equal(resolveTouchBarLayout({ ...base, meeting: { ...base.meeting!, state: 'completed', transcriptAvailable: true } }).id, 'notes.completed-meeting');
 });
 

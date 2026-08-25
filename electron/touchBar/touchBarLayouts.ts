@@ -31,6 +31,9 @@ export type TouchBarLayoutId =
   | 'projects.detail'
   | 'calendar'
   | 'notes.meeting'
+  | 'notes.meeting.recording'
+  | 'notes.meeting.paused'
+  | 'notes.meeting.processing'
   | 'notes.completed-meeting'
   | `${'default' | 'notes.list' | 'notes.editor' | 'projects.list' | 'projects.detail' | 'calendar'}.meeting`;
 
@@ -103,8 +106,8 @@ const PROJECTS_DETAIL_LAYOUT = [
 ] as const satisfies readonly TouchBarLayoutItem[];
 const CALENDAR_LAYOUT = [
   action('calendar.today'),
-  action('calendar.previous'),
-  action('calendar.next'),
+  { ...action('calendar.previous'), label: '' },
+  { ...action('calendar.next'), label: '' },
   spacer('section'),
   { type: 'segmented', items: [
     { id: 'day', actionId: 'calendar.view.day', label: 'Day' },
@@ -152,8 +155,8 @@ export const TOUCH_BAR_LAYOUTS: Record<string, TouchBarLayoutDefinition> = {
 };
 
 export const MEETING_LAYOUTS = {
-  recording: { id: 'notes.meeting', items: MEETING_RECORDING_LAYOUT },
-  paused: { id: 'notes.meeting', items: MEETING_PAUSED_LAYOUT },
-  processing: { id: 'notes.meeting', items: MEETING_PROCESSING_LAYOUT },
+  recording: { id: 'notes.meeting.recording', items: MEETING_RECORDING_LAYOUT },
+  paused: { id: 'notes.meeting.paused', items: MEETING_PAUSED_LAYOUT },
+  processing: { id: 'notes.meeting.processing', items: MEETING_PROCESSING_LAYOUT },
   completed: { id: 'notes.completed-meeting', items: COMPLETED_MEETING_LAYOUT },
 } as const;
