@@ -20174,7 +20174,24 @@ const ensureCalendarSubscription = async (userId, workspaceId) => {
         .insert({ user_id: userId, workspace_id: workspaceId, token, is_active: true })
         .select('token')
         .single();
-      if (createdToken.error) throw createdToken.error;
+      if (createdToken.error) {
+        // Two Calendar surfaces can initialize the subscription concurrently.
+        // The unique active-token index is intentional; reuse the token that
+        // won the race instead of turning the harmless race into a 500/404.
+        if (createdToken.error.code !== '23505') throw createdToken.error;
+        const concurrentToken = await supabase
+          .from('calendar_sync_tokens')
+          .select('token, workspace_id')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .or(`workspace_id.eq.${workspaceId},workspace_id.is.null`)
+          .order('workspace_id', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        if (concurrentToken.error) throw concurrentToken.error;
+        if (!concurrentToken.data?.token) throw createdToken.error;
+        token = concurrentToken.data.token;
+      }
     }
 
     const tokenHash = hashCalendarSubscriptionToken(token);
@@ -20193,19 +20210,31 @@ const ensureCalendarSubscription = async (userId, workspaceId) => {
         })
         .select('*')
         .single();
-      if (created.error) throw created.error;
-      subscription = created.data;
+      if (created.error) {
+        if (created.error.code !== '23505') throw created.error;
+        const concurrentSubscription = await supabase
+          .from('calendar_subscriptions')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle();
+        if (concurrentSubscription.error) throw concurrentSubscription.error;
+        if (!concurrentSubscription.data) throw created.error;
+        subscription = concurrentSubscription.data;
+      } else {
+        subscription = created.data;
 
-      const calendars = await supabase
-        .from('calendars')
-        .select('id')
-        .eq('workspace_id', workspaceId);
-      if (calendars.error) throw calendars.error;
-      if (calendars.data?.length) {
-        const links = await supabase.from('calendar_subscription_calendars').insert(
-          calendars.data.map((calendar) => ({ subscription_id: subscription.id, calendar_id: calendar.id }))
-        );
-        if (links.error) throw links.error;
+        const calendars = await supabase
+          .from('calendars')
+          .select('id')
+          .eq('workspace_id', workspaceId);
+        if (calendars.error) throw calendars.error;
+        if (calendars.data?.length) {
+          const links = await supabase.from('calendar_subscription_calendars').insert(
+            calendars.data.map((calendar) => ({ subscription_id: subscription.id, calendar_id: calendar.id }))
+          );
+          if (links.error) throw links.error;
+        }
       }
     } else if (!tokenLookup.data || tokenLookup.data.workspace_id !== workspaceId || hashCalendarSubscriptionToken(token) !== subscription.token_hash) {
       const refreshed = await supabase

@@ -750,7 +750,7 @@ export const NotesHome = ({
             </div>
           )}
         </div>
-        {!askLedgerOpen && (
+        {notes.length > 0 && !askLedgerOpen && (
           <div className="relative sticky bottom-5 z-10 mt-auto flex h-28 w-full items-end">
             <form
               className="relative mx-auto flex h-12 w-[min(520px,calc(100%-32px))] items-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] pl-4 pr-1.5 shadow-[var(--ledger-shadow)]"
