@@ -10482,6 +10482,7 @@ function App() {
         <NotificationCenterProvider>
           {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
           {user && !isModuleWindow ? <TranscriptionFailureToast /> : null}
+          {user && !isModuleWindow ? <MeetingAutoStopToast /> : null}
           <AuthSessionToastReset />
           {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? (
             <McpScopeUpgradeAuthorizationPage
@@ -10534,6 +10535,46 @@ function TranscriptionFailureToast() {
       });
     });
     return unsubscribe;
+  }, [toast]);
+
+  return null;
+}
+
+function MeetingAutoStopToast() {
+  const toast = useToast();
+  const toastIdRef = useRef<string | null>(null);
+  const newMeetingKeysRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    const autoStop = window.meetingAutoStop;
+    if (!autoStop) return;
+    const unsubscribe = autoStop.onGrace((event) => {
+      if (event.active && !toastIdRef.current) {
+        toastIdRef.current = toast.show('No meeting audio detected — stopping soon', {
+          detail: 'Ledger will stop this recording unless audio resumes.',
+          duration: 0,
+          actions: [{ label: 'Keep recording', onClick: async () => { await autoStop.keepRecording(); } }],
+        });
+      } else if (!event.active && toastIdRef.current) {
+        toast.dismiss(toastIdRef.current);
+        toastIdRef.current = null;
+      }
+    });
+    const unsubscribeNewMeeting = autoStop.onNewMeeting((event) => {
+      const key = `${event.noteId}:${event.title ?? ''}`;
+      if (newMeetingKeysRef.current.has(key)) return;
+      newMeetingKeysRef.current.add(key);
+      toast.show('New meeting detected — start a new note?', {
+        detail: event.title ? `Ledger is still recording the current note. ${event.title}` : 'Ledger is still recording the current note.',
+        duration: 7000,
+      });
+    });
+    return () => {
+      unsubscribe();
+      unsubscribeNewMeeting();
+      if (toastIdRef.current) toast.dismiss(toastIdRef.current);
+      toastIdRef.current = null;
+    };
   }, [toast]);
 
   return null;

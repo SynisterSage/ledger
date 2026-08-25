@@ -51,6 +51,12 @@ interface ImportMeta {
 }
 
 interface Window {
+  speakerTags?: {
+    status: () => Promise<{ platform: string; state: 'authorized' | 'not_authorized' | 'unsupported' }>;
+    setup: () => Promise<{ platform: string; state: 'authorized' | 'not_authorized' | 'unsupported' }>;
+    start: () => Promise<unknown>;
+    onEvent: (listener: (event: unknown) => void) => () => void;
+  };
   ledgerIpc?: {
     events?: Record<string, (listenerOrSubscription: ((...args: any[]) => void) | string) => string | void>;
     commands?: Record<string, (payload?: any) => Promise<unknown> | void>;
@@ -79,7 +85,7 @@ interface Window {
     inspect: (sessionId?: string) => Promise<unknown>;
     recover: (payload: { sessionId: string; noteId: string; workspaceId: string }) => Promise<unknown>;
     discardRecovery: (sessionId: string) => Promise<unknown>;
-    start: (payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null }) => Promise<unknown>;
+    start: (payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null; scheduledEndAt?: string | null; transcriptOffsetMs?: number }) => Promise<unknown>;
     testSource: (source: 'user_microphone' | 'system_audio', microphoneDeviceId?: string | null) => Promise<unknown>;
     pause: () => Promise<unknown>;
     resume: () => Promise<unknown>;
@@ -90,6 +96,14 @@ interface Window {
     onLevel: (listener: (event: { source: 'user_microphone' | 'system_audio'; level: number }) => void) => () => void;
     onError: (listener: (event: { source: 'user_microphone' | 'system_audio'; error: string }) => void) => () => void;
     onDevicesChanged: (listener: () => void) => () => void;
+  };
+  meetingAutoStop?: {
+    keepRecording: () => Promise<unknown>;
+    signalCallEnded: (noteId: string) => Promise<unknown>;
+    signalNewMeeting: (payload: { noteId: string; title?: string }) => Promise<unknown>;
+    onGrace: (listener: (event: { active: boolean; noteId: string; reason?: string }) => void) => () => void;
+    onStopRequested: (listener: (event: { noteId: string; reason: string }) => void) => () => void;
+    onNewMeeting: (listener: (event: { noteId: string; title?: string }) => void) => () => void;
   };
   meetingTranscription?: {
     modelStatus: () => Promise<unknown>;

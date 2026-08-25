@@ -10,6 +10,7 @@ import { decodeFloat32Base64, normalizeWavForTranscription, resampleToMono16k, w
 import { PersistentWhisperRuntime } from './whisperRuntime';
 import { LiveSpeechBuffer, type SpeechWindow } from './liveSpeechBuffer';
 import { mergeCoverage } from './transcriptionCoverage';
+import { ZoomSpeakerAttribution } from './zoomSpeakerAttribution';
 
 export type TranscriptionProgress = { jobId: string; sessionId: string; noteId: string; workspaceId: string; status: TranscriptionJob['status']; progress: number; currentSource: LocalTranscriptSegment['audioSource'] | null; currentChunkSequence: number | null; completedChunks: number; totalChunks: number; queueDepth: number; error: string | null };
 export type TranscriptionSegmentsEvent = { jobId: string; sessionId: string; noteId: string; workspaceId: string; chunkKey: string; source: RecordingChunk['source']; sequence: number; finalizedAt: string | null; segments: LocalTranscriptSegment[]; metrics: { audioDurationSeconds: number; queueWaitMs: number; preprocessingMs: number; runtimeStartupMs: number; whisperWallMs: number; finalizedToVisibleMs: number; rtf: number; queueDepth: number; speechWindowDurationMs: number; silenceSkippedMs: number; captureToWindowFinalizedMs: number; windowToWhisperStartMs: number; overlapMs: number; dedupEvents: number } };
@@ -17,7 +18,7 @@ type RuntimeSegment = { offsets?: { from?: number; to?: number }; text?: string;
 type TranscriptionWorkItem = { key: string; source: RecordingChunk['source']; sequence: number; fileName: string; startAt: string; endAt: string | null; durationSeconds: number; finalized: boolean; identity: string; liveWindow?: TranscriptionWindowRecord };
 type TranscribedChunk = { rows: LocalTranscriptSegment[]; preprocessingMs: number; runtimeStartupMs: number; whisperWallMs: number; runtimeMode: 'persistent' | 'cli' };
 type MeetingMetrics = { audioDurationSeconds: number; chunks: number; liveWindows: number; archivalFallbackWindows: number; inferenceMs: number; preprocessingMs: number; rtfs: number[]; visibleLatenciesMs: number[]; silenceSkippedMs: number; speechWindowMs: number; maxQueueDepth: number; failures: number; retries: number; recoveryFallbacks: number };
-type LiveSessionState = { sessionStartedAt: number; buffers: Record<RecordingChunk['source'], LiveSpeechBuffer>; nextSequence: Record<RecordingChunk['source'], number>; skippedSilenceMs: number; windows: number; dedupEvents: number };
+type LiveSessionState = { sessionStartedAt: number; transcriptOffsetMs: number; buffers: Record<RecordingChunk['source'], LiveSpeechBuffer>; nextSequence: Record<RecordingChunk['source'], number>; skippedSilenceMs: number; windows: number; dedupEvents: number };
 const chunkKey = (chunk: Pick<RecordingChunk, 'source' | 'sequence'>) => `${chunk.source}:${chunk.sequence}`;
 
 export class LocalTranscriptionService {
@@ -37,7 +38,7 @@ export class LocalTranscriptionService {
   private progressListeners = new Set<(value: TranscriptionProgress) => void>();
   private segmentListeners = new Set<(value: TranscriptionSegmentsEvent) => void>();
 
-  constructor(sessions = new RecordingSessionStore()) {
+  constructor(sessions = new RecordingSessionStore(), private readonly zoomAttribution?: ZoomSpeakerAttribution) {
     this.sessions = sessions;
     const log = (event: string, detail?: Record<string, unknown>) => console.info('[transcription]', JSON.stringify({ event, ...detail }));
     const cpuServer = this.serverPath('cpu');
@@ -80,7 +81,7 @@ export class LocalTranscriptionService {
     if (!session || session.kind !== 'meeting' || !session.noteId || !session.workspaceId) return;
     let state = this.liveSessions.get(event.sessionId);
     if (!state) {
-      state = { sessionStartedAt: Date.parse(session.startedAt), buffers: { user_microphone: new LiveSpeechBuffer({ source: 'user_microphone' }), system_audio: new LiveSpeechBuffer({ source: 'system_audio' }) }, nextSequence: { user_microphone: 0, system_audio: 0 }, skippedSilenceMs: 0, windows: 0, dedupEvents: 0 };
+      state = { sessionStartedAt: Date.parse(session.startedAt), transcriptOffsetMs: Math.max(0, session.transcriptOffsetMs ?? 0), buffers: { user_microphone: new LiveSpeechBuffer({ source: 'user_microphone' }), system_audio: new LiveSpeechBuffer({ source: 'system_audio' }) }, nextSequence: { user_microphone: 0, system_audio: 0 }, skippedSilenceMs: 0, windows: 0, dedupEvents: 0 };
       this.liveSessions.set(event.sessionId, state);
     }
     try {
@@ -113,8 +114,8 @@ export class LocalTranscriptionService {
     const key = `live:${window.source}:${sequence}`;
     const filePath = path.join(this.jobs.storageRoot, 'live-audio', `${job.jobId}-${window.source}-${sequence}.wav`);
     writeTranscriptionWav(filePath, window.samples);
-    const startAt = new Date(state.sessionStartedAt + window.startOffsetMs).toISOString();
-    const endAt = new Date(state.sessionStartedAt + window.endOffsetMs).toISOString();
+    const startAt = new Date(state.sessionStartedAt + state.transcriptOffsetMs + window.startOffsetMs).toISOString();
+    const endAt = new Date(state.sessionStartedAt + state.transcriptOffsetMs + window.endOffsetMs).toISOString();
     const record: TranscriptionWindowRecord = { key, kind: 'live-window', sessionId: session.sessionId, noteId: session.noteId, workspaceId: session.workspaceId, audioSource: window.source, sequence, filePath, startAt, endAt, durationSeconds: window.samples.length / 16_000, finalized: true, state: 'queued', queuedAt: new Date().toISOString(), processingAt: null, completedAt: null, failedAt: null, error: null, speechDurationMs: window.speechDurationMs, silenceSkippedMs: window.silenceSkippedMs, overlapMs: window.overlapMs };
     this.updateJob(job.jobId, { liveWindowRecords: { ...job.liveWindowRecords, [key]: record }, totalChunks: job.totalChunks + 1, error: null }, 'speech_window_enqueued');
     if (this.modelManager.status().installed) void this.run(job.jobId);
@@ -210,11 +211,14 @@ export class LocalTranscriptionService {
         const processingPatch = next.liveWindow ? { liveWindowRecords: { ...refreshedLiveRecords, [key]: processingRecord } } : { chunkRecords: { ...records, [key]: processingRecord } };
         this.updateJob(jobId, { ...processingPatch, status: 'transcribing', currentSource: next.source, currentChunkSequence: next.sequence, progress: this.progress({ ...records, ...refreshedLiveRecords }) }, 'chunk_started');
         try {
-          const parsed = await this.transcribeWorkItem(job, next, Date.parse(session.startedAt)); const latest = this.jobs.get(jobId); if (!latest) return;
+          const parsed = await this.transcribeWorkItem(job, next, Date.parse(session.startedAt));
+          const attributedRows = this.zoomAttribution?.attribute(session.sessionId, parsed.rows) ?? parsed.rows;
+          const attributedParsed = { ...parsed, rows: attributedRows };
+          const latest = this.jobs.get(jobId); if (!latest) return;
           const completedRecord = { ...processingRecord, state: 'completed' as const, completedAt: new Date().toISOString(), error: null };
           const updatedRecords = { ...latest.chunkRecords, ...(next.liveWindow ? {} : { [key]: completedRecord }) };
           const updatedLiveRecords = { ...(latest.liveWindowRecords ?? {}), ...(next.liveWindow ? { [key]: completedRecord } : {}) };
-          const merged = [...latest.segments, ...parsed.rows].sort((a, b) => a.startMs - b.startMs || a.audioSource.localeCompare(b.audioSource) || a.segmentOrder - b.segmentOrder);
+          const merged = [...latest.segments, ...attributedRows].sort((a, b) => a.startMs - b.startMs || a.audioSource.localeCompare(b.audioSource) || a.segmentOrder - b.segmentOrder);
           const coverage = this.coverageForRecords(updatedRecords, updatedLiveRecords);
           this.updateJob(jobId, { segments: dedupeSegments(merged), chunkRecords: updatedRecords, liveWindowRecords: updatedLiveRecords, coverage, completedChunks: this.completedCount({ ...updatedRecords, ...updatedLiveRecords }), progress: this.progress({ ...updatedRecords, ...updatedLiveRecords }), error: null }, next.liveWindow ? 'speech_window_complete' : 'chunk_complete');
           if (next.liveWindow) fs.rmSync(next.fileName, { force: true });
@@ -222,7 +226,7 @@ export class LocalTranscriptionService {
           const meeting = this.meetingMetrics.get(jobId) ?? emptyMeetingMetrics();
           meeting.audioDurationSeconds += audioDuration; meeting.chunks += 1; if (next.liveWindow) meeting.liveWindows = Math.max(meeting.liveWindows, 1); else meeting.archivalFallbackWindows += 1; meeting.inferenceMs += parsed.whisperWallMs; meeting.preprocessingMs += parsed.preprocessingMs; meeting.rtfs.push(metrics.rtf); meeting.visibleLatenciesMs.push(metrics.finalizedToVisibleMs); meeting.maxQueueDepth = Math.max(meeting.maxQueueDepth, queueDepth); this.meetingMetrics.set(jobId, meeting);
           console.info('[transcription]', JSON.stringify({ event: 'chunk_metrics', jobId, sessionId: session.sessionId, source: next.source, sequence: next.sequence, runtimeMode: parsed.runtimeMode, finalizedAt: currentRecord.queuedAt, ...metrics }));
-          if (parsed.rows.length) this.emitSegments(jobId, session, next, parsed.rows, metrics);
+          if (attributedParsed.rows.length) this.emitSegments(jobId, session, next, attributedParsed.rows, metrics);
         } catch (error) {
           const latest = this.jobs.get(jobId); if (!latest) return; const message = error instanceof Error ? error.message : String(error); const failedRecord = { ...processingRecord, state: 'failed' as const, failedAt: new Date().toISOString(), error: message.slice(0, 500) };
           const failedRecords = next.liveWindow ? { ...(latest.liveWindowRecords ?? {}), [key]: failedRecord } : latest.chunkRecords;
@@ -252,7 +256,7 @@ export class LocalTranscriptionService {
       console.warn('[transcription]', JSON.stringify({ event: 'audio_normalization_failed', jobId: job.jobId, source: chunk.source, sequence: chunk.sequence, error: error instanceof Error ? error.message : String(error) }));
     }
 
-    const offset = Math.max(0, Date.parse(chunk.startAt) - sessionStartedAt);
+    const offset = Math.max(0, Date.parse(chunk.startAt) - sessionStartedAt) + Math.max(0, session?.transcriptOffsetMs ?? 0);
     if (this.whisperRuntime?.available) {
       let result: Awaited<ReturnType<PersistentWhisperRuntime['transcribe']>>;
       try { result = await this.whisperRuntime.transcribe(transcriptionInput); }

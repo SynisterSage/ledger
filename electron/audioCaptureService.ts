@@ -115,7 +115,7 @@ export class MeetingAudioCaptureService {
     return this.adapter.devices();
   }
 
-  async start(input: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null }) {
+  async start(input: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null; transcriptOffsetMs?: number }) {
     this.validateIdentity(input.noteId, input.workspaceId);
     if (this.activeSession) {
       if (this.activeSession.noteId === input.noteId) return this.publicStatus();
@@ -135,6 +135,7 @@ export class MeetingAudioCaptureService {
       enabledSources: [input.microphone ? 'user_microphone' : null, input.systemAudio ? 'system_audio' : null].filter(Boolean) as RecordingSource[],
       directoryRef: path.relative(this.sessionStore.storageRoot, directory),
       selectedMicrophoneId: input.microphoneDeviceId ?? null,
+      transcriptOffsetMs: Number.isFinite(input.transcriptOffsetMs) ? Math.max(0, input.transcriptOffsetMs!) : 0,
     });
     try {
       const capture = await this.adapter.start({ sessionId, directory, microphone: input.microphone, systemAudio: input.systemAudio, microphoneDeviceId: input.microphone ? input.microphoneDeviceId ?? null : null });

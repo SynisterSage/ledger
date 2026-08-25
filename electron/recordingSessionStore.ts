@@ -43,6 +43,7 @@ export type RecordingSession = {
   durationSeconds: number;
   warnings: string[];
   selectedMicrophoneId?: string | null;
+  transcriptOffsetMs?: number;
   finalizationState?: RecordingFinalizationState;
   interruptedAt?: string | null;
   transcription?: { jobId: string | null; status: string | null; progress: number; segmentCount: number };

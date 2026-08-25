@@ -278,7 +278,8 @@ type SettingsSectionId =
   | 'shortcuts'
   | 'accessibility'
   | 'meeting_notes'
-  | 'local_ai';
+  | 'local_ai'
+  | 'speaker_tags';
 type SettingsNavGroupId = 'account' | 'workspace' | 'preferences';
 
 type SettingsNavSection = {
@@ -400,6 +401,12 @@ const settingsNavGroups: Array<{
         icon: SlidersHorizontal,
       },
       {
+        id: 'speaker_tags',
+        label: 'Speaker tags',
+        description: 'Identify speakers in supported calls',
+        icon: Monitor,
+      },
+      {
         id: 'meeting_notes',
         label: 'Meeting Notes',
         description: 'Local audio, transcription, and privacy',
@@ -426,6 +433,7 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
     section === 'accessibility' ||
     section === 'meeting_notes' ||
     section === 'local_ai'
+    || section === 'speaker_tags'
   );
 };
 
@@ -910,6 +918,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   } = useWorkspaceContext();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(initialSection ?? getInitialSettingsSection());
   const [localAIModels, setLocalAIModels] = useState<LocalAIModelSettingsRow[]>([]);
+  const [speakerTagsState, setSpeakerTagsState] = useState<'authorized' | 'not_authorized' | 'unsupported' | 'loading'>('loading');
   const [localAISelectedTier, setLocalAISelectedTier] = useState<LocalAIModelSettingsRow['tier']>('fast');
   const [localAIModelAction, setLocalAIModelAction] = useState<string | null>(null);
   const [localAIModelError, setLocalAIModelError] = useState<string | null>(null);
@@ -928,6 +937,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       platform.navigation.openRoute({ kind: 'app', page: 'settings', section });
       return;
     }
+    if (section === 'speaker_tags') return;
 
     if (!activeWorkspaceId) return;
     platform.navigation.openRoute({
@@ -965,6 +975,24 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     const unsubscribe = window.askLedger?.onLocalAIStatus(() => { void loadLocalAIModels(); });
     return () => unsubscribe?.();
   }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection !== 'speaker_tags') return;
+    let cancelled = false;
+    const refresh = async () => {
+      const status = await window.speakerTags?.status();
+      if (!cancelled) setSpeakerTagsState(status?.state ?? 'unsupported');
+    };
+    void refresh();
+    const onFocus = () => void refresh();
+    window.addEventListener('focus', onFocus);
+    return () => { cancelled = true; window.removeEventListener('focus', onFocus); };
+  }, [activeSection]);
+
+  const setUpSpeakerTags = async () => {
+    const status = await window.speakerTags?.setup();
+    setSpeakerTagsState(status?.state ?? 'unsupported');
+  };
 
   const manageLocalAIModel = async (model: LocalAIModelSettingsRow, action: 'download' | 'remove' | 'select' | 'cancel') => {
     if (!window.askLedger || (localAIModelAction && action !== 'cancel')) return;
@@ -5532,6 +5560,31 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       <p className="mt-1 text-[var(--ledger-text-muted)]">You are responsible for any consent required by your meeting.</p>
                     </div>
                   </div>
+                </section>
+              )}
+
+              {activeSection === 'speaker_tags' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-speaker-tags">
+                  <h2 id="settings-speaker-tags" className={settingsTheme.pageTitle}>Speaker tags</h2>
+                  <p className={settingsTheme.pageSubtitle + ' mt-1'}>Identify speakers in supported calls.</p>
+                  <section className={settingsTheme.sectionShell + ' mt-5'} aria-labelledby="speaker-tags-zoom">
+                    <h3 id="speaker-tags-zoom" className={settingsTheme.sectionTitle}>Zoom</h3>
+                    <div className={settingsTheme.sectionRows}>
+                      <div className="flex items-center justify-between gap-4 px-4 py-3">
+                        <span className="min-w-0">
+                          <span className={settingsTheme.label}>Identify speakers in Zoom calls</span>
+                          <span className={settingsTheme.help}>macOS Accessibility is used only to observe Zoom’s minimal speaker labels. No audio or meeting content is captured.</span>
+                        </span>
+                        {speakerTagsState === 'authorized' ? (
+                          <span className="shrink-0 text-xs font-medium text-[var(--ledger-text-secondary)]">Enabled</span>
+                        ) : speakerTagsState === 'unsupported' ? (
+                          <span className="shrink-0 text-xs text-[var(--ledger-text-muted)]">Not available on this device</span>
+                        ) : (
+                          <button type="button" onClick={() => void setUpSpeakerTags()} className="shrink-0 rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]">Set up</button>
+                        )}
+                      </div>
+                    </div>
+                  </section>
                 </section>
               )}
 

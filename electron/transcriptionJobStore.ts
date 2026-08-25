@@ -14,12 +14,20 @@ export type TranscriptionJobStatus =
 export type LocalTranscriptSegment = {
   id: string;
   audioSource: 'user_microphone' | 'system_audio';
-  speakerLabel: 'You' | 'Meeting';
+  speakerLabel: string;
   startMs: number;
   endMs: number;
   text: string;
   confidence: number | null;
   segmentOrder: number;
+  speakerIdentity?: {
+    rawSpeakerId?: string;
+    displayName?: string;
+    state: 'known' | 'unknown';
+    confidence?: number;
+    source: 'zoom_accessibility';
+    confirmedByUser: false;
+  };
 };
 
 export type TranscriptionChunkState = 'queued' | 'processing' | 'completed' | 'failed';

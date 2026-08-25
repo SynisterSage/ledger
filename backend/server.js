@@ -1092,7 +1092,7 @@ const normalizeTranscriptSegment = (body = {}, { allowId = false } = {}) => {
     const identity = body.speaker_identity;
     if (typeof identity !== 'object' || Array.isArray(identity)) throw meetingValidationError('speaker_identity must be an object');
     if (!['known', 'suggested', 'unknown'].includes(String(identity.state ?? ''))) throw meetingValidationError('Invalid speaker identity state');
-    if (identity.source != null && !['current_user', 'calendar_attendee', 'transcript_context', 'user_confirmed'].includes(String(identity.source))) throw meetingValidationError('Invalid speaker identity source');
+    if (identity.source != null && !['current_user', 'calendar_attendee', 'transcript_context', 'zoom_accessibility', 'user_confirmed'].includes(String(identity.source))) throw meetingValidationError('Invalid speaker identity source');
     if (identity.confidence != null && (!Number.isFinite(Number(identity.confidence)) || Number(identity.confidence) < 0 || Number(identity.confidence) > 1)) throw meetingValidationError('Invalid speaker identity confidence');
     speakerIdentity = {
       rawSpeakerId: normalizeNullableText(identity.rawSpeakerId),

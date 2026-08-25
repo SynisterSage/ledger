@@ -31,6 +31,8 @@ import {
 import { desktopTokens } from '../src/theme/desktopTokens';
 import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
 import { LocalTranscriptionService } from './transcriptionService';
+import { ZoomSpeakerAttribution } from './zoomSpeakerAttribution';
+import { resolveZoomAccessibilityBridgePath } from './speakerTagsRuntime';
 import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
@@ -53,6 +55,7 @@ import {
   FloatingMeetingIndicatorController,
   type FloatingMeetingIndicatorActivity,
 } from './floatingMeetingIndicator';
+import { MeetingAutoStopCoordinator, type AutoStopReason } from './meetingAutoStopCoordinator';
 import {
   activityFromLevel,
   restoreIndicatorPosition,
@@ -82,12 +85,19 @@ let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
 let tray: Tray | null = null;
 let isQuittingApp = false;
 let appleCalendarWatcher: ReturnType<typeof spawn> | null = null;
+let zoomAccessibilityWatcher: ReturnType<typeof spawn> | null = null;
+let zoomWatcherRestartTimer: NodeJS.Timeout | null = null;
+let zoomWatcherRestartAttempts = 0;
+let zoomPermissionPollTimer: NodeJS.Timeout | null = null;
 // Both services must use the same in-process session store. A second store
 // instance only sees the file as it existed at startup, so transcription would
 // reject a recording finalized moments earlier as belonging to no session.
 const recordingSessionStore = new RecordingSessionStore();
 const meetingAudioCaptureService = new MeetingAudioCaptureService(recordingSessionStore);
-const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore);
+const zoomSpeakerAttribution = new ZoomSpeakerAttribution();
+const localTranscriptionService = new LocalTranscriptionService(recordingSessionStore, zoomSpeakerAttribution);
+let autoStopTimer: NodeJS.Timeout | null = null;
+let autoStopRequestInFlight = false;
 const localAIAssets = new LocalAIAssetManager();
 const localAICapabilityService = new LocalAICapabilityService();
 const localAIService = createLocalAIService(localAIAssets);
@@ -136,6 +146,38 @@ function broadcastMeetingAudioEvent(channel: string, payload: unknown) {
   }
 }
 
+function requestMeetingAutoStop(reason: AutoStopReason, noteId: string) {
+  if (autoStopRequestInFlight) return;
+  const current = meetingAudioCaptureService.status();
+  if (!meetingAudioCaptureService.isActive || current.noteId !== noteId) return;
+  autoStopRequestInFlight = true;
+  broadcastMeetingAudioEvent('meeting-auto-stop:requested', { noteId, reason });
+  const sessionId = current.sessionId;
+  const finalize = async () => {
+    try {
+      if (meetingAudioCaptureService.isActive && meetingAudioCaptureService.status().sessionId === sessionId) {
+        await meetingAudioCaptureService.stop();
+      }
+    } catch (error) {
+      console.warn('[meeting-auto-stop]', JSON.stringify({ event: 'finalization_failed', reason, error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      if (meetingAudioCaptureService.status().sessionId === sessionId || !meetingAudioCaptureService.isActive) {
+        meetingAutoStopCoordinator.stop();
+        syncFloatingMeetingIndicator();
+      }
+      autoStopRequestInFlight = false;
+    }
+  };
+  // Give the Notes renderer a chance to use the normal Stop -> transcription path.
+  setTimeout(() => { void finalize(); }, reason === 'sleep' ? 0 : 1200);
+}
+
+const meetingAutoStopCoordinator = new MeetingAutoStopCoordinator({
+  onGrace: (state) => broadcastMeetingAudioEvent('meeting-auto-stop:grace', state),
+  onStop: (reason, noteId) => requestMeetingAutoStop(reason, noteId),
+  onNewMeeting: (context) => broadcastMeetingAudioEvent('meeting-auto-stop:new-meeting', context),
+});
+
 ipcMain.on('device-session:get-id', (event, legacyDeviceId: unknown) => {
   event.returnValue = getOrCreateDesktopDeviceId(
     typeof legacyDeviceId === 'string' ? legacyDeviceId : undefined
@@ -148,6 +190,7 @@ meetingAudioCaptureService.onLevel((event) => {
   broadcastMeetingAudioEvent('meeting-audio:level', event);
   const status = meetingAudioCaptureService.status() as { state?: string };
   if (status.state === 'recording') {
+    meetingAutoStopCoordinator.audioLevel(event.level);
     meetingAudioLevels.set(event.source, event.level);
     latestMeetingActivity = activityFromLevel(Math.max(...meetingAudioLevels.values(), 0));
     floatingMeetingIndicator.setActivity(latestMeetingActivity);
@@ -211,18 +254,24 @@ ipcMain.handle('meeting-audio:devices', (event) => {
   bindMeetingAudioRenderer(event);
   return meetingAudioCaptureService.devices();
 });
-ipcMain.handle('meeting-audio:start', async (event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown }) => {
+ipcMain.handle('meeting-audio:start', async (event, payload: { noteId?: unknown; workspaceId?: unknown; microphone?: unknown; systemAudio?: unknown; microphoneDeviceId?: unknown; scheduledEndAt?: unknown; transcriptOffsetMs?: unknown }) => {
   bindMeetingAudioRenderer(event);
   if (typeof payload?.noteId !== 'string' || typeof payload?.workspaceId !== 'string') throw new Error('Meeting recording identity is invalid.');
   if (payload.microphoneDeviceId !== undefined && payload.microphoneDeviceId !== null && typeof payload.microphoneDeviceId !== 'string') throw new Error('Invalid microphone device.');
   const start = async () => {
     // Permission prompting belongs to the adapter's explicit setup flow;
     // capture itself reports a bounded native error if access is unavailable.
-    return meetingAudioCaptureService.start({ noteId: payload.noteId as string, workspaceId: payload.workspaceId as string, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined });
+    return meetingAudioCaptureService.start({ noteId: payload.noteId as string, workspaceId: payload.workspaceId as string, microphone: payload.microphone !== false, systemAudio: payload.systemAudio !== false, microphoneDeviceId: payload.microphoneDeviceId as string | null | undefined, transcriptOffsetMs: typeof payload.transcriptOffsetMs === 'number' && Number.isFinite(payload.transcriptOffsetMs) ? payload.transcriptOffsetMs : 0 });
   };
   const result = await start();
+  if (result.sessionId && result.noteId && result.workspaceId && result.startedAt) {
+    const stored = recordingSessionStore.get(result.sessionId);
+    zoomSpeakerAttribution.startSession(result.sessionId, { noteId: result.noteId, workspaceId: result.workspaceId, startedAt: stored?.startedAt ?? result.startedAt, transcriptOffsetMs: stored?.transcriptOffsetMs });
+    refreshZoomAccessibilityWatcher();
+  }
   meetingAudioLevels.clear();
   latestMeetingActivity = 'silent';
+  meetingAutoStopCoordinator.start({ noteId: payload.noteId as string, scheduledEndAt: typeof payload.scheduledEndAt === 'string' ? payload.scheduledEndAt : null });
   syncFloatingMeetingIndicator();
   return result;
 });
@@ -237,22 +286,32 @@ ipcMain.handle('meeting-audio:pause', async (event) => {
   bindMeetingAudioRenderer(event);
   const sessionId = meetingAudioCaptureService.status().sessionId;
   const result = await meetingAudioCaptureService.pause();
+  meetingAutoStopCoordinator.pause();
   if (sessionId) localTranscriptionService.flushLiveAudio(sessionId);
   meetingAudioLevels.clear();
   latestMeetingActivity = 'silent';
   syncFloatingMeetingIndicator();
   return result;
 });
-ipcMain.handle('meeting-audio:resume', async (event) => { bindMeetingAudioRenderer(event); const result = await meetingAudioCaptureService.resume(); meetingAudioLevels.clear(); latestMeetingActivity = 'silent'; syncFloatingMeetingIndicator(); return result; });
+ipcMain.handle('meeting-audio:resume', async (event) => { bindMeetingAudioRenderer(event); const result = await meetingAudioCaptureService.resume(); meetingAutoStopCoordinator.resume(); meetingAudioLevels.clear(); latestMeetingActivity = 'silent'; syncFloatingMeetingIndicator(); return result; });
 ipcMain.handle('meeting-audio:stop', async (event) => {
   bindMeetingAudioRenderer(event);
   const sessionId = meetingAudioCaptureService.status().sessionId;
   const result = await meetingAudioCaptureService.stop();
+  meetingAutoStopCoordinator.stop();
   if (sessionId) localTranscriptionService.flushLiveAudio(sessionId);
   meetingAudioLevels.clear();
   latestMeetingActivity = 'silent';
   syncFloatingMeetingIndicator();
   return result;
+});
+ipcMain.handle('meeting-auto-stop:keep-recording', () => meetingAutoStopCoordinator.keepRecording());
+ipcMain.handle('meeting-auto-stop:call-ended', (_event, payload: { noteId?: unknown }) => {
+  return typeof payload?.noteId === 'string' && meetingAutoStopCoordinator.signalCallEnded(payload.noteId);
+});
+ipcMain.handle('meeting-auto-stop:new-meeting', (_event, payload: { noteId?: unknown; title?: unknown }) => {
+  if (typeof payload?.noteId !== 'string') return false;
+  return meetingAutoStopCoordinator.signalNewMeeting({ noteId: payload.noteId, title: typeof payload.title === 'string' ? payload.title : undefined });
 });
 ipcMain.handle('meeting-indicator:click', (event) => {
   if (BrowserWindow.fromWebContents(event.sender) !== floatingMeetingIndicator.getWindow()) return false;
@@ -290,7 +349,10 @@ ipcMain.handle('meeting-transcription:start', (_event, payload: { sessionId?: un
 });
 ipcMain.handle('meeting-transcription:cancel', (_event, jobId: unknown) => {
   if (typeof jobId !== 'string') throw new Error('Invalid transcription job.');
-  return localTranscriptionService.cancel(jobId);
+  const job = localTranscriptionService.status(jobId) as { sessionId?: string };
+  const result = localTranscriptionService.cancel(jobId);
+  if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
+  return result;
 });
 ipcMain.handle('meeting-transcription:results', (_event, jobId: unknown) => {
   if (typeof jobId !== 'string') throw new Error('Invalid transcription job.');
@@ -298,11 +360,17 @@ ipcMain.handle('meeting-transcription:results', (_event, jobId: unknown) => {
 });
 ipcMain.handle('meeting-transcription:complete', (_event, payload: { jobId?: unknown; retention?: unknown }) => {
   if (typeof payload?.jobId !== 'string' || (payload.retention !== 'retain' && payload.retention !== 'delete_after_transcription')) throw new Error('Invalid transcription completion request.');
-  return localTranscriptionService.complete(payload.jobId, payload.retention);
+  const job = localTranscriptionService.status(payload.jobId) as { sessionId?: string };
+  const result = localTranscriptionService.complete(payload.jobId, payload.retention);
+  if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
+  return result;
 });
 ipcMain.handle('meeting-transcription:fail', (_event, payload: { jobId?: unknown; error?: unknown }) => {
   if (typeof payload?.jobId !== 'string' || typeof payload.error !== 'string') throw new Error('Invalid transcription failure request.');
-  return localTranscriptionService.fail(payload.jobId, payload.error);
+  const job = localTranscriptionService.status(payload.jobId) as { sessionId?: string };
+  const result = localTranscriptionService.fail(payload.jobId, payload.error);
+  if (job.sessionId) zoomSpeakerAttribution.clearSession(job.sessionId);
+  return result;
 });
 
 ipcMain.handle('ask-ledger:list-skills', () => listAskLedgerSkills());
@@ -604,6 +672,88 @@ function appleCalendarBridgePath() {
     ? path.join(process.resourcesPath, 'AppleCalendarBridge')
     : path.join(app.getAppPath(), 'native', 'AppleCalendarBridge');
 }
+
+function zoomAccessibilityBridgePath() {
+  return resolveZoomAccessibilityBridgePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
+}
+
+function speakerTagsPermission() {
+  if (process.platform !== 'darwin') return { platform: process.platform, state: 'unsupported' as const };
+  const trusted = systemPreferences.isTrustedAccessibilityClient(false);
+  console.info('[speaker-tags]', JSON.stringify({ event: 'accessibility', authorized: trusted }));
+  return { platform: process.platform, state: trusted ? 'authorized' as const : 'not_authorized' as const };
+}
+
+function startZoomAccessibilityWatcher() {
+  if (process.platform !== 'darwin' || zoomAccessibilityWatcher || zoomWatcherRestartAttempts >= 3 || speakerTagsPermission().state !== 'authorized') return;
+  if (zoomWatcherRestartTimer) { clearTimeout(zoomWatcherRestartTimer); zoomWatcherRestartTimer = null; }
+  try {
+    const watcher = spawn(zoomAccessibilityBridgePath(), ['--watch'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    zoomAccessibilityWatcher = watcher;
+    zoomWatcherRestartAttempts += 1;
+    let buffer = '';
+    watcher.stdout.on('data', (chunk) => {
+      buffer += String(chunk);
+      const lines = buffer.split('\n'); buffer = lines.pop() ?? '';
+      for (const line of lines) { try {
+        const event = JSON.parse(line);
+        console.info('[speaker-tags]', JSON.stringify(event));
+        if (event?.type === 'state' && event.state !== 'not-authorized') zoomWatcherRestartAttempts = 0;
+        if (event?.type === 'observer' && event.state === 'rediscovering') {
+          const recording = meetingAudioCaptureService.status();
+          if (recording.sessionId) zoomSpeakerAttribution.noteRediscovery(recording.sessionId);
+        }
+        if (event?.type === 'speaker-change' && typeof event.displayName === 'string' && Number.isFinite(event.observedAtMs)) {
+          const recording = meetingAudioCaptureService.status();
+          if (recording.sessionId) {
+            const accepted = zoomSpeakerAttribution.record(recording.sessionId, { displayName: event.displayName, observedAtMs: event.observedAtMs, ambiguous: event.ambiguous === true });
+            console.info('[speaker-tags]', JSON.stringify({ event: accepted ? 'speaker_change_recorded' : 'speaker_change_ignored', sessionId: recording.sessionId, metrics: zoomSpeakerAttribution.metrics(recording.sessionId) }));
+          }
+        }
+        for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send('speaker-tags:event', event);
+      } catch {} }
+    });
+    watcher.once('error', (error) => console.warn('[speaker-tags]', JSON.stringify({ event: 'observer_failure', error: error.message })));
+    watcher.once('exit', (code, signal) => {
+      zoomAccessibilityWatcher = null;
+      if (!isQuittingApp && speakerTagsPermission().state === 'authorized' && zoomWatcherRestartAttempts < 3) {
+        console.warn('[speaker-tags]', JSON.stringify({ event: 'helper_exited', code, signal, action: 'rediscover_scheduled' }));
+        zoomWatcherRestartTimer = setTimeout(() => { zoomWatcherRestartTimer = null; startZoomAccessibilityWatcher(); }, Math.min(30_000, 1000 * zoomWatcherRestartAttempts));
+      } else if (zoomWatcherRestartAttempts >= 3) {
+        console.warn('[speaker-tags]', JSON.stringify({ event: 'helper_unavailable', action: 'fallback_to_meeting' }));
+      }
+    });
+  } catch (error) { console.warn('[speaker-tags]', JSON.stringify({ event: 'observer_unavailable', error: String(error) })); }
+}
+
+function stopZoomAccessibilityWatcher() {
+  if (zoomWatcherRestartTimer) { clearTimeout(zoomWatcherRestartTimer); zoomWatcherRestartTimer = null; }
+  if (!zoomAccessibilityWatcher) return;
+  zoomAccessibilityWatcher.kill(); zoomAccessibilityWatcher = null;
+  console.info('[speaker-tags]', JSON.stringify({ event: 'observer_detached' }));
+}
+
+function refreshZoomAccessibilityWatcher() {
+  if (process.platform !== 'darwin' || speakerTagsPermission().state !== 'authorized') return;
+  stopZoomAccessibilityWatcher();
+  zoomWatcherRestartAttempts = 0;
+  startZoomAccessibilityWatcher();
+}
+
+ipcMain.handle('speaker-tags:status', () => {
+  const status = speakerTagsPermission();
+  if (status.state === 'authorized') startZoomAccessibilityWatcher();
+  return status;
+});
+ipcMain.handle('speaker-tags:setup', () => {
+  if (process.platform !== 'darwin') return speakerTagsPermission();
+  zoomWatcherRestartAttempts = 0;
+  const trusted = systemPreferences.isTrustedAccessibilityClient(true);
+  if (!trusted) void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+  setTimeout(startZoomAccessibilityWatcher, 500);
+  return speakerTagsPermission();
+});
+ipcMain.handle('speaker-tags:start', () => { startZoomAccessibilityWatcher(); return speakerTagsPermission(); });
 
 async function runAppleCalendarBridge(payload: Record<string, unknown>) {
   if (process.platform !== 'darwin') return { ok: false, error: 'Apple Calendar is only available in the macOS app.' };
@@ -7663,8 +7813,13 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   isQuittingApp = true;
+  if (autoStopTimer) clearInterval(autoStopTimer);
+  autoStopTimer = null;
+  meetingAutoStopCoordinator.stop();
   floatingMeetingIndicator.destroy();
   stopAppleCalendarWatcher();
+  stopZoomAccessibilityWatcher();
+  if (zoomPermissionPollTimer) { clearInterval(zoomPermissionPollTimer); zoomPermissionPollTimer = null; }
   if (tray) {
     tray.destroy();
     tray = null;
@@ -7702,8 +7857,13 @@ app.on('before-quit', (event) => {
 });
 
 powerMonitor.on('suspend', () => {
-  void meetingAudioCaptureService.prepareForSuspend().catch((error) => {
+  void meetingAudioCaptureService.prepareForSuspend().then(() => {
+    meetingAutoStopCoordinator.sleep();
+  }).catch((error) => {
     console.warn('[meeting-audio]', JSON.stringify({ event: 'suspend_checkpoint_failed', error: error instanceof Error ? error.message : String(error) }));
+    // A failed checkpoint is ambiguous: retain the session for recovery, but
+    // still request the same idempotent stop path so it cannot run forever.
+    meetingAutoStopCoordinator.sleep();
   });
 });
 powerMonitor.on('resume', () => {
@@ -8859,6 +9019,10 @@ function syncTouchBar() {
 }
 
 app.whenReady().then(() => {
+  autoStopTimer = setInterval(() => {
+    meetingAutoStopCoordinator.tick();
+    meetingAutoStopCoordinator.finishGrace();
+  }, 5000);
   loadFloatingMeetingIndicatorPosition();
   nativeTheme.on('updated', () => {
     sendSidebarAccessibilityState();
@@ -8866,6 +9030,12 @@ app.whenReady().then(() => {
   });
   registerWindowsLoopbackCapture();
   startAppleCalendarWatcher();
+  startZoomAccessibilityWatcher();
+  if (process.platform === 'darwin') {
+    zoomPermissionPollTimer = setInterval(() => {
+      if (!zoomAccessibilityWatcher && systemPreferences.isTrustedAccessibilityClient(false)) startZoomAccessibilityWatcher();
+    }, 2000);
+  }
   loadNotificationDeliveryState();
   registerLedgerProtocol();
   // A remembered module window may refer to a display that was disconnected

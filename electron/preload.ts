@@ -368,7 +368,7 @@ contextBridge.exposeInMainWorld('meetingAudio', {
     return ipcRenderer.invoke('meeting-audio:recover', payload);
   },
   discardRecovery(sessionId: string) { return ipcRenderer.invoke('meeting-audio:discard-recovery', sessionId); },
-  start(payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null }) {
+  start(payload: { noteId: string; workspaceId: string; microphone: boolean; systemAudio: boolean; microphoneDeviceId?: string | null; scheduledEndAt?: string | null; transcriptOffsetMs?: number }) {
     return ipcRenderer.invoke('meeting-audio:start', payload);
   },
   testSource(source: 'user_microphone' | 'system_audio', microphoneDeviceId?: string | null) {
@@ -400,6 +400,38 @@ contextBridge.exposeInMainWorld('meetingAudio', {
     const wrapped = () => listener();
     ipcRenderer.on('meeting-audio:devices-changed', wrapped);
     return () => ipcRenderer.off('meeting-audio:devices-changed', wrapped);
+  },
+});
+
+contextBridge.exposeInMainWorld('speakerTags', {
+  status() { return ipcRenderer.invoke('speaker-tags:status'); },
+  setup() { return ipcRenderer.invoke('speaker-tags:setup'); },
+  start() { return ipcRenderer.invoke('speaker-tags:start'); },
+  onEvent(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('speaker-tags:event', wrapped);
+    return () => ipcRenderer.off('speaker-tags:event', wrapped);
+  },
+});
+
+contextBridge.exposeInMainWorld('meetingAutoStop', {
+  keepRecording() { return ipcRenderer.invoke('meeting-auto-stop:keep-recording'); },
+  signalCallEnded(noteId: string) { return ipcRenderer.invoke('meeting-auto-stop:call-ended', { noteId }); },
+  signalNewMeeting(payload: { noteId: string; title?: string }) { return ipcRenderer.invoke('meeting-auto-stop:new-meeting', payload); },
+  onGrace(listener: (event: { active: boolean; noteId: string; reason?: string }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { active: boolean; noteId: string; reason?: string }) => listener(payload);
+    ipcRenderer.on('meeting-auto-stop:grace', wrapped);
+    return () => ipcRenderer.off('meeting-auto-stop:grace', wrapped);
+  },
+  onStopRequested(listener: (event: { noteId: string; reason: string }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { noteId: string; reason: string }) => listener(payload);
+    ipcRenderer.on('meeting-auto-stop:requested', wrapped);
+    return () => ipcRenderer.off('meeting-auto-stop:requested', wrapped);
+  },
+  onNewMeeting(listener: (event: { noteId: string; title?: string }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { noteId: string; title?: string }) => listener(payload);
+    ipcRenderer.on('meeting-auto-stop:new-meeting', wrapped);
+    return () => ipcRenderer.off('meeting-auto-stop:new-meeting', wrapped);
   },
 });
 

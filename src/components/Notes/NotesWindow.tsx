@@ -2435,6 +2435,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   );
   const transcriptDraftsRef = useRef<Record<string, string>>({});
   const transcriptSpeakerDraftsRef = useRef<Record<string, string>>({});
+  const transcriptAppendOffsetMsRef = useRef(0);
   const transcriptCommitVersionRef = useRef<Record<string, number>>({});
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [meetingRecapDraft, setMeetingRecapDraft] = useState<MeetingRecapDraft | null>(null);
@@ -3036,6 +3037,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           text: string;
           confidence: number | null;
           segmentOrder: number;
+          speakerIdentity?: TranscriptSegment['speaker_identity'];
         }>;
         metrics?: { audioDurationSeconds?: number; queueWaitMs?: number; whisperWallMs?: number; rtf?: number; queueDepth?: number };
       };
@@ -3052,6 +3054,25 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         transcript_text: row.text,
         confidence: row.confidence,
         segment_order: row.segmentOrder,
+        speaker_identity: row.speakerIdentity ? resolveDeterministicSpeakerIdentity({
+          segment: {
+            id: row.id,
+            note_id: event.noteId!,
+            workspace_id: event.workspaceId!,
+            audio_source: row.audioSource,
+            speaker_label: row.speakerLabel,
+            speaker_identity: row.speakerIdentity,
+            start_ms: row.startMs,
+            end_ms: row.endMs,
+            transcript_text: row.text,
+            confidence: row.confidence,
+            segment_order: row.segmentOrder,
+            created_at: '',
+            updated_at: '',
+          },
+          metadata: meetingMetadata,
+          currentUser: user ? { id: user.id, email: user.email } : null,
+        }) : undefined,
       }));
       const persistStartedAt = Date.now();
       void api.bulkCreateTranscriptSegments(event.noteId!, segments)
@@ -3070,7 +3091,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           const safeStored = Array.isArray(stored) ? stored : [];
           setTranscriptSegments(safeStored);
           setTranscriptDrafts(Object.fromEntries(safeStored.map((segment) => [segment.id, segment.transcript_text])));
-          setTranscriptSpeakerDrafts(Object.fromEntries(safeStored.map((segment) => [segment.id, segment.speaker_label ?? ''])));
+          setTranscriptSpeakerDrafts(Object.fromEntries(safeStored.map((segment) => [segment.id, segment.speaker_identity?.displayName ?? segment.speaker_label ?? ''])));
         })
         .catch((error) => {
           persistedLiveTranscriptChunksRef.current.delete(chunkKey);
@@ -4630,7 +4651,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         );
         setTranscriptSpeakerDrafts(
           Object.fromEntries(
-            safeSegments.map((segment) => [segment.id, segment.speaker_label ?? ''])
+            safeSegments.map((segment) => [segment.id, segment.speaker_identity?.displayName ?? segment.speaker_label ?? ''])
           )
         );
         const focusSegmentId = initialFocusContext.startsWith('transcript-segment:')
@@ -5014,7 +5035,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   }, []);
 
   const startMeeting = useCallback(async () => {
-    if (!meetingMetadata || meetingMetadata.transcription_status !== 'idle') return;
+    if (!meetingMetadata || !['idle', 'complete'].includes(meetingMetadata.transcription_status)) return;
     if (!window.meetingAudio) {
       setIsAudioSetupOpen(true);
       return;
@@ -5022,6 +5043,17 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setMeetingBusyAction('start');
     setAudioError(null);
     const now = new Date().toISOString();
+    const resumingCompletedMeeting = meetingMetadata.transcription_status === 'complete';
+    const transcriptAppendOffsetMs = resumingCompletedMeeting
+      ? Math.max(0, ...transcriptSegments.map((segment) => Number(segment.end_ms) || 0)) + 1000
+      : 0;
+    transcriptAppendOffsetMsRef.current = transcriptAppendOffsetMs;
+    if (resumingCompletedMeeting) {
+      setMeetingRecapDraft(null);
+      setMeetingRecapStatus('idle');
+      setMeetingRecapHasRun(false);
+      setMeetingRecapError(null);
+    }
     try {
       if (window.meetingTranscription) {
         const model = (await window.meetingTranscription.modelStatus()) as TranscriptionModelStatus;
@@ -5067,6 +5099,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         microphone,
         systemAudio,
         microphoneDeviceId,
+        scheduledEndAt: meetingMetadata.scheduled_end_at ?? null,
+        transcriptOffsetMs: transcriptAppendOffsetMs,
       })) as MeetingAudioStatus;
       setAudioCaptureStatus(capture);
       if (window.meetingTranscription && capture.sessionId && selectedNoteIdRef.current && activeWorkspaceId) {
@@ -5077,7 +5111,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       const sources = new Set(capture.sources.map((source) => source.source));
       const updated = await updateMeetingMetadata({
         transcription_status: 'recording',
-        meeting_start_at: capture.startedAt || now,
+        meeting_start_at: resumingCompletedMeeting ? (meetingMetadata.meeting_start_at ?? capture.startedAt ?? now) : (capture.startedAt || now),
         meeting_end_at: null,
         duration_seconds: 0,
         microphone_enabled: sources.has('user_microphone'),
@@ -5111,6 +5145,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     meetingMetadata,
     refreshAudioDevices,
     selectedMicrophoneId,
+    transcriptSegments,
     updateMeetingMetadata,
   ]);
 
@@ -5244,6 +5279,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     }
   }, [activeWorkspaceId, audioCaptureStatus?.sessionId, meetingMetadata, reportTranscriptionError, updateMeetingMetadata]);
 
+  useEffect(() => {
+    const autoStop = window.meetingAutoStop;
+    if (!autoStop) return;
+    return autoStop.onStopRequested((event) => {
+      if (event.noteId !== selectedNoteIdRef.current) return;
+      void stopMeeting();
+    });
+  }, [stopMeeting]);
+
   const installTranscriptionModel = useCallback(async () => {
     if (!window.meetingTranscription) return;
     setTranscriptionBusy(true);
@@ -5358,6 +5402,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           text: string;
           confidence: number | null;
           segmentOrder: number;
+          speakerIdentity?: TranscriptSegment['speaker_identity'];
         }>;
         if (cancelled) return;
         const segments = rows.map((row) => ({
@@ -5369,6 +5414,25 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           transcript_text: row.text,
           confidence: row.confidence,
           segment_order: row.segmentOrder,
+          speaker_identity: row.speakerIdentity ? resolveDeterministicSpeakerIdentity({
+            segment: {
+              id: row.id,
+              note_id: job.noteId,
+              workspace_id: job.workspaceId,
+              audio_source: row.audioSource,
+              speaker_label: row.speakerLabel,
+              speaker_identity: row.speakerIdentity,
+              start_ms: row.startMs,
+              end_ms: row.endMs,
+              transcript_text: row.text,
+              confidence: row.confidence,
+              segment_order: row.segmentOrder,
+              created_at: '',
+              updated_at: '',
+            },
+            metadata: meetingMetadata,
+            currentUser: user ? { id: user.id, email: user.email } : null,
+          }) : undefined,
         }));
         const existingBeforeMerge = (await api.getTranscriptSegments(job.noteId)) as TranscriptSegment[];
         const existingIds = new Set(
@@ -10705,6 +10769,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         {meetingMetadata.transcription_status === 'complete' && (
                           <div className="flex items-center justify-between gap-2 text-xs">
                             <span className="text-[var(--ledger-text-muted)]">Transcript available</span>
+                            <button type="button" onClick={() => void startMeeting()} disabled={Boolean(meetingBusyAction)} className="shrink-0 text-[var(--ledger-accent)] disabled:opacity-50">Resume</button>
                             {transcriptSegments.length > 0 && <button type="button" onClick={() => void clearMeetingTranscript()} disabled={Boolean(meetingBusyAction)} className="shrink-0 text-[var(--ledger-danger)] disabled:opacity-50">Clear transcript</button>}
                           </div>
                         )}

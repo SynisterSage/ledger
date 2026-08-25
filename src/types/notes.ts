@@ -16,6 +16,7 @@ export type MeetingSpeakerIdentitySource =
   | 'current_user'
   | 'calendar_attendee'
   | 'transcript_context'
+  | 'zoom_accessibility'
   | 'user_confirmed';
 
 export type MeetingSpeakerIdentity = {

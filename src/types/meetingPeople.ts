@@ -70,6 +70,13 @@ export type MeetingAttendee = {
   email?: string;
 };
 
+export const matchZoomDisplayNameToAttendee = (displayName: string, attendees: MeetingAttendee[]) => {
+  const normalized = clean(displayName).toLowerCase();
+  if (!normalized) return null;
+  const matches = attendees.filter((attendee) => clean(attendee.name).toLowerCase() === normalized);
+  return matches.length === 1 && matches[0].id ? matches[0] : null;
+};
+
 export const normalizeMeetingAttendees = (attendees: unknown[] | null | undefined): MeetingAttendee[] =>
   (attendees ?? [])
     .map((attendee) => {
@@ -103,6 +110,11 @@ export const resolveDeterministicSpeakerIdentity = ({
 }): MeetingSpeakerIdentity => {
   const rawSpeakerId = `source:${segment.audio_source}`;
   if (segment.speaker_identity?.confirmedByUser) return segment.speaker_identity;
+  if (segment.speaker_identity?.source === 'zoom_accessibility') {
+    const zoomName = segment.speaker_identity.displayName || segment.speaker_label || '';
+    const attendee = matchZoomDisplayNameToAttendee(zoomName, normalizeMeetingAttendees(metadata?.attendees));
+    return { ...segment.speaker_identity, personId: attendee?.id };
+  }
   if (segment.audio_source === 'user_microphone') {
     return {
       rawSpeakerId,

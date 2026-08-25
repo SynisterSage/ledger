@@ -23,9 +23,9 @@
     icon: 'public/icon.png',
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
-    binaries: ['native/LedgerAudioCaptureBridge'],
+    binaries: ['native/LedgerAudioCaptureBridge', 'native/ZoomAccessibilityBridge'],
     extraResources: [
-      { from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'whisper-cli', 'whisper-server'] },
+      { from: 'native', to: '.', filter: ['AppleCalendarBridge', 'LedgerAudioCaptureBridge', 'ZoomAccessibilityBridge', 'whisper-cli', 'whisper-server'] },
       { from: 'native/local-ai-runtime', to: 'local-ai-runtime' },
     ],
     artifactName: '${productName}-Mac-${version}-Installer.${ext}',
