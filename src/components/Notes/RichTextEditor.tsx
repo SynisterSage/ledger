@@ -180,6 +180,12 @@ const getSelectedContentPayload = (
 
 const editorConfig = {
   namespace: 'ledger-notes',
+  // Keep a malformed plugin update from taking down the Notes surface. The
+  // editor reports the failure for diagnosis while meeting transcription and
+  // its durable progress continue independently.
+  onError: (error: Error) => {
+    console.error('[lexical] editor error', error);
+  },
   nodes: [
     HeadingNode,
     QuoteNode,
@@ -237,7 +243,6 @@ const editorConfig = {
       comment: 'ledger-code-token-comment',
     },
   },
-  onError: (error: Error) => console.error(error),
 };
 
 const URL_MATCHERS = [

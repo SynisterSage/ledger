@@ -428,6 +428,11 @@ contextBridge.exposeInMainWorld('meetingAutoStop', {
     ipcRenderer.on('meeting-auto-stop:requested', wrapped);
     return () => ipcRenderer.off('meeting-auto-stop:requested', wrapped);
   },
+  onCompleted(listener: (event: { noteId: string; sessionId: string }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: { noteId: string; sessionId: string }) => listener(payload);
+    ipcRenderer.on('meeting-auto-stop:completed', wrapped);
+    return () => ipcRenderer.off('meeting-auto-stop:completed', wrapped);
+  },
   onNewMeeting(listener: (event: { noteId: string; title?: string }) => void) {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: { noteId: string; title?: string }) => listener(payload);
     ipcRenderer.on('meeting-auto-stop:new-meeting', wrapped);

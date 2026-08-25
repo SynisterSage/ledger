@@ -154,6 +154,23 @@ export class TranscriptionJobStore {
       data.jobs.forEach((job) => {
         if (!job?.jobId || !job.noteId || !job.workspaceId || !Array.isArray(job.segments)) return;
         if (['preparing', 'transcribing'].includes(job.status)) job.status = 'queued';
+        // A process can exit while Whisper is working on one window. The job
+        // status is recoverable, but the in-flight record must be queued too;
+        // otherwise the worker skips it forever and the meeting can remain in
+        // Processing with a permanently incomplete coverage range.
+        const requeueInterrupted = (record: TranscriptionChunkRecord | TranscriptionWindowRecord) => {
+          if (record.state !== 'processing') return record;
+          return {
+            ...record,
+            state: 'queued' as const,
+            processingAt: null,
+            failedAt: null,
+            error: null,
+            queuedAt: new Date().toISOString(),
+          };
+        };
+        job.chunkRecords = Object.fromEntries(Object.entries(job.chunkRecords ?? {}).map(([key, record]) => [key, requeueInterrupted(record)]));
+        job.liveWindowRecords = Object.fromEntries(Object.entries(job.liveWindowRecords ?? {}).map(([key, record]) => [key, requeueInterrupted(record)]));
         if (job.status === 'merging') {
           job.status = 'failed';
           job.error = 'Transcript merge was interrupted. The durable transcript and recording are preserved; retry to finish this meeting.';

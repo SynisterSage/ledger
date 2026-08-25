@@ -13,6 +13,13 @@ export type WhisperRuntimeResult = {
 
 export type WhisperBackend = 'cpu' | 'metal';
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 3 * 60 * 1000;
+
+function requestTimeoutMs() {
+  const configured = Number(process.env.LEDGER_WHISPER_REQUEST_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
 export class PersistentWhisperRuntime {
   private process: ChildProcess | null = null;
   private port: number | null = null;
@@ -50,6 +57,7 @@ export class PersistentWhisperRuntime {
   async transcribe(filePath: string): Promise<WhisperRuntimeResult> {
     let restarted = false;
     while (true) {
+      let requestTimedOut = false;
       try {
         const runtimeStartupMs = await this.start();
         const startedAt = Date.now();
@@ -57,14 +65,25 @@ export class PersistentWhisperRuntime {
         form.append('file', new Blob([fs.readFileSync(filePath)], { type: 'audio/wav' }), path.basename(filePath));
         form.append('response_format', 'verbose_json'); form.append('language', 'en'); form.append('temperature', '0'); form.append('temperature_inc', '0');
         this.abortController = new AbortController();
-        const response = await fetch(`http://127.0.0.1:${this.port}/inference`, { method: 'POST', body: form, signal: this.abortController.signal });
+        const timeout = setTimeout(() => { requestTimedOut = true; this.abortController?.abort(); }, requestTimeoutMs());
+        let response: Response;
+        try {
+          response = await fetch(`http://127.0.0.1:${this.port}/inference`, { method: 'POST', body: form, signal: this.abortController.signal });
+        } finally {
+          clearTimeout(timeout);
+        }
         if (!response.ok) throw new Error(`Whisper runtime returned HTTP ${response.status}.`);
         const payload = await response.json() as { segments?: ServerSegment[] };
         this.abortController = null;
         return { segments: Array.isArray(payload.segments) ? payload.segments : [], runtimeStartupMs, inferenceWallMs: Date.now() - startedAt };
       } catch (error) {
         this.abortController = null;
-        if (error instanceof Error && error.name === 'AbortError') throw error;
+        const aborted = error instanceof Error && error.name === 'AbortError';
+        if (aborted && requestTimedOut) {
+          error = new Error(`Whisper runtime timed out after ${Math.round(requestTimeoutMs() / 1000)} seconds.`);
+        } else if (aborted) {
+          throw error;
+        }
         this.log('runtime_request_failed', { backend: this.backend, error: error instanceof Error ? error.message : String(error), restarted });
         await this.stop();
         if (restarted) throw error;

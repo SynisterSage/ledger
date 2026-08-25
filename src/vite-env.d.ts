@@ -103,6 +103,7 @@ interface Window {
     signalNewMeeting: (payload: { noteId: string; title?: string }) => Promise<unknown>;
     onGrace: (listener: (event: { active: boolean; noteId: string; reason?: string }) => void) => () => void;
     onStopRequested: (listener: (event: { noteId: string; reason: string }) => void) => () => void;
+    onCompleted: (listener: (event: { noteId: string; sessionId: string }) => void) => () => void;
     onNewMeeting: (listener: (event: { noteId: string; title?: string }) => void) => () => void;
   };
   meetingTranscription?: {

@@ -208,7 +208,9 @@ export class MeetingAudioCaptureService {
   }
 
   async pause() {
-    this.requireActive();
+    // Auto-stop and renderer Stop can legitimately converge. Returning the
+    // current idle status keeps a stale renderer from surfacing an IPC error.
+    if (!this.activeSession) return this.publicStatus();
     await this.adapter.pause();
     this.activeSession!.state = 'paused';
     this.sessionStore.addPause(this.activeSession!.sessionId, new Date().toISOString());
@@ -217,7 +219,7 @@ export class MeetingAudioCaptureService {
   }
 
   async resume() {
-    this.requireActive();
+    if (!this.activeSession) return this.publicStatus();
     await this.adapter.resume();
     this.activeSession!.state = 'recording';
     this.sessionStore.endPause(this.activeSession!.sessionId, new Date().toISOString());
@@ -421,8 +423,6 @@ export class MeetingAudioCaptureService {
   private validateIdentity(noteId: string, workspaceId: string) {
     if (!safeId(noteId) || !safeId(workspaceId)) throw new Error('Meeting recording identity is invalid.');
   }
-
-  private requireActive() { if (!this.activeSession) throw new Error('No audio capture session is active.'); }
 
   private handleCaptureEvent(event: AudioCaptureEvent) {
     if (event.type === 'devices-changed') {

@@ -806,6 +806,13 @@ const getMeetingElapsedSeconds = (metadata: MeetingNoteMetadata | null, now = Da
   return storedSeconds + Math.max(0, Math.floor((now - startedAt) / 1000));
 };
 
+// The API stores duration_seconds as an integer. Native capture durations can
+// include fractional seconds, so normalize them before every metadata write.
+const normalizeMeetingDurationSeconds = (value: unknown) => {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) ? Math.max(0, Math.round(seconds)) : 0;
+};
+
 const meetingStatusLabel = (status: MeetingTranscriptionStatus | null | undefined) => {
   if (status === 'recording') return 'Recording';
   if (status === 'paused') return 'Paused';
@@ -4984,7 +4991,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         });
         await api.updateMeetingMetadata(session.noteId, {
           transcription_status: 'processing',
-          duration_seconds: session.durationSeconds,
+          duration_seconds: normalizeMeetingDurationSeconds(session.durationSeconds),
           meeting_start_at: session.startedAt,
           meeting_end_at: session.lastActivityAt,
         });
@@ -5157,7 +5164,37 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     }
     setMeetingBusyAction('pause');
     try {
-      setAudioCaptureStatus((await window.meetingAudio.pause()) as MeetingAudioStatus);
+      const capture = (await window.meetingAudio.pause()) as MeetingAudioStatus;
+      setAudioCaptureStatus(capture);
+      if (capture.state !== 'paused') {
+        const staleSessionId = audioCaptureStatus?.sessionId;
+        let recoveredToProcessing = false;
+        if (staleSessionId && activeWorkspaceId && window.meetingTranscription) {
+          try {
+            const inspection = (await window.meetingAudio.inspect(staleSessionId)) as RecordingRecovery;
+            if (inspection.status === 'ready' && inspection.chunks.some((chunk) => chunk.finalized && chunk.sizeBytes > 44)) {
+              const job = (await window.meetingTranscription.start({
+                sessionId: staleSessionId,
+                noteId: inspection.noteId || selectedNoteIdRef.current!,
+                workspaceId: inspection.workspaceId || activeWorkspaceId,
+              })) as TranscriptionJobStatus;
+              setTranscriptionJob(job);
+              await updateMeetingMetadata({ transcription_status: 'processing', transcription_error: null });
+              recoveredToProcessing = true;
+            }
+          } catch (recoveryError) {
+            console.warn('[meeting-notes] stale capture reconciliation failed', recoveryError);
+          }
+        }
+        if (!recoveredToProcessing) {
+          await updateMeetingMetadata({
+            transcription_status: 'idle',
+            transcription_error: 'The recording session was no longer active.',
+          });
+        }
+        setAudioError(recoveredToProcessing ? 'Recording had already stopped; transcription is continuing.' : 'Recording had already stopped.');
+        return;
+      }
       await updateMeetingMetadata({
         transcription_status: 'paused',
         duration_seconds: getMeetingElapsedSeconds(meetingMetadata),
@@ -5167,7 +5204,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     } finally {
       setMeetingBusyAction(null);
     }
-  }, [meetingMetadata, updateMeetingMetadata]);
+  }, [activeWorkspaceId, audioCaptureStatus?.sessionId, meetingMetadata, updateMeetingMetadata]);
 
   const resumeMeeting = useCallback(async () => {
     if (!meetingMetadata || meetingMetadata.transcription_status !== 'paused') return;
@@ -5177,7 +5214,16 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     }
     setMeetingBusyAction('resume');
     try {
-      setAudioCaptureStatus((await window.meetingAudio.resume()) as MeetingAudioStatus);
+      const capture = (await window.meetingAudio.resume()) as MeetingAudioStatus;
+      setAudioCaptureStatus(capture);
+      if (capture.state !== 'recording') {
+        await updateMeetingMetadata({
+          transcription_status: 'idle',
+          transcription_error: 'The recording session was no longer active.',
+        });
+        setAudioError('Recording had already stopped.');
+        return;
+      }
       await updateMeetingMetadata({
         transcription_status: 'recording',
         meeting_end_at: null,
@@ -5219,6 +5265,9 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         meetingEndMs < meetingStartMs
           ? new Date(meetingStartMs).toISOString()
           : rawMeetingEndAt;
+      const durationSeconds = normalizeMeetingDurationSeconds(
+        capture?.durationSeconds || getMeetingElapsedSeconds(meetingMetadata)
+      );
       if (window.meetingTranscription && sessionId) {
         try {
           const recordingNoteId = capture.noteId || selectedNoteIdRef.current;
@@ -5239,8 +5288,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
               ? {
                   ...current,
                   transcription_status: 'processing',
-                  duration_seconds:
-                    capture?.durationSeconds || getMeetingElapsedSeconds(current),
+                  duration_seconds: durationSeconds,
                   meeting_end_at: meetingEndAt,
                   transcription_error: null,
                 }
@@ -5248,7 +5296,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           );
           const updated = await updateMeetingMetadata({
             transcription_status: 'processing',
-            duration_seconds: capture?.durationSeconds || getMeetingElapsedSeconds(meetingMetadata),
+            duration_seconds: durationSeconds,
             meeting_end_at: meetingEndAt,
             transcription_error: null,
           });
@@ -5261,7 +5309,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           reportTranscriptionError(message);
           await updateMeetingMetadata({
             transcription_status: 'failed',
-            duration_seconds: capture?.durationSeconds || getMeetingElapsedSeconds(meetingMetadata),
+            duration_seconds: durationSeconds,
             meeting_end_at: meetingEndAt,
             transcription_error: message,
           });
@@ -5283,6 +5331,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     const autoStop = window.meetingAutoStop;
     if (!autoStop) return;
     return autoStop.onStopRequested((event) => {
+      if (event.noteId !== selectedNoteIdRef.current) return;
+      void stopMeeting();
+    });
+  }, [stopMeeting]);
+
+  useEffect(() => {
+    const autoStop = window.meetingAutoStop;
+    if (!autoStop) return;
+    return autoStop.onCompleted((event) => {
       if (event.noteId !== selectedNoteIdRef.current) return;
       void stopMeeting();
     });
@@ -5376,6 +5433,27 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     meetingMetadata?.transcription_status,
     refreshTranscriptionState,
     transcriptionJob?.jobId,
+  ]);
+
+  // A local worker failure is durable and retryable. Reflect it in the note
+  // instead of leaving the cloud metadata in Processing forever.
+  useEffect(() => {
+    if (
+      !isMeetingNote ||
+      meetingMetadata?.transcription_status !== 'processing' ||
+      transcriptionJob?.status !== 'failed' ||
+      !transcriptionJob.error ||
+      selectedNoteIdRef.current !== transcriptionJob.noteId
+    ) return;
+    void updateMeetingMetadata({
+      transcription_status: 'failed',
+      transcription_error: transcriptionJob.error,
+    });
+  }, [
+    isMeetingNote,
+    meetingMetadata?.transcription_status,
+    transcriptionJob,
+    updateMeetingMetadata,
   ]);
 
   useEffect(() => {

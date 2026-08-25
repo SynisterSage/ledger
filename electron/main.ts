@@ -154,9 +154,11 @@ function requestMeetingAutoStop(reason: AutoStopReason, noteId: string) {
   broadcastMeetingAudioEvent('meeting-auto-stop:requested', { noteId, reason });
   const sessionId = current.sessionId;
   const finalize = async () => {
+    let stopped: ReturnType<typeof meetingAudioCaptureService.status> | null = null;
     try {
       if (meetingAudioCaptureService.isActive && meetingAudioCaptureService.status().sessionId === sessionId) {
-        await meetingAudioCaptureService.stop();
+        stopped = await meetingAudioCaptureService.stop();
+        broadcastMeetingAudioEvent('meeting-auto-stop:completed', { noteId, sessionId, capture: stopped });
       }
     } catch (error) {
       console.warn('[meeting-auto-stop]', JSON.stringify({ event: 'finalization_failed', reason, error: error instanceof Error ? error.message : String(error) }));
