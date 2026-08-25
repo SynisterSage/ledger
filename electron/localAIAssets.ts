@@ -189,12 +189,14 @@ export class LocalAIAssetManager {
         : [];
     const fallback = preference.find((tier) => this.statusFor(GENERATION_MODEL_REGISTRY.find((model) => model.tier === tier)!).installed);
     if (!fallback) return { requestedTier, resolvedTier: 'fast', fallbackReason: 'no_installed_generation_tier' };
-    try { fs.writeFileSync(selectionPath(), JSON.stringify({ tier: fallback, migratedFrom: requestedTier, updatedAt: new Date().toISOString() }), { mode: 0o600 }); } catch {}
     return { requestedTier, resolvedTier: fallback, fallbackReason: 'requested_uninstalled' };
   }
   getSelectedGenerationModel() {
     const selectedTier = this.getSelectedGenerationTier();
     return GENERATION_MODEL_REGISTRY.find((model) => model.tier === selectedTier) ?? GENERATION_MODEL_REGISTRY[0];
+  }
+  getRequestedGenerationTier() {
+    return this.selectedTier();
   }
   getGenerationModelPath(modelId: string) {
     const model = this.generationModel(modelId);

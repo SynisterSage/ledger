@@ -84,6 +84,7 @@ let pendingInviteToken: string | null = null;
 let sidebarTouchBar: InstanceType<typeof TouchBar> | null = null;
 let tray: Tray | null = null;
 let isQuittingApp = false;
+let explicitQuitPromise: Promise<void> | null = null;
 let appleCalendarWatcher: ReturnType<typeof spawn> | null = null;
 let zoomAccessibilityWatcher: ReturnType<typeof spawn> | null = null;
 let zoomWatcherRestartTimer: NodeJS.Timeout | null = null;
@@ -6473,8 +6474,31 @@ function focusSidebarWindow() {
 }
 
 function quitLedgerApp() {
+  if (explicitQuitPromise) return explicitQuitPromise;
   isQuittingApp = true;
-  app.quit();
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+  // Explicit Exit Ledger must not enter Electron's close-event chain: that
+  // chain can be held open by a renderer/runtime shutdown promise and leave a
+  // tray process behind after the window disappears.
+  const shutdown = Promise.allSettled([
+    meetingAudioCaptureService.shutdown(),
+    localTranscriptionService.shutdown(),
+    askLedgerService.shutdown(),
+  ]);
+  explicitQuitPromise = Promise.race([
+    shutdown.then(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, 4000)),
+  ]).then(() => {
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+    app.exit(0);
+  });
+  return explicitQuitPromise;
 }
 
 async function toggleNotificationsPaused() {
@@ -7859,11 +7883,24 @@ app.on('before-quit', (event) => {
   }
   audioShutdownInProgress = true;
   event.preventDefault();
-  void Promise.all([
+  // A stuck local runtime or retrieval shutdown must never leave the tray
+  // process resident after the user explicitly chose Exit Ledger.
+  const forceExitTimer = setTimeout(() => {
+    console.warn('[electron] shutdown exceeded deadline; forcing process exit');
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+    app.exit(0);
+  }, 2500);
+  void Promise.allSettled([
     meetingAudioCaptureService.shutdown(),
     localTranscriptionService.shutdown(),
     askLedgerService.shutdown(),
-  ]).finally(() => app.quit());
+  ]).finally(() => {
+    clearTimeout(forceExitTimer);
+    app.quit();
+  });
 });
 
 powerMonitor.on('suspend', () => {
@@ -7934,7 +7971,7 @@ ipcMain.handle('window:hide-temporary', () => {
 });
 
 ipcMain.handle('window:quit-app', () => {
-  quitLedgerApp();
+  return quitLedgerApp();
 });
 
 ipcMain.handle('window:get-rendering-settings', () => ({

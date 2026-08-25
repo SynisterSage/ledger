@@ -826,6 +826,27 @@ button:focus {
 
 .ledger-meeting-live-transcript {
   animation: ledger-meeting-transcript-in 160ms ease-out both;
+  scrollbar-color: var(--ledger-scrollbar-thumb, rgb(80 80 80)) var(--ledger-surface-card);
+  scrollbar-width: thin;
+}
+
+.ledger-meeting-live-transcript::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.ledger-meeting-live-transcript::-webkit-scrollbar-track {
+  background: var(--ledger-surface-card);
+}
+
+.ledger-meeting-live-transcript::-webkit-scrollbar-thumb {
+  background-color: var(--ledger-scrollbar-thumb, rgb(80 80 80));
+  border: 2px solid var(--ledger-surface-card);
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+
+.ledger-meeting-live-transcript::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ledger-scrollbar-thumb-hover, rgb(110 110 110));
 }
 
 @keyframes ledger-meeting-waveform-bar {
@@ -836,6 +857,10 @@ button:focus {
 .ledger-meeting-waveform-bar-active {
   transform-origin: bottom;
   animation: ledger-meeting-waveform-bar 720ms ease-in-out infinite alternate;
+}
+
+.ledger-meeting-waveform-bar {
+  transition: height 90ms ease-out;
 }
 
 .ledger-meeting-waveform-bar-active:nth-child(2) { animation-delay: 120ms; }
@@ -1797,6 +1822,34 @@ button:focus {
   margin-bottom: 2px;
   padding: 9px 10px;
   border-radius: 6px !important;
+}
+.notes-ask-ledger-pane {
+  bottom: -1.25rem !important;
+  z-index: 30 !important;
+}
+.notes-ask-ledger-pane > .agent-ask-ledger-content {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 0;
+}
+.notes-ask-ledger-pane .meeting-chat-composer {
+  position: absolute !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  min-height: 128px !important;
+  border-radius: 0 !important;
+}
+.notes-ask-ledger-pane .meeting-chat-composer--empty {
+  top: auto !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  height: 330px !important;
+  min-height: 330px !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 .notes-ask-ledger-pane .ask-ledger-composer textarea {
   min-height: 34px;

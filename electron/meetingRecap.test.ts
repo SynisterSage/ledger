@@ -26,7 +26,7 @@ const context = (overrides: Partial<MeetingIntelligenceContext> = {}): MeetingIn
 test('meeting evidence chunks preserve segment IDs and timestamps', () => {
   const chunks = buildMeetingEvidenceChunks(context(), 40);
   assert.equal(chunks.length, 2);
-  assert.match(chunks[0].text, /segment-1\|1000/);
+  assert.match(chunks[0].text, /S1\|1000/);
   assert.deepEqual(chunks[1].segmentIds, ['segment-2']);
 });
 
@@ -62,7 +62,7 @@ test('meeting recap prompt prioritizes human notes and grounding rules', () => {
   assert.match(prompt, /Human notes are user-authored context/);
   assert.match(prompt, /original human notes must remain preserved separately under Your notes/);
   assert.match(prompt, /Never fabricate citations/);
-  assert.match(prompt, /segment-1\|1000/);
+  assert.match(prompt, /S1\|1000/);
 });
 
 test('selected meeting templates change recap emphasis', () => {
@@ -126,9 +126,27 @@ test('recap validation keeps a grounded item when the model timestamp drifts', (
   assert.equal(draft?.decisions[0]?.sourceRefs[0]?.timestampMs, 3000);
 });
 
+test('recap validation maps short source keys back to transcript IDs', () => {
+  const draft = parseMeetingRecapDraft(JSON.stringify({
+    overview: 'The team aligned on timing.',
+    decisions: [{ text: 'Keep September.', sourceRefs: [{ sourceKey: 'S1', timestampMs: 999999 }] }],
+    actions: [],
+    openThreads: [],
+  }), context());
+  assert.equal(draft?.decisions[0]?.sourceRefs[0]?.transcriptSegmentId, 'segment-1');
+  assert.equal(draft?.decisions[0]?.sourceRefs[0]?.timestampMs, 3000);
+});
+
+test('recap prompt requires supported structured sections instead of overview-only output', () => {
+  const prompt = buildMeetingRecapPrompt(context(), buildMeetingEvidenceChunks(context()));
+  assert.match(prompt, /never an overview-only summary/i);
+  assert.match(prompt, /do not leave decisions, actions, or openThreads empty/i);
+});
+
 test('recap service rejects cross-workspace transcript evidence before model use', async () => {
   let switched = false;
   const service = new MeetingRecapService({
+    getMeetingRecapGenerationTier: () => 'balanced',
     switchGenerationTier: async () => { switched = true; return { ok: true }; },
     cancel: () => ({ ok: true }),
     start: () => '',
@@ -141,6 +159,7 @@ test('recap service rejects cross-workspace transcript evidence before model use
 
 test('recap service returns unavailable when neither local generation tier is installed', async () => {
   const service = new MeetingRecapService({
+    getMeetingRecapGenerationTier: () => 'balanced',
     switchGenerationTier: async () => ({ ok: false }),
     cancel: () => ({ ok: true }),
     start: () => '',

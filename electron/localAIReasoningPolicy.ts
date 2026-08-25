@@ -41,7 +41,7 @@ export const resolveGenerationBudgets = (tier: GenerationTier, configuredMaxToke
   // truncated JSON, which cannot be reviewed or parsed by the Notes UI.
   const visibleCeiling = tier === 'fast'
     ? signals?.routeReason === 'meeting_recap'
-      ? 900
+      ? 1400
       : signals?.hasSkill
         ? 768
         : 640

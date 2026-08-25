@@ -42,6 +42,10 @@ export type MeetingEvidenceChunk = {
   text: string;
 };
 
+const orderedEvidenceSegments = (context: MeetingIntelligenceContext) => [...context.transcriptSegments]
+  .filter((segment) => !segment.deleted_at)
+  .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order);
+
 /** Remove overlap-window repeats for recap context without mutating stored transcript rows. */
 export const dedupeMeetingTranscriptSegments = (segments: TranscriptSegment[]) => {
   const result: TranscriptSegment[] = [];
@@ -84,13 +88,14 @@ export const buildMeetingEvidenceChunks = (
   context: MeetingIntelligenceContext,
   maxChars = 2200,
 ): MeetingEvidenceChunk[] => {
-  const segments = [...context.transcriptSegments]
-    .filter((segment) => !segment.deleted_at)
-    .sort((a, b) => a.start_ms - b.start_ms || a.segment_order - b.segment_order);
+  const segments = orderedEvidenceSegments(context);
   const chunks: MeetingEvidenceChunk[] = [];
   let current: MeetingEvidenceChunk = { index: 0, segmentIds: [], text: '' };
-  for (const segment of segments) {
-    const line = `[${segment.id}|${segment.start_ms}] ${clean(segment.speaker_label || '')}${segment.speaker_label ? ': ' : ''}${clean(segment.transcript_text)}`;
+  for (const [segmentIndex, segment] of segments.entries()) {
+    // Short source keys are much more reliable for small local models than
+    // copying long UUIDs. The parser maps these keys back to the real IDs.
+    const sourceKey = `S${segmentIndex + 1}`;
+    const line = `[${sourceKey}|${segment.start_ms}] ${clean(segment.speaker_label || '')}${segment.speaker_label ? ': ' : ''}${clean(segment.transcript_text)}`;
     if (current.text && current.text.length + line.length + 1 > maxChars) {
       chunks.push(current);
       current = { index: chunks.length, segmentIds: [], text: '' };
@@ -154,7 +159,7 @@ export const buildMeetingRecapPrompt = (
     custom: context.meeting.templateInstructions ? clean(context.meeting.templateInstructions).slice(0, 1000) : 'Use a balanced generic meeting recap.',
   };
   const selectedEmphasis = emphasis[effectiveTemplate] ?? emphasis.auto;
-  return `SYSTEM / LEDGER MEETING RECAP\nReturn JSON only. Do not return markdown.\nTemplate emphasis: ${selectedEmphasis}\nSchema: {"overview":"","decisions":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"actions":[{"text":"","ownerText":"","dueDateText":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}],"openThreads":[{"text":"","sourceRefs":[{"transcriptSegmentId":"","timestampMs":0}]}]}\nProduce a substantive recap, not an overview-only summary. Identify concrete decisions, commitments/next actions, and unresolved questions when the transcript supports them; include at least one concise item in each supported section. For every decision, action, or open thread, include at least one sourceRef. Copy transcriptSegmentId exactly from the evidence line and copy its timestampMs exactly; do not invent, shorten, or convert the ID or timestamp. Use only source IDs present in the transcript evidence. Never fabricate citations. Human notes are user-authored context: use them to enrich the recap, recover details the transcript may underrepresent, and shape useful emphasis. Do not delete, rewrite, or present human notes as transcript evidence; the original human notes must remain preserved separately under Your notes. Transcript evidence is authoritative for what was said. Exact calendar/project data is authoritative for structured state. Do not invent decisions, owners, deadlines, or speaker identities. A discussion is not a decision unless commitment is supported. Omit uncertain owners and dates. Keep overview to 2-4 sentences. Keep each item concise. Return at most 4 decisions, 6 actions, and 4 open threads.\n\nMEETING CONTEXT\n${meeting}\n\nHUMAN NOTES\n${notes || '(none)'}\n\nTRANSCRIPT EVIDENCE\n${evidenceText || '(none)'}`;
+  return `SYSTEM / LEDGER MEETING RECAP\nReturn JSON only. Do not return markdown.\nTemplate emphasis: ${selectedEmphasis}\nSchema: {"overview":"","decisions":[{"text":"","sourceRefs":[{"sourceKey":"S1","timestampMs":0}]}],"actions":[{"text":"","ownerText":"","dueDateText":"","sourceRefs":[{"sourceKey":"S1","timestampMs":0}]}],"openThreads":[{"text":"","sourceRefs":[{"sourceKey":"S1","timestampMs":0}]}]}\nProduce a substantive recap, never an overview-only summary. Read the entire chronological transcript evidence before answering. Extract every supported concrete decision, commitment/next action, and unresolved question. Return at least one grounded item in every section that the evidence supports; do not leave decisions, actions, or openThreads empty merely to shorten the answer. For every decision, action, or open thread, include at least one sourceRef. Each sourceRef must use the short sourceKey (S1, S2, S3...) copied from the evidence line and its exact timestampMs. Do not use transcript IDs in the response. Never fabricate citations. Human notes are user-authored context: use them to enrich the recap, recover details the transcript may underrepresent, and shape useful emphasis. Do not delete, rewrite, or present human notes as transcript evidence; the original human notes must remain preserved separately under Your notes. Transcript evidence is authoritative for what was said. Exact calendar/project data is authoritative for structured state. Do not invent decisions, owners, deadlines, or speaker identities. A discussion is not a decision unless commitment is supported. Omit uncertain owners and dates. Keep overview to 2-4 sentences. Keep each item concise but specific. Return at most 4 decisions, 6 actions, and 4 open threads.\n\nMEETING CONTEXT\n${meeting}\n\nHUMAN NOTES\n${notes || '(none)'}\n\nTRANSCRIPT EVIDENCE\n${evidenceText || '(none)'}`;
 };
 
 const parseJson = (text: string): unknown => {
@@ -167,12 +172,15 @@ export const parseMeetingRecapDraft = (text: string, context: MeetingIntelligenc
   if (!value || typeof value !== 'object') return null;
   const raw = value as Record<string, unknown>;
   const segments = new Map(context.transcriptSegments.map((segment) => [segment.id, segment]));
+  const sourceKeys = new Map(orderedEvidenceSegments(context).map((segment, index) => [`S${index + 1}`, segment]));
   const refs = (value: unknown): TranscriptEvidenceRef[] => Array.isArray(value)
     ? value.flatMap((item) => {
         if (!item || typeof item !== 'object') return [];
         const ref = item as Record<string, unknown>;
-        const id = clean(ref.transcriptSegmentId);
-        const segment = segments.get(id);
+        const sourceKey = clean(ref.sourceKey);
+        const legacyId = clean(ref.transcriptSegmentId);
+        const segment = sourceKeys.get(sourceKey) ?? segments.get(legacyId);
+        const id = segment?.id ?? legacyId;
         const timestampMs = Number(ref.timestampMs);
         if (!segment) return [];
         // Models sometimes preserve the correct segment ID but drift slightly

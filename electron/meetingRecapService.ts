@@ -37,9 +37,14 @@ export class MeetingRecapService {
     };
     const chunks = buildMeetingEvidenceChunks(recapContext, 900);
     const startedAt = Date.now();
+    const requestedTier = this.localAI.getMeetingRecapGenerationTier();
     let generatedResponse = false;
-    for (const tier of ['balanced', 'fast'] as const) {
-      const switched = await this.localAI.switchGenerationTier(tier).catch(() => ({ ok: false }));
+    // Recaps prefer the stronger installed model. This is independent from
+    // the user's general Ask Ledger selection, and never persists a recap-only
+    // model switch.
+    const tiers = [requestedTier] as const;
+    for (const tier of tiers) {
+      const switched = await this.localAI.switchGenerationTier(tier, { persistSelection: false }).catch(() => ({ ok: false }));
       if (generationRunId !== this.generationRunId) return { status: 'unavailable', reason: 'generation_failed' };
       if (!switched || switched.ok !== true) continue;
       // 12 x 900 chars covers a typical short meeting end-to-end. Prefer the
@@ -80,12 +85,12 @@ export class MeetingRecapService {
           });
           this.localAI.cancel(requestId);
           finish({ text, failed: true });
-        }, tier === 'balanced' ? 60_000 : 90_000);
+        }, tier === 'balanced' ? 120_000 : 90_000);
         this.localAI.start({
           question: 'Enhance this meeting note with a grounded recap.',
           context: prompt,
-          generationBudget: tier === 'balanced' ? 1400 : 900,
-          timeoutMs: tier === 'balanced' ? 55_000 : 85_000,
+          generationBudget: tier === 'balanced' ? 1400 : 1400,
+          timeoutMs: tier === 'balanced' ? 115_000 : 85_000,
           reasoningSignals: { answerDepth: 'standard', generationDepth: 'standard', retrievalRequired: true, routeReason: 'meeting_recap' },
         }, { onEvent: (event: LocalAIStreamEvent) => {
           if (event.type === 'delta') text += event.text ?? '';
@@ -120,17 +125,29 @@ export class MeetingRecapService {
       });
       if (this.activeRequestId === requestId) this.activeRequestId = null;
       if (generationRunId !== this.generationRunId) return { status: 'unavailable', reason: 'generation_failed' };
-      if (answer.failed) continue;
+      if (answer.failed) {
+        // Do not silently downgrade a generation failure. Tier selection was
+        // already resolved from installed-model availability above.
+        break;
+      }
       const draft = parseMeetingRecapDraft(answer.text, recapContext);
-      if (!draft) {
+      const groundedItemCount = draft
+        ? draft.decisions.length + draft.actions.length + draft.openThreads.length
+        : 0;
+      if (!draft || !draft.overview.trim() || groundedItemCount === 0) {
         console.warn('[meeting-recap] generated response was not valid recap JSON', {
           workspaceId: context.workspaceId,
           noteId: context.noteId,
           tier,
           requestId,
           textChars: answer.text.length,
+          overviewChars: draft?.overview.length ?? 0,
+          decisions: draft?.decisions.length ?? 0,
+          actions: draft?.actions.length ?? 0,
+          openThreads: draft?.openThreads.length ?? 0,
+          reason: !draft ? 'invalid_json_or_shape' : 'overview_only_or_empty',
         });
-        continue;
+        break;
       }
       console.info('[meeting-recap] parsed draft', {
         workspaceId: context.workspaceId,
@@ -142,7 +159,7 @@ export class MeetingRecapService {
         openThreads: draft.openThreads.length,
       });
       const metrics = {
-        requestedTier: 'balanced' as const,
+        requestedTier,
         actualTier: tier,
         transcriptLength: recapContext.transcriptSegments.reduce((sum, segment) => sum + segment.transcript_text.length, 0),
         chunkCount: selectMeetingEvidenceChunks(chunks, maxEvidenceChunks).length,

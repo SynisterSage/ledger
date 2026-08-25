@@ -2112,7 +2112,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
   return (
       <div className={compact
-      ? `agent-ask-ledger-content flex h-full min-h-0 w-full flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
+      ? `agent-ask-ledger-content relative flex h-full min-h-0 w-full flex-col ${conversationActive ? 'agent-ask-ledger-content--active' : ''}`
       : conversationActive ? 'flex h-full min-h-0 w-full flex-col' : 'mt-5'}>
       {conversationActive && (
           <section
@@ -2130,7 +2130,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               {message.role === 'user' ? (
                 <div className="flex max-w-[78%] flex-col items-end gap-1">
                   {message.skillId && <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)]"><Boxes size={12} />{skillCatalog.find((skill) => skill.id === message.skillId)?.name}</span>}
-                  {message.attachments?.length ? <div className="flex max-w-full flex-wrap justify-end gap-1.5">{message.attachments.map((attachment, index) => attachment.kind === 'file' ? <button key={`${message.id}-file-${attachment.attachment.id}`} type="button" onClick={() => void window.askLedger?.openAttachment(attachment.attachment.id)} className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.attachment.name}`}><FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{attachmentKindLabel(attachment.attachment)}</span><span className="truncate">{attachmentDisplayName(attachment.attachment.name)}</span></button> : <button key={`${message.id}-resource-${index}`} type="button" onClick={() => openSource(attachment.resource)} className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.resource.title}`}><span className="truncate">{attachment.resource.title}</span></button>)}</div> : null}
+                  {message.attachments?.length ? <div className="flex max-w-full flex-wrap justify-end gap-1.5">{message.attachments.map((attachment, index) => attachment.kind === 'file' ? <button key={`${message.id}-file-${attachment.attachment.id}`} type="button" onClick={() => void window.askLedger?.openAttachment(attachment.attachment.id)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.attachment.name}`}><FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{attachmentKindLabel(attachment.attachment)}</span><span className="min-w-0 flex-1 truncate">{attachmentDisplayName(attachment.attachment.name)}</span></button> : <button key={`${message.id}-resource-${index}`} type="button" onClick={() => openSource(attachment.resource)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.resource.title}`}><span className="min-w-0 flex-1 truncate">{attachment.resource.title}</span></button>)}</div> : null}
                   {message.content && <>
                     <p className="w-fit rounded-lg bg-[var(--ledger-surface-hover)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)]">{message.content}</p>
                     <div className="mt-1 flex justify-end opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
@@ -2236,32 +2236,32 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       )}
       <div
         ref={skillPickerRef}
-        className={`ask-ledger-composer ${conversationActive || compact ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'mx-auto min-h-[104px] max-w-[620px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${meetingChat ? 'meeting-chat-composer !absolute !inset-x-2 !bottom-3 !z-20 !mx-0 !w-auto !min-h-[128px] !rounded-md !px-3 !py-3' : compact ? '!mx-3 !w-[calc(100%-1.5rem)] !min-h-[72px] !rounded-none !px-3 !py-2' : ''} ${localAIUnavailable ? 'cursor-pointer' : ''}`}
+        className={`ask-ledger-composer ${conversationActive || compact ? 'order-2 sticky bottom-4 z-10 mt-auto min-h-[104px]' : 'mx-auto min-h-[104px] max-w-[620px]'} relative flex w-full flex-col rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-4 py-3 shadow-[0_4px_18px_rgba(17,24,39,0.04)] transition focus-within:border-[color:var(--ledger-border-strong)] ${meetingChat ? `meeting-chat-composer ${conversationActive ? 'meeting-chat-composer--active !absolute !inset-x-0 !bottom-0 !z-20 !mx-0 !w-full !min-h-[128px]' : 'meeting-chat-composer--empty !absolute !inset-0 !z-20 !m-0 !h-full !min-h-0 !w-full'} !rounded-none !px-3 !py-3` : compact ? '!mx-3 !w-[calc(100%-1.5rem)] !min-h-[72px] !rounded-none !px-3 !py-2' : ''} ${localAIUnavailable ? 'cursor-pointer' : ''}`}
         onClick={() => {
           if (localAIUnavailable) setSetupModalOpen(true);
         }}
       >
         {conversationActive && <div aria-hidden="true" className={`ask-ledger-composer-fade pointer-events-none absolute inset-x-0 z-0 ${meetingChat ? 'bottom-[-16px] h-16' : compact ? 'bottom-[-10px] h-10' : 'bottom-[calc(100%+1px)] h-12'}`} />}
         {(activeInitialContext || selectedSkill || composerAttachments.length > 0 || attachmentIndexing) && (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
+            <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2 px-1">
             {composerAttachments.map((attachment) => (
-              <span key={`${attachment.kind}-${attachment.kind === 'file' ? attachment.attachment.id : attachment.resource.resourceId}`} className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
+              <span key={`${attachment.kind}-${attachment.kind === 'file' ? attachment.attachment.id : attachment.resource.resourceId}`} className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
                 {attachment.kind === 'file' ? <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /> : (() => { const Icon = sourceIconMap[attachment.resource.type]; return <Icon size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />; })()}
-                <span className="min-w-0 truncate">{attachment.kind === 'file' ? attachmentDisplayName(attachment.attachment.name) : attachment.resource.title}</span>
+                <span className="min-w-0 flex-1 truncate">{attachment.kind === 'file' ? attachmentDisplayName(attachment.attachment.name) : attachment.resource.title}</span>
                 <button type="button" onClick={(event) => { event.stopPropagation(); removeComposerAttachment(attachment); }} aria-label={`Remove ${attachment.kind === 'file' ? attachment.attachment.name : attachment.resource.title}`} className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"><X size={12} /></button>
               </span>
             ))}
             {activeInitialContext && (
-              <span className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
+              <span className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
                 <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                <span className="min-w-0 truncate">{activeInitialContext.title}</span>
+                <span className="min-w-0 flex-1 truncate">{activeInitialContext.title}</span>
                 <button type="button" onClick={(event) => { event.stopPropagation(); removeInitialContext(); }} aria-label="Remove Ask Ledger context" className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]">×</button>
               </span>
             )}
             {selectedSkill && (
-              <span className="inline-flex h-8 max-w-[260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
+              <span className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
                 <Boxes size={12} className="text-[var(--ledger-text-muted)]" />
-                <span className="min-w-0 truncate">{selectedSkill.name}</span>
+                <span className="min-w-0 flex-1 truncate">{selectedSkill.name}</span>
                 <button
                   type="button"
                   aria-label={`Remove ${selectedSkill.name}`}

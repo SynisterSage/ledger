@@ -663,6 +663,19 @@ export class LocalAIService {
     };
   }
 
+  getSelectedGenerationTier(): GenerationTier {
+    return this.assets.getSelectedGenerationTier();
+  }
+
+  getRequestedGenerationTier(): GenerationTier {
+    return this.assets.getRequestedGenerationTier();
+  }
+
+  getMeetingRecapGenerationTier(): 'balanced' | 'fast' {
+    const balanced = this.assets.getAvailableGenerationModels().find((model) => model.tier === 'balanced');
+    return balanced && this.assets.getGenerationModelStatus(balanced.id).installed ? 'balanced' : 'fast';
+  }
+
   getModelRouting(signals: AskLedgerModelRoutingSignals): AskLedgerModelRoute {
     const requestedTier = this.assets.getGenerationTierResolution?.().requestedTier ?? this.assets.getSelectedGenerationTier();
     const installedTiers = this.assets.getAvailableGenerationModels()
@@ -681,7 +694,7 @@ export class LocalAIService {
     this.runtimeStateListeners.forEach((listener) => listener(state));
   }
 
-  switchGenerationTier(targetTier: unknown): Promise<GenerationModelSwitchResult> {
+  switchGenerationTier(targetTier: unknown, options: { persistSelection?: boolean } = {}): Promise<GenerationModelSwitchResult> {
     if (targetTier !== 'fast' && targetTier !== 'balanced' && targetTier !== 'powerful') {
       return Promise.reject(new Error('Invalid generation tier.'));
     }
@@ -693,13 +706,13 @@ export class LocalAIService {
     if (this.switchPromise) {
       console.info('[local-ai] generation model switch queued', { requestedTier: normalizedTargetTier });
       const activeSwitch = this.switchPromise;
-      const queuedSwitch = activeSwitch.then(() => this.performGenerationSwitch(normalizedTargetTier));
+      const queuedSwitch = activeSwitch.then(() => this.performGenerationSwitch(normalizedTargetTier, options.persistSelection !== false));
       let trackedSwitch!: Promise<GenerationModelSwitchResult>;
       trackedSwitch = queuedSwitch.finally(() => { if (this.switchPromise === trackedSwitch) this.switchPromise = null; });
       this.switchPromise = trackedSwitch;
       return trackedSwitch;
     }
-    this.switchPromise = this.performGenerationSwitch(normalizedTargetTier).finally(() => { if (this.switchPromise) this.switchPromise = null; });
+    this.switchPromise = this.performGenerationSwitch(normalizedTargetTier, options.persistSelection !== false).finally(() => { if (this.switchPromise) this.switchPromise = null; });
     return this.switchPromise;
   }
 
@@ -717,7 +730,7 @@ export class LocalAIService {
     return { ok: true as const, status: await this.assets.removeGeneration(modelId) };
   }
 
-  private async performGenerationSwitch(targetTier: GenerationTier): Promise<GenerationModelSwitchResult> {
+  private async performGenerationSwitch(targetTier: GenerationTier, persistSelection = true): Promise<GenerationModelSwitchResult> {
     const target = this.assets.getAvailableGenerationModels().find((model) => model.tier === targetTier)!;
     const targetStatus = this.assets.getGenerationModelStatus(target.id);
     if (!targetStatus.installed) {
@@ -759,7 +772,7 @@ export class LocalAIService {
       this.runtime = nextRuntime;
       this.runtimeModelId = target.id;
       this.loadedModelId = target.id;
-      this.assets.setSelectedGenerationTier(targetTier);
+      if (persistSelection) this.assets.setSelectedGenerationTier(targetTier);
       this.switchState = { switching: false, targetTier: null, ready: true, failure: null, selectedTier: targetTier, loadedTier: targetTier };
       this.emitGenerationRuntimeState();
       console.info('[local-ai] generation model switch ready', { requestedTier: targetTier, modelId: target.id, startupMs: startup.startupMs, totalMs: Date.now() - startedAt });
