@@ -27,7 +27,7 @@ test('phase 1 tracks chunk identity and processes one worker at a time', () => {
 
 test('stable segments are emitted incrementally and persisted through the existing API', () => {
   assert.match(service, /onSegments\(/);
-  assert.match(service, /this\.emitSegments\(jobId, session, next, parsed\.rows/);
+  assert.match(service, /this\.emitSegments\(jobId, session, next, visibleRows/);
   assert.match(main, /meeting-transcription:segments/);
   assert.match(notes, /transcription\.onSegments\(/);
   assert.match(notes, /api\.bulkCreateTranscriptSegments\(event\.noteId/);

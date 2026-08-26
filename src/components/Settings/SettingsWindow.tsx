@@ -1024,7 +1024,17 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
         await loadLocalAIModels();
         return;
       }
-      if (action === 'download') await window.askLedger.downloadGenerationModel(model.id);
+      if (action === 'download') {
+        const result = await window.askLedger.downloadGenerationModel(model.id) as {
+          ok?: boolean;
+          error?: string;
+          status?: { generationModels?: Record<string, { error?: string | null }> };
+        };
+        if (result?.ok === false) {
+          const statusError = result.status?.generationModels?.[model.id]?.error;
+          throw new Error(result.error || statusError || `Could not install ${localAISettingsTierLabels[model.tier]}.`);
+        }
+      }
       if (action === 'remove') await window.askLedger.removeGenerationModel(model.id);
       if (action === 'select') {
         const result = await window.askLedger.switchGenerationTier(model.tier) as { ok?: boolean; state?: string; error?: string };

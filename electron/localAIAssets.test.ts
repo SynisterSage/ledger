@@ -52,6 +52,10 @@ test('release manifests include verified Fast and embedding metadata without env
   assert.match(fast?.downloadUrl ?? '', /^https:\/\/huggingface\.co\//);
   assert.equal(fast?.expectedSize, 1282439264);
   assert.match(fast?.sha256 ?? '', /^[a-f0-9]{64}$/);
+  const balanced = GENERATION_MODEL_REGISTRY.find((model) => model.tier === 'balanced');
+  assert.match(balanced?.downloadUrl ?? '', /resolve\/a8512ea\//);
+  assert.equal(balanced?.expectedSize, 2497280960);
+  assert.equal(balanced?.sha256, 'fbe1d5edd4ce802ae3ae7c7e4ab7d09789d697fdac1fc7929f8df4ca3c41bae3');
 
   const assets = new LocalAIAssetManager();
   const embedding = assets.status().embedding;

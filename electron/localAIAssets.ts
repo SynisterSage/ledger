@@ -62,9 +62,9 @@ const VERIFIED_OPTIONAL_GENERATION_ARTIFACTS = {
     sha256: 'd2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5',
   },
   balanced: {
-    url: 'https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf?download=true',
-    size: 2497280640,
-    sha256: 'ab27b9bfa375a178d6cba48f3ad892b94b7739659dcc7aae8058ce0ffed6b328',
+    url: 'https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/a8512ea/Qwen_Qwen3-4B-Q4_K_M.gguf?download=true',
+    size: 2497280960,
+    sha256: 'fbe1d5edd4ce802ae3ae7c7e4ab7d09789d697fdac1fc7929f8df4ca3c41bae3',
   },
 } as const;
 
@@ -130,7 +130,7 @@ export type LocalAIStatus = {
 
 const assetRoot = () => path.join(appDataPath(), 'ai');
 const modelPath = (asset: LocalAIAssetManifest) => path.join(assetRoot(), 'models', asset.role, asset.role === 'generation' && asset.id !== DEFAULT_GENERATION_MODEL_ID ? asset.id : '', asset.fileName);
-const temporaryModelPath = (asset: LocalAIAssetManifest) => `${modelPath(asset)}.${process.pid}.part`;
+const temporaryModelPath = (asset: LocalAIAssetManifest, target = modelPath(asset)) => `${target}.${process.pid}.part`;
 const selectionPath = () => path.join(assetRoot(), 'metadata', 'generation-selection.json');
 
 export const localAIRuntimeCandidates = () => {
@@ -163,7 +163,11 @@ export class LocalAIAssetManager {
     for (const asset of LOCAL_AI_MANIFEST) fs.mkdirSync(path.dirname(modelPath(asset)), { recursive: true });
     fs.mkdirSync(path.join(assetRoot(), 'runtime'), { recursive: true });
     fs.mkdirSync(path.join(assetRoot(), 'metadata'), { recursive: true });
-    for (const asset of LOCAL_AI_MANIFEST) fs.rmSync(temporaryModelPath(asset), { force: true });
+    for (const asset of LOCAL_AI_MANIFEST) {
+      fs.rmSync(temporaryModelPath(asset), { force: true });
+      const configuredTarget = asset.role === 'generation' ? this.getGenerationModelPath(asset.id) : this.pathFor(asset.role);
+      if (configuredTarget !== modelPath(asset)) fs.rmSync(temporaryModelPath(asset, configuredTarget), { force: true });
+    }
   }
 
   onChange(listener: (status: LocalAIStatus) => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -225,7 +229,7 @@ export class LocalAIAssetManager {
       const downloading = this.downloads.has(asset.id);
       const verifying = this.verifying.has(asset.id);
       const file = asset.role === 'generation' ? this.getGenerationModelPath(asset.id) : this.pathFor(asset.role);
-      const progressFile = downloading ? temporaryModelPath(asset) : file;
+      const progressFile = downloading ? temporaryModelPath(asset, file) : file;
       let installed = false; let bytesDownloaded = 0; let error: string | null = null;
       try { const stat = fs.statSync(progressFile); bytesDownloaded = stat.size; } catch { bytesDownloaded = 0; }
       const overrideKey = asset.role === 'embedding'
@@ -281,12 +285,11 @@ export class LocalAIAssetManager {
     const existing = this.downloadPromises.get(asset.id);
     if (existing) return existing;
     if (asset.role === 'generation' && this.generationDownloadId && this.generationDownloadId !== asset.id) throw new Error(`Another generation model is currently downloading: ${this.generationDownloadId}.`);
-    if (asset.role === 'generation') this.generationDownloadId = asset.id;
     const promise = this.downloadAsset(asset).finally(() => {
       this.downloadPromises.delete(asset.id);
       if (asset.role === 'generation' && this.generationDownloadId === asset.id) this.generationDownloadId = null;
     });
-    if (asset.role === 'generation') this.downloadPromises.set(asset.id, promise);
+    this.downloadPromises.set(asset.id, promise);
     return promise;
   }
   private isDownloadable(asset: LocalAIAssetManifest) { return Boolean(asset.downloadUrl && asset.sha256 && asset.expectedSize); }
@@ -300,8 +303,9 @@ export class LocalAIAssetManager {
     const free = await fs.promises.statfs(assetRoot());
     if (Number(free.bavail) * Number(free.bsize) < expectedSize! + 256 * 1024 * 1024) { this.downloadErrors.set(asset.id, { code: 'disk_space', message: 'There is not enough disk space for Local AI.' }); this.emit(); throw new Error('There is not enough disk space for Local AI.'); }
     const controller = new AbortController(); this.downloads.set(asset.id, controller); if (asset.role === 'generation') this.generationDownloadId = asset.id; this.downloadErrors.delete(asset.id); this.emit();
-    const target = asset.role === 'generation' ? this.getGenerationModelPath(asset.id) : modelPath(asset); const temporary = `${target}.${process.pid}.part`;
+    const target = asset.role === 'generation' ? this.getGenerationModelPath(asset.id) : modelPath(asset); const temporary = temporaryModelPath(asset, target);
     try {
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
       const response = await fetch(downloadUrl!, { signal: controller.signal, redirect: 'follow' });
       if (!response.ok || !response.body) throw new Error(`Model download failed with HTTP ${response.status}.`);
       const file = fs.createWriteStream(temporary, { flags: 'w', mode: 0o600, highWaterMark: 4 * 1024 * 1024 }); const hash = crypto.createHash('sha256'); let bytes = 0;
