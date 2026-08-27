@@ -14,6 +14,13 @@ import {
   getSystemDesktopThemeScheme,
   resolveDesktopThemeScheme,
 } from './theme/desktopTokens';
+import {
+  applyHighContrastPreference,
+  applyCompactDensityPreference,
+  loadStoredCompactDensityPreference,
+  loadStoredHighContrastPreference,
+  SETTINGS_STORAGE_KEY,
+} from './config/accessibility';
 
 const loadStoredDesktopThemePreference = () => {
   if (typeof document === 'undefined') {
@@ -46,6 +53,8 @@ if (typeof document !== 'undefined') {
   // Chromium/Electron can promote pointer focus to :focus-visible. Track the
   // interaction modality so the shared fallback focus ring is keyboard-only.
   const root = document.documentElement;
+  applyHighContrastPreference(root, loadStoredHighContrastPreference());
+  applyCompactDensityPreference(root, loadStoredCompactDensityPreference());
   const handleKeyboardNavigation = (event: KeyboardEvent) => {
     if (!['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
       return;
@@ -56,13 +65,28 @@ if (typeof document !== 'undefined') {
   window.addEventListener('keydown', handleKeyboardNavigation, true);
   window.addEventListener('pointerdown', handlePointerNavigation, true);
 
+  const handleAccessibilityPreferenceChange = (event: StorageEvent) => {
+    if (event.key !== SETTINGS_STORAGE_KEY) return;
+    applyHighContrastPreference(root, loadStoredHighContrastPreference());
+    applyCompactDensityPreference(root, loadStoredCompactDensityPreference());
+  };
+  window.addEventListener('storage', handleAccessibilityPreferenceChange);
+
   const handleThemeBroadcast = (
     _event: unknown,
-    payload: { theme?: 'light' | 'dark' | 'system' } | null
+    payload: { theme?: 'light' | 'dark' | 'system'; highContrast?: boolean; compactDensity?: boolean } | null
   ) => {
     const preference = payload?.theme ?? loadStoredDesktopThemePreference();
     const scheme = resolveDesktopThemeScheme(preference, getSystemDesktopThemeScheme());
     applyDesktopCssVars(document.documentElement, scheme);
+    applyHighContrastPreference(
+      document.documentElement,
+      payload?.highContrast ?? loadStoredHighContrastPreference()
+    );
+    applyCompactDensityPreference(
+      document.documentElement,
+      payload?.compactDensity ?? loadStoredCompactDensityPreference()
+    );
   };
 
   window.ledgerIpc?.events?.onLedgerThemeUpdated(handleThemeBroadcast as any);

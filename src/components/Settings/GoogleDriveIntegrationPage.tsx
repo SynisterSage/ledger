@@ -23,6 +23,7 @@ import { useToast } from '../Common/ToastProvider';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import {
   IntegrationSection,
+  IntegrationPageHeader,
   MetaRow,
   settingsIntegrationButton,
   settingsIntegrationPrimary,
@@ -333,29 +334,7 @@ export function GoogleDriveIntegrationPage({
   const sourceCount = sources.length;
   return (
     <section className="w-full max-w-215" aria-labelledby="settings-google-drive">
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-5 inline-flex items-center gap-1 text-xs font-medium text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
-      >
-        ← Integrations
-      </button>
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--ledger-surface-muted)]">
-          <GoogleDriveIcon size={20} />
-        </span>
-        <div>
-          <h2
-            id="settings-google-drive"
-            className="text-2xl font-semibold tracking-tight text-[var(--ledger-text-primary)]"
-          >
-            Google Drive
-          </h2>
-          <p className="mt-1 text-[13px] leading-5 text-[var(--ledger-text-secondary)]">
-            Connect Google Drive files, folders, and activity to your Ledger work.
-          </p>
-        </div>
-      </div>
+      <IntegrationPageHeader id="settings-google-drive" title="Google Drive" description="Connect Google Drive files, folders, and activity to your Ledger work." icon={<GoogleDriveIcon size={30} />} onBack={onBack} />
       {!canManage && (
         <p className="mt-5 flex items-center gap-2 text-xs text-[var(--ledger-danger)]">
           <AlertCircle size={14} />

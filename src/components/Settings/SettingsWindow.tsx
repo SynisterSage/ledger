@@ -63,6 +63,7 @@ import {
 } from '../../theme/desktopTokens';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useApi } from '../../hooks/useApi';
+import { applyCompactDensityPreference, applyHighContrastPreference } from '../../config/accessibility';
 import { buildInviteUrl } from '../../config/invite';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
@@ -405,19 +406,6 @@ const settingsNavGroups: Array<{
     ],
   },
   {
-    id: 'developer',
-    label: 'Developer',
-    icon: Globe2,
-    sections: [
-      {
-        id: 'developer_api',
-        label: 'Developer & API',
-        description: 'Extension tokens and AI connections',
-        icon: Globe2,
-      },
-    ],
-  },
-  {
     id: 'preferences',
     label: 'Preferences',
     icon: Settings,
@@ -481,6 +469,19 @@ const settingsNavGroups: Array<{
         label: 'Report a bug',
         description: 'Send a problem report to Ledger',
         icon: Bug,
+      },
+    ],
+  },
+  {
+    id: 'developer',
+    label: 'Developer',
+    icon: Globe2,
+    sections: [
+      {
+        id: 'developer_api',
+        label: 'Developer & API',
+        description: 'Extension tokens and AI connections',
+        icon: Globe2,
       },
     ],
   },
@@ -713,9 +714,6 @@ const getSidebarOpacitySliderStyle = (value: number): CSSProperties => {
     ['--ledger-range-fill' as string]: 'var(--ledger-accent)',
   };
 };
-
-const compactFieldClassName =
-  'h-9 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
 
 const compactSelectClassName =
   'h-9 appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 pr-8 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 disabled:opacity-60';
@@ -1399,6 +1397,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeam[]>([]);
   const [workspaceAuditLogs, setWorkspaceAuditLogs] = useState<WorkspaceAuditLog[]>([]);
   const [isLoadingWorkspaceAudit, setIsLoadingWorkspaceAudit] = useState(false);
+  const [isLoadingMoreWorkspaceAudit, setIsLoadingMoreWorkspaceAudit] = useState(false);
+  const [hasMoreWorkspaceAudit, setHasMoreWorkspaceAudit] = useState(false);
   const [workspaceAuditError, setWorkspaceAuditError] = useState<string | null>(null);
   const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member');
   const [isLoadingWorkspaceAdmin, setIsLoadingWorkspaceAdmin] = useState(false);
@@ -1449,8 +1449,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [mcpConnectionActionId, setMcpConnectionActionId] = useState<string | null>(null);
   const [mcpScopeActionId, setMcpScopeActionId] = useState<string | null>(null);
   const [isMcpConnectionsExpanded, setIsMcpConnectionsExpanded] = useState(false);
+  const [mcpDetailOpen, setMcpDetailOpen] = useState(false);
   const [expandedMcpConnectionId, setExpandedMcpConnectionId] = useState<string | null>(null);
   const [openMcpConnectionMenuId, setOpenMcpConnectionMenuId] = useState<string | null>(null);
+  const [openTeamActionMenuId, setOpenTeamActionMenuId] = useState<string | null>(null);
   const [openMcpPermissionsId, setOpenMcpPermissionsId] = useState<string | null>(null);
   const [accountSessions, setAccountSessions] = useState<AccountSessionRow[]>([]);
   const [isLoadingAccountSessions, setIsLoadingAccountSessions] = useState(false);
@@ -1523,6 +1525,24 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       description: 'Restore the last open or collapsed state.',
     },
   ];
+
+  useEffect(() => {
+    if (!openTeamActionMenuId) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && !event.target.closest('[data-team-actions]')) {
+        setOpenTeamActionMenuId(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenTeamActionMenuId(null);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openTeamActionMenuId]);
 
   useEffect(() => {
     const handleFocusContext = (
@@ -1640,8 +1660,20 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     applyDesktopCssVars(document.documentElement, scheme);
     window.ledgerIpc?.commands?.ledgerThemeUpdated({
       theme: preferences.theme,
+      highContrast: preferences.highContrast,
+      compactDensity: preferences.compactDensity,
     });
-  }, [preferences.theme]);
+  }, [preferences.compactDensity, preferences.highContrast, preferences.theme]);
+
+  useEffect(() => {
+    if (!settingsHydratedRef.current) return;
+    applyHighContrastPreference(document.documentElement, preferences.highContrast);
+  }, [preferences.highContrast]);
+
+  useEffect(() => {
+    if (!settingsHydratedRef.current) return;
+    applyCompactDensityPreference(document.documentElement, preferences.compactDensity);
+  }, [preferences.compactDensity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2096,6 +2128,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       await refreshWorkspaces();
 
       window.dispatchEvent(new CustomEvent('ledger:workspaces-changed'));
+      setShowCreateWorkspaceForm(false);
       setWorkspaceCreateStatus('Workspace created and activated. Next step: invite teammates.');
       window.setTimeout(() => {
         inviteEmailRef.current?.focus();
@@ -2463,11 +2496,12 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     setIsLoadingWorkspaceAudit(true);
     setWorkspaceAuditError(null);
     void api
-      .getWorkspaceAuditLog(activeWorkspaceId)
+      .getWorkspaceAuditLog(activeWorkspaceId, { limit: 10, offset: 0 })
       .then((payload) => {
         if (cancelled) return;
         const logs = (payload as { logs?: WorkspaceAuditLog[] })?.logs;
         setWorkspaceAuditLogs(Array.isArray(logs) ? logs : []);
+        setHasMoreWorkspaceAudit(Boolean((payload as { hasMore?: boolean })?.hasMore));
       })
       .catch((error) => {
         if (!cancelled) setWorkspaceAuditError(error instanceof Error ? error.message : 'Could not load the audit log');
@@ -2479,6 +2513,24 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       cancelled = true;
     };
   }, [activeSection, activeWorkspaceId, api, canManageWorkspace]);
+
+  const loadMoreWorkspaceAudit = async () => {
+    if (!activeWorkspaceId || !canManageWorkspace || !hasMoreWorkspaceAudit || isLoadingMoreWorkspaceAudit) return;
+    setIsLoadingMoreWorkspaceAudit(true);
+    try {
+      const payload = await api.getWorkspaceAuditLog(activeWorkspaceId, {
+        limit: 10,
+        offset: workspaceAuditLogs.length,
+      });
+      const logs = (payload as { logs?: WorkspaceAuditLog[] })?.logs;
+      setWorkspaceAuditLogs((current) => [...current, ...(Array.isArray(logs) ? logs : [])]);
+      setHasMoreWorkspaceAudit(Boolean((payload as { hasMore?: boolean })?.hasMore));
+    } catch (error) {
+      setWorkspaceAuditError(error instanceof Error ? error.message : 'Could not load more audit activity');
+    } finally {
+      setIsLoadingMoreWorkspaceAudit(false);
+    }
+  };
 
   useEffect(() => {
     if (!openMcpConnectionMenuId) return;
@@ -3037,6 +3089,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
 
   const isSettingsModalOpen =
     showCloseGuardModal ||
+    showCreateWorkspaceForm ||
     isExtensionTokenModalOpen ||
     extensionTokenConfirmAction !== null ||
     (isWorkspaceManageModalOpen && Boolean(activeWorkspace)) ||
@@ -3452,7 +3505,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
 
                   <div className="mt-8 space-y-4">
                     <div className={settingsTheme.sectionRows}>
-                      <div className="space-y-2.5">
+                      <div className="space-y-4">
                         <label htmlFor="settings-bug-title" className={settingsTheme.label}>
                           Short summary
                         </label>
@@ -3465,7 +3518,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           className={settingsTheme.input}
                         />
                       </div>
-                      <div className="space-y-2.5">
+                      <div className="space-y-4">
                         <label htmlFor="settings-bug-description" className={settingsTheme.label}>
                           What happened?
                         </label>
@@ -3668,11 +3721,11 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           ) : null}
                           <button
                             type="button"
-                            onClick={() => setShowCreateWorkspaceForm((value) => !value)}
+                            onClick={() => setShowCreateWorkspaceForm(true)}
                             className={settingsTheme.controlButtonNeutral + ' h-8 rounded-lg px-2.5 text-xs'}
-                            aria-label={showCreateWorkspaceForm ? 'Close workspace creation' : 'Create workspace'}
+                            aria-label="Create workspace"
                           >
-                            {showCreateWorkspaceForm ? 'Close' : 'Create workspace'}
+                            Create workspace
                           </button>
                         </div>
                       </div>
@@ -4047,20 +4100,20 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           type="button"
                           onClick={openCreateTeamModal}
                           disabled={!canManageWorkspace}
-                          className={settingsTheme.controlButton}
+                          className={settingsTheme.controlButton + ' inline-flex shrink-0 flex-row items-center gap-2 whitespace-nowrap leading-none'}
                         >
                           <Plus size={12} />
                           New team
                         </button>
                       </div>
 
-                      <div className="mt-5 overflow-hidden rounded-[20px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
-                        <div className="grid grid-cols-[minmax(220px,1fr)_90px_90px_100px_100px] gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-xs font-medium text-[var(--ledger-text-muted)]">
+                      <div className="relative mt-5 overflow-visible rounded-[20px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+                        <div className="grid grid-cols-[minmax(140px,1fr)_72px_72px_82px_48px] gap-2 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-xs font-medium text-[var(--ledger-text-muted)] sm:grid-cols-[minmax(180px,1fr)_84px_84px_92px_52px] sm:gap-3">
                           <div>Name</div>
                           <div>Members</div>
                           <div>Assigned</div>
                           <div>Identifier</div>
-                          <div className="text-right">Actions</div>
+                          <div className="text-right" aria-label="Actions" />
                         </div>
                         {workspaceTeams.length === 0 ? (
                           <div className="flex min-h-40 items-center justify-center px-4 py-8 text-center">
@@ -4092,7 +4145,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             return (
                               <div
                                 key={team.id}
-                                className="grid grid-cols-[minmax(220px,1fr)_90px_90px_100px_100px] items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
+                                className="relative grid grid-cols-[minmax(140px,1fr)_72px_72px_82px_48px] items-center gap-2 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 last:rounded-b-[20px] last:border-b-0 hover:bg-[var(--ledger-surface-hover)] sm:grid-cols-[minmax(180px,1fr)_84px_84px_92px_52px] sm:gap-3"
                               >
                                 <button
                                   type="button"
@@ -4115,87 +4168,69 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                                     </span>
                                   </span>
                                 </button>
-                                <div className="text-sm text-[var(--ledger-text-secondary)]">
+                                <div className="truncate text-sm text-[var(--ledger-text-secondary)]">
                                   {memberCount} members
                                 </div>
-                                <div className="text-sm text-[var(--ledger-text-secondary)]">
+                                <div className="truncate text-sm text-[var(--ledger-text-secondary)]">
                                   {team.assignedCount} assigned
                                 </div>
                                 <div className="truncate font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
                                   {team.identifier}
                                 </div>
-                                <div className="flex items-center justify-end gap-1">
+                                <div className="relative flex justify-end" data-team-actions onClick={(event) => event.stopPropagation()}>
                                   <button
                                     type="button"
-                                    onClick={() => openWorkspaceTeamSettings(team.id)}
+                                    onClick={() => setOpenTeamActionMenuId(openTeamActionMenuId === team.id ? null : team.id)}
                                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                                    aria-label={`Open settings for ${team.name}`}
-                                    title="Team settings"
+                                    aria-label={`Actions for ${team.name}`}
+                                    aria-expanded={openTeamActionMenuId === team.id}
+                                    title="Team actions"
                                   >
-                                    <Settings size={15} />
+                                    <MoreHorizontal size={16} />
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      try {
-                                        if (isArchived) {
-                                          await api.restoreTeam(team.id);
-                                        } else {
-                                          await api.archiveTeam(team.id);
-                                        }
-                                        const teamsPayload = await api.getTeams({
-                                          includeArchived: true,
-                                        });
-                                        const nextTeams = Array.isArray(
-                                          (teamsPayload as { teams?: unknown[] })?.teams
-                                        )
-                                          ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? []
-                                          : [];
-                                        setWorkspaceTeams(nextTeams);
-                                      } catch (err) {
-                                        setWorkspaceAdminError(
-                                          err instanceof Error
-                                            ? err.message
-                                            : 'Could not update team'
-                                        );
-                                      }
-                                    }}
-                                    className="inline-flex h-8 items-center rounded-lg px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                                    disabled={!canManageWorkspace}
-                                  >
-                                    {isArchived ? 'Restore' : 'Archive'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      if (!canManageWorkspace) return;
-                                      if (!window.confirm(`Delete ${team.name}?`)) return;
-                                      try {
-                                        await api.deleteTeam(team.id);
-                                        const teamsPayload = await api.getTeams({
-                                          includeArchived: true,
-                                        });
-                                        const nextTeams = Array.isArray(
-                                          (teamsPayload as { teams?: unknown[] })?.teams
-                                        )
-                                          ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? []
-                                          : [];
-                                        setWorkspaceTeams(nextTeams);
-                                      } catch (err) {
-                                        setWorkspaceAdminError(
-                                          err instanceof Error
-                                            ? err.message
-                                            : 'Could not delete team'
-                                        );
-                                      }
-                                    }}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[color:rgba(217,45,32,0.08)] hover:text-[var(--ledger-danger)] disabled:opacity-50"
-                                    disabled={!canManageWorkspace}
-                                    title="Delete team"
-                                    aria-label={`Delete ${team.name}`}
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
+                                  {openTeamActionMenuId === team.id && (
+                                    <div className="absolute bottom-9 right-0 z-30 w-44 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[0_12px_30px_rgba(15,23,42,0.2)]">
+                                      <button type="button" onClick={() => { setOpenTeamActionMenuId(null); openWorkspaceTeamSettings(team.id); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"><Settings size={14} /> Team settings</button>
+                                      <button
+                                        type="button"
+                                        disabled={!canManageWorkspace}
+                                        onClick={async () => {
+                                          setOpenTeamActionMenuId(null);
+                                          try {
+                                            if (isArchived) await api.restoreTeam(team.id);
+                                            else await api.archiveTeam(team.id);
+                                            const teamsPayload = await api.getTeams({ includeArchived: true });
+                                            const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams) ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [] : [];
+                                            setWorkspaceTeams(nextTeams);
+                                          } catch (err) {
+                                            setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not update team');
+                                          }
+                                        }}
+                                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"
+                                      >
+                                        {isArchived ? <ChevronRight size={14} /> : <CirclePause size={14} />} {isArchived ? 'Restore team' : 'Archive team'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!canManageWorkspace}
+                                        onClick={async () => {
+                                          setOpenTeamActionMenuId(null);
+                                          if (!window.confirm(`Delete ${team.name}?`)) return;
+                                          try {
+                                            await api.deleteTeam(team.id);
+                                            const teamsPayload = await api.getTeams({ includeArchived: true });
+                                            const nextTeams = Array.isArray((teamsPayload as { teams?: unknown[] })?.teams) ? (teamsPayload as { teams: WorkspaceTeam[] }).teams ?? [] : [];
+                                            setWorkspaceTeams(nextTeams);
+                                          } catch (err) {
+                                            setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not delete team');
+                                          }
+                                        }}
+                                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50"
+                                      >
+                                        <Trash2 size={14} /> Delete team
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -4264,57 +4299,6 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       </div>
                     </section>
 
-                      {showCreateWorkspaceForm ? (
-                        <div className="mt-3 space-y-3">
-                          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_176px]">
-                            <input
-                              value={workspaceCreateName}
-                              onChange={(e) => setWorkspaceCreateName(e.target.value)}
-                              placeholder="Workspace name"
-                              className={compactFieldClassName}
-                              aria-label="Workspace name"
-                            />
-                            <select
-                              value={workspaceCreateType}
-                              onChange={(e) =>
-                                setWorkspaceCreateType(e.target.value as 'team' | 'personal')
-                              }
-                              className={compactSelectClassName}
-                              style={selectChevronStyle}
-                              aria-label="Workspace type"
-                            >
-                              <option value="team">Team workspace</option>
-                              <option value="personal">Personal workspace</option>
-                            </select>
-                          </div>
-                          <textarea
-                            value={workspaceCreateDescription}
-                            onChange={(e) => setWorkspaceCreateDescription(e.target.value)}
-                            placeholder="Optional description"
-                            className={settingsTheme.input + ' min-h-14 resize-none py-2'}
-                            aria-label="Workspace description"
-                          />
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="min-h-5">
-                              {workspaceCreateStatus && (
-                                <p className="text-xs text-[color:var(--ledger-accent)]">
-                                  {workspaceCreateStatus}
-                                </p>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => void handleCreateWorkspace()}
-                              disabled={isCreatingWorkspace || !workspaceCreateName.trim()}
-                              className={
-                                settingsTheme.primaryButton + ' h-8 rounded-lg px-3 text-xs'
-                              }
-                            >
-                              {isCreatingWorkspace ? 'Creating...' : 'Create workspace'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
-
                     <SettingsDangerGroup>
                       <section aria-labelledby="settings-danger-zone">
                       <div className="flex items-center justify-between gap-4">
@@ -4357,7 +4341,15 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         </div>
                         <Shield size={16} className="shrink-0 text-[var(--ledger-text-muted)]" aria-hidden="true" />
                       </div>
-                      <div className={settingsTheme.sectionRows + ' mt-4'}>
+                      <div
+                        className={settingsTheme.sectionRows + ' mt-4 max-h-[28rem] overflow-y-auto'}
+                        onScroll={(event) => {
+                          const element = event.currentTarget;
+                          if (element.scrollHeight - element.scrollTop - element.clientHeight < 96) {
+                            void loadMoreWorkspaceAudit();
+                          }
+                        }}
+                      >
                         {isLoadingWorkspaceAudit ? (
                           <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">Loading activity…</div>
                         ) : workspaceAuditLogs.length === 0 ? (
@@ -4372,6 +4364,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             <time className="shrink-0 text-right text-[11px] text-[var(--ledger-text-muted)]" dateTime={log.created_at}>{new Date(log.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time>
                           </div>
                         ))}
+                        {isLoadingMoreWorkspaceAudit ? <div className="px-4 py-3 text-xs text-[var(--ledger-text-muted)]">Loading more activity…</div> : null}
                       </div>
                     </section>
                   )}
@@ -5425,6 +5418,40 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                   onBack={closeGoogleDriveManagement}
                   onStatusChange={(next) => setGoogleDriveStatus(next)}
                 />
+              ) : activeSection === 'integrations' && mcpDetailOpen ? (
+                <section className="w-full max-w-215" aria-labelledby="settings-mcp">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2">
+                      <button type="button" onClick={() => setMcpDetailOpen(false)} className="text-xs text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]">← Back to integrations</button>
+                      <h2 id="settings-mcp" className={settingsTheme.pageTitle}>MCP connections</h2>
+                      <p className={settingsTheme.pageSubtitle}>Manage AI clients connected to this workspace and the access they have.</p>
+                    </div>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center pt-1"><img src="/mcp-icons/mpc.svg" alt="" className="h-7 w-7 dark:invert" /></span>
+                  </div>
+                  <section className={settingsTheme.sectionShell + ' mt-8'} aria-labelledby="mcp-connection-list">
+                    <div className="flex items-center justify-between gap-4 px-4 py-3">
+                      <div>
+                        <h3 id="mcp-connection-list" className={settingsTheme.sectionTitle}>Connected clients</h3>
+                        <p className={settingsTheme.sectionStatus + ' mt-1'}>Connections are limited to the workspaces and permissions approved during authorization.</p>
+                      </div>
+                      <span className={settingsTheme.pill}>{activeMcpConnections.length} active</span>
+                    </div>
+                    <div className={settingsTheme.sectionRows}>
+                      {isLoadingMcpConnections ? <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">Loading connections…</div> : activeMcpConnections.length === 0 ? <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No active MCP connections.</div> : activeMcpConnections.map((connection) => {
+                        const hasWriteAccess = connection.scopes.some((scope) => scope.endsWith(':write'));
+                        const isRevoking = mcpConnectionActionId === connection.id;
+                        return <div key={connection.id} className="flex items-center gap-3 px-4 py-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]" aria-hidden="true"><img src="/mcp-icons/mpc.svg" alt="" className="h-5 w-5 dark:invert" /></span>
+                          <div className="min-w-0 flex-1">
+                            <p className={settingsTheme.label}>{connection.client_name}</p>
+                            <p className={settingsTheme.help}>{connection.workspaces[0]?.name ?? 'Workspace'} · {hasWriteAccess ? 'Read + write' : 'Read only'}</p>
+                          </div>
+                          <button type="button" onClick={() => void handleRevokeMcpConnection(connection.id)} disabled={isRevoking || !canUseWorkspaceIntegrations} className={settingsTheme.dangerButton}>{isRevoking ? 'Revoking…' : 'Revoke'}</button>
+                        </div>;
+                      })}
+                    </div>
+                  </section>
+                </section>
               ) : activeSection === 'integrations' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-integrations">
                   <div className="space-y-2">
@@ -5588,23 +5615,14 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           </div>
                         </div>
 
-                        <div
-                          className={`flex items-center gap-3 px-4 py-2.5 ${activeMcpConnections.length ? `cursor-pointer transition ${isMcpConnectionsExpanded ? '' : 'hover:bg-[var(--ledger-surface-muted)]'}` : ''}`}
-                          onClick={() => {
-                            if (!activeMcpConnections.length) return;
-                            setIsMcpConnectionsExpanded((expanded) => !expanded);
-                            setOpenMcpConnectionMenuId(null);
-                            setOpenMcpPermissionsId(null);
-                          }}
-                          aria-expanded={activeMcpConnections.length ? isMcpConnectionsExpanded : undefined}
-                        >
+                        <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]" aria-hidden="true">
                             <img src="/mcp-icons/mpc.svg" alt="" className="h-5 w-5 dark:invert" />
                           </span>
                           <div className="min-w-0 flex-1">
                             <p className={settingsTheme.label}>MCP connections{isLoadingMcpConnections ? <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">Checking connections…</span> : activeMcpConnections.length === 0 ? <span className="ml-1 text-[11px] font-normal text-[var(--ledger-text-muted)]">No active connections</span> : null}</p>
                             <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">Connect AI tools to an explicitly approved Ledger workspace.</p>
-                            {!isLoadingMcpConnections && activeMcpConnections.length > 0 && isMcpConnectionsExpanded ? (
+                            {!isLoadingMcpConnections && activeMcpConnections.length > 0 && isMcpConnectionsExpanded && false ? (
                               <div
                                 className="mt-2 overflow-visible rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]"
                                 onClick={(event) => event.stopPropagation()}
@@ -5662,16 +5680,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                               </div>
                             ) : null}
                           </div>
-                          {activeMcpConnections.length > 0 && (
-                            <button
-                              type="button"
-                              aria-label={isMcpConnectionsExpanded ? 'Collapse MCP connections' : 'Expand MCP connections'}
-                              aria-expanded={isMcpConnectionsExpanded}
-                              className="mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
-                            >
-                              {isMcpConnectionsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </button>
-                          )}
+                          <button type="button" onClick={() => setMcpDetailOpen(true)} className={settingsTheme.controlButtonNeutral + ' shrink-0 rounded-lg'}>Manage</button>
                         </div>
                       </div>
 
@@ -5715,15 +5724,15 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         const active = localAISelectedTier === model.tier;
                         const protectedModel = model.tier === 'fast';
                         return (
-                          <div key={model.id} className="flex items-center gap-3 px-4 py-4">
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] text-[var(--ledger-text-muted)]"><HardDrive size={14} aria-hidden="true" /></span>
+                          <div key={model.id} className={`flex items-center gap-3 px-4 py-4 transition ${active ? 'bg-[var(--ledger-surface-hover)]/45' : 'hover:bg-[var(--ledger-surface-hover)]/35'}`}>
+                            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${active ? 'border-[color:var(--ledger-accent)]/40 bg-[color:var(--ledger-accent)]/10 text-[var(--ledger-accent)]' : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'}`}><HardDrive size={16} aria-hidden="true" /></span>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                 <p className={settingsTheme.rowLabel}>{localAISettingsTierLabels[model.tier]} · {model.displayName}</p>
-                                {active && <span className="text-[10px] text-[var(--ledger-text-muted)]">In use</span>}
-                                {protectedModel && !installed && <span className="text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
+                                {active && <span className="rounded-full bg-[color:var(--ledger-accent)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--ledger-accent)]">In use</span>}
+                                {protectedModel && !installed && <span className="rounded-full bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
                               </div>
-                              <p className={settingsTheme.rowMuted}>{model.downloading || model.verifying ? (model.description || 'Local generation model') : installed ? 'Installed on this device' : `${model.description || 'Local generation model'} · ${formatLocalAIModelSize(model.expectedSize)} download`}</p>
+                              <p className={settingsTheme.rowMuted}>{model.downloading || model.verifying ? (model.description || 'Local generation model') : installed ? 'Installed locally on this device' : `${model.description || 'Local generation model'} · ${formatLocalAIModelSize(model.expectedSize)}`}</p>
                               {model.downloading || model.verifying ? <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{model.verifying ? 'Verifying…' : `Downloading ${model.progressPercent ?? 0}% · ${formatLocalAIModelSize(model.expectedSize)}`}</p> : null}
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
@@ -6608,6 +6617,63 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                   >
                     {isExtensionTokenBusy ? 'Revoking...' : 'Revoke'}
                   </button>
+                </div>
+              </ModalOverlay>
+
+              <ModalOverlay
+                isOpen={showCreateWorkspaceForm}
+                onClose={() => setShowCreateWorkspaceForm(false)}
+                backdropBorderRadius="inherit"
+                disablePortal
+                manageWindowChrome={false}
+                classNameContainer={`w-full max-w-[720px] ${settingsTheme.modalShell}`}
+              >
+                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                  <div>
+                    <p className={settingsTheme.rowMuted + ' font-medium'}>Workspace settings</p>
+                    <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">Create workspace</h3>
+                    <p className={settingsTheme.rowMuted + ' mt-0.5'}>Set up a new space for personal or shared work.</p>
+                  </div>
+                  <ModalCloseButton onClick={() => setShowCreateWorkspaceForm(false)} ariaLabel="Close create workspace modal" />
+                </div>
+
+                <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
+                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                    <div className="space-y-1 pt-1">
+                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Name</p>
+                      <p className={settingsTheme.rowMuted}>Workspace display name.</p>
+                    </div>
+                    <input value={workspaceCreateName} onChange={(e) => setWorkspaceCreateName(e.target.value)} placeholder="Workspace name" className={settingsTheme.input} aria-label="Workspace name" autoFocus />
+                  </div>
+                </div>
+
+                <div className="mt-4 px-5">
+                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                    <div className="space-y-1 pt-1">
+                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Description</p>
+                      <p className={settingsTheme.rowMuted}>Optional workspace context.</p>
+                    </div>
+                    <textarea value={workspaceCreateDescription} onChange={(e) => setWorkspaceCreateDescription(e.target.value)} placeholder="Optional description" className={settingsTheme.input + ' min-h-24 resize-none py-2'} aria-label="Workspace description" />
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] px-5 pt-4">
+                  <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                    <div className="space-y-1 pt-1">
+                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Workspace type</p>
+                      <p className={settingsTheme.rowMuted}>Choose whether this workspace is for personal or shared work.</p>
+                    </div>
+                    <select value={workspaceCreateType} onChange={(e) => setWorkspaceCreateType(e.target.value as 'team' | 'personal')} className={settingsTheme.input + ' appearance-none pr-9'} style={selectChevronStyle} aria-label="Workspace type">
+                      <option value="team">Team workspace</option>
+                      <option value="personal">Personal workspace</option>
+                    </select>
+                  </div>
+                </div>
+
+                {(workspaceAdminError || workspaceCreateStatus) && <p className={`px-5 pt-4 text-xs ${workspaceAdminError ? 'text-[var(--ledger-danger)]' : 'text-[var(--ledger-accent)]'}`} role="status">{workspaceAdminError || workspaceCreateStatus}</p>}
+                <div className="mt-5 flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
+                  <button type="button" onClick={() => setShowCreateWorkspaceForm(false)} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Cancel</button>
+                  <button type="button" onClick={() => void handleCreateWorkspace()} disabled={isCreatingWorkspace || !workspaceCreateName.trim()} className={settingsTheme.primaryButton + ' rounded-lg'}>{isCreatingWorkspace ? 'Creating…' : 'Create workspace'}</button>
                 </div>
               </ModalOverlay>
 

@@ -231,8 +231,8 @@ export const useApi = () => {
         }),
       getWorkspaceInvitations: (workspaceId: string) =>
         request(`/api/workspaces/${workspaceId}/invitations`),
-      getWorkspaceAuditLog: (workspaceId: string) =>
-        request(`/api/workspaces/${workspaceId}/audit-log`),
+      getWorkspaceAuditLog: (workspaceId: string, options?: { limit?: number; offset?: number }) =>
+        request(`/api/workspaces/${workspaceId}/audit-log?limit=${options?.limit ?? 10}&offset=${options?.offset ?? 0}`),
       createWorkspace: (payload: {
         name: string;
         description?: string | null;

@@ -6653,14 +6653,18 @@ app.get('/api/workspaces/:workspaceId/audit-log', authMiddleware, rateLimit('rea
   try {
     const workspaceId = String(req.params.workspaceId);
     await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? '10'), 10) || 10, 1), 50);
+    const offset = Math.max(Number.parseInt(String(req.query.offset ?? '0'), 10) || 0, 0);
     const result = await supabase
       .from('workspace_audit_logs')
       .select('id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at')
       .eq('workspace_id', workspaceId)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .range(offset, offset + limit);
     if (result.error) throw result.error;
-    const rows = result.data ?? [];
+    const fetchedRows = result.data ?? [];
+    const hasMore = fetchedRows.length > limit;
+    const rows = hasMore ? fetchedRows.slice(0, limit) : fetchedRows;
     const actorIds = [...new Set(rows.map((row) => row.actor_user_id).filter(Boolean))];
     const actors = actorIds.length
       ? await supabase.from('users').select('id, full_name, email').in('id', actorIds)
@@ -6673,6 +6677,7 @@ app.get('/api/workspaces/:workspaceId/audit-log', authMiddleware, rateLimit('rea
       ])
     );
     res.json({
+      hasMore,
       logs: rows.map((row) => ({
         ...row,
         actor_name: row.actor_user_id ? actorNames.get(String(row.actor_user_id)) ?? null : null,

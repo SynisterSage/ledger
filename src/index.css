@@ -91,6 +91,22 @@ body {
   transition: none;
 }
 
+/* Compact density is a restrained shared spacing mode. It targets ordinary
+   rows and controls while leaving editor content and module geometry alone. */
+[data-compact-density='true'] {
+  --ledger-density-row-padding: 0.625rem;
+  --ledger-density-control-height: 2rem;
+}
+
+[data-compact-density='true'] :is([class~='py-3'], [class~='py-3.5']) {
+  padding-block: var(--ledger-density-row-padding) !important;
+}
+
+[data-compact-density='true'] :is([class~='h-9'], [class~='h-10']) {
+  min-height: var(--ledger-density-control-height);
+  height: var(--ledger-density-control-height);
+}
+
 /* Keep module side panes visually consistent across native scrollbar engines. */
 .ledger-pane-surface,
 .ledger-pane-scrollbar {
@@ -758,6 +774,225 @@ body.has-modal-open #root > * {
 [data-reduce-motion='true'] .sidebar-glass-content * {
   animation-duration: 0ms !important;
   transition-duration: 0ms !important;
+}
+
+/* User-controlled high contrast keeps the existing theme, but makes the
+   shared semantic surfaces, borders, and keyboard focus easier to distinguish. */
+[data-high-contrast='true'] {
+  --ledger-text-primary: #000000 !important;
+  --ledger-text-secondary: #292929 !important;
+  --ledger-text-muted: #505050 !important;
+  --ledger-border-subtle: #858585 !important;
+  --ledger-border-strong: #333333 !important;
+  --ledger-surface-hover: #e6e6e6 !important;
+  --ledger-surface-selected: #d8d8d8 !important;
+  --ledger-focus-ring: #000000 !important;
+}
+
+:root[data-ledger-theme='dark'][data-high-contrast='true'] {
+  --ledger-text-primary: #ffffff !important;
+  --ledger-text-secondary: #eeeeee !important;
+  --ledger-text-muted: #c7c7c7 !important;
+  --ledger-border-subtle: #888888 !important;
+  --ledger-border-strong: #eeeeee !important;
+  --ledger-surface-hover: #2d2d2d !important;
+  --ledger-surface-selected: #404040 !important;
+  --ledger-focus-ring: #ffffff !important;
+}
+
+[data-high-contrast='true'] :is(button, input, select, textarea) {
+  border-color: var(--ledger-border-strong);
+}
+
+/* Compatibility layer for older surfaces that still use literal Tailwind
+   utilities instead of Ledger semantic tokens. These selectors are scoped to
+   high contrast so the default theme keeps its existing appearance. */
+[data-high-contrast='true'] :is(
+  [class*='text-gray-400'],
+  [class*='text-gray-500'],
+  [class*='text-gray-600'],
+  [class*='text-gray-700'],
+  [class*='text-slate-400'],
+  [class*='text-slate-500'],
+  [class*='text-slate-600'],
+  [class*='text-slate-700']
+) {
+  color: var(--ledger-text-secondary) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='text-gray-800'],
+  [class*='text-gray-900'],
+  [class*='text-slate-800'],
+  [class*='text-slate-900'],
+  [class*='text-zinc-800'],
+  [class*='text-zinc-900']
+) {
+  color: var(--ledger-text-primary) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='border-gray-100'],
+  [class*='border-gray-200'],
+  [class*='border-gray-300'],
+  [class*='border-gray-400'],
+  [class*='border-slate-200'],
+  [class*='border-slate-300'],
+  [class*='border-slate-400']
+) {
+  border-color: var(--ledger-border-subtle) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='bg-gray-50'],
+  [class*='bg-gray-100'],
+  [class*='bg-slate-50'],
+  [class*='bg-slate-100']
+) {
+  background-color: var(--ledger-surface-muted) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='bg-gray-200'],
+  [class*='bg-gray-300'],
+  [class*='bg-slate-200'],
+  [class*='bg-slate-300']
+) {
+  background-color: var(--ledger-surface-selected) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='hover:bg-gray-50']:hover,
+  [class*='hover:bg-gray-100']:hover,
+  [class*='hover:bg-slate-50']:hover,
+  [class*='hover:bg-slate-100']:hover
+) {
+  background-color: var(--ledger-surface-hover) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='text-amber-600'],
+  [class*='text-amber-700'],
+  [class*='text-amber-800'],
+  [class*='text-amber-900'],
+  [class*='text-orange-600'],
+  [class*='text-orange-700']
+) {
+  color: var(--ledger-warning) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='bg-amber-50'],
+  [class*='bg-amber-100'],
+  [class*='bg-orange-50'],
+  [class*='bg-orange-100']
+) {
+  background-color: color-mix(in srgb, var(--ledger-warning) 16%, var(--ledger-surface-card)) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='border-amber-200'],
+  [class*='border-amber-300'],
+  [class*='border-amber-400'],
+  [class*='border-amber-500'],
+  [class*='border-orange-200'],
+  [class*='border-orange-300']
+) {
+  border-color: var(--ledger-warning) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='text-red-600'],
+  [class*='text-red-700'],
+  [class*='text-red-800'],
+  [class*='text-red-900']
+) {
+  color: var(--ledger-danger) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='bg-red-50'],
+  [class*='bg-red-100']
+) {
+  background-color: color-mix(in srgb, var(--ledger-danger) 12%, var(--ledger-surface-card)) !important;
+}
+
+[data-high-contrast='true'] :is(
+  [class*='border-red-200'],
+  [class*='border-red-300'],
+  [class*='border-red-400'],
+  [class*='border-red-500']
+) {
+  border-color: var(--ledger-danger) !important;
+}
+
+[data-high-contrast='true'] :is([data-ledger-module-header], footer, [role='tablist']) {
+  border-color: var(--ledger-border-strong) !important;
+}
+
+[data-high-contrast='true'] [role='tab'][aria-selected='true'] {
+  color: var(--ledger-text-primary) !important;
+  background-color: var(--ledger-surface-selected) !important;
+  box-shadow: inset 0 -2px 0 var(--ledger-accent);
+}
+
+[data-high-contrast='true'] :is(button, input, select, textarea, [role='button']):focus-visible {
+  outline: 2px solid var(--ledger-text-primary) !important;
+  outline-offset: 2px;
+}
+
+[data-high-contrast='true'] .sidebar-glass-material {
+  background: var(--ledger-surface-card) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-high-contrast='true'] .sidebar-glass-clip {
+  --sidebar-edge-color: #333333;
+  --ledger-text-primary: #000000;
+  --ledger-text-secondary: #292929;
+  --ledger-text-muted: #505050;
+  --sidebar-material-text-primary: #000000;
+  --sidebar-material-text-secondary: #292929;
+  --sidebar-material-text-muted: #505050;
+  --sidebar-surface-background: #e6e6e6;
+  --sidebar-hover-row-background: #d8d8d8;
+  --sidebar-selected-row-background: #c8c8c8;
+  --sidebar-material-rgb: 255 255 255;
+  --sidebar-material-alpha: 1;
+  --sidebar-material-alpha-default: 1;
+}
+
+[data-high-contrast='true'] .sidebar-glass-content {
+  --ledger-text-primary: #000000;
+  --ledger-text-secondary: #292929;
+  --ledger-text-muted: #505050;
+  --ledger-border-subtle: #858585;
+  --ledger-border-strong: #333333;
+  color: #000000;
+}
+
+:root[data-ledger-theme='dark'][data-high-contrast='true'] .sidebar-glass-clip {
+  --sidebar-edge-color: #eeeeee;
+  --ledger-text-primary: #ffffff;
+  --ledger-text-secondary: #eeeeee;
+  --ledger-text-muted: #c7c7c7;
+  --sidebar-material-text-primary: #ffffff;
+  --sidebar-material-text-secondary: #eeeeee;
+  --sidebar-material-text-muted: #c7c7c7;
+  --sidebar-surface-background: #2d2d2d;
+  --sidebar-hover-row-background: #404040;
+  --sidebar-selected-row-background: #515151;
+  --sidebar-material-rgb: 15 15 15;
+}
+
+:root[data-ledger-theme='dark'][data-high-contrast='true'] .sidebar-glass-content {
+  --ledger-text-primary: #ffffff;
+  --ledger-text-secondary: #eeeeee;
+  --ledger-text-muted: #c7c7c7;
+  --ledger-border-subtle: #888888;
+  --ledger-border-strong: #eeeeee;
+  color: #ffffff;
 }
 
 @media (forced-colors: active) {

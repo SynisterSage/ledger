@@ -10156,7 +10156,7 @@ ipcMain.on('notes:smart-links-updated', (_event, payload: { noteId?: string | nu
 
 ipcMain.on(
   'ledger:theme-updated',
-  (_event, payload: { theme?: 'light' | 'dark' | 'system' } | null) => {
+  (_event, payload: { theme?: 'light' | 'dark' | 'system'; highContrast?: boolean } | null) => {
     const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed());
     for (const win of windows) {
       if (!win.webContents.isDestroyed()) {
