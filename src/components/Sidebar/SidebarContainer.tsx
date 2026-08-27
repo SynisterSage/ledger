@@ -167,12 +167,14 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
       return;
     }
 
-    // Let the shell resize first; mounting expanded content during the first frame is the slow path.
+    // Let the shell finish resizing before mounting the heavier expanded tree. Mounting it
+    // during the width transition causes a visible hitch in the open animation.
+    const contentSwapDelayMs = motionDurationMs + 16;
     contentSwapTimerRef.current = window.setTimeout(() => {
       setContentView(targetContentView);
       contentSwapTimerRef.current = null;
-    }, 110);
-  }, [effectivePosition, reduceMotion, state, targetContentView]);
+    }, contentSwapDelayMs);
+  }, [effectivePosition, motionDurationMs, reduceMotion, state, targetContentView]);
 
   const shellSizeClasses =
     state === 'expanded'
@@ -492,6 +494,8 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
   // keep layout width/height but hide visually until hydration completes to avoid flashes
   const hydrationClass = isHydrated ? '' : 'opacity-0 pointer-events-none';
   const shouldDisableShellMotion = (isDragging && isFloating) || isHorizontal;
+  const isExpandedContentSwapPending =
+    !reduceMotion && state === 'expanded' && contentView.state !== 'expanded';
 
   const shellStyle: React.CSSProperties = {
     opacity: autoHide && !isHovered && isAutoHideFading ? 0 : 1,
@@ -579,7 +583,10 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
     >
       <div className={`sidebar-glass-clip h-full w-full ${shellRadiusClass}`}>
         <div ref={materialRef} className={materialClass} aria-hidden="true" />
-        <div className="sidebar-glass-content h-full w-full">
+        <div
+          className="sidebar-glass-content h-full w-full transition-opacity duration-[80ms] ease-out"
+          style={{ opacity: isExpandedContentSwapPending ? 0 : 1 }}
+        >
           {renderSidebarContent(
             contentView.state as Exclude<typeof state, 'fullscreen'>,
             contentView.isExpanded

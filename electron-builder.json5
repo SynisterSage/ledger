@@ -28,7 +28,9 @@
   mac: {
     target: ['dmg'],
     identity: 'ALEXANDER RAY FERGUSON (CAY3N8J725)',
-    icon: 'public/icon.png',
+    // Use the native macOS iconset so Finder/Dock receive transparent
+    // rounded artwork instead of rasterizing the square PNG canvas.
+    icon: 'public/logo.icns',
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
     notarize: {

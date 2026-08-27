@@ -117,6 +117,7 @@ import { LensCache } from './features/lens/lensCache';
 import { LensRequestRegistry } from './features/lens/lensRequestRegistry';
 import { openAskLedgerWithContext } from './components/Common/askLedgerContext';
 import { LocalAIUnavailableState } from './components/Common/LocalAIUnavailableState';
+import { LedgerLensWheel } from './components/Common/LedgerLensWheel';
 import type { AskLedgerInitialContext } from './types/askLedgerContext';
 import { FigmaPluginAuthorizationPage } from './components/Integrations/FigmaPluginAuthorizationPage';
 import { McpAuthorizationPage } from './components/Integrations/McpAuthorizationPage';
@@ -4494,15 +4495,13 @@ export function DashboardContent({
       platform.navigation.openRoute({
         kind: 'workspace',
         workspaceId: activeWorkspaceId,
-        page: 'settings',
-        scope: 'workspace',
-        section: 'integrations',
+        page: 'calendar',
       });
       return;
     }
-    void window.desktopWindow?.openModule('settings', {
-      kind: 'settings',
-      focusContext: 'integrations',
+    void window.desktopWindow?.openModule('calendar', {
+      kind: 'calendar',
+      focusContext: 'connect-calendar',
     });
   };
 
@@ -7597,12 +7596,15 @@ export function DashboardContent({
                         aria-labelledby="overview-lens-heading"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p
-                            id="overview-lens-heading"
-                            className="text-[10px] font-medium text-[var(--ledger-text-muted)]"
-                          >
-                            Lens
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <LedgerLensWheel size={16} state={overviewFocusStatus} label="Lens status" />
+                            <p
+                              id="overview-lens-heading"
+                              className="text-[10px] font-medium text-[var(--ledger-text-muted)]"
+                            >
+                              Lens
+                            </p>
+                          </div>
                           <button
                             type="button"
                             onClick={refreshOverviewFocus}

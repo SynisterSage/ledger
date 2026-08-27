@@ -326,6 +326,12 @@ const formatLocalAIModelSize = (bytes?: number) => {
   return `${gigabytes >= 1 ? gigabytes.toFixed(1) : (bytes / 1_000_000).toFixed(0)} ${gigabytes >= 1 ? 'GB' : 'MB'} download`;
 };
 
+const formatMeetingModelSize = (bytes?: number) => {
+  if (!bytes || !Number.isFinite(bytes)) return 'Size unavailable';
+  const gigabytes = bytes / 1_000_000_000;
+  return gigabytes >= 1 ? `${gigabytes.toFixed(1)} GB` : `${(bytes / 1_000_000).toFixed(0)} MB`;
+};
+
 const settingsNavGroups: Array<{
   id: SettingsNavGroupId;
   label: string;
@@ -5441,10 +5447,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                 <p className={settingsTheme.rowLabel}>{localAISettingsTierLabels[model.tier]} · {model.displayName}</p>
                                 {active && <span className="text-[10px] text-[var(--ledger-text-muted)]">In use</span>}
-                                {protectedModel && <span className="text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
+                                {protectedModel && !installed && <span className="text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
                               </div>
-                              <p className={settingsTheme.rowMuted}>{model.description || 'Local generation model'} · {formatLocalAIModelSize(model.expectedSize)}</p>
-                              {model.downloading || model.verifying ? <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{model.verifying ? 'Verifying…' : `Downloading ${model.progressPercent ?? 0}%`}</p> : null}
+                              <p className={settingsTheme.rowMuted}>{model.downloading || model.verifying ? (model.description || 'Local generation model') : installed ? 'Installed on this device' : `${model.description || 'Local generation model'} · ${formatLocalAIModelSize(model.expectedSize)} download`}</p>
+                              {model.downloading || model.verifying ? <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{model.verifying ? 'Verifying…' : `Downloading ${model.progressPercent ?? 0}% · ${formatLocalAIModelSize(model.expectedSize)}`}</p> : null}
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
                               {model.downloading ? (
@@ -5672,7 +5678,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       <div className="flex items-center justify-between gap-4 px-4 py-4">
                         <div className="min-w-0">
                           <p className={settingsTheme.label}>{meetingModelStatus?.installed ? meetingModelStatus.label || 'Whisper model installed' : 'Model not installed'}</p>
-                          <p className={settingsTheme.help}>{meetingModelStatus?.downloading ? 'Downloading in the background. You can keep using Ledger.' : meetingModelStatus?.error ? 'The last download did not finish. You can try again.' : 'Stored locally in Ledger application data and preserved across app updates.'}</p>
+                          <p className={settingsTheme.help}>{meetingModelStatus?.downloading ? `Downloading ${Math.min(100, Math.round(((meetingModelStatus.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus.approximateBytes ?? 1)) * 100))}% · ${formatMeetingModelSize(meetingModelStatus.approximateBytes)}` : meetingModelStatus?.installed ? 'Installed on this device and preserved across app updates.' : meetingModelStatus?.error ? `The last download did not finish · ${formatMeetingModelSize(meetingModelStatus?.approximateBytes)}` : `Stored locally in Ledger application data · ${formatMeetingModelSize(meetingModelStatus?.approximateBytes)} download`}</p>
+                          {meetingModelStatus?.downloading ? <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]" role="progressbar" aria-label="Downloading local transcription model" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(((meetingModelStatus.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus.approximateBytes ?? 1)) * 100))}><div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.round(((meetingModelStatus.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus.approximateBytes ?? 1)) * 100))}%` }} /></div> : null}
                         </div>
                         {window.meetingTranscription && !meetingModelStatus?.installed && (
                           meetingModelStatus?.downloading ? (
@@ -5895,25 +5902,27 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 </section>
               )}
 
-                <footer className="mt-8 pb-2 text-center text-[11px] leading-4 text-[var(--ledger-text-muted)]">
-                  <a
-                    href="https://ledgerworkspace.com/terms"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline underline-offset-2 transition hover:text-[var(--ledger-text-secondary)]"
-                  >
-                    Terms
-                  </a>
-                  <span className="px-1.5">·</span>
-                  <a
-                    href="https://ledgerworkspace.com/privacy"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline underline-offset-2 transition hover:text-[var(--ledger-text-secondary)]"
-                  >
-                    Privacy Policy
-                  </a>
-                </footer>
+                {activeSection === 'account' && (
+                  <footer className="mt-8 pb-2 text-center text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                    <a
+                      href="https://ledgerworkspace.com/terms"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-2 transition hover:text-[var(--ledger-text-secondary)]"
+                    >
+                      Terms
+                    </a>
+                    <span className="px-1.5">·</span>
+                    <a
+                      href="https://ledgerworkspace.com/privacy"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-2 transition hover:text-[var(--ledger-text-secondary)]"
+                    >
+                      Privacy Policy
+                    </a>
+                  </footer>
+                )}
               </SettingsPage>
               <ModalOverlay
                 isOpen={isMeetingModelDownloadOpen && !isMeetingModelDownloadMinimized}
@@ -5943,7 +5952,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(((meetingModelStatus?.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus?.approximateBytes ?? 1)) * 100))}>
                         <div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.round(((meetingModelStatus?.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus?.approximateBytes ?? 1)) * 100))}%` }} />
                       </div>
-                      <p className="mt-2 text-xs tabular-nums text-[var(--ledger-text-muted)]">{Math.round((meetingModelStatus?.bytesDownloaded ?? 0) / 1024 ** 2)} MB of {Math.round((meetingModelStatus?.approximateBytes ?? 0) / 1024 ** 2)} MB</p>
+                      <p className="mt-2 text-xs tabular-nums text-[var(--ledger-text-muted)]">{formatMeetingModelSize(meetingModelStatus?.bytesDownloaded)} of {formatMeetingModelSize(meetingModelStatus?.approximateBytes)}</p>
                     </>
                   )}
                 </div>

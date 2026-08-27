@@ -601,8 +601,59 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                     setSubmenuOpen(false);
                   }, 300);
                 }}
-              >
-                <div className="p-1">
+            >
+              <div className="p-1">
+                {hasLedgerUpdate || ledgerUpdateState.status === 'error' ? (
+                  ledgerUpdateState.status === 'error' ? (
+                    <div
+                      data-ledger-update-panel="true"
+                      className="mx-2 mb-1 flex min-w-0 items-center gap-2 px-1 py-1"
+                      role="status"
+                      title={ledgerUpdateState.error ?? 'Try again in a moment.'}
+                    >
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-danger)]" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-[10px] text-[var(--ledger-text-muted)]">Updates unavailable</span>
+                      <button
+                        type="button"
+                        data-switcher-row="true"
+                        onClick={handleUpdateAction}
+                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      data-ledger-update-panel="true"
+                      className="mx-2 mb-1 flex min-w-0 items-center gap-2 px-1 py-1"
+                      role="status"
+                    >
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-accent)]" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-[var(--ledger-text-secondary)]">
+                        {ledgerUpdateState.status === 'downloaded'
+                          ? 'Update ready'
+                          : ledgerUpdateState.status === 'downloading'
+                            ? `Downloading ${Math.round(ledgerUpdateState.percent ?? 0)}%`
+                            : `Ledger ${ledgerUpdateState.version ?? 'update'} available`}
+                      </span>
+                      {ledgerUpdateState.status === 'downloading' ? (
+                        <div className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]" aria-label={`${Math.round(ledgerUpdateState.percent ?? 0)}% downloaded`}>
+                          <div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.max(0, ledgerUpdateState.percent ?? 0))}%` }} />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          data-switcher-row="true"
+                          onClick={handleUpdateAction}
+                          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+                        >
+                          {ledgerUpdateState.status === 'downloaded' ? 'Restart' : 'Download'}
+                        </button>
+                      )}
+                    </div>
+                  )
+                ) : null}
+
                   {primaryMenuItems.map((item) => {
                     const ItemIcon = item.icon;
                     return (
@@ -628,57 +679,6 @@ export const WorkspaceSwitcherMenu = ({ variant = 'sidebar', compact = false }: 
                       </button>
                     );
                   })}
-
-                  {hasLedgerUpdate || ledgerUpdateState.status === 'error' ? (
-                    ledgerUpdateState.status === 'error' ? (
-                      <div
-                        data-ledger-update-panel="true"
-                        className="mx-2 mt-1 flex min-w-0 items-center gap-2 px-1 py-1"
-                        role="status"
-                        title={ledgerUpdateState.error ?? 'Try again in a moment.'}
-                      >
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-danger)]" aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate text-[10px] text-[var(--ledger-text-muted)]">Updates unavailable</span>
-                        <button
-                          type="button"
-                          data-switcher-row="true"
-                          onClick={handleUpdateAction}
-                          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
-                        >
-                          Retry
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        data-ledger-update-panel="true"
-                        className="mx-2 mt-1 flex min-w-0 items-center gap-2 px-1 py-1"
-                        role="status"
-                      >
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-accent)]" aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate text-[10px] font-medium text-[var(--ledger-text-secondary)]">
-                          {ledgerUpdateState.status === 'downloaded'
-                            ? 'Update ready'
-                            : ledgerUpdateState.status === 'downloading'
-                              ? `Downloading ${Math.round(ledgerUpdateState.percent ?? 0)}%`
-                              : `Ledger ${ledgerUpdateState.version ?? 'update'} available`}
-                        </span>
-                        {ledgerUpdateState.status === 'downloading' ? (
-                          <div className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]" aria-label={`${Math.round(ledgerUpdateState.percent ?? 0)}% downloaded`}>
-                            <div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.max(0, ledgerUpdateState.percent ?? 0))}%` }} />
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            data-switcher-row="true"
-                            onClick={handleUpdateAction}
-                            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
-                          >
-                            {ledgerUpdateState.status === 'downloaded' ? 'Restart' : 'Download'}
-                          </button>
-                        )}
-                      </div>
-                    )
-                  ) : null}
 
                   {platform.kind === 'web' && (
                     <>

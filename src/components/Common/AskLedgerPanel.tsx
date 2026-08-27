@@ -747,6 +747,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const [downloadPhase, setDownloadPhase] = useState<'confirm' | 'downloading' | 'preparing' | 'error'>('confirm');
   const [downloadMinimized, setDownloadMinimized] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const downloadDismissedRef = useRef(false);
+  const optionalDownloadStorageKey = 'ledger.local-ai.generation-download-tier';
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [contextPickerSkill, setContextPickerSkill] = useState<AskLedgerSkillMetadata | null>(null);
   const [contextPickerOptions, setContextPickerOptions] = useState<AskLedgerInitialContext[]>([]);
@@ -1336,6 +1338,24 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       }
       if (next?.generationModels) setGenerationModels(Object.values(next.generationModels));
       else if (next?.generation?.tier && next.generation.id) setGenerationModels([{ id: next.generation.id, tier: next.generation.tier, ...next.generation }]);
+
+      // The download is owned by Electron, not this panel. Remember the
+      // requested tier so a tab remount can reconnect to an active download.
+      try {
+        const rememberedTier = localStorage.getItem(optionalDownloadStorageKey);
+        const rememberedModel = rememberedTier && next?.generationModels
+          ? Object.values(next.generationModels).find((model) => model.tier === rememberedTier)
+          : undefined;
+        if (rememberedModel?.downloading && !downloadDismissedRef.current && isGenerationTier(rememberedTier)) {
+          setDownloadTier(rememberedTier);
+          setDownloadPhase('downloading');
+          setDownloadMinimized(false);
+        } else if (rememberedModel?.installed || rememberedModel?.state === 'failed') {
+          localStorage.removeItem(optionalDownloadStorageKey);
+        }
+      } catch {
+        // Browser storage can be unavailable in restricted renderer contexts.
+      }
     };
     void window.askLedger
       .localAIStatus()
@@ -1792,6 +1812,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const tier = downloadTier;
     const model = modelForTier(tier);
     if (!model) return;
+    downloadDismissedRef.current = false;
+    try { localStorage.setItem(optionalDownloadStorageKey, tier); } catch { /* best effort */ }
     setDownloadPhase('downloading');
     setDownloadMinimized(false);
     setDownloadError(null);
@@ -1821,15 +1843,19 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
       setDownloadTier(null);
       setDownloadPhase('confirm');
       setAdvancedOpen(false);
+      try { localStorage.removeItem(optionalDownloadStorageKey); } catch { /* best effort */ }
     } catch (error) {
       setDownloadError(optionalModelDownloadMessage(error));
       setDownloadPhase('error');
+      try { localStorage.removeItem(optionalDownloadStorageKey); } catch { /* best effort */ }
     }
   };
 
   const cancelOptionalDownload = () => {
     const model = downloadTier ? modelForTier(downloadTier) : undefined;
     if (model && model.downloading) void window.askLedger?.cancelGenerationModelDownload(model.id);
+    try { localStorage.removeItem(optionalDownloadStorageKey); } catch { /* best effort */ }
+    downloadDismissedRef.current = true;
     setDownloadTier(null);
     setDownloadPhase('confirm');
     setDownloadError(null);
@@ -2432,7 +2458,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                 <span>{generationModeLabels[generationMode]}</span>
               </button>
               {advancedOpen && (
-                <div ref={advancedPopoverRef} role="dialog" aria-label="How Ledger should respond" onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-9 left-0 z-40 w-[min(205px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-2 shadow-[var(--ledger-shadow)]">
+                <div ref={advancedPopoverRef} role="dialog" aria-label="How Ledger should respond" onPointerDown={(event) => event.stopPropagation()} className="absolute bottom-9 left-0 z-40 w-[min(220px,calc(100vw-24px))] overflow-hidden rounded-[12px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-2 shadow-[var(--ledger-shadow)]">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-xs font-medium tracking-[-0.02em] text-[var(--ledger-text-secondary)]">Advanced</span>
                     {tierSwitchInProgress && <LoaderCircle size={15} className="shrink-0 animate-spin text-[var(--ledger-text-muted)]" aria-label="Switching Local AI model" />}
@@ -2448,10 +2474,10 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
                         <button key={mode} type="button" role="radio" aria-checked={selected} aria-label={`${generationModeLabels[mode]}: ${generationModeDescriptions[mode]}${mode === 'balanced' ? ', recommended' : ''}${mode !== 'thinking' && !installed ? unavailable ? ', unavailable' : ', download required' : ''}`} onClick={() => void selectGenerationMode(mode)} disabled={tierSwitchInProgress || isSubmitting} className={`flex min-h-[42px] w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--ledger-accent)] ${selected ? 'bg-[var(--ledger-surface-hover)] text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]'} disabled:cursor-not-allowed disabled:opacity-55`}>
                           <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[var(--ledger-accent)]' : 'border-[var(--ledger-border-strong)]'}`} aria-hidden="true">{selected ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" /> : null}</span>
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-1.5 font-medium"><span>{generationModeLabels[mode]}</span>{mode === 'balanced' ? <span className="shrink-0 rounded-full bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[9px] font-normal leading-none text-[var(--ledger-text-muted)]">Recommended</span> : null}</span>
+                            <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 font-medium"><span>{generationModeLabels[mode]}</span>{mode === 'balanced' ? <span className="shrink-0 rounded-full bg-[var(--ledger-surface-muted)] px-1.5 py-0.5 text-[9px] font-normal leading-none text-[var(--ledger-text-muted)]">Recommended</span> : null}</span>
                             <span className="mt-0.5 block truncate text-[10px] leading-3.5 text-[var(--ledger-text-muted)]">{generationModeDescriptions[mode]}</span>
                           </span>
-                          {mode !== 'thinking' && !installed ? <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{unavailable ? 'Unavailable' : 'Install'}</span> : null}
+                          {mode !== 'thinking' && !installed ? <span className="w-12 shrink-0 text-right text-[10px] text-[var(--ledger-text-muted)]">{unavailable ? 'Unavailable' : 'Install'}</span> : null}
                         </button>
                       );
                     })}
@@ -2522,7 +2548,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
 
       <ModalOverlay
         isOpen={Boolean(downloadTier && !downloadMinimized)}
-        onClose={() => { if (downloadPhase === 'downloading') cancelOptionalDownload(); else if (downloadPhase !== 'preparing') setDownloadTier(null); }}
+        onClose={() => { if (downloadPhase === 'downloading') { downloadDismissedRef.current = true; setDownloadMinimized(true); } else if (downloadPhase !== 'preparing') setDownloadTier(null); }}
         closeOnBackdropClick={downloadPhase !== 'downloading' && downloadPhase !== 'preparing'}
         backdropBorderRadius="var(--window-radius)"
         backdropInset="0px"
@@ -2537,7 +2563,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {downloadPhase === 'downloading' && <button type="button" onClick={() => { setDownloadMinimized(true); advancedButtonRef.current?.focus(); }} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]" aria-label="Minimize model download"><Minimize2 size={14} /></button>}
-              <ModalCloseButton onClick={() => { if (downloadPhase === 'downloading') cancelOptionalDownload(); else if (downloadPhase !== 'preparing') setDownloadTier(null); }} ariaLabel="Close model download" disabled={downloadPhase === 'preparing'} />
+              <ModalCloseButton onClick={() => { if (downloadPhase === 'downloading') { downloadDismissedRef.current = true; setDownloadMinimized(true); } else if (downloadPhase !== 'preparing') setDownloadTier(null); }} ariaLabel="Hide model download" disabled={downloadPhase === 'preparing'} />
             </div>
           </div>
           {downloadPhase === 'error' ? (

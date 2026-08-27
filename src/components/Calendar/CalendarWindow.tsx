@@ -25,8 +25,18 @@ import {
   SlidersHorizontal,
   Search,
   Mic,
+  MapPin,
+  Clock3,
 } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ContextMenu } from '../Common/ContextMenu';
 import { RRule } from 'rrule';
@@ -54,9 +64,24 @@ import {
 } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import {
+  CreateFieldRow,
+  CreateModalShell,
+  CreateMoreOptions,
+  CreateSection,
+} from '../Common/CreateModalShell';
+import { CreateSmartField } from '../Common/CreateSmartField';
+import { parseCreateInput } from '../../utils/createParser/parseCreateInput';
+import { parseAiCreateSuggestion, shouldUseCreateAi, type AiCreateSuggestion, type CreateSuggestionResource } from '../../utils/createParser/createAiSuggestion';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
-import { routeForHome, routeForNote, routeForProject, routeForTask, usePlatform } from '../../platform';
+import {
+  routeForHome,
+  routeForNote,
+  routeForProject,
+  routeForTask,
+  usePlatform,
+} from '../../platform';
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
@@ -151,7 +176,14 @@ type EventRow = {
   time_zone?: string | null;
   url?: string | null;
   attendees?: unknown[] | null;
-  meeting_transcription_status?: 'idle' | 'recording' | 'paused' | 'processing' | 'complete' | 'failed' | null;
+  meeting_transcription_status?:
+    | 'idle'
+    | 'recording'
+    | 'paused'
+    | 'processing'
+    | 'complete'
+    | 'failed'
+    | null;
   meeting_event_deleted?: boolean;
 };
 
@@ -162,7 +194,14 @@ type ReminderRow = {
   calendar_id: string;
   color?: string;
   is_done: boolean;
-  recurrence_rule?: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'weekdays' | 'specific_dates';
+  recurrence_rule?:
+    | 'none'
+    | 'daily'
+    | 'weekly'
+    | 'monthly'
+    | 'yearly'
+    | 'weekdays'
+    | 'specific_dates';
   priority?: number;
   project_id?: string | null;
   note_id?: string | null;
@@ -413,9 +452,15 @@ const endOfLocalDay = (date: Date) => {
 };
 const baseEventId = (id: string) => id.split('__')[0];
 const baseReminderId = (id: string) => id.split('__')[0];
-const configuredIcalServiceUrl = (import.meta.env.VITE_ICAL_SERVICE_URL ?? 'https://ledger-jloh.onrender.com').trim().replace(/\/$/, '');
+const configuredIcalServiceUrl = (
+  import.meta.env.VITE_ICAL_SERVICE_URL ?? 'https://ledger-jloh.onrender.com'
+)
+  .trim()
+  .replace(/\/$/, '');
 const ICAL_SERVICE_URL = configuredIcalServiceUrl
-  ? (/^https?:\/\//i.test(configuredIcalServiceUrl) ? configuredIcalServiceUrl : `https://${configuredIcalServiceUrl}`)
+  ? /^https?:\/\//i.test(configuredIcalServiceUrl)
+    ? configuredIcalServiceUrl
+    : `https://${configuredIcalServiceUrl}`
   : '';
 
 type ParsedIcsEvent = {
@@ -768,11 +813,11 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
     }
 
     const baseEvent = {
-        title: summary || 'Imported Event',
-        componentType: blockType,
-        notes: description || undefined,
-        location: location || undefined,
-      };
+      title: summary || 'Imported Event',
+      componentType: blockType,
+      notes: description || undefined,
+      location: location || undefined,
+    };
 
     // Expand recurring events
     if (rrule) {
@@ -808,7 +853,16 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
   return out;
 };
 
-export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'week' | 'day' | 'agenda'; date?: string; event?: string; reminder?: string } } = {}) => {
+export const CalendarWindow = ({
+  webQuery,
+}: {
+  webQuery?: {
+    view?: 'month' | 'week' | 'day' | 'agenda';
+    date?: string;
+    event?: string;
+    reminder?: string;
+  };
+} = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout, reduceMotion } = useSidebar();
@@ -821,9 +875,15 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const hasLoadedDataRef = useRef(false);
   const calendarDataCacheRef = useRef(new Map<string, CalendarDataCacheEntry>());
   const hasAppliedInitialFocusContextRef = useRef(false);
-  const initialFocusDate = webQuery?.date ?? new URLSearchParams(window.location.search).get('focusDate');
-  const initialFocusContext = webQuery?.event ? `focus-event:${webQuery.event}` : webQuery?.reminder ? `focus-reminder:${webQuery.reminder}` : new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
-  const initialCalendarSection = webQuery?.view ?? new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
+  const initialFocusDate =
+    webQuery?.date ?? new URLSearchParams(window.location.search).get('focusDate');
+  const initialFocusContext = webQuery?.event
+    ? `focus-event:${webQuery.event}`
+    : webQuery?.reminder
+    ? `focus-reminder:${webQuery.reminder}`
+    : new URLSearchParams(window.location.search).get('focusContext')?.trim() ?? '';
+  const initialCalendarSection =
+    webQuery?.view ?? new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
   const [viewMode, setViewMode] = useState<CalendarViewMode>(
     initialCalendarSection === 'day' || initialCalendarSection === 'month'
       ? initialCalendarSection
@@ -855,6 +915,16 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const appliedCalendarDataFingerprintRef = useRef<string | null>(null);
 
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [isComposerMoreOptionsOpen, setIsComposerMoreOptionsOpen] = useState(false);
+  const [activeComposerSmartField, setActiveComposerSmartField] = useState<string | null>(null);
+  const [naturalLanguageInput, setNaturalLanguageInput] = useState('');
+  const composerParserOverridesRef = useRef(new Set<string>());
+  const composerAiRequestRef = useRef<{ revision: number; requestId: string } | null>(null);
+  const composerDismissedAiResourcesRef = useRef(new Set<string>());
+  const [composerAiStatus, setComposerAiStatus] = useState<'idle' | 'understanding' | 'unavailable'>('idle');
+  const [composerAiSuggestions, setComposerAiSuggestions] = useState<AiCreateSuggestion | null>(null);
+  const composerReturnFocusRef = useRef<HTMLElement | null>(null);
+  const composerWasOpenRef = useRef(false);
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventDate, setNewEventDate] = useState(() => formatDateKey(new Date()));
   const [newEventTime, setNewEventTime] = useState('09:00');
@@ -882,7 +952,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const [isSavingCalendarSubscription, setIsSavingCalendarSubscription] = useState(false);
   const [calendarSubscriptionSettings, setCalendarSubscriptionSettings] =
     useState<CalendarSubscriptionDetails | null>(null);
-  const [calendarSubscriptionWorkspaceName, setCalendarSubscriptionWorkspaceName] = useState<string | null>(null);
+  const [calendarSubscriptionWorkspaceName, setCalendarSubscriptionWorkspaceName] = useState<
+    string | null
+  >(null);
   const [calendarSubscriptionCalendars, setCalendarSubscriptionCalendars] = useState<
     CalendarSubscriptionCalendar[]
   >([]);
@@ -923,14 +995,23 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     {
       kind: 'calendar',
       focusSection: viewMode,
-      focusDate: selectedEvent ? formatDateKey(new Date(selectedEvent.start_at)) : selectedReminder ? formatDateKey(new Date(selectedReminder.remind_at)) : formatDateKey(viewAnchor),
-      focusContext: selectedEvent ? `focus-event:${baseEventId(selectedEvent.id) ?? selectedEvent.id}` : selectedReminder ? `focus-reminder:${baseReminderId(selectedReminder.id) ?? selectedReminder.id}` : null,
+      focusDate: selectedEvent
+        ? formatDateKey(new Date(selectedEvent.start_at))
+        : selectedReminder
+        ? formatDateKey(new Date(selectedReminder.remind_at))
+        : formatDateKey(viewAnchor),
+      focusContext: selectedEvent
+        ? `focus-event:${baseEventId(selectedEvent.id) ?? selectedEvent.id}`
+        : selectedReminder
+        ? `focus-reminder:${baseReminderId(selectedReminder.id) ?? selectedReminder.id}`
+        : null,
     },
     Boolean(activeWorkspaceId) && platform.kind === 'web',
     { pushHistory: false }
   );
   const [reminderEditorReminder, setReminderEditorReminder] = useState<ReminderRow | null>(null);
-  const [appleReminderEditorSnapshot, setAppleReminderEditorSnapshot] = useState<ReminderRow | null>(null);
+  const [appleReminderEditorSnapshot, setAppleReminderEditorSnapshot] =
+    useState<ReminderRow | null>(null);
   const previousAppleReminderIdsRef = useRef<Set<string>>(new Set());
   const [pendingFocusEventId, setPendingFocusEventId] = useState<string | null>(null);
   const [pendingFocusReminderId, setPendingFocusReminderId] = useState<string | null>(null);
@@ -943,7 +1024,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const [editAllDay, setEditAllDay] = useState(false);
   const [editLocation, setEditLocation] = useState('');
   const [editUrl, setEditUrl] = useState('');
-  const [editRecurrenceSpan, setEditRecurrenceSpan] = useState<'thisEvent' | 'futureEvents'>('thisEvent');
+  const [editRecurrenceSpan, setEditRecurrenceSpan] = useState<'thisEvent' | 'futureEvents'>(
+    'thisEvent'
+  );
   const [editDurationValue, setEditDurationValue] = useState(30);
   const [editDurationUnit, setEditDurationUnit] = useState<'minutes' | 'hours'>('minutes');
   const [editStatus, setEditStatus] = useState<'planned' | 'done' | 'missed' | 'cancelled'>(
@@ -1183,9 +1266,121 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     newEventRecurrence === 'specific_dates' && newEventSpecificDates.length === 0
       ? 'Choose at least one date.'
       : null;
+  useEffect(() => {
+    if (specificDatesValidationMessage) setIsComposerMoreOptionsOpen(true);
+  }, [specificDatesValidationMessage]);
+  useEffect(() => {
+    if (!isComposerOpen) return;
+    if (!naturalLanguageInput.trim()) {
+      setNewEventTitle('');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const parsed = parseCreateInput(naturalLanguageInput);
+      if (!composerParserOverridesRef.current.has('title') && parsed.title) setNewEventTitle(parsed.title);
+      if (!composerParserOverridesRef.current.has('date') && parsed.date) setNewEventDate(parsed.date);
+      if (!composerParserOverridesRef.current.has('time') && parsed.time) setNewEventTime(parsed.time);
+      if (!composerParserOverridesRef.current.has('duration') && parsed.durationMinutes) {
+        const display = getDurationDisplay(parsed.durationMinutes);
+        setNewEventDurationValue(display.value);
+        setNewEventDurationUnit(display.unit);
+      }
+      if (!composerParserOverridesRef.current.has('recurrence') && parsed.recurrence) setNewEventRecurrence(parsed.recurrence);
+      if (parsed.allDay && !composerParserOverridesRef.current.has('allDay')) {
+        setNewEventAllDay(true);
+        setIsComposerMoreOptionsOpen(true);
+      }
+      if (!composerParserOverridesRef.current.has('location') && parsed.location) setNewEventLocation(parsed.location);
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [isComposerOpen, naturalLanguageInput]);
+  useEffect(() => {
+    if (!isComposerOpen || !activeWorkspaceId || !window.askLedger?.start || !naturalLanguageInput.trim()) {
+      return;
+    }
+    const deterministic = parseCreateInput(naturalLanguageInput);
+    if (!shouldUseCreateAi(naturalLanguageInput, deterministic)) {
+      setComposerAiStatus('idle');
+      setComposerAiSuggestions(null);
+      return;
+    }
+    const revision = Date.now();
+    const requestId = `create-${revision}`;
+    const timer = window.setTimeout(() => {
+      const terms = naturalLanguageInput.toLowerCase().split(/\s+/).filter((term) => term.length > 2);
+      const candidates = [
+        ...projects.map((item) => ({ resourceType: 'project', resourceId: item.id, title: item.name, content: item.name })),
+        ...events.slice(0, 20).map((item) => ({ resourceType: 'event', resourceId: item.id, title: item.title, content: `${item.title} ${item.notes ?? ''}` })),
+        ...reminders.slice(0, 20).map((item) => ({ resourceType: 'reminder', resourceId: item.id, title: item.title, content: `${item.title} ${item.notes ?? ''}` })),
+        ...tasks.slice(0, 20).map((item) => ({ resourceType: 'task', resourceId: item.id, title: item.title, content: item.title })),
+        ...notes.slice(0, 20).map((item) => ({ resourceType: 'note', resourceId: item.id, title: item.title, content: item.title })),
+      ];
+      const ranked = candidates
+        .map((item) => ({ item, score: terms.reduce((score, term) => score + (item.content.toLowerCase().includes(term) ? 1 : 0), 0) }))
+        .filter((entry) => entry.score > 0)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 8)
+        .map(({ item }) => item);
+      const allowedResources: CreateSuggestionResource[] = ranked
+        .filter((item): item is typeof item & { resourceType: 'project' | 'event' | 'task' | 'note' } => item.resourceType !== 'reminder')
+        .map((item) => ({ type: item.resourceType, id: item.resourceId, label: item.title }));
+      const context = ranked.map((item) => ({ resourceType: item.resourceType, resourceId: item.resourceId, title: item.title, content: item.content.slice(0, 320) }));
+      const prompt = `Return JSON only matching this schema: {"title":"string?","date":"YYYY-MM-DD?","time":"HH:MM?","durationMinutes":"number?","location":"string?","recurrence":"none|daily|weekly|monthly|weekdays?","relatedResources":[{"type":"project|note|event|task","id":"string","label":"string"}],"confidence":"high|medium|low","unresolved":["string"]}. Interpret this ${composerMode} request conservatively. Never invent resource IDs; only use IDs in the supplied context. Request: ${naturalLanguageInput}\nContext: ${JSON.stringify(context)}`;
+      setComposerAiStatus('understanding');
+      composerAiRequestRef.current = { revision, requestId };
+      let output = '';
+      const unsubscribe = window.askLedger?.onStream((event: unknown) => {
+        const stream = event as { requestId?: string; type?: string; text?: string };
+        if (stream.requestId !== requestId) return;
+        if (stream.type === 'delta') output += stream.text ?? '';
+        if (stream.type === 'replace') output = stream.text ?? '';
+        if (stream.type === 'done' || stream.type === 'error') {
+          unsubscribe?.();
+          if (revision !== composerAiRequestRef.current?.revision) return;
+          const suggestion = stream.type === 'done' ? parseAiCreateSuggestion(output, allowedResources) : null;
+          if (!suggestion) {
+            setComposerAiStatus('unavailable');
+            return;
+          }
+          if (!composerParserOverridesRef.current.has('title') && suggestion.title) setNewEventTitle(suggestion.title);
+          if (!deterministic.date && !composerParserOverridesRef.current.has('date') && suggestion.date) setNewEventDate(suggestion.date);
+          if (!deterministic.time && !composerParserOverridesRef.current.has('time') && suggestion.time) setNewEventTime(suggestion.time);
+          if (!composerParserOverridesRef.current.has('duration') && suggestion.durationMinutes) {
+            const display = getDurationDisplay(suggestion.durationMinutes);
+            setNewEventDurationValue(display.value);
+            setNewEventDurationUnit(display.unit);
+          }
+          if (!composerParserOverridesRef.current.has('location') && suggestion.location) setNewEventLocation(suggestion.location);
+          if (!deterministic.recurrence && !composerParserOverridesRef.current.has('recurrence') && suggestion.recurrence) setNewEventRecurrence(suggestion.recurrence);
+          if (suggestion.unresolved?.length) setIsComposerMoreOptionsOpen(true);
+          setComposerAiSuggestions({ ...suggestion, relatedResources: suggestion.relatedResources?.filter((resource) => !composerDismissedAiResourcesRef.current.has(`${resource.type}:${resource.id}`)) });
+          setComposerAiStatus('idle');
+        }
+      });
+      void window.askLedger?.start({ requestId, question: prompt, workspaceId: activeWorkspaceId, documents: context, lexicalResults: context, reasoningMode: 'off', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {
+        unsubscribe?.();
+        if (revision === composerAiRequestRef.current?.revision) setComposerAiStatus('unavailable');
+      });
+    }, 650);
+    return () => {
+      window.clearTimeout(timer);
+      if (composerAiRequestRef.current?.requestId === requestId) {
+        void window.askLedger?.cancel(requestId);
+        composerAiRequestRef.current = null;
+      }
+    };
+  }, [activeWorkspaceId, composerMode, events, isComposerOpen, naturalLanguageInput, notes, projects, reminders, tasks]);
+  useEffect(() => {
+    if (composerWasOpenRef.current && !isComposerOpen) {
+      window.setTimeout(() => composerReturnFocusRef.current?.focus(), 0);
+    }
+    composerWasOpenRef.current = isComposerOpen;
+  }, [isComposerOpen]);
   const selectedEventPreview = useMemo(() => {
     if (!selectedEvent) return null;
-    const fresh = [...events, ...appleEventsForSelection].find((row) => row.id === baseEventId(selectedEvent.id));
+    const fresh = [...events, ...appleEventsForSelection].find(
+      (row) => row.id === baseEventId(selectedEvent.id)
+    );
     if (!fresh) return null;
     if (fresh.id === selectedEvent.id) return fresh;
     return {
@@ -1199,7 +1394,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
   const focusEventById = (eventIdRaw: string) => {
     const eventId = baseEventId(eventIdRaw);
-    const target = [...events, ...appleEventsForSelection].find((event) => baseEventId(event.id) === eventId) ?? null;
+    const target =
+      [...events, ...appleEventsForSelection].find((event) => baseEventId(event.id) === eventId) ??
+      null;
     if (!target) {
       setPendingFocusEventId(eventId);
       return;
@@ -1272,6 +1469,17 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   useEffect(() => {
     const applyFocusContext = (focusContext: string | null | undefined) => {
       if (!focusContext) return;
+      if (focusContext === 'connect-calendar') {
+        // The Overview handoff should land on Calendar with the connection
+        // menu already open, rather than sending the user to a separate
+        // settings page.
+        window.setTimeout(() => {
+          const buttonRect = calendarNewButtonRef.current?.getBoundingClientRect();
+          if (!buttonRect) return;
+          setCalendarHeaderMenu({ x: buttonRect.left, y: buttonRect.bottom + 6 });
+        }, 0);
+        return;
+      }
       if (focusContext.startsWith('smart-date-create:')) {
         const payload = focusContext.slice('smart-date-create:'.length);
         const separatorIndex = payload.lastIndexOf(':');
@@ -1363,9 +1571,14 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         ? Array.from({ length: 7 }, (_, i) => addDays(start, i))
         : Array.from({ length: 5 }, (_, i) => addDays(start, i));
       return {
-        label: `Agenda · ${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} - ${new Date(
-          end.getTime() - 1
-        ).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`,
+        label: `Agenda · ${start.toLocaleDateString([], {
+          month: 'short',
+          day: 'numeric',
+        })} - ${new Date(end.getTime() - 1).toLocaleDateString([], {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })}`,
         start,
         end,
         dates,
@@ -1375,7 +1588,11 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     if (viewMode === 'month') {
       const monthStart = startOfMonth(viewAnchor);
       const start = startOfMonthGrid(viewAnchor);
-      const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+      const daysInMonth = new Date(
+        monthStart.getFullYear(),
+        monthStart.getMonth() + 1,
+        0
+      ).getDate();
       const leadingDays = Math.round((monthStart.getTime() - start.getTime()) / 86_400_000);
       const gridLength = Math.ceil((leadingDays + daysInMonth) / 7) * 7;
       const end = addDays(start, gridLength);
@@ -1408,55 +1625,62 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   }, [viewAnchor, viewMode, calendarPreferences.showWeekends, calendarPreferences.weekStartsOn]);
 
   const isEventDragAllowed = useCallback(
-    (event: EventRow) => event.provider !== 'apple' && !event.all_day && (event.recurrence_rule ?? 'none') === 'none',
+    (event: EventRow) =>
+      event.provider !== 'apple' && !event.all_day && (event.recurrence_rule ?? 'none') === 'none',
     []
   );
 
-  const commitEventDrag = useCallback(async (drag: CalendarDragState) => {
-    const source = events.find((event) => event.id === drag.eventId);
-    if (!source) return;
-    if (drag.previewStartAt === drag.startAt && drag.previewEndAt === drag.endAt) return;
+  const commitEventDrag = useCallback(
+    async (drag: CalendarDragState) => {
+      const source = events.find((event) => event.id === drag.eventId);
+      if (!source) return;
+      if (drag.previewStartAt === drag.startAt && drag.previewEndAt === drag.endAt) return;
 
-    const optimistic = { ...source, start_at: drag.previewStartAt, end_at: drag.previewEndAt };
-    setEvents((current) => current.map((event) => event.id === source.id ? optimistic : event));
-    setSelectedEvent((current) => current?.id === source.id ? optimistic : current);
-    try {
-      const updated = (await api.updateEvent(source.id, {
-        start_at: drag.previewStartAt,
-        end_at: drag.previewEndAt,
-      })) as EventRow;
-      setEvents((current) => current.map((event) => event.id === updated.id ? updated : event));
-      setSelectedEvent((current) => current?.id === updated.id ? updated : current);
-      notifyCalendarItemsUpdated();
-    } catch (error) {
-      setEvents((current) => current.map((event) => event.id === source.id ? source : event));
-      setSelectedEvent((current) => current?.id === source.id ? source : current);
-      setError(error instanceof Error ? error.message : 'Could not move this event.');
-    }
-  }, [api, events, notifyCalendarItemsUpdated]);
+      const optimistic = { ...source, start_at: drag.previewStartAt, end_at: drag.previewEndAt };
+      setEvents((current) => current.map((event) => (event.id === source.id ? optimistic : event)));
+      setSelectedEvent((current) => (current?.id === source.id ? optimistic : current));
+      try {
+        const updated = (await api.updateEvent(source.id, {
+          start_at: drag.previewStartAt,
+          end_at: drag.previewEndAt,
+        })) as EventRow;
+        setEvents((current) => current.map((event) => (event.id === updated.id ? updated : event)));
+        setSelectedEvent((current) => (current?.id === updated.id ? updated : current));
+        notifyCalendarItemsUpdated();
+      } catch (error) {
+        setEvents((current) => current.map((event) => (event.id === source.id ? source : event)));
+        setSelectedEvent((current) => (current?.id === source.id ? source : current));
+        setError(error instanceof Error ? error.message : 'Could not move this event.');
+      }
+    },
+    [api, events, notifyCalendarItemsUpdated]
+  );
 
-  const beginEventDrag = useCallback((event: EventRow, pointerEvent: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!isEventDragAllowed(event)) return;
-    pointerEvent.preventDefault();
-    pointerEvent.stopPropagation();
-    pointerEvent.currentTarget.setPointerCapture?.(pointerEvent.pointerId);
-    setCalendarDrag({
-      eventId: event.id,
-      pointerId: pointerEvent.pointerId,
-      startAt: event.start_at,
-      endAt: event.end_at,
-      previewStartAt: event.start_at,
-      previewEndAt: event.end_at,
-    });
-    calendarDragRef.current = {
-      eventId: event.id,
-      pointerId: pointerEvent.pointerId,
-      startAt: event.start_at,
-      endAt: event.end_at,
-      previewStartAt: event.start_at,
-      previewEndAt: event.end_at,
-    };
-  }, [isEventDragAllowed]);
+  const beginEventDrag = useCallback(
+    (event: EventRow, pointerEvent: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!isEventDragAllowed(event)) return;
+      pointerEvent.preventDefault();
+      pointerEvent.stopPropagation();
+      pointerEvent.currentTarget.setPointerCapture?.(pointerEvent.pointerId);
+      setCalendarDrag({
+        eventId: event.id,
+        pointerId: pointerEvent.pointerId,
+        startAt: event.start_at,
+        endAt: event.end_at,
+        previewStartAt: event.start_at,
+        previewEndAt: event.end_at,
+      });
+      calendarDragRef.current = {
+        eventId: event.id,
+        pointerId: pointerEvent.pointerId,
+        startAt: event.start_at,
+        endAt: event.end_at,
+        previewStartAt: event.start_at,
+        previewEndAt: event.end_at,
+      };
+    },
+    [isEventDragAllowed]
+  );
 
   useEffect(() => {
     if (!calendarDrag) return;
@@ -1471,12 +1695,20 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       const x = event.clientX - rect.left + container.scrollLeft - 72;
       const dayIndex = Math.max(0, Math.min(viewConfig.dates.length - 1, Math.floor(x / dayWidth)));
       const y = event.clientY - rect.top + container.scrollTop - 96;
-      const minutes = Math.max(0, Math.min(23 * 60 + 45, Math.round((y / TIMELINE_HOUR_HEIGHT * 60) / 15) * 15));
+      const minutes = Math.max(
+        0,
+        Math.min(23 * 60 + 45, Math.round(((y / TIMELINE_HOUR_HEIGHT) * 60) / 15) * 15)
+      );
       const nextStart = new Date(viewConfig.dates[dayIndex] ?? viewAnchor);
       nextStart.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-      const duration = new Date(currentDrag.endAt).getTime() - new Date(currentDrag.startAt).getTime();
+      const duration =
+        new Date(currentDrag.endAt).getTime() - new Date(currentDrag.startAt).getTime();
       const nextEnd = new Date(nextStart.getTime() + Math.max(15 * 60 * 1000, duration));
-      const next = { ...currentDrag, previewStartAt: nextStart.toISOString(), previewEndAt: nextEnd.toISOString() };
+      const next = {
+        ...currentDrag,
+        previewStartAt: nextStart.toISOString(),
+        previewEndAt: nextEnd.toISOString(),
+      };
       calendarDragRef.current = next;
       setCalendarDrag(next);
     };
@@ -1502,7 +1734,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const calendarDragPreview = useMemo(() => {
     if (!calendarDrag || viewMode === 'month' || viewMode === 'agenda') return null;
     const start = new Date(calendarDrag.previewStartAt);
-    const dayIndex = viewConfig.dates.findIndex((date) => formatDateKey(date) === formatDateKey(start));
+    const dayIndex = viewConfig.dates.findIndex(
+      (date) => formatDateKey(date) === formatDateKey(start)
+    );
     if (dayIndex < 0) return null;
     const source = events.find((event) => event.id === calendarDrag.eventId);
     if (!source) return null;
@@ -1514,7 +1748,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       title: source.title,
       color: source.color ?? '#93C5FD',
       dayIndex,
-      top: 96 + (start.getHours() * 60 + start.getMinutes()) / 60 * TIMELINE_HOUR_HEIGHT,
+      top: 96 + ((start.getHours() * 60 + start.getMinutes()) / 60) * TIMELINE_HOUR_HEIGHT,
       height: Math.max(24, (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 4),
     };
   }, [calendarDrag, events, viewConfig.dates, viewMode]);
@@ -1522,23 +1756,55 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const appleCalendar = useAppleCalendar(user?.id, viewConfig.start, viewConfig.end);
   const appleReminders = useAppleReminders(user?.id, viewConfig.start, viewConfig.end);
   const allCalendarRows = useMemo(
-    () => [...calendars, ...appleCalendar.connectedCalendars.map((calendar) => ({ ...calendar, is_visible: calendar.visible })), ...appleReminders.connectedLists.map((list) => ({ ...list, id: list.id, name: list.title, is_visible: list.visible, is_reminder_list: true }))],
+    () => [
+      ...calendars,
+      ...appleCalendar.connectedCalendars.map((calendar) => ({
+        ...calendar,
+        is_visible: calendar.visible,
+      })),
+      ...appleReminders.connectedLists.map((list) => ({
+        ...list,
+        id: list.id,
+        name: list.title,
+        is_visible: list.visible,
+        is_reminder_list: true,
+      })),
+    ],
     [appleCalendar.connectedCalendars, appleReminders.connectedLists, calendars]
   );
-  const allEvents = useMemo<EventRow[]>(() => [...events, ...(appleCalendar.events as EventRow[])], [appleCalendar.events, events]);
+  const allEvents = useMemo<EventRow[]>(
+    () => [...events, ...(appleCalendar.events as EventRow[])],
+    [appleCalendar.events, events]
+  );
   useEffect(() => {
-    setReminders((current) => [...current.filter((reminder) => reminder.provider !== 'apple-reminders'), ...(appleReminders.reminders as ReminderRow[])]);
+    setReminders((current) => [
+      ...current.filter((reminder) => reminder.provider !== 'apple-reminders'),
+      ...(appleReminders.reminders as ReminderRow[]),
+    ]);
   }, [appleReminders.reminders]);
   useEffect(() => {
-    const nextIds = new Set(appleReminders.reminders.map((reminder) => reminder.provider_reminder_id).filter((id): id is string => Boolean(id)));
-    const selectedProviderId = selectedReminder?.provider === 'apple-reminders' ? selectedReminder.provider_reminder_id : null;
-    if (selectedProviderId && previousAppleReminderIdsRef.current.has(selectedProviderId) && !nextIds.has(selectedProviderId)) {
+    const nextIds = new Set(
+      appleReminders.reminders
+        .map((reminder) => reminder.provider_reminder_id)
+        .filter((id): id is string => Boolean(id))
+    );
+    const selectedProviderId =
+      selectedReminder?.provider === 'apple-reminders'
+        ? selectedReminder.provider_reminder_id
+        : null;
+    if (
+      selectedProviderId &&
+      previousAppleReminderIdsRef.current.has(selectedProviderId) &&
+      !nextIds.has(selectedProviderId)
+    ) {
       setSelectedReminder(null);
       setReminderEditorReminder(null);
       setAppleReminderEditorSnapshot(null);
       setError('This reminder was removed from Apple Reminders.');
     } else if (selectedProviderId) {
-      const latest = appleReminders.reminders.find((reminder) => reminder.provider_reminder_id === selectedProviderId) as ReminderRow | undefined;
+      const latest = appleReminders.reminders.find(
+        (reminder) => reminder.provider_reminder_id === selectedProviderId
+      ) as ReminderRow | undefined;
       if (latest && !reminderEditorReminder) setSelectedReminder(latest);
     }
     previousAppleReminderIdsRef.current = nextIds;
@@ -1547,35 +1813,54 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     let cancelled = false;
     const appleEvents = appleCalendar.events as EventRow[];
     setAppleEventsForSelection(appleEvents);
-    if (!appleEvents.length) return () => { cancelled = true; };
-    void Promise.all(appleEvents.map(async (event) => {
-      try {
-        const linked = await api.getMeetingNoteForCalendarEvent({
-          calendar_provider: 'apple',
-          calendar_event_key: event.provider_event_id ?? event.id,
-        }) as { note?: NoteRow; metadata?: { transcription_status?: string; calendar_event_deleted?: boolean } } | null;
-        return linked?.note ? {
-          id: event.id,
-          note_id: linked.note.id,
-          meeting_transcription_status: linked.metadata?.transcription_status as EventRow['meeting_transcription_status'],
-          meeting_event_deleted: linked.metadata?.calendar_event_deleted,
-        } : null;
-      } catch {
-        return null;
-      }
-    })).then((links) => {
+    if (!appleEvents.length)
+      return () => {
+        cancelled = true;
+      };
+    void Promise.all(
+      appleEvents.map(async (event) => {
+        try {
+          const linked = (await api.getMeetingNoteForCalendarEvent({
+            calendar_provider: 'apple',
+            calendar_event_key: event.provider_event_id ?? event.id,
+          })) as {
+            note?: NoteRow;
+            metadata?: { transcription_status?: string; calendar_event_deleted?: boolean };
+          } | null;
+          return linked?.note
+            ? {
+                id: event.id,
+                note_id: linked.note.id,
+                meeting_transcription_status: linked.metadata
+                  ?.transcription_status as EventRow['meeting_transcription_status'],
+                meeting_event_deleted: linked.metadata?.calendar_event_deleted,
+              }
+            : null;
+        } catch {
+          return null;
+        }
+      })
+    ).then((links) => {
       if (cancelled) return;
       const byId = new Map(links.filter(Boolean).map((link) => [link!.id, link]));
-      setAppleEventsForSelection((current) => current.map((event) => {
-        const link = byId.get(event.id);
-        return link ? { ...event, ...link } : event;
-      }));
+      setAppleEventsForSelection((current) =>
+        current.map((event) => {
+          const link = byId.get(event.id);
+          return link ? { ...event, ...link } : event;
+        })
+      );
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [api, appleCalendar.events]);
   useEffect(() => {
     const nextIds = new Set(appleCalendar.events.map((event) => event.id));
-    if (selectedEvent?.provider === 'apple' && previousAppleEventIdsRef.current.has(selectedEvent.id) && !nextIds.has(selectedEvent.id)) {
+    if (
+      selectedEvent?.provider === 'apple' &&
+      previousAppleEventIdsRef.current.has(selectedEvent.id) &&
+      !nextIds.has(selectedEvent.id)
+    ) {
       setSelectedEvent(null);
       setEventEditorEvent(null);
       setAppleEditorSnapshot(null);
@@ -1611,13 +1896,22 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const visibleCalendarIdsMemo = useMemo(() => {
     return new Set(
       allCalendarRows
-        .filter((calendar) => calendar.is_visible !== false && (calendar as { available?: boolean }).available !== false)
+        .filter(
+          (calendar) =>
+            calendar.is_visible !== false &&
+            (calendar as { available?: boolean }).available !== false
+        )
         .map((c) => c.id)
     );
   }, [allCalendarRows]);
 
   const isPastEvent = (event: EventRow) => new Date(event.end_at).getTime() < Date.now();
-  const canEditEvent = (event: EventRow) => event.provider !== 'apple' || Boolean(appleCalendar.connectedCalendars.find((calendar) => calendar.id === event.calendar_id)?.allowsContentModifications);
+  const canEditEvent = (event: EventRow) =>
+    event.provider !== 'apple' ||
+    Boolean(
+      appleCalendar.connectedCalendars.find((calendar) => calendar.id === event.calendar_id)
+        ?.allowsContentModifications
+    );
   const isPastReminder = (reminder: ReminderRow) =>
     new Date(reminder.remind_at).getTime() < Date.now();
   const isPastEventMuted = (event: EventRow) =>
@@ -1803,40 +2097,43 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     return grouped;
   }, [dueDateItems, viewConfig.dates]);
 
-  const openDueDateItem = useCallback((item: DueDateItem) => {
-    if (activeWorkspaceId) {
+  const openDueDateItem = useCallback(
+    (item: DueDateItem) => {
+      if (activeWorkspaceId) {
+        if (item.kind === 'project') {
+          platform.navigation.openRoute(routeForProject(activeWorkspaceId, item.sourceId));
+          return;
+        }
+        if (item.kind === 'task') {
+          platform.navigation.openRoute(routeForTask(activeWorkspaceId, item.sourceId));
+          return;
+        }
+      }
       if (item.kind === 'project') {
-        platform.navigation.openRoute(routeForProject(activeWorkspaceId, item.sourceId));
+        void window.desktopWindow?.openModule('projects', {
+          kind: 'projects',
+          focusProjectId: item.sourceId,
+        });
+        return;
+      }
+      if (item.kind === 'milestone') {
+        void window.desktopWindow?.openModule('projects', {
+          kind: 'projects',
+          focusSection: 'timeline:all',
+        });
         return;
       }
       if (item.kind === 'task') {
-        platform.navigation.openRoute(routeForTask(activeWorkspaceId, item.sourceId));
+        void window.desktopWindow?.openModule('dashboard', { kind: 'dashboard' });
         return;
       }
-    }
-    if (item.kind === 'project') {
-      void window.desktopWindow?.openModule('projects', {
-        kind: 'projects',
-        focusProjectId: item.sourceId,
+      void window.desktopWindow?.openModule('inbox', {
+        kind: 'inbox',
+        focusSection: 'unprocessed',
       });
-      return;
-    }
-    if (item.kind === 'milestone') {
-      void window.desktopWindow?.openModule('projects', {
-        kind: 'projects',
-        focusSection: 'timeline:all',
-      });
-      return;
-    }
-    if (item.kind === 'task') {
-      void window.desktopWindow?.openModule('dashboard', { kind: 'dashboard' });
-      return;
-    }
-    void window.desktopWindow?.openModule('inbox', {
-      kind: 'inbox',
-      focusSection: 'unprocessed',
-    });
-  }, [activeWorkspaceId, platform]);
+    },
+    [activeWorkspaceId, platform]
+  );
 
   const renderDueDateRow = (item: DueDateItem, className = '') => (
     <CenterInlineItemRow
@@ -1850,8 +2147,18 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       color={item.color}
       completed={item.completed}
       className={className}
-      titleText={`${item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'}: ${item.title}`}
-      icon={item.kind === 'task' ? <CheckSquare size={11} strokeWidth={1.8} /> : item.kind === 'milestone' ? <Flag size={11} strokeWidth={1.8} /> : <CalendarClock size={11} strokeWidth={1.8} />}
+      titleText={`${
+        item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'
+      }: ${item.title}`}
+      icon={
+        item.kind === 'task' ? (
+          <CheckSquare size={11} strokeWidth={1.8} />
+        ) : item.kind === 'milestone' ? (
+          <Flag size={11} strokeWidth={1.8} />
+        ) : (
+          <CalendarClock size={11} strokeWidth={1.8} />
+        )
+      }
     />
   );
 
@@ -2164,8 +2471,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     const endLabel = formatCalendarTime(end).replace(':00', '');
     return `${startLabel}–${endLabel}`;
   };
-  const formatCompactCalendarTime = (date: Date) =>
-    formatCalendarTime(date).replace(':00', '');
+  const formatCompactCalendarTime = (date: Date) => formatCalendarTime(date).replace(':00', '');
   const getDurationDisplay = (minutes: number) => {
     if (minutes >= 60 && minutes % 60 === 0) {
       return { value: minutes / 60, unit: 'hours' as const };
@@ -2174,6 +2480,19 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   };
   const getDurationMinutes = (value: number, unit: 'minutes' | 'hours') =>
     Math.max(1, Math.round(unit === 'hours' ? value * 60 : value));
+  const formatSmartDate = (dateKey: string) => {
+    const date = parseDateKey(dateKey);
+    return date
+      ? date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+      : 'Invalid date';
+  };
+  const formatSmartTime = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 'Invalid time';
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    return formatCalendarTime(date);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -2285,13 +2604,15 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 | 'workspace'
                 | 'projects')
             : 'personal',
-          calendarScope: !activeWorkspace?.is_personal && ['current_workspace', 'all_accessible_workspaces'].includes(
-            String(payload?.preferences?.calendarScope)
-          )
-            ? (payload?.preferences?.calendarScope as
-                | 'current_workspace'
-                | 'all_accessible_workspaces')
-            : 'current_workspace',
+          calendarScope:
+            !activeWorkspace?.is_personal &&
+            ['current_workspace', 'all_accessible_workspaces'].includes(
+              String(payload?.preferences?.calendarScope)
+            )
+              ? (payload?.preferences?.calendarScope as
+                  | 'current_workspace'
+                  | 'all_accessible_workspaces')
+              : 'current_workspace',
           calendarColor: ['ledger-orange', 'blue', 'green', 'gray'].includes(
             String(payload?.preferences?.calendarColor)
           )
@@ -2485,9 +2806,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         if (cancelled) return;
 
         const filteredReminders = ((reminderRows ?? []) as ReminderRow[]).filter((reminder) => {
-            const remindAt = new Date(reminder.remind_at).getTime();
-            return remindAt >= viewConfig.start.getTime() && remindAt < viewConfig.end.getTime();
-          });
+          const remindAt = new Date(reminder.remind_at).getTime();
+          return remindAt >= viewConfig.start.getTime() && remindAt < viewConfig.end.getTime();
+        });
 
         const eventRowsById = new Set(((eventRows ?? []) as EventRow[]).map((event) => event.id));
         const reminderRowsById = new Set(
@@ -2531,12 +2852,45 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             ? (noteResult.value as { notes: NoteRow[] }).notes ?? []
             : [];
         const nextCalendarDataFingerprint = JSON.stringify({
-          calendars: finalCalendars.map((calendar) => [calendar.id, calendar.name, calendar.color, calendar.is_visible]),
-          events: (eventRows ?? []).map((event: EventRow) => [event.id, event.start_at, event.end_at, event.status]),
-          reminders: filteredReminders.map((reminder) => [reminder.id, reminder.remind_at, reminder.is_done]),
-          projects: loadedProjects.map((project) => [project.id, project.name, project.end_date, project.status, project.color]),
-          tasks: loadedTasks.map((task) => [task.id, task.title, task.due_date, task.due_time, task.status, task.project_id]),
-          milestones: loadedMilestones.map((milestone) => [milestone.id, milestone.title, milestone.milestone_date, milestone.completed, milestone.project_id]),
+          calendars: finalCalendars.map((calendar) => [
+            calendar.id,
+            calendar.name,
+            calendar.color,
+            calendar.is_visible,
+          ]),
+          events: (eventRows ?? []).map((event: EventRow) => [
+            event.id,
+            event.start_at,
+            event.end_at,
+            event.status,
+          ]),
+          reminders: filteredReminders.map((reminder) => [
+            reminder.id,
+            reminder.remind_at,
+            reminder.is_done,
+          ]),
+          projects: loadedProjects.map((project) => [
+            project.id,
+            project.name,
+            project.end_date,
+            project.status,
+            project.color,
+          ]),
+          tasks: loadedTasks.map((task) => [
+            task.id,
+            task.title,
+            task.due_date,
+            task.due_time,
+            task.status,
+            task.project_id,
+          ]),
+          milestones: loadedMilestones.map((milestone) => [
+            milestone.id,
+            milestone.title,
+            milestone.milestone_date,
+            milestone.completed,
+            milestone.project_id,
+          ]),
           notes: loadedNotes.map((note) => [note.id, note.title]),
         });
         const shouldApplyCalendarData =
@@ -2884,6 +3238,11 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     setNewEventLocation('');
     setNewEventUrl('');
     setNewEventTitle(title);
+    setNaturalLanguageInput(title);
+    composerParserOverridesRef.current.clear();
+    composerDismissedAiResourcesRef.current.clear();
+    setComposerAiStatus('idle');
+    setComposerAiSuggestions(null);
     setNewEventRecurrence('none');
     setNewEventSpecificDates([]);
     setComposerCalendarId(
@@ -2897,9 +3256,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     setComposerNotes('');
     setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
     setComposerMode(mode);
+    setIsComposerMoreOptionsOpen(false);
+    setActiveComposerSmartField(null);
     setIsSpecificDatesModalOpen(false);
     setSpecificDatesDraft([]);
     setSpecificDatesCleared(false);
+    composerReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : calendarNewButtonRef.current;
     setIsComposerOpen(true);
   };
 
@@ -2932,6 +3294,11 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     setNewEventLocation('');
     setNewEventUrl('');
     setNewEventTitle(context.suggestedTitle || context.noteTitle || 'Untitled event');
+    setNaturalLanguageInput(context.suggestedTitle || context.noteTitle || 'Untitled event');
+    composerParserOverridesRef.current.clear();
+    composerDismissedAiResourcesRef.current.clear();
+    setComposerAiStatus('idle');
+    setComposerAiSuggestions(null);
     setNewEventRecurrence('none');
     setNewEventSpecificDates([]);
     setComposerCalendarId(
@@ -2945,9 +3312,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     setComposerNotes('');
     setNewEventVisibility(calendarPreferences.defaultEventVisibility ?? 'private');
     setComposerMode(mode);
+    setIsComposerMoreOptionsOpen(Boolean(context.hasExplicitTime === false || context.noteProjectId || context.noteId));
+    setActiveComposerSmartField(null);
     setIsSpecificDatesModalOpen(false);
     setSpecificDatesDraft([]);
     setSpecificDatesCleared(false);
+    composerReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : calendarNewButtonRef.current;
     setIsComposerOpen(true);
   };
 
@@ -3071,7 +3441,8 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       else if (actionId === 'calendar.view.day') setViewMode('day');
       else if (actionId === 'calendar.view.week') setViewMode('week');
       else if (actionId === 'calendar.view.month') setViewMode('month');
-      else if (actionId === 'event.create') openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event');
+      else if (actionId === 'event.create')
+        openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event');
     };
     window.addEventListener('ledger:touchbar-action', handleTouchBarAction);
     return () => window.removeEventListener('ledger:touchbar-action', handleTouchBarAction);
@@ -3089,7 +3460,17 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   }, [viewAnchor, viewMode]);
 
   const createQuickEvent = async () => {
-    if (!user || !newEventTitle.trim() || (calendars.length === 0 && appleCalendar.connectedCalendars.length === 0 && appleReminders.connectedLists.length === 0)) return;
+    const activeAiRequest = composerAiRequestRef.current;
+    if (activeAiRequest) void window.askLedger?.cancel(activeAiRequest.requestId);
+    composerAiRequestRef.current = null;
+    if (
+      !user ||
+      !newEventTitle.trim() ||
+      (calendars.length === 0 &&
+        appleCalendar.connectedCalendars.length === 0 &&
+        appleReminders.connectedLists.length === 0)
+    )
+      return;
     if (newEventRecurrence === 'specific_dates' && newEventSpecificDates.length === 0) {
       setError('Choose at least one date.');
       return;
@@ -3097,9 +3478,15 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
     const smartDateContext = smartDateComposerContextRef.current;
 
-    const appleDestination = appleCalendar.connectedCalendars.find((calendar) => calendar.id === composerCalendarId);
-    const appleReminderDestination = composerMode === 'reminder' ? appleReminders.connectedLists.find((list) => list.id === composerCalendarId) : undefined;
-    const selectedCalendar = calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar();
+    const appleDestination = appleCalendar.connectedCalendars.find(
+      (calendar) => calendar.id === composerCalendarId
+    );
+    const appleReminderDestination =
+      composerMode === 'reminder'
+        ? appleReminders.connectedLists.find((list) => list.id === composerCalendarId)
+        : undefined;
+    const selectedCalendar =
+      calendars.find((calendar) => calendar.id === composerCalendarId) ?? getDefaultCalendar();
     if (!selectedCalendar && !appleDestination && !appleReminderDestination) return;
     const start = newEventAllDay
       ? new Date(`${newEventDate}T00:00:00`)
@@ -3118,12 +3505,35 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     if (composerMode === 'reminder') {
       if (appleReminderDestination) {
         try {
-          await appleReminders.createReminder({ listId: appleReminderDestination.id.slice('apple-reminder:'.length), title: newEventTitle.trim(), notes: composerNotes.trim() || null, dueAt: start.toISOString(), allDay: newEventAllDay, priority: newReminderPriority, recurrence: newEventRecurrence === 'specific_dates' ? 'none' : newEventRecurrence, completed: false });
-          setIsSavingEvent(false); setIsComposerOpen(false); setNewEventTitle(''); setComposerNotes('');
-        } catch (error) { setIsSavingEvent(false); setError(error instanceof Error ? error.message : 'Ledger couldn’t save this reminder to Apple Reminders.'); }
+          await appleReminders.createReminder({
+            listId: appleReminderDestination.id.slice('apple-reminder:'.length),
+            title: newEventTitle.trim(),
+            notes: composerNotes.trim() || null,
+            dueAt: start.toISOString(),
+            allDay: newEventAllDay,
+            priority: newReminderPriority,
+            recurrence: newEventRecurrence === 'specific_dates' ? 'none' : newEventRecurrence,
+            completed: false,
+          });
+          setIsSavingEvent(false);
+          setIsComposerOpen(false);
+          setNewEventTitle('');
+          setComposerNotes('');
+        } catch (error) {
+          setIsSavingEvent(false);
+          setError(
+            error instanceof Error
+              ? error.message
+              : 'Ledger couldn’t save this reminder to Apple Reminders.'
+          );
+        }
         return;
       }
-      if (appleDestination) { setIsSavingEvent(false); setError('Choose an Apple Reminders list or Ledger calendar for a reminder.'); return; }
+      if (appleDestination) {
+        setIsSavingEvent(false);
+        setError('Choose an Apple Reminders list or Ledger calendar for a reminder.');
+        return;
+      }
       const reminderCalendarPreference =
         calendarPreferences.reminderDestination ?? 'today-calendar';
       const selectedReminderCalendar =
@@ -3167,6 +3577,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       );
       setSelectedEvent(null);
       setNewEventTitle('');
+      setNaturalLanguageInput('');
       setIsComposerOpen(false);
       setComposerMode('event');
       setNewEventRecurrence('none');
@@ -3205,7 +3616,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
     if (appleDestination) {
       try {
-        const created = await appleCalendar.createEvent({
+        const created = (await appleCalendar.createEvent({
           calendarId: appleDestination.id.slice('apple:'.length),
           title: newEventTitle.trim(),
           start: start.toISOString(),
@@ -3216,16 +3627,23 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
           location: newEventLocation.trim() || null,
           url: newEventUrl.trim() || null,
           recurrence: newEventRecurrence === 'specific_dates' ? 'none' : newEventRecurrence,
-        }) as EventRow;
-        setAppleEventsForSelection((prev) => [...prev.filter((event) => event.id !== created.id), created]);
+        })) as EventRow;
+        setAppleEventsForSelection((prev) => [
+          ...prev.filter((event) => event.id !== created.id),
+          created,
+        ]);
         setSelectedEvent(created);
         setSelectedReminder(null);
         setIsComposerOpen(false);
         setNewEventTitle('');
         notifyCalendarItemsUpdated();
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Ledger could not save this event to Apple Calendar.');
-      } finally { setIsSavingEvent(false); }
+        setError(
+          err instanceof Error ? err.message : 'Ledger could not save this event to Apple Calendar.'
+        );
+      } finally {
+        setIsSavingEvent(false);
+      }
       return;
     }
 
@@ -3270,6 +3688,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     setSelectedEvent(createdEvents[0] ?? null);
     setSelectedReminder(null);
     setNewEventTitle('');
+    setNaturalLanguageInput('');
     setIsComposerOpen(false);
     setComposerMode('event');
     setNewEventRecurrence('none');
@@ -3337,11 +3756,34 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const toggleReminderDone = async (reminder: ReminderRow) => {
     if (reminder.provider === 'apple-reminders') {
       const previousDone = reminder.is_done;
-      setReminders((prev) => prev.map((item) => item.provider_reminder_id === reminder.provider_reminder_id ? { ...item, is_done: !previousDone } : item));
+      setReminders((prev) =>
+        prev.map((item) =>
+          item.provider_reminder_id === reminder.provider_reminder_id
+            ? { ...item, is_done: !previousDone }
+            : item
+        )
+      );
       try {
-        await appleReminders.setCompleted({ reminderId: reminder.provider_reminder_id, completed: !reminder.is_done, listId: reminder.calendar_id.slice('apple-reminder:'.length) });
+        await appleReminders.setCompleted({
+          reminderId: reminder.provider_reminder_id,
+          completed: !reminder.is_done,
+          listId: reminder.calendar_id.slice('apple-reminder:'.length),
+        });
         await appleReminders.refreshReminders(true);
-      } catch (error) { setReminders((prev) => prev.map((item) => item.provider_reminder_id === reminder.provider_reminder_id ? { ...item, is_done: previousDone } : item)); setError(error instanceof Error ? error.message : 'Ledger couldn’t save this reminder to Apple Reminders.'); }
+      } catch (error) {
+        setReminders((prev) =>
+          prev.map((item) =>
+            item.provider_reminder_id === reminder.provider_reminder_id
+              ? { ...item, is_done: previousDone }
+              : item
+          )
+        );
+        setError(
+          error instanceof Error
+            ? error.message
+            : 'Ledger couldn’t save this reminder to Apple Reminders.'
+        );
+      }
       return;
     }
     try {
@@ -3368,11 +3810,20 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
   const quickDeleteReminder = async (reminderId: string) => {
     try {
-      const providerReminder = reminders.find((item) => item.id === reminderId || item.id.startsWith(`${reminderId}__`));
+      const providerReminder = reminders.find(
+        (item) => item.id === reminderId || item.id.startsWith(`${reminderId}__`)
+      );
       if (providerReminder?.provider === 'apple-reminders') {
-        if (!window.confirm('Delete this reminder from Apple Reminders? It will also be removed from your other Apple devices using this account.')) return;
+        if (
+          !window.confirm(
+            'Delete this reminder from Apple Reminders? It will also be removed from your other Apple devices using this account.'
+          )
+        )
+          return;
         await appleReminders.deleteReminder({ reminderId: providerReminder.provider_reminder_id });
-        setReminders((prev) => prev.filter((item) => item.provider_reminder_id !== providerReminder.provider_reminder_id));
+        setReminders((prev) =>
+          prev.filter((item) => item.provider_reminder_id !== providerReminder.provider_reminder_id)
+        );
         return;
       }
       const targetId = baseReminderId(reminderId);
@@ -3393,7 +3844,14 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     setReminderEditorReminder(source);
     setReminderEditTitle(source.title);
     setReminderEditDate(formatDateKey(start));
-    setReminderEditTime(source.all_day ? '' : `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`);
+    setReminderEditTime(
+      source.all_day
+        ? ''
+        : `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(
+            2,
+            '0'
+          )}`
+    );
     setReminderEditCalendarId(source.calendar_id);
     setReminderEditColor(source.color ?? '#F59E0B');
     setReminderEditDone(source.is_done);
@@ -3429,37 +3887,121 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
     if (reminderEditorReminder.provider === 'apple-reminders') {
       try {
-        const latest = await appleReminders.refetchReminder(reminderEditorReminder.provider_reminder_id ?? '');
+        const latest = await appleReminders.refetchReminder(
+          reminderEditorReminder.provider_reminder_id ?? ''
+        );
         const snapshot = appleReminderEditorSnapshot ?? reminderEditorReminder;
-        const fields = ['title', 'notes', 'remind_at', 'all_day', 'priority', 'is_done', 'recurrence_rule', 'calendar_id'] as const;
-        const latestValues: Record<string, unknown> = { title: latest.title, notes: latest.notes ?? null, remind_at: latest.remind_at, all_day: latest.all_day, priority: latest.priority ?? 0, is_done: latest.is_done, recurrence_rule: latest.recurrence_rule ?? 'none', calendar_id: latest.calendar_id };
-        const snapshotValues: Record<string, unknown> = { title: snapshot.title, notes: snapshot.notes ?? null, remind_at: snapshot.remind_at, all_day: snapshot.all_day, priority: snapshot.priority ?? 0, is_done: snapshot.is_done, recurrence_rule: snapshot.recurrence_rule ?? 'none', calendar_id: snapshot.calendar_id };
-        const mineValues: Record<string, unknown> = { title: reminderEditTitle.trim(), notes: reminderEditNotes.trim() || null, remind_at: new Date(`${reminderEditDate}T${reminderEditTime || '00:00'}:00`).toISOString(), all_day: !reminderEditTime, priority: reminderEditPriority, is_done: reminderEditDone, recurrence_rule: reminderEditRecurrence, calendar_id: reminderEditCalendarId };
-        const externallyChanged = fields.filter((field) => latestValues[field] !== snapshotValues[field]);
+        const fields = [
+          'title',
+          'notes',
+          'remind_at',
+          'all_day',
+          'priority',
+          'is_done',
+          'recurrence_rule',
+          'calendar_id',
+        ] as const;
+        const latestValues: Record<string, unknown> = {
+          title: latest.title,
+          notes: latest.notes ?? null,
+          remind_at: latest.remind_at,
+          all_day: latest.all_day,
+          priority: latest.priority ?? 0,
+          is_done: latest.is_done,
+          recurrence_rule: latest.recurrence_rule ?? 'none',
+          calendar_id: latest.calendar_id,
+        };
+        const snapshotValues: Record<string, unknown> = {
+          title: snapshot.title,
+          notes: snapshot.notes ?? null,
+          remind_at: snapshot.remind_at,
+          all_day: snapshot.all_day,
+          priority: snapshot.priority ?? 0,
+          is_done: snapshot.is_done,
+          recurrence_rule: snapshot.recurrence_rule ?? 'none',
+          calendar_id: snapshot.calendar_id,
+        };
+        const mineValues: Record<string, unknown> = {
+          title: reminderEditTitle.trim(),
+          notes: reminderEditNotes.trim() || null,
+          remind_at: new Date(
+            `${reminderEditDate}T${reminderEditTime || '00:00'}:00`
+          ).toISOString(),
+          all_day: !reminderEditTime,
+          priority: reminderEditPriority,
+          is_done: reminderEditDone,
+          recurrence_rule: reminderEditRecurrence,
+          calendar_id: reminderEditCalendarId,
+        };
+        const externallyChanged = fields.filter(
+          (field) => latestValues[field] !== snapshotValues[field]
+        );
         const mineChanged = fields.filter((field) => mineValues[field] !== snapshotValues[field]);
         if (externallyChanged.some((field) => mineChanged.includes(field))) {
-          const useMine = window.confirm('This reminder changed in Apple Reminders while you were editing it. Press OK to use your changes, or Cancel to keep the Apple version.');
-          if (!useMine) { openReminderEditor(latest as ReminderRow); setIsSavingEdit(false); return; }
+          const useMine = window.confirm(
+            'This reminder changed in Apple Reminders while you were editing it. Press OK to use your changes, or Cancel to keep the Apple version.'
+          );
+          if (!useMine) {
+            openReminderEditor(latest as ReminderRow);
+            setIsSavingEdit(false);
+            return;
+          }
         }
         const desired = { ...mineValues };
-        for (const field of fields) if (!mineChanged.includes(field)) desired[field] = latestValues[field];
-        const listId = String(desired.calendar_id).replace(/^apple-reminder:/, '') || latest.calendar_id.replace(/^apple-reminder:/, '');
+        for (const field of fields)
+          if (!mineChanged.includes(field)) desired[field] = latestValues[field];
+        const listId =
+          String(desired.calendar_id).replace(/^apple-reminder:/, '') ||
+          latest.calendar_id.replace(/^apple-reminder:/, '');
         const dueAt = String(desired.remind_at);
-        const updated = await appleReminders.updateReminder({ reminderId: latest.provider_reminder_id, listId, title: String(desired.title), notes: desired.notes, dueAt, allDay: Boolean(desired.all_day), priority: Number(desired.priority ?? 0), completed: Boolean(desired.is_done), recurrence: String(desired.recurrence_rule ?? 'none') });
-        setSelectedReminder(updated as ReminderRow); setReminderEditorReminder(updated as ReminderRow);
+        const updated = await appleReminders.updateReminder({
+          reminderId: latest.provider_reminder_id,
+          listId,
+          title: String(desired.title),
+          notes: desired.notes,
+          dueAt,
+          allDay: Boolean(desired.all_day),
+          priority: Number(desired.priority ?? 0),
+          completed: Boolean(desired.is_done),
+          recurrence: String(desired.recurrence_rule ?? 'none'),
+        });
+        setSelectedReminder(updated as ReminderRow);
+        setReminderEditorReminder(updated as ReminderRow);
         setAppleReminderEditorSnapshot(updated as ReminderRow);
       } catch (error) {
-        if (error && typeof error === 'object' && 'notFound' in error && (error as { notFound?: boolean }).notFound) { setReminders((prev) => prev.filter((item) => item.provider_reminder_id !== reminderEditorReminder.provider_reminder_id)); setSelectedReminder(null); setReminderEditorReminder(null); setError('This reminder was removed from Apple Reminders.'); }
-        else setError(error instanceof Error ? error.message : 'Ledger couldn’t save this reminder to Apple Reminders.');
+        if (
+          error &&
+          typeof error === 'object' &&
+          'notFound' in error &&
+          (error as { notFound?: boolean }).notFound
+        ) {
+          setReminders((prev) =>
+            prev.filter(
+              (item) => item.provider_reminder_id !== reminderEditorReminder.provider_reminder_id
+            )
+          );
+          setSelectedReminder(null);
+          setReminderEditorReminder(null);
+          setError('This reminder was removed from Apple Reminders.');
+        } else
+          setError(
+            error instanceof Error
+              ? error.message
+              : 'Ledger couldn’t save this reminder to Apple Reminders.'
+          );
+      } finally {
+        setIsSavingEdit(false);
       }
-      finally { setIsSavingEdit(false); }
       return;
     }
 
     const originalReminderDate = new Date(reminderEditorReminder.remind_at);
     const remindAt = new Date(`${reminderEditDate}T${reminderEditTime}:00`);
     const resolvedReminderCalendarId =
-      reminderEditCalendarId || reminderEditorReminder.calendar_id || getDefaultCalendar()?.id || '';
+      reminderEditCalendarId ||
+      reminderEditorReminder.calendar_id ||
+      getDefaultCalendar()?.id ||
+      '';
     const resolvedReminderColor =
       calendarById.get(resolvedReminderCalendarId)?.color ?? reminderEditColor;
 
@@ -3502,11 +4044,33 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
   const deleteReminderFromEditor = async () => {
     if (!reminderEditorReminder) return;
     if (reminderEditorReminder.provider === 'apple-reminders') {
-      if (!window.confirm('Delete this reminder from Apple Reminders? It will also be removed from your other Apple devices using this account.')) return;
+      if (
+        !window.confirm(
+          'Delete this reminder from Apple Reminders? It will also be removed from your other Apple devices using this account.'
+        )
+      )
+        return;
       setIsDeletingReminder(true);
-      try { await appleReminders.deleteReminder({ reminderId: reminderEditorReminder.provider_reminder_id }); setReminders((prev) => prev.filter((item) => item.provider_reminder_id !== reminderEditorReminder.provider_reminder_id)); setSelectedReminder(null); setReminderEditorReminder(null); }
-      catch (error) { setError(error instanceof Error ? error.message : 'Ledger couldn’t delete this reminder from Apple Reminders.'); }
-      finally { setIsDeletingReminder(false); }
+      try {
+        await appleReminders.deleteReminder({
+          reminderId: reminderEditorReminder.provider_reminder_id,
+        });
+        setReminders((prev) =>
+          prev.filter(
+            (item) => item.provider_reminder_id !== reminderEditorReminder.provider_reminder_id
+          )
+        );
+        setSelectedReminder(null);
+        setReminderEditorReminder(null);
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : 'Ledger couldn’t delete this reminder from Apple Reminders.'
+        );
+      } finally {
+        setIsDeletingReminder(false);
+      }
       return;
     }
     setIsDeletingReminder(true);
@@ -3651,25 +4215,45 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             ...(createAnother ? { parent_note_id: null } : {}),
           }
         : {
-          event_id: baseEventId(event.id),
-          microphone_enabled: true,
-          system_audio_enabled: true,
-          ...(createAnother ? { parent_note_id: null } : {}),
+            event_id: baseEventId(event.id),
+            microphone_enabled: true,
+            system_audio_enabled: true,
+            ...(createAnother ? { parent_note_id: null } : {}),
           };
-      const result = (await api.createMeetingNoteFromCalendar(payload)) as { existing?: boolean; note?: NoteRow; meeting_metadata?: { transcription_status?: string } };
+      const result = (await api.createMeetingNoteFromCalendar(payload)) as {
+        existing?: boolean;
+        note?: NoteRow;
+        meeting_metadata?: { transcription_status?: string };
+      };
       const note = result.note;
       if (!note) throw new Error('The meeting note was not returned.');
       if (!isApple) {
-        setEvents((current) => current.map((item) => item.id === baseEventId(event.id) ? { ...item, note_id: note.id } : item));
-        setSelectedEvent((current) => current && baseEventId(current.id) === baseEventId(event.id) ? { ...current, note_id: note.id } : current);
+        setEvents((current) =>
+          current.map((item) =>
+            item.id === baseEventId(event.id) ? { ...item, note_id: note.id } : item
+          )
+        );
+        setSelectedEvent((current) =>
+          current && baseEventId(current.id) === baseEventId(event.id)
+            ? { ...current, note_id: note.id }
+            : current
+        );
       } else {
-        setAppleEventsForSelection((current) => current.map((item) => item.id === event.id ? { ...item, note_id: note.id } : item));
-        setSelectedEvent((current) => current && current.id === event.id ? { ...current, note_id: note.id } : current);
+        setAppleEventsForSelection((current) =>
+          current.map((item) => (item.id === event.id ? { ...item, note_id: note.id } : item))
+        );
+        setSelectedEvent((current) =>
+          current && current.id === event.id ? { ...current, note_id: note.id } : current
+        );
       }
-      if (result.existing) setError('This event already has Meeting Notes. Opening the existing note.');
-      if (activeWorkspaceId) platform.navigation.openRoute(routeForNote(activeWorkspaceId, note.id));
+      if (result.existing)
+        setError('This event already has Meeting Notes. Opening the existing note.');
+      if (activeWorkspaceId)
+        platform.navigation.openRoute(routeForNote(activeWorkspaceId, note.id));
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not create Meeting Notes for this event.');
+      setError(
+        error instanceof Error ? error.message : 'Could not create Meeting Notes for this event.'
+      );
     } finally {
       setIsCreatingMeetingNote(false);
     }
@@ -3703,7 +4287,8 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     const start = new Date(`${editDate}T${editTime}:00`);
     const durationMinutes = getDurationMinutes(editDurationValue, editDurationUnit);
     const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
-    if (eventEditorEvent.provider === 'apple' && editAllDay) end.setTime(start.getTime() + 24 * 60 * 60 * 1000);
+    if (eventEditorEvent.provider === 'apple' && editAllDay)
+      end.setTime(start.getTime() + 24 * 60 * 60 * 1000);
 
     setIsSavingEdit(true);
     setError(null);
@@ -3721,17 +4306,58 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         let latestApple = eventEditorEvent;
         if (eventEditorEvent.provider_event_id && appleEditorSnapshot) {
           try {
-            latestApple = await appleCalendar.refetchEvent(eventEditorEvent.provider_event_id) as EventRow;
-            const fieldValue = (event: EventRow, field: string) => field === 'calendar_id' ? event.calendar_id : field === 'all_day' ? Boolean(event.all_day) : field === 'location' ? event.location ?? '' : field === 'notes' ? event.notes ?? '' : field === 'recurrence_rule' ? event.recurrence_rule ?? 'none' : (event as Record<string, unknown>)[field] ?? '';
-            const desired: Record<string, unknown> = { title: appleTitle, start_at: start.toISOString(), end_at: end.toISOString(), all_day: editAllDay, location: appleLocation, notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? '', calendar_id: appleCalendarIdValue, recurrence_rule: appleRecurrence };
-            const fields = ['title', 'start_at', 'end_at', 'all_day', 'location', 'notes', 'calendar_id', 'recurrence_rule'];
-            const externallyChanged = fields.filter((field) => fieldValue(latestApple, field) !== fieldValue(appleEditorSnapshot, field));
-            const mineChanged = fields.filter((field) => desired[field] !== fieldValue(appleEditorSnapshot, field));
+            latestApple = (await appleCalendar.refetchEvent(
+              eventEditorEvent.provider_event_id
+            )) as EventRow;
+            const fieldValue = (event: EventRow, field: string) =>
+              field === 'calendar_id'
+                ? event.calendar_id
+                : field === 'all_day'
+                ? Boolean(event.all_day)
+                : field === 'location'
+                ? event.location ?? ''
+                : field === 'notes'
+                ? event.notes ?? ''
+                : field === 'recurrence_rule'
+                ? event.recurrence_rule ?? 'none'
+                : (event as Record<string, unknown>)[field] ?? '';
+            const desired: Record<string, unknown> = {
+              title: appleTitle,
+              start_at: start.toISOString(),
+              end_at: end.toISOString(),
+              all_day: editAllDay,
+              location: appleLocation,
+              notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? '',
+              calendar_id: appleCalendarIdValue,
+              recurrence_rule: appleRecurrence,
+            };
+            const fields = [
+              'title',
+              'start_at',
+              'end_at',
+              'all_day',
+              'location',
+              'notes',
+              'calendar_id',
+              'recurrence_rule',
+            ];
+            const externallyChanged = fields.filter(
+              (field) => fieldValue(latestApple, field) !== fieldValue(appleEditorSnapshot, field)
+            );
+            const mineChanged = fields.filter(
+              (field) => desired[field] !== fieldValue(appleEditorSnapshot, field)
+            );
             const conflict = externallyChanged.some((field) => mineChanged.includes(field));
             if (conflict) {
-              const useMine = window.confirm('This event changed in Apple Calendar while you were editing it. Press OK to use my changes, or Cancel to keep the Apple version.');
+              const useMine = window.confirm(
+                'This event changed in Apple Calendar while you were editing it. Press OK to use my changes, or Cancel to keep the Apple version.'
+              );
               if (!useMine) {
-                setAppleEventsForSelection((prev) => prev.map((event) => event.provider_event_id === latestApple.provider_event_id ? latestApple : event));
+                setAppleEventsForSelection((prev) =>
+                  prev.map((event) =>
+                    event.provider_event_id === latestApple.provider_event_id ? latestApple : event
+                  )
+                );
                 setSelectedEvent(latestApple);
                 setEventEditorEvent(null);
                 setAppleEditorSnapshot(null);
@@ -3742,8 +4368,10 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
               if (!mineChanged.includes('title')) desired.title = latestApple.title;
               if (!mineChanged.includes('location')) desired.location = latestApple.location ?? '';
               if (!mineChanged.includes('notes')) desired.notes = latestApple.notes ?? '';
-              if (!mineChanged.includes('calendar_id')) desired.calendar_id = latestApple.calendar_id;
-              if (!mineChanged.includes('recurrence_rule')) desired.recurrence_rule = latestApple.recurrence_rule ?? 'none';
+              if (!mineChanged.includes('calendar_id'))
+                desired.calendar_id = latestApple.calendar_id;
+              if (!mineChanged.includes('recurrence_rule'))
+                desired.recurrence_rule = latestApple.recurrence_rule ?? 'none';
             }
             appleTitle = String(desired.title);
             appleLocation = String(desired.location);
@@ -3751,10 +4379,20 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             appleCalendarIdValue = String(desired.calendar_id);
           } catch (error) {
             if ((error as { notFound?: boolean })?.notFound) {
-              setAppleEventsForSelection((prev) => prev.filter((event) => event.provider_event_id !== eventEditorEvent.provider_event_id));
-              setSelectedEvent(null); setEventEditorEvent(null); setAppleEditorSnapshot(null);
+              setAppleEventsForSelection((prev) =>
+                prev.filter(
+                  (event) => event.provider_event_id !== eventEditorEvent.provider_event_id
+                )
+              );
+              setSelectedEvent(null);
+              setEventEditorEvent(null);
+              setAppleEditorSnapshot(null);
             }
-            setError(error instanceof Error ? error.message : 'Could not check the latest Apple Calendar event.');
+            setError(
+              error instanceof Error
+                ? error.message
+                : 'Could not check the latest Apple Calendar event.'
+            );
             setIsSavingEdit(false);
             return;
           }
@@ -3762,7 +4400,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         const appleCalendarId = appleCalendarIdValue.startsWith('apple:')
           ? appleCalendarIdValue.slice('apple:'.length)
           : appleCalendarIdValue;
-        updated = await appleCalendar.updateEvent({
+        updated = (await appleCalendar.updateEvent({
           eventId: eventEditorEvent.provider_event_id,
           calendarId: appleCalendarId,
           title: appleTitle,
@@ -3775,8 +4413,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
           notes: eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? null,
           recurrence: appleRecurrence,
           span: editRecurrenceSpan,
-        }) as EventRow;
-        setAppleEventsForSelection((prev) => prev.map((event) => event.provider_event_id === updated.provider_event_id ? updated : event));
+        })) as EventRow;
+        setAppleEventsForSelection((prev) =>
+          prev.map((event) =>
+            event.provider_event_id === updated.provider_event_id ? updated : event
+          )
+        );
         setSelectedEvent(updated);
         setEventEditorEvent(null);
         notifyCalendarItemsUpdated();
@@ -3799,7 +4441,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     } catch (error) {
       console.error('Could not update event:', error);
       if ((error as { notFound?: boolean })?.notFound) {
-        setAppleEventsForSelection((prev) => prev.filter((event) => event.id !== eventEditorEvent.id));
+        setAppleEventsForSelection((prev) =>
+          prev.filter((event) => event.id !== eventEditorEvent.id)
+        );
         setSelectedEvent(null);
         setEventEditorEvent(null);
       }
@@ -3842,9 +4486,21 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
     try {
       if (eventEditorEvent.provider === 'apple') {
-        if (!window.confirm('Delete this event from Apple Calendar? It will also be removed from Calendar on your Mac and other devices connected to this account.')) { setIsDeletingEvent(false); return; }
-        await appleCalendar.deleteEvent({ eventId: eventEditorEvent.provider_event_id, span: editRecurrenceSpan });
-        setAppleEventsForSelection((prev) => prev.filter((event) => event.provider_event_id !== eventEditorEvent.provider_event_id));
+        if (
+          !window.confirm(
+            'Delete this event from Apple Calendar? It will also be removed from Calendar on your Mac and other devices connected to this account.'
+          )
+        ) {
+          setIsDeletingEvent(false);
+          return;
+        }
+        await appleCalendar.deleteEvent({
+          eventId: eventEditorEvent.provider_event_id,
+          span: editRecurrenceSpan,
+        });
+        setAppleEventsForSelection((prev) =>
+          prev.filter((event) => event.provider_event_id !== eventEditorEvent.provider_event_id)
+        );
         setSelectedEvent(null);
         setEventEditorEvent(null);
         setConfirmDelete(false);
@@ -3859,7 +4515,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       notifyCalendarItemsUpdated();
     } catch (error) {
       if ((error as { notFound?: boolean })?.notFound) {
-        setAppleEventsForSelection((prev) => prev.filter((event) => event.id !== eventEditorEvent.id));
+        setAppleEventsForSelection((prev) =>
+          prev.filter((event) => event.id !== eventEditorEvent.id)
+        );
         setSelectedEvent(null);
         setEventEditorEvent(null);
       }
@@ -4040,7 +4698,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       return payload.subscription;
     } catch (subscriptionErr) {
       setCalendarSubscriptionError(
-        subscriptionErr instanceof Error ? subscriptionErr.message : 'Could not load subscription settings.'
+        subscriptionErr instanceof Error
+          ? subscriptionErr.message
+          : 'Could not load subscription settings.'
       );
       return undefined;
     } finally {
@@ -4061,7 +4721,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     if (!user) return;
     if (appleSubscriptionUrl) return appleSubscriptionUrl;
     if (!ICAL_SERVICE_URL) {
-      setError('Calendar subscription service is not configured. Set VITE_ICAL_SERVICE_URL to the Ledger iCal service URL.');
+      setError(
+        'Calendar subscription service is not configured. Set VITE_ICAL_SERVICE_URL to the Ledger iCal service URL.'
+      );
       return;
     }
 
@@ -4107,9 +4769,23 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
     }
   };
 
-  const updateCalendarSubscriptionLifecycle = async (action: 'enable' | 'disable' | 'regenerate') => {
-    if (action === 'regenerate' && !window.confirm('Regenerating the link will stop the current subscription from updating. You will need to add the new link to your calendar apps. Continue?')) return;
-    if (action === 'disable' && !window.confirm('Ledger will stop serving calendar data through this link. Existing items may remain visible until you remove the subscribed calendar. Disable it?')) return;
+  const updateCalendarSubscriptionLifecycle = async (
+    action: 'enable' | 'disable' | 'regenerate'
+  ) => {
+    if (
+      action === 'regenerate' &&
+      !window.confirm(
+        'Regenerating the link will stop the current subscription from updating. You will need to add the new link to your calendar apps. Continue?'
+      )
+    )
+      return;
+    if (
+      action === 'disable' &&
+      !window.confirm(
+        'Ledger will stop serving calendar data through this link. Existing items may remain visible until you remove the subscribed calendar. Disable it?'
+      )
+    )
+      return;
     setIsSavingCalendarSubscription(true);
     setCalendarSubscriptionError(null);
     try {
@@ -4122,10 +4798,19 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       };
       if (!response.subscription) throw new Error('Subscription update was not returned.');
       setCalendarSubscriptionSettings(response.subscription);
-      if (response.subscription.feed_token) setAppleSubscriptionUrl(`${ICAL_SERVICE_URL}/ical/${response.subscription.feed_token}.ics`);
-      setAppleSyncMessage(action === 'regenerate' ? 'Subscription link regenerated. Add the new link to your calendar apps.' : action === 'disable' ? 'Ledger Calendar subscription disabled.' : 'Ledger Calendar subscription enabled.');
+      if (response.subscription.feed_token)
+        setAppleSubscriptionUrl(`${ICAL_SERVICE_URL}/ical/${response.subscription.feed_token}.ics`);
+      setAppleSyncMessage(
+        action === 'regenerate'
+          ? 'Subscription link regenerated. Add the new link to your calendar apps.'
+          : action === 'disable'
+          ? 'Ledger Calendar subscription disabled.'
+          : 'Ledger Calendar subscription enabled.'
+      );
     } catch (lifecycleErr) {
-      setCalendarSubscriptionError(lifecycleErr instanceof Error ? lifecycleErr.message : 'Could not update the subscription.');
+      setCalendarSubscriptionError(
+        lifecycleErr instanceof Error ? lifecycleErr.message : 'Could not update the subscription.'
+      );
     } finally {
       setIsSavingCalendarSubscription(false);
     }
@@ -4141,10 +4826,17 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
     try {
       const result = await window.desktopWindow?.openExternal(webcalUrl);
-      if (result && !result.ok) throw new Error(result.error || 'macOS could not open the calendar subscription.');
-      setAppleSyncMessage('Opened Apple Calendar. Add Ledger as a read-only calendar subscription.');
+      if (result && !result.ok)
+        throw new Error(result.error || 'macOS could not open the calendar subscription.');
+      setAppleSyncMessage(
+        'Opened Apple Calendar. Add Ledger as a read-only calendar subscription.'
+      );
     } catch (openError) {
-      setError(openError instanceof Error ? openError.message : 'Could not open Apple Calendar. Use Copy link and add the URL manually.');
+      setError(
+        openError instanceof Error
+          ? openError.message
+          : 'Could not open Apple Calendar. Use Copy link and add the URL manually.'
+      );
     }
   };
 
@@ -4193,25 +4885,29 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
       const selectedCalendar = getPreferredCalendar('workspace');
       if (!selectedCalendar) return;
-      const eventPayload = parsed.filter((evt) => evt.componentType !== 'VTODO').map((evt) => ({
-        calendar_id: selectedCalendar.id,
-        workspace_id: selectedCalendar.workspace_id,
-        created_by: user.id,
-        title: evt.title,
-        notes: evt.notes ?? null,
-        location: evt.location ?? null,
-        start_at: evt.startAt,
-        end_at: evt.endAt,
-        color: selectedCalendar.color,
-        status: 'planned',
-      }));
-      const reminderPayload = parsed.filter((evt) => evt.componentType === 'VTODO').map((evt) => ({
-        calendar_id: selectedCalendar.id,
-        title: evt.title,
-        notes: evt.notes ?? null,
-        remind_at: evt.startAt,
-        color: selectedCalendar.color,
-      }));
+      const eventPayload = parsed
+        .filter((evt) => evt.componentType !== 'VTODO')
+        .map((evt) => ({
+          calendar_id: selectedCalendar.id,
+          workspace_id: selectedCalendar.workspace_id,
+          created_by: user.id,
+          title: evt.title,
+          notes: evt.notes ?? null,
+          location: evt.location ?? null,
+          start_at: evt.startAt,
+          end_at: evt.endAt,
+          color: selectedCalendar.color,
+          status: 'planned',
+        }));
+      const reminderPayload = parsed
+        .filter((evt) => evt.componentType === 'VTODO')
+        .map((evt) => ({
+          calendar_id: selectedCalendar.id,
+          title: evt.title,
+          notes: evt.notes ?? null,
+          remind_at: evt.startAt,
+          color: selectedCalendar.color,
+        }));
 
       // Deduplicate: check if events already exist in the calendar
       const existingEventKeys = new Set<string>();
@@ -4227,21 +4923,28 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
       if (payloadToImport.length < eventPayload.length) {
         console.log(
-          `[ICS Import] Deduplicated ${eventPayload.length - payloadToImport.length} duplicate events`
+          `[ICS Import] Deduplicated ${
+            eventPayload.length - payloadToImport.length
+          } duplicate events`
         );
       }
 
       const importedEvents = [] as EventRow[];
-      const eventResponse = payloadToImport.length > 0
-        ? await api.importCalendarEvents({ events: payloadToImport.map((item) => ({
-            ...item,
-            status: item.status || (calendarPreferences.defaultEventStatus ?? 'planned'),
-          })) }) as { created?: EventRow[] }
-        : { created: [] };
+      const eventResponse =
+        payloadToImport.length > 0
+          ? ((await api.importCalendarEvents({
+              events: payloadToImport.map((item) => ({
+                ...item,
+                status: item.status || (calendarPreferences.defaultEventStatus ?? 'planned'),
+              })),
+            })) as { created?: EventRow[] })
+          : { created: [] };
       importedEvents.push(...(eventResponse.created ?? []));
 
       if (reminderPayload.length > 0) {
-        const reminderResponse = await api.importCalendarReminders({ reminders: reminderPayload }) as { created?: ReminderRow[] };
+        const reminderResponse = (await api.importCalendarReminders({
+          reminders: reminderPayload,
+        })) as { created?: ReminderRow[] };
         setReminders((prev) => [...prev, ...(reminderResponse.created ?? [])]);
       }
 
@@ -4251,8 +4954,11 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         )
       );
 
-      let message = `Imported ${importedEvents.length} events${reminderPayload.length ? ` and ${reminderPayload.length} reminders` : ''}`;
-      if (payloadToImport.length < eventPayload.length) message += ` (${eventPayload.length - payloadToImport.length} duplicate events skipped)`;
+      let message = `Imported ${importedEvents.length} events${
+        reminderPayload.length ? ` and ${reminderPayload.length} reminders` : ''
+      }`;
+      if (payloadToImport.length < eventPayload.length)
+        message += ` (${eventPayload.length - payloadToImport.length} duplicate events skipped)`;
       setImportMessage(message);
     } catch (importErr) {
       const message = importErr instanceof Error ? importErr.message : 'Import failed';
@@ -4347,7 +5053,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
               icon={<BellRing size={12} />}
               count={notificationCount}
               notificationTrayToggle
-              onClick={() => window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('ledger:toggle-notification-tray'))
+              }
               title="Open notifications center"
               ariaLabel="Open notifications center"
             />
@@ -4402,9 +5110,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             aria-expanded={Boolean(calendarHeaderMenu)}
             aria-label="More calendar actions"
             title="More calendar actions"
-            >
-              <MoreHorizontal size={14} />
-            </ModuleHeaderActionButton>
+          >
+            <MoreHorizontal size={14} />
+          </ModuleHeaderActionButton>
         }
         viewControls={
           <div className="relative left-4 -mr-4 flex items-center gap-1.5">
@@ -4441,7 +5149,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 onClick={() => {
                   const buttonRect = calendarViewButtonRef.current?.getBoundingClientRect();
                   if (!buttonRect) return;
-                  setCalendarViewMenu((current) => current ? null : { x: buttonRect.left, y: buttonRect.bottom + 6 });
+                  setCalendarViewMenu((current) =>
+                    current ? null : { x: buttonRect.left, y: buttonRect.bottom + 6 }
+                  );
                 }}
                 buttonRef={calendarViewButtonRef}
                 active
@@ -4467,13 +5177,13 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
             items: [
               {
                 id: 'new-event',
-            label: 'New event',
+                label: 'New event',
                 icon: <CalendarPlus size={13} />,
                 onClick: () => openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event'),
               },
               {
                 id: 'new-reminder',
-            label: 'New reminder',
+                label: 'New reminder',
                 icon: <BellRing size={13} />,
                 onClick: () => openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'reminder'),
               },
@@ -4497,33 +5207,41 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
           },
           {
             label: 'Use Ledger in other calendars',
-            items: calendarSubscriptionSettings ? [
-              {
-                id: 'open-apple-calendar',
-                label: 'Add to Apple Calendar',
-                icon: <img src={`${import.meta.env.BASE_URL}apple.svg`} alt="" className="h-[13px] w-[13px] object-contain dark:invert" />,
-                onClick: () => void openAppleCalendarSubscription(),
-              },
-              {
-                id: 'copy-ledger-calendar-link',
-                label: 'Copy calendar link',
-                icon: <Copy size={13} />,
-                onClick: () => void copyAppleCalendarSubscription(),
-              },
-              {
-                id: 'manage-calendar-sharing',
-                label: 'Manage calendar sharing…',
-                icon: <SlidersHorizontal size={13} />,
-                onClick: openCalendarSubscriptionSettings,
-              },
-            ] : [
-              {
-                id: 'setup-calendar-sharing',
-                label: 'Set up calendar sharing…',
-                icon: <SlidersHorizontal size={13} />,
-                onClick: openCalendarSubscriptionSettings,
-              },
-            ],
+            items: calendarSubscriptionSettings
+              ? [
+                  {
+                    id: 'open-apple-calendar',
+                    label: 'Add to Apple Calendar',
+                    icon: (
+                      <img
+                        src={`${import.meta.env.BASE_URL}apple.svg`}
+                        alt=""
+                        className="h-[13px] w-[13px] object-contain dark:invert"
+                      />
+                    ),
+                    onClick: () => void openAppleCalendarSubscription(),
+                  },
+                  {
+                    id: 'copy-ledger-calendar-link',
+                    label: 'Copy calendar link',
+                    icon: <Copy size={13} />,
+                    onClick: () => void copyAppleCalendarSubscription(),
+                  },
+                  {
+                    id: 'manage-calendar-sharing',
+                    label: 'Manage calendar sharing…',
+                    icon: <SlidersHorizontal size={13} />,
+                    onClick: openCalendarSubscriptionSettings,
+                  },
+                ]
+              : [
+                  {
+                    id: 'setup-calendar-sharing',
+                    label: 'Set up calendar sharing…',
+                    icon: <SlidersHorizontal size={13} />,
+                    onClick: openCalendarSubscriptionSettings,
+                  },
+                ],
           },
         ]}
       />
@@ -4536,13 +5254,15 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
         onClose={() => setCalendarViewMenu(null)}
         ariaLabel="Calendar views"
         groupLabelCase="normal"
-        groups={[{
-          items: (['agenda', 'day', 'week', 'month'] as CalendarViewMode[]).map((mode) => ({
-            id: `view-${mode}`,
-            label: mode[0].toUpperCase() + mode.slice(1),
-            onClick: () => setViewMode(mode),
-          })),
-        }]}
+        groups={[
+          {
+            items: (['agenda', 'day', 'week', 'month'] as CalendarViewMode[]).map((mode) => ({
+              id: `view-${mode}`,
+              label: mode[0].toUpperCase() + mode.slice(1),
+              onClick: () => setViewMode(mode),
+            })),
+          },
+        ]}
       />
 
       <input
@@ -4788,10 +5508,134 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
               {appleCalendar.supported && (
                 <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                   <div className="mb-3 flex items-center justify-between gap-2">
-                    <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">Connected calendars</h2>
-                    {appleCalendar.connected || appleReminders.connected ? <button type="button" onClick={() => void Promise.all([appleCalendar.refreshCalendars(), appleCalendar.refreshEvents(true), appleReminders.refreshLists(), appleReminders.refreshReminders(true)])} className="text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]" title="Refresh Apple calendars and reminders"><RefreshCw size={12} /></button> : <button type="button" onClick={() => { const buttonRect = calendarNewButtonRef.current?.getBoundingClientRect(); if (!buttonRect) return; setCalendarHeaderMenu((current) => current ? null : { x: buttonRect.left, y: buttonRect.bottom + 6 }); }} className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]" title="Add a calendar connection" aria-label="Add a calendar connection"><Plus size={12} /></button>}
+                    <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                      Connected calendars
+                    </h2>
+                    {appleCalendar.connected || appleReminders.connected ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void Promise.all([
+                            appleCalendar.refreshCalendars(),
+                            appleCalendar.refreshEvents(true),
+                            appleReminders.refreshLists(),
+                            appleReminders.refreshReminders(true),
+                          ])
+                        }
+                        className="text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]"
+                        title="Refresh Apple calendars and reminders"
+                      >
+                        <RefreshCw size={12} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const buttonRect = calendarNewButtonRef.current?.getBoundingClientRect();
+                          if (!buttonRect) return;
+                          setCalendarHeaderMenu((current) =>
+                            current ? null : { x: buttonRect.left, y: buttonRect.bottom + 6 }
+                          );
+                        }}
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                        title="Add a calendar connection"
+                        aria-label="Add a calendar connection"
+                      >
+                        <Plus size={12} />
+                      </button>
+                    )}
                   </div>
-                  {appleCalendar.connected || appleReminders.connected ? <div className="space-y-2">{appleCalendar.connected && <><div className="flex items-center justify-between"><p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Calendar <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">Connected</span></p>{appleCalendar.syncStatus === 'syncing' ? <span className="text-[10px] text-[var(--ledger-text-muted)]">Syncing…</span> : appleCalendar.syncStatus === 'synced' ? <span className="text-[10px] text-[var(--ledger-text-muted)]">Up to date</span> : null}</div>{appleCalendar.connectedCalendars.map((calendar) => <div key={calendar.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: calendar.color }} /><span className="min-w-0 flex-1 truncate">{calendar.title}</span><button type="button" onClick={() => appleCalendar.setCalendarVisible(calendar.id.slice('apple:'.length), calendar.visible === false)} title={calendar.visible === false ? 'Show calendar' : 'Hide calendar'} className="text-[var(--ledger-text-muted)]">{calendar.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}{appleReminders.connected && <><p className="pt-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">Apple Reminders <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">Connected</span></p>{appleReminders.connectedLists.map((list) => <div key={list.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: list.color }} /><span className="min-w-0 flex-1 truncate">{list.title}</span><button type="button" onClick={() => appleReminders.setListVisible(list.id.slice('apple-reminder:'.length), list.visible === false)} title={list.visible === false ? 'Show list' : 'Hide list'} className="text-[var(--ledger-text-muted)]">{list.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}</button></div>)}</>}</div> : null}
+                  {appleCalendar.connected || appleReminders.connected ? (
+                    <div className="space-y-2">
+                      {appleCalendar.connected && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                              Apple Calendar{' '}
+                              <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">
+                                Connected
+                              </span>
+                            </p>
+                            {appleCalendar.syncStatus === 'syncing' ? (
+                              <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                                Syncing…
+                              </span>
+                            ) : appleCalendar.syncStatus === 'synced' ? (
+                              <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                                Up to date
+                              </span>
+                            ) : null}
+                          </div>
+                          {appleCalendar.connectedCalendars.map((calendar) => (
+                            <div
+                              key={calendar.id}
+                              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"
+                            >
+                              <span
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: calendar.color }}
+                              />
+                              <span className="min-w-0 flex-1 truncate">{calendar.title}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  appleCalendar.setCalendarVisible(
+                                    calendar.id.slice('apple:'.length),
+                                    calendar.visible === false
+                                  )
+                                }
+                                title={
+                                  calendar.visible === false ? 'Show calendar' : 'Hide calendar'
+                                }
+                                className="text-[var(--ledger-text-muted)]"
+                              >
+                                {calendar.visible === false ? (
+                                  <EyeOff size={12} />
+                                ) : (
+                                  <Eye size={12} />
+                                )}
+                              </button>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                      {appleReminders.connected && (
+                        <>
+                          <p className="pt-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                            Apple Reminders{' '}
+                            <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">
+                              Connected
+                            </span>
+                          </p>
+                          {appleReminders.connectedLists.map((list) => (
+                            <div
+                              key={list.id}
+                              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-[var(--ledger-text-secondary)]"
+                            >
+                              <span
+                                className="h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: list.color }}
+                              />
+                              <span className="min-w-0 flex-1 truncate">{list.title}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  appleReminders.setListVisible(
+                                    list.id.slice('apple-reminder:'.length),
+                                    list.visible === false
+                                  )
+                                }
+                                title={list.visible === false ? 'Show list' : 'Hide list'}
+                                className="text-[var(--ledger-text-muted)]"
+                              >
+                                {list.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}
+                              </button>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -4845,7 +5689,13 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
               {calendarDrag ? (
                 <div className="pointer-events-none absolute left-1/2 top-3 z-[60] flex w-fit -translate-x-1/2 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-[11px] text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
-                  Moving to {new Date(calendarDrag.previewStartAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · {formatCalendarTime(new Date(calendarDrag.previewStartAt))}
+                  Moving to{' '}
+                  {new Date(calendarDrag.previewStartAt).toLocaleDateString([], {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}{' '}
+                  · {formatCalendarTime(new Date(calendarDrag.previewStartAt))}
                 </div>
               ) : null}
               {isInitialLoading ? (
@@ -4853,8 +5703,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
               ) : viewMode === 'agenda' ? (
                 <div className="mx-auto max-w-[860px] px-5 py-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Upcoming and dated work</p>
-                    <p className="text-[11px] text-[var(--ledger-text-muted)]">{viewConfig.dates.length} days</p>
+                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Upcoming and dated work
+                    </p>
+                    <p className="text-[11px] text-[var(--ledger-text-muted)]">
+                      {viewConfig.dates.length} days
+                    </p>
                   </div>
                   <div className="space-y-1">
                     {viewConfig.dates.map((dayDate) => {
@@ -4866,10 +5720,24 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                       return (
                         <section key={key} className="py-3 first:pt-1">
                           <div className="mb-1 flex min-h-7 items-center justify-between gap-3">
-                            <h2 className={`text-[12px] font-semibold ${key === todayKey ? 'text-[var(--ledger-accent)]' : 'text-[var(--ledger-text-primary)]'}`}>
-                              {dayDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
+                            <h2
+                              className={`text-[12px] font-semibold ${
+                                key === todayKey
+                                  ? 'text-[var(--ledger-accent)]'
+                                  : 'text-[var(--ledger-text-primary)]'
+                              }`}
+                            >
+                              {dayDate.toLocaleDateString([], {
+                                weekday: 'long',
+                                month: 'long',
+                                day: 'numeric',
+                              })}
                             </h2>
-                            <span className="text-[11px] text-[var(--ledger-text-muted)]">{itemCount ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : 'No items'}</span>
+                            <span className="text-[11px] text-[var(--ledger-text-muted)]">
+                              {itemCount
+                                ? `${itemCount} item${itemCount === 1 ? '' : 's'}`
+                                : 'No items'}
+                            </span>
                           </div>
                           {itemCount ? (
                             <div className="space-y-0.5">
@@ -4880,10 +5748,26 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                     key={`event:${event.id}`}
                                     compact
                                     title={event.title}
-                                    time={isAllDayEvent(event) ? 'All day' : formatCompactCalendarTime(new Date(event.start_at))}
-                                    detail={event.project_id ? 'Linked project' : event.provider === 'apple' ? 'Apple Calendar' : null}
+                                    time={
+                                      isAllDayEvent(event)
+                                        ? 'All day'
+                                        : formatCompactCalendarTime(new Date(event.start_at))
+                                    }
+                                    detail={
+                                      event.project_id
+                                        ? 'Linked project'
+                                        : event.provider === 'apple'
+                                        ? 'Apple Calendar'
+                                        : null
+                                    }
                                     color={color}
-                                    icon={event.project_id ? <Folder size={12} /> : <CalendarDays size={12} />}
+                                    icon={
+                                      event.project_id ? (
+                                        <Folder size={12} />
+                                      ) : (
+                                        <CalendarDays size={12} />
+                                      )
+                                    }
                                     muted={isPastEvent(event)}
                                     completed={event.status === 'done'}
                                     selected={selectedEvent?.id === event.id}
@@ -4895,7 +5779,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                     }}
                                     onContextMenu={(contextEvent) => {
                                       contextEvent.preventDefault();
-                                      setListContextMenu({ x: contextEvent.clientX, y: contextEvent.clientY, kind: 'event', id: event.id });
+                                      setListContextMenu({
+                                        x: contextEvent.clientX,
+                                        y: contextEvent.clientY,
+                                        kind: 'event',
+                                        id: event.id,
+                                      });
                                     }}
                                   />
                                 );
@@ -4905,10 +5794,16 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                   key={`reminder:${reminder.id}`}
                                   compact
                                   title={reminder.title}
-                                  time={reminder.all_day ? 'All day' : formatCompactCalendarTime(new Date(reminder.remind_at))}
+                                  time={
+                                    reminder.all_day
+                                      ? 'All day'
+                                      : formatCompactCalendarTime(new Date(reminder.remind_at))
+                                  }
                                   detail={reminder.project_id ? 'Linked project' : 'Reminder'}
                                   color={reminder.color ?? '#F59E0B'}
-                                  icon={reminder.is_done ? <Check size={12} /> : <BellRing size={12} />}
+                                  icon={
+                                    reminder.is_done ? <Check size={12} /> : <BellRing size={12} />
+                                  }
                                   muted={isPastReminder(reminder)}
                                   completed={reminder.is_done}
                                   selected={selectedReminder?.id === reminder.id}
@@ -4920,7 +5815,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                   }}
                                   onContextMenu={(contextEvent) => {
                                     contextEvent.preventDefault();
-                                    setListContextMenu({ x: contextEvent.clientX, y: contextEvent.clientY, kind: 'reminder', id: reminder.id });
+                                    setListContextMenu({
+                                      x: contextEvent.clientX,
+                                      y: contextEvent.clientY,
+                                      kind: 'reminder',
+                                      id: reminder.id,
+                                    });
                                   }}
                                 />
                               ))}
@@ -4930,9 +5830,23 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                   compact
                                   title={item.title}
                                   time={item.time}
-                                  detail={item.kind === 'task' ? 'Task' : item.kind === 'milestone' ? 'Milestone' : 'Project deadline'}
+                                  detail={
+                                    item.kind === 'task'
+                                      ? 'Task'
+                                      : item.kind === 'milestone'
+                                      ? 'Milestone'
+                                      : 'Project deadline'
+                                  }
                                   color={item.color}
-                                  icon={item.kind === 'task' ? <CheckSquare size={12} /> : item.kind === 'milestone' ? <Flag size={12} /> : <CalendarClock size={12} />}
+                                  icon={
+                                    item.kind === 'task' ? (
+                                      <CheckSquare size={12} />
+                                    ) : item.kind === 'milestone' ? (
+                                      <Flag size={12} />
+                                    ) : (
+                                      <CalendarClock size={12} />
+                                    )
+                                  }
                                   completed={item.completed}
                                   onClick={(clickEvent) => {
                                     clickEvent.stopPropagation();
@@ -4942,7 +5856,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                               ))}
                             </div>
                           ) : (
-                            <p className="px-2 text-[12px] text-[var(--ledger-text-muted)]">Nothing scheduled.</p>
+                            <p className="px-2 text-[12px] text-[var(--ledger-text-muted)]">
+                              Nothing scheduled.
+                            </p>
                           )}
                         </section>
                       );
@@ -4951,9 +5867,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                 </div>
               ) : viewMode === 'month' ? (
                 <div className="min-w-[720px] bg-[var(--ledger-surface-card)]">
-                  <div
-                    className="grid grid-cols-7 border-l border-t border-[color:var(--ledger-border-subtle)]"
-                  >
+                  <div className="grid grid-cols-7 border-l border-t border-[color:var(--ledger-border-subtle)]">
                     {days.map((day) => (
                       <div
                         key={day}
@@ -4987,7 +5901,8 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                       for (const item of dayDueItems) {
                         const rowHeight =
                           monthRowHeight +
-                          (visibleReminders.length + visibleDueItems.length + visibleEvents.length > 0
+                          (visibleReminders.length + visibleDueItems.length + visibleEvents.length >
+                          0
                             ? monthRowGap
                             : 0);
                         if (usedMonthContentHeight + rowHeight > monthContentHeight) break;
@@ -4998,7 +5913,8 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                       for (const event of dayEvents) {
                         const rowHeight =
                           monthRowHeight +
-                          (visibleReminders.length + visibleDueItems.length + visibleEvents.length > 0
+                          (visibleReminders.length + visibleDueItems.length + visibleEvents.length >
+                          0
                             ? monthRowGap
                             : 0);
                         if (usedMonthContentHeight + rowHeight > monthContentHeight) break;
@@ -5007,8 +5923,12 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                       }
 
                       const extraCount =
-                        dayEvents.length + dayReminders.length + dayDueItems.length -
-                        visibleEvents.length - visibleReminders.length - visibleDueItems.length;
+                        dayEvents.length +
+                        dayReminders.length +
+                        dayDueItems.length -
+                        visibleEvents.length -
+                        visibleReminders.length -
+                        visibleDueItems.length;
                       const inMonth = dayDate.getMonth() === viewAnchor.getMonth();
 
                       return (
@@ -5067,16 +5987,26 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                               (() => {
                                 const pastReminder = isPastReminder(reminder);
                                 return (
-                                    <CenterInlineItemRow
-                                      key={reminder.id}
-                                      title={reminder.title}
-                                      time={reminder.all_day ? 'All day' : formatCompactCalendarTime(new Date(reminder.remind_at))}
-                                      color={reminder.color ?? '#F59E0B'}
-                                      muted={pastReminder}
-                                      completed={reminder.is_done}
-                                      selected={selectedReminder?.id === reminder.id}
-                                      icon={reminder.is_done ? <Check size={8} strokeWidth={2.5} /> : <BellRing size={9} strokeWidth={1.8} />}
-                                      onClick={(e) => {
+                                  <CenterInlineItemRow
+                                    key={reminder.id}
+                                    title={reminder.title}
+                                    time={
+                                      reminder.all_day
+                                        ? 'All day'
+                                        : formatCompactCalendarTime(new Date(reminder.remind_at))
+                                    }
+                                    color={reminder.color ?? '#F59E0B'}
+                                    muted={pastReminder}
+                                    completed={reminder.is_done}
+                                    selected={selectedReminder?.id === reminder.id}
+                                    icon={
+                                      reminder.is_done ? (
+                                        <Check size={8} strokeWidth={2.5} />
+                                      ) : (
+                                        <BellRing size={9} strokeWidth={1.8} />
+                                      )
+                                    }
+                                    onClick={(e) => {
                                       e.stopPropagation();
                                       setListContextMenu(null);
                                       setSelectedEvent(null);
@@ -5092,8 +6022,10 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                         id: reminder.id,
                                       });
                                     }}
-                                      titleText={`${formatCompactCalendarTime(new Date(reminder.remind_at))} • ${reminder.title}`}
-                                    />
+                                    titleText={`${formatCompactCalendarTime(
+                                      new Date(reminder.remind_at)
+                                    )} • ${reminder.title}`}
+                                  />
                                 );
                               })()
                             )}
@@ -5106,12 +6038,22 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                   <CenterInlineItemRow
                                     key={event.id}
                                     title={event.title}
-                                    time={!isAllDayEvent(event) ? formatCompactCalendarTime(new Date(event.start_at)) : null}
+                                    time={
+                                      !isAllDayEvent(event)
+                                        ? formatCompactCalendarTime(new Date(event.start_at))
+                                        : null
+                                    }
                                     color={calendarColor}
                                     muted={pastEvent || event.status === 'cancelled'}
                                     completed={event.status === 'done'}
                                     selected={selectedEvent?.id === event.id}
-                                    icon={event.project_id ? <Folder size={8} /> : <CalendarDays size={9} />}
+                                    icon={
+                                      event.project_id ? (
+                                        <Folder size={8} />
+                                      ) : (
+                                        <CalendarDays size={9} />
+                                      )
+                                    }
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setListContextMenu(null);
@@ -5132,7 +6074,13 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                         id: event.id,
                                       });
                                     }}
-                                    titleText={`${event.title}${!isAllDayEvent(event) ? ` • ${formatCompactCalendarTime(new Date(event.start_at))}` : ''}`}
+                                    titleText={`${event.title}${
+                                      !isAllDayEvent(event)
+                                        ? ` • ${formatCompactCalendarTime(
+                                            new Date(event.start_at)
+                                          )}`
+                                        : ''
+                                    }`}
                                   />
                                 );
                               })()
@@ -5170,7 +6118,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                         style={{
                           top: calendarDragPreview.top,
                           height: calendarDragPreview.height,
-                          left: `calc(72px + (100% - 72px) * ${calendarDragPreview.dayIndex / viewConfig.dates.length} + 4px)`,
+                          left: `calc(72px + (100% - 72px) * ${
+                            calendarDragPreview.dayIndex / viewConfig.dates.length
+                          } + 4px)`,
                           width: `calc((100% - 72px) / ${viewConfig.dates.length} - 8px)`,
                           color: calendarDragPreview.color,
                           backgroundColor: `${calendarDragPreview.color}14`,
@@ -5178,7 +6128,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                         }}
                       >
                         <span className="block truncate">{calendarDragPreview.title}</span>
-                        <span className="mt-0.5 block text-[10px] font-normal text-[var(--ledger-text-muted)]">Drop to move</span>
+                        <span className="mt-0.5 block text-[10px] font-normal text-[var(--ledger-text-muted)]">
+                          Drop to move
+                        </span>
                       </div>
                     ) : null}
                     <div className="sticky top-0 z-50 h-14 border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]" />
@@ -5193,7 +6145,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     ))}
 
                     <div className="flex h-10 items-start justify-end border-b border-[color:var(--ledger-border-subtle)] pr-2 pt-1.5 text-[10px] text-[var(--ledger-text-muted)]">
-                      <CenterSectionLabel className="w-full justify-end">All day</CenterSectionLabel>
+                      <CenterSectionLabel className="w-full justify-end">
+                        All day
+                      </CenterSectionLabel>
                     </div>
                     {viewConfig.dates.map((dayDate) => {
                       const key = formatDateKey(dayDate);
@@ -5201,16 +6155,25 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                         isAllDayEvent(evt)
                       );
                       const allDayDueItems = dueItemsByDay[key] ?? [];
-                      const allDayReminders = (remindersByDay[key] ?? []).filter((reminder) => reminder.all_day);
-                      const allDayItemCount = allDayItems.length + allDayDueItems.length + allDayReminders.length;
+                      const allDayReminders = (remindersByDay[key] ?? []).filter(
+                        (reminder) => reminder.all_day
+                      );
+                      const allDayItemCount =
+                        allDayItems.length + allDayDueItems.length + allDayReminders.length;
                       const visibleAllDayItems = allDayItems.slice(0, 2);
-                      const visibleAllDayReminders = allDayReminders.slice(0, Math.max(0, 2 - visibleAllDayItems.length));
+                      const visibleAllDayReminders = allDayReminders.slice(
+                        0,
+                        Math.max(0, 2 - visibleAllDayItems.length)
+                      );
                       const visibleAllDayDueItems = allDayDueItems.slice(
                         0,
                         Math.max(0, 2 - visibleAllDayItems.length - visibleAllDayReminders.length)
                       );
                       const hiddenAllDayCount =
-                        allDayItemCount - visibleAllDayItems.length - visibleAllDayDueItems.length - visibleAllDayReminders.length;
+                        allDayItemCount -
+                        visibleAllDayItems.length -
+                        visibleAllDayDueItems.length -
+                        visibleAllDayReminders.length;
 
                       return (
                         <div
@@ -5252,7 +6215,13 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                       : pastEvent
                                       ? 'var(--ledger-surface-hover)'
                                       : `color-mix(in srgb, ${eventColor} 9%, transparent)`,
-                                    border: `1px solid ${selected ? eventColor : pastEvent ? 'var(--ledger-border-subtle)' : `color-mix(in srgb, ${eventColor} 20%, transparent)`}`,
+                                    border: `1px solid ${
+                                      selected
+                                        ? eventColor
+                                        : pastEvent
+                                        ? 'var(--ledger-border-subtle)'
+                                        : `color-mix(in srgb, ${eventColor} 20%, transparent)`
+                                    }`,
                                     color: pastEvent
                                       ? 'var(--ledger-text-muted)'
                                       : 'var(--ledger-text-primary)',
@@ -5353,7 +6322,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                 const dayReminders = remindersByDay[key] ?? [];
                                 const visibleItems = startingEvents;
                                 const remindersForHour = dayReminders.filter(
-                                  (reminder) => !reminder.all_day && new Date(reminder.remind_at).getHours() === hourInt
+                                  (reminder) =>
+                                    !reminder.all_day &&
+                                    new Date(reminder.remind_at).getHours() === hourInt
                                 );
                                 const visibleReminders = remindersForHour.slice(0, 2);
                                 const hiddenReminders =
@@ -5362,18 +6333,24 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                   visibleReminders.length > 0
                                     ? visibleReminders.length * 24 + (hiddenReminders > 0 ? 16 : 6)
                                     : 0;
-                                const reminderLaneOffset = Math.max(
-                                  0,
-                                  ...remindersForHour.map((reminder) =>
-                                    (eventsByDay[key] ?? []).filter((event) => {
-                                      if (isAllDayEvent(event)) return false;
-                                      const eventStart = new Date(event.start_at).getTime();
-                                      const eventEnd = new Date(event.end_at).getTime();
-                                      const reminderTime = new Date(reminder.remind_at).getTime();
-                                      return eventStart < reminderTime && eventEnd > reminderTime;
-                                    }).length
-                                  )
-                                ) * 14;
+                                const reminderLaneOffset =
+                                  Math.max(
+                                    0,
+                                    ...remindersForHour.map(
+                                      (reminder) =>
+                                        (eventsByDay[key] ?? []).filter((event) => {
+                                          if (isAllDayEvent(event)) return false;
+                                          const eventStart = new Date(event.start_at).getTime();
+                                          const eventEnd = new Date(event.end_at).getTime();
+                                          const reminderTime = new Date(
+                                            reminder.remind_at
+                                          ).getTime();
+                                          return (
+                                            eventStart < reminderTime && eventEnd > reminderTime
+                                          );
+                                        }).length
+                                    )
+                                  ) * 14;
                                 const hasOccupiedTimelineCell =
                                   hourEvents.length > 0 || remindersForHour.length > 0;
                                 const isQuickAddOpen =
@@ -5467,7 +6444,13 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                             title={reminder.title}
                                             time={formatCalendarTime(new Date(reminder.remind_at))}
                                             color={reminder.color ?? '#F59E0B'}
-                                            icon={reminder.is_done ? <Check size={8} /> : <BellRing size={9} />}
+                                            icon={
+                                              reminder.is_done ? (
+                                                <Check size={8} />
+                                              ) : (
+                                                <BellRing size={9} />
+                                              )
+                                            }
                                             muted={isPastReminder(reminder)}
                                             completed={reminder.is_done}
                                             selected={selectedReminder?.id === reminder.id}
@@ -5518,21 +6501,43 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                           key={evt.id}
                                           title={evt.title}
                                           titleContent={
-                                            <span className={pastEventMuted ? 'opacity-70' : undefined}>
-                                              {evt.recurrence_rule && evt.recurrence_rule !== 'none' ? '↻ ' : ''}
-                                              {evt.project_id ? <Folder size={8} className="mr-1 inline-block text-[var(--ledger-text-muted)]" /> : null}
+                                            <span
+                                              className={pastEventMuted ? 'opacity-70' : undefined}
+                                            >
+                                              {evt.recurrence_rule && evt.recurrence_rule !== 'none'
+                                                ? '↻ '
+                                                : ''}
+                                              {evt.project_id ? (
+                                                <Folder
+                                                  size={8}
+                                                  className="mr-1 inline-block text-[var(--ledger-text-muted)]"
+                                                />
+                                              ) : null}
                                               {evt.title}
                                             </span>
                                           }
-                                          timeRange={durationRows > 1 && !(viewMode === 'week' && viewportWidth < 1200) ? formatEventTimeRangeLabel(evt) : null}
+                                          timeRange={
+                                            durationRows > 1 &&
+                                            !(viewMode === 'week' && viewportWidth < 1200)
+                                              ? formatEventTimeRangeLabel(evt)
+                                              : null
+                                          }
                                           color={eventColor}
                                           muted={pastEvent}
                                           selected={selectedEvent?.id === evt.id}
                                           compact={viewMode === 'week' && viewportWidth < 1200}
-                                          top={Math.max(8, 4 + reminderStackHeight + (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT)}
+                                          top={Math.max(
+                                            8,
+                                            4 +
+                                              reminderStackHeight +
+                                              (minuteOffset / 60) * TIMELINE_HOUR_HEIGHT
+                                          )}
                                           left={`${4 + overlapDepth * 14}px`}
                                           right="4px"
-                                          height={Math.max(24, (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 4)}
+                                          height={Math.max(
+                                            24,
+                                            (durationMinutes / 60) * TIMELINE_HOUR_HEIGHT - 4
+                                          )}
                                           onClick={(event) => {
                                             event.stopPropagation();
                                             setSelectedEvent(evt);
@@ -5540,9 +6545,16 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                           onContextMenu={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
-                                            setListContextMenu({ x: e.clientX, y: e.clientY, kind: 'event', id: evt.id });
+                                            setListContextMenu({
+                                              x: e.clientX,
+                                              y: e.clientY,
+                                              kind: 'event',
+                                              id: evt.id,
+                                            });
                                           }}
-                                          onPointerDown={(pointerEvent) => beginEventDrag(evt, pointerEvent)}
+                                          onPointerDown={(pointerEvent) =>
+                                            beginEventDrag(evt, pointerEvent)
+                                          }
                                         />
                                       );
                                     })}
@@ -5634,7 +6646,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                   <button
                                     type="button"
                                     onMouseDown={(event) => event.stopPropagation()}
-                                    onClick={() => setSelectedEventActionsOpen((current) => !current)}
+                                    onClick={() =>
+                                      setSelectedEventActionsOpen((current) => !current)
+                                    }
                                     className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                                     aria-label="Event actions"
                                     aria-haspopup="menu"
@@ -5653,7 +6667,10 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                         <button
                                           type="button"
                                           role="menuitem"
-                                          onClick={() => { setSelectedEventActionsOpen(false); openEventEditor(selectedEventPreview); }}
+                                          onClick={() => {
+                                            setSelectedEventActionsOpen(false);
+                                            openEventEditor(selectedEventPreview);
+                                          }}
                                           className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                                         >
                                           <PencilLine size={13} />
@@ -5664,7 +6681,10 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                         <button
                                           type="button"
                                           role="menuitem"
-                                          onClick={() => { setSelectedEventActionsOpen(false); void createMeetingNoteFromEvent(selectedEventPreview); }}
+                                          onClick={() => {
+                                            setSelectedEventActionsOpen(false);
+                                            void createMeetingNoteFromEvent(selectedEventPreview);
+                                          }}
                                           disabled={isCreatingMeetingNote}
                                           className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
                                         >
@@ -5682,7 +6702,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                       />
                                     </div>
                                   )}
-                              </div>
+                                </div>
                               </div>
                               <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
                                 {formatEventDateTimeLabel(selectedEventPreview)}
@@ -5696,7 +6716,16 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                                   ? 'Workspace'
                                   : 'Private'}
                               </p>
-                              {selectedEventPreview.provider === 'apple' && <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">Apple Calendar · {selectedEventPreview.provider_calendar_name ?? 'Selected calendar'}{!canEditEvent(selectedEventPreview) ? ' — This calendar does not allow Ledger to edit its events.' : ''}</p>}
+                              {selectedEventPreview.provider === 'apple' && (
+                                <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
+                                  Apple Calendar ·{' '}
+                                  {selectedEventPreview.provider_calendar_name ??
+                                    'Selected calendar'}
+                                  {!canEditEvent(selectedEventPreview)
+                                    ? ' — This calendar does not allow Ledger to edit its events.'
+                                    : ''}
+                                </p>
+                              )}
                               {showWorkspaceNames && selectedEventPreview.workspace_name && (
                                 <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
                                   Workspace · {selectedEventPreview.workspace_name}
@@ -5720,10 +6749,25 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                           </p>
                           <p className="mt-1 text-[13px] text-[var(--ledger-text-secondary)]">
                             {selectedReminder.all_day
-                              ? new Date(selectedReminder.remind_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
-                              : new Date(selectedReminder.remind_at).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                              ? new Date(selectedReminder.remind_at).toLocaleDateString([], {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })
+                              : new Date(selectedReminder.remind_at).toLocaleString([], {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })}
                           </p>
-                          {selectedReminder.provider === 'apple-reminders' && <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">Apple Reminders · {selectedReminder.provider_list_name ?? 'Selected list'}</p>}
+                          {selectedReminder.provider === 'apple-reminders' && (
+                            <p className="mt-1 text-[12px] text-[var(--ledger-text-muted)]">
+                              Apple Reminders ·{' '}
+                              {selectedReminder.provider_list_name ?? 'Selected list'}
+                            </p>
+                          )}
                           <p className="mt-1 text-[13px] text-[var(--ledger-text-primary)]">
                             Reminder context
                           </p>
@@ -5735,7 +6779,18 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                         </div>
                       </div>
                       <div className="mt-1">
-                        {selectedReminder.provider === 'apple-reminders' ? <p className="text-[12px] text-[var(--ledger-text-muted)]">This reminder is owned by Apple Reminders and is read-only in Ledger.</p> : <button onClick={() => openReminderEditor(selectedReminder)} className="w-full text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]">Open reminder</button>}
+                        {selectedReminder.provider === 'apple-reminders' ? (
+                          <p className="text-[12px] text-[var(--ledger-text-muted)]">
+                            This reminder is owned by Apple Reminders and is read-only in Ledger.
+                          </p>
+                        ) : (
+                          <button
+                            onClick={() => openReminderEditor(selectedReminder)}
+                            className="w-full text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
+                          >
+                            Open reminder
+                          </button>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -5747,14 +6802,34 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
 
                 {(selectedEventPreview || selectedReminder) && (
                   <LinkedDesignsSection
-                    target={{ workspaceId: activeWorkspaceId ?? '', targetType: selectedEventPreview ? 'event' : 'reminder', targetId: selectedEventPreview ? (baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id) : (baseReminderId(selectedReminder!.id) ?? selectedReminder!.id) }}
+                    target={{
+                      workspaceId: activeWorkspaceId ?? '',
+                      targetType: selectedEventPreview ? 'event' : 'reminder',
+                      targetId: selectedEventPreview
+                        ? baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id
+                        : baseReminderId(selectedReminder!.id) ?? selectedReminder!.id,
+                    }}
                     canEdit={selectedEventPreview ? canEditEvent(selectedEventPreview) : true}
                     hideGithubResourcePicker
                     minimalEmptyState
-                    notes={notes.map((note) => ({ id: note.id, title: note.title, preview: String((note as any).content_preview ?? (note as any).preview ?? '') }))}
-                    projects={projects.map((project) => ({ id: project.id, name: project.name, status: (project as any).status, completeness: (project as any).completeness, end_date: (project as any).end_date }))}
-                    onLinkNotes={async (noteIds) => { for (const noteId of noteIds) await linkEventToNote(noteId); }}
-                    onLinkProjects={async (projectIds) => { for (const projectId of projectIds) await linkEventToProject(projectId); }}
+                    notes={notes.map((note) => ({
+                      id: note.id,
+                      title: note.title,
+                      preview: String((note as any).content_preview ?? (note as any).preview ?? ''),
+                    }))}
+                    projects={projects.map((project) => ({
+                      id: project.id,
+                      name: project.name,
+                      status: (project as any).status,
+                      completeness: (project as any).completeness,
+                      end_date: (project as any).end_date,
+                    }))}
+                    onLinkNotes={async (noteIds) => {
+                      for (const noteId of noteIds) await linkEventToNote(noteId);
+                    }}
+                    onLinkProjects={async (projectIds) => {
+                      for (const projectId of projectIds) await linkEventToProject(projectId);
+                    }}
                   />
                 )}
 
@@ -5762,152 +6837,168 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   <RelatedContextList
                     workspaceId={activeWorkspaceId}
                     resourceType={selectedEventPreview ? 'event' : 'reminder'}
-                    resourceId={selectedEventPreview ? (baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id) : (baseReminderId(selectedReminder!.id) ?? selectedReminder!.id)}
+                    resourceId={
+                      selectedEventPreview
+                        ? baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id
+                        : baseReminderId(selectedReminder!.id) ?? selectedReminder!.id
+                    }
                     title="Related context"
                     emptyMessage="No project, note, or follow-up context yet."
                     className="border-t border-[color:var(--ledger-border-subtle)] pt-4"
                   />
                 ) : null}
 
-                {selectedEventPreview && !selectedEventPreview.provider && calendarPreferences.eventNotesBehavior !== 'disabled' && (
-                  <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
-                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Event notes
-                    </p>
-                    <textarea
-                      value={selectedEventNoteDraft}
-                      onChange={(e) => {
-                        const nextValue = e.target.value;
-                        setEventNotesDrafts((prev) => ({
-                          ...prev,
-                          [selectedEventPreview.id]: nextValue,
-                        }));
-                      }}
-                      rows={2}
-                      placeholder="Add notes for this event..."
-                      className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[13px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)]"
-                    />
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[12px] text-[var(--ledger-text-muted)]">
-                        Saved to the event.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => void saveSelectedEventNotes()}
-                        className="text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
-                      >
-                        Save notes
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {selectedEventPreview && !selectedEventPreview.provider && calendarPreferences.followUpBehavior !== 'none' && (
-                  <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
-                    <div className="flex items-center justify-between gap-3">
+                {selectedEventPreview &&
+                  !selectedEventPreview.provider &&
+                  calendarPreferences.eventNotesBehavior !== 'disabled' && (
+                    <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                       <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                        Follow-ups
+                        Event notes
                       </p>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId ?? '', page: 'follow-up', entityId: `ledger-followup|${baseEventId(
-                              selectedEventPreview.id
-                            )}|${encodeURIComponent(selectedEventPreview.title)}|${
-                              selectedEventPreview.project_id ?? ''
-                            }|${selectedEventPreview.note_id ?? ''}|${
-                              calendarPreferences.followUpDefaultTime ?? 'tomorrow_9'
-                            }|${calendarPreferences.linkedProjectFollowUps ?? 'project_and_today'}` })
-                        }
-                        className="inline-flex items-center gap-0.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
-                      >
-                        <span>+ </span>
-                        <span>
-                          {calendarPreferences.followUpBehavior === 'review_prompt'
-                            ? 'Review'
-                            : 'Add'}
-                        </span>
-                      </button>
-                    </div>
-                    {selectedEventFollowUps.length > 0 ? (
-                      <div className="space-y-1">
-                        {selectedEventFollowUps.map((task) => (
-                          <button
-                            key={task.id}
-                            onClick={() =>
-                              void window.desktopWindow?.toggleModule('dashboard', {
-                                focusTaskId: task.id,
-                              })
-                            }
-                            className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] transition hover:bg-[var(--ledger-surface-hover)]"
-                            title={task.title}
-                          >
-                            <span className="min-w-0 truncate text-[var(--ledger-text-primary)]">
-                              {task.title}
-                            </span>
-                            <span className="shrink-0 text-[12px] text-[var(--ledger-text-muted)]">
-                              {task.status === 'done' ? 'Done' : 'Todo'}
-                            </span>
-                          </button>
-                        ))}
+                      <textarea
+                        value={selectedEventNoteDraft}
+                        onChange={(e) => {
+                          const nextValue = e.target.value;
+                          setEventNotesDrafts((prev) => ({
+                            ...prev,
+                            [selectedEventPreview.id]: nextValue,
+                          }));
+                        }}
+                        rows={2}
+                        placeholder="Add notes for this event..."
+                        className="w-full rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2 text-[13px] text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[color:var(--ledger-border-strong)]"
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[12px] text-[var(--ledger-text-muted)]">
+                          Saved to the event.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void saveSelectedEventNotes()}
+                          className="text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
+                        >
+                          Save notes
+                        </button>
                       </div>
-                    ) : (
-                      <p className="text-[14px] text-[var(--ledger-text-muted)]">
-                        No follow-ups yet.
-                      </p>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
+
+                {selectedEventPreview &&
+                  !selectedEventPreview.provider &&
+                  calendarPreferences.followUpBehavior !== 'none' && (
+                    <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                          Follow-ups
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            platform.navigation.openOverlay({
+                              kind: 'overlay',
+                              workspaceId: activeWorkspaceId ?? '',
+                              page: 'follow-up',
+                              entityId: `ledger-followup|${baseEventId(
+                                selectedEventPreview.id
+                              )}|${encodeURIComponent(selectedEventPreview.title)}|${
+                                selectedEventPreview.project_id ?? ''
+                              }|${selectedEventPreview.note_id ?? ''}|${
+                                calendarPreferences.followUpDefaultTime ?? 'tomorrow_9'
+                              }|${
+                                calendarPreferences.linkedProjectFollowUps ?? 'project_and_today'
+                              }`,
+                            })
+                          }
+                          className="inline-flex items-center gap-0.5 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-accent)]"
+                        >
+                          <span>+ </span>
+                          <span>
+                            {calendarPreferences.followUpBehavior === 'review_prompt'
+                              ? 'Review'
+                              : 'Add'}
+                          </span>
+                        </button>
+                      </div>
+                      {selectedEventFollowUps.length > 0 ? (
+                        <div className="space-y-1">
+                          {selectedEventFollowUps.map((task) => (
+                            <button
+                              key={task.id}
+                              onClick={() =>
+                                void window.desktopWindow?.toggleModule('dashboard', {
+                                  focusTaskId: task.id,
+                                })
+                              }
+                              className="flex h-8 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[13px] transition hover:bg-[var(--ledger-surface-hover)]"
+                              title={task.title}
+                            >
+                              <span className="min-w-0 truncate text-[var(--ledger-text-primary)]">
+                                {task.title}
+                              </span>
+                              <span className="shrink-0 text-[12px] text-[var(--ledger-text-muted)]">
+                                {task.status === 'done' ? 'Done' : 'Todo'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[14px] text-[var(--ledger-text-muted)]">
+                          No follow-ups yet.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                 <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-6">
                   <p className="text-xs font-medium text-[var(--ledger-text-muted)]">Agenda</p>
                   <div className="space-y-1">
-                    {selectedContextDayEvents.length === 0 && selectedContextDayDueItems.length === 0 ? (
+                    {selectedContextDayEvents.length === 0 &&
+                    selectedContextDayDueItems.length === 0 ? (
                       <p className="text-[14px] text-[var(--ledger-text-muted)]">
                         No dated items for this day.
                       </p>
                     ) : (
                       <>
                         {selectedContextDayEvents.map((event) => {
-                        const isSelected = selectedEventPreview?.id === event.id;
-                        const eventColor = getCalendarColor(event.calendar_id);
-                        return (
-                          <button
-                            key={event.id}
-                            onClick={() => setSelectedEvent(event)}
-                            className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
-                              isSelected
-                                ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-border-subtle)]'
-                                : 'hover:bg-[var(--ledger-surface-hover)]'
-                            }`}
-                          >
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{
-                                backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor,
-                              }}
-                            />
-                            <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-[var(--ledger-text-primary)]">
-                              {formatEventTimeLabel(event)}
-                            </p>
-                            <div className="min-w-0 flex-1">
-                              <p
-                                className={`truncate text-[13px] ${
-                                  isPastEvent(event)
-                                    ? 'text-[var(--ledger-text-muted)]'
-                                    : 'text-[var(--ledger-text-secondary)]'
-                                }`}
-                              >
-                                {event.title}
+                          const isSelected = selectedEventPreview?.id === event.id;
+                          const eventColor = getCalendarColor(event.calendar_id);
+                          return (
+                            <button
+                              key={event.id}
+                              onClick={() => setSelectedEvent(event)}
+                              className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition ${
+                                isSelected
+                                  ? 'bg-[var(--ledger-surface-hover)] ring-1 ring-[color:var(--ledger-border-subtle)]'
+                                  : 'hover:bg-[var(--ledger-surface-hover)]'
+                              }`}
+                            >
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{
+                                  backgroundColor: isPastEvent(event) ? '#9CA3AF' : eventColor,
+                                }}
+                              />
+                              <p className="w-28 shrink-0 whitespace-nowrap text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                                {formatEventTimeLabel(event)}
                               </p>
-                              {showWorkspaceNames && event.workspace_name && (
-                                <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
-                                  Workspace · {event.workspace_name}
+                              <div className="min-w-0 flex-1">
+                                <p
+                                  className={`truncate text-[13px] ${
+                                    isPastEvent(event)
+                                      ? 'text-[var(--ledger-text-muted)]'
+                                      : 'text-[var(--ledger-text-secondary)]'
+                                  }`}
+                                >
+                                  {event.title}
                                 </p>
-                              )}
-                            </div>
-                          </button>
-                        );
+                                {showWorkspaceNames && event.workspace_name && (
+                                  <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">
+                                    Workspace · {event.workspace_name}
+                                  </p>
+                                )}
+                              </div>
+                            </button>
+                          );
                         })}
                         {selectedContextDayDueItems.map((item) => (
                           <button
@@ -5916,7 +7007,10 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                             onClick={() => openDueDateItem(item)}
                             className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left transition hover:bg-[var(--ledger-surface-hover)]"
                           >
-                            <span className="flex h-3 w-3 shrink-0 items-center justify-center" style={{ color: item.color }}>
+                            <span
+                              className="flex h-3 w-3 shrink-0 items-center justify-center"
+                              style={{ color: item.color }}
+                            >
                               {item.kind === 'task' ? (
                                 <CheckSquare size={11} strokeWidth={1.8} />
                               ) : item.kind === 'milestone' ? (
@@ -5965,84 +7059,99 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
       </div>
 
       {isComposerOpen && (
-        <ModalOverlay
+        <CreateModalShell
           isOpen={isComposerOpen}
           onClose={() => {
             if (!isSavingEvent) setIsComposerOpen(false);
           }}
-          closeOnBackdropClick={!isSavingEvent}
-          backdropBorderRadius="inherit"
-          disablePortal
-          manageWindowChrome={false}
-          classNameContainer="w-full max-w-[620px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+          title={composerMode === 'reminder' ? 'New reminder' : 'New event'}
+          subtitle={
+            composerMode === 'reminder'
+              ? 'Keep something important on your radar.'
+              : 'Add a time, place, and context for this event.'
+          }
+          primaryLabel={composerMode === 'reminder' ? 'Create reminder' : 'Create event'}
+          onPrimary={() => void createQuickEvent()}
+          primaryBusy={isSavingEvent}
+          primaryDisabled={
+            !newEventTitle.trim() ||
+            (calendars.length === 0 &&
+              appleCalendar.connectedCalendars.length === 0 &&
+              appleReminders.connectedLists.length === 0) ||
+            Boolean(specificDatesValidationMessage)
+          }
+          closeLabel="Close calendar composer"
         >
-          <div>
-            <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
-              <h3 className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                {composerMode === 'reminder' ? 'New Reminder' : 'New Event'}
-              </h3>
-              <ModalCloseButton
-                onClick={() => {
-                  if (!isSavingEvent) setIsComposerOpen(false);
-                }}
-                ariaLabel="Close event composer"
-                disabled={isSavingEvent}
-                className="shrink-0"
-              />
-            </div>
-            <div className="space-y-4 px-5 py-5">
-              <input
-                value={newEventTitle}
-                onChange={(e) => setNewEventTitle(e.target.value)}
-                placeholder={composerMode === 'reminder' ? 'Reminder title' : 'Event title'}
-                className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="date"
-                  value={newEventDate}
-                  onChange={(e) => setNewEventDate(e.target.value)}
-                  className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                />
-                <input
-                  type="time"
-                  value={newEventTime}
-                  onChange={(e) => setNewEventTime(e.target.value)}
-                  disabled={composerMode === 'event' && newEventAllDay}
-                  className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
-                />
+          <div className="space-y-4">
+            <input
+              autoFocus
+              value={naturalLanguageInput}
+              onChange={(e) => setNaturalLanguageInput(e.target.value)}
+              placeholder={composerMode === 'reminder' ? 'What should Ledger remind you about?' : "Tell Ledger what you're planning."}
+              className="col-span-1 h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60 sm:col-span-2"
+            />
+            {composerAiStatus === 'understanding' && <p className="text-xs text-[var(--ledger-text-muted)]">Understanding with Ledger…</p>}
+            {composerAiStatus === 'unavailable' && <p className="text-xs text-[var(--ledger-text-muted)]">Ledger AI is unavailable. You can continue creating this manually.</p>}
+            {composerAiSuggestions?.relatedResources?.map((resource) => (
+              <div key={`${resource.type}:${resource.id}`} className="inline-flex max-w-full items-center gap-2 self-start rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2.5 py-1 text-xs text-[var(--ledger-text-secondary)]">
+                <span>Suggested context · {resource.label}</span>
+                <button type="button" aria-label={`Remove suggested context ${resource.label}`} onClick={() => { composerDismissedAiResourcesRef.current.add(`${resource.type}:${resource.id}`); setComposerAiSuggestions((current) => current ? { ...current, relatedResources: current.relatedResources?.filter((item) => item.id !== resource.id || item.type !== resource.type) } : current); }} className="text-[var(--ledger-text-muted)] hover:text-[var(--ledger-text-primary)]">×</button>
               </div>
-              {composerMode === 'event' || composerMode === 'reminder' ? (
-                <label className="flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
-                  <input
-                    type="checkbox"
-                    checked={newEventAllDay}
-                    onChange={(e) => setNewEventAllDay(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-[#C9B7A5] text-[var(--ledger-accent)] focus:ring-[color:var(--ledger-accent)]"
-                  />
-                  All day
-                </label>
-              ) : null}
-              {composerMode === 'event' && <>
-                <input value={newEventLocation} onChange={(e) => setNewEventLocation(e.target.value)} placeholder="Location (optional)" className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
-                <input value={newEventUrl} onChange={(e) => setNewEventUrl(e.target.value)} placeholder="URL (optional)" type="url" className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />
-              </>}
+            ))}
+            <CreateFieldRow>
+              <CreateSmartField icon={<CalendarDays size={14} />} label="Date" value={formatSmartDate(newEventDate)} onActivate={() => setActiveComposerSmartField('date')} active={activeComposerSmartField === 'date'} />
+              <CreateSmartField icon={<CalendarClock size={14} />} label="Time" value={newEventAllDay ? 'All day' : formatSmartTime(newEventTime)} onActivate={() => setActiveComposerSmartField('time')} active={activeComposerSmartField === 'time'} disabled={composerMode === 'event' && newEventAllDay} />
+              <input
+                type="date"
+                value={newEventDate}
+                style={{ display: 'none' }}
+                onChange={(e) => setNewEventDate(e.target.value)}
+                className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+              />
+              <input
+                type="time"
+                value={newEventTime}
+                style={{ display: 'none' }}
+                onChange={(e) => setNewEventTime(e.target.value)}
+                disabled={composerMode === 'event' && newEventAllDay}
+                className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+              />
+            </CreateFieldRow>
+            {activeComposerSmartField === 'date' && <input autoFocus type="date" value={newEventDate} onChange={(e) => { composerParserOverridesRef.current.add('date'); setNewEventDate(e.target.value); }} onBlur={() => setActiveComposerSmartField(null)} className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />}
+            {activeComposerSmartField === 'time' && <input autoFocus type="time" value={newEventTime} onChange={(e) => { composerParserOverridesRef.current.add('time'); setNewEventTime(e.target.value); }} onBlur={() => setActiveComposerSmartField(null)} className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none" />}
+            <CreateSection title={composerMode === 'event' ? 'Event details' : 'Reminder details'}>
               {composerMode === 'event' && (
-                <div className="grid grid-cols-[1fr_110px] gap-3">
+                <>
+                  <CreateSmartField icon={<MapPin size={14} />} label="Location" value={newEventLocation} emptyLabel="Add location" onActivate={() => setActiveComposerSmartField('location')} active={activeComposerSmartField === 'location'} />
+                <div className="col-span-1 sm:col-span-2" style={{ display: activeComposerSmartField === 'location' ? 'block' : 'none' }}>
+                  <input
+                    value={newEventLocation}
+                    onChange={(e) => { composerParserOverridesRef.current.add('location'); setNewEventLocation(e.target.value); }}
+                    placeholder="Location (optional)"
+                    className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none"
+                  />
+                </div>
+                </>
+              )}
+              {composerMode === 'event' && (
+                <>
+                <CreateSmartField icon={<Clock3 size={14} />} label="Duration" value={`${getDurationDisplay(getDurationMinutes(newEventDurationValue, newEventDurationUnit)).value} ${getDurationDisplay(getDurationMinutes(newEventDurationValue, newEventDurationUnit)).unit === 'hours' ? 'hr' : 'min'}`} onActivate={() => setActiveComposerSmartField('duration')} active={activeComposerSmartField === 'duration'} />
+                <div className="col-span-1 grid grid-cols-[1fr_110px] gap-3 sm:col-span-2" style={{ display: activeComposerSmartField === 'duration' ? 'grid' : 'none' }}>
                   <input
                     type="number"
                     min="1"
                     step="1"
                     value={newEventDurationValue}
-                    onChange={(e) => setNewEventDurationValue(Number(e.target.value) || 1)}
+                    onChange={(e) => { composerParserOverridesRef.current.add('duration'); setNewEventDurationValue(Number(e.target.value) || 1); }}
                     className="h-10 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                   />
                   <div className="relative">
                     <select
                       value={newEventDurationUnit}
-                      onChange={(e) =>
-                        setNewEventDurationUnit(e.target.value as 'minutes' | 'hours')
-                      }
+                      onChange={(e) => {
+                        composerParserOverridesRef.current.add('duration');
+                        setNewEventDurationUnit(e.target.value as 'minutes' | 'hours');
+                      }}
                       className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                     >
                       <option value="minutes">minutes</option>
@@ -6054,71 +7163,121 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     />
                   </div>
                 </div>
+                </>
               )}
-              <div className="relative">
+              <CreateSmartField icon={<CalendarDays size={14} />} label="Calendar" value={(calendars.find((calendar) => calendar.id === (composerCalendarId || getDefaultCalendar()?.id))?.name) || 'Personal'} onActivate={() => setActiveComposerSmartField('calendar')} active={activeComposerSmartField === 'calendar'} disabled={calendars.length === 0 && appleCalendar.connectedCalendars.length === 0} />
+              <div className="relative col-span-1 sm:col-span-2" style={{ display: activeComposerSmartField === 'calendar' ? 'block' : 'none' }}>
                 <select
                   value={composerCalendarId || getDefaultCalendar()?.id || ''}
-                  onChange={(e) => setComposerCalendarId(e.target.value)}
+                  onChange={(e) => { composerParserOverridesRef.current.add('calendar'); setComposerCalendarId(e.target.value); }}
                   className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
                   disabled={calendars.length === 0 && appleCalendar.connectedCalendars.length === 0}
                 >
                   <optgroup label="Ledger calendars">
                     {calendars.map((calendar) => (
-                      <option key={calendar.id} value={calendar.id}>{calendar.name}</option>
+                      <option key={calendar.id} value={calendar.id}>
+                        {calendar.name}
+                      </option>
                     ))}
                   </optgroup>
-                  {appleCalendar.connectedCalendars.length > 0 && <optgroup label="Apple Calendar">
-                    {appleCalendar.connectedCalendars.map((calendar) => (
-                      <option key={calendar.id} value={calendar.id} disabled={!calendar.available || !calendar.allowsContentModifications}>{calendar.title}{!calendar.allowsContentModifications ? ' · Read-only' : ''}</option>
-                    ))}
-                  </optgroup>}
-                  {composerMode === 'reminder' && appleReminders.connectedLists.length > 0 && <optgroup label="Apple Reminders">
-                    {appleReminders.connectedLists.map((list) => <option key={list.id} value={list.id} disabled={!list.available || !list.allowsContentModifications}>{list.title}{!list.allowsContentModifications ? ' · Read-only' : ''}</option>)}
-                  </optgroup>}
+                  {appleCalendar.connectedCalendars.length > 0 && (
+                    <optgroup label="Apple Calendar">
+                      {appleCalendar.connectedCalendars.map((calendar) => (
+                        <option
+                          key={calendar.id}
+                          value={calendar.id}
+                          disabled={!calendar.available || !calendar.allowsContentModifications}
+                        >
+                          {calendar.title}
+                          {!calendar.allowsContentModifications ? ' · Read-only' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {composerMode === 'reminder' && appleReminders.connectedLists.length > 0 && (
+                    <optgroup label="Apple Reminders">
+                      {appleReminders.connectedLists.map((list) => (
+                        <option
+                          key={list.id}
+                          value={list.id}
+                          disabled={!list.available || !list.allowsContentModifications}
+                        >
+                          {list.title}
+                          {!list.allowsContentModifications ? ' · Read-only' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 <ChevronDown
                   size={16}
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
-              {composerMode === 'event' && !isPersonalWorkspace && (
+              {composerMode === 'reminder' && (
+                <>
+                <CreateSmartField icon={<Flag size={14} />} label="Priority" value={newReminderPriority === 1 ? 'High' : newReminderPriority === 5 ? 'Medium' : newReminderPriority === 9 ? 'Low' : 'No priority'} onActivate={() => setActiveComposerSmartField('priority')} active={activeComposerSmartField === 'priority'} />
+                <select
+                  value={newReminderPriority}
+                  onChange={(e) => { composerParserOverridesRef.current.add('priority'); setNewReminderPriority(Number(e.target.value)); }}
+                  style={{ display: activeComposerSmartField === 'priority' ? 'block' : 'none' }}
+                  className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm"
+                >
+                  <option value={0}>No priority</option>
+                  <option value={1}>High priority</option>
+                  <option value={5}>Medium priority</option>
+                  <option value={9}>Low priority</option>
+                </select>
+                </>
+              )}
+              <CreateMoreOptions
+                expanded={isComposerMoreOptionsOpen}
+                onToggle={() => setIsComposerMoreOptionsOpen((current) => !current)}
+                label="More options"
+                accessibleLabel={`more ${composerMode} options`}
+                contentId="calendar-create-more-options"
+              />
+              <div id="calendar-create-more-options" className="space-y-3">
+              {composerMode === 'event' && !isPersonalWorkspace && isComposerMoreOptionsOpen && (
                 <div className="relative">
                   <select
                     value={newEventVisibility}
-                    onChange={(e) =>
-                      setNewEventVisibility(e.target.value as 'private' | 'workspace')
-                    }
-                    className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
+                    onChange={(e) => setNewEventVisibility(e.target.value as 'private' | 'workspace')}
+                    className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none"
                   >
                     <option value="private">Private</option>
                     <option value="workspace">Workspace</option>
                   </select>
-                  <ChevronDown
-                    size={16}
-                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
-                  />
+                  <ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 </div>
               )}
-              <div className="relative">
-                <select
-                  value={composerProjectId}
-                  onChange={(e) => setComposerProjectId(e.target.value)}
-                  className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
-                >
-                  <option value="">None</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
+              {isComposerMoreOptionsOpen && <div className="relative">
+                <select value={composerProjectId} onChange={(e) => setComposerProjectId(e.target.value)} className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-secondary)] outline-none">
+                  <option value="">Related project (optional)</option>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                 </select>
-                <ChevronDown
-                  size={16}
-                  className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+              </div>}
+              {isComposerMoreOptionsOpen && (composerMode === 'event' || composerMode === 'reminder') ? (
+                <label className="flex h-8 items-center gap-2 text-xs text-[var(--ledger-text-muted)] sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={newEventAllDay}
+                    onChange={(e) => { composerParserOverridesRef.current.add('allDay'); setNewEventAllDay(e.target.checked); }}
+                    className="h-3.5 w-3.5 rounded border-[#C9B7A5] text-[var(--ledger-accent)] focus:ring-[color:var(--ledger-accent)]"
+                  />
+                  All day
+                </label>
+              ) : null}
+              {isComposerMoreOptionsOpen && composerMode === 'event' && (
+                <input
+                  value={newEventUrl}
+                  onChange={(e) => setNewEventUrl(e.target.value)}
+                  placeholder="Meeting link (optional)"
+                  type="url"
+                  className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm text-[var(--ledger-text-primary)] outline-none"
                 />
-              </div>
-              {composerMode === 'reminder' && <select value={newReminderPriority} onChange={(e) => setNewReminderPriority(Number(e.target.value))} className="h-10 w-full rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 text-sm"><option value={0}>No priority</option><option value={1}>High priority</option><option value={5}>Medium priority</option><option value={9}>Low priority</option></select>}
-              <div className="relative">
+              )}
+              {isComposerMoreOptionsOpen && <div className="relative">
                 <select
                   value={composerNoteId}
                   onChange={(e) => setComposerNoteId(e.target.value)}
@@ -6135,8 +7294,8 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   size={16}
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
-              </div>
-              <textarea
+              </div>}
+              {isComposerMoreOptionsOpen && <textarea
                 value={composerNotes}
                 onChange={(e) => setComposerNotes(e.target.value)}
                 placeholder={
@@ -6145,9 +7304,9 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     : 'Add context for this event...'
                 }
                 rows={3}
-                className="w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
-              />
-              <div className="relative">
+                className="col-span-1 w-full rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2 text-sm text-[var(--ledger-text-primary)] placeholder:text-[var(--ledger-placeholder)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60 sm:col-span-2"
+              />}
+              {isComposerMoreOptionsOpen && <div className="relative col-span-1 sm:col-span-2">
                 <select
                   value={newEventRecurrence}
                   onChange={(e) => {
@@ -6162,6 +7321,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                       openSpecificDatesPicker();
                       return;
                     }
+                    composerParserOverridesRef.current.add('recurrence');
                     setNewEventRecurrence(nextValue);
                   }}
                   className="h-10 w-full appearance-none rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pl-3 pr-9 text-sm text-[var(--ledger-text-secondary)] outline-none transition focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[var(--ledger-surface-hover)]/60"
@@ -6178,37 +7338,16 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   size={16}
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
-              </div>
+              </div>}
               {specificDatesValidationMessage && (
-                <p className="text-xs text-red-600">{specificDatesValidationMessage}</p>
+                <p className="col-span-1 text-xs text-red-600 sm:col-span-2">
+                  {specificDatesValidationMessage}
+                </p>
               )}
-            </div>
-            <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
-              <button
-                onClick={() => setIsComposerOpen(false)}
-                className="rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => void createQuickEvent()}
-                disabled={
-                  isSavingEvent ||
-                  !newEventTitle.trim() ||
-                  calendars.length === 0 && appleCalendar.connectedCalendars.length === 0 && appleReminders.connectedLists.length === 0 ||
-                  Boolean(specificDatesValidationMessage)
-                }
-                className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60"
-              >
-                {isSavingEvent
-                  ? 'Saving...'
-                  : composerMode === 'reminder'
-                  ? 'Create Reminder'
-                  : 'Create'}
-              </button>
-            </div>
+              </div>
+            </CreateSection>
           </div>
-        </ModalOverlay>
+        </CreateModalShell>
       )}
 
       <ModalOverlay
@@ -6376,10 +7515,35 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0"
                 />
               </label>
-              <textarea value={reminderEditNotes} onChange={(e) => setReminderEditNotes(e.target.value)} placeholder="Notes (optional)" rows={3} className="w-full rounded-md border border-[#E2D4C4] px-3 py-2 text-sm" />
+              <textarea
+                value={reminderEditNotes}
+                onChange={(e) => setReminderEditNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                rows={3}
+                className="w-full rounded-md border border-[#E2D4C4] px-3 py-2 text-sm"
+              />
               <div className="grid grid-cols-2 gap-2">
-                <select value={reminderEditPriority} onChange={(e) => setReminderEditPriority(Number(e.target.value))} className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm"><option value={0}>No priority</option><option value={1}>High priority</option><option value={5}>Medium priority</option><option value={9}>Low priority</option></select>
-                <select value={reminderEditRecurrence} onChange={(e) => setReminderEditRecurrence(e.target.value)} className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm"><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>
+                <select
+                  value={reminderEditPriority}
+                  onChange={(e) => setReminderEditPriority(Number(e.target.value))}
+                  className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm"
+                >
+                  <option value={0}>No priority</option>
+                  <option value={1}>High priority</option>
+                  <option value={5}>Medium priority</option>
+                  <option value={9}>Low priority</option>
+                </select>
+                <select
+                  value={reminderEditRecurrence}
+                  onChange={(e) => setReminderEditRecurrence(e.target.value)}
+                  className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm"
+                >
+                  <option value="none">Does not repeat</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
               </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
@@ -6449,11 +7613,31 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   className="h-9 rounded-md border border-[#E2D4C4] px-2 text-sm focus:border-gray-400 focus:outline-none"
                 />
               </div>
-              {eventEditorEvent.provider === 'apple' && <>
-                <label className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" checked={editAllDay} onChange={(e) => setEditAllDay(e.target.checked)} /> All day</label>
-                <input value={editLocation} onChange={(e) => setEditLocation(e.target.value)} placeholder="Location (optional)" className="h-9 w-full rounded-md border border-[#E2D4C4] px-3 text-sm" />
-                <input value={editUrl} onChange={(e) => setEditUrl(e.target.value)} placeholder="URL (optional)" type="url" className="h-9 w-full rounded-md border border-[#E2D4C4] px-3 text-sm" />
-              </>}
+              {eventEditorEvent.provider === 'apple' && (
+                <>
+                  <label className="flex items-center gap-2 text-xs text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={editAllDay}
+                      onChange={(e) => setEditAllDay(e.target.checked)}
+                    />{' '}
+                    All day
+                  </label>
+                  <input
+                    value={editLocation}
+                    onChange={(e) => setEditLocation(e.target.value)}
+                    placeholder="Location (optional)"
+                    className="h-9 w-full rounded-md border border-[#E2D4C4] px-3 text-sm"
+                  />
+                  <input
+                    value={editUrl}
+                    onChange={(e) => setEditUrl(e.target.value)}
+                    placeholder="URL (optional)"
+                    type="url"
+                    className="h-9 w-full rounded-md border border-[#E2D4C4] px-3 text-sm"
+                  />
+                </>
+              )}
               <div className="grid grid-cols-[1fr_92px] gap-2">
                 <input
                   type="number"
@@ -6573,8 +7757,25 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   onChange={(e) => setEditCalendarId(e.target.value)}
                   className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm focus:border-gray-400 focus:outline-none"
                 >
-                  <optgroup label="Ledger calendars">{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</optgroup>
-                  <optgroup label="Apple Calendar">{appleCalendar.connectedCalendars.map((calendar) => <option key={calendar.id} value={calendar.id} disabled={!calendar.available || !calendar.allowsContentModifications}>{calendar.title}{!calendar.allowsContentModifications ? ' · Read-only' : ''}</option>)}</optgroup>
+                  <optgroup label="Ledger calendars">
+                    {calendars.map((calendar) => (
+                      <option key={calendar.id} value={calendar.id}>
+                        {calendar.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Apple Calendar">
+                    {appleCalendar.connectedCalendars.map((calendar) => (
+                      <option
+                        key={calendar.id}
+                        value={calendar.id}
+                        disabled={!calendar.available || !calendar.allowsContentModifications}
+                      >
+                        {calendar.title}
+                        {!calendar.allowsContentModifications ? ' · Read-only' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
                 <span
                   className="pointer-events-none absolute right-8 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-[#E2D4C4]"
@@ -6585,10 +7786,50 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
                 />
               </div>
-              {eventEditorEvent.provider === 'apple' && eventEditorEvent.recurrence_rule !== 'none' && <div className="relative"><select value={editRecurrenceSpan} onChange={(e) => setEditRecurrenceSpan(e.target.value as 'thisEvent' | 'futureEvents')} className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm"><option value="thisEvent">This event</option><option value="futureEvents">This and future events</option></select><ChevronDown size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500" /></div>}
-              {eventEditorEvent.provider === 'apple' && <textarea value={eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? ''} onChange={(e) => setEventNotesDrafts((prev) => ({ ...prev, [eventEditorEvent.id]: e.target.value }))} placeholder="Notes (optional)" rows={3} className="w-full rounded-md border border-[#E2D4C4] px-3 py-2 text-sm" />}
+              {eventEditorEvent.provider === 'apple' &&
+                eventEditorEvent.recurrence_rule !== 'none' && (
+                  <div className="relative">
+                    <select
+                      value={editRecurrenceSpan}
+                      onChange={(e) =>
+                        setEditRecurrenceSpan(e.target.value as 'thisEvent' | 'futureEvents')
+                      }
+                      className="h-9 w-full appearance-none rounded-md border border-[#E2D4C4] bg-[#FFF8F2] pl-2 pr-9 text-sm"
+                    >
+                      <option value="thisEvent">This event</option>
+                      <option value="futureEvents">This and future events</option>
+                    </select>
+                    <ChevronDown
+                      size={16}
+                      className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500"
+                    />
+                  </div>
+                )}
+              {eventEditorEvent.provider === 'apple' && (
+                <textarea
+                  value={eventNotesDrafts[eventEditorEvent.id] ?? eventEditorEvent.notes ?? ''}
+                  onChange={(e) =>
+                    setEventNotesDrafts((prev) => ({
+                      ...prev,
+                      [eventEditorEvent.id]: e.target.value,
+                    }))
+                  }
+                  placeholder="Notes (optional)"
+                  rows={3}
+                  className="w-full rounded-md border border-[#E2D4C4] px-3 py-2 text-sm"
+                />
+              )}
             </div>
-            {eventEditorEvent.provider === 'apple' && <p className="mt-3 text-xs text-[var(--ledger-text-muted)]">Apple Calendar · {eventEditorEvent.provider_calendar_name ?? 'Selected calendar'}{!appleCalendar.connectedCalendars.find((calendar) => calendar.id === eventEditorEvent.calendar_id)?.allowsContentModifications ? ' — This calendar does not allow Ledger to edit its events.' : ''}</p>}
+            {eventEditorEvent.provider === 'apple' && (
+              <p className="mt-3 text-xs text-[var(--ledger-text-muted)]">
+                Apple Calendar · {eventEditorEvent.provider_calendar_name ?? 'Selected calendar'}
+                {!appleCalendar.connectedCalendars.find(
+                  (calendar) => calendar.id === eventEditorEvent.calendar_id
+                )?.allowsContentModifications
+                  ? ' — This calendar does not allow Ledger to edit its events.'
+                  : ''}
+              </p>
+            )}
 
             <div className="mt-4 flex items-center justify-between">
               <div>
@@ -6619,7 +7860,15 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
               </div>
 
               <div className="flex items-center gap-2">
-                {eventEditorEvent.provider === 'apple' && <button type="button" onClick={() => void window.desktopWindow?.openExternal('ical://')} className="rounded-md bg-[#FFF1E3] px-3 py-2 text-xs font-medium text-gray-700 hover:bg-[#EDE3D8]">Open in Apple Calendar</button>}
+                {eventEditorEvent.provider === 'apple' && (
+                  <button
+                    type="button"
+                    onClick={() => void window.desktopWindow?.openExternal('ical://')}
+                    className="rounded-md bg-[#FFF1E3] px-3 py-2 text-xs font-medium text-gray-700 hover:bg-[#EDE3D8]"
+                  >
+                    Open in Apple Calendar
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setEventEditorEvent(null);
@@ -6655,7 +7904,16 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
           <div className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Edit Reminder</h3>
-              {reminderEditorReminder.provider === 'apple-reminders' && <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Apple Reminders · {reminderEditorReminder.provider_list_name ?? 'Selected list'}{!appleReminders.connectedLists.find((list) => list.id === reminderEditorReminder.calendar_id)?.allowsContentModifications ? ' — This reminder list does not allow Ledger to make changes.' : ''}</p>}
+              {reminderEditorReminder.provider === 'apple-reminders' && (
+                <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                  Apple Reminders · {reminderEditorReminder.provider_list_name ?? 'Selected list'}
+                  {!appleReminders.connectedLists.find(
+                    (list) => list.id === reminderEditorReminder.calendar_id
+                  )?.allowsContentModifications
+                    ? ' — This reminder list does not allow Ledger to make changes.'
+                    : ''}
+                </p>
+              )}
               <div className="flex items-center gap-1">
                 <PinActionButton
                   objectType="reminder"
@@ -6733,7 +7991,20 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                       {calendar.name}
                     </option>
                   ))}
-                  {reminderEditorReminder.provider === 'apple-reminders' && <optgroup label="Apple Reminders">{appleReminders.connectedLists.map((list) => <option key={list.id} value={list.id} disabled={!list.available || !list.allowsContentModifications}>{list.title}{!list.allowsContentModifications ? ' · Read-only' : ''}</option>)}</optgroup>}
+                  {reminderEditorReminder.provider === 'apple-reminders' && (
+                    <optgroup label="Apple Reminders">
+                      {appleReminders.connectedLists.map((list) => (
+                        <option
+                          key={list.id}
+                          value={list.id}
+                          disabled={!list.available || !list.allowsContentModifications}
+                        >
+                          {list.title}
+                          {!list.allowsContentModifications ? ' · Read-only' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
                 <span
                   className="pointer-events-none absolute right-8 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full border border-[#E2D4C4]"
@@ -7115,17 +8386,28 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     </p>
                   </div>
                   {menuTime ? (
-                    <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">{menuTime}</p>
+                    <p className="mt-0.5 text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                      {menuTime}
+                    </p>
                   ) : null}
                 </div>
               </div>
               <div className="px-1.5 py-1.5">
                 <button
                   onClick={() => {
-                    const resource = listContextMenu.kind === 'event'
-                      ? events.find((item) => item.id === baseEventId(listContextMenu.id))
-                      : reminders.find((item) => item.id === listContextMenu.id);
-                    if (resource && activeWorkspaceId) openAskLedgerWithContext({ resourceType: listContextMenu.kind, resourceId: listContextMenu.id, title: resource.title }, () => platform.navigation.openRoute(routeForHome(activeWorkspaceId)));
+                    const resource =
+                      listContextMenu.kind === 'event'
+                        ? events.find((item) => item.id === baseEventId(listContextMenu.id))
+                        : reminders.find((item) => item.id === listContextMenu.id);
+                    if (resource && activeWorkspaceId)
+                      openAskLedgerWithContext(
+                        {
+                          resourceType: listContextMenu.kind,
+                          resourceId: listContextMenu.id,
+                          title: resource.title,
+                        },
+                        () => platform.navigation.openRoute(routeForHome(activeWorkspaceId))
+                      );
                     setListContextMenu(null);
                   }}
                   className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
@@ -7144,12 +8426,17 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     return (
                       <>
                         <button
-                          onClick={() => { if (event) void createMeetingNoteFromEvent(event); setListContextMenu(null); }}
+                          onClick={() => {
+                            if (event) void createMeetingNoteFromEvent(event);
+                            setListContextMenu(null);
+                          }}
                           disabled={!event || isCreatingMeetingNote}
                           className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Mic size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                          <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">Start meeting notes</span>
+                          <span className="min-w-0 truncate text-[14px] font-medium tracking-tight">
+                            Start meeting notes
+                          </span>
                         </button>
                         <button
                           onClick={() => {
@@ -7158,11 +8445,20 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                             setListContextMenu(null);
                           }}
                           disabled={!canEditMenuEvent}
-                          className={`flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm ${canEditMenuEvent ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]' : 'cursor-not-allowed text-[var(--ledger-text-muted)]/60'}`}
+                          className={`flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm ${
+                            canEditMenuEvent
+                              ? 'text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]'
+                              : 'cursor-not-allowed text-[var(--ledger-text-muted)]/60'
+                          }`}
                           title={canEditMenuEvent ? 'Edit Event' : 'Past events are read-only here'}
                         >
-                          <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                          <span className="min-w-0 truncate text-[14px] font-medium">Edit event</span>
+                          <PencilLine
+                            size={14}
+                            className="shrink-0 text-[var(--ledger-text-muted)]"
+                          />
+                          <span className="min-w-0 truncate text-[14px] font-medium">
+                            Edit event
+                          </span>
                         </button>
                       </>
                     );
@@ -7177,9 +8473,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
                     <PencilLine size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                    <span className="min-w-0 truncate text-[14px] font-medium">
-                      Edit reminder
-                    </span>
+                    <span className="min-w-0 truncate text-[14px] font-medium">Edit reminder</span>
                   </button>
                 )}
 
@@ -7188,9 +8482,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                   className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                 >
                   <CalendarPlus size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                  <span className="min-w-0 truncate text-[14px] font-medium">
-                    New event here
-                  </span>
+                  <span className="min-w-0 truncate text-[14px] font-medium">New event here</span>
                 </button>
 
                 <button
@@ -7246,9 +8538,7 @@ export const CalendarWindow = ({ webQuery }: { webQuery?: { view?: 'month' | 'we
                     className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                   >
                     <BellRing size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                    <span className="min-w-0 truncate text-[14px] font-medium">
-                      Toggle done
-                    </span>
+                    <span className="min-w-0 truncate text-[14px] font-medium">Toggle done</span>
                   </button>
                 )}
 
