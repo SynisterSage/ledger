@@ -295,7 +295,6 @@ export const getDesktopCssVars = (scheme: DesktopThemeScheme = 'light'): Record<
     '--ledger-accent': colors.accent,
     '--ledger-accent-hover': colors.accentHover,
     '--ledger-accent-soft': colors.accentSoft,
-    '--ledger-new-tab-atmosphere': scheme === 'dark' ? 'rgba(255, 140, 95, 0.05)' : 'rgba(255, 95, 64, 0.08)',
     '--ledger-danger': colors.danger,
     '--ledger-success': colors.success,
     '--ledger-warning': colors.warning,

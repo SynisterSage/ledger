@@ -1,7 +1,28 @@
 import { defineConfig } from 'vite';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import electron from 'vite-plugin-electron/simple';
 import react from '@vitejs/plugin-react';
+
+const prepareElectronDevelopmentPermissions = () => {
+  if (process.platform !== 'darwin') return;
+  const infoPlist = path.join(__dirname, 'node_modules/electron/dist/Electron.app/Contents/Info.plist');
+  if (!fs.existsSync(infoPlist)) return;
+  const entries = {
+    NSCalendarsUsageDescription: 'Ledger uses Calendar access to show events from calendars you choose.',
+    NSCalendarsFullAccessUsageDescription: 'Ledger uses Calendar access to show events from calendars you choose.',
+    NSRemindersFullAccessUsageDescription: 'Ledger uses Reminders access to show reminders from lists you choose.',
+  };
+  for (const [key, value] of Object.entries(entries)) {
+    const plistValue = value.replaceAll("'", "\\'");
+    try {
+      execFileSync('/usr/libexec/PlistBuddy', ['-c', `Add :${key} string '${plistValue}'`, infoPlist], { stdio: 'ignore' });
+    } catch {
+      execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} '${plistValue}'`, infoPlist], { stdio: 'ignore' });
+    }
+  }
+};
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -92,6 +113,7 @@ export default defineConfig(({ mode }) => {
         if (process.env.VITE_LAUNCH_ELECTRON === '0') {
           return;
         }
+        prepareElectronDevelopmentPermissions();
         startup();
       },
       // Ployfill the Electron and Node.js API for Renderer process.

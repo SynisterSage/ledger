@@ -107,7 +107,10 @@ export const useAppleCalendar = (userId: string | undefined, start: Date, end: D
         status = await window.appleCalendar.status();
         setPermission(status.status);
       }
-      if (status.status !== 'granted') return false;
+      if (status.status !== 'granted') {
+        setError('Ledger does not have access to Apple Calendar. Allow Calendar access in macOS System Settings, then try again.');
+        return false;
+      }
       await refreshCalendars();
       return true;
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not connect Apple Calendar.'); }

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.ledger.apple-calendar-bridge</string>
+	<key>CFBundleName</key>
+	<string>Ledger Apple Calendar Bridge</string>
+	<key>CFBundleExecutable</key>
+	<string>AppleCalendarBridge</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Ledger uses Calendar access to show events from calendars you choose.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Ledger uses Calendar access to show events from calendars you choose.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Ledger uses Reminders access to show reminders from lists you choose.</string>
+</dict>
+</plist>

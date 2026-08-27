@@ -196,7 +196,11 @@ export const buildRetrievalPlan = (question: string, now = new Date()): Retrieva
   const structuredConstraints: RetrievalStructuredConstraints = {};
   if (/\bunread\b/.test(normalizedQuestion) && primaryResourceTypes.includes('notification')) structuredConstraints.read = false;
   if (/\bread\b/.test(normalizedQuestion) && primaryResourceTypes.includes('notification') && !/unread/.test(normalizedQuestion)) structuredConstraints.read = true;
-  if (/\b(?:attention|important|high priority|urgent)\b/.test(normalizedQuestion)) structuredConstraints.attentionOnly = true;
+  // "Important updates" is a recent-update request, not a strict alert
+  // filter. Activity records often have no priority/severity field, so
+  // treating the adjective as attentionOnly can discard the entire activity
+  // corpus before recent-update ranking runs.
+  if (/\b(?:attention|high priority|urgent)\b/.test(normalizedQuestion)) structuredConstraints.attentionOnly = true;
   if (/\bcircle\b/.test(normalizedQuestion) && !(/\b(?:people|persons?|anyone|members?|tasks?|actions?|workload|active)\b/.test(normalizedQuestion))) structuredConstraints.sourceLabel = 'Circle';
   if (taskQuery && /\btoday\b/.test(normalizedQuestion)) structuredConstraints.horizon = 'today';
   if (taskQuery && /\blong[- ]term\b|\blong term work\b/.test(normalizedQuestion)) structuredConstraints.horizon = 'long_term';

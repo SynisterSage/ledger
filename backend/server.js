@@ -6649,6 +6649,40 @@ const mapAccountSession = (row, currentDeviceId = null) => ({
   is_current: Boolean(currentDeviceId && row?.device_id && row.device_id === currentDeviceId),
 });
 
+app.get('/api/workspaces/:workspaceId/audit-log', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+    const result = await supabase
+      .from('workspace_audit_logs')
+      .select('id, workspace_id, actor_user_id, action, target_type, target_id, metadata, created_at')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (result.error) throw result.error;
+    const rows = result.data ?? [];
+    const actorIds = [...new Set(rows.map((row) => row.actor_user_id).filter(Boolean))];
+    const actors = actorIds.length
+      ? await supabase.from('users').select('id, full_name, email').in('id', actorIds)
+      : { data: [], error: null };
+    if (actors.error) throw actors.error;
+    const actorNames = new Map(
+      (actors.data ?? []).map((actor) => [
+        String(actor.id),
+        actor.full_name?.trim() || actor.email?.split('@')[0] || 'A teammate',
+      ])
+    );
+    res.json({
+      logs: rows.map((row) => ({
+        ...row,
+        actor_name: row.actor_user_id ? actorNames.get(String(row.actor_user_id)) ?? null : null,
+      })),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.get('/api/extension/token/status', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = await resolveWorkspaceIdForRequest(req);
@@ -13909,6 +13943,83 @@ app.delete(
 );
 
 app.get(
+  '/api/workspaces/:workspaceId/navigation-settings',
+  authMiddleware,
+  rateLimit('read'),
+  async (req, res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+      const result = await supabase
+        .from('workspaces')
+        .select('navigation_settings')
+        .eq('id', workspaceId)
+        .single();
+      if (result.error) throw result.error;
+      res.json({ navigation_settings: result.data?.navigation_settings ?? {} });
+    } catch (error) {
+      return respondWithError(res, error);
+    }
+  }
+);
+
+app.patch(
+  '/api/workspaces/:workspaceId/navigation-settings',
+  authMiddleware,
+  rateLimit('write'),
+  async (req, res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+      const normalRailOrder = Array.isArray(req.body?.normalRailOrder)
+        ? req.body.normalRailOrder
+            .filter((item) => typeof item === 'string')
+            .slice(0, 12)
+        : null;
+      const allowedNormalRailItems = new Set([
+        'search',
+        'ask-ledger',
+        'overview',
+        'calendar',
+        'projects',
+        'notes',
+      ]);
+      if (
+        !normalRailOrder ||
+        normalRailOrder.length !== allowedNormalRailItems.size ||
+        new Set(normalRailOrder).size !== normalRailOrder.length ||
+        normalRailOrder.some((item) => !allowedNormalRailItems.has(item))
+      ) {
+        return res.status(400).json({ error: 'A normal rail order is required' });
+      }
+
+      const updated = await supabase
+        .from('workspaces')
+        .update({
+          navigation_settings: { normalRailOrder },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', workspaceId)
+        .select('navigation_settings')
+        .single();
+      if (updated.error) throw updated.error;
+
+      await writeWorkspaceAuditLog({
+        workspaceId,
+        actorUserId: req.authUser.id,
+        action: 'workspace.navigation_settings_updated',
+        targetType: 'workspace',
+        targetId: workspaceId,
+        metadata: { normalRailOrder, actor_role: access.role },
+      });
+      res.json({ navigation_settings: updated.data?.navigation_settings ?? {} });
+    } catch (error) {
+      return respondWithError(res, error);
+    }
+  }
+);
+
+app.get(
   '/api/workspaces/:workspaceId/members',
   authMiddleware,
   rateLimit('read'),
@@ -14289,6 +14400,100 @@ app.post(
         invite_token: token,
         current_user_role: access.role,
       });
+    } catch (error) {
+      return respondWithError(res, error);
+    }
+  }
+);
+
+app.delete(
+  '/api/workspaces/:workspaceId/invitations/history',
+  authMiddleware,
+  rateLimit('write'),
+  async (req, res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+      const nowIso = new Date().toISOString();
+      const historical = await supabase
+        .from('workspace_invites')
+        .select('id, accepted_at, expires_at')
+        .eq('workspace_id', workspaceId);
+
+      if (historical.error) throw historical.error;
+      const historicalIds = (historical.data ?? [])
+        .filter((invite) => Boolean(invite.accepted_at) || (invite.expires_at && String(invite.expires_at) <= nowIso))
+        .map((invite) => invite.id)
+        .filter(Boolean);
+
+      if (historicalIds.length) {
+        const deleted = await supabase
+          .from('workspace_invites')
+          .delete()
+          .eq('workspace_id', workspaceId)
+          .in('id', historicalIds);
+        if (deleted.error) throw deleted.error;
+      }
+
+      await writeWorkspaceAuditLog({
+        workspaceId,
+        actorUserId: req.authUser.id,
+        action: 'invite.history_cleared',
+        targetType: 'workspace_invite',
+        targetId: workspaceId,
+        metadata: { deleted_count: historicalIds.length, actor_role: access.role },
+      });
+
+      res.json({ success: true, deleted_count: historicalIds.length });
+    } catch (error) {
+      return respondWithError(res, error);
+    }
+  }
+);
+
+app.delete(
+  '/api/workspaces/:workspaceId/invitations/:invitationId/history',
+  authMiddleware,
+  rateLimit('write'),
+  async (req, res) => {
+    try {
+      const workspaceId = String(req.params.workspaceId);
+      const invitationId = String(req.params.invitationId);
+      const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+      const existing = await supabase
+        .from('workspace_invites')
+        .select('id, role, email, accepted_at, expires_at')
+        .eq('id', invitationId)
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+
+      if (existing.error) throw existing.error;
+      if (!existing.data?.id) return res.status(404).json({ error: 'Invite not found' });
+
+      const isHistorical = Boolean(existing.data.accepted_at) || (existing.data.expires_at && String(existing.data.expires_at) <= new Date().toISOString());
+      if (!isHistorical) return res.status(400).json({ error: 'Pending invites must be revoked' });
+
+      const deleted = await supabase
+        .from('workspace_invites')
+        .delete()
+        .eq('id', invitationId)
+        .eq('workspace_id', workspaceId);
+      if (deleted.error) throw deleted.error;
+
+      await writeWorkspaceAuditLog({
+        workspaceId,
+        actorUserId: req.authUser.id,
+        action: 'invite.history_cleared',
+        targetType: 'workspace_invite',
+        targetId: invitationId,
+        metadata: {
+          email: existing.data.email,
+          role: String(existing.data.role).toLowerCase(),
+          actor_role: access.role,
+        },
+      });
+
+      res.json({ success: true });
     } catch (error) {
       return respondWithError(res, error);
     }

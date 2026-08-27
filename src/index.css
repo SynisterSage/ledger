@@ -175,7 +175,6 @@ body {
   --ledger-accent: #ff5f40;
   --ledger-accent-hover: #e85430;
   --ledger-accent-soft: #ffe8dc;
-  --ledger-new-tab-atmosphere: rgba(255, 95, 64, 0.08);
   --ledger-link: #2563eb;
   --ledger-link-hover: #1d4ed8;
   --ledger-danger: #d92d20;
@@ -242,7 +241,6 @@ body {
     --ledger-accent: #ff8c5f;
     --ledger-accent-hover: #ff7a4d;
     --ledger-accent-soft: #ffab8f;
-    --ledger-new-tab-atmosphere: rgba(255, 140, 95, 0.05);
     --ledger-link: #60a5fa;
     --ledger-link-hover: #93c5fd;
     --ledger-danger: #f97066;
@@ -1296,22 +1294,6 @@ button:focus {
   will-change: opacity, transform;
 }
 
-@keyframes ledger-new-tab-atmosphere-drift {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(-0.25%, 0.2%, 0) scale(1.008);
-  }
-}
-
-.ledger-new-tab-atmosphere {
-  animation: ledger-new-tab-atmosphere-drift 18s ease-in-out infinite;
-  backface-visibility: hidden;
-  will-change: transform;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .ledger-auth-left-enter,
   .ledger-auth-pane-enter,
@@ -1323,11 +1305,6 @@ button:focus {
     will-change: auto;
   }
 
-  .ledger-new-tab-atmosphere {
-    animation: none;
-    transform: none;
-    will-change: auto;
-  }
 }
 
 .slack-content .divide-y > :not([hidden]) ~ :not([hidden]) {

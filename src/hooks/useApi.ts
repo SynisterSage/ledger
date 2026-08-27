@@ -231,6 +231,8 @@ export const useApi = () => {
         }),
       getWorkspaceInvitations: (workspaceId: string) =>
         request(`/api/workspaces/${workspaceId}/invitations`),
+      getWorkspaceAuditLog: (workspaceId: string) =>
+        request(`/api/workspaces/${workspaceId}/audit-log`),
       createWorkspace: (payload: {
         name: string;
         description?: string | null;
@@ -246,6 +248,16 @@ export const useApi = () => {
         payload: { name?: string; description?: string | null; is_personal?: boolean }
       ) =>
         request(`/api/workspaces/${workspaceId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        }),
+      getWorkspaceNavigationSettings: (workspaceId: string) =>
+        request(`/api/workspaces/${workspaceId}/navigation-settings`),
+      updateWorkspaceNavigationSettings: (
+        workspaceId: string,
+        payload: { normalRailOrder: string[] }
+      ) =>
+        request(`/api/workspaces/${workspaceId}/navigation-settings`, {
           method: 'PATCH',
           body: JSON.stringify(payload),
         }),
@@ -266,6 +278,14 @@ export const useApi = () => {
         }),
       revokeWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
         request(`/api/workspaces/${workspaceId}/invitations/${invitationId}`, {
+          method: 'DELETE',
+        }),
+      clearWorkspaceInvitationHistory: (workspaceId: string) =>
+        request(`/api/workspaces/${workspaceId}/invitations/history`, {
+          method: 'DELETE',
+        }),
+      clearWorkspaceInvitationHistoryItem: (workspaceId: string, invitationId: string) =>
+        request(`/api/workspaces/${workspaceId}/invitations/${invitationId}/history`, {
           method: 'DELETE',
         }),
       acceptWorkspaceInvitation: (token: string) =>

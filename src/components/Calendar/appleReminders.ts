@@ -87,7 +87,7 @@ export const useAppleReminders = (userId: string | undefined, start: Date, end: 
   }, [supported, userId]);
 
   const connect = useCallback(async () => {
-    if (!supported || !window.appleReminders) return;
+    if (!supported || !window.appleReminders) return false;
     setLoading(true); setError(null);
     try {
       let status = await window.appleReminders.getPermissionStatus();
@@ -97,8 +97,13 @@ export const useAppleReminders = (userId: string | undefined, start: Date, end: 
         status = await window.appleReminders.getPermissionStatus();
         setPermission(status.status);
       }
-      if (status.status === 'granted') await refreshLists();
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not connect Apple Reminders.'); }
+      if (status.status !== 'granted') {
+        setError('Ledger does not have access to Apple Reminders. Allow Reminders access in macOS System Settings, then try again.');
+        return false;
+      }
+      await refreshLists();
+      return true;
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not connect Apple Reminders.'); return false; }
     finally { setLoading(false); }
   }, [refreshLists, supported]);
 

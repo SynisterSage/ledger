@@ -53,6 +53,27 @@ test('builds attention and notification plans from authoritative fields', () => 
   assert.ok(circle.structuredConstraints.dueAfter);
 });
 
+test('does not discard ordinary activity for important recent updates', async () => {
+  const question = 'What changed recently? Find important updates across my workspace.';
+  const plan = buildRetrievalPlan(question);
+  assert.deepEqual(plan.primaryResourceTypes, ['activity']);
+  assert.equal(plan.structuredConstraints.attentionOnly, undefined);
+
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    item({
+      resourceType: 'activity',
+      resourceId: 'activity-update',
+      title: 'Workspace item changed',
+      content: 'A workspace item was updated.',
+      updatedAt: '2026-08-18T10:00:00Z',
+    }),
+  ]);
+  const result = await retrieval.retrieve('workspace-a', question, [], 8, { plan });
+  assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['activity-update']);
+});
+
 test('builds a team workload plan across teams, people, and open work', () => {
   const plan = buildRetrievalPlan('How are my teamspaces? Does anyone in my circle have tasks?');
   assert.deepEqual(plan.primaryResourceTypes, ['team', 'person', 'task', 'milestone', 'reminder', 'event', 'project']);

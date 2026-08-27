@@ -1,6 +1,6 @@
 import { type CSSProperties, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, ChevronDown, Funnel, MoreHorizontal } from 'lucide-react';
+import { Bell, ChevronDown, Funnel, Trash2 } from 'lucide-react';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from './ModuleWindowHeader';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -47,7 +47,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const { activeWorkspaceId } = useWorkspaceContext();
   const { workspaceShellLayout } = useSidebar();
   const api = useApi();
-  const isWindows = window.desktopWindow?.platform === 'win32';
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [askConversationActive, setAskConversationActive] = useState(false);
@@ -55,7 +54,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const [askSessionTitle, setAskSessionTitle] = useState('Ask Ledger');
   const [recentSessions, setRecentSessions] = useState<AskLedgerSession[]>([]);
   const [selectedAskSession, setSelectedAskSession] = useState<AskLedgerSession | null>(null);
-  const [openSessionMenu, setOpenSessionMenu] = useState<string | null>(null);
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const conversationMenuRef = useRef<HTMLDivElement>(null);
   const conversationMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -190,7 +188,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     setAskInitialContext(null);
     setAskConversationActive(false);
     setAskSessionTitle('Ask Ledger');
-    setOpenSessionMenu(null);
     setConversationMenuOpen(false);
     setAskResetKey((key) => key + 1);
     updateAskRoute('new-tab:browser', 'replace');
@@ -314,7 +311,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   }, [conversationMenuOpen]);
 
   const openAskSession = async (session: AskLedgerSession) => {
-    setOpenSessionMenu(null);
     let restoredSession = session;
     if (activeWorkspaceId) {
       try {
@@ -333,7 +329,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
 
   const deleteAskSession = async (session: AskLedgerSession) => {
     if (!activeWorkspaceId) return;
-    setOpenSessionMenu(null);
     const routeSessionId = new URLSearchParams(window.location.search).get('focusContext')?.startsWith('ask-session:')
       ? new URLSearchParams(window.location.search).get('focusContext')?.slice('ask-session:'.length)
       : null;
@@ -469,8 +464,7 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
                           <span className="block truncate text-sm text-[var(--ledger-text-primary)]">{session.title || 'Ask Ledger conversation'}</span>
                           <span className="mt-0.5 block text-xs text-[var(--ledger-text-muted)]">{sessionAge(session.updatedAt)}</span>
                         </button>
-                        <button type="button" aria-label={`More actions for ${session.title || 'conversation'}`} onClick={(event) => { event.stopPropagation(); setOpenSessionMenu((current) => current === session.id ? null : session.id); }} className="mr-1 rounded-md p-1.5 text-[var(--ledger-text-muted)] opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"><MoreHorizontal size={15} /></button>
-                        {openSessionMenu === session.id && <div className="absolute right-2 top-10 z-30 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] p-1 shadow-lg"><button type="button" onClick={() => void deleteAskSession(session)} className="rounded-md px-3 py-1.5 text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]">Delete conversation</button></div>}
+                        <button type="button" aria-label={`Delete ${session.title || 'conversation'}`} onClick={(event) => { event.stopPropagation(); void deleteAskSession(session); }} className="mr-1 shrink-0 rounded-md p-1.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"><Trash2 size={15} /></button>
                       </div>
                     ))}
                   </div>
@@ -509,26 +503,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
         showWorkspaceNavigation
       />
       <main className={`web-new-tab-content relative min-h-0 flex-1 bg-[var(--ledger-background)] ${isBrowser ? 'overflow-auto' : 'overflow-hidden'}`}>
-        {!askConversationActive && <div aria-hidden="true" className="pointer-events-none sticky top-0 z-0 h-0 overflow-visible">
-          <div className="absolute left-0 top-0 h-screen w-full overflow-hidden">
-            <div
-              className="ledger-new-tab-atmosphere absolute inset-0"
-              style={{
-                background: [
-                  ...(isWindows
-                    ? [
-                        'radial-gradient(ellipse 125% 56% at 50% 148%, var(--ledger-new-tab-atmosphere), transparent 100%)',
-                        'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
-                      ]
-                    : [
-                        'radial-gradient(ellipse 68% 42% at 50% 145%, var(--ledger-new-tab-atmosphere), transparent 86%)',
-                        'linear-gradient(to top, var(--ledger-new-tab-atmosphere), transparent 88%)',
-                      ]),
-                ].join(', '),
-              }}
-            />
-          </div>
-        </div>}
         <div className={`web-new-tab-body relative z-10 mx-auto flex w-full max-w-[700px] flex-col px-5 pb-16 sm:px-6 ${askConversationActive ? 'h-full min-h-0 pt-5' : 'min-h-full justify-center'}`}>
           <div className={`relative z-10 w-full ${askConversationActive ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
             {!isBrowser && !askConversationActive && (

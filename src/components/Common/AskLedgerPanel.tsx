@@ -461,6 +461,7 @@ const emptyStateExamples = [
   { title: 'What changed recently?', description: 'Find important updates across your workspace.', icon: CalendarDays, prompt: 'What changed recently? Find important updates across my workspace.' },
   { title: 'Prepare me for a meeting', description: 'Pull together relevant notes, tasks, and context.', icon: FileText, prompt: 'Prepare me for a meeting. Pull together relevant notes, tasks, and context.' },
 ];
+const ASK_LEDGER_EXAMPLES_HIDDEN = 'ledger:ask-ledger:examples-hidden:v1';
 
 const deriveSessionTitle = (question: string) => {
   const value = question.trim().replace(/[?!.]+$/, '');
@@ -682,6 +683,13 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const latestMessageRef = useRef<HTMLElement | null>(null);
   const [question, setQuestion] = useState('');
+  const [showEmptyStateExamples, setShowEmptyStateExamples] = useState(() => {
+    try {
+      return window.localStorage.getItem(ASK_LEDGER_EXAMPLES_HIDDEN) !== 'true';
+    } catch {
+      return true;
+    }
+  });
   const [state, setState] = useState<AskLedgerState>({ status: 'idle' });
   const [generationPhrase, setGenerationPhrase] = useState<string>(GENERATION_PHRASES[0]);
   const stateRef = useRef<AskLedgerState>({ status: 'idle' });
@@ -2491,9 +2499,27 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           </div>
         </div>
       </div>
-      {!conversationActive && !meetingChat && (
+      {!conversationActive && !meetingChat && showEmptyStateExamples && (
         <section className="mt-7" aria-labelledby="ask-ledger-examples-heading">
-          <h2 id="ask-ledger-examples-heading" className="mb-2 px-1 text-xs font-medium text-[var(--ledger-text-muted)]">Get started with some examples</h2>
+          <div className="mb-2 flex items-center justify-between gap-3 px-1">
+            <h2 id="ask-ledger-examples-heading" className="text-xs font-medium text-[var(--ledger-text-muted)]">Get started with some examples</h2>
+            <button
+              type="button"
+              aria-label="Hide examples"
+              title="Hide examples"
+              onClick={() => {
+                setShowEmptyStateExamples(false);
+                try {
+                  window.localStorage.setItem(ASK_LEDGER_EXAMPLES_HIDDEN, 'true');
+                } catch {
+                  // Storage is optional; the examples can still be hidden for this session.
+                }
+              }}
+              className="rounded-md p-1 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+            >
+              <X size={14} />
+            </button>
+          </div>
           <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
             {emptyStateExamples.map(({ title, description, icon: Icon, prompt }) => (
               <button

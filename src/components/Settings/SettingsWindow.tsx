@@ -32,7 +32,6 @@ import {
   Monitor,
   Wind,
   Plus,
-  Hash,
   Info,
   Inbox,
   MoreHorizontal,
@@ -158,6 +157,7 @@ type WorkspaceInvitation = {
   role: 'admin' | 'member';
   status: 'pending' | 'accepted' | 'expired';
   expires_at: string;
+  accepted_at?: string | null;
   token?: string | null;
   invited_by?: string;
   created_by?: string;
@@ -174,6 +174,17 @@ type WorkspaceTeam = {
   assignedCount: number;
   milestoneCount: number;
   archivedAt?: string | null;
+};
+
+type WorkspaceAuditLog = {
+  id: string;
+  actor_user_id?: string | null;
+  actor_name?: string | null;
+  action: string;
+  target_type?: string | null;
+  target_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
 };
 
 type SlackIntegrationStatus = {
@@ -282,6 +293,9 @@ type SettingsSectionId =
   | 'sessions'
   | 'workspace'
   | 'members'
+  | 'teams'
+  | 'security_audit'
+  | 'data_privacy'
   | 'calendar'
   | 'notifications'
   | 'integrations'
@@ -290,9 +304,10 @@ type SettingsSectionId =
   | 'accessibility'
   | 'meeting_notes'
   | 'local_ai'
+  | 'developer_api'
   | 'speaker_tags'
   | 'report_bug';
-type SettingsNavGroupId = 'account' | 'workspace' | 'preferences';
+type SettingsNavGroupId = 'account' | 'workspace' | 'developer' | 'preferences';
 
 type SettingsNavSection = {
   id: SettingsSectionId;
@@ -368,6 +383,37 @@ const settingsNavGroups: Array<{
         label: 'Members & access',
         description: 'Workspace members, roles, and invites',
         icon: ListTree,
+      },
+      {
+        id: 'teams',
+        label: 'Teams',
+        description: 'Teams, membership, and team work',
+        icon: ListTree,
+      },
+      {
+        id: 'security_audit',
+        label: 'Security & audit',
+        description: 'Workspace access and activity history',
+        icon: Shield,
+      },
+      {
+        id: 'data_privacy',
+        label: 'Data & privacy',
+        description: 'Retention, exports, and workspace data',
+        icon: HardDrive,
+      },
+    ],
+  },
+  {
+    id: 'developer',
+    label: 'Developer',
+    icon: Globe2,
+    sections: [
+      {
+        id: 'developer_api',
+        label: 'Developer & API',
+        description: 'Extension tokens and AI connections',
+        icon: Globe2,
       },
     ],
   },
@@ -449,6 +495,9 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
     section === 'sessions' ||
     section === 'workspace' ||
     section === 'members' ||
+    section === 'teams' ||
+    section === 'security_audit' ||
+    section === 'data_privacy' ||
     section === 'calendar' ||
     section === 'notifications' ||
     section === 'integrations' ||
@@ -457,6 +506,7 @@ const isSettingsSection = (value: string | null | undefined): value is SettingsS
     section === 'accessibility' ||
     section === 'meeting_notes' ||
     section === 'local_ai'
+    || section === 'developer_api'
     || section === 'speaker_tags'
     || section === 'report_bug'
   );
@@ -504,20 +554,22 @@ const shortcutSections: Array<{
     id: 'sidebar',
     title: 'Sidebar',
     shortcuts: [
-      { keys: '⌘ + ⇧ + B', description: 'hide / show sidebar' },
+      { keys: '⌘/Ctrl + ⇧ + B', description: 'hide / show sidebar (desktop)' },
+      { keys: '⌘/Ctrl + ⇧ + E', description: 'expand sidebar or click the ^ control' },
+      { keys: '⌘/Ctrl + ⇧ + C', description: 'collapse sidebar' },
       {
         keys: '⌘/Ctrl + ⇧ + H',
         description: 'toggle side panels in Notes, Calendar, and Projects',
       },
-      { keys: '⌘/Ctrl + ⇧ + L', description: 'hide / show all Ledger windows' },
-      { keys: '⌘ + B', description: 'collapse / expand' },
+      { keys: '⌘/Ctrl + ⇧ + L', description: 'hide / show all Ledger windows (desktop)' },
     ],
   },
   {
     id: 'search',
     title: 'Search',
     shortcuts: [
-      { keys: '⌘ + K', description: 'search everything' },
+      { keys: '⌘/Ctrl + K', description: 'search everything' },
+      { keys: '⌘/Ctrl + F', description: 'find on the current page or module' },
       { keys: 'Esc', description: 'close search' },
       { keys: '↑ ↓ Arrow keys', description: 'navigate results' },
       { keys: 'Enter', description: 'jump to result' },
@@ -527,28 +579,43 @@ const shortcutSections: Array<{
     id: 'navigation',
     title: 'Navigation',
     shortcuts: [
-      { keys: '⌘/Ctrl + ⌥/Alt + 1', description: 'overview' },
-      { keys: '⌘/Ctrl + ⌥/Alt + 2', description: 'calendar' },
-      { keys: '⌘/Ctrl + ⌥/Alt + 3', description: 'notes' },
-      { keys: '⌘/Ctrl + ⌥/Alt + 4', description: 'projects' },
-      { keys: '⌘/Ctrl + ⌥/Alt + 5', description: 'settings' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 1', description: 'open overview (desktop)' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 2', description: 'open calendar (desktop)' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 3', description: 'open notes (desktop)' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 4', description: 'open projects (desktop)' },
+      { keys: '⌘/Ctrl + ⌥/Alt + 5', description: 'open settings (desktop)' },
       { keys: '⌘/Ctrl + ⇧ + M', description: 'switch workspace' },
     ],
   },
   {
-    id: 'general',
-    title: 'General',
+    id: 'tabs',
+    title: 'Tabs',
     shortcuts: [
-      { keys: '⌘ + ,', description: 'open settings' },
-      { keys: '⌘ + ?', description: 'show this help' },
+      { keys: '⌘/Ctrl + T', description: 'open a new tab' },
+      { keys: '⌘/Ctrl + W', description: 'close the active tab' },
+      { keys: '⌘/Ctrl + Tab', description: 'switch to the next tab' },
+      { keys: '⌘/Ctrl + ⇧ + Tab', description: 'switch to the previous tab' },
+      { keys: '⌘/Ctrl + 1–9', description: 'switch to a tab by number' },
     ],
   },
   {
-    id: 'mouse-actions',
-    title: 'Mouse Actions',
+    id: 'notes',
+    title: 'Notes and editors',
     shortcuts: [
-      { keys: 'Click logo', description: 'collapse / expand' },
-      { keys: 'Hold logo', description: 'shut down app' },
+      { keys: '⌘/Ctrl + S', description: 'save the current note' },
+      { keys: '⌘/Ctrl + K', description: 'add or edit a link for selected text' },
+      { keys: '⌘/Ctrl + Z', description: 'undo in the mind map editor' },
+      { keys: '⌘/Ctrl + ⇧ + Z', description: 'redo in the mind map editor' },
+      { keys: '⌘/Ctrl + Enter', description: 'save a focused multiline edit' },
+    ],
+  },
+  {
+    id: 'ask-ledger',
+    title: 'Ask Ledger',
+    shortcuts: [
+      { keys: 'Enter', description: 'send the current message' },
+      { keys: 'Shift + Enter', description: 'insert a new line' },
+      { keys: 'Esc', description: 'cancel an active response' },
     ],
   },
 ];
@@ -833,9 +900,11 @@ const SettingsGroup = ({ children }: { children: ReactNode }) => (
   <div className={settingsTheme.sectionRows}>{children}</div>
 );
 
-const SettingsDangerGroup = ({ children }: { children: ReactNode }) => (
+const SettingsDangerGroup = ({ children, title, description }: { children: ReactNode; title?: string; description?: string }) => (
   <div className="mt-7 rounded-xl border border-[color:rgba(217,45,32,0.18)] bg-[color:rgba(217,45,32,0.025)] p-4">
-    {children}
+    {title ? <p className={settingsTheme.sectionTitle}>{title}</p> : null}
+    {description ? <p className={settingsTheme.sectionStatus + ' mt-1'}>{description}</p> : null}
+    <div className={title || description ? 'mt-4' : undefined}>{children}</div>
   </div>
 );
 
@@ -912,6 +981,14 @@ const makeTeamIdentifier = (value: string) => {
     .toUpperCase();
 };
 
+const getTeamInitials = (value: string) => {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 'T';
+  return words.length === 1
+    ? words[0].slice(0, 2).toUpperCase()
+    : words.slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+};
+
 export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSectionId } = {}) => {
   const platform = usePlatform();
   const { user, profile, signOut, refreshProfile } = useAuthContext();
@@ -970,7 +1047,18 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       workspaceId: activeWorkspaceId,
       page: 'settings',
       scope: 'workspace',
-      section: section === 'meeting_notes' ? 'meeting-notes' : section === 'local_ai' ? 'local-ai' : section,
+      section:
+        section === 'meeting_notes'
+          ? 'meeting-notes'
+          : section === 'local_ai'
+            ? 'local-ai'
+            : section === 'security_audit'
+              ? 'security-audit'
+              : section === 'data_privacy'
+                ? 'data-privacy'
+                : section === 'developer_api'
+                  ? 'developer-api'
+                  : section,
     });
   };
 
@@ -1309,6 +1397,9 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [workspaceInvitations, setWorkspaceInvitations] = useState<WorkspaceInvitation[]>([]);
   const [workspaceTeams, setWorkspaceTeams] = useState<WorkspaceTeam[]>([]);
+  const [workspaceAuditLogs, setWorkspaceAuditLogs] = useState<WorkspaceAuditLog[]>([]);
+  const [isLoadingWorkspaceAudit, setIsLoadingWorkspaceAudit] = useState(false);
+  const [workspaceAuditError, setWorkspaceAuditError] = useState<string | null>(null);
   const [workspaceUserRole, setWorkspaceUserRole] = useState<WorkspaceRole>('member');
   const [isLoadingWorkspaceAdmin, setIsLoadingWorkspaceAdmin] = useState(false);
   const [workspaceAdminError, setWorkspaceAdminError] = useState<string | null>(null);
@@ -2367,6 +2458,29 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const canUseWorkspaceIntegrations = workspaceUserRole !== 'viewer';
 
   useEffect(() => {
+    if (activeSection !== 'security_audit' || !activeWorkspaceId || !canManageWorkspace) return;
+    let cancelled = false;
+    setIsLoadingWorkspaceAudit(true);
+    setWorkspaceAuditError(null);
+    void api
+      .getWorkspaceAuditLog(activeWorkspaceId)
+      .then((payload) => {
+        if (cancelled) return;
+        const logs = (payload as { logs?: WorkspaceAuditLog[] })?.logs;
+        setWorkspaceAuditLogs(Array.isArray(logs) ? logs : []);
+      })
+      .catch((error) => {
+        if (!cancelled) setWorkspaceAuditError(error instanceof Error ? error.message : 'Could not load the audit log');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingWorkspaceAudit(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, activeWorkspaceId, api, canManageWorkspace]);
+
+  useEffect(() => {
     if (!openMcpConnectionMenuId) return;
     const handlePointerDown = (event: PointerEvent) => {
       if (event.target instanceof Element && !event.target.closest('[data-mcp-menu]')) {
@@ -2584,7 +2698,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
 
   useEffect(() => {
     if (
-      (activeSection !== 'workspace' && activeSection !== 'members') ||
+      (activeSection !== 'workspace' && activeSection !== 'members' && activeSection !== 'teams') ||
       !activeWorkspaceId
     )
       return;
@@ -2796,7 +2910,60 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     }
   };
 
+  const handleClearInvitationHistory = async () => {
+    if (!activeWorkspaceId || !canManageWorkspace) return;
+    const historicalCount = workspaceInvitations.filter((invite) => invite.status !== 'pending').length;
+    if (!historicalCount || !window.confirm(`Clear ${historicalCount} accepted or expired invite${historicalCount === 1 ? '' : 's'} from this list?`)) return;
+
+    setWorkspaceAdminError(null);
+    setInvitationActionId('history');
+    try {
+      await api.clearWorkspaceInvitationHistory(activeWorkspaceId);
+      setWorkspaceInvitations((current) => current.filter((invite) => invite.status === 'pending'));
+      if (inviteModal && workspaceInvitations.find((invite) => invite.id === inviteModal.id)?.status !== 'pending') {
+        setInviteModal(null);
+      }
+    } catch (err) {
+      setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not clear invite history');
+    } finally {
+      setInvitationActionId(null);
+    }
+  };
+
+  const handleDeleteInvitation = async (invite: WorkspaceInvitation) => {
+    if (!activeWorkspaceId || !canManageWorkspace) return;
+    const action = invite.status === 'pending' ? 'revoke' : 'clear';
+    const label = invite.invited_email || 'this invite';
+    if (!window.confirm(`${action === 'revoke' ? 'Revoke' : 'Clear'} ${label} ${action === 'revoke' ? 'invitation' : 'from invite history'}?`)) return;
+
+    setWorkspaceAdminError(null);
+    setInvitationActionId(invite.id);
+    try {
+      if (action === 'revoke') {
+        await api.revokeWorkspaceInvitation(activeWorkspaceId, invite.id);
+      } else {
+        await api.clearWorkspaceInvitationHistoryItem(activeWorkspaceId, invite.id);
+      }
+      setWorkspaceInvitations((current) => current.filter((item) => item.id !== invite.id));
+      if (inviteModal?.id === invite.id) setInviteModal(null);
+    } catch (err) {
+      setWorkspaceAdminError(err instanceof Error ? err.message : `Could not ${action} invitation`);
+    } finally {
+      setInvitationActionId(null);
+    }
+  };
+
   const openWorkspaceTeamSettings = (teamId: string) => {
+    if (platform.kind === 'web' && activeWorkspaceId) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'team',
+        teamId,
+        settings: true,
+      });
+      return;
+    }
     void window.desktopWindow?.openModule('teams', {
       kind: 'teams',
       focusContext: `team-settings:${teamId}`,
@@ -2804,6 +2971,15 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   };
 
   const openTeamWorkPage = (teamId: string) => {
+    if (platform.kind === 'web' && activeWorkspaceId) {
+      platform.navigation.openRoute({
+        kind: 'workspace',
+        workspaceId: activeWorkspaceId,
+        page: 'team',
+        teamId,
+      });
+      return;
+    }
     void window.desktopWindow?.openModule('teams', {
       kind: 'teams',
       focusContext: `team:${teamId}`,
@@ -3441,15 +3617,17 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 </section>
               )}
 
-              {(activeSection === 'workspace' || activeSection === 'members') && (
+              {(activeSection === 'workspace' || activeSection === 'members' || activeSection === 'teams') && (
                 <section className="w-full max-w-215" aria-labelledby="settings-workspace">
                   <div className="space-y-2">
                     <h2 id="settings-workspace" className={settingsTheme.pageTitle}>
-                      {activeSection === 'members' ? 'Members & access' : 'Workspace'}
+                      {activeSection === 'members' ? 'Members & access' : activeSection === 'teams' ? 'Teams' : 'Workspace'}
                     </h2>
                     <p className={settingsTheme.pageSubtitle}>
                       {activeSection === 'members'
                         ? 'Manage who can access this workspace and what they can do.'
+                        : activeSection === 'teams'
+                          ? 'Organize people and work into focused teams.'
                         : activeWorkspace?.is_personal
                           ? 'Manage workspace identity and defaults.'
                           : 'Manage workspace identity, defaults, and lifecycle.'}
@@ -3627,44 +3805,44 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                                     </p>
                                   </div>
                                 </div>
-                                <select
-                                  value={member.is_owner ? 'owner' : member.role}
-                                  onChange={(e) =>
-                                    void handleUpdateMemberRole(
-                                      member.user_id,
-                                      e.target.value as 'admin' | 'member' | 'viewer'
-                                    )
-                                  }
-                                  disabled={!canEditRole || memberActionId === member.user_id}
-                                  className={
-                                    settingsTheme.inputSecondary +
-                                    ' h-8 w-full appearance-none rounded-lg px-2 pr-8 text-xs md:w-auto'
-                                  }
-                                  style={selectChevronStyle}
-                                  aria-label={`Update ${displayName} role`}
-                                >
-                                  {member.is_owner ? (
-                                    <option value="owner">owner</option>
-                                  ) : (
-                                    <>
-                                      <option value="admin">admin</option>
-                                      <option value="member">member</option>
-                                      <option value="viewer">viewer</option>
-                                    </>
-                                  )}
-                                </select>
-                                <button
-                                  onClick={() => void handleRemoveMember(member.user_id)}
-                                  disabled={
-                                    !canManageWorkspace ||
-                                    member.is_owner ||
-                                    member.user_id === user?.id ||
-                                    memberActionId === member.user_id
-                                  }
-                                  className={settingsTheme.controlButtonNeutral + ' rounded-lg'}
-                                >
-                                  Remove
-                                </button>
+                                {!member.is_owner ? (
+                                  <select
+                                    value={member.role}
+                                    onChange={(e) =>
+                                      void handleUpdateMemberRole(
+                                        member.user_id,
+                                        e.target.value as 'admin' | 'member' | 'viewer'
+                                      )
+                                    }
+                                    disabled={!canEditRole || memberActionId === member.user_id}
+                                    className={
+                                      settingsTheme.inputSecondary +
+                                      ' h-8 w-full appearance-none rounded-lg px-2 pr-8 text-xs md:w-auto'
+                                    }
+                                    style={selectChevronStyle}
+                                    aria-label={`Update ${displayName} role`}
+                                  >
+                                    <option value="admin">admin</option>
+                                    <option value="member">member</option>
+                                    <option value="viewer">viewer</option>
+                                  </select>
+                                ) : null}
+                                {!member.is_owner ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleRemoveMember(member.user_id)}
+                                    disabled={
+                                      !canManageWorkspace ||
+                                      member.user_id === user?.id ||
+                                      memberActionId === member.user_id
+                                    }
+                                    aria-label={`Remove ${displayName} from workspace`}
+                                    title="Remove member"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[color:rgba(217,45,32,0.08)] hover:text-[var(--ledger-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 disabled:opacity-50"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                ) : null}
                               </div>
                             );
                           })
@@ -3775,14 +3953,26 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       )}
 
                       <div className="mt-4 border-t border-[color:var(--ledger-border-subtle)] pt-4">
-                        <p
-                          className={settingsTheme.rowMuted.replace(
-                            'text-xs',
-                            'text-xs font-medium'
+                        <div className="flex items-center justify-between gap-3">
+                          <p
+                            className={settingsTheme.rowMuted.replace(
+                              'text-xs',
+                              'text-xs font-medium'
+                            )}
+                          >
+                            Recent invites
+                          </p>
+                          {workspaceInvitations.some((invite) => invite.status !== 'pending') && (
+                            <button
+                              type="button"
+                              onClick={() => void handleClearInvitationHistory()}
+                              disabled={!canManageWorkspace || invitationActionId === 'history'}
+                              className={settingsTheme.controlButtonNeutral + ' rounded-lg px-2.5 text-xs'}
+                            >
+                              {invitationActionId === 'history' ? 'Clearing...' : 'Clear'}
+                            </button>
                           )}
-                        >
-                          Recent invites
-                        </p>
+                        </div>
                         <div className={settingsTheme.sectionRows}>
                           {isLoadingWorkspaceAdmin ? (
                             <div aria-label="Loading invitations" role="status">
@@ -3806,32 +3996,28 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             </div>
                           ) : (
                             workspaceInvitations.map((invite) => (
-                              <div
-                                key={invite.id}
-                                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3"
-                              >
+                              <div key={invite.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium text-[var(--ledger-text-primary)]">
                                     {invite.invited_email}
                                   </p>
                                   <p className="text-xs text-[var(--ledger-text-muted)]">
-                                    {invite.role} · {invite.status}
+                                    {invite.role} · {invite.status} · {new Date(invite.accepted_at ?? invite.created_at).toLocaleDateString([], {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric',
+                                    })}
                                   </p>
                                 </div>
-                                <p className="text-[11px] text-[var(--ledger-text-muted)]">
-                                  {new Date(invite.expires_at).toLocaleDateString([], {
-                                    month: 'short',
-                                    day: 'numeric',
-                                  })}
-                                </p>
                                 <button
-                                  onClick={() => setInviteModal({ id: invite.id })}
-                                  disabled={!canManageWorkspace}
-                                  className={
-                                    settingsTheme.controlButtonNeutral + ' rounded-lg px-2'
-                                  }
+                                  type="button"
+                                  onClick={() => void handleDeleteInvitation(invite)}
+                                  disabled={!canManageWorkspace || invitationActionId === invite.id}
+                                  aria-label={`${invite.status === 'pending' ? 'Revoke' : 'Clear'} invitation for ${invite.invited_email}`}
+                                  title={invite.status === 'pending' ? 'Revoke invitation' : 'Clear from history'}
+                                  className="rounded-lg p-2 text-[var(--ledger-text-muted)] transition hover:bg-[color:rgba(217,45,32,0.08)] hover:text-[var(--ledger-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20 disabled:opacity-50"
                                 >
-                                  Manage
+                                  <Trash2 size={16} />
                                 </button>
                               </div>
                             ))
@@ -3840,7 +4026,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       </div>
                     </section>
 
-                    {false && (
+                    </>
+                    )}
+
+                    {activeSection === 'teams' && (
                     <section
                       className={settingsTheme.sectionShell}
                       aria-labelledby="settings-teams"
@@ -3866,11 +4055,12 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       </div>
 
                       <div className="mt-5 overflow-hidden rounded-[20px] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
-                        <div className="grid grid-cols-[minmax(0,1fr)_120px_96px_120px] gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-xs font-medium text-[var(--ledger-text-muted)]">
+                        <div className="grid grid-cols-[minmax(220px,1fr)_90px_90px_100px_100px] gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 text-xs font-medium text-[var(--ledger-text-muted)]">
                           <div>Name</div>
                           <div>Members</div>
                           <div>Assigned</div>
-                          <div className="text-right">Identifier</div>
+                          <div>Identifier</div>
+                          <div className="text-right">Actions</div>
                         </div>
                         {workspaceTeams.length === 0 ? (
                           <div className="flex min-h-40 items-center justify-center px-4 py-8 text-center">
@@ -3902,18 +4092,18 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             return (
                               <div
                                 key={team.id}
-                                className="grid grid-cols-[minmax(0,1fr)_120px_96px_120px_auto] items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
+                                className="grid grid-cols-[minmax(220px,1fr)_90px_90px_100px_100px] items-center gap-3 border-b border-[color:var(--ledger-border-subtle)] px-4 py-3 last:border-b-0 hover:bg-[var(--ledger-surface-hover)]"
                               >
                                 <button
                                   type="button"
                                   onClick={() => openTeamWorkPage(team.id)}
-                                  className="flex min-w-0 items-center gap-3 text-left"
-                                >
+                                    className="flex min-w-0 items-center gap-3 text-left"
+                                  >
                                   <span
-                                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+                                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-semibold text-white shadow-sm"
                                     style={{ backgroundColor: team.color || '#FF5F40' }}
                                   >
-                                    <Hash size={14} />
+                                    {getTeamInitials(team.name)}
                                   </span>
                                   <span className="min-w-0">
                                     <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">
@@ -3931,23 +4121,18 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                                 <div className="text-sm text-[var(--ledger-text-secondary)]">
                                   {team.assignedCount} assigned
                                 </div>
-                                <div className="text-right font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
+                                <div className="truncate font-mono text-xs font-semibold text-[var(--ledger-text-muted)]">
                                   {team.identifier}
                                 </div>
                                 <div className="flex items-center justify-end gap-1">
                                   <button
                                     type="button"
-                                    onClick={() => openTeamWorkPage(team.id)}
-                                    className={settingsTheme.controlButton}
-                                  >
-                                    Open
-                                  </button>
-                                  <button
-                                    type="button"
                                     onClick={() => openWorkspaceTeamSettings(team.id)}
-                                    className={settingsTheme.controlButton}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                                    aria-label={`Open settings for ${team.name}`}
+                                    title="Team settings"
                                   >
-                                    Settings
+                                    <Settings size={15} />
                                   </button>
                                   <button
                                     type="button"
@@ -3975,7 +4160,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                                         );
                                       }
                                     }}
-                                    className={settingsTheme.controlButton}
+                                    className="inline-flex h-8 items-center rounded-lg px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                                     disabled={!canManageWorkspace}
                                   >
                                     {isArchived ? 'Restore' : 'Archive'}
@@ -4004,11 +4189,12 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                                         );
                                       }
                                     }}
-                                    className={settingsTheme.dangerButton}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-muted)] transition hover:bg-[color:rgba(217,45,32,0.08)] hover:text-[var(--ledger-danger)] disabled:opacity-50"
                                     disabled={!canManageWorkspace}
                                     title="Delete team"
+                                    aria-label={`Delete ${team.name}`}
                                   >
-                                    Delete
+                                    <Trash2 size={15} />
                                   </button>
                                 </div>
                               </div>
@@ -4017,8 +4203,6 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         )}
                       </div>
                     </section>
-                    )}
-                      </>
                     )}
 
                     {activeSection === 'workspace' && (
@@ -4157,6 +4341,96 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                   </div>
                 </section>
               )}
+              {activeSection === 'security_audit' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-security-audit">
+                  <div className="space-y-2">
+                    <h2 id="settings-security-audit" className={settingsTheme.pageTitle}>Security & audit</h2>
+                    <p className={settingsTheme.pageSubtitle}>Review workspace access and important administrative activity.</p>
+                    <p className={settingsTheme.pageStatus} role="status">{workspaceAuditError || (canManageWorkspace ? 'Showing the latest workspace activity.' : 'Admin access is required to view this history.')}</p>
+                  </div>
+                  {canManageWorkspace && (
+                    <section className={settingsTheme.sectionShell + ' mt-8'} aria-labelledby="workspace-audit-history">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <h3 id="workspace-audit-history" className={settingsTheme.sectionTitle}>Activity history</h3>
+                          <p className={settingsTheme.sectionStatus + ' mt-1'}>Administrative changes and connected-service activity for this workspace.</p>
+                        </div>
+                        <Shield size={16} className="shrink-0 text-[var(--ledger-text-muted)]" aria-hidden="true" />
+                      </div>
+                      <div className={settingsTheme.sectionRows + ' mt-4'}>
+                        {isLoadingWorkspaceAudit ? (
+                          <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">Loading activity…</div>
+                        ) : workspaceAuditLogs.length === 0 ? (
+                          <div className="px-4 py-4 text-sm text-[var(--ledger-text-muted)]">No audit activity has been recorded yet.</div>
+                        ) : workspaceAuditLogs.map((log) => (
+                          <div key={log.id} className="flex items-start gap-3 px-4 py-3">
+                            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]"><Shield size={14} /></span>
+                            <div className="min-w-0 flex-1">
+                              <p className={settingsTheme.label}>{String(log.action || 'Workspace activity').replace(/[._-]/g, ' ')}</p>
+                              <p className={settingsTheme.help}>{log.actor_name || 'Ledger'}{log.target_type ? ` · ${String(log.target_type).replace(/[._-]/g, ' ')}` : ''}</p>
+                            </div>
+                            <time className="shrink-0 text-right text-[11px] text-[var(--ledger-text-muted)]" dateTime={log.created_at}>{new Date(log.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</time>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                </section>
+              )}
+
+              {activeSection === 'data_privacy' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-data-privacy">
+                  <div className="space-y-2">
+                    <h2 id="settings-data-privacy" className={settingsTheme.pageTitle}>Data & privacy</h2>
+                    <p className={settingsTheme.pageSubtitle}>Control how Ledger stores and removes workspace data.</p>
+                    <p className={settingsTheme.pageStatus} role="status">Changes save automatically where a control is available.</p>
+                  </div>
+                  <div className="mt-8 flex flex-col gap-8">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="data-retention">
+                      <h3 id="data-retention" className={settingsTheme.sectionTitle}>Meeting recordings</h3>
+                      <div className={settingsTheme.sectionRows + ' mt-4'}>
+                        <SettingsRow label="Default audio retention" help="Audio is deleted only after transcript storage succeeds.">
+                          <select value={meetingDefaultRetention} onChange={(event) => setMeetingDefaultRetention(event.target.value as typeof meetingDefaultRetention)} className={preferenceSelectClassName} style={selectChevronStyle}>
+                            <option value="delete_after_transcription">Delete after transcription</option>
+                            <option value="retain">Retain until deleted</option>
+                          </select>
+                        </SettingsRow>
+                        <SettingsRow label="Connected data" help="Manage external services and their access to this workspace.">
+                          <button type="button" onClick={() => selectSettingsSection('integrations')} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Open integrations</button>
+                        </SettingsRow>
+                      </div>
+                    </section>
+                    <SettingsDangerGroup title="Workspace data" description="Deleting a workspace permanently removes its Ledger data and cannot be undone.">
+                      <button type="button" onClick={() => { if (activeWorkspace && workspaceUserRole === 'owner') openWorkspaceDeleteModal(); }} disabled={!activeWorkspace || workspaceUserRole !== 'owner'} className={settingsTheme.dangerButton}>Delete workspace</button>
+                    </SettingsDangerGroup>
+                  </div>
+                </section>
+              )}
+
+              {activeSection === 'developer_api' && (
+                <section className="w-full max-w-215" aria-labelledby="settings-developer-api">
+                  <div className="space-y-2">
+                    <h2 id="settings-developer-api" className={settingsTheme.pageTitle}>Developer & API</h2>
+                    <p className={settingsTheme.pageSubtitle}>Manage the credentials and connected AI clients that can work with Ledger.</p>
+                  </div>
+                  <div className="mt-8 flex flex-col gap-8">
+                    <section className={settingsTheme.sectionShell} aria-labelledby="developer-extension">
+                      <h3 id="developer-extension" className={settingsTheme.sectionTitle}>Browser extension</h3>
+                      <div className={settingsTheme.sectionRows + ' mt-4'}>
+                        <SettingsRow label="Extension token" help={extensionTokenStatus?.exists ? 'The extension can capture links, selected text, and quick notes.' : 'Generate a token to connect the Ledger browser extension.'}>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {extensionTokenStatus?.exists ? <><button type="button" onClick={() => setExtensionTokenConfirmAction('regenerate')} disabled={isExtensionTokenBusy || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Regenerate</button><button type="button" onClick={() => setExtensionTokenConfirmAction('revoke')} disabled={isExtensionTokenBusy || !canUseWorkspaceIntegrations} className={settingsTheme.dangerButton}>Revoke</button></> : <button type="button" onClick={() => void handleGenerateExtensionToken()} disabled={isExtensionTokenBusy || !canUseWorkspaceIntegrations} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{isExtensionTokenBusy ? 'Generating…' : 'Generate token'}</button>}
+                          </div>
+                        </SettingsRow>
+                        <SettingsRow label="MCP connections" help={activeMcpConnections.length ? `${activeMcpConnections.length} active connection${activeMcpConnections.length === 1 ? '' : 's'} for this workspace.` : 'No active AI connections for this workspace.'}>
+                          <button type="button" onClick={() => selectSettingsSection('integrations')} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Manage connections</button>
+                        </SettingsRow>
+                      </div>
+                    </section>
+                  </div>
+                </section>
+              )}
+
               {activeSection === 'calendar' && (
                 <section className="w-full max-w-215" aria-labelledby="settings-calendar">
                   <div className="space-y-2">
@@ -5868,7 +6142,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 <section className="w-full max-w-215" aria-labelledby="settings-shortcuts">
                   <SettingsPageHeader
                     id="settings-shortcuts"
-                    title="Keyboard Shortcuts"
+                    title="Keyboard shortcuts"
                     description="Quick reference for actions."
                   />
 

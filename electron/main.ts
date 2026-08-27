@@ -1592,8 +1592,8 @@ ipcMain.handle('ask-ledger:local-ai-remove', (_event, role: unknown) => {
 
 function appleCalendarBridgePath() {
   return app.isPackaged
-    ? path.join(process.resourcesPath, 'AppleCalendarBridge')
-    : path.join(app.getAppPath(), 'native', 'AppleCalendarBridge');
+    ? path.join(process.resourcesPath, 'AppleCalendarBridge.app', 'Contents', 'MacOS', 'AppleCalendarBridge')
+    : path.join(app.getAppPath(), 'native', 'AppleCalendarBridge.app', 'Contents', 'MacOS', 'AppleCalendarBridge');
 }
 
 function zoomAccessibilityBridgePath() {
