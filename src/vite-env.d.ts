@@ -261,6 +261,7 @@ interface Window {
     cancelLocalAIDownload: (role: 'generation' | 'embedding') => Promise<unknown>;
     removeLocalAI: (role: 'generation' | 'embedding') => Promise<unknown>;
     onLocalAIStatus: (listener: (event: unknown) => void) => () => void;
+    onModelDownloadComplete: (listener: (event: unknown) => void) => () => void;
     onGenerationRuntimeState: (listener: (event: unknown) => void) => () => void;
     start: (payload: {
       requestId?: string;

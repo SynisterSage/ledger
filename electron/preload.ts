@@ -1143,6 +1143,11 @@ contextBridge.exposeInMainWorld('askLedger', {
     ipcRenderer.on('ask-ledger:local-ai-status', wrapped);
     return () => ipcRenderer.off('ask-ledger:local-ai-status', wrapped);
   },
+  onModelDownloadComplete(listener: (event: unknown) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on('ask-ledger:model-download-complete', wrapped);
+    return () => ipcRenderer.off('ask-ledger:model-download-complete', wrapped);
+  },
   onGenerationRuntimeState(listener: (event: unknown) => void) {
     const wrapped = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload);
     ipcRenderer.on('ask-ledger:generation-runtime-state', wrapped);

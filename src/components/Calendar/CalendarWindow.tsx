@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   BellRing,
   ClipboardPaste,
   CalendarPlus,
@@ -947,6 +948,7 @@ export const CalendarWindow = ({
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [, setIsSyncingApple] = useState(false);
   const [appleSubscriptionUrl, setAppleSubscriptionUrl] = useState<string | null>(null);
+  const [isConnectedCalendarsExpanded, setIsConnectedCalendarsExpanded] = useState(true);
   const [isCalendarSubscriptionModalOpen, setIsCalendarSubscriptionModalOpen] = useState(false);
   const [isLoadingCalendarSubscription, setIsLoadingCalendarSubscription] = useState(false);
   const [isSavingCalendarSubscription, setIsSavingCalendarSubscription] = useState(false);
@@ -5508,9 +5510,15 @@ export const CalendarWindow = ({
               {appleCalendar.supported && (
                 <div className="mb-5 border-t border-[color:var(--ledger-border-subtle)] pt-4">
                   <div className="mb-3 flex items-center justify-between gap-2">
-                    <h2 className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                      Connected calendars
-                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => setIsConnectedCalendarsExpanded((current) => !current)}
+                      className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:text-[var(--ledger-text-primary)]"
+                      aria-expanded={isConnectedCalendarsExpanded}
+                    >
+                      {isConnectedCalendarsExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      <span>Connected calendars</span>
+                    </button>
                     {appleCalendar.connected || appleReminders.connected ? (
                       <button
                         type="button"
@@ -5545,26 +5553,23 @@ export const CalendarWindow = ({
                       </button>
                     )}
                   </div>
-                  {appleCalendar.connected || appleReminders.connected ? (
+                  {isConnectedCalendarsExpanded && (appleCalendar.connected || appleReminders.connected) ? (
                     <div className="space-y-2">
                       {appleCalendar.connected && (
                         <>
-                          <div className="flex items-center justify-between">
-                            <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                              Apple Calendar{' '}
-                              <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">
-                                Connected
+                          <div className="rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/45 px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-card)]">
+                                <img src={`${import.meta.env.BASE_URL}apple.svg`} alt="" className="h-3.5 w-3.5 dark:invert" />
                               </span>
-                            </p>
-                            {appleCalendar.syncStatus === 'syncing' ? (
-                              <span className="text-[10px] text-[var(--ledger-text-muted)]">
-                                Syncing…
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[11px] font-medium text-[var(--ledger-text-primary)]">Apple Calendar</p>
+                                <p className="text-[10px] text-[var(--ledger-text-muted)]">Connected</p>
+                              </div>
+                              <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                {appleCalendar.syncStatus === 'syncing' ? 'Syncing…' : appleCalendar.syncStatus === 'synced' ? 'Up to date' : 'Ready'}
                               </span>
-                            ) : appleCalendar.syncStatus === 'synced' ? (
-                              <span className="text-[10px] text-[var(--ledger-text-muted)]">
-                                Up to date
-                              </span>
-                            ) : null}
+                            </div>
                           </div>
                           {appleCalendar.connectedCalendars.map((calendar) => (
                             <div
@@ -5601,12 +5606,20 @@ export const CalendarWindow = ({
                       )}
                       {appleReminders.connected && (
                         <>
-                          <p className="pt-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                            Apple Reminders{' '}
-                            <span className="ml-1 font-normal text-[var(--ledger-text-secondary)]">
-                              Connected
-                            </span>
-                          </p>
+                          <div className="rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/45 px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-card)]">
+                                <img src={`${import.meta.env.BASE_URL}apple.svg`} alt="" className="h-3.5 w-3.5 dark:invert" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-[11px] font-medium text-[var(--ledger-text-primary)]">Apple Reminders</p>
+                                <p className="text-[10px] text-[var(--ledger-text-muted)]">Connected</p>
+                              </div>
+                              <span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">
+                                {appleReminders.syncStatus === 'syncing' ? 'Syncing…' : appleReminders.syncStatus === 'synced' ? 'Up to date' : 'Ready'}
+                              </span>
+                            </div>
+                          </div>
                           {appleReminders.connectedLists.map((list) => (
                             <div
                               key={list.id}
@@ -5639,7 +5652,20 @@ export const CalendarWindow = ({
                 </div>
               )}
 
-              {error && <p className="mt-4 text-xs text-[var(--ledger-danger)]">{error}</p>}
+              {error && (
+                <div className="mt-4 flex items-start gap-2 text-xs text-[var(--ledger-danger)]">
+                  <p className="min-w-0 flex-1">{error}</p>
+                  {(appleCalendar.permission === 'denied' || appleCalendar.permission === 'restricted') && (
+                    <button
+                      type="button"
+                      onClick={() => void window.appleCalendar?.openSystemSettings()}
+                      className="shrink-0 underline"
+                    >
+                      Open System Settings
+                    </button>
+                  )}
+                </div>
+              )}
             </aside>
 
             <div

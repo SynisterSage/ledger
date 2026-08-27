@@ -109,6 +109,9 @@ export const useAppleCalendar = (userId: string | undefined, start: Date, end: D
       }
       if (status.status !== 'granted') {
         setError('Ledger does not have access to Apple Calendar. Allow Calendar access in macOS System Settings, then try again.');
+        // EventKit permission prompts can be suppressed for a nested helper in
+        // a packaged app. Give the user the recovery path immediately.
+        void window.appleCalendar.openSystemSettings().catch(() => undefined);
         return false;
       }
       await refreshCalendars();

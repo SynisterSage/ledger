@@ -121,6 +121,7 @@ let ledgerUpdateState: LedgerUpdateState = {
   status: 'idle',
   currentVersion: app.getVersion(),
 };
+let ledgerUpdateCheckPromise: Promise<LedgerUpdateState> | null = null;
 
 const sendLedgerUpdateState = () => {
   BrowserWindow.getAllWindows().forEach((window) => {
@@ -140,6 +141,10 @@ const setLedgerUpdateState = (state: Partial<LedgerUpdateState>) => {
 const configureLedgerUpdater = () => {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
+  // GitHub releases are currently published as prereleases while Ledger is
+  // in beta. electron-updater defaults this to false for a stable app version,
+  // which makes a valid prerelease look like there is no update.
+  autoUpdater.allowPrerelease = true;
 
   autoUpdater.on('checking-for-update', () =>
     setLedgerUpdateState({ status: 'checking', error: undefined })
@@ -188,6 +193,7 @@ const configureLedgerUpdater = () => {
 };
 
 const checkForLedgerUpdate = async () => {
+  if (ledgerUpdateCheckPromise) return ledgerUpdateCheckPromise;
   if (!app.isPackaged) {
     setLedgerUpdateState({
       status: 'unavailable',
@@ -195,16 +201,23 @@ const checkForLedgerUpdate = async () => {
     });
     return ledgerUpdateState;
   }
+  ledgerUpdateCheckPromise = (async () => {
+    try {
+      setLedgerUpdateState({ status: 'checking', error: undefined });
+      await autoUpdater.checkForUpdates();
+    } catch (error) {
+      setLedgerUpdateState({
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return ledgerUpdateState;
+  })();
   try {
-    setLedgerUpdateState({ status: 'checking', error: undefined });
-    await autoUpdater.checkForUpdates();
-  } catch (error) {
-    setLedgerUpdateState({
-      status: 'error',
-      error: error instanceof Error ? error.message : String(error),
-    });
+    return await ledgerUpdateCheckPromise;
+  } finally {
+    ledgerUpdateCheckPromise = null;
   }
-  return ledgerUpdateState;
 };
 
 const downloadLedgerUpdate = async () => {
@@ -268,10 +281,45 @@ localAIService.onGenerationRuntimeState((state) => {
       window.webContents.send('ask-ledger:generation-runtime-state', state);
   });
 });
+const localAIInstalledState = new Map<string, boolean>();
+let whisperInstalledState = localTranscriptionService.modelStatus().installed;
+localAIAssets.status().generationModels && Object.entries(localAIAssets.status().generationModels).forEach(([modelId, status]) => {
+  localAIInstalledState.set(`generation:${modelId}`, status.installed);
+});
+localAIInstalledState.set('embedding', localAIAssets.status().embedding.installed);
+
+function broadcastLocalAIDownloadComplete(payload: { modelType: 'generation' | 'embedding' | 'whisper'; label: string }) {
+  // Completion toasts belong exclusively to the primary Ledger IPC workspace
+  // window. The sidebar may also host a download entry point, but it must
+  // never render this toast in compact, expanded, or any other sidebar state.
+  if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) {
+    workspaceModuleWin.webContents.send('ask-ledger:model-download-complete', payload);
+  }
+}
+
 localAIAssets.onChange((status) => {
   BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed()) window.webContents.send('ask-ledger:local-ai-status', status);
   });
+  Object.entries(status.generationModels).forEach(([modelId, modelStatus]) => {
+    const key = `generation:${modelId}`;
+    const wasInstalled = localAIInstalledState.get(key) ?? false;
+    if (!wasInstalled && modelStatus.installed && !modelStatus.downloading && !modelStatus.verifying) {
+      broadcastLocalAIDownloadComplete({ modelType: 'generation', label: modelStatus.displayName });
+    }
+    localAIInstalledState.set(key, modelStatus.installed);
+  });
+  const embeddingWasInstalled = localAIInstalledState.get('embedding') ?? false;
+  if (!embeddingWasInstalled && status.embedding.installed && !status.embedding.downloading && !status.embedding.verifying) {
+    broadcastLocalAIDownloadComplete({ modelType: 'embedding', label: status.embedding.displayName });
+  }
+  localAIInstalledState.set('embedding', status.embedding.installed);
+});
+localTranscriptionService.modelManager.onChange((status) => {
+  if (!whisperInstalledState && status.installed && !status.downloading) {
+    broadcastLocalAIDownloadComplete({ modelType: 'whisper', label: status.label });
+  }
+  whisperInstalledState = status.installed;
 });
 
 const desktopDeviceIdPath = () => path.join(app.getPath('userData'), 'ledger-device-id');

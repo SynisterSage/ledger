@@ -99,6 +99,7 @@ export const useAppleReminders = (userId: string | undefined, start: Date, end: 
       }
       if (status.status !== 'granted') {
         setError('Ledger does not have access to Apple Reminders. Allow Reminders access in macOS System Settings, then try again.');
+        void window.appleReminders.openSystemSettings().catch(() => undefined);
         return false;
       }
       await refreshLists();

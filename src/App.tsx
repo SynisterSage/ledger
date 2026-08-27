@@ -10895,6 +10895,7 @@ function App() {
         <NotificationCenterProvider>
           {shouldShowNotificationMonitor ? <NotificationMonitor /> : null}
           {user && isModuleWindow && moduleKind === 'notes' ? <TranscriptionFailureToast /> : null}
+          {user ? <LocalAIModelDownloadToast /> : null}
           {user && !isModuleWindow ? <MeetingAutoStopToast /> : null}
           <AuthSessionToastReset />
           {mcpScopeUpgradeSession && mcpScopeUpgradeCode && user ? (
@@ -10926,6 +10927,26 @@ function App() {
       </ToastProvider>
     </SearchProvider>
   );
+}
+
+function LocalAIModelDownloadToast() {
+  const toast = useToast();
+
+  useEffect(() => {
+    const unsubscribe = window.askLedger?.onModelDownloadComplete((value) => {
+      const event = value as { modelType?: unknown; label?: unknown } | null;
+      const label = String(event?.label ?? '').trim() || 'Local AI model';
+      const modelType = event?.modelType === 'whisper' ? 'Whisper transcription model' : label;
+      toast.show(`${modelType} is ready`, {
+        detail: 'You can use it from anywhere in Ledger.',
+        variant: 'success',
+        duration: 5000,
+      });
+    });
+    return () => unsubscribe?.();
+  }, [toast]);
+
+  return null;
 }
 
 function TranscriptionFailureToast() {

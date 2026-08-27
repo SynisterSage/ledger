@@ -18,6 +18,8 @@
       releaseType: 'prerelease',
     },
   ],
+  afterPack: 'scripts/sign-apple-calendar-bridge.mjs',
+  afterSign: 'scripts/verify-apple-calendar-bridge.mjs',
   // Never ship a macOS build with ad-hoc signing. The audio helper must be
   // signed under the same Developer ID team as Ledger.app for TCC access.
   forceCodeSigning: true,
@@ -28,19 +30,15 @@
   mac: {
     target: ['dmg'],
     identity: 'ALEXANDER RAY FERGUSON (CAY3N8J725)',
-    // Use the native macOS iconset so Finder/Dock receive transparent
-    // rounded artwork instead of rasterizing the square PNG canvas.
-    icon: 'public/logo.icns',
+    // Use the shared opaque white rounded artwork so Finder/Dock do not add a
+    // gray backing to the transparent logo.
+    icon: 'public/app-icon.png',
     entitlements: 'entitlements.mac.plist',
     entitlementsInherit: 'entitlements.mac.plist',
     notarize: {
       teamId: 'CAY3N8J725',
     },
-    binaries: [
-      'native/AppleCalendarBridge.app/Contents/MacOS/AppleCalendarBridge',
-      'native/LedgerAudioCaptureBridge',
-      'native/ZoomAccessibilityBridge',
-    ],
+    binaries: ['native/LedgerAudioCaptureBridge', 'native/ZoomAccessibilityBridge'],
     extraResources: [
       { from: 'native', to: '.', filter: ['AppleCalendarBridge.app/**/*', 'LedgerAudioCaptureBridge', 'ZoomAccessibilityBridge', 'whisper-cli', 'whisper-server'] },
       { from: 'native/local-ai-runtime', to: 'local-ai-runtime' },
@@ -56,6 +54,7 @@
     },
   },
   win: {
+    icon: 'public/app-icon.ico',
     target: [
       {
         target: 'nsis',

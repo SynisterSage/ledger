@@ -18,7 +18,6 @@ import {
   Download,
   HardDrive,
   Loader2,
-  Minimize2,
   PanelLeft,
   Plug2,
   Settings,
@@ -79,6 +78,7 @@ import { GoogleDriveIntegrationPage } from './GoogleDriveIntegrationPage';
 import { GithubIntegrationCard } from './GithubIntegrationCard';
 import { GithubIntegrationPage } from './GithubIntegrationPage';
 import { AppleCalendarConnection } from '../Calendar/AppleCalendarConnection';
+import { AppleIntegrationPage } from './AppleIntegrationPage';
 import { usePlatform } from '../../platform';
 
 type RenderingMode = 'auto' | 'high_quality' | 'compatibility';
@@ -1166,8 +1166,6 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     bytesDownloaded?: number;
     error?: string | null;
   } | null>(null);
-  const [isMeetingModelDownloadOpen, setIsMeetingModelDownloadOpen] = useState(false);
-  const [isMeetingModelDownloadMinimized, setIsMeetingModelDownloadMinimized] = useState(false);
   const [isMeetingModelDeleteModalOpen, setIsMeetingModelDeleteModalOpen] = useState(false);
   const [isDeletingMeetingModel, setIsDeletingMeetingModel] = useState(false);
   useEffect(() => {
@@ -1198,7 +1196,6 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     void window.meetingTranscription.modelStatus().then((status) => {
       const next = status as typeof meetingModelStatus;
       setMeetingModelStatus(next);
-      if (next?.downloading) setIsMeetingModelDownloadMinimized(true);
     }).catch(() => setMeetingModelStatus(null));
   }, [activeSection]);
   useEffect(() => {
@@ -1206,10 +1203,6 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     return window.meetingTranscription.onModelChange((event) => {
       const next = event as typeof meetingModelStatus;
       setMeetingModelStatus(next);
-      if (next?.installed && !next.downloading) {
-        setIsMeetingModelDownloadOpen(false);
-        setIsMeetingModelDownloadMinimized(false);
-      }
     });
   }, []);
   useEffect(() => {
@@ -1221,25 +1214,19 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   };
   const startMeetingModelDownload = async () => {
     if (!window.meetingTranscription) return;
-    setIsMeetingModelDownloadOpen(true);
-    setIsMeetingModelDownloadMinimized(false);
     try {
       const status = await window.meetingTranscription.downloadModel();
       const next = status as typeof meetingModelStatus;
       setMeetingModelStatus(next);
-      if (next?.installed) setIsMeetingModelDownloadOpen(false);
     } catch {
       const status = await window.meetingTranscription.modelStatus().catch(() => null);
       setMeetingModelStatus(status as typeof meetingModelStatus);
-      setIsMeetingModelDownloadMinimized(false);
     }
   };
   const cancelMeetingModelDownload = async () => {
     if (!window.meetingTranscription) return;
     const status = await window.meetingTranscription.cancelModelDownload();
     setMeetingModelStatus(status as typeof meetingModelStatus);
-    setIsMeetingModelDownloadOpen(false);
-    setIsMeetingModelDownloadMinimized(false);
   };
   const handleDeleteMeetingModel = async () => {
     if (!window.meetingTranscription) return;
@@ -1450,6 +1437,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [mcpScopeActionId, setMcpScopeActionId] = useState<string | null>(null);
   const [isMcpConnectionsExpanded, setIsMcpConnectionsExpanded] = useState(false);
   const [mcpDetailOpen, setMcpDetailOpen] = useState(false);
+  const [appleCalendarDetailOpen, setAppleCalendarDetailOpen] = useState(false);
+  const [appleRemindersDetailOpen, setAppleRemindersDetailOpen] = useState(false);
   const [expandedMcpConnectionId, setExpandedMcpConnectionId] = useState<string | null>(null);
   const [openMcpConnectionMenuId, setOpenMcpConnectionMenuId] = useState<string | null>(null);
   const [openTeamActionMenuId, setOpenTeamActionMenuId] = useState<string | null>(null);
@@ -3045,6 +3034,16 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     }
   };
 
+  const openAppleIntegrationManagement = (kind: 'calendar' | 'reminders') => {
+    setGithubDetailOpen(false);
+    setFigmaDetailOpen(false);
+    setSlackDetailOpen(false);
+    setGoogleDriveDetailOpen(false);
+    setMcpDetailOpen(false);
+    setAppleCalendarDetailOpen(kind === 'calendar');
+    setAppleRemindersDetailOpen(kind === 'reminders');
+  };
+
   const openTeamWorkPage = (teamId: string) => {
     if (platform.kind === 'web' && activeWorkspaceId) {
       platform.navigation.openRoute({
@@ -3528,8 +3527,8 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
 
                   <div className="mt-8 space-y-4">
                     <div className={settingsTheme.sectionRows}>
-                      <div className="space-y-4">
-                        <label htmlFor="settings-bug-title" className={settingsTheme.label}>
+                      <div>
+                        <label htmlFor="settings-bug-title" className={settingsTheme.label + ' block'}>
                           Short summary
                         </label>
                         <input
@@ -3538,11 +3537,11 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           onChange={(event) => setBugReportTitle(event.target.value)}
                           placeholder="What went wrong?"
                           maxLength={200}
-                          className={settingsTheme.input}
+                          className={settingsTheme.input + ' mt-3'}
                         />
                       </div>
-                      <div className="space-y-4">
-                        <label htmlFor="settings-bug-description" className={settingsTheme.label}>
+                      <div>
+                        <label htmlFor="settings-bug-description" className={settingsTheme.label + ' block'}>
                           What happened?
                         </label>
                         <textarea
@@ -3552,7 +3551,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           placeholder="Include the steps that led to the problem and what you expected to happen."
                           maxLength={10000}
                           rows={7}
-                          className="w-full resize-y rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
+                          className="mt-3 w-full resize-y rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2.5 text-sm text-[var(--ledger-text-primary)] outline-none transition placeholder:text-[var(--ledger-placeholder)] focus:border-[color:var(--ledger-border-strong)] focus:ring-4 focus:ring-[color:var(--ledger-surface-hover)]/60"
                         />
                       </div>
                     </div>
@@ -5441,6 +5440,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                   onBack={closeGoogleDriveManagement}
                   onStatusChange={(next) => setGoogleDriveStatus(next)}
                 />
+              ) : activeSection === 'integrations' && appleCalendarDetailOpen ? (
+                <AppleIntegrationPage userId={user?.id} kind="calendar" onBack={() => setAppleCalendarDetailOpen(false)} />
+              ) : activeSection === 'integrations' && appleRemindersDetailOpen ? (
+                <AppleIntegrationPage userId={user?.id} kind="reminders" onBack={() => setAppleRemindersDetailOpen(false)} />
               ) : activeSection === 'integrations' && mcpDetailOpen ? (
                 <section className="w-full max-w-215" aria-labelledby="settings-mcp">
                   <div className="flex items-start justify-between gap-4">
@@ -5496,7 +5499,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                       </h3>
                       <div className={settingsTheme.sectionRows}>
                         <div className="!p-0">
-                          <AppleCalendarConnection userId={user?.id} />
+                          <AppleCalendarConnection userId={user?.id} onManageCalendar={() => openAppleIntegrationManagement('calendar')} onManageReminders={() => openAppleIntegrationManagement('reminders')} />
                         </div>
                         <div className="flex items-center gap-3 px-4 py-2.5">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]" aria-hidden="true"><FigmaMark /></span>
@@ -5748,15 +5751,23 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         const protectedModel = model.tier === 'fast';
                         return (
                           <div key={model.id} className={`flex items-center gap-3 px-4 py-4 transition ${active ? 'bg-[var(--ledger-surface-hover)]/45' : 'hover:bg-[var(--ledger-surface-hover)]/35'}`}>
-                            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${active ? 'border-[color:var(--ledger-accent)]/40 bg-[color:var(--ledger-accent)]/10 text-[var(--ledger-accent)]' : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'}`}><HardDrive size={16} aria-hidden="true" /></span>
+                            {!model.downloading && <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${active ? 'border-[color:var(--ledger-accent)]/40 bg-[color:var(--ledger-accent)]/10 text-[var(--ledger-accent)]' : 'border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'}`}><HardDrive size={16} aria-hidden="true" /></span>}
                             <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <p className={settingsTheme.rowLabel}>{localAISettingsTierLabels[model.tier]} · {model.displayName}</p>
-                                {active && <span className="rounded-full bg-[color:var(--ledger-accent)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--ledger-accent)]">In use</span>}
-                                {protectedModel && !installed && <span className="rounded-full bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
-                              </div>
-                              <p className={settingsTheme.rowMuted}>{model.downloading || model.verifying ? (model.description || 'Local generation model') : installed ? 'Installed locally on this device' : `${model.description || 'Local generation model'} · ${formatLocalAIModelSize(model.expectedSize)}`}</p>
-                              {model.downloading || model.verifying ? <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">{model.verifying ? 'Verifying…' : `Downloading ${model.progressPercent ?? 0}% · ${formatLocalAIModelSize(model.expectedSize)}`}</p> : null}
+                              {model.downloading ? <>
+                                <p className={settingsTheme.rowLabel}>Model not installed</p>
+                                <p className={settingsTheme.help}>Downloading {model.progressPercent ?? 0}% · {formatLocalAIModelSize(model.expectedSize)}</p>
+                                <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]" role="progressbar" aria-label={`Downloading ${localAISettingsTierLabels[model.tier]} model`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, model.progressPercent ?? 0))}>
+                                  <div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.max(0, model.progressPercent ?? 0))}%` }} />
+                                </div>
+                              </> : <>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <p className={settingsTheme.rowLabel}>{localAISettingsTierLabels[model.tier]} · {model.displayName}</p>
+                                  {active && <span className="rounded-full bg-[color:var(--ledger-accent)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--ledger-accent)]">In use</span>}
+                                  {protectedModel && !installed && <span className="rounded-full bg-[var(--ledger-surface-muted)] px-2 py-0.5 text-[10px] text-[var(--ledger-text-muted)]">Required</span>}
+                                </div>
+                                <p className={settingsTheme.rowMuted}>{model.verifying ? (model.description || 'Local generation model') : installed ? 'Installed locally on this device' : `${model.description || 'Local generation model'} · ${formatLocalAIModelSize(model.expectedSize)}`}</p>
+                                {model.verifying ? <p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Verifying…</p> : null}
+                              </>}
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
                               {model.downloading ? (
@@ -5989,7 +6000,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         </div>
                         {window.meetingTranscription && !meetingModelStatus?.installed && (
                           meetingModelStatus?.downloading ? (
-                            <button type="button" onClick={() => { setIsMeetingModelDownloadOpen(true); setIsMeetingModelDownloadMinimized(false); }} className="shrink-0 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)] transition hover:bg-[var(--ledger-surface-hover)]">{`Downloading ${Math.min(100, Math.round(((meetingModelStatus.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus.approximateBytes ?? 1)) * 100))}%`}</button>
+                            <button type="button" onClick={() => void cancelMeetingModelDownload()} className="shrink-0 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--ledger-text-primary)] transition hover:bg-[var(--ledger-surface-hover)]">Cancel</button>
                           ) : (
                             <button type="button" onClick={() => void startMeetingModelDownload()} className="shrink-0 rounded-lg bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]">Install model</button>
                           )
@@ -6230,48 +6241,6 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                   </footer>
                 )}
               </SettingsPage>
-              <ModalOverlay
-                isOpen={isMeetingModelDownloadOpen && !isMeetingModelDownloadMinimized}
-                onClose={() => { if (!meetingModelStatus?.downloading) setIsMeetingModelDownloadOpen(false); }}
-                backdropBorderRadius="inherit"
-                disablePortal
-                manageWindowChrome={false}
-                classNameContainer={`w-full max-w-md ${settingsTheme.modalShell}`}
-              >
-                <div className="flex items-start justify-between gap-4 px-5 pt-5">
-                  <div>
-                    <p className={settingsTheme.rowMuted + ' font-medium'}>Local transcription</p>
-                    <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
-                      {meetingModelStatus?.error && !meetingModelStatus.downloading ? 'Transcription model download failed' : 'Downloading transcription model'}
-                    </h3>
-                  </div>
-                  {meetingModelStatus?.downloading ? (
-                    <button type="button" onClick={() => { setIsMeetingModelDownloadMinimized(true); }} aria-label="Minimize transcription model download" title="Minimize" className="rounded-md p-1.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Minimize2 size={16} strokeWidth={1.8} /></button>
-                  ) : <ModalCloseButton onClick={() => setIsMeetingModelDownloadOpen(false)} ariaLabel="Close transcription model download" />}
-                </div>
-                <div className="border-t border-[color:var(--ledger-border-subtle)] px-5 py-4 text-sm leading-5 text-[var(--ledger-text-secondary)]">
-                  {meetingModelStatus?.error && !meetingModelStatus.downloading ? (
-                    <p>The model was not installed. You can try the download again.</p>
-                  ) : (
-                    <>
-                      <p>This can continue while you use Ledger. Transcription stays on this computer.</p>
-                      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-surface-hover)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(((meetingModelStatus?.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus?.approximateBytes ?? 1)) * 100))}>
-                        <div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]" style={{ width: `${Math.min(100, Math.round(((meetingModelStatus?.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus?.approximateBytes ?? 1)) * 100))}%` }} />
-                      </div>
-                      <p className="mt-2 text-xs tabular-nums text-[var(--ledger-text-muted)]">{formatMeetingModelSize(meetingModelStatus?.bytesDownloaded)} of {formatMeetingModelSize(meetingModelStatus?.approximateBytes)}</p>
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-4">
-                  {meetingModelStatus?.downloading ? <button type="button" onClick={() => void cancelMeetingModelDownload()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Cancel</button> : <button type="button" onClick={() => void startMeetingModelDownload()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]">Try again</button>}
-                </div>
-              </ModalOverlay>
-              {isMeetingModelDownloadMinimized && meetingModelStatus?.downloading ? (
-                <button type="button" onClick={() => { setIsMeetingModelDownloadOpen(true); setIsMeetingModelDownloadMinimized(false); }} className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 py-3 text-left shadow-lg transition hover:border-[color:var(--ledger-accent)]" aria-label="Show transcription model download progress">
-                  <Loader2 size={15} className="animate-spin text-[var(--ledger-accent)]" />
-                  <span className="text-xs font-medium text-[var(--ledger-text-primary)]">Downloading transcription model · {Math.min(100, Math.round(((meetingModelStatus.bytesDownloaded ?? 0) / Math.max(1, meetingModelStatus.approximateBytes ?? 1)) * 100))}%</span>
-                </button>
-              ) : null}
               {isAvatarEditorOpen && user?.id ? (
                 <AvatarEditorModal
                   isOpen={isAvatarEditorOpen}
@@ -6296,10 +6265,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                 manageWindowChrome={false}
                 classNameContainer={`w-full max-w-md ${settingsTheme.modalShell}`}
               >
-                <div className="flex items-start justify-between gap-4 px-5 pt-5">
+                <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-5">
                   <div>
                     <p className={settingsTheme.rowMuted + ' font-medium'}>Local storage</p>
-                    <h3 className="mt-1 text-lg font-semibold text-[var(--ledger-text-primary)]">
+                    <h3 className="mt-2 text-lg font-semibold leading-6 text-[var(--ledger-text-primary)]">
                       Delete the transcription model?
                     </h3>
                   </div>
