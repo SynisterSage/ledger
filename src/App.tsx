@@ -10,7 +10,9 @@ import {
   ChevronUp,
   Check,
   CheckCircle2,
+  CheckSquare2,
   Circle,
+  CircleUserRound,
   Code2,
   Folder,
   FolderKanban,
@@ -31,6 +33,7 @@ import {
   Trash2,
   FileText,
   Sparkles,
+  Milestone,
   Map as MapIcon,
   PanelBottom,
   PanelLeft,
@@ -40,6 +43,9 @@ import {
   Zap,
   UserRound,
   UserCheck,
+  UserPlus,
+  Plug2,
+  Keyboard,
   RefreshCw,
   X,
   Users,
@@ -131,7 +137,7 @@ import {
   clearBrowserInviteContinuation,
   readBrowserInviteContinuation,
 } from './web/browserInviteContinuation';
-import { usePlatform } from './platform';
+import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from './platform';
 import { routeForHome } from './platform/routes';
 const AgentAskLedgerPanel = lazy(() =>
   import('./components/Common/AskLedgerPanel').then((module) => ({
@@ -1625,6 +1631,7 @@ export function DashboardContent({
   const [overviewFocusResult, setOverviewFocusResult] = useState<OverviewFocusResult | null>(null);
   const overviewFocusResultRef = useRef<OverviewFocusResult | null>(null);
   const [overviewFocusRefreshToken, setOverviewFocusRefreshToken] = useState(0);
+  const [overviewTryRotationTick, setOverviewTryRotationTick] = useState(0);
   const overviewFocusRequestRef = useRef(0);
   const overviewFocusSnapshotKeyRef = useRef('');
   overviewFocusResultRef.current = overviewFocusResult;
@@ -1647,6 +1654,12 @@ export function DashboardContent({
     }, 2600);
     return () => window.clearInterval(timer);
   }, [overviewFocusStatus]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setOverviewTryRotationTick((current) => current + 1);
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [inboxCount, setInboxCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
   const [githubAttention, setGithubAttention] = useState<
@@ -4504,6 +4517,38 @@ export function DashboardContent({
       focusContext: 'connect-calendar',
     });
   };
+
+  const openOverviewTryModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
+    if (platform.kind === 'web') {
+      openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
+      return;
+    }
+    void window.desktopWindow?.openModule(kind, focus as any);
+  };
+
+  const overviewTryItems = [
+    { title: 'Connect calendar', icon: CalendarDays, action: openOverviewCalendarConnection },
+    { title: 'Try project roadmap', icon: FolderKanban, action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all' }) },
+    { title: 'Invite a member', icon: UserPlus, action: () => openOverviewTryModule('teams', { focusContext: 'try:invite-member' }) },
+    { title: 'Add a milestone', icon: Milestone, action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all', focusContext: 'try:add-milestone' }) },
+    { title: 'Review unfinished', icon: CheckSquare2, action: () => openOverviewTryModule('dashboard', { focusSection: 'today' }) },
+    { title: 'Install browser extension', icon: Plug2, action: () => openOverviewTryModule('settings', { focusContext: 'integrations' }) },
+    { title: 'Create a meeting note', icon: FileText, action: () => openOverviewTryModule('quick-note') },
+    { title: 'Link a note to a project', icon: Link2, action: () => openOverviewTryModule('projects', { focusSection: 'timeline:all' }) },
+    { title: 'Try long-term tasks', icon: Check, action: () => openOverviewTryModule('quick-task') },
+    { title: 'See all shortcuts', icon: Keyboard, action: () => openOverviewTryModule('settings', { focusContext: 'shortcuts' }) },
+    { title: 'Try a note template', icon: FileText, action: () => openOverviewTryModule('notes', { focusContext: 'try:template' }) },
+    { title: 'Review Intake', icon: Funnel, action: () => openOverviewTryModule('inbox', { focusSection: 'unprocessed' }) },
+    { title: 'Open Circle', icon: CircleUserRound, action: () => openOverviewTryModule('circle', { focusContext: 'overview' }) },
+    { title: 'Create a team meeting note', icon: Users, action: () => openOverviewTryModule('notes', { focusContext: 'try:team-meeting-template' }) },
+  ];
+  const visibleOverviewTryItems = isPersonalWorkspace
+    ? overviewTryItems.filter((item) => !['Invite a member', 'Open Circle', 'Create a team meeting note'].includes(item.title))
+    : overviewTryItems;
+  const overviewTryStart = visibleOverviewTryItems.length
+    ? (Number(todayKey().replace(/-/g, '')) + overviewTryRotationTick) % visibleOverviewTryItems.length
+    : 0;
+  const overviewTryItem = visibleOverviewTryItems[overviewTryStart];
 
   const openOverviewFocusResource = (resource: {
     type: 'task' | 'project' | 'event' | 'note';
@@ -7531,8 +7576,8 @@ export function DashboardContent({
               )}
             </main>
 
-            <aside className="web-dashboard-secondary min-h-0 border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 md:border-l md:border-t-0">
-              <div className="flex h-full min-h-0 flex-col overflow-y-auto pr-0.5">
+            <aside className="web-dashboard-secondary min-h-0 overflow-y-auto border-t border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]/35 p-4 md:border-l md:border-t-0">
+              <div className="flex min-h-full flex-col">
                 {!selectedOverviewRow ? (
                   <>
                     <div className="space-y-4">
@@ -7699,7 +7744,8 @@ export function DashboardContent({
                           onClick={openOverviewRecentNote}
                           className="block w-full border-t border-[color:var(--ledger-border-subtle)] pt-2.5 text-left transition hover:text-[var(--ledger-text-primary)]"
                         >
-                          <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                          <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                            <StickyNote size={11} className="shrink-0" aria-hidden="true" />
                             Recent note
                           </p>
                           <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
@@ -7707,18 +7753,21 @@ export function DashboardContent({
                           </p>
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={openOverviewCalendarConnection}
-                        className="block w-full pt-2 text-left transition hover:text-[var(--ledger-text-primary)]"
-                      >
-                        <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                          Try next
-                        </p>
-                        <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
-                          Connect calendar
-                        </p>
-                      </button>
+                      {overviewTryItem && (
+                        <button
+                          type="button"
+                          onClick={overviewTryItem.action}
+                          className="block w-full pt-2 text-left transition hover:text-[var(--ledger-text-primary)]"
+                        >
+                          <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                            <overviewTryItem.icon size={11} className="shrink-0" aria-hidden="true" />
+                            Try next
+                          </p>
+                          <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                            {overviewTryItem.title}
+                          </p>
+                        </button>
+                      )}
                     </div>
                   </>
                 ) : (

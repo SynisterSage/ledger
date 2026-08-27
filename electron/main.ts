@@ -8653,7 +8653,11 @@ function openModuleWindow(
       moduleWin === workspaceModuleWin &&
       currentSidebarPosition === 'floating' &&
       Boolean(currentFloatingDockTarget);
-    if (!detachedRecord) {
+    // A replacement module can be created before the old BrowserWindow emits
+    // `closed`. Only remove the registry entry if it still points at the
+    // window that is actually closing; otherwise the late cleanup can erase
+    // the replacement and make later navigation appear to do nothing.
+    if (!detachedRecord && moduleWins.get(kind) === moduleWin) {
       moduleWins.delete(kind);
     }
     if (workspaceModuleWin === moduleWin) {
@@ -8662,7 +8666,7 @@ function openModuleWindow(
         stopFloatingDockTracking();
       }
       cancelWorkspaceDockRefresh();
-      if (workspaceModuleKind) {
+      if (workspaceModuleKind && moduleWins.get(workspaceModuleKind) === moduleWin) {
         moduleWins.delete(workspaceModuleKind);
       }
       workspaceModuleWin = null;

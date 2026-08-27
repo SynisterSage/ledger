@@ -394,6 +394,14 @@ export default function SlackWindow({ routeWorkspaceId = null }: SlackWindowProp
   }, [captures, filter]);
 
   const openSettings = () => {
+    if (window.desktopWindow) {
+      void window.desktopWindow.openModule('settings', {
+        kind: 'settings',
+        focusSection: 'integrations',
+        focusContext: 'integration:slack',
+      });
+      return;
+    }
     platform.navigation.openRoute({ kind: 'workspace', workspaceId: workspaceId ?? activeWorkspaceId ?? '', page: 'settings', scope: 'workspace', section: 'integrations' });
   };
 

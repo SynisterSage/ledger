@@ -20,6 +20,19 @@ const moduleForPage = (route: LedgerWorkspaceRoute): LedgerModule => {
   }
 };
 
+const settingsSectionForRoute = (
+  section: Extract<LedgerWorkspaceRoute, { page: 'settings' }>['section']
+) => {
+  switch (section) {
+    case 'security-audit': return 'security_audit';
+    case 'data-privacy': return 'data_privacy';
+    case 'meeting-notes': return 'meeting_notes';
+    case 'local-ai': return 'local_ai';
+    case 'developer-api': return 'developer_api';
+    default: return section;
+  }
+};
+
 const focusForRoute = (route: LedgerWorkspaceRoute): ModuleFocusPayload => {
   switch (route.page) {
     case 'dashboard': return { focusSection: route.query?.section };
@@ -37,7 +50,7 @@ const focusForRoute = (route: LedgerWorkspaceRoute): ModuleFocusPayload => {
     case 'inbox': return { focusInboxId: route.query?.item, focusSection: route.query?.section };
     case 'notifications': return { focusContext: route.query?.item, focusSection: route.query?.filter };
     case 'search': return { focusContext: `search:${route.query.q}` };
-    case 'settings': return { focusContext: route.section };
+    case 'settings': return { focusSection: settingsSectionForRoute(route.section) };
     default: return {};
   }
 };

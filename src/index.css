@@ -15,6 +15,11 @@ body {
   background-color: transparent;
 }
 
+/* Settings actions stay compact and readable at narrow pane widths. */
+.ledger-settings-shell button {
+  white-space: nowrap;
+}
+
 @keyframes ledgerWebShellIn {
   from {
     opacity: 0;

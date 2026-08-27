@@ -757,13 +757,13 @@ const settingsTheme = {
   modalBody: 'border-t border-[color:var(--ledger-border-subtle)]',
   modalFooter: 'border-t border-[color:var(--ledger-border-subtle)]',
   controlButton:
-    'h-8 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'h-8 shrink-0 whitespace-nowrap rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   controlButtonNeutral:
-    'h-8 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
+    'h-8 shrink-0 whitespace-nowrap rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-60',
   primaryButton:
-    'h-9 rounded-[var(--ledger-control-radius)] bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
+    'h-9 shrink-0 whitespace-nowrap rounded-[var(--ledger-control-radius)] bg-[var(--ledger-accent)] px-4 text-sm font-medium text-white transition hover:bg-[var(--ledger-accent-hover)] disabled:opacity-60',
   dangerButton:
-    'h-8 rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50',
+    'h-8 shrink-0 whitespace-nowrap rounded-full border border-[color:rgba(217,45,32,0.18)] bg-[var(--ledger-surface-card)] px-3 text-xs font-medium text-[var(--ledger-danger)] transition hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50',
   sectionCard:
     'mt-2 divide-y divide-[color:var(--ledger-border-subtle)] border-y border-[color:var(--ledger-border-subtle)]',
   radioRow:
@@ -774,7 +774,7 @@ const settingsTheme = {
   help: 'mt-1 block text-xs leading-5 text-[var(--ledger-text-muted)]',
   fieldValue: 'text-sm text-[var(--ledger-text-secondary)]',
   footerButton:
-    'h-9 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
+    'h-9 shrink-0 whitespace-nowrap rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-4 text-sm font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   headerButton:
     'h-9 rounded-[var(--ledger-control-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 text-xs font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]',
   navButton:
@@ -1429,7 +1429,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [figmaStatus, setFigmaStatus] = useState<FigmaIntegrationStatus>({ status: 'disconnected' });
   const [figmaDetailOpen, setFigmaDetailOpen] = useState(false);
   const [githubDetailOpen, setGithubDetailOpen] = useState(false);
-  const [slackDetailOpen, setSlackDetailOpen] = useState(false);
+  const [slackDetailOpen, setSlackDetailOpen] = useState(() => new URLSearchParams(window.location.search).get('focusContext') === 'integration:slack');
   const [googleDriveDetailOpen, setGoogleDriveDetailOpen] = useState(() => window.location.pathname === '/settings/integrations/google-drive');
   const [extensionTokenStatus, setExtensionTokenStatus] = useState<ExtensionTokenStatus | null>(
     null
@@ -1552,6 +1552,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       const focusContext = payload?.focusContext ?? '';
       if (focusContext.startsWith('settings-anchor:')) {
         pendingSettingsAnchorRef.current = focusContext.slice('settings-anchor:'.length);
+      }
+      if (focusContext === 'integration:slack') {
+        setActiveSection('integrations');
+        setSlackDetailOpen(true);
       }
     };
 
@@ -1769,7 +1773,11 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   }, []);
 
   useWorkspaceRouteHistory(
-    { kind: 'settings', focusSection: activeSection },
+    {
+      kind: 'settings',
+      focusSection: activeSection,
+      focusContext: slackDetailOpen ? 'integration:slack' : null,
+    },
     Boolean(activeSection)
   );
 
@@ -3022,6 +3030,21 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     } as any);
   };
 
+  const openSlackManagement = () => {
+    setGithubDetailOpen(false);
+    setFigmaDetailOpen(false);
+    setGoogleDriveDetailOpen(false);
+    setMcpDetailOpen(false);
+    setSlackDetailOpen(true);
+    if (platform.kind !== 'web') {
+      void window.desktopWindow?.openModule('settings', {
+        kind: 'settings',
+        focusSection: 'integrations',
+        focusContext: 'integration:slack',
+      });
+    }
+  };
+
   const openTeamWorkPage = (teamId: string) => {
     if (platform.kind === 'web' && activeWorkspaceId) {
       platform.navigation.openRoute({
@@ -3105,7 +3128,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
 
   return (
     <div
-      className={settingsTheme.shell}
+      className={`${settingsTheme.shell} ledger-settings-shell`}
       style={{
         scrollbarGutter: 'auto',
         ...workspaceShellLayout.workspaceShellStyle,
@@ -5487,10 +5510,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         </div>
                         <div
                           className={`flex items-center gap-3 px-4 py-2.5 ${slackStatus?.connected ? 'cursor-pointer hover:bg-[var(--ledger-surface-hover)]' : ''}`}
-                          onClick={() => { if (slackStatus?.connected) setSlackDetailOpen(true); }}
+                          onClick={() => { if (slackStatus?.connected) openSlackManagement(); }}
                           role={slackStatus?.connected ? 'button' : undefined}
                           tabIndex={slackStatus?.connected ? 0 : undefined}
-                          onKeyDown={(event) => { if (slackStatus?.connected && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSlackDetailOpen(true); } }}
+                          onKeyDown={(event) => { if (slackStatus?.connected && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openSlackManagement(); } }}
                         >
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--ledger-surface-muted)]">
                             <SlackMark />
@@ -5515,7 +5538,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                             <button
                               type="button"
-                              onClick={(event) => { event.stopPropagation(); if (slackStatus?.connected) setSlackDetailOpen(true); else void handleConnectSlack(); }}
+                              onClick={(event) => { event.stopPropagation(); if (slackStatus?.connected) openSlackManagement(); else void handleConnectSlack(); }}
                               disabled={
                                 isConnectingSlack || !activeWorkspaceId || !canManageWorkspace
                               }

@@ -42,6 +42,8 @@ export const MinimizedSidebar = ({
   const normalRailOrderRef = useRef(normalRailOrder);
   const draggedRailItemRef = useRef<NormalRailItemId | null>(null);
   const suppressClickRef = useRef(false);
+  const pendingRailDragRef = useRef<{ itemId: NormalRailItemId; x: number; y: number } | null>(null);
+  const railDragHoldTimerRef = useRef<number | null>(null);
   const railButtonRefs = useRef<Partial<Record<NormalRailItemId, HTMLButtonElement>>>({});
   const platform = usePlatform();
   const toggleModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus = {}) => {
@@ -113,6 +115,14 @@ export const MinimizedSidebar = ({
   const visibleRailOrder = isHorizontal ? [...NORMAL_RAIL_ITEM_IDS] : normalRailOrder;
 
   normalRailOrderRef.current = normalRailOrder;
+
+  useEffect(() => {
+    return () => {
+      if (railDragHoldTimerRef.current !== null) {
+        window.clearTimeout(railDragHoldTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (isHorizontal || !draggedRailItem) return;
@@ -207,14 +217,42 @@ export const MinimizedSidebar = ({
                 onMouseDown={(e) => e.stopPropagation()}
                 onPointerDown={(event) => {
                   if (isHorizontal || !isRailOrderLoaded || event.button !== 0) return;
-                  event.preventDefault();
-                  dragStartOrderRef.current = [...normalRailOrder];
-                  draggedRailItemRef.current = itemId;
+                  pendingRailDragRef.current = { itemId, x: event.clientX, y: event.clientY };
                   suppressClickRef.current = false;
-                  setDraggedRailItem(itemId);
+                  if (railDragHoldTimerRef.current !== null) {
+                    window.clearTimeout(railDragHoldTimerRef.current);
+                  }
+                  railDragHoldTimerRef.current = window.setTimeout(() => {
+                    const pending = pendingRailDragRef.current;
+                    if (!pending || pending.itemId !== itemId) return;
+                    pendingRailDragRef.current = null;
+                    dragStartOrderRef.current = [...normalRailOrderRef.current];
+                    draggedRailItemRef.current = itemId;
+                    suppressClickRef.current = true;
+                    setDraggedRailItem(itemId);
+                    railDragHoldTimerRef.current = null;
+                  }, 180);
+                }}
+                onPointerMove={(event) => {
+                  const pending = pendingRailDragRef.current;
+                  if (!pending || pending.itemId !== itemId) return;
+                  if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < 6) return;
+                  pendingRailDragRef.current = null;
+                  if (railDragHoldTimerRef.current !== null) {
+                    window.clearTimeout(railDragHoldTimerRef.current);
+                    railDragHoldTimerRef.current = null;
+                  }
+                }}
+                onPointerUp={() => {
+                  if (!pendingRailDragRef.current) return;
+                  pendingRailDragRef.current = null;
+                  if (railDragHoldTimerRef.current !== null) {
+                    window.clearTimeout(railDragHoldTimerRef.current);
+                    railDragHoldTimerRef.current = null;
+                  }
                 }}
                 className={`${neutralIcon} select-none ${draggedRailItem === itemId ? 'opacity-50' : ''}`}
-                style={{ touchAction: isHorizontal ? 'auto' : 'none', cursor: isHorizontal ? 'pointer' : 'grab' }}
+                style={{ touchAction: isHorizontal ? 'auto' : 'none', cursor: isHorizontal ? 'pointer' : draggedRailItem ? 'grabbing' : 'pointer' }}
                 title={itemId === 'ask-ledger' ? 'Ask Ledger' : itemId[0].toUpperCase() + itemId.slice(1)}
               >
                 {railItems[itemId]}
