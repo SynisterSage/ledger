@@ -197,13 +197,9 @@ function NotificationsScreen() {
     }
   }, [loadNotifications]);
 
-  useEffect(() => {
-    void loadNotifications();
-  }, [loadNotifications, workspaceState.selectedWorkspaceId]);
-
   useFocusEffect(
     useCallback(() => {
-      void loadNotifications({ silent: true });
+      void loadNotifications({ silent: hasLoadedOnceRef.current });
     }, [loadNotifications]),
   );
 
