@@ -53,7 +53,9 @@ function setup(platform: NodeJS.Platform = 'darwin', includeWindow = true) {
 test('default layout resolves in the expected order', () => {
   assert.deepEqual(DEFAULT_TOUCH_BAR_LAYOUT, [
     { type: 'action', actionId: 'task.create' },
+    { type: 'spacer', spacing: 'compact' },
     { type: 'action', actionId: 'note.create' },
+    { type: 'spacer', spacing: 'compact' },
     { type: 'action', actionId: 'event.create' },
     { type: 'spacer', spacing: 'section' },
     { type: 'action', actionId: 'search.open' },
@@ -78,7 +80,7 @@ test('native layout preserves labels, color, spacer, and action mappings', () =>
 
   assert.deepEqual(
     items.map((item) => (item.kind === 'spacer' ? 'spacer' : item.label)),
-    ['Task', 'Note', 'Event', 'spacer', 'Search']
+    ['Task', 'spacer', 'Note', 'spacer', 'Event', 'spacer', 'Search']
   );
   assert.deepEqual(
     items

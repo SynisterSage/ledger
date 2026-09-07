@@ -37,12 +37,24 @@ import { useSidebar } from '../../context/SidebarContext';
 import { useSearch } from '../../context/SearchContext';
 import { useApi } from '../../hooks/useApi';
 import { useWorkspaceRealtimeRefresh } from '../../hooks/useWorkspaceRealtimeRefresh';
+import { useToast } from '../Common/ToastProvider';
 import { WorkspaceSwitcherMenu } from '../Common/WorkspaceSwitcherMenu';
 import { PinnedSidebarSection } from './PinnedSidebarSection';
 import { sidebarTheme } from './sidebarTheme';
 import { getProjectTypeOption } from '../../utils/projectTypes';
 import { resolveIntakeRouting } from '../../utils/intakeRouting';
-import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from '../../platform';
+import {
+  openLegacyModule,
+  routeForProject,
+  usePlatform,
+  type LegacyModuleFocus,
+  type LegacyModuleKind,
+} from '../../platform';
+import {
+  clearStarterOnboardingReturn,
+  readStarterOnboardingReturn,
+  rememberStarterOnboardingReturn,
+} from '../../utils/starterOnboarding';
 
 type FocusItem = {
   id: string;
@@ -90,6 +102,7 @@ type TodayTask = {
   completed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  starter_key?: string | null;
 };
 type CompletedTodayTask = {
   kind: 'task' | 'reminder';
@@ -354,6 +367,7 @@ export const ExpandedSidebar = ({
   const { openSearch } = useSearch();
   const api = useApi();
   const platform = usePlatform();
+  const toast = useToast();
   const openSidebarModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus & { kind?: string } = {}) => {
     if (previewMode) {
       window.dispatchEvent(new CustomEvent('ledger:preview-route-intent', { detail: { kind, focus } }));
@@ -383,6 +397,22 @@ export const ExpandedSidebar = ({
       kind: 'overlay', workspaceId: activeWorkspaceId, page: action === 'follow-up' ? 'follow-up' : 'capture',
       ...(action === 'follow-up' ? { entityId } : { action, projectId, date }),
     } as any);
+  };
+  const rememberStarterReviewReturn = () => {
+    if (!activeWorkspaceId) return;
+    const reviewTask = workspaceTasks.find(
+      (task) =>
+        task.starter_key?.endsWith(':review') &&
+        task.project_id &&
+        !['completed', 'done', 'cancelled'].includes(String(task.status ?? '').toLowerCase())
+    );
+    if (!reviewTask?.project_id) return;
+    rememberStarterOnboardingReturn({
+      workspaceId: activeWorkspaceId,
+      projectId: reviewTask.project_id,
+      taskId: reviewTask.id,
+      step: 'review',
+    });
   };
   const isHorizontal = position === 'top' || position === 'bottom';
   const getWorkspaceTaskMetadata = () => ({
@@ -1367,6 +1397,7 @@ export const ExpandedSidebar = ({
 
   useEffect(() => {
     const handleOpenCheckin = () => {
+      rememberStarterReviewReturn();
       setIsCheckinExpanded(true);
       window.setTimeout(() => {
         checkinSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1377,7 +1408,19 @@ export const ExpandedSidebar = ({
     return () => {
       if (typeof subscription === 'string') window.ledgerIpc?.events?.offSidebarOpenCheckin(subscription);
     };
-  }, []);
+  }, [activeWorkspaceId, workspaceTasks]);
+
+  useEffect(() => {
+    const handleWebOpenCheckin = () => {
+      rememberStarterReviewReturn();
+      setIsCheckinExpanded(true);
+      window.setTimeout(() => {
+        checkinSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 80);
+    };
+    window.addEventListener('ledger:open-checkin', handleWebOpenCheckin);
+    return () => window.removeEventListener('ledger:open-checkin', handleWebOpenCheckin);
+  }, [activeWorkspaceId, workspaceTasks]);
 
   useEffect(() => {
     if (!todayDockPopoverOpen || !todayDockButtonRef.current) {
@@ -1673,7 +1716,34 @@ export const ExpandedSidebar = ({
       blocked: checkin.blocked,
       firstTaskTomorrow: checkin.firstTaskTomorrow,
     });
-    await saveDaily({ checkin });
+    const saved = await saveDaily({ checkin });
+    if (!saved || !activeWorkspaceId) return;
+
+    try {
+      const pending = readStarterOnboardingReturn();
+      if (
+        pending?.workspaceId !== activeWorkspaceId ||
+        pending.step !== 'review' ||
+        !pending.projectId ||
+        !pending.taskId
+      ) {
+        return;
+      }
+
+      await api.updateTaskInWorkspace(pending.taskId, activeWorkspaceId, {
+        status: 'completed',
+      });
+      clearStarterOnboardingReturn();
+      toast.show('Step complete', {
+        detail: 'Your Daily Check-in is saved and the starter project is updated.',
+        variant: 'success',
+        icon: 'ledger',
+      });
+      platform.navigation.openRoute(routeForProject(activeWorkspaceId, pending.projectId));
+    } catch (error) {
+      console.error('Failed to complete the starter review task:', error);
+      setSaveError('Check-in saved, but the starter step could not be completed.');
+    }
   };
 
   useEffect(() => {
@@ -2646,7 +2716,14 @@ export const ExpandedSidebar = ({
 
           <button
             type="button"
-            onClick={() => window.desktopWindow?.openCheckin()}
+            onClick={() => {
+              rememberStarterReviewReturn();
+              if (window.desktopWindow?.openCheckin) {
+                void window.desktopWindow.openCheckin();
+              } else {
+                window.dispatchEvent(new CustomEvent('ledger:open-checkin'));
+              }
+            }}
             className="inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1.5 text-[13px] transition hover:bg-[var(--ledger-surface-muted)]"
           >
             <span className="text-xs font-medium text-[var(--ledger-text-muted)]">Check-in</span>

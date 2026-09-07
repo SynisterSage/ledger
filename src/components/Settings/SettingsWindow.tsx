@@ -80,6 +80,12 @@ import { GithubIntegrationPage } from './GithubIntegrationPage';
 import { AppleCalendarConnection } from '../Calendar/AppleCalendarConnection';
 import { AppleIntegrationPage } from './AppleIntegrationPage';
 import { usePlatform } from '../../platform';
+import { routeForProject } from '../../platform';
+import { useToast } from '../Common/ToastProvider';
+import {
+  clearStarterOnboardingReturn,
+  readStarterOnboardingReturn,
+} from '../../utils/starterOnboarding';
 
 type RenderingMode = 'auto' | 'high_quality' | 'compatibility';
 
@@ -1008,6 +1014,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     workspaceShellLayout,
   } = useSidebar();
   const api = useApi();
+  const toast = useToast();
   const {
     workspaces,
     activeWorkspace,
@@ -1366,6 +1373,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [workspaceCreateType, setWorkspaceCreateType] = useState<'team' | 'personal'>('team');
   const [showCreateWorkspaceForm, setShowCreateWorkspaceForm] = useState(false);
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [isProvisioningStarterContent, setIsProvisioningStarterContent] = useState(false);
   const [workspaceCreateStatus, setWorkspaceCreateStatus] = useState<string | null>(null);
   const [isWorkspaceManageModalOpen, setIsWorkspaceManageModalOpen] = useState(false);
   const [workspaceEditName, setWorkspaceEditName] = useState('');
@@ -2487,6 +2495,32 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const canManageWorkspace = workspaceUserRole === 'owner' || workspaceUserRole === 'admin';
   const canUseWorkspaceIntegrations = workspaceUserRole !== 'viewer';
 
+  const handleProvisionStarterContent = async () => {
+    if (!activeWorkspaceId || !canManageWorkspace || isProvisioningStarterContent) return;
+    setIsProvisioningStarterContent(true);
+    setWorkspaceStatus(null);
+    try {
+      const result = (await api.provisionWorkspaceStarterContent(activeWorkspaceId)) as {
+        project_id?: string;
+      };
+      window.localStorage.removeItem(`ledger:starter-guide-hidden:${activeWorkspaceId}`);
+      window.localStorage.setItem(`ledger:starter-guide-reopened:${activeWorkspaceId}`, 'true');
+      toast.show('Getting started is ready.', {
+        detail: 'Opening your first Ledger project.',
+        variant: 'success',
+      });
+      if (result.project_id) {
+        platform.navigation.openRoute(routeForProject(activeWorkspaceId, result.project_id));
+      }
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not add getting started content.', {
+        variant: 'error',
+      });
+    } finally {
+      setIsProvisioningStarterContent(false);
+    }
+  };
+
   useEffect(() => {
     if (activeSection !== 'security_audit' || !activeWorkspaceId || !canManageWorkspace) return;
     let cancelled = false;
@@ -2893,6 +2927,33 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
         ? (invitesPayload as { invitations: WorkspaceInvitation[] }).invitations
         : [];
       setWorkspaceInvitations(nextInvites);
+
+      const pending = readStarterOnboardingReturn();
+      if (
+        pending?.workspaceId === activeWorkspaceId &&
+        pending.projectId &&
+        pending.taskId &&
+        pending.step === 'invite'
+      ) {
+        try {
+          await api.updateTaskInWorkspace(pending.taskId, activeWorkspaceId, {
+            status: 'completed',
+          });
+          clearStarterOnboardingReturn();
+          toast.show('Step complete', {
+            detail: 'Your invitation was created and the starter step is complete.',
+            variant: 'success',
+            icon: 'ledger',
+          });
+          platform.navigation.openRoute(routeForProject(activeWorkspaceId, pending.projectId));
+        } catch (completionError) {
+          console.error('Failed to complete the starter invite step:', completionError);
+          toast.show('Invitation created', {
+            detail: 'The starter step could not be marked complete yet.',
+            variant: 'info',
+          });
+        }
+      }
     } catch (err) {
       setWorkspaceAdminError(err instanceof Error ? err.message : 'Could not create invitation');
     } finally {
@@ -3772,6 +3833,36 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                           </div>
                         </div>
                       </div>
+                    </section>
+                    <section
+                      className={settingsTheme.sectionShell}
+                      aria-labelledby="settings-getting-started"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <h3 id="settings-getting-started" className={settingsTheme.sectionTitle}>
+                            Get to know Ledger
+                          </h3>
+                          <p className={settingsTheme.sectionStatus}>
+                            Open a short, real-work walkthrough for this workspace.
+                          </p>
+                        </div>
+                        {canManageWorkspace ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleProvisionStarterContent()}
+                            disabled={isProvisioningStarterContent}
+                            className={settingsTheme.primaryButton + ' shrink-0 rounded-lg'}
+                          >
+                            {isProvisioningStarterContent ? 'Preparing…' : 'Explore Ledger'}
+                          </button>
+                        ) : null}
+                      </div>
+                      <p className="mt-4 max-w-2xl text-sm leading-6 text-[var(--ledger-text-secondary)]">
+                        Ledger will add a small getting-started project with next actions for capture,
+                        planning, follow-through, and review, then open it for you. Nothing is added
+                        automatically to an existing workspace.
+                      </p>
                     </section>
                     <section
                       className={settingsTheme.sectionShell}

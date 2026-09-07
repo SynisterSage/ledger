@@ -224,6 +224,11 @@ export const BlockHandlePlugin = ({
   };
   const runLedgerAction = (action?: SelectedContentAction) => {
     if (!action || !noteId) return;
+    // A block action can be launched while the native drag lifecycle is still
+    // settling. Clear the insertion guide so it cannot remain over the editor
+    // after the action modal opens or the block is converted.
+    setDragKey(null);
+    setDropKey(null);
     let payload: Parameters<SelectedContentAction>[0] | null = null;
     editor.update(() => {
       const node = $getNodeByKey(hovered.key);

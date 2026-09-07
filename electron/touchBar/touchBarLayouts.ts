@@ -72,7 +72,9 @@ export const spacer = (spacing: TouchBarSpacing = 'standard'): TouchBarSpacerDef
 
 export const DEFAULT_TOUCH_BAR_LAYOUT = [
   action('task.create'),
+  spacer('compact'),
   action('note.create'),
+  spacer('compact'),
   action('event.create'),
   spacer('section'),
   action('search.open'),
@@ -96,9 +98,13 @@ const PROJECTS_DETAIL_LAYOUT = [
   spacer('standard'),
   { type: 'popover', label: 'Project Lens', icon: 'lens', items: [
     action('project.lens.catch-up'),
+    spacer('compact'),
     action('project.lens.blockers'),
+    spacer('compact'),
     action('project.lens.next-steps'),
+    spacer('compact'),
     action('project.lens.prepare-actions'),
+    spacer('compact'),
     action('project.lens.find-context'),
   ] },
   spacer('section'),
@@ -106,7 +112,9 @@ const PROJECTS_DETAIL_LAYOUT = [
 ] as const satisfies readonly TouchBarLayoutItem[];
 const CALENDAR_LAYOUT = [
   action('calendar.today'),
+  spacer('compact'),
   { ...action('calendar.previous'), label: '' },
+  spacer('compact'),
   { ...action('calendar.next'), label: '' },
   spacer('section'),
   { type: 'segmented', items: [

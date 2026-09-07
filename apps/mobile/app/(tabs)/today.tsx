@@ -33,6 +33,7 @@ import { useLedgerTheme } from '@/theme';
 import { getFloatingTabBarScrollOffset, useFloatingTabBarScroll } from '@/components/FloatingTabBarScrollContext';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
 import { getMobileResource, readMobileResource } from '@/lib/mobileResourceCache';
+import { updateLedgerWidgetSnapshot } from '@/native/ledgerWidget';
 import type {
   MobileTodayInteractionItem,
   MobileTodayItem,
@@ -190,6 +191,10 @@ export default function TodayScreen() {
       void loadToday({ silent: true });
     }
   }, [loadToday, workspaceState.selectedWorkspaceId]);
+
+  useEffect(() => {
+    updateLedgerWidgetSnapshot(today);
+  }, [today]);
 
   useEffect(() => {
     return () => {

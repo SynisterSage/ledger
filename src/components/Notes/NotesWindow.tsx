@@ -139,6 +139,7 @@ type NoteRow = {
   date: string;
   mood: string | null;
   source: string;
+  starter_key?: string | null;
   parent_id?: string | null;
   section_id?: string | null;
   sort_order?: number;
@@ -2491,6 +2492,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const noteNavigationRequestRef = useRef(0);
   const localNoteNavigationRef = useRef<{ noteId: string; at: number } | null>(null);
   const initialTryActionHandledRef = useRef(false);
+  const starterNotesFocusHandledRef = useRef<string | null>(null);
   const noteViewerPollingDisabledForNoteRef = useRef<string | null>(null);
   const meetingPrepCacheRef = useRef<Map<string, MeetingPrepResult>>(new Map());
   const meetingPrepInFlightRef = useRef<Set<string>>(new Set());
@@ -2506,6 +2508,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(initialFocusNoteId || initialFocusNoteFromContext || null);
+  const [starterNotesRequested, setStarterNotesRequested] = useState(initialFocusContext === 'starter-notes');
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [meetingMetadata, setMeetingMetadata] = useState<MeetingNoteMetadata | null>(null);
   const [meetingSeriesOccurrences, setMeetingSeriesOccurrences] = useState<
@@ -8431,6 +8434,16 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   }, [initialFocusNoteId, notes, openNote, openNoteById, selectedNoteId]);
 
   useEffect(() => {
+    if ((!starterNotesRequested && initialFocusContext !== 'starter-notes') || !activeWorkspaceId || notes.length === 0) return;
+    const starterNote = notes.find((note) => note.starter_key?.endsWith(':note'));
+    if (!starterNote) return;
+    const focusKey = `${activeWorkspaceId}:${starterNote.id}`;
+    if (starterNotesFocusHandledRef.current === focusKey) return;
+    starterNotesFocusHandledRef.current = focusKey;
+    void openNote(starterNote);
+  }, [activeWorkspaceId, initialFocusContext, notes, openNote, starterNotesRequested]);
+
+  useEffect(() => {
     if (!selectedNoteId) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -8456,6 +8469,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       payload: { kind?: string; focusNoteId?: string | null; focusContext?: string | null }
     ) => {
       if (payload?.kind !== 'notes') return;
+      if (payload.focusContext === 'starter-notes') {
+        setStarterNotesRequested(true);
+        const starterNote = notesRef.current.find((note) => note.starter_key?.endsWith(':note'));
+        if (starterNote) void focusNoteHandlersRef.current.openNote(starterNote);
+        return;
+      }
+      setStarterNotesRequested(false);
       if (!payload.focusNoteId) {
         void focusNoteHandlersRef.current.goToNotesHome();
         return;

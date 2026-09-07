@@ -13330,17 +13330,19 @@ const workspaceStarterContent = (isPersonal) => {
         color: '#FF5F40',
       },
       tasks: [
-        ['capture', 'Capture something on your mind', 'Open Quick Capture and save one thought, task, or idea you actually want to remember.'],
-        ['next-action', 'Turn it into a next action', 'Create a small task that makes the captured thought actionable. Keep it concrete enough to do next.'],
-        ['context', 'Give it useful context', 'Open Notes and write down the context, decision, or reference you will want beside the task.'],
-        ['follow-through', 'Plan the follow-through', 'Open Calendar and add a real follow-up event or reminder if this work needs time or a later nudge.'],
-        ['review', 'Close the loop', 'Open Daily Check-In and record what moved, what is blocked, and what should happen next.'],
+        ['capture', 'See how Ledger captures context', 'Open the full Notes workspace to see where thoughts, references, and working context live.'],
+        ['next-action', 'See next actions in a project', 'Open the project workspace to see how Ledger turns context into focused next actions.'],
+        ['context', 'Open a note beside the work', 'Explore the Welcome to Ledger note and see headings, callouts, checklists, tables, and linked context.'],
+        ['follow-through', 'See follow-through on Calendar', 'Open Calendar to see how time, events, reminders, and projects connect.'],
+        ['review', 'See Daily Check-in', 'Open the review surface to see how Ledger closes the loop around finished work, blockers, and what comes next.'],
       ],
       note: {
         starter_key: `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:personal:note`,
         title: 'Welcome to Ledger',
         content:
-          'Ledger is a calm command center for daily accountability. Capture what is on your mind, turn it into a plan, follow through, and review what moved.\n\nStart with the “Start with Ledger” project, then replace these starter records with your own work when you are ready.',
+          'Ledger is a calm command center for daily accountability. Capture what is on your mind, turn it into a plan, follow through, and review what moved.\n\nUse this note as a small tour: write with headings and lists, add a checklist, link the note to a project, and ask Ledger about the context when you are ready.\n\nStart with the “Start with Ledger” project, then replace these starter records with your own work when you are ready.',
+        content_html:
+          '<h1>Welcome to Ledger</h1><p>Ledger is a calm command center for daily accountability. Capture what is on your mind, turn it into a plan, follow through, and review what moved.</p><h2>A small tour</h2><p>This note shows how Ledger keeps writing, context, and follow-through together instead of scattering them across separate tools.</p><aside data-ledger-callout="true" data-callout-type="info" data-ledger-callout-type="info" data-callout-style="info" class="ledger-callout ledger-callout--info"><p>Good context makes the next action easier to choose.</p></aside><h3>Try the editor</h3><ul><li>Use headings to give a note shape.</li></ul><ul data-lexical-list-type="check" class="ledger-checklist"><li role="checkbox" aria-checked="false">Use checklists for small follow-ups.</li><li role="checkbox" aria-checked="false">Use the insert menu for links, callouts, and tables.</li></ul><h3>Keep the loop nearby</h3><table><tbody><tr><th>Capture</th><th>Plan</th><th>Review</th></tr><tr><td>Save the thought.</td><td>Choose the next action.</td><td>Notice what moved.</td></tr></tbody></table><p>Start with the “Start with Ledger” project, then replace these starter records with your own work when you are ready.</p>',
       },
     };
   }
@@ -13354,11 +13356,11 @@ const workspaceStarterContent = (isPersonal) => {
       color: '#FF5F40',
     },
     tasks: [
-      ['project', 'Add your team’s first real project', 'Create or rename a project around an outcome your team is actively trying to move forward.'],
-      ['invite', 'Invite the people who need context', 'Add teammates from Members & access so shared work does not depend on one person holding the plan.'],
-      ['capture', 'Capture a shared decision or open question', 'Use Quick Capture or Notes to put one piece of context somewhere the team can find it.'],
-      ['follow-through', 'Plan the next follow-up', 'Connect the work to a calendar event or reminder so the next step has a time to happen.'],
-      ['review', 'Run the first team check-in', 'Use Daily Check-In to record what moved, what is blocked, and what the team should do next.'],
+      ['project', 'See a team project in Ledger', 'Open Projects to see how a shared outcome, next actions, milestones, and context fit together.'],
+      ['invite', 'Explore Members & access', 'Open workspace members to see where people, roles, and shared context are managed.'],
+      ['capture', 'Open shared context in Notes', 'Explore the Welcome to Ledger note and see how decisions and open questions can stay beside the work.'],
+      ['follow-through', 'See team follow-through on Calendar', 'Open Calendar to see how shared time, events, reminders, and projects connect.'],
+      ['review', 'See the team review surface', 'Open the review surface to see how Ledger keeps progress, blockers, and next steps visible.'],
     ],
   };
 };
@@ -13401,7 +13403,12 @@ const provisionWorkspaceStarterContent = async ({ workspaceId, userId, isPersona
 
   for (const [key, title, description] of starter.tasks) {
     const starterKey = `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:${isPersonal ? 'personal' : 'team'}:task:${key}`;
-    const existingTask = await supabase.from('tasks').select('id').eq('workspace_id', workspaceId).eq('starter_key', starterKey).maybeSingle();
+    const existingTask = await supabase
+      .from('tasks')
+      .select('id, source')
+      .eq('workspace_id', workspaceId)
+      .eq('starter_key', starterKey)
+      .maybeSingle();
     if (existingTask.error) throw existingTask.error;
     if (!existingTask.data) {
       const insertedTask = await supabase.from('tasks').insert({
@@ -13418,12 +13425,26 @@ const provisionWorkspaceStarterContent = async ({ workspaceId, userId, isPersona
         starter_key: starterKey,
       });
       if (insertedTask.error && String(insertedTask.error.code) !== '23505') throw insertedTask.error;
+    } else if (existingTask.data.source === 'onboarding') {
+      const refreshedTask = await supabase
+        .from('tasks')
+        .update({ title, description, updated_at: new Date().toISOString() })
+        .eq('id', existingTask.data.id)
+        .eq('workspace_id', workspaceId);
+      if (refreshedTask.error) throw refreshedTask.error;
     }
   }
 
+  let starterNoteId = null;
   if (starter.note) {
-    const existingNote = await supabase.from('notes').select('id').eq('workspace_id', workspaceId).eq('starter_key', starter.note.starter_key).maybeSingle();
+    const existingNote = await supabase
+      .from('notes')
+      .select('id, content, content_html, updated_at, created_at')
+      .eq('workspace_id', workspaceId)
+      .eq('starter_key', starter.note.starter_key)
+      .maybeSingle();
     if (existingNote.error) throw existingNote.error;
+    starterNoteId = existingNote.data?.id ?? null;
     if (!existingNote.data) {
       const insertedNote = await supabase.from('notes').insert({
         workspace_id: workspaceId,
@@ -13432,16 +13453,154 @@ const provisionWorkspaceStarterContent = async ({ workspaceId, userId, isPersona
         starter_key: starter.note.starter_key,
         title: starter.note.title,
         content: starter.note.content,
-        content_html: `<p>${starter.note.content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br />')}</p>`,
+        content_html:
+          starter.note.content_html ??
+          `<p>${starter.note.content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br />')}</p>`,
         date: new Date().toISOString().slice(0, 10),
         source: 'onboarding',
         mode: 'text',
-      });
+      }).select('id').single();
       if (insertedNote.error && String(insertedNote.error.code) !== '23505') throw insertedNote.error;
+      starterNoteId = insertedNote.data?.id ?? starterNoteId;
+    } else if (
+      String(existingNote.data.content ?? '').includes('Ledger is a calm command center') &&
+      !String(existingNote.data.content_html ?? '').includes('data-ledger-callout')
+    ) {
+      const refreshedNote = await supabase
+        .from('notes')
+        .update({
+          content: starter.note.content,
+          content_html: starter.note.content_html,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingNote.data.id)
+        .eq('workspace_id', workspaceId);
+      if (refreshedNote.error) throw refreshedNote.error;
     }
   }
 
+  if (starterNoteId) {
+    const linked = await supabase.from('project_note_links').upsert(
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        note_id: starterNoteId,
+        created_by: userId,
+      },
+      { onConflict: 'workspace_id,project_id,note_id', ignoreDuplicates: true }
+    );
+    if (linked.error) throw linked.error;
+  }
+
+  const today = new Date();
+  const starterDate = (daysFromToday) => {
+    const date = new Date(today);
+    date.setDate(date.getDate() + daysFromToday);
+    return date.toISOString().slice(0, 10);
+  };
+  const starterMilestones = [
+    {
+      title: 'Example: First weekly review',
+      milestone_date: starterDate(3),
+      type: 'Review',
+      note: 'A small recurring review keeps the Ledger loop visible.',
+    },
+    {
+      title: 'Example: Share the next step',
+      milestone_date: starterDate(7),
+      type: 'Handoff',
+      note: 'Use milestones to make an outcome and its next handoff easy to see.',
+    },
+  ];
+  for (const milestone of starterMilestones) {
+    const existingMilestone = await supabase
+      .from('project_milestones')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('project_id', projectId)
+      .eq('title', milestone.title)
+      .maybeSingle();
+    if (existingMilestone.error) throw existingMilestone.error;
+    if (!existingMilestone.data) {
+      const createdMilestone = await supabase.from('project_milestones').insert({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        created_by: userId,
+        updated_by: userId,
+        ...milestone,
+        completed: false,
+      });
+      if (createdMilestone.error) throw createdMilestone.error;
+    }
+  }
+
+  const personalCalendar = await getPersonalCalendar(workspaceId, userId);
+  const eventTitle = 'Example: Weekly Ledger review';
+  const eventStart = new Date(today);
+  eventStart.setDate(eventStart.getDate() + 5);
+  eventStart.setHours(9, 0, 0, 0);
+  const eventEnd = new Date(eventStart.getTime() + 45 * 60 * 1000);
+  const existingEvent = await supabase
+    .from('events')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .eq('project_id', projectId)
+    .eq('title', eventTitle)
+    .maybeSingle();
+  if (existingEvent.error) throw existingEvent.error;
+  if (!existingEvent.data) {
+    const createdEvent = await supabase.from('events').insert({
+      workspace_id: workspaceId,
+      calendar_id: personalCalendar.id,
+      created_by: userId,
+      updated_by: userId,
+      title: eventTitle,
+      start_at: eventStart.toISOString(),
+      end_at: eventEnd.toISOString(),
+      all_day: false,
+      color: '#FF5F40',
+      status: 'planned',
+      visibility: 'private',
+      project_id: projectId,
+      note_id: starterNoteId,
+      notes: 'A sample calendar connection for planning follow-through.',
+      source: 'onboarding',
+      source_platform: 'ledger',
+    });
+    if (createdEvent.error) throw createdEvent.error;
+  }
+
   return { project_id: projectId, version: WORKSPACE_STARTER_CONTENT_VERSION };
+};
+
+const syncWorkspaceStarterProjectProgress = async (workspaceId, projectId) => {
+  if (!workspaceId || !projectId) return;
+  const project = await supabase
+    .from('projects')
+    .select('id, starter_key')
+    .eq('workspace_id', workspaceId)
+    .eq('id', projectId)
+    .maybeSingle();
+  if (project.error) throw project.error;
+  if (!project.data?.starter_key) return;
+
+  const tasks = await supabase
+    .from('tasks')
+    .select('status')
+    .eq('workspace_id', workspaceId)
+    .eq('project_id', projectId)
+    .not('starter_key', 'is', null);
+  if (tasks.error) throw tasks.error;
+  const rows = tasks.data ?? [];
+  const completed = rows.filter((task) => ['completed', 'done'].includes(String(task.status ?? '').toLowerCase())).length;
+  const completeness = rows.length ? Math.round((completed / rows.length) * 100) : 0;
+  const updated = await supabase
+    .from('projects')
+    .update({ completeness, updated_at: new Date().toISOString() })
+    .eq('workspace_id', workspaceId)
+    .eq('id', projectId);
+  if (updated.error) throw updated.error;
 };
 
 app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res) => {
@@ -20387,6 +20546,16 @@ app.patch('/api/tasks/:id', authMiddleware, rateLimit('write'), async (req, res)
         if (String(req.body?.status ?? '').toLowerCase() === 'completed') {
           const resolved = await supabase.from('github_attention_signals').update({ status: 'resolved', resolved_at: nowIso, updated_at: nowIso }).eq('workspace_id', workspaceId).eq('target_type', 'task').eq('target_id', req.params.id).eq('status', 'active');
           if (resolved.error && !isMissingRelationError(resolved.error, 'github_attention_signals')) throw resolved.error;
+        }
+        try {
+          await syncWorkspaceStarterProjectProgress(
+            workspaceId,
+            update.project_id !== undefined ? update.project_id : existingTask?.project_id
+          );
+        } catch (progressError) {
+          // Task updates remain successful if an older database is missing the
+          // starter project fields; the next workspace refresh can reconcile it.
+          console.warn('[starter] Could not sync project progress:', progressError?.message ?? progressError);
         }
         return res.json(data);
       }

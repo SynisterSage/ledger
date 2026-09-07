@@ -20,6 +20,9 @@ const config: ExpoConfig = {
     bundleIdentifier: iosBundleIdentifier,
     buildNumber: '9',
     supportsTablet: true,
+    entitlements: {
+      'com.apple.security.application-groups': ['group.com.ledger.mobile'],
+    },
     infoPlist: {
       NSSiriUsageDescription: 'Allow Ledger to capture tasks, reminders, notes, and events with Siri.',
       NSPhotoLibraryUsageDescription: 'Allow Ledger to attach photos to notes.',
@@ -27,6 +30,31 @@ const config: ExpoConfig = {
       LedgerAPIBaseURL: apiUrl,
       LedgerSupabaseURL: supabaseUrl,
       LedgerSupabaseAnonKey: supabaseAnonKey,
+      // These are the actions shown when someone long-presses the Ledger icon
+      // on the iOS Home Screen. The AppDelegate maps each type to a Ledger
+      // deep link so the action opens a real capture flow.
+      UIApplicationShortcutItems: [
+        {
+          UIApplicationShortcutItemType: 'com.ledger.mobile.capture-note',
+          UIApplicationShortcutItemTitle: 'Capture note',
+          UIApplicationShortcutItemIconType: 'UIApplicationShortcutIconTypeCompose',
+        },
+        {
+          UIApplicationShortcutItemType: 'com.ledger.mobile.add-task',
+          UIApplicationShortcutItemTitle: 'Add task',
+          UIApplicationShortcutItemIconType: 'UIApplicationShortcutIconTypeAdd',
+        },
+        {
+          UIApplicationShortcutItemType: 'com.ledger.mobile.add-reminder',
+          UIApplicationShortcutItemTitle: 'Add reminder',
+          UIApplicationShortcutItemIconType: 'UIApplicationShortcutIconTypeTime',
+        },
+        {
+          UIApplicationShortcutItemType: 'com.ledger.mobile.today',
+          UIApplicationShortcutItemTitle: 'Open Today',
+          UIApplicationShortcutItemIconType: 'UIApplicationShortcutIconTypeHome',
+        },
+      ],
     },
   },
   android: {

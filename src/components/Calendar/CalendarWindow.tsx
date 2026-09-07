@@ -88,6 +88,11 @@ import {
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
+import { useToast } from '../Common/ToastProvider';
+import {
+  clearStarterOnboardingReturn,
+  readStarterOnboardingReturn,
+} from '../../utils/starterOnboarding';
 import {
   CalendarSubscriptionModal,
   type CalendarSubscriptionCalendar,
@@ -1075,6 +1080,7 @@ export const CalendarWindow = ({
   const { workspaceShellLayout, reduceMotion } = useSidebar();
   const api = useApi();
   const platform = usePlatform();
+  const toast = useToast();
   const viewportWidth = useViewportWidth();
   const centerScrollRef = useRef<HTMLDivElement | null>(null);
   const hasAutoScrolledToNowRef = useRef(false);
@@ -3654,6 +3660,39 @@ export const CalendarWindow = ({
     setListContextMenu(null);
   };
 
+  const completeStarterFollowThrough = async () => {
+    if (!activeWorkspaceId) return false;
+    const pending = readStarterOnboardingReturn();
+    if (
+      pending?.workspaceId !== activeWorkspaceId ||
+      pending.step !== 'follow-through' ||
+      !pending.projectId ||
+      !pending.taskId
+    ) {
+      return false;
+    }
+    try {
+      await api.updateTaskInWorkspace(pending.taskId, activeWorkspaceId, {
+        status: 'completed',
+      });
+      clearStarterOnboardingReturn();
+      toast.show('Step complete', {
+        detail: 'Your follow-through is scheduled and the starter project is updated.',
+        variant: 'success',
+        icon: 'ledger',
+      });
+      platform.navigation.openRoute(routeForProject(activeWorkspaceId, pending.projectId));
+      return true;
+    } catch (error) {
+      console.error('Failed to complete the starter follow-through step:', error);
+      toast.show('Calendar item created', {
+        detail: 'The starter step could not be marked complete yet.',
+        variant: 'info',
+      });
+      return false;
+    }
+  };
+
   const moveView = (direction: -1 | 1) => {
     setSelectedEvent(null);
     setSelectedReminder(null);
@@ -3758,6 +3797,7 @@ export const CalendarWindow = ({
           setIsComposerOpen(false);
           setNewEventTitle('');
           setComposerNotes('');
+          await completeStarterFollowThrough();
         } catch (error) {
           setIsSavingEvent(false);
           setError(
@@ -3814,6 +3854,7 @@ export const CalendarWindow = ({
           (a, b) => new Date(a.remind_at).getTime() - new Date(b.remind_at).getTime()
         )
       );
+      if (await completeStarterFollowThrough()) return;
       setSelectedEvent(null);
       setNewEventTitle('');
       setNaturalLanguageInput('');
@@ -3876,6 +3917,7 @@ export const CalendarWindow = ({
         setIsComposerOpen(false);
         setNewEventTitle('');
         notifyCalendarItemsUpdated();
+        await completeStarterFollowThrough();
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Ledger could not save this event to Apple Calendar.'
@@ -3924,6 +3966,7 @@ export const CalendarWindow = ({
         (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
       )
     );
+    if (await completeStarterFollowThrough()) return;
     setSelectedEvent(createdEvents[0] ?? null);
     setSelectedReminder(null);
     setNewEventTitle('');

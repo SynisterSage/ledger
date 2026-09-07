@@ -5,7 +5,12 @@ import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { CloseGuardModal } from './CloseGuardModal';
 import { findSmartDateMatch, formatSmartDateKey } from '../Notes/smartDateUtils';
-import { usePlatform } from '../../platform';
+import { routeForProject, usePlatform } from '../../platform';
+import { useToast } from './ToastProvider';
+import {
+  clearStarterOnboardingReturn,
+  readStarterOnboardingReturn,
+} from '../../utils/starterOnboarding';
 import {
   removeWebDraft,
   readWebDraft,
@@ -214,6 +219,7 @@ export const QuickCaptureWindow = ({
   const { activeWorkspaceId } = useWorkspaceContext();
   const api = useApi();
   const platform = usePlatform();
+  const toast = useToast();
 
   const [taskTitle, setTaskTitle] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
@@ -253,6 +259,24 @@ export const QuickCaptureWindow = ({
     () => webDraftKey(user?.id, activeWorkspaceId, kind, context, initialDate),
     [activeWorkspaceId, context, initialDate, kind, user?.id]
   );
+
+  const onboardingHint = useMemo(() => {
+    const pending = readStarterOnboardingReturn();
+    if (pending?.workspaceId !== activeWorkspaceId) return null;
+    if (pending.step === 'capture' && kind === 'quick-note') {
+      return 'Capture one real thought, task, or idea you want to remember.';
+    }
+    if (pending.step === 'context' && kind === 'quick-note') {
+      return 'Add the decision, reference, or context you will want beside your work.';
+    }
+    if (pending.step === 'next-action' && kind === 'quick-task') {
+      return 'Turn the thought into one small action you can do next.';
+    }
+    if (pending.step === 'follow-through' && kind === 'quick-event') {
+      return 'Give this work a time on your calendar so it does not disappear.';
+    }
+    return null;
+  }, [activeWorkspaceId, kind]);
 
   useEffect(() => {
     if (!browserMode || !user?.id || !activeWorkspaceId) {
@@ -393,6 +417,37 @@ export const QuickCaptureWindow = ({
   const closeWindowNow = () => {
     if (browserMode) platform.navigation.closeOverlay();
     else void window.desktopWindow?.closeModule(kind as any);
+  };
+
+  const completePendingStarterStep = async (steps: string[], detail: string) => {
+    if (!activeWorkspaceId) return false;
+    const pending = readStarterOnboardingReturn();
+    if (
+      pending?.workspaceId !== activeWorkspaceId ||
+      !pending.projectId ||
+      !pending.taskId ||
+      !steps.includes(pending.step)
+    ) {
+      return false;
+    }
+
+    try {
+      await api.updateTaskInWorkspace(pending.taskId, activeWorkspaceId, {
+        status: 'completed',
+      });
+      clearStarterOnboardingReturn();
+      toast.show('Step complete', { detail, variant: 'success', icon: 'ledger' });
+      closeWindowNow();
+      platform.navigation.openRoute(routeForProject(activeWorkspaceId, pending.projectId));
+      return true;
+    } catch (completionError) {
+      console.error('Failed to complete the starter step:', completionError);
+      toast.show('Saved successfully', {
+        detail: 'The starter step could not be marked complete yet.',
+        variant: 'info',
+      });
+      return false;
+    }
   };
 
   const resetTaskDraft = () => setTaskTitle('');
@@ -594,6 +649,14 @@ export const QuickCaptureWindow = ({
         })
       );
 
+      if (
+        await completePendingStarterStep(
+          ['next-action'],
+          'Your next action was created and the starter step is complete.'
+        )
+      )
+        return;
+
       if (followUpContext) {
         window.ledgerIpc?.commands?.calendarFollowUpCreated({
           eventId: followUpContext.eventId,
@@ -663,6 +726,13 @@ export const QuickCaptureWindow = ({
           }
         })
       );
+      if (
+        await completePendingStarterStep(
+          ['capture', 'context'],
+          'Your note was saved and the starter step is complete.'
+        )
+      )
+        return;
       setShowCloseGuardModal(false);
       resetNoteDraft();
       removeWebDraft(draftKey);
@@ -742,6 +812,13 @@ export const QuickCaptureWindow = ({
         color: preferredCalendar.color ?? undefined,
         status: quickCapturePreferences.defaultEventStatus ?? 'planned',
       });
+      if (
+        await completePendingStarterStep(
+          ['follow-through'],
+          'Your event was scheduled and the starter step is complete.'
+        )
+      )
+        return;
       setShowCloseGuardModal(false);
       resetEventDraft();
       removeWebDraft(draftKey);
@@ -778,6 +855,17 @@ export const QuickCaptureWindow = ({
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}
         />
+
+        {onboardingHint && (
+          <div className="mx-4 mt-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+              Getting started
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-[var(--ledger-text-secondary)]">
+              {onboardingHint}
+            </p>
+          </div>
+        )}
 
         {truncatedContext && (
           <div className="mx-4 mt-4 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
@@ -841,6 +929,17 @@ export const QuickCaptureWindow = ({
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}
         />
+
+        {onboardingHint && (
+          <div className="mx-4 mt-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+              Getting started
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-[var(--ledger-text-secondary)]">
+              {onboardingHint}
+            </p>
+          </div>
+        )}
 
         {contextText && (
           <div className="mx-4 mt-4 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
@@ -926,6 +1025,13 @@ export const QuickCaptureWindow = ({
         project_id: selectionContext?.projectId ?? null,
         note_id: selectionContext?.noteId ?? null,
       });
+      if (
+        await completePendingStarterStep(
+          ['follow-through'],
+          'Your reminder was scheduled and the starter step is complete.'
+        )
+      )
+        return;
       setShowCloseGuardModal(false);
       resetEventDraft();
       removeWebDraft(draftKey);
@@ -962,6 +1068,17 @@ export const QuickCaptureWindow = ({
           onMinimize={minimizeWindow}
           onToggleFullscreen={toggleFullscreen}
         />
+
+        {onboardingHint && (
+          <div className="mx-4 mt-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+              Getting started
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-[var(--ledger-text-secondary)]">
+              {onboardingHint}
+            </p>
+          </div>
+        )}
 
         {contextText && (
           <div className="mx-4 mt-4 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">

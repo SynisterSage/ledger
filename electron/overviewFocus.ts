@@ -54,7 +54,7 @@ export const deriveOverviewFocusSignals = (snapshot: OverviewFocusSnapshot, now 
   return signals.slice(0, 32);
 };
 
-export type OverviewFocusValidationRejection = 'invalid_result' | 'missing_resource' | 'completed_resource' | 'weak_observation' | 'unsupported_urgency' | 'duplicate' | 'too_long' | 'too_many';
+export type OverviewFocusValidationRejection = 'invalid_result' | 'missing_resource' | 'completed_resource' | 'leaked_resource_id' | 'weak_observation' | 'unsupported_urgency' | 'duplicate' | 'too_long' | 'too_many';
 export type OverviewFocusValidation = { result: OverviewFocusResult; rawInsightCount: number; rejectionReasons: OverviewFocusValidationRejection[] };
 export type OverviewFocusGenerationOptions = { previousResult?: OverviewFocusResult };
 
@@ -94,6 +94,9 @@ export const validateOverviewFocusResultWithDiagnostics = (value: unknown, snaps
   ]);
   const taskById = new Map(snapshot.tasks.map((item) => [item.id, item]));
   const projectById = new Map(snapshot.projects.map((item) => [item.id, item]));
+  const resourceIds = [...allowed]
+    .map((key) => key.slice(key.indexOf(':') + 1).toLowerCase())
+    .filter((id) => id.length >= 8);
   const seen = new Set<string>();
   const acceptedText: Set<string>[] = [];
   const insights: OverviewFocusInsight[] = [];
@@ -114,6 +117,7 @@ export const validateOverviewFocusResultWithDiagnostics = (value: unknown, snaps
     if (!title || !summary || !refs.length) { rejectionReasons.push('missing_resource'); continue; }
     if (refs.some((ref) => ref.type === 'task' && /^(completed|complete|done|cancelled|canceled)$/i.test(taskById.get(ref.id)?.status ?? '') || ref.type === 'project' && (/^(completed|complete|done|cancelled|canceled)$/i.test(projectById.get(ref.id)?.status ?? '') || (projectById.get(ref.id)?.progress ?? 0) >= 100))) { rejectionReasons.push('completed_resource'); continue; }
     const lowerText = `${title} ${summary}`.toLowerCase();
+    if (resourceIds.some((id) => id && lowerText.includes(id))) { rejectionReasons.push('leaked_resource_id'); continue; }
     if (/\b(urgent|critical|emergency|crisis|catastrophic|must act now|immediate(?:ly)?|asap|right now)\b/.test(lowerText)) { rejectionReasons.push('unsupported_urgency'); continue; }
     const meaningful = /\b(overdue|past due|due|deadline|unfinished|incomplete|behind|progress|connected|related|same project|tomorrow|concentrat|stalled|blocked|needs? attention|near deadline)\b/i.test(lowerText);
     const countOnly = /^\s*(you have|there are|there's)\s+\d+\s+(tasks?|projects?|events?|notes?)\b/i.test(lowerText) && !meaningful;

@@ -32,6 +32,41 @@
 			</array>
 		</dict>
 	</array>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeCompose</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Capture note</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.ledger.mobile.capture-note</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeAdd</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Add task</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.ledger.mobile.add-task</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeTime</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Add reminder</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.ledger.mobile.add-reminder</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeHome</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Open Today</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.ledger.mobile.today</string>
+		</dict>
+	</array>
   <key>CFBundleVersion</key>
   <string>9</string>
 	<key>LSMinimumSystemVersion</key>

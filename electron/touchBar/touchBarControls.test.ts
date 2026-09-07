@@ -62,6 +62,18 @@ test('action controls use native presentation, semantic icons, and accessibility
   assert.match(fixture.icons[0], /^data:image\/svg\+xml/);
 });
 
+test('compact spacers keep adjacent quick actions visually separated', () => {
+  const fixture = setup();
+  const built = fixture.controls.build(
+    [action('task.create'), spacer('compact'), action('note.create')],
+    fixture.context
+  );
+
+  assert.equal(built.items.length, 3);
+  assert.equal((built.items[1] as any).type, 'spacer');
+  assert.equal((built.items[1] as any).size, 'small');
+});
+
 test('availability disables action controls and prevents disabled clicks', () => {
   const fixture = setup();
   const built = fixture.controls.build([action('search.open')], {
@@ -108,7 +120,7 @@ test('popover controls build bounded nested action groups', () => {
       {
         type: 'popover',
         label: 'More',
-        items: [action('task.create')],
+        items: [action('task.create'), spacer('compact'), action('note.create')],
       },
     ],
     fixture.context
@@ -116,4 +128,8 @@ test('popover controls build bounded nested action groups', () => {
   assert.equal(fixture.popovers.length, 1);
   assert.equal(fixture.popovers[0].label, 'More');
   assert.equal(fixture.popovers[0].showCloseButton, true);
+  assert.deepEqual(
+    fixture.popovers[0].items.items.map((item: any) => item.type ?? item.label),
+    ['Task', 'spacer', 'Note']
+  );
 });

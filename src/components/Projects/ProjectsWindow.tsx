@@ -86,10 +86,16 @@ import {
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { LocalAIUnavailableState } from '../Common/LocalAIUnavailableState';
 import { LedgerLensWheel } from '../Common/LedgerLensWheel';
+import { useToast } from '../Common/ToastProvider';
 import {
   deriveWorkspaceProjectSignals,
   summarizeProjectSignals,
 } from '../../features/projects/projectSignals';
+import {
+  clearStarterOnboardingReturn,
+  readStarterOnboardingReturn,
+  rememberStarterOnboardingReturn,
+} from '../../utils/starterOnboarding';
 import { buildProjectIntelligenceContext } from '../../features/projects/projectIntelligenceContext';
 import type { ProjectIntelligenceContext } from '../../features/projects/projectIntelligenceContext';
 import {
@@ -922,6 +928,7 @@ export const ProjectsWindow = ({
   const { workspaceShellLayout, reduceMotion } = useSidebar();
   const api = useApi();
   const platform = usePlatform();
+  const toast = useToast();
   const isPersonalWorkspace = Boolean(activeWorkspace?.is_personal);
   const viewportWidth = useViewportWidth();
   const viewportHeight = useViewportHeight();
@@ -1363,6 +1370,33 @@ export const ProjectsWindow = ({
         return b.created_at.localeCompare(a.created_at);
       });
   }, [selectedProjectId, tasks]);
+
+  const starterProjectProgressById = useMemo(() => {
+    const progress = new Map<string, { completed: number; total: number; percentage: number }>();
+    for (const task of tasks) {
+      if (!task.starter_key || !task.project_id) continue;
+      const current = progress.get(task.project_id) ?? { completed: 0, total: 0, percentage: 0 };
+      current.total += 1;
+      if (['completed', 'done'].includes(String(task.status).toLowerCase())) current.completed += 1;
+      current.percentage = Math.round((current.completed / current.total) * 100);
+      progress.set(task.project_id, current);
+    }
+    return progress;
+  }, [tasks]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId || !selectedProject?.starter_key) return;
+    const starterTasks = selectedProjectTasks.filter((task) => task.starter_key);
+    if (starterTasks.length === 0 || starterTasks.some((task) => task.status !== 'completed')) {
+      return;
+    }
+    const reopened = window.localStorage.getItem(
+      `ledger:starter-guide-reopened:${activeWorkspaceId}`
+    );
+    if (reopened === 'true') return;
+    window.localStorage.setItem(`ledger:starter-guide-hidden:${activeWorkspaceId}`, 'true');
+    setStarterGuideHidden(true);
+  }, [activeWorkspaceId, selectedProject?.starter_key, selectedProjectTasks]);
 
   const selectedProjectMilestones = useMemo(() => {
     const milestones = workspaceMilestones
@@ -2489,7 +2523,7 @@ export const ProjectsWindow = ({
     }
   }, [api, activeWorkspaceId, previewMode, user]);
 
-  const loadTasks = useCallback(async () => {
+  const loadTasks = useCallback(async (force = false) => {
     if (previewMode) {
       hasLoadedTasksDataRef.current = true;
       setTasks(previewTasks);
@@ -2506,7 +2540,7 @@ export const ProjectsWindow = ({
 
     const cacheKey = activeWorkspaceId;
     const cached = tasksDataCacheRef.current.get(cacheKey);
-    const isCacheFresh = Boolean(cached && Date.now() - cached.updatedAt < 45_000);
+    const isCacheFresh = !force && Boolean(cached && Date.now() - cached.updatedAt < 45_000);
     if (cached) {
       hasLoadedTasksDataRef.current = true;
       setTasks(cached.rows);
@@ -2830,6 +2864,33 @@ export const ProjectsWindow = ({
       setNewProjectNotesSearch('');
       setIsNewProjectNotesExpanded(false);
       setIsCreatingProject(false);
+      const pending = readStarterOnboardingReturn();
+      if (
+        pending?.workspaceId === activeWorkspaceId &&
+        pending.projectId &&
+        pending.taskId &&
+        pending.step === 'project'
+      ) {
+        try {
+          await api.updateTaskInWorkspace(pending.taskId, activeWorkspaceId, {
+            status: 'completed',
+          });
+          clearStarterOnboardingReturn();
+          toast.show('Step complete', {
+            detail: 'Your project was created and the starter step is complete.',
+            variant: 'success',
+            icon: 'ledger',
+          });
+          platform.navigation.openRoute(routeForProject(activeWorkspaceId, pending.projectId));
+          return;
+        } catch (completionError) {
+          console.error('Failed to complete the starter project step:', completionError);
+          toast.show('Project created', {
+            detail: 'The starter step could not be marked complete yet.',
+            variant: 'info',
+          });
+        }
+      }
       if (linkNoteError) {
         setError(linkNoteError);
       }
@@ -2839,6 +2900,7 @@ export const ProjectsWindow = ({
       setIsCreatingProjectNow(false);
     }
   }, [
+    activeWorkspaceId,
     api,
     newProjectDescription,
     newProjectLeadId,
@@ -2847,7 +2909,9 @@ export const ProjectsWindow = ({
     newProjectGithubRepositoryId,
     newProjectNoteIds,
     newProjectType,
+    platform,
     syncDraftFromProject,
+    toast,
   ]);
 
   const openCreateProjectComposer = useCallback(() => {
@@ -3107,12 +3171,23 @@ export const ProjectsWindow = ({
         const data = await api.updateTask(task.id, { status });
         const updated = data as TaskRow;
         setTasks((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+        if (status === 'completed' && task.starter_key) {
+          const pending = readStarterOnboardingReturn();
+          if (pending?.taskId === task.id) {
+            clearStarterOnboardingReturn();
+            toast.show('Step complete', {
+              detail: 'Your getting-started checklist is up to date.',
+              variant: 'success',
+              icon: 'ledger',
+            });
+          }
+        }
       } catch (updateError) {
         setTaskError(updateError instanceof Error ? updateError.message : 'Could not update task.');
         setTasks((prev) => prev.map((row) => (row.id === task.id ? previousTask : row)));
       }
     },
-    [api]
+    [api, toast]
   );
 
   const openActionInlineEditor = useCallback(
@@ -4062,7 +4137,7 @@ export const ProjectsWindow = ({
   }, [viewportWidth]);
 
   useEffect(() => {
-    void loadTasks();
+    void loadTasks(workspaceRefreshToken > 0);
   }, [loadTasks, workspaceRefreshToken]);
 
   useEffect(() => {
@@ -4714,19 +4789,58 @@ export const ProjectsWindow = ({
   }, [closeActionInlineEditor, closeMilestoneInlineEditor, expandedActionId, expandedMilestoneId]);
 
   const openStarterTask = useCallback(
-    (task: TaskRow) => {
+    async (task: TaskRow) => {
       if (!activeWorkspaceId || !task.starter_key) return;
       const key = task.starter_key.split(':').slice(-1)[0];
+      if (selectedProjectId) {
+        rememberStarterOnboardingReturn({
+          workspaceId: activeWorkspaceId,
+          projectId: selectedProjectId,
+          taskId: task.id,
+          step: key,
+        });
+      }
+      const visitOnlySteps = new Set([
+        'capture',
+        'context',
+        'next-action',
+        'follow-through',
+        'review',
+        'invite',
+        'project',
+      ]);
+      if (visitOnlySteps.has(key)) {
+        try {
+          await api.updateTask(task.id, { status: 'completed' });
+          setTasks((current) =>
+            current.map((item) => (item.id === task.id ? { ...item, status: 'completed' } : item))
+          );
+          clearStarterOnboardingReturn();
+          toast.show('Step complete', {
+            detail: 'Explore the Ledger workspace at your own pace.',
+            variant: 'success',
+            icon: 'ledger',
+          });
+        } catch (error) {
+          toast.show(error instanceof Error ? error.message : 'Could not open this Ledger workspace.', {
+            variant: 'error',
+          });
+          return;
+        }
+      }
       if (key === 'capture' || key === 'context') {
-        openLegacyModule(platform.navigation, activeWorkspaceId, 'quick-note', {
-          focusProjectId: selectedProjectId,
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'notes', {
+          focusContext: 'starter-notes',
         });
       } else if (key === 'next-action') {
-        openLegacyModule(platform.navigation, activeWorkspaceId, 'quick-task', {
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'projects', {
           focusProjectId: selectedProjectId,
+          focusTaskId: task.id,
         });
       } else if (key === 'follow-through') {
-        openLegacyModule(platform.navigation, activeWorkspaceId, 'calendar');
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'calendar', {
+          focusContext: 'starter-calendar',
+        });
       } else if (key === 'review') {
         openLegacyModule(platform.navigation, activeWorkspaceId, 'dashboard', {
           focusSection: 'review',
@@ -4736,10 +4850,13 @@ export const ProjectsWindow = ({
           focusContext: 'members',
         });
       } else if (key === 'project') {
-        openLegacyModule(platform.navigation, activeWorkspaceId, 'projects');
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'projects', {
+          focusProjectId: selectedProjectId,
+          focusContext: 'starter-project',
+        });
       }
     },
-    [activeWorkspaceId, platform.navigation, selectedProjectId]
+    [activeWorkspaceId, api, platform.navigation, selectedProjectId, toast]
   );
 
   const starterTaskLinkLabel = (task: TaskRow) => {
@@ -4749,7 +4866,8 @@ export const ProjectsWindow = ({
     if (key === 'follow-through') return 'Calendar';
     if (key === 'review') return 'Review';
     if (key === 'project') return 'Projects';
-    if (key === 'context') return 'Notes';
+    if (key === 'capture' || key === 'context') return 'Notes';
+    if (key === 'next-action') return 'Projects';
     return 'Open';
   };
 
@@ -6060,32 +6178,15 @@ export const ProjectsWindow = ({
       return null;
     }
 
-    if (starterGuideHidden) {
-      return (
-        <div className="mt-4 flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
-          <span>Getting started is hidden.</span>
-          <button
-            type="button"
-            onClick={() => {
-              if (activeWorkspaceId) {
-                window.localStorage.removeItem(
-                  `ledger:starter-guide-hidden:${activeWorkspaceId}`
-                );
-              }
-              setStarterGuideHidden(false);
-            }}
-            className="font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
-          >
-            Show it again
-          </button>
-        </div>
-      );
-    }
-
     const starterTasks = selectedProjectTasks.filter((task) => task.starter_key);
     const completedCount = starterTasks.filter((task) => task.status === 'completed').length;
     const totalCount = starterTasks.length;
     const complete = totalCount > 0 && completedCount === totalCount;
+    const explicitlyReopened =
+      activeWorkspaceId &&
+      window.localStorage.getItem(`ledger:starter-guide-reopened:${activeWorkspaceId}`) === 'true';
+
+    if (starterGuideHidden || (complete && !explicitlyReopened)) return null;
     const progress = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
 
     return (
@@ -6098,11 +6199,11 @@ export const ProjectsWindow = ({
             <p className="mt-1 text-sm font-semibold text-[var(--ledger-text-primary)]">
               {complete ? 'You’ve got the Ledger loop.' : 'Take Ledger for a first spin.'}
             </p>
-            <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--ledger-text-secondary)]">
-              {complete
-                ? 'You captured, planned, followed through, and reviewed. Replace these starter actions with your own work whenever you’re ready.'
-                : 'These small actions show how capture, planning, follow-through, and review fit together.'}
-            </p>
+            {!complete && (
+              <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--ledger-text-secondary)]">
+                Five small actions to learn the Ledger loop.
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -6111,6 +6212,9 @@ export const ProjectsWindow = ({
                 window.localStorage.setItem(
                   `ledger:starter-guide-hidden:${activeWorkspaceId}`,
                   'true'
+                );
+                window.localStorage.removeItem(
+                  `ledger:starter-guide-reopened:${activeWorkspaceId}`
                 );
               }
               setStarterGuideHidden(true);
@@ -6141,30 +6245,77 @@ export const ProjectsWindow = ({
             {completedCount}/{totalCount}
           </span>
         </div>
+        <div className="mt-4 divide-y divide-[color:var(--ledger-border-subtle)] overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)]">
+          {starterTasks.map((task) => {
+            const taskComplete = task.status === 'completed';
+            const linkLabel = starterTaskLinkLabel(task);
+            return (
+              <div key={task.id} className="flex min-h-11 items-center gap-2.5 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => void updateTaskStatus(task, taskComplete ? 'todo' : 'completed')}
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
+                    taskComplete
+                      ? 'border-[color:rgba(50,213,131,0.35)] bg-[color:rgba(50,213,131,0.12)] text-[rgb(22,163,74)]'
+                      : 'border-[color:var(--ledger-border-strong)] text-transparent hover:border-[var(--ledger-accent)]'
+                  }`}
+                  aria-label={taskComplete ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}
+                >
+                  {taskComplete ? <Check size={12} /> : null}
+                </button>
+                <span
+                  className={`min-w-0 flex-1 truncate text-xs font-medium ${
+                    taskComplete
+                      ? 'text-[var(--ledger-text-muted)] line-through'
+                      : 'text-[var(--ledger-text-primary)]'
+                  }`}
+                >
+                  {task.title}
+                </span>
+                {!taskComplete && linkLabel ? (
+                  <button
+                    type="button"
+                    onClick={() => openStarterTask(task)}
+                    className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent-hover)]"
+                  >
+                    {linkLabel}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       </section>
     );
   };
 
   const renderProjectProgressStrip = () => {
     if (!selectedProject) return null;
+    const starterProgress = selectedProject.starter_key
+      ? starterProjectProgressById.get(selectedProject.id)?.percentage ?? 0
+      : null;
+    const displayedProgress = starterProgress ?? projectDraft.completeness;
 
     return (
       <div className="mt-4 flex items-center gap-3">
         <span className="text-[12px] font-medium text-[var(--ledger-text-muted)]">Progress</span>
         <span className="w-9 shrink-0 text-[13px] font-medium text-[var(--ledger-text-primary)]">
-          {projectDraft.completeness}%
+          {displayedProgress}%
         </span>
         <div className="min-w-0 flex-1">
           <input
             type="range"
             min="0"
             max="100"
-            value={projectDraft.completeness}
+            value={displayedProgress}
             onPointerDown={() => {
+              if (starterProgress !== null) return;
               isCompletenessDraggingRef.current = true;
               if (autosaveTimerRef.current) window.clearTimeout(autosaveTimerRef.current);
             }}
-            onChange={(e) => updateProjectDraft({ completeness: Number(e.target.value) })}
+            onChange={(e) => {
+              if (starterProgress === null) updateProjectDraft({ completeness: Number(e.target.value) });
+            }}
             onPointerUp={() => {
               isCompletenessDraggingRef.current = false;
               void flushProjectDraft();
@@ -6180,13 +6331,11 @@ export const ProjectsWindow = ({
             style={
               {
                 '--ledger-range-fill': projectDraft.color || '#FF5F40',
-                '--ledger-range-progress': `${Math.max(
-                  0,
-                  Math.min(100, projectDraft.completeness)
-                )}%`,
+                '--ledger-range-progress': `${Math.max(0, Math.min(100, displayedProgress))}%`,
               } as any
             }
-            className="ledger-range h-3.5 w-full min-w-24"
+            className="ledger-range h-3.5 w-full min-w-24 disabled:cursor-default"
+            disabled={starterProgress !== null}
             aria-label="Project progress"
           />
         </div>
@@ -8728,7 +8877,12 @@ export const ProjectsWindow = ({
                   visibleProjects.map((project) => {
                     const semantic = parseProjectStatus(String(project.status));
                     const active = selectedProjectId === project.id;
-                    const displayCompleteness = active
+                    const starterProgress = project.starter_key
+                      ? starterProjectProgressById.get(project.id)?.percentage ?? 0
+                      : null;
+                    const displayCompleteness = starterProgress !== null
+                      ? starterProgress
+                      : active
                       ? Math.max(0, Math.min(100, Number(projectDraft.completeness) || 0))
                       : Math.max(0, Math.min(100, Number(project.completeness) || 0));
                     const progressColor = active

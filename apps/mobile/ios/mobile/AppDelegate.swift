@@ -26,6 +26,17 @@ class AppDelegate: ExpoAppDelegate {
       withModuleName: "main",
       in: window,
       launchOptions: launchOptions)
+
+    // A Home Screen quick action can launch the app from a terminated state.
+    // Wait until the React Native bridge has started before forwarding it as a
+    // normal Ledger deep link.
+    if let shortcutItem = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem,
+       let url = shortcutURL(for: shortcutItem) {
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        _ = self.application(application, open: url, options: [:])
+      }
+    }
 #endif
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -38,6 +49,35 @@ class AppDelegate: ExpoAppDelegate {
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
     return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)
+  }
+
+  // Home Screen quick actions while Ledger is already running.
+  public override func application(
+    _ application: UIApplication,
+    performActionFor shortcutItem: UIApplicationShortcutItem,
+    completionHandler: @escaping (Bool) -> Void
+  ) {
+    guard let url = shortcutURL(for: shortcutItem) else {
+      completionHandler(false)
+      return
+    }
+
+    completionHandler(self.application(application, open: url, options: [:]))
+  }
+
+  private func shortcutURL(for shortcutItem: UIApplicationShortcutItem) -> URL? {
+    switch shortcutItem.type {
+    case "com.ledger.mobile.capture-note":
+      return URL(string: "ledger://capture/note?source=quick-action")
+    case "com.ledger.mobile.add-task":
+      return URL(string: "ledger://capture/task?source=quick-action")
+    case "com.ledger.mobile.add-reminder":
+      return URL(string: "ledger://capture/reminder?source=quick-action")
+    case "com.ledger.mobile.today":
+      return URL(string: "ledger:///today?source=quick-action")
+    default:
+      return nil
+    }
   }
 
   // Universal Links

@@ -140,8 +140,18 @@ import {
   clearBrowserInviteContinuation,
   readBrowserInviteContinuation,
 } from './web/browserInviteContinuation';
-import { openLegacyModule, usePlatform, type LegacyModuleFocus, type LegacyModuleKind } from './platform';
+import {
+  openLegacyModule,
+  routeForProject,
+  usePlatform,
+  type LegacyModuleFocus,
+  type LegacyModuleKind,
+} from './platform';
 import { routeForHome } from './platform/routes';
+import {
+  clearStarterOnboardingReturn,
+  readStarterOnboardingReturn,
+} from './utils/starterOnboarding';
 const AgentAskLedgerPanel = lazy(() =>
   import('./components/Common/AskLedgerPanel').then((module) => ({
     default: module.AskLedgerPanel,
@@ -1516,6 +1526,7 @@ export function DashboardContent({
       completed_at?: string | null;
       created_at?: string | null;
       updated_at?: string | null;
+      starter_key?: string | null;
     }>
   >([]);
   const [upcomingReminders, setUpcomingReminders] = useState<Array<(typeof todayTasks)[number]>>(
@@ -1543,8 +1554,10 @@ export function DashboardContent({
       workspace_color?: string | null;
       created_at?: string | null;
       updated_at?: string | null;
+      starter_key?: string | null;
     }>
   >([]);
+  const [starterTasks, setStarterTasks] = useState<typeof workspaceTasks>([]);
   const [daily, setDaily] = useState<{
     focusItems: Array<{ id: string; text: string; done: boolean }>;
     finished: string;
@@ -2018,6 +2031,7 @@ export function DashboardContent({
     setTodayTasks(cached.state.todayTasks as typeof todayTasks);
     setUpcomingReminders(cached.state.upcomingReminders as typeof upcomingReminders);
     setWorkspaceTasks(cached.state.workspaceTasks as typeof workspaceTasks);
+    setStarterTasks((cached.state.starterTasks as typeof starterTasks) ?? []);
     setProjects(cached.state.projects as typeof projects);
     setUpcoming(cached.state.upcoming as typeof upcoming);
     setNotes(cached.state.notes as typeof notes);
@@ -2062,7 +2076,7 @@ export function DashboardContent({
     overviewFocusRequestRef.current += 1;
     setOverviewFocusResult(null);
     setOverviewFocusStatus('idle');
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, overviewFocusSnapshotKey]);
 
   useEffect(() => {
     if (
@@ -2166,6 +2180,7 @@ export function DashboardContent({
         todayTasks,
         upcomingReminders,
         workspaceTasks,
+        starterTasks,
         projects,
         upcoming,
         notes,
@@ -2185,6 +2200,7 @@ export function DashboardContent({
     todayTasks,
     upcoming,
     upcomingReminders,
+    starterTasks,
     workspaceTasks,
     workspaceTeams,
   ]);
@@ -2564,6 +2580,7 @@ export function DashboardContent({
       setWorkspaceTeams([]);
       setFollowUpTasks([]);
       setWorkspaceTasks([]);
+      setStarterTasks([]);
       return;
     }
 
@@ -2902,6 +2919,7 @@ export function DashboardContent({
                 workspace_id?: string | null;
                 workspace_name?: string | null;
                 workspace_color?: string | null;
+                starter_key?: string | null;
                 updated_at?: string;
                 created_at?: string | null;
               }>)
@@ -2911,6 +2929,11 @@ export function DashboardContent({
             (task) =>
               String(task.status ?? '').toLowerCase() !== 'completed' &&
               !isOverviewDeletePending('task', task.id)
+          )
+        );
+        setStarterTasks(
+          rawTasks.filter(
+            (task) => Boolean(task.starter_key) && !isOverviewDeletePending('task', task.id)
           )
         );
         const calendarFollowUps = rawTasks
@@ -4039,6 +4062,7 @@ export function DashboardContent({
     is_today_focus?: boolean;
     task_horizon?: 'today' | 'long_term' | null;
     remind_at?: string | null;
+    starter_key?: string | null;
   };
 
   type OverviewActionRowKind =
@@ -4232,6 +4256,29 @@ export function DashboardContent({
       }
       handleDashboardWorkspaceRefresh();
       void refreshTodayTasks();
+      if (row.kind === 'task' && target.starter_key) {
+        setStarterTasks((current) =>
+          current.map((task) =>
+            task.id === target.id ? { ...task, status: 'completed' } : task
+          )
+        );
+      }
+      const pending = readStarterOnboardingReturn();
+      const isStarterTask =
+        row.kind === 'task' &&
+        (Boolean(target.starter_key) || pending?.taskId === target.id);
+      const returnProjectId = target.project_id ?? pending?.projectId ?? null;
+      if (isStarterTask && returnProjectId && activeWorkspaceId) {
+        if (pending?.workspaceId === activeWorkspaceId && pending.taskId === target.id) {
+          clearStarterOnboardingReturn();
+        }
+        toast.show('Step complete', {
+          detail: 'Returning to your getting-started project.',
+          variant: 'success',
+          icon: 'ledger',
+        });
+        platform.navigation.openRoute(routeForProject(activeWorkspaceId, returnProjectId));
+      }
     } catch (error) {
       console.error('Failed to complete overview row:', error);
       setTodayTasks(previousTodayTasks);
@@ -5743,6 +5790,51 @@ export function DashboardContent({
         .map((row) => [row.id, row])
     ).values()
   );
+
+  const onboardingTasks = starterTasks.filter((task) => Boolean(task.starter_key));
+  const completedStarterTasks = onboardingTasks.filter((task) =>
+    ['completed', 'done'].includes(String(task.status ?? '').toLowerCase())
+  );
+  const starterProjectId = onboardingTasks.find((task) => task.project_id)?.project_id ?? null;
+  const starterGuideReopened =
+    activeWorkspaceId &&
+    window.localStorage.getItem(`ledger:starter-guide-reopened:${activeWorkspaceId}`) === 'true';
+  const showStarterGuideEntry =
+    onboardingTasks.length > 0 &&
+    (completedStarterTasks.length < onboardingTasks.length || Boolean(starterGuideReopened));
+  const nextStarterTask = onboardingTasks.find(
+    (task) => !['completed', 'done'].includes(String(task.status ?? '').toLowerCase())
+  );
+  const nextStarterTaskLabel = nextStarterTask?.starter_key?.endsWith(':review')
+    ? 'Close the loop in Daily Check-in.'
+    : nextStarterTask?.title ?? 'Continue your first Ledger loop.';
+  const openStarterReview = async () => {
+    if (!activeWorkspaceId || !nextStarterTask?.starter_key?.endsWith(':review')) return;
+    try {
+      await api.updateTaskInWorkspace(nextStarterTask.id, activeWorkspaceId, {
+        status: 'completed',
+      });
+      setStarterTasks((current) =>
+        current.map((task) => (task.id === nextStarterTask.id ? { ...task, status: 'completed' } : task))
+      );
+      clearStarterOnboardingReturn();
+      toast.show('Step complete', {
+        detail: 'Explore Daily Check-in whenever you are ready.',
+        variant: 'success',
+        icon: 'ledger',
+      });
+      if (window.desktopWindow?.openCheckin) {
+        void window.desktopWindow.openCheckin();
+      } else {
+        window.dispatchEvent(new CustomEvent('ledger:open-checkin'));
+      }
+      void refreshTodayTasks();
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not open Daily Check-in.', {
+        variant: 'error',
+      });
+    }
+  };
 
   useEffect(() => {
     if (!initialFocusTaskId) return;
@@ -7288,6 +7380,38 @@ export function DashboardContent({
 
           <div className="web-dashboard-panels grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_280px]">
             <main className="flex min-h-0 min-w-0 flex-col overflow-auto px-3 py-3">
+              {!isLoadingDashboard && showStarterGuideEntry && (
+                <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-2">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-hover)] text-[var(--ledger-accent)]">
+                    <Info size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <p className="text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                        Getting started · {completedStarterTasks.length}/{onboardingTasks.length}
+                      </p>
+                      <p className="text-[11px] leading-4 text-[var(--ledger-text-secondary)]">
+                        {nextStarterTaskLabel}
+                      </p>
+                    </div>
+                  </div>
+                  {starterProjectId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (nextStarterTask?.starter_key?.endsWith(':review')) {
+                          void openStarterReview();
+                        } else {
+                          platform.navigation.openRoute(routeForProject(activeWorkspaceId ?? '', starterProjectId));
+                        }
+                      }}
+                      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-accent-hover)]"
+                    >
+                      {nextStarterTask?.starter_key?.endsWith(':review') ? 'Open check-in' : 'Open guide'}
+                    </button>
+                  )}
+                </div>
+              )}
               {isLoadingDashboard ? (
                 <div className="space-y-2 p-3">
                   {Array.from({ length: 8 }).map((_, i) => (
@@ -10753,6 +10877,7 @@ function AgentMockupPopover() {
   const { activeWorkspaceId } = useWorkspaceContext();
   const [position, setPosition] = useState({ left: 16, top: 16 });
   const [isOpen, setIsOpen] = useState(false);
+  const isOpenRef = useRef(false);
   const [resetKey, setResetKey] = useState(0);
   const [isMinimized, setIsMinimized] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -10764,7 +10889,16 @@ function AgentMockupPopover() {
   const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  useEffect(() => {
     const handleOpen = (event: Event) => {
+      if (isOpenRef.current) {
+        isOpenRef.current = false;
+        setIsOpen(false);
+        return;
+      }
       const detail = (event as CustomEvent<{ x?: number; y?: number }>).detail;
       const x = Number(detail?.x ?? window.innerWidth - 80);
       const y = Number(detail?.y ?? window.innerHeight - 28);
@@ -10776,6 +10910,7 @@ function AgentMockupPopover() {
       setIsMinimized(false);
       setOpenGeneration((current) => current + 1);
       setHasMounted(true);
+      isOpenRef.current = true;
       setIsOpen(true);
     };
     window.addEventListener('ledger:agent-panel-open', handleOpen);
@@ -10790,13 +10925,19 @@ function AgentMockupPopover() {
   useEffect(() => {
     if (!isOpen) return undefined;
     const close = (event: MouseEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent && event.key === 'Escape') setIsOpen(false);
+      if (event instanceof KeyboardEvent && event.key === 'Escape') {
+        isOpenRef.current = false;
+        setIsOpen(false);
+      }
       if (
         event instanceof MouseEvent &&
         event.target instanceof Element &&
+        !event.target.closest('[aria-label="Open Agent"]') &&
         !event.target.closest('[data-agent-mockup-panel], .agent-ask-ledger-portal')
-      )
+      ) {
+        isOpenRef.current = false;
         setIsOpen(false);
+      }
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', close);
@@ -10841,6 +10982,7 @@ function AgentMockupPopover() {
     setSessionTitle('New chat');
     setQuestionDraft('');
     setIsMinimized(false);
+    isOpenRef.current = false;
     setIsOpen(false);
   };
   return createPortal(
