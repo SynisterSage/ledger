@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
+import { EmptyState } from '@/components/EmptyState';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
 import type { MobileCalendarItem, MobileCalendarItemType } from './calendarItemNormalizer';
@@ -174,10 +175,15 @@ export function SelectedDayAgenda({ date, items, onCreate, onOpenItem, onLongPre
       </View>
 
       {!items.length ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Create something for ${dateLabel}`} onPress={() => onCreate(date)} style={styles.emptyState}>
-          <AppText variant="meta">No items scheduled</AppText>
-          <AppText variant="button" style={{ color: theme.colors.accent }}>+ Create something</AppText>
-        </Pressable>
+        <EmptyState
+          iconName={{ ios: 'calendar', android: 'event', web: 'event' }}
+          title="No items scheduled"
+          description={`Add something to ${dateLabel}.`}
+          kind="first-use"
+          density="compact"
+          style={styles.emptyState}
+          primaryAction={{ label: 'Create something', onPress: () => onCreate(date), accessibilityLabel: `Create something for ${dateLabel}` }}
+        />
       ) : groups.map((group) => (
         <View key={group.id} style={styles.group}>
           <AppText variant="caption" style={styles.groupLabel}>{group.label}</AppText>
@@ -193,7 +199,7 @@ const styles = StyleSheet.create({
   header: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
   headerText: { gap: 2 },
   createButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  emptyState: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
+  emptyState: { paddingHorizontal: 8 },
   group: { marginTop: 7 },
   groupLabel: { paddingHorizontal: 8, paddingBottom: 2, fontWeight: '600' },
   row: { minHeight: 49, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8 },

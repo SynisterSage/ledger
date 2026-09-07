@@ -41,8 +41,10 @@ const statusAliases: Record<string, string[]> = {
   todo: ['todo', 'to do', 'not started', 'not completed', 'open'],
   open: ['open', 'todo', 'to do', 'not started', 'not completed'],
   not_completed: ['not completed', 'todo', 'to do', 'not started', 'open'],
+  notstarted: ['not started', 'notstarted', 'todo', 'to do', 'open'],
   not_started: ['not started', 'todo', 'to do', 'not completed', 'open'],
   in_progress: ['in progress', 'in-progress', 'in_progress'],
+  inprogress: ['in progress', 'in-progress', 'inprogress'],
 };
 const answerContainsStatus = (answer: string, status: string) => (statusAliases[status.replace(/\s+/g, '_')] ?? [status]).some((value) => new RegExp(`\\b${value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&').replace(/_/g, '[ _-]')}\\b`, 'i').test(answer));
 const providerPattern = (provider: string) => provider.replace(/[\\^$*+?.()|[\]{}]/g, '\\$&');

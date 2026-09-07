@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  session,
   dialog,
   Notification,
   ipcMain,
@@ -61,6 +62,13 @@ import {
   type FloatingMeetingIndicatorActivity,
 } from './floatingMeetingIndicator';
 import { MeetingAutoStopCoordinator, type AutoStopReason } from './meetingAutoStopCoordinator';
+import {
+  performanceDiagnosticsEnabled,
+  recordIpcDuration,
+  recordPerformanceEvent,
+  recentPerformanceEvents,
+} from './performanceDiagnostics';
+import { boundedOptionalString, boundedPerformanceDetails, isValidModuleWindowKind } from './ipcValidation';
 import {
   activityFromLevel,
   restoreIndicatorPosition,
@@ -323,6 +331,44 @@ localTranscriptionService.modelManager.onChange((status) => {
 });
 
 const desktopDeviceIdPath = () => path.join(app.getPath('userData'), 'ledger-device-id');
+
+// Phase 1 diagnostics are opt-in. Renderer payloads are bounded here as well
+// as in preload because IPC callers should never be treated as trusted input.
+ipcMain.on('performance:renderer-event', (event, payload: unknown) => {
+  if (!performanceDiagnosticsEnabled || !payload || typeof payload !== 'object') return;
+  const value = payload as { name?: unknown; durationMs?: unknown; details?: unknown };
+  if (typeof value.name !== 'string' || value.name.length === 0) return;
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  const details = boundedPerformanceDetails(value.details);
+  recordPerformanceEvent({
+    name: value.name.slice(0, 100),
+    durationMs:
+      typeof value.durationMs === 'number' && Number.isFinite(value.durationMs)
+        ? Math.max(0, Math.min(value.durationMs, 60_000))
+        : undefined,
+    windowId: sender?.id,
+    processId: sender?.webContents.getProcessId(),
+    details,
+  });
+});
+
+ipcMain.handle('performance:recent-events', () =>
+  performanceDiagnosticsEnabled ? recentPerformanceEvents() : []
+);
+
+ipcMain.handle('performance:memory', () => {
+  if (!performanceDiagnosticsEnabled) return null;
+  return {
+    at: new Date().toISOString(),
+    process: process.memoryUsage(),
+    metrics: app.getAppMetrics().map((metric) => ({
+      pid: metric.pid,
+      type: metric.type,
+      memoryWorkingSetSize: metric.memory?.workingSetSize ?? null,
+      cpuPercent: metric.cpu?.percentCPUUsage ?? null,
+    })),
+  };
+});
 
 ipcMain.handle('updates:status', () => ledgerUpdateState);
 ipcMain.handle('updates:check', () => checkForLedgerUpdate());
@@ -2806,6 +2852,7 @@ type ModuleWindowKind =
 type ModuleFocusPayload = {
   kind: ModuleWindowKind;
   historyMode?: 'push' | 'replace';
+  navigationGeneration?: number;
   focusDate?: string | null;
   focusProjectId?: string | null;
   focusNoteId?: string | null;
@@ -2824,6 +2871,7 @@ type WorkspaceModuleRoute = {
   focusContext?: string | null;
   focusSection?: string | null;
 };
+let workspaceNavigationGeneration = 0;
 type DetachedTabSession = {
   tabId: string;
   workspaceId?: string | null;
@@ -7768,6 +7816,40 @@ const hardenRendererWindow = (win: BrowserWindow) => {
   });
 };
 
+const attachPerformanceDiagnostics = (win: BrowserWindow, role: string) => {
+  if (!performanceDiagnosticsEnabled) return;
+  const createdAt = performance.now();
+  const details = { role };
+  recordPerformanceEvent({ name: 'window.created', windowId: win.id, details });
+  win.webContents.on('did-start-loading', () =>
+    recordPerformanceEvent({ name: 'renderer.load-start', windowId: win.id, details })
+  );
+  win.webContents.on('did-finish-load', () =>
+    recordPerformanceEvent({
+      name: 'renderer.load-finished',
+      durationMs: performance.now() - createdAt,
+      windowId: win.id,
+      processId: win.webContents.getProcessId(),
+      details,
+    })
+  );
+  win.webContents.on('render-process-gone', (_event, goneDetails) =>
+    recordPerformanceEvent({
+      name: 'renderer.process-gone',
+      windowId: win.id,
+      details: { ...details, reason: goneDetails.reason },
+    })
+  );
+  win.on('closed', () =>
+    recordPerformanceEvent({
+      name: 'window.closed',
+      durationMs: performance.now() - createdAt,
+      windowId: win.id,
+      details,
+    })
+  );
+};
+
 function attachNativeContextMenu(win: BrowserWindow) {
   win.webContents.on('context-menu', (_event, params) => {
     const template: Electron.MenuItemConstructorOptions[] = [];
@@ -7875,6 +7957,7 @@ function createSidebarWindow() {
       spellcheck: true,
     },
   });
+  attachPerformanceDiagnostics(sidebarWin, 'sidebar');
   hardenRendererWindow(sidebarWin);
   watchLedgerWindowFocus(sidebarWin);
 
@@ -8117,7 +8200,10 @@ function broadcastWorkspaceNavigationState() {
   }
 }
 
-function broadcastWorkspaceRouteRequested(route: WorkspaceModuleRoute) {
+function broadcastWorkspaceRouteRequested(
+  route: WorkspaceModuleRoute,
+  navigationGeneration?: number
+) {
   const targets = new Set<BrowserWindow>();
   if (sidebarWin && !sidebarWin.isDestroyed()) targets.add(sidebarWin);
   if (workspaceModuleWin && !workspaceModuleWin.isDestroyed()) targets.add(workspaceModuleWin);
@@ -8125,24 +8211,11 @@ function broadcastWorkspaceRouteRequested(route: WorkspaceModuleRoute) {
     if (!win.isDestroyed()) targets.add(win);
   }
   for (const win of targets) {
-    win.webContents.send('workspace:route-requested', { ...route });
+    win.webContents.send('workspace:route-requested', {
+      ...route,
+      ...(navigationGeneration === undefined ? {} : { navigationGeneration }),
+    });
   }
-}
-
-function sendDetachedRouteChanged(record: DetachedWindowRecord) {
-  if (record.win.isDestroyed()) return;
-  sendWorkspaceRouteChanged(record.win, record.route);
-  sendModuleFocus(
-    record.route.kind,
-    record.route.focusDate,
-    record.route.focusProjectId,
-    record.route.focusNoteId,
-    record.route.focusTaskId,
-    record.route.focusContext,
-    record.route.focusSection,
-    record.win
-  );
-  sendNavigationStateToWindow(record.win);
 }
 
 function navigateDetachedWindow(
@@ -8161,7 +8234,21 @@ function navigateDetachedWindow(
   if (existingIndex >= 0) record.recentRoutes.splice(existingIndex, 1);
   record.recentRoutes.unshift({ ...route });
   record.recentRoutes.length = Math.min(record.recentRoutes.length, 12);
-  sendDetachedRouteChanged(record);
+  const navigationGeneration = ++workspaceNavigationGeneration;
+  if (!record.win.isDestroyed()) {
+    sendWorkspaceRouteChanged(record.win, record.route, navigationGeneration);
+    sendModuleFocus(
+      record.route.kind,
+      record.route.focusDate,
+      record.route.focusProjectId,
+      record.route.focusNoteId,
+      record.route.focusTaskId,
+      record.route.focusContext,
+      record.route.focusSection,
+      record.win
+    );
+    sendNavigationStateToWindow(record.win);
+  }
   return true;
 }
 
@@ -8195,6 +8282,37 @@ function routeFromModuleArgs(
     focusInboxId: focusInboxId ?? null,
     focusContext: focusContext ?? null,
     focusSection: focusSection ?? null,
+  };
+}
+
+function normalizeModuleFocusPayload(payload: unknown): ModuleFocusPayload | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const value = payload as Record<string, unknown>;
+  if (!isValidModuleWindowKind(value.kind)) return null;
+
+  const focusDate = boundedOptionalString(value.focusDate, 80);
+  const focusProjectId = boundedOptionalString(value.focusProjectId, 200);
+  const focusNoteId = boundedOptionalString(value.focusNoteId, 200);
+  const focusTaskId = boundedOptionalString(value.focusTaskId, 200);
+  const focusInboxId = boundedOptionalString(value.focusInboxId, 200);
+  const focusContext = boundedOptionalString(value.focusContext, 500);
+  const focusSection = boundedOptionalString(value.focusSection, 120);
+  if ([focusDate, focusProjectId, focusNoteId, focusTaskId, focusInboxId, focusContext, focusSection].includes(undefined)) return null;
+
+  return {
+    kind: value.kind as ModuleWindowKind,
+    historyMode: value.historyMode === 'replace' ? 'replace' : 'push',
+    navigationGeneration:
+      typeof value.navigationGeneration === 'number' && Number.isSafeInteger(value.navigationGeneration)
+        ? value.navigationGeneration
+        : undefined,
+    focusDate,
+    focusProjectId,
+    focusNoteId,
+    focusTaskId,
+    focusInboxId,
+    focusContext,
+    focusSection,
   };
 }
 
@@ -8297,7 +8415,11 @@ function registerWorkspaceModuleKind(
   moduleWins.set(kind, win);
 }
 
-function sendWorkspaceRouteChanged(win: BrowserWindow, route: WorkspaceModuleRoute) {
+function sendWorkspaceRouteChanged(
+  win: BrowserWindow,
+  route: WorkspaceModuleRoute,
+  navigationGeneration = workspaceNavigationGeneration
+) {
   win.webContents.send('workspace:route-changed', {
     kind: route.kind,
     focusDate: route.focusDate,
@@ -8306,6 +8428,7 @@ function sendWorkspaceRouteChanged(win: BrowserWindow, route: WorkspaceModuleRou
     focusTaskId: route.focusTaskId,
     focusContext: route.focusContext,
     focusSection: route.focusSection,
+    navigationGeneration,
   });
 }
 
@@ -8324,6 +8447,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
 
   registerWorkspaceModuleKind(route.kind, moduleWin, route);
   recordWorkspaceRoute(route);
+  const navigationGeneration = ++workspaceNavigationGeneration;
   setWorkspaceWindowAsFloatingDockTarget(route.kind);
 
   const shouldKeepFullscreen =
@@ -8343,7 +8467,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
       if (moduleWin.isDestroyed()) return;
       applyWindowsModuleWindowShape(moduleWin);
       sendModuleFullscreenState(route.kind, moduleWin, shouldKeepFullscreen);
-      sendWorkspaceRouteChanged(moduleWin, route);
+      sendWorkspaceRouteChanged(moduleWin, route, navigationGeneration);
       sendModuleFocus(
         route.kind,
         route.focusDate,
@@ -8359,7 +8483,7 @@ function navigateWorkspaceModuleWindow(route: WorkspaceModuleRoute, pushHistory 
     });
   } else {
     sendModuleFullscreenState(route.kind, moduleWin, shouldKeepFullscreen);
-    sendWorkspaceRouteChanged(moduleWin, route);
+    sendWorkspaceRouteChanged(moduleWin, route, navigationGeneration);
     sendModuleFocus(
       route.kind,
       route.focusDate,
@@ -8611,6 +8735,10 @@ function openModuleWindow(
       spellcheck: true,
     },
   });
+  attachPerformanceDiagnostics(
+    moduleWin,
+    isDetachedWindow ? `detached:${kind}` : `workspace:${kind}`
+  );
   hardenRendererWindow(moduleWin);
   watchLedgerWindowFocus(moduleWin);
 
@@ -9838,12 +9966,16 @@ ipcMain.handle('window:workspace-clear-recent', (event) => {
   return true;
 });
 
-ipcMain.handle('window:workspace-route-changed', (event, payload: ModuleFocusPayload) => {
+ipcMain.handle('window:workspace-route-changed', (event, rawPayload: unknown) => {
+  const startedAt = performance.now();
+  const payload = normalizeModuleFocusPayload(rawPayload);
+  if (!payload) return false;
   const kind = payload?.kind;
   if (!kind) return false;
-  const detachedRecord = getDetachedWindowRecord(BrowserWindow.fromWebContents(event.sender));
-  if (detachedRecord) {
-    return navigateDetachedWindow(
+  const senderWindow = BrowserWindow.fromWebContents(event.sender);
+  const detachedRecord = getDetachedWindowRecord(senderWindow);
+  const result = detachedRecord
+    ? navigateDetachedWindow(
       detachedRecord,
       routeFromModuleArgs(
         kind,
@@ -9855,23 +9987,31 @@ ipcMain.handle('window:workspace-route-changed', (event, payload: ModuleFocusPay
         payload.focusSection
       ),
       payload.historyMode !== 'replace'
-    );
-  }
-  return updateWorkspaceModuleRoute(
-    routeFromModuleArgs(
-      kind,
-      payload.focusDate,
-      payload.focusProjectId,
-      payload.focusNoteId,
-      payload.focusTaskId,
-      payload.focusContext,
-      payload.focusSection
-    ),
-    payload.historyMode !== 'replace'
+    )
+    : updateWorkspaceModuleRoute(
+        routeFromModuleArgs(
+          kind,
+          payload.focusDate,
+          payload.focusProjectId,
+          payload.focusNoteId,
+          payload.focusTaskId,
+          payload.focusContext,
+          payload.focusSection
+        ),
+        payload.historyMode !== 'replace'
+      );
+  recordIpcDuration(
+    'window:workspace-route-changed',
+    performance.now() - startedAt,
+    senderWindow,
+    { kind }
   );
+  return result;
 });
 
-ipcMain.handle('window:workspace-select-route', (event, payload: ModuleFocusPayload) => {
+ipcMain.handle('window:workspace-select-route', (event, rawPayload: unknown) => {
+  const payload = normalizeModuleFocusPayload(rawPayload);
+  if (!payload) return false;
   const kind = payload?.kind;
   if (!kind) return false;
   const route = routeFromModuleArgs(
@@ -9886,14 +10026,16 @@ ipcMain.handle('window:workspace-select-route', (event, payload: ModuleFocusPayl
   const senderWindow = BrowserWindow.fromWebContents(event.sender);
   const detachedRecord = getDetachedWindowRecord(senderWindow);
   if (detachedRecord) {
-    senderWindow?.webContents.send('workspace:route-requested', { ...route });
     return navigateDetachedWindow(detachedRecord, route, false);
   }
-  broadcastWorkspaceRouteRequested(route);
-  return navigateWorkspaceModuleWindow(route, false);
+  const result = navigateWorkspaceModuleWindow(route, false);
+  broadcastWorkspaceRouteRequested(route, workspaceNavigationGeneration);
+  return result;
 });
 
-ipcMain.handle('window:workspace-close-route', (event, payload: ModuleFocusPayload) => {
+ipcMain.handle('window:workspace-close-route', (event, rawPayload: unknown) => {
+  const payload = normalizeModuleFocusPayload(rawPayload);
+  if (!payload) return false;
   const kind = payload?.kind;
   if (!kind) return false;
   const route = routeFromModuleArgs(
@@ -10345,6 +10487,18 @@ function initializeTouchBarController() {
 }
 
 app.whenReady().then(() => {
+  const defaultSession = session.defaultSession;
+  defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const owner = BrowserWindow.fromWebContents(webContents);
+    // Ledger owns its local renderer windows; deny permission requests from
+    // anything else and keep the allowlist intentionally narrow.
+    callback(Boolean(owner && !owner.isDestroyed() && permission === 'media'));
+  });
+  defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (!webContents) return false;
+    const owner = BrowserWindow.fromWebContents(webContents);
+    return Boolean(owner && !owner.isDestroyed() && permission === 'media');
+  });
   autoStopTimer = setInterval(() => {
     meetingAutoStopCoordinator.tick();
     meetingAutoStopCoordinator.finishGrace();

@@ -69,6 +69,7 @@ import {
 } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { PinActionButton } from '../Common/PinActionButton';
 import { SkeletonLoader, SkeletonNoteCard } from '../Common/Skeleton';
@@ -11776,7 +11777,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                       </div>
                     ) : (
                       <div className="px-1 py-1">
-                        <p className="text-sm text-[var(--ledger-text-muted)]">No linked project</p>
+                        <LedgerEmptyState
+                          state="first-use"
+                          title="No linked project"
+                          description="Link this note to a project when it becomes part of a larger outcome."
+                          size="compact"
+                          testId="note-linked-project-empty"
+                          className="justify-start px-0 py-0 text-left"
+                        />
                       </div>
                     )
                   ) : (

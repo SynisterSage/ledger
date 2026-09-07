@@ -338,9 +338,15 @@ const formatTaskDueDateLabel = (value?: string | null) => {
 export const ExpandedSidebar = ({
   onDragHandleMouseDown,
   onCollapseRequest,
+  previewMode = false,
+  hideTrySection = false,
+  hideCollapseControl = false,
 }: {
   onDragHandleMouseDown?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onCollapseRequest?: () => void;
+  previewMode?: boolean;
+  hideTrySection?: boolean;
+  hideCollapseControl?: boolean;
 }) => {
   const { user } = useAuthContext();
   const { activeWorkspace, activeWorkspaceId } = useWorkspaceContext();
@@ -349,6 +355,10 @@ export const ExpandedSidebar = ({
   const api = useApi();
   const platform = usePlatform();
   const openSidebarModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus & { kind?: string } = {}) => {
+    if (previewMode) {
+      window.dispatchEvent(new CustomEvent('ledger:preview-route-intent', { detail: { kind, focus } }));
+      return;
+    }
     const { kind: _legacyKind, ...legacyFocus } = focus;
     if (platform.kind === 'web') {
       openLegacyModule(platform.navigation, activeWorkspaceId, kind, legacyFocus);
@@ -357,6 +367,10 @@ export const ExpandedSidebar = ({
     void window.desktopWindow?.openModule(kind, focus as any);
   };
   const toggleSidebarModule = (kind: LegacyModuleKind, focus: LegacyModuleFocus & { kind?: string } = {}) => {
+    if (previewMode) {
+      window.dispatchEvent(new CustomEvent('ledger:preview-route-intent', { detail: { kind, focus } }));
+      return;
+    }
     if (platform.kind === 'web') {
       openLegacyModule(platform.navigation, activeWorkspaceId, kind, focus);
       return;
@@ -2793,7 +2807,7 @@ export const ExpandedSidebar = ({
         }}
         style={{ cursor: onDragHandleMouseDown ? 'grab' : 'auto' }}
       >
-        <div className="flex items-start justify-between gap-3">
+        {!hideCollapseControl && <div className="flex items-start justify-between gap-3">
           <button
             type="button"
             onMouseDown={(e) => e.stopPropagation()}
@@ -2807,7 +2821,7 @@ export const ExpandedSidebar = ({
           >
             <ChevronLeft size={16} />
           </button>
-        </div>
+        </div>}
 
         <div className="mt-0 flex items-center justify-between gap-2">
           <div className="min-w-0 -ml-1.5">
@@ -4122,7 +4136,7 @@ export const ExpandedSidebar = ({
         </section>
       </div>
 
-      <div className="shrink-0 border-t border-[color:var(--ledger-border-subtle)] px-3.5 pb-3 pt-2">
+      {!hideTrySection && <div className="shrink-0 border-t border-[color:var(--ledger-border-subtle)] px-3.5 pb-3 pt-2">
         <p className="flex w-full items-center justify-between gap-3 px-0.5 text-left text-[12px] font-medium text-[var(--ledger-text-secondary)]">
           <span className="truncate">Try</span>
         </p>
@@ -4139,7 +4153,7 @@ export const ExpandedSidebar = ({
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       {contextMenu &&
         createPortal(

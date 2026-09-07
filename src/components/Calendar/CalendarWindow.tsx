@@ -11,6 +11,7 @@ import {
   BellRing,
   ClipboardPaste,
   CalendarPlus,
+  FileText,
   Palette,
   PencilLine,
   Trash2,
@@ -65,6 +66,7 @@ import {
 } from '../Common/ModuleWindowHeader';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import {
   CreateFieldRow,
   CreateModalShell,
@@ -303,6 +305,208 @@ type NoteRow = {
   title: string;
   mode?: 'text' | 'mind_map' | 'meeting_note';
 };
+
+const previewCalendar: CalendarRow = {
+  id: 'preview-calendar-main',
+  name: 'Ledger calendar',
+  color: '#FF5F40',
+  workspace_id: 'preview-workspace',
+  is_personal: false,
+  is_default: true,
+  is_visible: true,
+};
+
+const previewProjects: ProjectRow[] = [
+  { id: 'preview-beta', name: 'Ledger public beta', color: '#FF5F40', end_date: '2026-09-12', status: 'in_progress' },
+  { id: 'preview-foundations', name: 'Workspace foundations', color: '#8b78d8', end_date: '2026-10-03', status: 'in_progress' },
+];
+
+const previewCalendarEvents: EventRow[] = [
+  {
+    id: 'preview-calendar-event-review',
+    title: 'Product review',
+    start_at: '2026-08-27T10:00:00.000Z',
+    end_at: '2026-08-27T10:45:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#FF5F40',
+    status: 'planned',
+    visibility: 'workspace',
+    project_id: 'preview-beta',
+    notes: 'Review the beta scope, onboarding flow, and launch readiness.',
+    location: 'Ledger workspace',
+  },
+  {
+    id: 'preview-calendar-event-handoff',
+    title: 'Design handoff',
+    start_at: '2026-08-28T14:00:00.000Z',
+    end_at: '2026-08-28T14:30:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#8b78d8',
+    status: 'planned',
+    visibility: 'workspace',
+    project_id: 'preview-foundations',
+    notes: 'Walk through the shell and capture flow with the product team.',
+  },
+  {
+    id: 'preview-calendar-event-planning',
+    title: 'Weekly planning block',
+    start_at: '2026-08-31T09:00:00.000Z',
+    end_at: '2026-08-31T09:30:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#5aa6a0',
+    status: 'planned',
+    visibility: 'workspace',
+    notes: 'Choose the next actions and follow-ups for the week.',
+  },
+  {
+    id: 'preview-calendar-event-kickoff',
+    title: 'Beta kickoff',
+    start_at: '2026-08-04T11:00:00.000Z',
+    end_at: '2026-08-04T12:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#FF5F40',
+    status: 'done',
+    visibility: 'workspace',
+    project_id: 'preview-beta',
+  },
+  {
+    id: 'preview-calendar-event-foundations',
+    title: 'Foundations working session',
+    start_at: '2026-08-11T13:30:00.000Z',
+    end_at: '2026-08-11T14:30:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#8b78d8',
+    status: 'planned',
+    visibility: 'workspace',
+    project_id: 'preview-foundations',
+  },
+  {
+    id: 'preview-calendar-event-analytics',
+    title: 'Review beta signals',
+    start_at: '2026-08-18T15:00:00.000Z',
+    end_at: '2026-08-18T15:45:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#FF5F40',
+    status: 'planned',
+    visibility: 'workspace',
+    project_id: 'preview-beta',
+  },
+  {
+    id: 'preview-calendar-event-review-rhythm',
+    title: 'Review rhythm check-in',
+    start_at: '2026-08-25T09:30:00.000Z',
+    end_at: '2026-08-25T10:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#5aa6a0',
+    status: 'done',
+    visibility: 'workspace',
+  },
+  {
+    id: 'preview-calendar-event-retro',
+    title: 'Launch readiness retro',
+    start_at: '2026-08-29T11:00:00.000Z',
+    end_at: '2026-08-29T11:45:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#FF5F40',
+    status: 'planned',
+    visibility: 'workspace',
+    project_id: 'preview-beta',
+  },
+];
+
+const previewCalendarReminders: ReminderRow[] = [
+  {
+    id: 'preview-calendar-reminder-feedback',
+    title: 'Send beta feedback follow-up',
+    remind_at: '2026-08-27T15:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#F59E0B',
+    is_done: false,
+    priority: 1,
+    project_id: 'preview-beta',
+    notes: 'Send the recap and link the responses to the beta brief.',
+  },
+  {
+    id: 'preview-calendar-reminder-review',
+    title: 'Prepare weekly review',
+    remind_at: '2026-08-28T16:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#5aa6a0',
+    is_done: false,
+    project_id: 'preview-foundations',
+    notes: 'Bring open decisions and blocked items to the review.',
+  },
+  {
+    id: 'preview-calendar-reminder-scope',
+    title: 'Share scope notes',
+    remind_at: '2026-08-06T16:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#F59E0B',
+    is_done: true,
+    priority: 0,
+    project_id: 'preview-beta',
+  },
+  {
+    id: 'preview-calendar-reminder-capture',
+    title: 'Check capture edge cases',
+    remind_at: '2026-08-13T10:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#8b78d8',
+    is_done: false,
+    priority: 1,
+    project_id: 'preview-foundations',
+  },
+  {
+    id: 'preview-calendar-reminder-feedback-round',
+    title: 'Collect beta feedback',
+    remind_at: '2026-08-20T14:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#FF5F40',
+    is_done: false,
+    priority: 1,
+    project_id: 'preview-beta',
+  },
+  {
+    id: 'preview-calendar-reminder-weekly',
+    title: 'Close out the week',
+    remind_at: '2026-08-26T17:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#5aa6a0',
+    is_done: false,
+    priority: 0,
+  },
+  {
+    id: 'preview-calendar-reminder-launch',
+    title: 'Confirm launch checklist',
+    remind_at: '2026-08-30T12:00:00.000Z',
+    calendar_id: previewCalendar.id,
+    color: '#FF5F40',
+    is_done: false,
+    priority: 1,
+    project_id: 'preview-beta',
+  },
+];
+
+const previewCalendarTasks: TaskRow[] = [
+  { id: 'preview-calendar-task-1', title: 'Confirm launch review agenda', status: 'todo', project_id: 'preview-beta', due_date: '2026-08-27', due_time: '09:30' },
+  { id: 'preview-calendar-task-2', title: 'Capture design handoff decisions', status: 'todo', project_id: 'preview-foundations', due_date: '2026-08-28', due_time: '16:00' },
+  { id: 'preview-calendar-task-3', title: 'Write beta scope summary', status: 'completed', project_id: 'preview-beta', due_date: '2026-08-08', due_time: '11:00' },
+  { id: 'preview-calendar-task-4', title: 'Test sidebar capture states', status: 'in_progress', project_id: 'preview-foundations', due_date: '2026-08-15', due_time: '14:00' },
+  { id: 'preview-calendar-task-5', title: 'Prepare review questions', status: 'todo', project_id: 'preview-foundations', due_date: '2026-08-22', due_time: '10:00' },
+];
+
+const previewCalendarMilestones: MilestoneRow[] = [
+  { id: 'preview-calendar-milestone-launch', title: 'Public beta launch', milestone_date: '2026-09-12', completed: false, project_id: 'preview-beta' },
+  { id: 'preview-calendar-milestone-review', title: 'First weekly review', milestone_date: '2026-09-25', completed: false, project_id: 'preview-foundations' },
+  { id: 'preview-calendar-milestone-scope', title: 'Scope locked', milestone_date: '2026-08-09', completed: true, project_id: 'preview-beta' },
+  { id: 'preview-calendar-milestone-shell', title: 'Shell ready for review', milestone_date: '2026-08-19', completed: false, project_id: 'preview-foundations' },
+  { id: 'preview-calendar-milestone-check-in', title: 'Weekly review rhythm', milestone_date: '2026-08-28', completed: false, project_id: 'preview-foundations' },
+];
+
+const previewCalendarNotes: NoteRow[] = [
+  { id: 'preview-calendar-note-beta', title: 'Public beta brief', mode: 'text' },
+  { id: 'preview-calendar-note-review', title: 'Weekly review template', mode: 'meeting_note' },
+];
 
 type GridQuickAddState = {
   dateKey: string;
@@ -856,6 +1060,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
 
 export const CalendarWindow = ({
   webQuery,
+  previewMode = false,
 }: {
   webQuery?: {
     view?: 'month' | 'week' | 'day' | 'agenda';
@@ -863,6 +1068,7 @@ export const CalendarWindow = ({
     event?: string;
     reminder?: string;
   };
+  previewMode?: boolean;
 } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
@@ -886,7 +1092,9 @@ export const CalendarWindow = ({
   const initialCalendarSection =
     webQuery?.view ?? new URLSearchParams(window.location.search).get('section')?.trim() ?? '';
   const [viewMode, setViewMode] = useState<CalendarViewMode>(
-    initialCalendarSection === 'day' || initialCalendarSection === 'month'
+    previewMode
+      ? 'month'
+      : initialCalendarSection === 'day' || initialCalendarSection === 'month'
       ? initialCalendarSection
       : 'week'
   );
@@ -2500,6 +2708,14 @@ export const CalendarWindow = ({
     let cancelled = false;
 
     const loadPreferenceDefaults = async () => {
+      if (previewMode) {
+        setCalendarPreferences((current) => ({
+          ...current,
+          timeFormat: '12h',
+          defaultCalendarView: 'month',
+        }));
+        return;
+      }
       try {
         const payload = (await api.getUserSettings()) as {
           preferences?: CalendarPreferenceSnapshot | null;
@@ -2642,7 +2858,7 @@ export const CalendarWindow = ({
     return () => {
       cancelled = true;
     };
-  }, [api, user?.id, initialFocusDate]);
+  }, [api, initialFocusDate, previewMode, user?.id]);
 
   useEffect(() => {
     if (viewMode !== 'day' || !selectedTimelineInVisibleHours || selectedTimelineHour === null) {
@@ -2732,6 +2948,26 @@ export const CalendarWindow = ({
     let cancelled = false;
 
     const loadCalendarData = async () => {
+      if (previewMode) {
+        setCalendars([previewCalendar]);
+        setEvents(previewCalendarEvents);
+        setReminders(previewCalendarReminders);
+        setProjects(previewProjects);
+        setMilestones(previewCalendarMilestones);
+        setTasks(previewCalendarTasks);
+        setNotes(previewCalendarNotes);
+        setCalendarColorDrafts({ [previewCalendar.id]: previewCalendar.color });
+        setFollowUpTasksByEvent({
+          'preview-calendar-event-review': [previewCalendarTasks[0]],
+        });
+        setSelectedEvent(null);
+        setSelectedReminder(null);
+        setHasLoadedData(true);
+        hasLoadedDataRef.current = true;
+        setError(null);
+        setIsLoading(false);
+        return;
+      }
       if (!user || !activeWorkspaceId) {
         if (!cancelled) {
           setCalendars([]);
@@ -2991,6 +3227,7 @@ export const CalendarWindow = ({
     api,
     effectiveCalendarScope,
     calendarRefreshToken,
+    previewMode,
   ]);
 
   useEffect(() => {
@@ -3440,15 +3677,15 @@ export const CalendarWindow = ({
       if (actionId === 'calendar.today') jumpToToday();
       else if (actionId === 'calendar.previous') moveView(-1);
       else if (actionId === 'calendar.next') moveView(1);
-      else if (actionId === 'calendar.view.day') setViewMode('day');
-      else if (actionId === 'calendar.view.week') setViewMode('week');
+      else if (actionId === 'calendar.view.day' && !previewMode) setViewMode('day');
+      else if (actionId === 'calendar.view.week' && !previewMode) setViewMode('week');
       else if (actionId === 'calendar.view.month') setViewMode('month');
       else if (actionId === 'event.create')
         openComposerAtSlot(formatDateKey(viewAnchor), 9, '', 'event');
     };
     window.addEventListener('ledger:touchbar-action', handleTouchBarAction);
     return () => window.removeEventListener('ledger:touchbar-action', handleTouchBarAction);
-  }, [viewAnchor, viewMode]);
+  }, [previewMode, viewAnchor, viewMode]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -5003,6 +5240,15 @@ export const CalendarWindow = ({
     void window.desktopWindow?.closeModule('calendar');
   };
 
+  const agendaHasItems = viewConfig.dates.some((dayDate) => {
+    const key = formatDateKey(dayDate);
+    return Boolean(
+      (eventsByDay[key]?.length ?? 0) +
+        (remindersByDay[key]?.length ?? 0) +
+        (dueItemsByDay[key]?.length ?? 0)
+    );
+  });
+
   return (
     <div
       className="relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] shadow-none"
@@ -5014,7 +5260,7 @@ export const CalendarWindow = ({
         hasUnsavedChanges={false}
         onCancel={() => setShowCloseGuardModal(false)}
       />
-      <ModuleWindowHeader
+      {!previewMode && <ModuleWindowHeader
         title="Calendar"
         subtitle={viewConfig.label}
         icon={<CalendarDays size={18} className="text-[#FF5F40]" />}
@@ -5163,7 +5409,7 @@ export const CalendarWindow = ({
             </ModuleHeaderSegmentedGroup>
           </div>
         }
-      />
+      />}
 
       <ContextMenu
         open={Boolean(calendarHeaderMenu)}
@@ -5318,7 +5564,7 @@ export const CalendarWindow = ({
         className="relative flex-1 flex overflow-hidden"
         data-reduce-motion={reduceMotion ? 'true' : 'false'}
       >
-        {!isLeftPaneCollapsed ? (
+        {!previewMode && !isLeftPaneCollapsed ? (
           <>
             <aside
               className="ledger-pane-surface ledger-pane-left shrink-0 overflow-auto border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4"
@@ -5681,7 +5927,7 @@ export const CalendarWindow = ({
               title="Drag to resize sidebar"
             />
           </>
-        ) : (
+        ) : !previewMode ? (
           <div className="ledger-pane-toggle absolute left-2 top-4 z-30">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
@@ -5691,7 +5937,7 @@ export const CalendarWindow = ({
               <ChevronRight size={14} />
             </button>
           </div>
-        )}
+        ) : null}
 
         <section className="flex-1 min-w-0 p-0">
           <div className="flex h-full flex-col overflow-hidden bg-[var(--ledger-background)]">
@@ -5712,6 +5958,18 @@ export const CalendarWindow = ({
                 container.scrollLeft += event.deltaX;
               }}
             >
+              {previewMode && viewMode === 'day' ? (
+                <div className="border-b border-[color:var(--ledger-border-subtle)] px-5 py-2">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('month')}
+                    className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  >
+                    <ChevronLeft size={13} aria-hidden="true" />
+                    Back to month
+                  </button>
+                </div>
+              ) : null}
               {calendarDrag ? (
                 <div className="pointer-events-none absolute left-1/2 top-3 z-[60] flex w-fit -translate-x-1/2 items-center gap-2 rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-1.5 text-[11px] text-[var(--ledger-text-secondary)] shadow-[var(--ledger-shadow)]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--ledger-accent)]" />
@@ -5727,7 +5985,7 @@ export const CalendarWindow = ({
               {isInitialLoading ? (
                 loadingSkeleton
               ) : viewMode === 'agenda' ? (
-                <div className="mx-auto max-w-[860px] px-5 py-4">
+                agendaHasItems ? <div className="mx-auto max-w-[860px] px-5 py-4">
                   <div className="mb-3 flex items-center justify-between">
                     <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                       Upcoming and dated work
@@ -5890,7 +6148,18 @@ export const CalendarWindow = ({
                       );
                     })}
                   </div>
-                </div>
+                </div> : <LedgerEmptyState
+                  state="first-use"
+                  title="Nothing scheduled yet"
+                  description="Add an event or reminder to give your day a place to start."
+                  icon={CalendarDays}
+                  testId="calendar-agenda-first-use"
+                  primaryAction={{
+                    label: 'Create an event',
+                    onClick: () => openComposerAtSlot(todayKey, 9, '', 'event'),
+                  }}
+                  className="h-full"
+                />
               ) : viewMode === 'month' ? (
                 <div className="min-w-[720px] bg-[var(--ledger-surface-card)]">
                   <div className="grid grid-cols-7 border-l border-t border-[color:var(--ledger-border-subtle)]">
@@ -6543,8 +6812,9 @@ export const CalendarWindow = ({
                                             </span>
                                           }
                                           timeRange={
-                                            durationRows > 1 &&
-                                            !(viewMode === 'week' && viewportWidth < 1200)
+                                            previewMode ||
+                                            (durationRows > 1 &&
+                                              !(viewMode === 'week' && viewportWidth < 1200))
                                               ? formatEventTimeRangeLabel(evt)
                                               : null
                                           }
@@ -6578,8 +6848,10 @@ export const CalendarWindow = ({
                                               id: evt.id,
                                             });
                                           }}
-                                          onPointerDown={(pointerEvent) =>
-                                            beginEventDrag(evt, pointerEvent)
+                                          onPointerDown={
+                                            previewMode
+                                              ? undefined
+                                              : (pointerEvent) => beginEventDrag(evt, pointerEvent)
                                           }
                                         />
                                       );
@@ -6826,7 +7098,39 @@ export const CalendarWindow = ({
                   )}
                 </div>
 
-                {(selectedEventPreview || selectedReminder) && (
+                {previewMode && (selectedEventPreview || selectedReminder) ? (
+                  <div className="space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-4">
+                    <p className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                      Related context
+                    </p>
+                    <div className="space-y-1">
+                      {selectedEventPreview?.project_id || selectedReminder?.project_id ? (
+                        <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[var(--ledger-text-secondary)]">
+                          <Folder size={13} className="text-[var(--ledger-accent)]" />
+                          <span className="truncate">
+                            {projects.find(
+                              (project) =>
+                                project.id ===
+                                (selectedEventPreview?.project_id ?? selectedReminder?.project_id)
+                            )?.name ?? 'Linked project'}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[var(--ledger-text-secondary)]">
+                        <FileText size={13} className="text-[var(--ledger-text-muted)]" />
+                        <span>
+                          {selectedEventPreview
+                            ? 'Public beta brief'
+                            : 'Weekly review template'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[var(--ledger-text-secondary)]">
+                        <CheckSquare size={13} className="text-[var(--ledger-text-muted)]" />
+                        <span>Follow-up action linked</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (selectedEventPreview || selectedReminder) ? (
                   <LinkedDesignsSection
                     target={{
                       workspaceId: activeWorkspaceId ?? '',
@@ -6857,7 +7161,7 @@ export const CalendarWindow = ({
                       for (const projectId of projectIds) await linkEventToProject(projectId);
                     }}
                   />
-                )}
+                ) : null}
 
                 {(selectedEventPreview || selectedReminder) && activeWorkspaceId ? (
                   <RelatedContextList
@@ -6968,9 +7272,14 @@ export const CalendarWindow = ({
                           ))}
                         </div>
                       ) : (
-                        <p className="text-[14px] text-[var(--ledger-text-muted)]">
-                          No follow-ups yet.
-                        </p>
+                        <LedgerEmptyState
+                          state="first-use"
+                          title="No follow-ups yet"
+                          description="Add a follow-up when this event needs action after it ends."
+                          size="compact"
+                          testId="calendar-event-follow-ups-empty"
+                          className="justify-start px-0 py-1 text-left"
+                        />
                       )}
                     </div>
                   )}
@@ -6980,9 +7289,14 @@ export const CalendarWindow = ({
                   <div className="space-y-1">
                     {selectedContextDayEvents.length === 0 &&
                     selectedContextDayDueItems.length === 0 ? (
-                      <p className="text-[14px] text-[var(--ledger-text-muted)]">
-                        No dated items for this day.
-                      </p>
+                      <LedgerEmptyState
+                        state="no-results"
+                        title="No dated items"
+                        description="Events, reminders, and due work for this day will appear here."
+                        size="compact"
+                        testId="calendar-selected-day-empty"
+                        className="justify-start px-0 py-1 text-left"
+                      />
                     ) : (
                       <>
                         {selectedContextDayEvents.map((event) => {
@@ -7072,7 +7386,11 @@ export const CalendarWindow = ({
           </>
         )}
         {isRightPaneCollapsed && (
-          <div className="ledger-pane-toggle ledger-pane-toggle-right absolute right-2 top-4 z-30">
+          <div
+            className={`ledger-pane-toggle ledger-pane-toggle-right absolute top-4 z-50 ${
+              previewMode ? 'right-6' : 'right-2'
+            }`}
+          >
             <button
               onClick={() => setIsRightPaneCollapsed(false)}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"

@@ -19,6 +19,16 @@ export type MobileProjectTask = {
 
 export type MobileProjectNote = { id: string; title: string; preview?: string | null; updated_at?: string | null };
 export type MobileProjectResource = { id?: string; name?: string; provider?: string; type?: string; canonical_url?: string | null; external_metadata?: Record<string, unknown> | null };
+export type MobileProjectContextItem = {
+  id: string;
+  type: string;
+  title: string;
+  source?: string | null;
+  provider?: string | null;
+  url?: string | null;
+  relationship?: string | null;
+  sourceLabel?: string | null;
+};
 export type MobileProjectActivity = { id: string; title: string; timestamp: string | null };
 
 export type MobileProjectDetail = {
@@ -28,8 +38,9 @@ export type MobileProjectDetail = {
   notes: MobileProjectNote[];
   calendar: MobileCalendarItem[];
   resources: MobileProjectResource[];
+  relatedContext: MobileProjectContextItem[];
   activity: MobileProjectActivity[];
-  sectionErrors: Partial<Record<'tasks' | 'notes' | 'calendar' | 'resources', string>>;
+  sectionErrors: Partial<Record<'tasks' | 'notes' | 'calendar' | 'resources' | 'relatedContext', string>>;
 };
 
 type SectionResult<T> = { value: T; error?: string };
@@ -44,7 +55,7 @@ export async function getMobileProjectDetail(projectId: string, workspaceId: str
   const projectWorkspaceId = project.workspace_id;
   const headers = { 'x-workspace-id': projectWorkspaceId };
   const today = localDateKey();
-  const [tasksResult, notesResult, calendarResult, resourcesResult] = await Promise.all([
+  const [tasksResult, notesResult, calendarResult, resourcesResult, relatedContextResult] = await Promise.all([
     mobileRequest<MobileProjectTask[]>(`/api/tasks?projectId=${encodeURIComponent(projectId)}`, { headers })
       .then((value): SectionResult<MobileProjectTask[]> => ({ value }))
       .catch((error): SectionResult<MobileProjectTask[]> => ({ value: [], error: error instanceof Error ? error.message : 'Could not load tasks.' })),
@@ -57,6 +68,25 @@ export async function getMobileProjectDetail(projectId: string, workspaceId: str
     mobileRequest<MobileProjectResource[]>(`/api/projects/${encodeURIComponent(projectId)}/connected-sources`, { headers })
       .then((value): SectionResult<MobileProjectResource[]> => ({ value }))
       .catch((error): SectionResult<MobileProjectResource[]> => ({ value: [], error: error instanceof Error ? error.message : 'Could not load resources.' })),
+    Promise.all([
+      mobileRequest<Array<{ id?: string; resource?: { id?: string; type?: string; title?: string } }>>(`/api/context-links?resource_type=project&resource_id=${encodeURIComponent(projectId)}`, { headers }),
+      mobileRequest<Array<{ id?: string; external_reference_id?: string; external_references?: { id?: string; provider?: string | null; external_url?: string | null; normalized_url?: string | null; external_type?: string | null; metadata?: Record<string, unknown> | null } | Array<{ id?: string; provider?: string | null; external_url?: string | null; normalized_url?: string | null; external_type?: string | null; metadata?: Record<string, unknown> | null }> }>>(`/api/external-references?targetType=project&targetId=${encodeURIComponent(projectId)}`, { headers }),
+    ])
+      .then(([contextLinks, externalReferences]) => ({
+        value: {
+          items: [
+            ...contextLinks.map((link) => ({ source: 'context_link', target: link.resource, relationship: 'related_to', provenance: null })),
+            ...externalReferences.map((link) => {
+              const reference = Array.isArray(link.external_references) ? link.external_references[0] : link.external_references;
+              const metadata = reference?.metadata ?? {};
+              const title = [metadata.title, metadata.name, metadata.nodeName, metadata.fileName, metadata.pageName, metadata.documentName, metadata.repositoryFullName, reference?.external_type].find((value) => String(value ?? '').trim()) ?? 'Linked resource';
+              return { source: 'external_reference', target: { id: reference?.id ?? link.external_reference_id, type: 'external_reference', title: String(title), provider: reference?.provider ?? null, url: reference?.normalized_url ?? reference?.external_url ?? null }, relationship: 'references', provenance: { source_label: String(title) } };
+            }),
+          ],
+        },
+      }))
+      .then((value): SectionResult<{ items?: Array<{ source?: string | null; target?: { id?: string; type?: string; title?: string; provider?: string | null; url?: string | null }; relationship?: string | null; provenance?: { source_label?: string | null } | null }> }> => value)
+      .catch((error): SectionResult<{ items?: Array<{ source?: string | null; target?: { id?: string; type?: string; title?: string; provider?: string | null; url?: string | null }; relationship?: string | null; provenance?: { source_label?: string | null } | null }> }> => ({ value: {}, error: error instanceof Error ? error.message : 'Could not load related context.' })),
   ]);
   const milestones = projectResponse.milestones.filter((item) => item.project_id === projectId);
   const calendar = normalizeCalendarRange(calendarResult.value).filter((item) => item.projectId === projectId || item.type === 'project_deadline' && item.projectId === projectId);
@@ -73,12 +103,27 @@ export async function getMobileProjectDetail(projectId: string, workspaceId: str
     notes: (notesResult.value.links ?? []).map((link) => link.note).filter(Boolean) as MobileProjectNote[],
     calendar,
     resources: Array.isArray(resourcesResult.value) ? resourcesResult.value : [],
+    relatedContext: (relatedContextResult.value.items ?? []).flatMap((item) => {
+      const target = item.target;
+      if (!target?.id || !target.type || !target.title) return [];
+      return [{
+        id: `${target.type}:${target.id}`,
+        type: target.type,
+        title: target.title,
+        source: item.source ?? null,
+        provider: target.provider ?? null,
+        url: target.url ?? null,
+        relationship: item.relationship ?? null,
+        sourceLabel: item.provenance?.source_label ?? null,
+      }];
+    }),
     activity,
     sectionErrors: {
       ...(tasksResult.error ? { tasks: tasksResult.error } : {}),
       ...(notesResult.error ? { notes: notesResult.error } : {}),
       ...(calendarResult.error ? { calendar: calendarResult.error } : {}),
       ...(resourcesResult.error ? { resources: resourcesResult.error } : {}),
+      ...(relatedContextResult.error ? { relatedContext: relatedContextResult.error } : {}),
     },
   };
 }

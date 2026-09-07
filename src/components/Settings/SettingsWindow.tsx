@@ -5747,7 +5747,10 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         const installed = Boolean(model.installed || model.state === 'installed');
                         const busy = localAIModelAction?.endsWith(`:${model.id}`);
                         const cancelling = localAIModelAction === `cancel:${model.id}`;
-                        const active = localAISelectedTier === model.tier;
+                        // The resolver falls back to Fast when no generation model is
+                        // installed. That fallback is only a routing preference; it
+                        // must not make an unavailable/failed download appear active.
+                        const active = localAISelectedTier === model.tier && installed;
                         const protectedModel = model.tier === 'fast';
                         return (
                           <div key={model.id} className={`flex items-center gap-3 px-4 py-4 transition ${active ? 'bg-[var(--ledger-surface-hover)]/45' : 'hover:bg-[var(--ledger-surface-hover)]/35'}`}>

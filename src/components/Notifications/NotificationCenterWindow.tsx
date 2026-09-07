@@ -11,6 +11,7 @@ import { useSidebar } from '../../context/SidebarContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { usePlatform } from '../../platform';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
+import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 
 const isGenericTitle = (title: string | null | undefined, sourceType: NotificationCenterItem['sourceType']) => {
   const normalized = String(title ?? '').trim().toLowerCase();
@@ -686,20 +687,13 @@ export const NotificationCenterWindow: React.FC<NotificationCenterWindowProps> =
             ))}
           </div>
         ) : (isTray ? trayItems.length === 0 : displayActive.length === 0 && displayEarlier.length === 0) ? (
-          <div className="flex min-h-[280px] items-center justify-center">
-            <div className="max-w-sm text-center">
-              <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                {filter === 'earlier' ? 'No notification history' : filter === 'unread' ? 'Nothing unread' : 'Nothing needs attention'}
-              </p>
-              <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
-                {filter === 'earlier'
-                  ? 'Completed, dismissed, and expired notifications stay here for reference.'
-                  : filter === 'unread'
-                  ? 'New notifications will appear here when something needs your attention.'
-                  : 'Read notifications stay here until you complete, snooze, or dismiss them.'}
-              </p>
-            </div>
-          </div>
+          <LedgerEmptyState
+            state="completed"
+            title={filter === 'earlier' ? 'No notification history' : filter === 'unread' ? 'Nothing unread' : 'Nothing needs attention'}
+            description={filter === 'earlier' ? 'Completed, dismissed, and expired notifications stay here for reference.' : filter === 'unread' ? 'New notifications will appear here when something needs your attention.' : 'Read notifications stay here until you complete, snooze, or dismiss them.'}
+            testId={`notifications-${filter}-empty`}
+            className="min-h-[280px]"
+          />
         ) : isTray ? (
           <CompactTrayList
             items={trayItems}

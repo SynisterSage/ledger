@@ -3,8 +3,11 @@ import { mobileRequest } from './client';
 import type { CaptureType } from '@/types/ledger';
 
 export type MobileUserSettings = {
+  id?: string;
   full_name: string | null;
   email: string | null;
+  avatar_url?: string | null;
+  avatar_updated_at?: string | null;
   active_workspace_id: string | null;
   onboarding_completed: boolean;
   preferences: Record<string, unknown>;

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getMobileCalendarRange } from '@/api/calendar';
+import { getMobileCalendarMonth } from '@/api/calendar';
 import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
 import type { CalendarItemsByDate, MobileCalendarItem } from './calendarItemNormalizer';
-import { normalizeCalendarRange, sortCalendarItems } from './calendarItemNormalizer';
+import { sortCalendarItems } from './calendarItemNormalizer';
 import { subscribeCalendarDataChanges } from './calendarDataEvents';
+
+const MONTH_RANGE_CACHE_TTL_MS = 30_000;
+const monthRangeCache = new Map<string, { items: MobileCalendarItem[]; cachedAt: number }>();
 
 /**
  * Month owns one range request for the same months that its list renders.
@@ -28,13 +31,24 @@ export function useMobileMonthCalendarItems(
       return;
     }
     let cancelled = false;
+    const cacheKey = `${workspaceId}:${startDate}:${endDate}`;
+    const cached = monthRangeCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < MONTH_RANGE_CACHE_TTL_MS) {
+      setItems(cached.items);
+      setError(null);
+      setIsLoading(false);
+      return () => { cancelled = true; };
+    }
+
     setIsLoading(true);
     setError(null);
 
-    void getMobileCalendarRange(workspaceId, startDate, endDate)
+    void getMobileCalendarMonth(workspaceId, startDate, endDate)
       .then((payload) => {
         if (cancelled) return;
-        setItems(sortCalendarItems(normalizeCalendarRange(payload)));
+        const nextItems = sortCalendarItems(payload.items ?? []);
+        monthRangeCache.set(cacheKey, { items: nextItems, cachedAt: Date.now() });
+        setItems(nextItems);
       })
       .catch((nextError: unknown) => {
         if (!cancelled) setError(nextError instanceof Error ? nextError.message : 'Month items could not be loaded.');
@@ -47,7 +61,11 @@ export function useMobileMonthCalendarItems(
   }, [enabled, endDate, retryToken, startDate, workspaceId]);
 
   useEffect(() => subscribeCalendarDataChanges((changedWorkspaceId) => {
-    if (changedWorkspaceId === workspaceId) setRetryToken((value) => value + 1);
+    if (changedWorkspaceId !== workspaceId) return;
+    for (const key of monthRangeCache.keys()) {
+      if (key.startsWith(`${workspaceId}:`)) monthRangeCache.delete(key);
+    }
+    setRetryToken((value) => value + 1);
   }), [workspaceId]);
 
   const visibleItems = useMemo(() => filters ? filterCalendarItems(items, filters) : items, [filters, items]);
@@ -55,7 +73,10 @@ export function useMobileMonthCalendarItems(
     (groups[item.dateKey] ??= []).push(item);
     return groups;
   }, {}), [visibleItems]);
-  const retry = useCallback(() => setRetryToken((value) => value + 1), []);
+  const retry = useCallback(() => {
+    monthRangeCache.delete(`${workspaceId}:${startDate}:${endDate}`);
+    setRetryToken((value) => value + 1);
+  }, [endDate, startDate, workspaceId]);
 
   return { items: visibleItems, itemsByDate, isLoading, error, retry };
 }

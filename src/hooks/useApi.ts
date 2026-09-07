@@ -243,6 +243,14 @@ export const useApi = () => {
           method: 'POST',
           body: JSON.stringify(payload),
         }),
+      provisionWorkspaceStarterContent: (workspaceId: string) =>
+        request(`/api/workspaces/${workspaceId}/starter-content`, {
+          method: 'POST',
+        }),
+      removeWorkspaceStarterContent: (workspaceId: string) =>
+        request(`/api/workspaces/${workspaceId}/starter-content`, {
+          method: 'DELETE',
+        }),
       updateWorkspace: (
         workspaceId: string,
         payload: { name?: string; description?: string | null; is_personal?: boolean }
@@ -487,7 +495,16 @@ export const useApi = () => {
       getFigmaPrivacySettings: () => request('/api/integrations/figma/privacy'),
       acceptFigmaPrivacySettings: () => request('/api/integrations/figma/privacy/accept', { method: 'POST' }),
       removeFigmaWorkspaceData: (workspaceName: string) => request('/api/integrations/figma/data/remove', { method: 'POST', body: JSON.stringify({ workspace_name: workspaceName }) }),
-      approveFigmaPluginAuthorization: (sessionId: string, verificationCode: string) => request('/api/figma-plugin/auth/approve', { method: 'POST', body: JSON.stringify({ session_id: sessionId, verification_code: verificationCode }) }),
+      getFigmaPluginAuthorizationRequest: (sessionId: string, verificationCode: string) =>
+        request(`/api/figma-plugin/auth/requests/${encodeURIComponent(sessionId)}?code=${encodeURIComponent(verificationCode)}`, {
+          skipWorkspaceHeader: true,
+        }),
+      approveFigmaPluginAuthorization: (sessionId: string, verificationCode: string, workspaceId: string) =>
+        request('/api/figma-plugin/auth/approve', {
+          method: 'POST',
+          body: JSON.stringify({ session_id: sessionId, verification_code: verificationCode, workspace_id: workspaceId }),
+          skipWorkspaceHeader: true,
+        }),
       getMcpAuthorizationSession: (sessionId: string) => request(`/api/mcp/authorization/sessions/${encodeURIComponent(sessionId)}`, { skipWorkspaceHeader: true }),
       approveMcpAuthorization: (sessionId: string, verificationCode: string, workspaceId: string) => request('/api/mcp/authorization/approve', { method: 'POST', body: JSON.stringify({ session_id: sessionId, verification_code: verificationCode, workspace_id: workspaceId }), skipWorkspaceHeader: true }),
       cancelMcpAuthorization: (sessionId: string) => request('/api/mcp/authorization/cancel', { method: 'POST', body: JSON.stringify({ session_id: sessionId }), skipWorkspaceHeader: true }),

@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 
 import { FloatingTabBar } from '@/components/FloatingTabBar';
+import { FloatingTabBarScrollProvider } from '@/components/FloatingTabBarScrollContext';
 import { MobileSearchResultDetailSheet, MobileSearchSheet } from '@/features/search/MobileSearchSheet';
 import { SearchSheetProvider } from '@/features/search/SearchSheetContext';
 import { FollowUpSheetProvider } from '@/features/followup/FollowUpSheetContext';
@@ -11,9 +12,10 @@ export default function TabLayout() {
   const theme = useLedgerTheme();
 
   return (
-    <SearchSheetProvider>
-      <FollowUpSheetProvider>
-        <QuickNoteSheetProvider>
+    <FloatingTabBarScrollProvider>
+      <SearchSheetProvider>
+        <FollowUpSheetProvider>
+          <QuickNoteSheetProvider>
           <Tabs
             initialRouteName="today"
             tabBar={(props) => <FloatingTabBar {...props} />}
@@ -55,8 +57,9 @@ export default function TabLayout() {
           </Tabs>
           <MobileSearchSheet />
           <MobileSearchResultDetailSheet />
-        </QuickNoteSheetProvider>
-      </FollowUpSheetProvider>
-    </SearchSheetProvider>
+          </QuickNoteSheetProvider>
+        </FollowUpSheetProvider>
+      </SearchSheetProvider>
+    </FloatingTabBarScrollProvider>
   );
 }

@@ -12,6 +12,7 @@ import { useSearchSheet } from '@/features/search/SearchSheetContext';
 import { listCaptureOptions } from '@/api/captures';
 import { CalendarCreateSheet, type CalendarCreateItemType } from '@/features/calendar/CalendarSheets';
 import { useLedgerTheme } from '@/theme';
+import { getFloatingTabBarScrollOffset, useFloatingTabBarScroll } from '@/components/FloatingTabBarScrollContext';
 import { bootstrapWorkspaceState, getWorkspaceLabel, resolveCaptureWorkspaceId, selectWorkspace, useWorkspaceState } from '@/store/workspaceStore';
 import type { CaptureType } from '@/types/ledger';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
@@ -22,6 +23,7 @@ export default function CaptureScreen() {
   const scrollY = useRef(new Animated.Value(0)).current;
   const workspaceState = useWorkspaceState();
   const { openSearch } = useSearchSheet();
+  const { handleScrollOffset, resetScrollState } = useFloatingTabBarScroll();
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [createType, setCreateType] = useState<CalendarCreateItemType>('event');
@@ -42,7 +44,8 @@ export default function CaptureScreen() {
 
   useEffect(() => {
     void bootstrapWorkspaceState();
-  }, []);
+    resetScrollState();
+  }, [resetScrollState]);
 
   return (
     <Screen contentStyle={{ paddingTop: 0 }}>
@@ -77,6 +80,7 @@ export default function CaptureScreen() {
           keyboardShouldPersistTaps="handled"
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: true,
+            listener: (event) => handleScrollOffset(getFloatingTabBarScrollOffset(event)),
           })}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}>

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApi } from '../../hooks/useApi';
+import { LedgerEmptyState } from './LedgerEmptyState';
 import {
   routeForCalendarEvent,
   routeForCalendarReminder,
@@ -172,9 +173,24 @@ export function RelatedContextList({
           <Loader2 size={12} className="animate-spin" /> Loading context…
         </div>
       ) : error ? (
-        <p className="rounded-md bg-[color:rgba(217,45,32,0.06)] px-2.5 py-2 text-xs text-[var(--ledger-danger)]">{error}</p>
+        <LedgerEmptyState
+          state="error"
+          title="Could not load related context"
+          description={error}
+          size="compact"
+          testId={`related-context-error-${resourceType}`}
+          primaryAction={{ label: 'Try again', onClick: () => void load() }}
+          className="justify-start px-0 py-1 text-left"
+        />
       ) : items.length === 0 ? (
-        <p className="py-1 text-xs text-[var(--ledger-text-muted)]">{emptyMessage}</p>
+        <LedgerEmptyState
+          state="first-use"
+          title={emptyMessage}
+          description="Linked context will appear here when it is connected."
+          size="compact"
+          testId={`related-context-empty-${resourceType}`}
+          className="justify-start px-0 py-1 text-left"
+        />
       ) : (
         <div className="space-y-1">
           {items.map((item) => {

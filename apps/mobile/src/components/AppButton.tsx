@@ -11,6 +11,8 @@ type AppButtonProps = {
   title: string;
   onPress?: () => void;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  testID?: string;
   variant?: AppButtonVariant;
   right?: ReactNode;
   fullWidth?: boolean;
@@ -22,6 +24,8 @@ export function AppButton({
   title,
   onPress,
   disabled,
+  accessibilityLabel,
+  testID,
   variant = 'primary',
   right,
   fullWidth = true,
@@ -54,8 +58,10 @@ export function AppButton({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       onPress={onPress}
+      testID={testID}
       style={({ pressed }) => [
         styles.button,
         {

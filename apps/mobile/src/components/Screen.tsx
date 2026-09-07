@@ -10,10 +10,14 @@ type ScreenProps = {
   children: ReactNode;
   scroll?: boolean;
   contentStyle?: ViewStyle;
+  topFadeOffset?: number;
+  topFadeOpacityScale?: number;
+  topFadeHeight?: number;
 };
 
-export function Screen({ children, scroll = false, contentStyle }: ScreenProps) {
+export function Screen({ children, scroll = false, contentStyle, topFadeOffset, topFadeOpacityScale, topFadeHeight }: ScreenProps) {
   const theme = useLedgerTheme();
+  const resolvedTopFadeOffset = topFadeOffset ?? theme.spacing.screenY;
 
   const containerStyle = [
     styles.container,
@@ -30,7 +34,7 @@ export function Screen({ children, scroll = false, contentStyle }: ScreenProps) 
           showsVerticalScrollIndicator={false}>
           {children}
         </ScrollView>
-        <MobileTopFade topOffset={theme.spacing.screenY} />
+        <MobileTopFade topOffset={resolvedTopFadeOffset} opacityScale={topFadeOpacityScale} height={topFadeHeight} />
       </SafeAreaView>
     );
   }
@@ -38,7 +42,7 @@ export function Screen({ children, scroll = false, contentStyle }: ScreenProps) 
   return (
     <SafeAreaView style={containerStyle}>
       {children}
-      <MobileTopFade topOffset={theme.spacing.screenY} />
+      <MobileTopFade topOffset={resolvedTopFadeOffset} opacityScale={topFadeOpacityScale} height={topFadeHeight} />
     </SafeAreaView>
   );
 }

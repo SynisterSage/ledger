@@ -3,7 +3,7 @@ import { SidebarContainer } from '../components/Sidebar/SidebarContainer';
 import { useSidebar } from '../context/SidebarContext';
 import { WebModuleLayout } from './WebResponsiveLayout';
 
-export const WebSidebar = () => {
+export const WebSidebar = ({ previewMode = false }: { previewMode?: boolean }) => {
   const { state, isVisible, position } = useSidebar();
   const isExpanded = state === 'expanded';
   const effectivePosition = position === 'floating' ? 'left' : position;
@@ -28,18 +28,18 @@ export const WebSidebar = () => {
       data-sidebar-position={effectivePosition}
       data-sidebar-orientation={isHorizontal ? 'horizontal' : 'vertical'}
     >
-      <SidebarContainer browserMode />
+      <SidebarContainer browserMode previewMode={previewMode} hideTrySection={previewMode} hideCollapseControl={previewMode} />
     </aside>
   );
 };
 
-export const WebShellLayout = ({ children }: { children: ReactNode }) => {
+export const WebShellLayout = ({ children, previewMode = false }: { children: ReactNode; previewMode?: boolean }) => {
   const { position } = useSidebar();
   const effectivePosition = position === 'floating' ? 'left' : position;
   const isHorizontal = effectivePosition === 'top' || effectivePosition === 'bottom';
   const sidebarFirst = effectivePosition === 'left' || effectivePosition === 'top';
 
-  const sidebar = <WebSidebar />;
+  const sidebar = <WebSidebar previewMode={previewMode} />;
   const content = (
     <main className="web-ledger-content relative min-h-0 min-w-0 flex-1 overflow-hidden">
       <WebModuleLayout>{children}</WebModuleLayout>
@@ -48,7 +48,7 @@ export const WebShellLayout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div
-      className={`web-ledger-shell web-ledger-shell-enter flex h-screen min-h-0 overflow-hidden bg-[var(--ledger-background)] ${
+      className={`web-ledger-shell ${previewMode ? 'product-preview-shell' : ''} web-ledger-shell-enter flex h-screen min-h-0 overflow-hidden bg-[var(--ledger-background)] ${
         isHorizontal ? 'flex-col' : 'flex-row'
       }`}
       data-sidebar-position={effectivePosition}

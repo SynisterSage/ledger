@@ -17,13 +17,13 @@ import type {
 import { TodayItemRow, type TodayItemStatus, type TodayItemType } from './TodayItemRow';
 import { TodaySection } from './TodaySection';
 import { getTodayItemActions, getTodayItemSwipeActions } from './todayActions';
+import { EmptyState } from '@/components/EmptyState';
 
 type TodaySectionKey =
   | 'focus'
   | 'next-up'
   | 'attention'
   | 'today'
-  | 'projects'
   | 'intake'
   | 'notes'
   | 'team-activity';
@@ -81,7 +81,15 @@ function formatShortDate(dateLike: string | null | undefined) {
 }
 
 function compactMetadata(values: Array<string | null | undefined>) {
-  return values.filter(Boolean).slice(0, 3) as string[];
+  const seen = new Set<string>();
+  return values
+    .map((value) => (typeof value === 'string' ? value.trim() : value))
+    .filter((value): value is string => {
+      if (!value || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    })
+    .slice(0, 3);
 }
 
 function formatProjectStatus(status: string | null | undefined) {
@@ -160,11 +168,8 @@ function rowMetadata(
   }
   if (item.type === 'note') {
     return compactMetadata([
-      'Note',
-      item.authorName ? `By ${item.authorName}` : null,
-      item.lastEditorName ? `Edited by ${item.lastEditorName}` : null,
       workspace,
-      formatDateTimeLabel(item.updatedAt ?? item.createdAt),
+      item.updatedAt || item.createdAt ? `Updated ${formatDateTimeLabel(item.updatedAt ?? item.createdAt)}` : null,
     ]);
   }
   if (item.type === 'project') {
@@ -344,7 +349,6 @@ export function TodayList({
       !attentionIds.has(item.id) &&
       !nextUpIds.has(item.id),
   );
-  const projectItems = projects.slice(0, 5);
   const intakeItems = captures.items.slice(0, intakeExpanded ? captures.items.length : 3);
   const noteItems = notes.slice(0, 3);
 
@@ -376,21 +380,14 @@ export function TodayList({
             ),
           )
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Choose what matters today. Add to Focus"
-            onPress={onAddFocus}
-            style={({ pressed }) => [
-              { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', opacity: pressed ? 0.6 : 1 },
-            ]}
-          >
-            <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
-              Choose what matters today
-            </AppText>
-            <AppText variant="body" style={{ color: theme.colors.accent }}>
-              +
-            </AppText>
-          </Pressable>
+          <EmptyState
+            iconName={{ ios: 'target', android: 'adjust', web: 'adjust' }}
+            title="Choose what matters today"
+            description="Pick an item or add a quick focus so the next step stays visible."
+            kind="first-use"
+            density="compact"
+            primaryAction={onAddFocus ? { label: 'Add focus', onPress: onAddFocus } : undefined}
+          />
         )}
       </TodaySection> : null}
 
@@ -431,7 +428,7 @@ export function TodayList({
                   key={mention.id}
                   type="note"
                   title={mention.title}
-                  metadata={mention.metadata}
+                  metadata={compactMetadata([...mention.metadata, formatDateTimeLabel(mention.createdAt)])}
                   status={mention.unread ? 'focused' : 'default'}
                   onPress={() => onTeamItemPress?.('mention', mention.sourceId)}
                   accessibilityLabel={`${mention.title}. ${mention.metadata.join('. ')}`}
@@ -475,27 +472,6 @@ export function TodayList({
             itemRow(
               item,
               rowMetadata(item, showWorkspaceNames, item.type === 'project_action' ? item.meta : null),
-              onItemPress,
-              onItemLongPress,
-              onItemComplete,
-              onItemAction,
-            ),
-          )}
-        </TodaySection>
-      ) : null}
-
-      {show('projects') && projectItems.length ? (
-        <TodaySection
-          title="Projects"
-          count={projectItems.length}
-          collapsed={collapsed('projects')}
-          onToggle={() => toggle('projects')}
-          onLayout={layout('projects')}
-        >
-          {projectItems.map((item) =>
-            itemRow(
-              item,
-              rowMetadata(item, showWorkspaceNames, item.meta),
               onItemPress,
               onItemLongPress,
               onItemComplete,
@@ -566,8 +542,7 @@ export function TodayList({
               key={activity.id}
               type="note"
               title={activity.title}
-              metadata={activity.metadata}
-              trailingLabel={formatDateTimeLabel(activity.createdAt)}
+              metadata={compactMetadata([...activity.metadata, formatDateTimeLabel(activity.createdAt)])}
               onPress={() => onTeamItemPress?.('team_activity', activity.sourceId)}
               accessibilityLabel={`${activity.title}. ${activity.metadata.join('. ')}`}
             />

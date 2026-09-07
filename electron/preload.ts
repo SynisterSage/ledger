@@ -3,6 +3,9 @@ import { encodePcmWav, TARGET_SAMPLE_RATE } from './audio-capture/wav';
 
 const rendererListenerWrappers = new Map<string, Map<string, Function>>();
 let nextRendererListenerId = 0;
+const performanceDiagnosticsEnabled = ['1', 'true'].includes(
+  String(process.env.LEDGER_PERF_DIAGNOSTICS ?? '').toLowerCase()
+);
 
 type WindowsCaptureSource = 'user_microphone' | 'system_audio';
 type WindowsCaptureRuntime = {
@@ -1176,6 +1179,7 @@ type ModuleWindowKind =
 type ModuleFocusPayload = {
   kind: ModuleWindowKind;
   historyMode?: 'push' | 'replace';
+  navigationGeneration?: number;
   focusDate?: string | null;
   focusProjectId?: string | null;
   focusNoteId?: string | null;
@@ -1199,6 +1203,27 @@ type LedgerTabSession = {
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   platform: process.platform,
+  reportPerformance(event: {
+    name: string;
+    durationMs?: number;
+    details?: Record<string, string | number | boolean | null>;
+  }) {
+    if (!performanceDiagnosticsEnabled || !event || typeof event.name !== 'string') return;
+    ipcRenderer.send('performance:renderer-event', {
+      name: event.name.slice(0, 100),
+      durationMs:
+        typeof event.durationMs === 'number' && Number.isFinite(event.durationMs)
+          ? Math.max(0, Math.min(event.durationMs, 60_000))
+          : undefined,
+      details: event.details,
+    });
+  },
+  getPerformanceEvents() {
+    return ipcRenderer.invoke('performance:recent-events');
+  },
+  getPerformanceMemory() {
+    return ipcRenderer.invoke('performance:memory');
+  },
   meetingIndicatorClick() {
     return ipcRenderer.invoke('meeting-indicator:click');
   },

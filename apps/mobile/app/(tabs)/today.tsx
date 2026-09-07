@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Alert, Animated, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Animated, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useRouter, useFocusEffect } from 'expo-router';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
+import { EmptyState } from '@/components/EmptyState';
 import { Screen } from '@/components/Screen';
 import { MOBILE_PULL_TO_REFRESH_OFFSET } from '@/components/MobilePageHeader';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
@@ -29,7 +30,9 @@ import { performMobileTodayAction } from '@/api/todayActions';
 import { createMobileTask } from '@/api/captures';
 import { useMobileUnreadNotificationCount } from '@/features/notifications/useMobileUnreadNotificationCount';
 import { useLedgerTheme } from '@/theme';
+import { getFloatingTabBarScrollOffset, useFloatingTabBarScroll } from '@/components/FloatingTabBarScrollContext';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
+import { getMobileResource, readMobileResource } from '@/lib/mobileResourceCache';
 import type {
   MobileTodayInteractionItem,
   MobileTodayItem,
@@ -55,6 +58,8 @@ const EMPTY_TODAY: MobileTodayResponse = {
   teamActivity: [],
 };
 
+const todayCacheKey = (workspaceId: string) => `mobile:today:${workspaceId}:${formatDateToLocalIsoDate(new Date())}`;
+
 export default function TodayScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
@@ -67,6 +72,7 @@ export default function TodayScreen() {
   const { openFollowUpSheet } = useFollowUpSheet();
   const { openQuickNoteSheet } = useQuickNoteSheet();
   const { openSearch } = useSearchSheet();
+  const { handleScrollOffset, resetScrollState } = useFloatingTabBarScroll();
   const [today, setToday] = useState<MobileTodayResponse>(EMPTY_TODAY);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +87,7 @@ export default function TodayScreen() {
   const [surfaceSection, setSurfaceSection] = useState<'today' | 'attention' | 'next-up' | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<
     Partial<
-      Record<'focus' | 'next-up' | 'attention' | 'today' | 'projects' | 'intake' | 'notes' | 'team-activity', boolean>
+      Record<'focus' | 'next-up' | 'attention' | 'today' | 'intake' | 'notes' | 'team-activity', boolean>
     >
   >({});
   const scrollViewRef = useRef<ScrollView | null>(null);
@@ -93,6 +99,15 @@ export default function TodayScreen() {
   useEffect(() => {
     void bootstrapWorkspaceState();
   }, []);
+
+  useEffect(() => {
+    const cached = readMobileResource<MobileTodayResponse>(todayCacheKey(workspaceState.selectedWorkspaceId));
+    if (!cached) return;
+    setToday(cached);
+    hasLoadedRef.current = true;
+    setIsLoading(false);
+    setError(null);
+  }, [workspaceState.selectedWorkspaceId]);
 
   const showActionError = useCallback((message: string) => {
     setActionError(message);
@@ -118,7 +133,11 @@ export default function TodayScreen() {
       }
 
       try {
-        const response = await getMobileToday({ workspaceId: workspaceState.selectedWorkspaceId });
+        const response = await getMobileResource(
+          todayCacheKey(workspaceState.selectedWorkspaceId),
+          () => getMobileToday({ workspaceId: workspaceState.selectedWorkspaceId }),
+          { force: !isFirstLoad && !silent },
+        );
         if (loadToken !== loadTokenRef.current) return;
         setToday(response);
         setFocusOrder((current) => {
@@ -161,8 +180,9 @@ export default function TodayScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      resetScrollState();
       void loadToday({ silent: hasLoadedRef.current });
-    }, [loadToday]),
+    }, [loadToday, resetScrollState]),
   );
 
   useEffect(() => {
@@ -185,7 +205,7 @@ export default function TodayScreen() {
   };
 
   const toggleSection = (
-    section: 'focus' | 'next-up' | 'attention' | 'today' | 'projects' | 'intake' | 'notes' | 'team-activity',
+    section: 'focus' | 'next-up' | 'attention' | 'today' | 'intake' | 'notes' | 'team-activity',
   ) => {
     setCollapsedSections((current) => ({ ...current, [section]: !current[section] }));
   };
@@ -571,6 +591,7 @@ export default function TodayScreen() {
 
         <Animated.ScrollView
           ref={scrollViewRef}
+          removeClippedSubviews={Platform.OS === 'android'}
           style={{ flex: 1 }}
           contentContainerStyle={{
             paddingTop: TODAY_HEADER_SCROLL_SPACE,
@@ -592,6 +613,7 @@ export default function TodayScreen() {
           keyboardShouldPersistTaps="handled"
           onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
             useNativeDriver: true,
+            listener: (event) => handleScrollOffset(getFloatingTabBarScrollOffset(event)),
           })}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
@@ -694,13 +716,32 @@ export default function TodayScreen() {
                   }}
                 />
                 {surfaceSection === 'today' && todayCount === 0 ? (
-                  <SurfaceEmptyState message="Nothing due today" />
+                  <SurfaceEmptyState
+                    iconName={{ ios: 'checkmark.square', android: 'check_box_outline_blank', web: 'check_box_outline_blank' }}
+                    title="Nothing due today"
+                    description="Capture a task or reminder to give today a starting point."
+                    kind="first-use"
+                    actionLabel="Capture something"
+                    onAction={() => router.push('/(tabs)/capture')}
+                  />
                 ) : null}
                 {surfaceSection === 'attention' && attentionCount + teamMentionCount === 0 ? (
-                  <SurfaceEmptyState message="Nothing needs attention" />
+                  <SurfaceEmptyState
+                    iconName={{ ios: 'checkmark.circle', android: 'check_circle_outline', web: 'check_circle_outline' }}
+                    title="Nothing needs attention"
+                    description="You’re clear for now. New reminders and updates will appear here."
+                    kind="informational"
+                  />
                 ) : null}
                 {surfaceSection === 'next-up' && eventCount === 0 ? (
-                  <SurfaceEmptyState message="No events coming up" />
+                  <SurfaceEmptyState
+                    iconName={{ ios: 'calendar', android: 'event', web: 'event' }}
+                    title="No events coming up"
+                    description="Add something to your calendar when you have a time-bound plan."
+                    kind="first-use"
+                    actionLabel="View calendar"
+                    onAction={() => router.push('/(tabs)/calendar')}
+                  />
                 ) : null}
               </>
             )}
@@ -780,14 +821,31 @@ function SummaryButton({
   );
 }
 
-function SurfaceEmptyState({ message }: { message: string }) {
-  const theme = useLedgerTheme();
+function SurfaceEmptyState({
+  iconName,
+  title,
+  description,
+  kind,
+  actionLabel,
+  onAction,
+}: {
+  iconName: ComponentProps<typeof SymbolView>['name'];
+  title: string;
+  description: string;
+  kind: 'first-use' | 'informational';
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
-    <View style={styles.surfaceEmpty}>
-      <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
-        {message}
-      </AppText>
-    </View>
+    <EmptyState
+      iconName={iconName}
+      title={title}
+      description={description}
+      kind={kind}
+      density="compact"
+      style={styles.surfaceEmpty}
+      primaryAction={actionLabel && onAction ? { label: actionLabel, onPress: onAction } : undefined}
+    />
   );
 }
 

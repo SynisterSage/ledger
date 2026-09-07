@@ -5,16 +5,18 @@ type HeaderInsetFadeProps = {
   height?: number;
 };
 
+const FADE_STEPS = 17;
+
 export function HeaderInsetFade({ backgroundColor, height = 112 }: HeaderInsetFadeProps) {
   return (
     <View pointerEvents="none" style={[styles.wrap, { height }]}>
-      {Array.from({ length: height }).map((_, index) => {
-        const opacity = 1 - (index + 1) / height;
+      {Array.from({ length: FADE_STEPS }).map((_, index) => {
+        const opacity = 1 - (index + 1) / FADE_STEPS;
         return (
           <View
             key={index}
             style={{
-              height: 1,
+              height: height / FADE_STEPS,
               backgroundColor,
               opacity: Math.max(0, opacity),
             }}

@@ -64,3 +64,9 @@ test('routes broad work or imported calendar schedule questions to a whole-sched
   assert.deepEqual(detectAskLedgerQueryIntent('I imported my work schedule; how does my weekly schedule look and what days are off?'), { kind: 'weekly_overview' });
   assert.deepEqual(detectAskLedgerQueryIntent('What events are on my weekly schedule?'), { kind: 'weekly_overview' });
 });
+
+test('treats a named month as the full Calendar dated-items scope', () => {
+  const intent = detectAskLedgerQueryIntent('what is my month of september like this year?', new Date('2026-08-27T12:00:00Z'));
+  assert.deepEqual(intent, { kind: 'time_window', window: { start: '2026-09-01', end: '2026-09-30' } });
+  assert.deepEqual(resourceTypesForAskLedgerIntent(intent), ['task', 'milestone', 'project', 'event', 'reminder']);
+});

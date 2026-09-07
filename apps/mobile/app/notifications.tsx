@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, PanResponder, Platform, Pressable, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -719,7 +719,10 @@ function NotificationsScreen() {
   ], [dismissNotification, markNotificationRead]);
 
   return (
-    <Screen contentStyle={{ paddingTop: 0 }}>
+    <Screen
+      contentStyle={{ paddingTop: 0 }}
+      topFadeHeight={0}
+    >
       <View style={{ flex: 1 }}>
         <Animated.View style={[styles.pageSurface, { transform: [{ translateX: pageTranslateX }] }]}>
         <MobilePageHeader
@@ -783,6 +786,7 @@ function NotificationsScreen() {
 
         <Animated.ScrollView
           style={{ flex: 1 }}
+          removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={{
             paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
             paddingBottom: theme.spacing['3xl'] + insets.bottom + 24,
@@ -842,16 +846,20 @@ function NotificationsScreen() {
                 />
               </View>
             ) : activeFilterCount ? (
-              <View style={styles.filteredEmptyState}>
-                <AppText variant="body" style={styles.filteredEmptyTitle}>No matching notifications</AppText>
-                <AppText variant="caption" style={styles.filteredEmptyDescription}>Try another type or clear the filters.</AppText>
-                <AppButton title="Clear filters" variant="secondary" fullWidth={false} onPress={() => setNotificationFilters(DEFAULT_NOTIFICATION_FILTERS)} />
-              </View>
+              <EmptyState
+                iconName={{ ios: 'line.3.horizontal.decrease.circle', android: 'filter_alt', web: 'filter_alt' }}
+                title="No matching notifications"
+                description="Try another type or clear the filters."
+                kind="no-results"
+                density="compact"
+                primaryAction={{ label: 'Clear filters', variant: 'link', onPress: () => setNotificationFilters(DEFAULT_NOTIFICATION_FILTERS) }}
+              />
             ) : (
               <EmptyState
                 iconName="bell"
                 title="You’re all caught up"
                 description="New reminders, assignments, project updates, and integration activity will appear here."
+                kind="informational"
               />
             )}
           </View>

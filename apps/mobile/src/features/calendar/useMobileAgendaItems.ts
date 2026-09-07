@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
 import { getMobileCalendarRange, type MobileCalendarRangeResponse } from '@/api/calendar';
 import { formatCalendarDateKey } from './calendarMonthGenerator';
 import { normalizeCalendarRange, sortCalendarItems, type MobileCalendarItem } from './calendarItemNormalizer';
@@ -38,11 +37,6 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
     setStartDate(initialStart);
     setEndDate(initialEnd);
   }, [initialEnd, initialStart, workspaceId]);
-
-  useFocusEffect(useCallback(() => {
-    cacheRef.current.delete(`${workspaceId}:${startDate}:${endDate}`);
-    setRefreshToken((current) => current + 1);
-  }, [endDate, startDate, workspaceId]));
 
   useEffect(() => subscribeCalendarDataChanges((changedWorkspaceId) => {
     if (changedWorkspaceId !== workspaceId) return;

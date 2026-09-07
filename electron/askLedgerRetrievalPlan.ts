@@ -68,6 +68,20 @@ const addDays = (date: Date, days: number) => {
 };
 
 const endOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth() + 1, 0);
+const monthNumbers: Record<string, number> = {
+  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+  july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+};
+
+const namedMonthWindow = (question: string, now: Date) => {
+  const match = normalize(question).match(/\b(?:(this|next|last)\s+)?(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(20\d{2}))?\b/);
+  if (!match) return undefined;
+  const month = monthNumbers[match[2]];
+  let year = match[3] ? Number(match[3]) : now.getFullYear();
+  if (!match[3] && match[1] === 'next') year += 1;
+  if (!match[3] && match[1] === 'last') year -= 1;
+  return { start: isoDate(new Date(year, month, 1)), end: isoDate(new Date(year, month + 1, 0)) };
+};
 
 const requestedCountFor = (question: string) => {
   const match = question.match(countWords);
@@ -94,6 +108,9 @@ const integrationProvidersFor = (question: string): AskLedgerIntegrationSource[]
 
 const resourceTypesFor = (question: string): AskLedgerResourceType[] => {
   const normalized = normalize(question);
+  const asksForNamedMonthSchedule = /\b(?:this|next|last)?\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(normalized)
+    && /\b(?:schedule|calendar|month|events?|meetings?|reminders?|tasks?)\b/.test(normalized);
+  if (asksForNamedMonthSchedule) return ['event', 'reminder', 'task', 'milestone', 'project'];
   // A bounded recent-note request is authoritative even when the same
   // sentence also mentions meeting preparation or actions.
   if (/\b(?:last|latest|newest|recent|past)\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|several)?\s*notes?\b/.test(normalized)) return ['note'];
@@ -231,6 +248,12 @@ export const buildRetrievalPlan = (question: string, now = new Date()): Retrieva
   } else if (/\bthis month\b/.test(normalizedQuestion)) {
     structuredConstraints.dueAfter = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
     structuredConstraints.dueBefore = isoDate(endOfMonth(now));
+  } else {
+    const monthWindow = namedMonthWindow(question, now);
+    if (monthWindow) {
+      structuredConstraints.dueAfter = monthWindow.start;
+      structuredConstraints.dueBefore = monthWindow.end;
+    }
   }
   const ordering: RetrievalOrdering = /\b(oldest|first)\b/i.test(question) ? 'oldest' : /\b(last|latest|newest|recent|past)\b/i.test(question) || isLastWorkday ? 'newest' : 'relevance';
   const operation: RetrievalOperation = /\b(compare|versus|vs\.?|difference)\b/i.test(question)

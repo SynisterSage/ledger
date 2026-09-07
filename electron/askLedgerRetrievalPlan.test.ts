@@ -43,6 +43,13 @@ test('builds resource-aware plans for common constrained requests', () => {
   assert.equal(buildRetrievalPlan('Show completed Alfa tasks').entityQuery, 'Alfa');
 });
 
+test('recognizes a named month schedule as a calendar time window', () => {
+  const plan = buildRetrievalPlan('What is my schedule like for this September?', new Date('2026-08-27T12:00:00'));
+  assert.deepEqual(plan.primaryResourceTypes, ['event', 'reminder', 'task', 'milestone', 'project']);
+  assert.equal(plan.structuredConstraints.dueAfter, '2026-09-01');
+  assert.equal(plan.structuredConstraints.dueBefore, '2026-09-30');
+});
+
 test('builds attention and notification plans from authoritative fields', () => {
   const unread = buildRetrievalPlan('Show my unread notifications');
   assert.deepEqual(unread.primaryResourceTypes, ['notification']);
@@ -110,6 +117,12 @@ test('anchors named project requests and expands linked work context', () => {
   assert.deepEqual(plan.primaryResourceTypes, ['project']);
   assert.equal(plan.entityQuery, 'Pigmented Perceptions');
   assert.equal(plan.expandRelatedContext, true);
+});
+
+test('includes project and milestone deadlines in named-month calendar plans', () => {
+  const plan = buildRetrievalPlan('what is my month of september like this year?', new Date('2026-08-27T12:00:00Z'));
+  assert.deepEqual(plan.primaryResourceTypes, ['event', 'reminder', 'task', 'milestone', 'project']);
+  assert.deepEqual(plan.structuredConstraints, { dueAfter: '2026-09-01', dueBefore: '2026-09-30' });
 });
 
 test('selects scoped newest notes before unrelated semantic candidates', async () => {

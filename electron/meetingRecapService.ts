@@ -39,10 +39,14 @@ export class MeetingRecapService {
     const startedAt = Date.now();
     const requestedTier = this.localAI.getMeetingRecapGenerationTier();
     let generatedResponse = false;
-    // Recaps prefer the stronger installed model. This is independent from
-    // the user's general Ask Ledger selection, and never persists a recap-only
-    // model switch.
-    const tiers = [requestedTier] as const;
+    // The selected tier is a preference, not a guarantee that it can produce
+    // a reviewable structured recap for this transcript. Try it first, then
+    // the other tier as a bounded fallback. This keeps a truncated/invalid
+    // response from silently returning the user to the Enhance button with
+    // no draft.
+    const tiers = requestedTier === 'balanced'
+      ? (['balanced', 'fast'] as const)
+      : (['fast', 'balanced'] as const);
     for (const tier of tiers) {
       const switched = await this.localAI.switchGenerationTier(tier, { persistSelection: false }).catch(() => ({ ok: false }));
       if (generationRunId !== this.generationRunId) return { status: 'unavailable', reason: 'generation_failed' };
@@ -126,9 +130,9 @@ export class MeetingRecapService {
       if (this.activeRequestId === requestId) this.activeRequestId = null;
       if (generationRunId !== this.generationRunId) return { status: 'unavailable', reason: 'generation_failed' };
       if (answer.failed) {
-        // Do not silently downgrade a generation failure. Tier selection was
-        // already resolved from installed-model availability above.
-        break;
+        // A generation failure on one installed tier should not prevent the
+        // other installed tier from producing the reviewable draft.
+        continue;
       }
       const draft = parseMeetingRecapDraft(answer.text, recapContext);
       const groundedItemCount = draft
@@ -147,7 +151,7 @@ export class MeetingRecapService {
           openThreads: draft?.openThreads.length ?? 0,
           reason: !draft ? 'invalid_json_or_shape' : 'overview_only_or_empty',
         });
-        break;
+        continue;
       }
       console.info('[meeting-recap] parsed draft', {
         workspaceId: context.workspaceId,

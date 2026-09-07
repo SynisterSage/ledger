@@ -8,7 +8,7 @@ import {
   getSidebarNativeMacTintAlpha,
 } from '../../theme/sidebarMaterial';
 
-export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolean }) => {
+export const SidebarContainer = ({ browserMode = false, previewMode = false, hideTrySection = false, hideCollapseControl = false }: { browserMode?: boolean; previewMode?: boolean; hideTrySection?: boolean; hideCollapseControl?: boolean }) => {
   const {
     state,
     isVisible,
@@ -545,6 +545,9 @@ export const SidebarContainer = ({ browserMode = false }: { browserMode?: boolea
             <ExpandedSidebar
               onDragHandleMouseDown={isFloating ? handleDragHandleStart : undefined}
               onCollapseRequest={handleCollapseRequest}
+              previewMode={previewMode}
+              hideTrySection={hideTrySection}
+              hideCollapseControl={hideCollapseControl}
             />
           </div>
         )}

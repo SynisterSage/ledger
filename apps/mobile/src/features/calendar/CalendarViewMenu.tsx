@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps, type RefObject } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ComponentProps, type RefObject } from 'react';
 import { Animated, Easing, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,33 +26,64 @@ type Props = {
   onClose: () => void;
 };
 
+export type CalendarViewMenuHandle = {
+  open: () => void;
+};
+
+type CalendarViewMenuControllerProps = {
+  value: CalendarViewMenuValue;
+  icon: CalendarSymbolName;
+  onChange: (value: CalendarViewMenuValue) => void;
+};
+
+export const CalendarViewMenuController = forwardRef<CalendarViewMenuHandle, CalendarViewMenuControllerProps>(function CalendarViewMenuController({ value, icon, onChange }, ref) {
+  const theme = useLedgerTheme();
+  const [visible, setVisible] = useState(false);
+  const anchorRef = useRef<View>(null);
+
+  useImperativeHandle(ref, () => ({ open: () => setVisible(true) }), []);
+
+  return (
+    <>
+      <Pressable ref={anchorRef} accessibilityRole="button" accessibilityLabel="Change calendar view" onPress={() => setVisible(true)} style={styles.trigger}>
+        <SymbolView name={icon} size={21} tintColor={theme.colors.textPrimary} />
+      </Pressable>
+      <CalendarViewMenu
+        visible={visible}
+        value={value}
+        anchorRef={anchorRef}
+        onChange={onChange}
+        onClose={() => setVisible(false)}
+      />
+    </>
+  );
+});
+
 export function CalendarViewMenu({ visible, value, anchorRef, onChange, onClose }: Props) {
   const theme = useLedgerTheme();
   const { reduceMotionEnabled } = useAppPreferencesState();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [anchor, setAnchor] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [anchorReady, setAnchorReady] = useState(false);
   const [mounted, setMounted] = useState(visible);
   const opacity = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(0.96)).current;
   const translateY = useRef(new Animated.Value(-3)).current;
   const closingRef = useRef(false);
 
   useEffect(() => {
     closingRef.current = false;
     opacity.stopAnimation();
-    scale.stopAnimation();
     translateY.stopAnimation();
 
     if (visible) {
       setMounted(true);
+      setAnchorReady(false);
       opacity.setValue(0);
-      scale.setValue(0.96);
       translateY.setValue(-3);
       Animated.parallel([
-        Animated.timing(opacity, { toValue: 1, duration: reduceMotionEnabled ? 1 : 80, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(scale, { toValue: 1, duration: reduceMotionEnabled ? 1 : 95, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: 0, duration: reduceMotionEnabled ? 1 : 95, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: reduceMotionEnabled ? 1 : 55, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: 0, duration: reduceMotionEnabled ? 1 : 65, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       ]).start();
       return;
     }
@@ -60,19 +91,20 @@ export function CalendarViewMenu({ visible, value, anchorRef, onChange, onClose 
     if (!mounted) return;
     closingRef.current = true;
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 0, duration: reduceMotionEnabled ? 1 : 60, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 0.98, duration: reduceMotionEnabled ? 1 : 60, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: -2, duration: reduceMotionEnabled ? 1 : 60, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 0, duration: reduceMotionEnabled ? 1 : 45, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: -2, duration: reduceMotionEnabled ? 1 : 45, easing: Easing.in(Easing.quad), useNativeDriver: true }),
     ]).start(({ finished }) => {
       if (finished && closingRef.current) setMounted(false);
     });
-  }, [mounted, opacity, reduceMotionEnabled, scale, translateY, visible]);
+  }, [mounted, opacity, reduceMotionEnabled, translateY, visible]);
 
   useEffect(() => {
     if (!visible) return;
+    setAnchorReady(false);
     const frame = requestAnimationFrame(() => {
       anchorRef.current?.measureInWindow((x, y, measuredWidth, measuredHeight) => {
         setAnchor({ x, y, width: measuredWidth, height: measuredHeight });
+        setAnchorReady(true);
       });
     });
     return () => cancelAnimationFrame(frame);
@@ -83,7 +115,7 @@ export function CalendarViewMenu({ visible, value, anchorRef, onChange, onClose 
     onClose();
   };
 
-  if (!mounted) return null;
+  if (!mounted || !anchorReady) return null;
 
   const menuWidth = 176;
   const menuHeight = options.length * 48 + 8;
@@ -93,7 +125,7 @@ export function CalendarViewMenu({ visible, value, anchorRef, onChange, onClose 
   return (
     <Modal visible={mounted} transparent animationType="none" statusBarTranslucent onRequestClose={closeMenu}>
       <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} accessibilityLabel="Close calendar view menu" />
-      <Animated.View style={[styles.menu, { left, top, width: menuWidth, backgroundColor: theme.colors.surface, borderColor: theme.colors.borderSubtle, shadowColor: theme.colors.textPrimary, opacity, transform: [{ translateY }, { scale }] }]}> 
+      <Animated.View style={[styles.menu, { left, top, width: menuWidth, backgroundColor: theme.colors.surface, borderColor: theme.colors.borderSubtle, opacity, transform: [{ translateY }] }]}>
         {options.map((option, index) => (
           <View key={option.id}>
             {index === 3 ? <View style={[styles.divider, { backgroundColor: theme.colors.borderSubtle }]} /> : null}
@@ -116,7 +148,8 @@ export function CalendarViewMenu({ visible, value, anchorRef, onChange, onClose 
 }
 
 const styles = StyleSheet.create({
-  menu: { position: 'absolute', borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingVertical: 4, shadowOpacity: 0.14, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 8 },
+  trigger: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  menu: { position: 'absolute', borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingVertical: 4 },
   option: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13 },
   label: { flex: 1 },
   divider: { height: StyleSheet.hairlineWidth, marginVertical: 4 },

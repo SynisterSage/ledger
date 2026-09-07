@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ContextMenu, type ContextMenuGroup } from '../Common/ContextMenu';
+import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import { useToast } from '../Common/ToastProvider';
 import type { PinRecord } from '../../utils/pins';
 
@@ -745,9 +746,15 @@ export const NotesHome = ({
               </section>
             ))
           ) : (
-            <div className="px-2 py-12 text-[13px] text-[var(--ledger-text-muted)]">
-              No notes yet. Create one when you are ready.
-            </div>
+            <LedgerEmptyState
+              state="first-use"
+              title="No notes yet"
+              description="Capture a thought, meeting note, or decision so it is easy to revisit later."
+              icon={StickyNote}
+              testId="notes-home-first-use"
+              primaryAction={{ label: 'Create a note', onClick: () => onNewNote(currentSectionId) }}
+              className="flex-1"
+            />
           )}
         </div>
         {notes.length > 0 && !askLedgerOpen && (

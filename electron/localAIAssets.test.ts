@@ -181,7 +181,7 @@ test('verified optional model downloads atomically and does not select itself', 
     const result = await manager.downloadGeneration('qwen3-4b-q4-k-m');
     assert.equal(result.ok, true);
     assert.equal(manager.getGenerationModelStatus('qwen3-4b-q4-k-m').state, 'installed');
-    assert.equal(manager.getSelectedGenerationTier(), 'fast');
+    assert.equal(manager.getSelectedGenerationTier(), 'balanced');
     await manager.removeGeneration('qwen3-4b-q4-k-m');
   });
   await withModelMetadata('qwen3-4b-q4-k-m', Buffer.from('verified-balanced-model'), async (_url, manager) => {
@@ -189,6 +189,17 @@ test('verified optional model downloads atomically and does not select itself', 
     assert.equal(result.ok, true);
     assert.equal(manager.getGenerationModelStatus('qwen3-4b-q4-k-m').state, 'installed');
     await manager.removeGeneration('qwen3-4b-q4-k-m');
+  });
+});
+
+test('Balanced is the generation fallback when Fast is not installed', async () => {
+  await withModelMetadata('qwen3-4b-q4-k-m', Buffer.from('verified-balanced-model'), async (_url, manager) => {
+    const result = await manager.downloadGeneration('qwen3-4b-q4-k-m');
+    assert.equal(result.ok, true);
+    assert.equal(manager.getGenerationModelStatus('qwen3-4b-q4-k-m').installed, true);
+    assert.equal(manager.getGenerationModelStatus('qwen3-1.7b-q4-k-m').installed, false);
+    assert.equal(manager.getSelectedGenerationTier(), 'balanced');
+    assert.equal(manager.getSelectedGenerationModel().id, 'qwen3-4b-q4-k-m');
   });
 });
 

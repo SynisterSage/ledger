@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
+import { EmptyState } from '@/components/EmptyState';
 import { AppTextInput } from '@/components/AppTextInput';
 import { CaptureHeader } from '@/components/CaptureHeader';
 import { Screen } from '@/components/Screen';
@@ -30,6 +31,6 @@ export default function NewMilestoneScreen() {
     catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Could not add milestone.'); }
     finally { setSaving(false); }
   };
-  return <Screen contentStyle={{ paddingTop: theme.spacing.lg }}><CaptureHeader title="Add milestone" />{!permissions.canAddMilestone ? <AppText variant="meta" style={styles.unavailable}>Milestone creation is unavailable in this workspace.</AppText> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><AppTextInput label="Milestone name" placeholder="What is due?" value={title} onChangeText={setTitle} autoFocus /><AppTextInput label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} autoCapitalize="none" /><AppTextInput label="Notes" placeholder="Optional" value={note} onChangeText={setNote} multiline />{error ? <AppText variant="meta" style={{ color: theme.colors.danger }}>{error}</AppText> : null}<AppButton title={saving ? 'Saving…' : 'Add milestone'} size="lg" disabled={saving} onPress={() => void save()} /></ScrollView>}</Screen>;
+  return <Screen contentStyle={{ paddingTop: theme.spacing.lg }}><CaptureHeader title="Add milestone" />{!permissions.canAddMilestone ? <EmptyState iconName={{ ios: 'flag', android: 'flag', web: 'flag' }} title="Milestones are read-only here" description="You can view this project, but milestone creation is unavailable in this workspace." kind="permission" density="compact" primaryAction={{ label: 'Back to project', variant: 'link', onPress: () => router.back() }} /> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><AppTextInput label="Milestone name" placeholder="What is due?" value={title} onChangeText={setTitle} autoFocus /><AppTextInput label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} autoCapitalize="none" /><AppTextInput label="Notes" placeholder="Optional" value={note} onChangeText={setNote} multiline />{error ? <AppText variant="meta" style={{ color: theme.colors.danger }}>{error}</AppText> : null}<AppButton title={saving ? 'Saving…' : 'Add milestone'} size="lg" disabled={saving} onPress={() => void save()} /></ScrollView>}</Screen>;
 }
 const styles = StyleSheet.create({ content: { gap: 18, paddingBottom: 48 }, unavailable: { paddingTop: 24 } });

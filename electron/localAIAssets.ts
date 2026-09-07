@@ -188,9 +188,12 @@ export class LocalAIAssetManager {
     const requestedTier = this.selectedTier();
     const requestedModel = GENERATION_MODEL_REGISTRY.find((model) => model.tier === requestedTier)!;
     if (this.statusFor(requestedModel).installed) return { requestedTier, resolvedTier: requestedTier };
+    // A missing preference should fall back to the other installed tier. In
+    // particular, a user who has only downloaded Balanced must not be pushed
+    // through the Fast download just because Fast is the default preference.
     const preference: GenerationTier[] = requestedTier === 'balanced'
         ? ['fast']
-        : [];
+        : ['balanced'];
     const fallback = preference.find((tier) => this.statusFor(GENERATION_MODEL_REGISTRY.find((model) => model.tier === tier)!).installed);
     if (!fallback) return { requestedTier, resolvedTier: 'fast', fallbackReason: 'no_installed_generation_tier' };
     return { requestedTier, resolvedTier: fallback, fallbackReason: 'requested_uninstalled' };

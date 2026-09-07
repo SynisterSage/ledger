@@ -110,7 +110,10 @@ import { saveSidebarPreferences, type SidebarPosition } from './config/sidebarPr
 import { useToast } from './components/Common/ToastProvider';
 import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
+import { touchKeepAliveModules } from './utils/keepAliveModules';
+import { isStaleNavigationGeneration } from './utils/navigationGeneration';
 import { NewTabWindow } from './components/Common/NewTabWindow';
+import { LedgerEmptyState } from './components/Common/LedgerEmptyState';
 import { PageFindBar } from './components/Common/PageFindBar';
 import {
   buildOverviewFocusFingerprint,
@@ -5894,37 +5897,50 @@ export function DashboardContent({
   const overviewEmptyState = (() => {
     if (overviewTab === 'today') {
       return {
-        icon: <CalendarDays size={15} />,
+        icon: CalendarDays,
         title: 'No today items',
         body: 'Today will show tasks, reminders, and events scheduled for today.',
       };
     }
     if (overviewTab === 'assigned') {
       return {
-        icon: <UserCheck size={15} />,
+        icon: UserCheck,
         title: 'Nothing assigned',
         body: 'Assigned work will appear here once it is linked to this workspace.',
       };
     }
     if (overviewTab === 'projects') {
       return {
-        icon: <FolderKanban size={15} />,
+        icon: FolderKanban,
         title: 'No projects yet',
         body: 'Projects will show up here once they have activity or due dates.',
       };
     }
     if (overviewTab === 'notes') {
       return {
-        icon: <StickyNote size={15} />,
+        icon: StickyNote,
         title: 'No notes yet',
         body: 'Recent notes and meeting notes will appear here when they are created.',
       };
     }
     return {
-      icon: <CircleAlert size={15} />,
+      icon: CircleAlert,
       title: 'Nothing to show yet',
       body: 'Create a task, note, project, event, or reminder to populate the overview.',
     };
+  })();
+
+  const overviewEmptyPrimaryAction = (() => {
+    if (overviewTab === 'today' || overviewTab === 'all') {
+      return { label: 'Add today item', onClick: () => openOverviewTaskModal('today') };
+    }
+    if (overviewTab === 'projects') {
+      return { label: 'Add a project', onClick: openOverviewCreateProjectModal };
+    }
+    if (overviewTab === 'notes') {
+      return { label: 'Create a note', onClick: () => setIsOverviewCreateNoteOpen(true) };
+    }
+    return undefined;
   })();
 
   const selectedOverviewTypeLabel = selectedOverviewRow
@@ -7300,19 +7316,16 @@ export function DashboardContent({
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-1 items-center justify-center p-6">
-                    <div className="max-w-sm rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
-                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
-                        {overviewEmptyState.icon}
-                      </div>
-                      <p className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
-                        {overviewEmptyState.title}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
-                        {overviewEmptyState.body}
-                      </p>
-                    </div>
-                  </div>
+                  <LedgerEmptyState
+                    state="first-use"
+                    title={overviewEmptyState.title}
+                    description={overviewEmptyState.body}
+                    icon={overviewEmptyState.icon}
+                    primaryAction={overviewEmptyPrimaryAction}
+                    size="default"
+                    testId={`dashboard-${overviewTab}-first-use`}
+                    className="flex-1"
+                  />
                 )
               ) : (
                 <div className="space-y-1.5">
@@ -9082,6 +9095,7 @@ export function AppShell({
     if (!isModuleWindow) return;
 
     const closedRouteKeys = new Set<string>();
+    let lastNavigationGeneration = 0;
 
     const applyWorkspaceRoute = (route?: ModuleFocusPayload | null) => {
       if (!route?.kind) return;
@@ -9097,14 +9111,35 @@ export function AppShell({
       };
       const nextSearch = buildWorkspaceShellSearch(nextRoute);
       window.history.replaceState({}, '', `${window.location.pathname}?${nextSearch}`);
+      window.desktopWindow?.reportPerformance?.({
+        name: 'route.applied',
+        details: {
+          kind: nextRoute.kind,
+          hasResource:
+            Boolean(nextRoute.focusNoteId) ||
+            Boolean(nextRoute.focusProjectId) ||
+            Boolean(nextRoute.focusTaskId),
+          resourceId:
+            nextRoute.focusNoteId ??
+            nextRoute.focusProjectId ??
+            nextRoute.focusTaskId ??
+            null,
+        },
+      });
       setWorkspaceShellRoute(nextRoute);
     };
 
     const handleWorkspaceRouteChanged = (_event: unknown, route?: ModuleFocusPayload) => {
+      const generation = route?.navigationGeneration;
+      if (isStaleNavigationGeneration(generation, lastNavigationGeneration)) return;
+      if (typeof generation === 'number') lastNavigationGeneration = generation;
       if (closedRouteKeys.has(workspaceShellRouteKey(route))) return;
       applyWorkspaceRoute(route);
     };
     const handleWorkspaceRouteRequested = (_event: unknown, route?: ModuleFocusPayload) => {
+      const generation = route?.navigationGeneration;
+      if (isStaleNavigationGeneration(generation, lastNavigationGeneration)) return;
+      if (typeof generation === 'number') lastNavigationGeneration = generation;
       if (closedRouteKeys.has(workspaceShellRouteKey(route))) return;
       applyWorkspaceRoute(route);
     };
@@ -9140,8 +9175,12 @@ export function AppShell({
   useEffect(() => {
     if (!activeKeepAliveModuleKey) return;
     setVisitedModuleKeys((current) =>
-      current.includes(activeKeepAliveModuleKey) ? current : [...current, activeKeepAliveModuleKey]
+      touchKeepAliveModules(current, activeKeepAliveModuleKey)
     );
+    window.desktopWindow?.reportPerformance?.({
+      name: 'keepalive.updated',
+      details: { active: activeKeepAliveModuleKey },
+    });
   }, [activeKeepAliveModuleKey]);
 
   useEffect(() => {
@@ -10426,6 +10465,13 @@ export function AppShell({
           }
 
           setOnboardingWorkspaceId(workspaceId);
+
+          // New workspaces are seeded server-side. This idempotent call also
+          // covers the auth-trigger-created personal workspace that onboarding
+          // renames instead of creating.
+          if (workspaceId) {
+            await api.provisionWorkspaceStarterContent(workspaceId);
+          }
         }
 
         if (

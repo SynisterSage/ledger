@@ -38,6 +38,7 @@ import {
 } from '../Common/ModuleWindowHeader';
 import { useToast } from '../Common/ToastProvider';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { createPortal } from 'react-dom';
 import { sidebarTheme } from '../Sidebar/sidebarTheme';
@@ -3180,25 +3181,15 @@ export default function IntakeWindow({ webQuery }: { webQuery?: { item?: string;
                     {filteredItems.length > 0 ? (
                       filteredItems.map(renderRow)
                     ) : (
-                      <div className="flex min-h-[280px] items-center justify-center px-6 text-center">
-                        <div className="max-w-sm">
-                          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] text-[var(--ledger-text-muted)]">
-                            <Inbox size={16} />
-                          </div>
-                          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                            {searchQuery.trim()
-                              ? 'No search results.'
-                              : activeStatus === 'unprocessed'
-                              ? 'No items need review.'
-                              : `No ${getStatusLabel(activeStatus).toLowerCase()} items.`}
-                          </p>
-                          <p className="mt-1 text-sm text-[var(--ledger-text-muted)]">
-                            {searchQuery.trim()
-                              ? 'Try a different keyword or clear the search to return to the current tab.'
-                              : 'Captured notes, imports, and suggested actions appear here before they enter the workspace.'}
-                          </p>
-                        </div>
-                      </div>
+                      <LedgerEmptyState
+                        state={searchQuery.trim() ? 'no-results' : 'first-use'}
+                        title={searchQuery.trim() ? 'No search results' : activeStatus === 'unprocessed' ? 'Nothing needs review' : `No ${getStatusLabel(activeStatus).toLowerCase()} items`}
+                        description={searchQuery.trim() ? 'Try another keyword or clear the search to return to this tab.' : 'Captured notes, imports, and suggested actions appear here before they enter the workspace.'}
+                        icon={Inbox}
+                        testId="intake-empty"
+                        primaryAction={searchQuery.trim() ? { label: 'Clear search', onClick: () => setSearchQuery('') } : activeStatus === 'unprocessed' && activeWorkspaceId ? { label: 'Capture something', onClick: () => platform.navigation.openOverlay({ kind: 'overlay', workspaceId: activeWorkspaceId, page: 'capture', action: 'note' }) } : undefined}
+                        className="min-h-[280px]"
+                      />
                     )}
                   </div>
                 </section>

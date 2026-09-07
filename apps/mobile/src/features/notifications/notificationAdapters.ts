@@ -12,6 +12,7 @@ export type NotificationPresentation = {
   icon: NotificationIconName;
   sourceColor: string;
   colorTone: NotificationColorTone;
+  isOverdue: boolean;
   relativeTime: string;
   accessibilityTime: string;
 };
@@ -155,6 +156,7 @@ export function getNotificationPresentation(item: MobileNotificationCenterItem, 
     icon: notificationIcon(item),
     sourceColor: item.workspaceColor || '',
     colorTone: notificationColorTone(item),
+    isOverdue: item.notificationType === 'overdue_item',
     relativeTime: timestamp.relative,
     accessibilityTime: timestamp.absolute,
   };

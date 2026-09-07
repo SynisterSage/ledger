@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { Stack, usePathname, useRouter } from 'expo-router';
+import { Redirect, Stack, usePathname, useRouter } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
@@ -17,6 +17,8 @@ import { useAuthState } from '@/store/sessionStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
 import { bootstrapNotificationOnboardingState, useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
 import { useLedgerTheme } from '@/theme';
+import { getSafeNotificationPath, isNotificationOnboardingPath, isPublicMobilePath } from '@/utils/mobileNavigation';
+import { startMobilePerformance } from '@/lib/mobilePerformance';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -82,7 +84,8 @@ export default function RootLayout() {
       setBootState({ minimumSplashElapsed: true });
     }, MIN_SPLASH_MS);
 
-    void initializeAuth();
+    const finishAuthMeasure = startMobilePerformance('auth.bootstrap');
+    void initializeAuth().finally(() => finishAuthMeasure());
 
     return () => {
       cancelled = true;
@@ -210,7 +213,7 @@ export default function RootLayout() {
     (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data as Record<string, unknown> | undefined;
       const notificationId = typeof data?.notificationId === 'string' ? data.notificationId : null;
-      const route = typeof data?.route === 'string' ? data.route : '/notifications';
+      const route = getSafeNotificationPath(data?.route);
       const routeParams = (data?.routeParams && typeof data.routeParams === 'object' ? data.routeParams : null) as
         | Record<string, unknown>
         | null;
@@ -229,15 +232,10 @@ export default function RootLayout() {
         sourceId: typeof routeParams?.sourceId === 'string' ? routeParams.sourceId : null,
       };
 
-      if (route === '/(tabs)/notifications' || route === '/notifications') {
-        router.replace({
-          pathname: '/notifications',
-          params: notificationRouteParams,
-        });
-        return;
-      }
-
-      router.replace(route as never);
+      router.replace({
+        pathname: route,
+        params: notificationRouteParams,
+      });
     },
     [router],
   );
@@ -292,12 +290,22 @@ export default function RootLayout() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <SafeAreaProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: theme.colors.background },
-          }}
-        />
+        {boot.isBootReady ? (
+          !auth.session && !isPublicMobilePath(pathname) ? (
+            <Redirect href="/auth/welcome" />
+          ) : auth.session && isPublicMobilePath(pathname) ? (
+            <Redirect href="/" />
+          ) : auth.session && !notificationOnboarding.isComplete && !isNotificationOnboardingPath(pathname) ? (
+            <Redirect href="/onboarding/notifications" />
+          ) : (
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: theme.colors.background },
+              }}
+            />
+          )
+        ) : null}
       </SafeAreaProvider>
       {showSplashOverlay ? (
         <AppLoadingScreen

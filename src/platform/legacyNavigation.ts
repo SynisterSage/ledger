@@ -67,7 +67,7 @@ export const openLegacyModule = (
     case 'inbox': route = routeForInboxItem(workspaceId, focus.focusInboxId ?? undefined, focus.focusSection as 'unprocessed' | 'converted' | 'snoozed' | 'archived' | undefined); break;
     case 'slack': route = { ...base, page: 'slack' }; break;
     case 'notifications': route = routeForNotification(workspaceId, focus.focusContext ?? undefined, focus.focusSection as 'active' | 'unread' | 'earlier' | undefined); break;
-    case 'settings': route = { ...base, page: 'settings', scope: 'workspace', section: focus.focusContext === 'integrations' ? 'integrations' : focus.focusContext === 'shortcuts' ? 'sidebar' : 'workspace' }; break;
+    case 'settings': route = { ...base, page: 'settings', scope: 'workspace', section: focus.focusContext === 'integrations' ? 'integrations' : focus.focusContext === 'shortcuts' ? 'sidebar' : focus.focusContext === 'members' ? 'members' : 'workspace' }; break;
   }
   navigation.openRoute(route);
 };

@@ -3,7 +3,8 @@ import path from 'node:path';
 
 const viteEntry = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js');
 
-const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', '5173'], {
+const port = process.env.LEDGER_WEB_PORT || '5173';
+const child = spawn(process.execPath, [viteEntry, '--host', '127.0.0.1', '--port', port], {
   stdio: 'inherit',
   env: {
     ...process.env,

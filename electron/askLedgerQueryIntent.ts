@@ -55,6 +55,24 @@ const addDays = (date: Date, days: number) => {
   return result;
 };
 
+const monthNumbers: Record<string, number> = {
+  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+  july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+};
+
+const namedMonthWindow = (question: string, now: Date) => {
+  const match = question.toLowerCase().match(/\b(?:(this|next|last)\s+)?(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(20\d{2}))?\b/);
+  if (!match) return undefined;
+  const month = monthNumbers[match[2]];
+  let year = match[3] ? Number(match[3]) : now.getFullYear();
+  if (!match[3] && match[1] === 'next') year += 1;
+  if (!match[3] && match[1] === 'last') year -= 1;
+  const start = new Date(year, month, 1);
+  const end = new Date(year, month + 1, 0);
+  const iso = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return { start: iso(start), end: iso(end) };
+};
+
 export const detectAskLedgerQueryIntent = (question: string, now = new Date()): AskLedgerQueryIntent => {
   const normalized = question.toLowerCase().replace(/[’']/g, '').trim();
   const asksAboutExistingKnowledge = /\b(what did .*\b(discuss|say|decide|mention)|where did .*\b(discuss|say|decide|mention)|what was decided|what have we discussed)\b/.test(normalized);
@@ -97,6 +115,10 @@ export const detectAskLedgerQueryIntent = (question: string, now = new Date()): 
     // This is a whole schedule question, not a current-week lookup. Leave
     // the window open so Ledger can derive a pattern from calendar records.
     return { kind: 'weekly_overview' };
+  }
+  const monthWindow = namedMonthWindow(normalized, now);
+  if (monthWindow && /\b(?:schedule|calendar|month|events?|meetings?|reminders?|tasks?)\b/.test(normalized)) {
+    return { kind: 'time_window', window: monthWindow };
   }
   if (!asksAboutExistingKnowledge && (/\b(meetings?|events?)\b/.test(normalized) || /\b(calendar|schedule)\b.*\b(upcoming|today|this week|next week|event|meeting)\b/.test(normalized))) {
     return { kind: 'events' };
@@ -161,7 +183,9 @@ export const resourceTypesForAskLedgerIntent = (
     case 'deadlines':
       return ['task', 'milestone', 'project', 'event', 'reminder'];
     case 'time_window':
-      return ['task', 'event', 'reminder'];
+      // Match the Calendar dated-items lane: scheduled events/reminders plus
+      // task, milestone, and project deadlines.
+      return ['task', 'milestone', 'project', 'event', 'reminder'];
     case 'weekly_overview':
       return ['project', 'task', 'milestone', 'reminder', 'event', 'person', 'team', 'note', 'transcript', 'intake', 'external'];
     case 'status':

@@ -20,6 +20,7 @@ import {
   updateMobileUserSettings,
 } from '@/api/userSettings';
 import { AppText } from '@/components/AppText';
+import { MobileUserAvatar } from '@/components/MobileUserAvatar';
 import { Section } from '@/components/Section';
 import { SettingsRow } from '@/components/SettingsRow';
 import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
@@ -69,6 +70,8 @@ export default function SettingsScreen() {
   const [notificationPrefs, setNotificationPrefs] = useState(defaultMobileNotificationPreferences);
   const [notificationPrefsLoading, setNotificationPrefsLoading] = useState(true);
   const [capturePrefs, setCapturePrefs] = useState(defaultMobileCapturePreferences);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
+  const [profileAvatarUpdatedAt, setProfileAvatarUpdatedAt] = useState<string | null>(null);
   const [capturePrefsLoading, setCapturePrefsLoading] = useState(true);
   const [sheetMode, setSheetMode] = useState<SettingsEditSheetMode | null>(null);
   const [workspaceSheetTarget, setWorkspaceSheetTarget] = useState<
@@ -141,6 +144,8 @@ export default function SettingsScreen() {
         if (cancelled) return;
         setNotificationPrefs(readMobileNotificationPreferences(settings));
         setCapturePrefs(readMobileCapturePreferences(settings));
+        setProfileAvatarUrl(settings.avatar_url ?? null);
+        setProfileAvatarUpdatedAt(settings.avatar_updated_at ?? null);
       } catch {
         if (!cancelled) {
           setNotificationPrefs(defaultMobileNotificationPreferences);
@@ -359,7 +364,7 @@ export default function SettingsScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE - 12,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE - 44,
             paddingHorizontal: theme.spacing.screenX,
             paddingBottom: theme.spacing['3xl'] + 96,
             flexGrow: 1,
@@ -375,12 +380,13 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.sections}>
-          <Section title="Account">
+          <Section title="Account" card>
             <View style={[styles.identityBlock, { borderBottomColor: theme.colors.borderSubtle }]}>
-              <AppText variant="bodyStrong">{displayName}</AppText>
-              <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
-                {email}
-              </AppText>
+              <MobileUserAvatar displayName={displayName} email={email} avatarUrl={profileAvatarUrl} avatarUpdatedAt={profileAvatarUpdatedAt} size={52} />
+              <View style={styles.identityCopy}>
+                <AppText variant="bodyStrong">{displayName}</AppText>
+                <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>{email}</AppText>
+              </View>
             </View>
             <SettingsRow
               title="Display name"
@@ -398,7 +404,7 @@ export default function SettingsScreen() {
             />
           </Section>
 
-          <Section title="Workspace">
+          <Section title="Workspace" card>
             <SettingsRow
               title="Default capture workspace"
               value={
@@ -426,7 +432,7 @@ export default function SettingsScreen() {
             />
           </Section>
 
-          <Section title="Notifications">
+          <Section title="Notifications" card>
             <SettingsRow
               title="Push notifications"
               right={
@@ -509,7 +515,7 @@ export default function SettingsScreen() {
             />
           </Section>
 
-          <Section title="Capture">
+          <Section title="Capture" card>
             <SettingsRow
               title="Shared items"
               value={
@@ -530,7 +536,7 @@ export default function SettingsScreen() {
             />
           </Section>
 
-          <Section title="Siri Shortcuts">
+          <Section title="Siri Shortcuts" card>
             <SettingsRow
               title="Default Siri workspace"
               value={workspaceState.isLoading ? 'Loading...' : defaultSiriWorkspaceLabel}
@@ -549,7 +555,7 @@ export default function SettingsScreen() {
             />
           </Section>
 
-          <Section title="App">
+          <Section title="App" card>
             <SettingsRow
               title="Theme"
               value={themeModeLabel}
@@ -582,7 +588,7 @@ export default function SettingsScreen() {
             />
           </Section>
 
-          <Section title="About">
+          <Section title="About" card>
             <SettingsRow title="Help" chevron onPress={() => void openLegalLink('docs')} />
             <SettingsRow
               title="Privacy Policy"
@@ -598,7 +604,7 @@ export default function SettingsScreen() {
             />
           </Section>
 
-          <Section>
+          <Section card>
             <SettingsRow title="Sign out" destructive onPress={handleSignOut} />
           </Section>
         </View>
@@ -757,9 +763,17 @@ const styles = {
     gap: 28,
   },
   identityBlock: {
-    gap: 2,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 0.5,
+  },
+  identityCopy: {
+    flex: 1,
+    gap: 2,
   },
 } as const;
 

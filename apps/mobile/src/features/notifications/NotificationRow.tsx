@@ -38,6 +38,7 @@ function NotificationRowBase({
   const { notification: item, presentation, displayState } = presented;
   const unread = displayState === 'unread';
   const resolved = displayState === 'resolved';
+  const overdue = presentation.isOverdue && !resolved;
 
   const animateTo = (value: number) => {
     if (appPreferences.reduceMotionEnabled) {
@@ -99,7 +100,7 @@ function NotificationRowBase({
       <Animated.View style={{ transform: [{ translateX }] }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${presentation.title}. ${presentation.summary ?? ''} ${unread ? 'Unread.' : resolved ? 'Resolved.' : 'Read.'} ${presentation.accessibilityTime}`.trim()}
+        accessibilityLabel={`${presentation.title}. ${presentation.summary ?? ''} ${overdue ? 'Overdue.' : unread ? 'Unread.' : resolved ? 'Resolved.' : 'Read.'} ${presentation.accessibilityTime}`.trim()}
         accessibilityHint="Opens notification details. Long press for actions. Swipe left for notification actions."
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={(event) => swipeActions.find((action) => action.id === event.nativeEvent.actionName)?.onPress()}
@@ -121,29 +122,40 @@ function NotificationRowBase({
       <View style={styles.iconColumn}>
         <View style={[styles.iconContainer, { backgroundColor: theme.colors[presentation.colorTone] }]}>
           <SymbolView name={presentation.icon} size={15} weight="regular" tintColor="#FFFFFF" />
+          {overdue ? (
+            <View
+              style={[styles.attentionBadge, { backgroundColor: theme.colors.danger, borderColor: theme.colors.background }]}
+            >
+              <SymbolView name={{ ios: 'exclamationmark', android: 'priority_high', web: 'priority_high' }} size={8} tintColor="#FFFFFF" />
+            </View>
+          ) : null}
         </View>
       </View>
-      <View style={[styles.content, { borderBottomColor: theme.colors.borderSubtle }]}>
-        <View style={styles.titleLine}>
+      <View
+        style={[styles.content, { borderBottomColor: theme.colors.borderSubtle }]}
+      >
+        <View style={styles.titleBlock}>
           <AppText
             variant="body"
             numberOfLines={2}
-            style={{ color: theme.colors.textPrimary, fontWeight: unread ? '600' : resolved ? '400' : '500', flex: 1 }}
+            style={{ color: theme.colors.textPrimary, fontWeight: unread ? '600' : resolved ? '400' : '500' }}
           >
             {presentation.title}
           </AppText>
-          <View style={styles.timestamp}>
-            <AppText variant="meta" numberOfLines={1} style={{ color: theme.colors.textMuted }}>
-              {presentation.relativeTime}
-            </AppText>
-            {unread ? <View style={[styles.unreadDot, { backgroundColor: theme.colors.accent }]} /> : null}
+          <View style={styles.metaLine}>
+            {presentation.summary ? (
+              <AppText variant="meta" numberOfLines={1} ellipsizeMode="tail" style={[styles.summary, { color: unread ? theme.colors.textSecondary : theme.colors.textMuted }]}>
+                {presentation.summary}
+              </AppText>
+            ) : <View style={styles.summarySpacer} />}
+            <View style={styles.timestamp}>
+              <AppText variant="meta" numberOfLines={1} style={{ color: theme.colors.textMuted }}>
+                {presentation.relativeTime}
+              </AppText>
+              {!overdue && unread ? <View style={[styles.unreadDot, { backgroundColor: theme.colors.accent }]} /> : null}
+            </View>
           </View>
         </View>
-        {presentation.summary ? (
-          <AppText variant="meta" numberOfLines={1} ellipsizeMode="tail" style={{ color: unread ? theme.colors.textSecondary : theme.colors.textMuted }}>
-            {presentation.summary}
-          </AppText>
-        ) : null}
       </View>
       </Pressable>
       </Animated.View>
@@ -175,6 +187,18 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  attentionBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     minWidth: 0,
@@ -183,12 +207,10 @@ const styles = StyleSheet.create({
     paddingBottom: 9,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  titleLine: {
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
+  titleBlock: { minWidth: 0, gap: 3 },
+  metaLine: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  summary: { minWidth: 0, flex: 1 },
+  summarySpacer: { flex: 1 },
   timestamp: {
     minWidth: 34,
     flexDirection: 'row',

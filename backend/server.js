@@ -407,7 +407,7 @@ const getPluginAuthorizeUrl = (sessionId, code) => {
 const loadPluginCredential = async (req) => {
   const token = getBearerToken(req);
   if (!token || !token.startsWith('ledger_figma_plugin_')) return null;
-  const result = await supabase.from('figma_plugin_credentials').select('id, user_id, client_id, scopes, expires_at, revoked_at').eq('token_hash', hashPluginValue(token)).maybeSingle();
+  const result = await supabase.from('figma_plugin_credentials').select('id, user_id, workspace_id, client_id, scopes, expires_at, revoked_at').eq('token_hash', hashPluginValue(token)).maybeSingle();
   if (result.error) throw result.error;
   if (!result.data || result.data.revoked_at || new Date(result.data.expires_at).getTime() <= Date.now() || result.data.client_id !== FIGMA_PLUGIN_CLIENT_ID) return null;
   void supabase.from('figma_plugin_credentials').update({ last_used_at: new Date().toISOString() }).eq('id', result.data.id);
@@ -563,7 +563,7 @@ const normalizeProjectType = (value) => {
 };
 
 const projectSelectColumns =
-  'id, workspace_id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_by, created_at, updated_at';
+  'id, workspace_id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_by, starter_key, created_at, updated_at';
 const eventSelectColumns =
   'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, location, project_id, note_id, series_id, series_type, source, source_platform, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at';
 const workspaceTeamSelectColumns =
@@ -571,7 +571,7 @@ const workspaceTeamSelectColumns =
 const projectMilestoneSelectColumns =
   'id, workspace_id, project_id, title, milestone_date, type, note, completed, linked_note_id, linked_reminder_id, linked_event_id, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, created_by, updated_by, created_at, updated_at';
 const taskSelectColumns =
-  'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, tags, completed_at, source, source_platform, created_at, updated_at';
+  'id, workspace_id, project_id, milestone_id, title, description, notes, due_date, due_time, status, priority, assigned_to, assigned_to_user_id, assigned_to_team_id, assigned_team_id, assigned_by_user_id, assigned_at, tags, completed_at, source, source_platform, starter_key, created_at, updated_at';
 const taskSelectWithHorizonColumns = `${taskSelectColumns}, task_horizon`;
 const reminderSelectColumns =
   'id, workspace_id, user_id, title, body, remind_at, status, linked_type, linked_id, completed_at, dismissed_at, snoozed_until, source, source_platform, created_at, updated_at, calendar_id, project_id, note_id, notes, color, is_done, created_by, series_id, series_type, recurrence_rule, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at';
@@ -847,7 +847,7 @@ const mapNoteResponse = (row) => {
 };
 
 const noteSelectColumns =
-  'id, workspace_id, user_id, updated_by, title, content, content_html, date, mood, source, source_platform, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at';
+  'id, workspace_id, user_id, updated_by, title, content, content_html, date, mood, source, source_platform, starter_key, mode, mind_map_structure, parent_id, section_id, sort_order, depth, created_at, updated_at';
 const noteSummarySelectColumns =
   'id, workspace_id, user_id, updated_by, title, preview, date, mood, source, source_platform, mode, parent_id, section_id, sort_order, depth, created_at, updated_at';
 
@@ -4891,43 +4891,18 @@ const verifyGoogleDriveOAuthState = (state) => {
   return { ...payload, state_hash: crypto.createHash('sha256').update(String(state)).digest('hex') };
 };
 const escapeOAuthHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+const buildIntegrationCompleteHtml = ({ providerName, providerIcon, title, message, success, deepLink = null, autoClose = true, closeDelay = 700, postMessageType = null }) => {
+  const safeProvider = escapeOAuthHtml(providerName);
+  const safeIcon = escapeOAuthHtml(providerIcon);
+  const safeTitle = escapeOAuthHtml(title);
+  const safeMessage = escapeOAuthHtml(message);
+  const safeDeepLink = deepLink ? escapeOAuthHtml(deepLink) : null;
+  const script = `${postMessageType ? `window.opener?.postMessage({type:${JSON.stringify(postMessageType)},success:${Boolean(success)}},'*');` : ''}${autoClose ? `setTimeout(()=>{try{${safeDeepLink ? `window.location.href=${JSON.stringify(deepLink)}` : 'window.close()'}}catch{}},${Number(closeDelay) || 700});` : ''}`;
+  const hint = autoClose ? `This window will close automatically in ${Math.max(1, Math.round((Number(closeDelay) || 700) / 1000))} seconds.` : (success ? 'You can safely close this window.' : 'Return to Ledger and try connecting again.');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>${safeTitle} · Ledger</title><style>:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#080808;color:#f5f5f5}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:#080808}.card{width:min(680px,100%);padding:42px 32px;border:1px solid #242424;border-radius:14px;background:#141414;box-shadow:0 24px 80px rgba(0,0,0,.34);text-align:center}.logos{display:flex;align-items:center;justify-content:center;gap:20px}.logo{display:grid;place-items:center;width:78px;height:78px;padding:16px;border:1px solid #292929;border-radius:16px;background:#191919;box-shadow:0 8px 24px rgba(0,0,0,.24)}.logo img{max-width:100%;max-height:100%;object-fit:contain}.check{font-size:30px;line-height:1}.title{margin:32px 0 0;font-size:27px;line-height:1.15;letter-spacing:-.025em}.message{max-width:440px;margin:12px auto 0;color:#979797;font-size:15px;line-height:1.6}.button{display:inline-flex;align-items:center;justify-content:center;margin-top:28px;min-width:180px;height:44px;padding:0 20px;border:1px solid #363636;border-radius:8px;background:#202020;color:#f5f5f5;font:600 14px inherit;text-decoration:none;cursor:pointer}.button:hover{background:#292929}.hint{margin:16px 0 0;color:#777;font-size:13px}@media(max-width:520px){.card{padding:34px 22px}.title{font-size:24px}}</style></head><body><main class="card"><div class="logos" aria-label="${safeProvider} ${success ? 'connected to' : 'connection status'} Ledger"><div class="logo"><img src="${safeIcon}" alt="${safeProvider} logo"></div><span class="check" style="color:${success ? '#3bd267' : '#f0a45d'}" aria-hidden="true">${success ? '✓' : '!'}</span><div class="logo"><img src="https://ledgerworkspace.com/assets/logos/logo.svg" alt="Ledger logo"></div></div><h1 class="title">${safeTitle}</h1><p class="message">${safeMessage}</p>${safeDeepLink ? `<a class="button" href="${safeDeepLink}">Open Ledger</a>` : '<button class="button" type="button" onclick="window.close()">Close window</button>'}<p class="hint">${hint}</p></main><script>${script}</script></body></html>`;
+};
 const googleDriveCompleteHtml = (success, message = '') => {
-  const title = success ? 'Google Drive connected' : 'Google Drive connection failed';
-  const detail = message || (success ? 'Your Google Drive account is now connected to Ledger.' : 'Return to Ledger and try connecting again.');
-  const icon = success ? '✓' : '!';
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeOAuthHtml(title)} · Ledger</title>
-    <style>
-      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fffbf7; color: #111827; }
-      * { box-sizing: border-box; }
-      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 0%, #fff7ed 0, #fffbf7 46%, #f7f3ef 100%); }
-      main { width: min(100%, 440px); padding: 34px; border: 1px solid #f0dfd0; border-radius: 18px; background: rgba(255,255,255,.9); box-shadow: 0 18px 50px rgba(17,24,39,.09); text-align: center; }
-      .brand { display: inline-flex; align-items: center; gap: 9px; color: #111827; font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
-      .mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: #ff5f40; color: white; font-size: 14px; font-weight: 800; }
-      .icon { display: grid; place-items: center; width: 48px; height: 48px; margin: 28px auto 18px; border-radius: 14px; background: ${success ? '#ecfdf3' : '#fff7ed'}; color: ${success ? '#16803c' : '#b45309'}; font-size: 24px; font-weight: 700; }
-      h1 { margin: 0; font-size: 22px; line-height: 1.2; letter-spacing: -.03em; }
-      p { margin: 10px 0 0; color: #6b7280; font-size: 14px; line-height: 1.55; }
-      button { margin-top: 25px; border: 0; border-radius: 9px; padding: 10px 16px; background: #111827; color: white; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-      button:hover { background: #263244; }
-      .hint { margin-top: 18px; color: #9ca3af; font-size: 11px; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <div class="brand"><span class="mark">L</span>Ledger</div>
-      <div class="icon" aria-hidden="true">${icon}</div>
-      <h1>${escapeOAuthHtml(title)}</h1>
-      <p>${escapeOAuthHtml(detail)}</p>
-      <button type="button" onclick="window.close()">Return to Ledger</button>
-      <div class="hint">You can safely close this window.</div>
-    </main>
-    <script>window.opener?.postMessage({type:'ledger-google-drive-oauth',success:${Boolean(success)}},'*'); setTimeout(() => window.close(), 700);</script>
-  </body>
-</html>`;
+  return buildIntegrationCompleteHtml({ providerName: 'Google Drive', providerIcon: 'https://ledgerworkspace.com/drive.svg', title: success ? 'Google Drive connected' : 'Google Drive connection failed', message: message || (success ? 'Your Google Drive account is now connected to Ledger.' : 'Return to Ledger and try connecting again.'), success, postMessageType: 'ledger-google-drive-oauth', autoClose: success, closeDelay: 5000 });
 };
 const buildGoogleDriveAuthorizeUrl = ({ state }) => {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
@@ -5109,133 +5084,15 @@ const escapeHtml = (value) =>
     return map[char] ?? char;
   });
 
-const buildSlackInstallCompleteHtml = ({ teamName }) => {
-  const publicBackendUrl =
-    process.env.PUBLIC_BACKEND_URL?.trim() || 'https://api.ledgerworkspace.com';
-  const safeTeamName = escapeHtml(teamName ? ` to ${teamName}` : '');
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Slack connected to Ledger</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #fffbf7;
-        --card: rgba(255, 255, 255, 0.92);
-        --border: rgba(17, 24, 39, 0.08);
-        --text: #111827;
-        --muted: #6b7280;
-        --accent: #ff5f40;
-      }
-      html, body {
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        background: var(--bg);
-        color: var(--text);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      body {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-        box-sizing: border-box;
-      }
-      .card {
-        width: min(460px, 100%);
-        border: 1px solid var(--border);
-        border-radius: 28px;
-        background: var(--card);
-        box-shadow: 0 18px 50px rgba(17, 24, 39, 0.08);
-        padding: 32px 28px;
-        text-align: center;
-      }
-      h1 {
-        margin: 0;
-        font-size: clamp(24px, 4vw, 30px);
-        line-height: 1.12;
-        letter-spacing: -0.03em;
-      }
-      p {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.6;
-        font-size: 15px;
-      }
-      .eyebrow {
-        margin-bottom: 14px;
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-        color: var(--accent);
-      }
-      .actions {
-        display: flex;
-        justify-content: center;
-        margin-top: 24px;
-      }
-      .button {
-        appearance: none;
-        border: 0;
-        border-radius: 999px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 132px;
-        height: 44px;
-        padding: 0 18px;
-        font: inherit;
-        font-weight: 600;
-        cursor: pointer;
-        text-decoration: none;
-      }
-      .button.primary {
-        background: var(--accent);
-        color: white;
-        box-shadow: none;
-        transition: background-color 140ms ease, color 140ms ease;
-      }
-      .button.primary:hover {
-        background: #ea5336;
-      }
-      .fineprint {
-        margin-top: 12px;
-        font-size: 12px;
-      }
-      .subcopy {
-        margin-top: 12px;
-      }
-    </style>
-  </head>
-  <body>
-    <main class="card">
-      <div class="eyebrow">Ledger connected</div>
-      <h1>Slack connected${safeTeamName}</h1>
-      <p class="subcopy">Your Slack workspace is now linked to Ledger.</p>
-      <div class="actions">
-        <a class="button primary" href="ledger://settings/integrations">Open Ledger</a>
-      </div>
-      <p class="fineprint">If the app does not open, use the button above.</p>
-    </main>
-    <script>
-      setTimeout(() => {
-        try {
-          window.location.href = 'ledger://settings/integrations';
-        } catch {}
-      }, 120);
-    </script>
-  </body>
-</html>`;
+const buildSlackInstallCompleteHtml = ({ teamName, success = true, message = '' }) => {
+  return buildIntegrationCompleteHtml({ providerName: 'Slack', providerIcon: 'https://ledgerworkspace.com/slack.svg', title: success ? `Slack connected${teamName ? ` to ${teamName}` : ''}` : 'Slack connection failed', message: message || (success ? 'Your Slack workspace is now linked to Ledger.' : 'Return to Ledger and try connecting again.'), success, deepLink: success ? 'ledger://settings/integrations' : null, autoClose: success, closeDelay: 5000 });
 };
 
 const buildSlackIdentityCompleteHtml = ({ success, message = '' }) => {
-  const safeMessage = escapeHtml(message);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Slack identity</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fffbf7;color:#111827;font:14px system-ui,-apple-system,sans-serif}.content{width:min(360px,calc(100vw - 40px));text-align:center}h1{margin:0 0 8px;font-size:22px;letter-spacing:-.02em}p{margin:0;color:#6b7280;line-height:1.5}.button{display:inline-flex;margin-top:18px;padding:9px 15px;border-radius:999px;background:#ff5f40;color:white;text-decoration:none;font-weight:600}</style></head><body><main class="content"><h1>${success ? 'Slack identity connected' : 'Slack identity was not connected'}</h1><p>${safeMessage || (success ? 'Return to Ledger to continue.' : 'Authorization was cancelled or denied.')}</p>${success ? '<a class="button" href="ledger://slack">Open Ledger</a><script>setTimeout(()=>{try{window.location.href="ledger://slack"}catch{}} ,250)</script>' : ''}</main></body></html>`;
+  return buildIntegrationCompleteHtml({ providerName: 'Slack', providerIcon: 'https://ledgerworkspace.com/slack.svg', title: success ? 'Slack identity connected' : 'Slack identity was not connected', message: message || (success ? 'Return to Ledger to continue.' : 'Authorization was cancelled or denied.'), success, deepLink: success ? 'ledger://slack' : null, autoClose: success, closeDelay: 5000 });
 };
+
+const buildSlackOAuthErrorHtml = (message) => buildIntegrationCompleteHtml({ providerName: 'Slack', providerIcon: 'https://ledgerworkspace.com/slack.svg', title: 'Slack connection needs attention', message: message || 'Return to Ledger and try connecting again.', success: false, autoClose: false });
 
 const verifySlackRequest = (req) => {
   const signingSecret = process.env.SLACK_SIGNING_SECRET?.trim();
@@ -7912,16 +7769,16 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
   try {
     const code = String(req.query?.code ?? '').trim();
     const state = String(req.query?.state ?? '').trim();
-    if (!code) return res.status(400).send('Missing Slack OAuth code');
+    if (!code) return res.status(400).type('html').send(buildSlackOAuthErrorHtml('Slack did not return an authorization code.'));
 
     const statePayload = verifySlackOAuthState(state);
-    if (!statePayload) return res.status(400).send('Invalid Slack OAuth state');
+    if (!statePayload) return res.status(400).type('html').send(buildSlackOAuthErrorHtml('This Slack authorization attempt is invalid or expired.'));
 
     const clientId = process.env.SLACK_CLIENT_ID?.trim();
     const clientSecret = process.env.SLACK_CLIENT_SECRET?.trim();
     const redirectUri = getSlackRedirectUri();
     if (!clientId || !clientSecret || !redirectUri) {
-      return res.status(500).send('Slack OAuth is not configured');
+      return res.status(500).type('html').send(buildSlackOAuthErrorHtml('Slack is not configured for Ledger yet.'));
     }
 
     const oauthUserId = statePayload.flow === 'personal_identity'
@@ -7946,12 +7803,12 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
     const tokenPayload = await tokenResponse.json();
     if (!tokenPayload?.ok) {
       console.error('Slack OAuth token exchange failed', tokenPayload?.error ?? 'unknown_error');
-      return res.status(400).type('text').send('Slack OAuth failed');
+      return res.status(400).type('html').send(buildSlackOAuthErrorHtml('Slack could not approve this connection. Try again.'));
     }
 
     const teamId = tokenPayload.team?.id ?? null;
     const teamName = tokenPayload.team?.name ?? null;
-    if (!teamId) return res.status(400).send('Slack OAuth response missing team id');
+    if (!teamId) return res.status(400).type('html').send(buildSlackOAuthErrorHtml('Slack did not return a workspace for this connection.'));
 
     if (statePayload.flow === 'personal_identity') {
       const sharedConnection = await supabase
@@ -8083,13 +7940,12 @@ app.get('/api/integrations/slack/oauth/callback', rateLimit('auth'), async (req,
     console.error('Slack OAuth callback failed', error);
     const statusCode = getPublicErrorStatus(error);
     const message = getPublicErrorMessage(error, statusCode);
-    res.status(statusCode).type('text').send(message);
+    res.status(statusCode).type('html').send(buildSlackOAuthErrorHtml(message));
   }
 });
 
 const buildFigmaOAuthCompleteHtml = (success, message = '') => {
-  const safeMessage = escapeHtml(message);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Figma connection</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#fffbf7;color:#111827;font:14px system-ui,-apple-system,sans-serif}.content{width:min(320px,calc(100vw - 40px));text-align:center}h1{margin:0 0 8px;font-size:22px;letter-spacing:-.02em}p{margin:0;color:#6b7280;line-height:1.5}.button{display:inline-flex;margin-top:18px;padding:9px 15px;border-radius:999px;background:#ff5f40;color:white;text-decoration:none;font-weight:600}.button:hover{background:#f45135}</style></head><body><main class="content"><h1>${success ? 'Figma connected' : 'Figma wasn’t connected'}</h1><p>${safeMessage || (success ? 'Return to Ledger to manage the connection.' : 'Authorization was cancelled or denied.')}</p><a class="button" href="ledger://settings/integrations">Open Ledger</a></main>${success ? '<script>setTimeout(()=>{try{window.location.href="ledger://settings/integrations"}catch{}} ,120)</script>' : ''}</body></html>`;
+  return buildIntegrationCompleteHtml({ providerName: 'Figma', providerIcon: 'https://ledgerworkspace.com/Figma-logo.svg', title: success ? 'Figma connected' : 'Figma wasn’t connected', message: message || (success ? 'Return to Ledger to manage the connection.' : 'Authorization was cancelled or denied.'), success, deepLink: success ? 'ledger://settings/integrations' : null, autoClose: success, closeDelay: 5000 });
 };
 
 app.post('/api/figma-plugin/auth/sessions', rateLimit('auth'), async (req, res) => {
@@ -8114,6 +7970,23 @@ app.get('/api/figma-plugin/auth/authorize', async (req, res) => {
   const sessionId = String(req.query?.session_id ?? '').trim();
   const code = String(req.query?.code ?? '').trim().toUpperCase();
   res.type('html').send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect Ledger to Figma</title><style>body{font:15px system-ui;max-width:420px;margin:48px auto;padding:0 20px;color:#111827}button{background:#ff5f40;color:white;border:0;border-radius:8px;padding:10px 14px;font-weight:600}p{color:#4b5563;line-height:1.5}</style><h1>Connect Ledger to Figma</h1><p>Return to Ledger to approve this plugin connection. Verification code: <strong>${code.replace(/[^A-Z0-9-]/g, '')}</strong></p><p>Open Ledger in your browser if it is not already open, then approve the request there.</p><a href="${getPluginAuthorizeUrl(sessionId, code)}"><button>Open Ledger</button></a>`);
+});
+
+app.get('/api/figma-plugin/auth/requests/:id', authMiddleware, rateLimit('auth'), async (req, res) => {
+  try {
+    const sessionId = String(req.params.id ?? '').trim();
+    const code = String(req.query?.code ?? '').trim().toUpperCase();
+    const session = await supabase.from('figma_plugin_authorization_sessions').select('id, client_id, verification_code_hash, status, expires_at, scopes').eq('id', sessionId).maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data || session.data.client_id !== FIGMA_PLUGIN_CLIENT_ID || session.data.status !== 'pending' || new Date(session.data.expires_at).getTime() <= Date.now() || !pluginValueMatches(code, session.data.verification_code_hash)) return res.status(400).json({ error: 'This authorization request is invalid or expired.' });
+    const workspaceIds = [...(await getUserWorkspaceIds(req.authUser.id))];
+    const workspaces = workspaceIds.length ? await supabase.from('workspaces').select('id, name, is_personal, owner_id').in('id', workspaceIds) : { data: [], error: null };
+    if (workspaces.error) throw workspaces.error;
+    const members = workspaceIds.length ? await supabase.from('workspace_members').select('workspace_id, role').eq('user_id', req.authUser.id).in('workspace_id', workspaceIds) : { data: [], error: null };
+    if (members.error) throw members.error;
+    const roleById = new Map((members.data ?? []).map((row) => [row.workspace_id, row.role]));
+    return res.json({ id: session.data.id, scopes: session.data.scopes, expires_at: session.data.expires_at, workspaces: (workspaces.data ?? []).map((workspace) => ({ ...workspace, role: workspace.owner_id === req.authUser.id ? 'owner' : roleById.get(workspace.id) ?? 'member' })) });
+  } catch (error) { return respondWithError(res, error); }
 });
 
 app.get('/.well-known/oauth-protected-resource', (_req, res) => {
@@ -8599,11 +8472,14 @@ app.post('/api/figma-plugin/auth/approve', authMiddleware, rateLimit('auth'), as
   try {
     const sessionId = String(req.body?.session_id ?? '').trim();
     const code = String(req.body?.verification_code ?? '').trim().toUpperCase();
+    const workspaceId = String(req.body?.workspace_id ?? '').trim();
     const session = await supabase.from('figma_plugin_authorization_sessions').select('id, client_id, verification_code_hash, status, expires_at, scopes').eq('id', sessionId).maybeSingle();
     if (session.error) throw session.error;
     if (!session.data || session.data.client_id !== FIGMA_PLUGIN_CLIENT_ID || session.data.status !== 'pending' || new Date(session.data.expires_at).getTime() <= Date.now() || !pluginValueMatches(code, session.data.verification_code_hash)) return res.status(400).json({ error: 'This authorization request is invalid or expired.' });
+    if (!workspaceId) return res.status(400).json({ error: 'Choose a Ledger workspace.' });
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
     const credential = `ledger_figma_plugin_${crypto.randomBytes(32).toString('base64url')}`;
-    const credentialRow = await supabase.from('figma_plugin_credentials').insert({ token_hash: hashPluginValue(credential), user_id: req.authUser.id, client_id: FIGMA_PLUGIN_CLIENT_ID, scopes: session.data.scopes?.length ? session.data.scopes : FIGMA_PLUGIN_SCOPES, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }).select('id').single();
+    const credentialRow = await supabase.from('figma_plugin_credentials').insert({ token_hash: hashPluginValue(credential), user_id: req.authUser.id, workspace_id: workspaceId, client_id: FIGMA_PLUGIN_CLIENT_ID, scopes: session.data.scopes?.length ? session.data.scopes : FIGMA_PLUGIN_SCOPES, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }).select('id').single();
     if (credentialRow.error) throw credentialRow.error;
     const updated = await supabase.from('figma_plugin_authorization_sessions').update({ status: 'approved', user_id: req.authUser.id, credential_encrypted: protectIntegrationTokenForStorage(credential), approved_at: new Date().toISOString() }).eq('id', sessionId).eq('status', 'pending').select('id').maybeSingle();
     if (updated.error || !updated.data) { await supabase.from('figma_plugin_credentials').delete().eq('id', credentialRow.data.id); return res.status(409).json({ error: 'This authorization request was already completed.' }); }
@@ -8639,14 +8515,16 @@ app.get('/api/figma-plugin/session', pluginAuthMiddleware, rateLimit('read'), as
     requirePluginScope(req, 'workspace:read');
     const user = await supabase.from('users').select('id, email, full_name, avatar_url').eq('id', req.pluginCredential.user_id).maybeSingle();
     if (user.error) throw user.error;
-    res.json({ user: user.data, scopes: req.pluginCredential.scopes, expires_at: req.pluginCredential.expires_at });
+    res.json({ user: user.data, workspace_id: req.pluginCredential.workspace_id ?? null, scopes: req.pluginCredential.scopes, expires_at: req.pluginCredential.expires_at });
   } catch (error) { return respondWithError(res, error); }
 });
 
 app.get('/api/figma-plugin/workspaces', pluginAuthMiddleware, rateLimit('read'), async (req, res) => {
   try {
     requirePluginScope(req, 'workspace:read');
-    const workspaceIds = [...(await getUserWorkspaceIds(req.pluginCredential.user_id))];
+    const workspaceIds = req.pluginCredential.workspace_id
+      ? [req.pluginCredential.workspace_id]
+      : [...(await getUserWorkspaceIds(req.pluginCredential.user_id))];
     if (!workspaceIds.length) return res.json([]);
     const rows = await supabase.from('workspaces').select('id, name, description, is_personal, color, owner_id').in('id', workspaceIds);
     if (rows.error) throw rows.error;
@@ -8664,8 +8542,10 @@ const pluginSupportedNodeTypes = new Set(['FRAME', 'SECTION', 'COMPONENT', 'COMP
 const pluginTargetTypes = new Set(['task', 'project', 'note', 'meetingNote', 'intake']);
 const pluginError = (message, statusCode = 400) => { const error = new Error(message); error.statusCode = statusCode; return error; };
 const requirePluginWorkspace = async (req, minimumRole = 'member') => {
-  const workspaceId = getRequestedWorkspaceId(req);
+  const requestedWorkspaceId = getRequestedWorkspaceId(req);
+  const workspaceId = requestedWorkspaceId || req.pluginCredential.workspace_id;
   if (!workspaceId) throw pluginError('Choose a Ledger workspace.', 400);
+  if (req.pluginCredential.workspace_id && requestedWorkspaceId && requestedWorkspaceId !== req.pluginCredential.workspace_id) throw pluginError('This Figma connection is authorized for a different workspace.', 403);
   await requireWorkspaceAccess(req.pluginCredential.user_id, workspaceId, minimumRole);
   return workspaceId;
 };
@@ -13437,6 +13317,133 @@ const provisionLedgerTemplates = async (workspaceId) => {
   }
 };
 
+const WORKSPACE_STARTER_CONTENT_VERSION = 'v1';
+
+const workspaceStarterContent = (isPersonal) => {
+  if (isPersonal) {
+    return {
+      project: {
+        starter_key: `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:personal:project`,
+        name: 'Start with Ledger',
+        description:
+          'A short path through Ledger: capture something, turn it into a next action, give it context, plan the follow-through, and close the loop.',
+        color: '#FF5F40',
+      },
+      tasks: [
+        ['capture', 'Capture something on your mind', 'Open Quick Capture and save one thought, task, or idea you actually want to remember.'],
+        ['next-action', 'Turn it into a next action', 'Create a small task that makes the captured thought actionable. Keep it concrete enough to do next.'],
+        ['context', 'Give it useful context', 'Open Notes and write down the context, decision, or reference you will want beside the task.'],
+        ['follow-through', 'Plan the follow-through', 'Open Calendar and add a real follow-up event or reminder if this work needs time or a later nudge.'],
+        ['review', 'Close the loop', 'Open Daily Check-In and record what moved, what is blocked, and what should happen next.'],
+      ],
+      note: {
+        starter_key: `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:personal:note`,
+        title: 'Welcome to Ledger',
+        content:
+          'Ledger is a calm command center for daily accountability. Capture what is on your mind, turn it into a plan, follow through, and review what moved.\n\nStart with the “Start with Ledger” project, then replace these starter records with your own work when you are ready.',
+      },
+    };
+  }
+
+  return {
+    project: {
+      starter_key: `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:team:project`,
+      name: 'Set up your team in Ledger',
+      description:
+        'A shared path for getting your team workspace ready: establish a project, invite the people who need context, capture a decision, plan follow-through, and review progress together.',
+      color: '#FF5F40',
+    },
+    tasks: [
+      ['project', 'Add your team’s first real project', 'Create or rename a project around an outcome your team is actively trying to move forward.'],
+      ['invite', 'Invite the people who need context', 'Add teammates from Members & access so shared work does not depend on one person holding the plan.'],
+      ['capture', 'Capture a shared decision or open question', 'Use Quick Capture or Notes to put one piece of context somewhere the team can find it.'],
+      ['follow-through', 'Plan the next follow-up', 'Connect the work to a calendar event or reminder so the next step has a time to happen.'],
+      ['review', 'Run the first team check-in', 'Use Daily Check-In to record what moved, what is blocked, and what the team should do next.'],
+    ],
+  };
+};
+
+const provisionWorkspaceStarterContent = async ({ workspaceId, userId, isPersonal }) => {
+  const starter = workspaceStarterContent(Boolean(isPersonal));
+  const existingProject = await supabase
+    .from('projects')
+    .select('id')
+    .eq('workspace_id', workspaceId)
+    .eq('starter_key', starter.project.starter_key)
+    .maybeSingle();
+  if (existingProject.error) throw existingProject.error;
+
+  let projectId = existingProject.data?.id ?? null;
+  if (!projectId) {
+    const insertedProject = await supabase
+      .from('projects')
+      .insert({
+        workspace_id: workspaceId,
+        created_by: userId,
+        starter_key: starter.project.starter_key,
+        name: starter.project.name,
+        description: starter.project.description,
+        status: 'NotStarted',
+        completeness: 0,
+        color: starter.project.color,
+      })
+      .select('id')
+      .single();
+    if (insertedProject.error) {
+      if (String(insertedProject.error.code) !== '23505') throw insertedProject.error;
+      const retry = await supabase.from('projects').select('id').eq('workspace_id', workspaceId).eq('starter_key', starter.project.starter_key).single();
+      if (retry.error) throw retry.error;
+      projectId = retry.data.id;
+    } else {
+      projectId = insertedProject.data.id;
+    }
+  }
+
+  for (const [key, title, description] of starter.tasks) {
+    const starterKey = `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:${isPersonal ? 'personal' : 'team'}:task:${key}`;
+    const existingTask = await supabase.from('tasks').select('id').eq('workspace_id', workspaceId).eq('starter_key', starterKey).maybeSingle();
+    if (existingTask.error) throw existingTask.error;
+    if (!existingTask.data) {
+      const insertedTask = await supabase.from('tasks').insert({
+        workspace_id: workspaceId,
+        project_id: projectId,
+        title,
+        description,
+        status: 'todo',
+        priority: 'medium',
+        assigned_to: isPersonal ? userId : userId,
+        show_in_today: false,
+        is_today_focus: false,
+        source: 'onboarding',
+        starter_key: starterKey,
+      });
+      if (insertedTask.error && String(insertedTask.error.code) !== '23505') throw insertedTask.error;
+    }
+  }
+
+  if (starter.note) {
+    const existingNote = await supabase.from('notes').select('id').eq('workspace_id', workspaceId).eq('starter_key', starter.note.starter_key).maybeSingle();
+    if (existingNote.error) throw existingNote.error;
+    if (!existingNote.data) {
+      const insertedNote = await supabase.from('notes').insert({
+        workspace_id: workspaceId,
+        user_id: userId,
+        updated_by: userId,
+        starter_key: starter.note.starter_key,
+        title: starter.note.title,
+        content: starter.note.content,
+        content_html: `<p>${starter.note.content.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br />')}</p>`,
+        date: new Date().toISOString().slice(0, 10),
+        source: 'onboarding',
+        mode: 'text',
+      });
+      if (insertedNote.error && String(insertedNote.error.code) !== '23505') throw insertedNote.error;
+    }
+  }
+
+  return { project_id: projectId, version: WORKSPACE_STARTER_CONTENT_VERSION };
+};
+
 app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const userId = req.authUser.id;
@@ -13464,6 +13471,7 @@ app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res)
     if (insertResult.error) throw insertResult.error;
 
     await provisionLedgerTemplates(insertResult.data.id);
+    await provisionWorkspaceStarterContent({ workspaceId: insertResult.data.id, userId, isPersonal });
 
     await setUserActiveWorkspaceId(userId, insertResult.data.id);
     await writeWorkspaceAuditLog({
@@ -13482,6 +13490,53 @@ app.post('/api/workspaces', authMiddleware, rateLimit('write'), async (req, res)
       workspace_id: insertResult.data.id,
       workspace: insertResult.data,
       current_user_role: 'owner',
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/workspaces/:workspaceId/starter-content', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    if (access.role !== 'owner' && access.role !== 'admin') {
+      return res.status(403).json({ error: 'Only workspace owners and admins can provision starter content.' });
+    }
+    await provisionLedgerTemplates(workspaceId);
+    const result = await provisionWorkspaceStarterContent({
+      workspaceId,
+      userId: req.authUser.id,
+      isPersonal: Boolean(access.workspace.is_personal),
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/starter-content', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const access = await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    if (access.role !== 'owner' && access.role !== 'admin') {
+      return res.status(403).json({ error: 'Only workspace owners and admins can remove starter content.' });
+    }
+
+    const starterPattern = `workspace-starter:${WORKSPACE_STARTER_CONTENT_VERSION}:%`;
+    const [tasks, notes, projects] = await Promise.all([
+      supabase.from('tasks').delete().eq('workspace_id', workspaceId).like('starter_key', starterPattern).select('id'),
+      supabase.from('notes').delete().eq('workspace_id', workspaceId).like('starter_key', starterPattern).select('id'),
+      supabase.from('projects').delete().eq('workspace_id', workspaceId).like('starter_key', starterPattern).select('id'),
+    ]);
+    if (tasks.error || notes.error || projects.error) throw tasks.error || notes.error || projects.error;
+
+    res.json({
+      deleted: {
+        tasks: tasks.data?.length ?? 0,
+        notes: notes.data?.length ?? 0,
+        projects: projects.data?.length ?? 0,
+      },
     });
   } catch (error) {
     return respondWithError(res, error);
@@ -21430,7 +21485,9 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
       blockers: new Set(['notes', 'projects', 'tasks', 'transcriptSegments']),
       status_context: new Set(['projects', 'tasks']),
       deadlines: new Set(['projects', 'tasks', 'milestones', 'events', 'reminders']),
-      time_window: new Set(['tasks', 'events', 'reminders']),
+      // Keep this in sync with Calendar's dated-items lane. Project end dates
+      // and milestones are deadlines, not merely project metadata.
+      time_window: new Set(['projects', 'tasks', 'milestones', 'events', 'reminders']),
       meeting_prep: new Set(['notes', 'projects', 'tasks', 'milestones', 'events', 'reminders', 'transcriptSegments', 'inbox']),
       integration: new Set(['external', 'inbox', 'tasks', 'notes']),
       activity: new Set(['activity']),
@@ -21498,13 +21555,14 @@ app.get('/api/workspaces/:workspaceId/ai-documents', authMiddleware, rateLimit('
     if (assignedToMe) reminderQuery = reminderQuery.or(`user_id.eq.${req.authUser.id},assigned_to_user_id.eq.${req.authUser.id}`);
     if (rangeStart || rangeEnd) {
       taskQuery = applyDateRange(taskQuery, 'due_date');
+      milestoneQuery = applyDateRange(milestoneQuery, 'milestone_date');
       eventQuery = applyDateRange(eventQuery, 'start_at');
       reminderQuery = applyDateRange(reminderQuery, 'remind_at');
     }
 
     const [notes, projects, tasks, milestones, events, reminders, inbox, teams, teamMembers, transcriptSegments, externalReferences, slackContexts, circleActivity, githubAttention, notificationEvents, slackActivities] = await Promise.all([
       include('notes') ? supabase.from('notes').select('id, section_id, title, content, content_html, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(1000) : emptyResult(),
-      include('projects') ? (() => { let query = supabase.from('projects').select('id, name, description, status, completeness, start_date, end_date, lead_id, owner_team_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(500); if (projectReference) query = query.in('id', scopedProjectIds.length ? scopedProjectIds : ['00000000-0000-0000-0000-000000000000']); return query; })() : emptyResult(),
+      include('projects') ? (() => { let query = supabase.from('projects').select('id, name, description, status, completeness, start_date, end_date, lead_id, owner_team_id, updated_at, created_at').eq('workspace_id', workspaceId).order('updated_at', { ascending: false }).limit(500); if (projectReference) query = query.in('id', scopedProjectIds.length ? scopedProjectIds : ['00000000-0000-0000-0000-000000000000']); if (rangeStart) query = query.gte('end_date', rangeStart); if (rangeEnd) query = query.lte('end_date', rangeEnd); return query; })() : emptyResult(),
       include('tasks') ? taskQuery : emptyResult(),
       include('milestones') ? milestoneQuery : emptyResult(),
       include('events') ? eventQuery : emptyResult(),

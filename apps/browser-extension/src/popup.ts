@@ -17,6 +17,7 @@ import {
 type PopupState = {
   isLoading: boolean;
   isSaving: boolean;
+  isRefreshing: boolean;
   hasToken: boolean;
   isLinkNoteVisible: boolean;
   tokenInput: string;
@@ -36,6 +37,7 @@ type PopupState = {
 const state: PopupState = {
   isLoading: true,
   isSaving: false,
+  isRefreshing: false,
   hasToken: false,
   isLinkNoteVisible: false,
   tokenInput: '',
@@ -450,7 +452,7 @@ const render = () => {
       <section class="section section-current">
         <div class="section-header compact">
           <div class="section-label">Current page</div>
-          <button class="icon-button" id="refresh" aria-label="Refresh current page">
+          <button class="icon-button${state.isRefreshing ? ' is-loading' : ''}" id="refresh" aria-label="Refresh current page" ${state.isRefreshing ? 'disabled' : ''}>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M20 12a8 8 0 0 1-13.66 5.66L4 15.32" />
               <path d="M4 19.5v-4.18h4.18" />
@@ -467,7 +469,7 @@ const render = () => {
 
       ${state.hasToken ? renderCaptureFields() : ''}
 
-      <div class="section">
+      <div class="section workspace-section">
         ${renderWorkspaceSection()}
       </div>
 
@@ -506,7 +508,12 @@ const render = () => {
   });
 
   refreshButton?.addEventListener('click', () => {
-    void bootstrapCaptureData().then(() => render());
+    state.isRefreshing = true;
+    render();
+    void bootstrapCaptureData().finally(() => {
+      state.isRefreshing = false;
+      render();
+    });
   });
 
   workspaceSelect?.addEventListener('change', async () => {

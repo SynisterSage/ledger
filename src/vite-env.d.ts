@@ -34,6 +34,7 @@ type ModuleWindowKind =
 type ModuleFocusPayload = {
   kind?: ModuleWindowKind;
   historyMode?: 'push' | 'replace';
+  navigationGeneration?: number;
   focusDate?: string | null;
   focusProjectId?: string | null;
   focusNoteId?: string | null;
@@ -298,6 +299,13 @@ interface Window {
   };
   desktopWindow?: {
     platform?: string;
+    reportPerformance?: (event: {
+      name: string;
+      durationMs?: number;
+      details?: Record<string, string | number | boolean | null>;
+    }) => void;
+    getPerformanceEvents?: () => Promise<unknown[]>;
+    getPerformanceMemory?: () => Promise<unknown>;
     meetingIndicatorClick: () => Promise<boolean>;
     onMeetingIndicatorState: (
       listener: (state: {

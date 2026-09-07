@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { FlatList, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { AppText } from '@/components/AppText';
+import { EmptyState } from '@/components/EmptyState';
 import { useLedgerTheme } from '@/theme';
 import { formatCalendarDateKey, getCalendarFirstWeekday } from './calendarMonthGenerator';
 import { useMobileCalendarItems } from './useMobileCalendarItems';
@@ -148,7 +149,8 @@ export const WeekView = forwardRef<WeekViewHandle, WeekViewProps>(function WeekV
     </View>
   </View>;
 
-  const emptyTimeline = !selectedDayItems.length ? <View style={styles.emptyState}><AppText variant="meta">No plans for {selectedDate.toLocaleDateString([], { weekday: 'long' })}</AppText><Pressable accessibilityRole="button" onPress={() => onCreateAtTime(selectedDate, 9 * 60)}><AppText variant="caption" style={{ color: theme.colors.accent }}>+ Add something</AppText></Pressable></View> : null;
+  const selectedDayLabel = selectedDate.toLocaleDateString([], { weekday: 'long' });
+  const emptyTimeline = !selectedDayItems.length ? <EmptyState iconName={{ ios: 'calendar', android: 'event', web: 'event' }} title={`No plans for ${selectedDayLabel}`} description="Add something to this day when you have a plan." kind="first-use" density="compact" style={styles.emptyState} primaryAction={{ label: 'Add something', onPress: () => onCreateAtTime(selectedDate, 9 * 60), accessibilityLabel: `Add something on ${selectedDayLabel}` }} /> : null;
   const afterContent = laterItems.length ? <View style={styles.laterSection}><AppText variant="caption" style={styles.laterLabel}>Later this week</AppText>{laterItems.map((item) => <View key={item.id} style={styles.laterRow}><AppText variant="caption" style={styles.laterDate}>{new Date(`${item.dateKey}T12:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric' })}</AppText><View style={styles.laterBody}><DayAgendaItemRow item={item} compact onPress={() => onOpenItem(item)} onLongPress={() => onLongPressItem(item)} /></View></View>)}</View> : null;
 
   return <DayView ref={dayViewRef} selectedDate={selectedDate} workspaceId={workspaceId} filters={filters} scrollOffset={scrollOffset} onScrollOffsetChange={onScrollOffsetChange} onSelectDate={onSelectDate} onOpenItem={onOpenItem} onLongPressItem={onLongPressItem} onCreateAtTime={onCreateAtTime} showDateStrip={false} showTimeline={selectedTimedItems.length > 0} emptyTimelineContent={emptyTimeline} beforeContent={beforeContent} afterContent={afterContent} />;
@@ -164,7 +166,7 @@ const styles = StyleSheet.create({
   summary: { minHeight: 28, justifyContent: 'center', paddingHorizontal: 8 },
   selectedHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 8 },
   selectedTitle: { fontWeight: '600' },
-  emptyState: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 8 },
+  emptyState: { paddingHorizontal: 8 },
   laterSection: { paddingTop: 12 },
   laterLabel: { paddingHorizontal: 8, paddingBottom: 3, fontWeight: '600' },
   laterRow: { flexDirection: 'row', alignItems: 'flex-start' },

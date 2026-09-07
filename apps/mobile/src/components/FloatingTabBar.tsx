@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
 import { AppText } from './AppText';
+import { useFloatingTabBarScroll } from './FloatingTabBarScrollContext';
 
 import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 
-const BAR_HEIGHT = 52;
+const BAR_HEIGHT_EXPANDED = 58;
+const BAR_HEIGHT_COMPACT = 44;
 const BAR_SIDE_INSET = 20;
 const BAR_BOTTOM_GAP = 0;
 const FADE_HEIGHT = 136;
+const FADE_STEPS = 17;
+const DOCK_FADE_OPACITY_SCALE = 0.72;
 const BLOCK_HEIGHT = 10;
 const TRACK_PADDING = 4;
 const PILL_ANIMATION_DURATION = 240;
@@ -42,13 +47,13 @@ function FadeStack({ opacityScale = 1 }: { opacityScale?: number }) {
 
   return (
     <View pointerEvents="none" style={[styles.fadeWrap, { height: FADE_HEIGHT }]}>
-      {Array.from({ length: FADE_HEIGHT }).map((_, index) => {
-        const opacity = Math.min(1, ((index + 1) / FADE_HEIGHT) * opacityScale);
+      {Array.from({ length: FADE_STEPS }).map((_, index) => {
+        const opacity = Math.min(1, ((index + 1) / FADE_STEPS) * opacityScale);
         return (
           <View
             key={index}
             style={{
-              height: 1,
+              height: FADE_HEIGHT / FADE_STEPS,
               backgroundColor: fadeColor,
               opacity,
             }}
@@ -65,15 +70,24 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [tabLayouts, setTabLayouts] = useState<Record<string, { x: number; width: number }>>({});
-  const pillX = useRef(new Animated.Value(0)).current;
-  const pillWidth = useRef(new Animated.Value(0)).current;
+  const pillX = useSharedValue(0);
+  const pillWidth = useSharedValue(0);
+  const compactProgress = useSharedValue(0);
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
+  const { isCompact, resetScrollState } = useFloatingTabBarScroll();
   const dockFadeColor = theme.colors.background;
   const dockShadowColor = theme.scheme === 'dark' ? '#000000' : theme.colors.textPrimary;
   const dockShadowOpacity = theme.scheme === 'dark' ? 0.28 : theme.shadows.surface.opacity;
   const bottomInset = useMemo(() => Math.max(insets.bottom, 8), [insets.bottom]);
   const bottomOffset = bottomInset + BAR_BOTTOM_GAP;
-  const dockHeight = bottomOffset + BAR_HEIGHT + FADE_HEIGHT + BLOCK_HEIGHT;
+  const dockHeight = bottomOffset + BAR_HEIGHT_EXPANDED + FADE_HEIGHT + BLOCK_HEIGHT;
+  const animatedBarStyle = useAnimatedStyle(() => ({
+    height: BAR_HEIGHT_EXPANDED + (BAR_HEIGHT_COMPACT - BAR_HEIGHT_EXPANDED) * compactProgress.value,
+  }));
+  const animatedPillStyle = useAnimatedStyle(() => ({
+    width: pillWidth.value,
+    transform: [{ translateX: pillX.value }],
+  }));
   const activeRouteKey = state.routes[state.index]?.key;
   const isCalendarRoute = state.routes[state.index]?.name === 'calendar';
   const isNotificationsRoute = state.routes[state.index]?.name === 'notifications';
@@ -81,30 +95,31 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const activeLayout = activeRouteKey ? tabLayouts[activeRouteKey] : undefined;
 
   useEffect(() => {
+    resetScrollState();
+  }, [activeRouteKey, resetScrollState]);
+
+  useEffect(() => {
+    if (reduceMotionEnabled) {
+      compactProgress.value = isCompact ? 1 : 0;
+      return;
+    }
+
+    compactProgress.value = withTiming(isCompact ? 1 : 0, { duration: 80 });
+  }, [compactProgress, isCompact, reduceMotionEnabled]);
+
+  useEffect(() => {
     if (!activeLayout) {
       return;
     }
 
     if (reduceMotionEnabled) {
-      pillX.setValue(activeLayout.x);
-      pillWidth.setValue(activeLayout.width);
+      pillX.value = activeLayout.x;
+      pillWidth.value = activeLayout.width;
       return;
     }
 
-    Animated.parallel([
-      Animated.timing(pillX, {
-        toValue: activeLayout.x,
-        duration: PILL_ANIMATION_DURATION,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-      Animated.timing(pillWidth, {
-        toValue: activeLayout.width,
-        duration: PILL_ANIMATION_DURATION,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-    ]).start();
+    pillX.value = withTiming(activeLayout.x, { duration: PILL_ANIMATION_DURATION });
+    pillWidth.value = withTiming(activeLayout.width, { duration: PILL_ANIMATION_DURATION });
   }, [activeLayout, pillWidth, pillX, reduceMotionEnabled]);
 
   // Keep hooks above this branch so the tab bar remains valid when the
@@ -124,16 +139,17 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
           },
         ]}
       >
-        <FadeStack opacityScale={isCalendarRoute ? 0.2 : 1} />
+        <FadeStack opacityScale={isCalendarRoute ? 0.16 : DOCK_FADE_OPACITY_SCALE} />
         <View
           style={[styles.dockBlock, { height: BLOCK_HEIGHT, backgroundColor: dockFadeColor }]}
         />
         <View style={[styles.dockCover, { backgroundColor: dockFadeColor }]} />
       </View>
 
-      <View
+      <Reanimated.View
         style={[
           styles.container,
+          animatedBarStyle,
           {
             left: BAR_SIDE_INSET,
             right: BAR_SIDE_INSET,
@@ -149,15 +165,12 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
         ]}
       >
         <View style={styles.track}>
-          <Animated.View
+          <Reanimated.View
             pointerEvents="none"
             style={[
               styles.activePill,
+              animatedPillStyle,
               {
-                width: reduceMotionEnabled ? activeLayout?.width ?? 0 : pillWidth,
-                ...(reduceMotionEnabled
-                  ? { left: activeLayout?.x ?? 0 }
-                  : { transform: [{ translateX: pillX }] }),
                 backgroundColor: theme.colors.accent,
                 opacity: activeLayout ? 1 : 0,
               },
@@ -212,7 +225,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
               >
                 <SymbolView
                   name={routeIconByName[route.name] ?? { ios: 'circle', android: 'circle', web: 'circle' }}
-                  size={20}
+                  size={isCompact ? 18 : 20}
                   weight={isFocused ? 'semibold' : 'regular'}
                   tintColor={isFocused ? '#FFFFFF' : theme.colors.textPrimary}
                   fallback={
@@ -233,7 +246,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
           })}
         </View>
 
-      </View>
+      </Reanimated.View>
     </View>
   );
 }
@@ -261,7 +274,7 @@ const styles = StyleSheet.create({
   },
   container: {
     position: 'absolute',
-    height: BAR_HEIGHT,
+    height: BAR_HEIGHT_EXPANDED,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',

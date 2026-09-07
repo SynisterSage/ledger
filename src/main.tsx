@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { PlatformProvider } from './platform';
 import { WebAppShell } from './web/WebAppShell';
+import ProductPreviewPage from './web/ProductPreviewPage';
 import { AuthProvider } from './context/AuthContext';
 import { PinsProvider } from './context/PinsContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
@@ -112,7 +113,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <WorkspaceProvider>
           <PinsProvider>
             <SidebarProvider>
-              {window.desktopWindow ? <App /> : <WebErrorBoundary><WebAppShell /></WebErrorBoundary>}
+              {window.desktopWindow ? <App /> : window.location.pathname === '/product-preview' ? <div data-platform="web" className="web-app-root product-preview-root"><WebErrorBoundary><ProductPreviewPage /></WebErrorBoundary></div> : <WebErrorBoundary><WebAppShell /></WebErrorBoundary>}
             </SidebarProvider>
           </PinsProvider>
         </WorkspaceProvider>

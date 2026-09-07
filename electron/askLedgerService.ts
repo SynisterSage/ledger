@@ -161,14 +161,42 @@ const structuredGroupLabel = (resourceType: string) => ({
 
 const formatStructuredAnswer = (kind: string, items: AskLedgerContextItem[], timeZone?: string) => {
   const lines: string[] = [];
-  const title = kind === 'team_members' ? 'Team members' : kind === 'projects' ? 'Projects' : kind === 'milestones' ? 'Milestones' : kind === 'events' ? 'Events' : kind === 'reminders' ? 'Reminders' : kind === 'deadlines' ? 'Deadlines' : kind === 'time_window' ? 'This week' : kind === 'integration' ? 'Integration context' : 'Open actions';
+  const title = kind === 'team_members' ? 'Team members' : kind === 'projects' ? 'Projects' : kind === 'milestones' ? 'Milestones' : kind === 'events' ? 'Events' : kind === 'reminders' ? 'Reminders' : kind === 'deadlines' ? 'Deadlines' : kind === 'time_window' ? 'Dated items' : kind === 'integration' ? 'Integration context' : 'Open actions';
   lines.push(`${title}:`);
   const seen = new Set<string>();
+  const eventGroups = new Map<string, { item: AskLedgerContextItem; dates: string[] }>();
+  const eventGroupByResourceKey = new Map<string, { item: AskLedgerContextItem; dates: string[] }>();
+  if (kind === 'time_window') {
+    const dateFormatter = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', timeZone });
+    for (const item of items) {
+      if (item.resourceType !== 'event' || !item.timestamp || !Number.isFinite(Date.parse(item.timestamp))) continue;
+      const timePart = (value?: string) => value ? new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', timeZone }).format(new Date(value)) : '';
+      const occurrenceKey = `${item.title}|${timePart(item.timestamp)}|${timePart(item.endAt)}`;
+      const group = eventGroups.get(occurrenceKey) ?? { item, dates: [] };
+      const date = dateFormatter.format(new Date(item.timestamp));
+      if (!group.dates.includes(date)) group.dates.push(date);
+      eventGroups.set(occurrenceKey, group);
+      eventGroupByResourceKey.set(`${item.resourceType}:${item.resourceId}`, group);
+    }
+  }
   for (const item of items) {
     const key = `${item.resourceType}:${item.resourceId}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const details = [
+    // The same calendar occurrence can arrive through multiple retrieval
+    // paths (especially recurring/imported events). Once identity is known,
+    // do not print an identical title/time occurrence twice.
+    if (kind === 'time_window' && item.resourceType === 'event') {
+      const occurrenceKey = `${item.title}|${item.timestamp ?? ''}|${item.endAt ?? ''}`;
+      if (seen.has(`event-occurrence:${occurrenceKey}`)) continue;
+      seen.add(`event-occurrence:${occurrenceKey}`);
+    }
+    const groupedEvent = kind === 'time_window' && item.resourceType === 'event'
+      ? eventGroupByResourceKey.get(key)
+      : undefined;
+    const details = groupedEvent
+      ? [`${groupedEvent.dates.join(', ')} · ${formatLedgerDate(item.timestamp, timeZone)?.split(', ').slice(-1)[0] ?? ''}${item.endAt ? `–${formatLedgerDate(item.endAt, timeZone)?.split(', ').slice(-1)[0] ?? ''}` : ''}`]
+      : [
       ...structuredValueLinesFor(item, { timeZone }).lines,
       item.taskHorizon ? `Horizon ${item.taskHorizon === 'long_term' ? 'long term' : item.taskHorizon}` : undefined,
       item.projectName,
@@ -951,6 +979,9 @@ export class AskLedgerService {
         ? `Selected meeting anchor: "${explicitContext.title}". Scope meeting questions to the current meeting note, explicit calendar series, linked project, confirmed attendees, related meeting records, and their exact transcript evidence. For questions about what was said, mentioned, discussed, or happened, treat transcript segment text as the primary evidence and summarize those segments directly; do not substitute meeting dates, status, project metadata, or generic note fields for transcript content. Use current task/project state only for what is true now. Never use a same-title meeting from another series or workspace.`
         : '';
       const intent = detectAskLedgerQueryIntent(request.question);
+      const dateWindowInstruction = intent.kind === 'time_window'
+        ? 'This is a month/date-window summary. Summarize the supplied dated Ledger records in a compact, human-friendly overview. Group repeated events with the same title and time into one pattern and list their dates once. Mention project deadlines and milestones separately. Preserve every supplied status exactly; do not infer project health or replace statuses with opinions. Do not expose the evidence layout or repeat one event per source record.'
+        : '';
       const scheduleOverview = intent.kind === 'weekly_overview' && !intent.window;
       const scheduleOverviewItem = scheduleOverview
         ? buildCalendarScheduleOverview(request.documents, request.workspaceId, request.timeZone, request.timeFormat)
@@ -960,6 +991,7 @@ export class AskLedgerService {
         request.question,
         notesHomeInstruction,
         meetingAnchorInstruction,
+        dateWindowInstruction,
         scheduleOverviewItem
           ? 'This is a whole-calendar schedule question. Use the supplied calendar schedule overview as the authoritative summary. Explain the repeating weekly pattern, typical days off, item names, times, and any date-range caveats. Do not limit the answer to the current week.'
           : '',
@@ -1093,8 +1125,8 @@ export class AskLedgerService {
       performanceTrace.mark('evidenceBuildStarted');
       const customSkill = Boolean(skill && !skill.outputSections);
       const evidenceBudget = {
-        maxResources: scheduleOverviewItem ? 1 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
-        maxTokens: scheduleOverviewItem ? 2600 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
+        maxResources: scheduleOverviewItem ? 1 : intent.kind === 'time_window' ? 32 : customSkill ? 6 : skill ? 10 : projectAnchoredRequest ? 10 : retrieval.mode === 'research' ? 12 : 10,
+        maxTokens: scheduleOverviewItem ? 2600 : intent.kind === 'time_window' ? 4200 : customSkill ? 1200 : skill ? 1800 : projectAnchoredRequest ? 1200 : retrieval.mode === 'research' ? 2600 : 2200,
         maxItemTokens: scheduleOverviewItem ? 2400 : customSkill ? 240 : skill ? 300 : projectAnchoredRequest ? 360 : 520,
       };
       const evidence = compileAskLedgerEvidence({ question: request.question, result: retrieval, items: selectedRetrievalItems, budget: evidenceBudget, timeZone: request.timeZone, timeFormat: request.timeFormat });
@@ -1389,7 +1421,7 @@ export class AskLedgerService {
             },
           };
       this.localAI.start(
-        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, projectAnchorInstruction, meetingAnchorInstruction, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
+        { question: request.question, context: buildAskLedgerPrompt({ question: [request.question, projectAnchorInstruction, meetingAnchorInstruction, dateWindowInstruction, overviewFocusHandoffText(request.explicitContext ?? conversationForCurrentTurn?.initialContext)].filter(Boolean).join('\n\n'), context: normalized, evidencePackage: evidence.package, primaryContext: retrieval.primaryItems, supportingContext: retrieval.relatedItems, recentConversation: conversationForCurrentTurn, skill, skillContext: skill ? buildSkillPromptContext(skill, explicitContext) : undefined, responseMode: route.mode, executionMode: route.executionMode, presentationProfile: skill?.presentationProfile, timeZone: request.timeZone, timeFormat: request.timeFormat, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, generationDepthReason: generationDepth.reason }), generationBudget: answerGenerationBudget, timeoutMs: generationTimeoutMs, reasoningSignals: { reasoningMode: request.reasoningMode, answerDepth: route.answerDepth, generationDepth: generationDepth.depth, retrievalRequired: route.retrievalRequired, sourceCount: normalized.items.length, attachmentCount: request.attachmentIds?.length, hasSkill: Boolean(skill), skillReasoningPolicy: skill?.reasoningPolicy, routeReason: route.reason }, performance: performanceTrace },
         generationCallbacks,
         requestId,
       );

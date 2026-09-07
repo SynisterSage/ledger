@@ -104,6 +104,7 @@ export function AppBottomSheet({
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const keyboardTopRef = useRef<number | null>(null);
   const focusedInputRef = useRef<number | null>(null);
   const scrollOffsetRef = useRef(0);
@@ -197,15 +198,20 @@ export function AppBottomSheet({
 
     const showSub = Keyboard.addListener('keyboardDidShow', (event) => {
       setIsKeyboardVisible(true);
+      const keyboardHeight = event.endCoordinates?.height ?? 0;
+      setKeyboardInset(keyboardHeight);
       keyboardTopRef.current = typeof event.endCoordinates?.screenY === 'number'
         ? event.endCoordinates.screenY
-        : windowHeight - (event.endCoordinates?.height ?? 0);
+        : windowHeight - keyboardHeight;
       if (focusedInputRef.current) {
-        setTimeout(() => scrollFocusedInputIntoView(focusedInputRef.current), 40);
+        // Wait for the keyboard resize and the sheet layout pass before measuring.
+        setTimeout(() => scrollFocusedInputIntoView(focusedInputRef.current), 120);
+        setTimeout(() => scrollFocusedInputIntoView(focusedInputRef.current), 240);
       }
     });
     const hideSub = Keyboard.addListener('keyboardDidHide', () => {
       setIsKeyboardVisible(false);
+      setKeyboardInset(0);
       keyboardTopRef.current = null;
     });
 
@@ -214,6 +220,7 @@ export function AppBottomSheet({
       hideSub.remove();
       keyboardTopRef.current = null;
       focusedInputRef.current = null;
+      setKeyboardInset(0);
       setIsKeyboardVisible(false);
     };
   }, [avoidKeyboard, dismissKeyboardOnBackdropPress, visible]);
@@ -232,7 +239,10 @@ export function AppBottomSheet({
   const handleContentFocus = (event: { target: unknown }) => {
     const target = findNodeHandle(event.target as never);
     focusedInputRef.current = target;
-    if (keyboardTopRef.current) setTimeout(() => scrollFocusedInputIntoView(target), 40);
+    if (keyboardTopRef.current) {
+      setTimeout(() => scrollFocusedInputIntoView(target), 80);
+      setTimeout(() => scrollFocusedInputIntoView(target), 180);
+    }
   };
 
   useEffect(() => {
@@ -462,7 +472,7 @@ export function AppBottomSheet({
                 ref={scrollViewRef}
                 {...(dragFromContent ? panResponder.panHandlers : {})}
                 keyboardShouldPersistTaps="handled"
-                automaticallyAdjustKeyboardInsets={false}
+                automaticallyAdjustKeyboardInsets={avoidKeyboard}
                 onScroll={(event) => { scrollOffsetRef.current = event.nativeEvent.contentOffset.y; }}
                 scrollEventThrottle={16}
                 onTouchStart={dismissKeyboardOnContentPress ? () => Keyboard.dismiss() : undefined}
@@ -471,7 +481,7 @@ export function AppBottomSheet({
                   styles.content,
                   {
                     paddingHorizontal: theme.spacing.lg,
-                    paddingBottom: insets.bottom + theme.spacing.lg,
+                    paddingBottom: insets.bottom + theme.spacing.lg + (avoidKeyboard ? keyboardInset : 0),
                   },
                   contentStyle,
                 ]}

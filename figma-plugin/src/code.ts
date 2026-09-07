@@ -2,7 +2,7 @@ const readSelection = () => {
   const fileKey = (figma as unknown as { fileKey?: string }).fileKey;
   return { nodes: figma.currentPage.selection.slice(0, 100).map((node) => ({ id: String(node.id), name: String(node.name).slice(0, 200), type: String(node.type) })), pageId: String(figma.currentPage.id), pageName: String(figma.currentPage.name).slice(0, 200), fileName: String(figma.root.name).slice(0, 200), ...(fileKey ? { fileKey: String(fileKey).slice(0, 128) } : {}), fileKeyAvailable: Boolean(fileKey) };
 };
-figma.showUI(__html__, { width: 360, height: 520, themeColors: true });
+figma.showUI(__html__, { width: 420, height: 640, themeColors: true });
 const postSelection = () => figma.ui.postMessage({ type: 'selection-context', context: readSelection() });
 figma.ui.onmessage = (message) => {
   if (message.type === 'request-selection') postSelection();

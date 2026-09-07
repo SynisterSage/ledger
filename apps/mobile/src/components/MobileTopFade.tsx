@@ -2,25 +2,30 @@ import { StyleSheet, View } from 'react-native';
 
 import { useLedgerTheme } from '@/theme';
 
-const MOBILE_TOP_FADE_HEIGHT = 10;
+// Match the long, soft fade used above the floating dock so content can pass
+// behind the top inset without creating a hard color edge.
+const MOBILE_TOP_FADE_HEIGHT = 136;
+const MOBILE_TOP_FADE_STEPS = 17;
 
 type MobileTopFadeProps = {
   topOffset: number;
+  opacityScale?: number;
+  height?: number;
 };
 
-export function MobileTopFade({ topOffset }: MobileTopFadeProps) {
+export function MobileTopFade({ topOffset, opacityScale = 1, height = MOBILE_TOP_FADE_HEIGHT }: MobileTopFadeProps) {
   const theme = useLedgerTheme();
 
   return (
-    <View pointerEvents="none" style={[styles.container, { top: topOffset, height: MOBILE_TOP_FADE_HEIGHT }]}>
-      {Array.from({ length: MOBILE_TOP_FADE_HEIGHT }).map((_, index) => {
-        const opacity = 1 - index / MOBILE_TOP_FADE_HEIGHT;
+    <View pointerEvents="none" style={[styles.container, { top: topOffset, height }]}>
+      {Array.from({ length: MOBILE_TOP_FADE_STEPS }).map((_, index) => {
+        const opacity = (1 - (index + 1) / MOBILE_TOP_FADE_STEPS) * opacityScale;
 
         return (
           <View
             key={index}
             style={{
-              height: 1,
+              height: height / MOBILE_TOP_FADE_STEPS,
               backgroundColor: theme.colors.background,
               opacity,
             }}

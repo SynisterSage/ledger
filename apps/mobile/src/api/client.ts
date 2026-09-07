@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
+import { recordMobilePerformance, sanitizeMobilePerformancePath } from '@/lib/mobilePerformance';
 
 const STORAGE_KEY = 'ledger-mobile-auth';
 const DEVICE_ID_STORAGE_KEY = 'ledger-mobile-device-id-v1';
@@ -35,6 +36,10 @@ export const supabaseConfigError =
 const memoryStorage = new Map<string, string>();
 
 let mobileDeviceIdPromise: Promise<string> | null = null;
+
+export type MobileRequestInit = RequestInit & {
+  timeoutMs?: number;
+};
 
 async function getMobileDeviceId() {
   if (mobileDeviceIdPromise) return mobileDeviceIdPromise;
@@ -143,11 +148,12 @@ export async function getMobileAccessToken() {
   return token;
 }
 
-export async function mobileRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function mobileRequest<T>(path: string, init: MobileRequestInit = {}): Promise<T> {
   const baseUrl = getMobileApiBaseUrl();
   const accessToken = await getMobileAccessToken();
   const deviceId = await getMobileDeviceId();
-  const headers = new Headers(init.headers ?? {});
+  const { timeoutMs = 15_000, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers ?? {});
   headers.set('Authorization', `Bearer ${accessToken}`);
   headers.set('Accept', 'application/json');
   headers.set('X-Ledger-Device-Id', deviceId);
@@ -158,34 +164,70 @@ export async function mobileRequest<T>(path: string, init: RequestInit = {}): Pr
     headers.set('X-Ledger-App-Version', Constants.expoConfig.version);
   }
 
-  if (init.body && !headers.has('Content-Type')) {
+  if (requestInit.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers,
-  });
-
-  const text = await response.text();
-  const payload = text ? (() => {
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      return null;
-    }
-  })() : null;
-
-  if (!response.ok) {
-    const message =
-      payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
-        ? String((payload as { error: string }).error)
-        : `Request failed with status ${response.status}`;
-    if (response.status === 401 && message === 'SESSION_REVOKED') {
-      await getSupabaseClient().auth.signOut({ scope: 'local' });
-    }
-    throw new Error(message);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const requestStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  let responseStatus: number | null = null;
+  let failure: string | null = null;
+  const abortFromCaller = () => controller.abort();
+  requestInit.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (requestInit.signal?.aborted) {
+    controller.abort();
   }
 
-  return (payload ?? (null as T)) as T;
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      ...requestInit,
+      headers,
+      signal: controller.signal,
+    });
+    responseStatus = response.status;
+
+    const text = await response.text();
+    const payload = text ? (() => {
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        return null;
+      }
+    })() : null;
+
+    if (!response.ok) {
+      const message =
+        payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
+          ? String((payload as { error: string }).error)
+          : `Request failed with status ${response.status}`;
+      if (response.status === 401 && message === 'SESSION_REVOKED') {
+        await getSupabaseClient().auth.signOut({ scope: 'local' });
+      }
+      throw new Error(message);
+    }
+
+    return (payload ?? (null as T)) as T;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      if (requestInit.signal?.aborted) {
+        failure = 'aborted';
+        throw error;
+      }
+      failure = 'timeout';
+      throw new Error(`Request timed out after ${timeoutMs}ms.`);
+    }
+    failure = error instanceof Error ? error.message : 'request_failed';
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    requestInit.signal?.removeEventListener('abort', abortFromCaller);
+    const endedAt = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    recordMobilePerformance('api.request', endedAt - requestStartedAt, {
+      method: requestInit.method ?? 'GET',
+      path: sanitizeMobilePerformancePath(path),
+      status: responseStatus,
+      failure,
+    });
+  }
 }

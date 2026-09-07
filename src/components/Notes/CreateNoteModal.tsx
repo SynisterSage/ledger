@@ -57,6 +57,8 @@ export const CreateNoteModal = ({
   const [templateContent, setTemplateContent] = useState('');
   const [templateTitlePattern, setTemplateTitlePattern] = useState('');
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [isTemplatePreviewOpen, setIsTemplatePreviewOpen] = useState(false);
+  const [closeTemplatePreviewSignal, setCloseTemplatePreviewSignal] = useState(0);
 
   useEffect(() => {
     if (!isOpen) {
@@ -276,7 +278,13 @@ export const CreateNoteModal = ({
             {step === 'custom-form' && 'Create Custom Template'}
           </h2>
           <ModalCloseButton
-            onClick={onClose}
+            onClick={() => {
+              if (step === 'gallery' && isTemplatePreviewOpen) {
+                setCloseTemplatePreviewSignal((value) => value + 1);
+                return;
+              }
+              onClose();
+            }}
             ariaLabel="Close create note modal"
             disabled={isCreating}
           />
@@ -349,6 +357,8 @@ export const CreateNoteModal = ({
                 initialTemplateId={initialTemplateId}
                 onCreateCustom={() => setStep('custom-form')}
                 onEditTemplate={handleEditTemplate}
+                onPreviewChange={setIsTemplatePreviewOpen}
+                closePreviewSignal={closeTemplatePreviewSignal}
               />
             </div>
           )}

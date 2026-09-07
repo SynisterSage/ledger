@@ -11,6 +11,8 @@ interface TemplateGalleryProps {
   initialTemplateId?: string | null;
   onCreateCustom?: () => void;
   onEditTemplate?: (template: TemplateSummary) => void;
+  onPreviewChange?: (isOpen: boolean) => void;
+  closePreviewSignal?: number;
 }
 
 export const TemplateGallery = ({
@@ -18,6 +20,8 @@ export const TemplateGallery = ({
   initialTemplateId,
   onCreateCustom,
   onEditTemplate,
+  onPreviewChange,
+  closePreviewSignal,
 }: TemplateGalleryProps) => {
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const api = useApi();
@@ -31,6 +35,14 @@ export const TemplateGallery = ({
   const [previewTemplate, setPreviewTemplate] = useState<TemplateSummary | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const didOpenInitialTemplateRef = useRef<string | null>(null);
+  const lastClosePreviewSignalRef = useRef(closePreviewSignal);
+
+  useEffect(() => {
+    if (closePreviewSignal === lastClosePreviewSignalRef.current) return;
+    lastClosePreviewSignalRef.current = closePreviewSignal;
+    setPreviewTemplate(null);
+    onPreviewChange?.(false);
+  }, [closePreviewSignal, onPreviewChange]);
 
   const loadTemplates = useCallback(async () => {
     if (!activeWorkspaceId) return;
@@ -193,6 +205,7 @@ export const TemplateGallery = ({
   const handlePreview = async (template: TemplateSummary) => {
     setIsPreviewLoading(true);
     setPreviewTemplate({ ...template, content_html: null });
+    onPreviewChange?.(true);
     try {
       const full = (await api.getTemplate(template.id)) as TemplateSummary;
       setPreviewTemplate({ ...template, ...full });
@@ -224,7 +237,10 @@ export const TemplateGallery = ({
           <div className="min-w-0">
             <button
               type="button"
-              onClick={() => setPreviewTemplate(null)}
+      onClick={() => {
+        setPreviewTemplate(null);
+        onPreviewChange?.(false);
+      }}
               className="mb-2 text-xs font-medium text-[var(--ledger-text-secondary)] hover:text-[var(--ledger-text-primary)]"
             >
               Back to templates

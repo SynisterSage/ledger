@@ -167,3 +167,36 @@ test('recap service returns unavailable when neither local generation tier is in
   const result = await service.generate(context());
   assert.deepEqual(result, { status: 'unavailable', reason: 'model_unavailable' });
 });
+
+test('recap service falls back when the preferred tier returns invalid recap JSON', async () => {
+  const switchedTiers: string[] = [];
+  let starts = 0;
+  const service = new MeetingRecapService({
+    getMeetingRecapGenerationTier: () => 'fast',
+    switchGenerationTier: async (tier: string) => {
+      switchedTiers.push(tier);
+      return { ok: true };
+    },
+    cancel: () => ({ ok: true }),
+    start: (_request: unknown, callbacks: { onEvent: (event: unknown) => void }, requestId: string) => {
+      starts += 1;
+      const text = starts === 1
+        ? '{"overview":"Only an overview"}'
+        : JSON.stringify({
+            overview: 'The team aligned on timing.',
+            decisions: [{ text: 'Keep September.', sourceRefs: [{ sourceKey: 'S1', timestampMs: 1000 }] }],
+            actions: [],
+            openThreads: [],
+          });
+      callbacks.onEvent({ type: 'delta', requestId, text });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { finishReason: 'stop' } });
+      return requestId;
+    },
+  } as never);
+
+  const result = await service.generate(context());
+  assert.equal(result.status, 'ready');
+  assert.equal(result.status === 'ready' ? result.tier : null, 'balanced');
+  assert.deepEqual(switchedTiers, ['fast', 'balanced']);
+  assert.equal(starts, 2);
+});

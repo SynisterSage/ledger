@@ -27,6 +27,7 @@ import { useToast } from './ToastProvider';
 import { routeForLegacyWorkspaceState, serializeLedgerRoute } from '../../platform';
 import type { LedgerWorkspaceRoute } from '../../platform';
 import { parseWebLocation } from '../../web/webRouteState';
+import { isStaleNavigationGeneration } from '../../utils/navigationGeneration';
 
 type LedgerRoute = {
   kind: ModuleWindowKind;
@@ -902,12 +903,16 @@ export const LedgerTabStrip = () => {
   }, [tabOrder]);
 
   useEffect(() => {
+    let lastNavigationGeneration = 0;
     const handleState = (_event: unknown, state?: NavigationState) => {
       if (state) setNavigationState(state);
     };
     const handleRouteChanged = (_event: unknown, nextRoute?: ModuleFocusPayload | null) => {
       const route = normalizeRoute(nextRoute);
       if (!route) return;
+      const generation = nextRoute?.navigationGeneration;
+      if (isStaleNavigationGeneration(generation, lastNavigationGeneration)) return;
+      if (typeof generation === 'number') lastNavigationGeneration = generation;
       // A kept-alive module can acknowledge the route that was visible just
       // before its tab was closed. The tab-local closed set is the guard
       // against letting that late acknowledgement resurrect the tab.

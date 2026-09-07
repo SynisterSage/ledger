@@ -56,3 +56,16 @@ test('does not apply one resource status to another resource', () => {
   });
   assert.equal(result.contradictionIssues.length, 0);
 });
+
+test('treats compact database statuses as their human-readable aliases', () => {
+  const packageValue = evidence();
+  packageValue.sections[0].items[0].resource.title = 'Watercolor Exhibition';
+  packageValue.sections[0].items[0].resource.status = 'NotStarted';
+  const result = new AskLedgerAnswerValidator().validate({
+    question: 'Summarize September.',
+    answer: 'Watercolor Exhibition is not started and is due in September.',
+    evidencePackage: packageValue,
+    depth: 'standard',
+  });
+  assert.equal(result.contradictionIssues.length, 0);
+});

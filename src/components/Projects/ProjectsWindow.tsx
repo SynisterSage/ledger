@@ -57,6 +57,7 @@ import {
 import { ContextMenu } from '../Common/ContextMenu';
 import { CloseGuardModal } from '../Common/CloseGuardModal';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
+import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import { CreateModalShell } from '../Common/CreateModalShell';
 import { LinkNoteModal } from '../Common/LinkNoteModal';
 import { SkeletonCompactRow, SkeletonProjectCard } from '../Common/Skeleton';
@@ -72,6 +73,7 @@ import { RelatedContextList } from '../Common/RelatedContextList';
 import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
 import {
+  openLegacyModule,
   routeForCalendarEvent,
   routeForCalendarReminder,
   routeForHome,
@@ -150,6 +152,7 @@ type ProjectRow = {
   lead_id?: string | null;
   owner_team_id?: string | null;
   created_by?: string | null;
+  starter_key?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -170,8 +173,302 @@ type TaskRow = {
   status: 'todo' | 'in_progress' | 'completed' | 'cancelled' | string;
   priority: 'low' | 'medium' | 'high' | 'urgent' | string;
   tags: string[];
+  starter_key?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+const previewProjects: ProjectRow[] = [
+  { id: 'preview-beta', name: 'Ledger public beta', description: 'Prepare the public beta launch.', status: 'in_progress', completeness: 62, color: '#ff6b4a', start_date: '2026-08-18', end_date: '2026-09-12', project_type: 'code', owner_team_id: 'preview-team-product', lead_id: 'preview-lex', created_at: '2026-08-01T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+  { id: 'preview-foundations', name: 'Workspace foundations', description: 'Make the workspace feel immediate and dependable.', status: 'in_progress', completeness: 38, color: '#8b78d8', start_date: '2026-08-25', end_date: '2026-10-03', project_type: 'product', owner_team_id: 'preview-team-engineering', lead_id: 'preview-maya', created_at: '2026-08-01T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+  { id: 'preview-calendar', name: 'Calendar follow-through', description: 'Connect time to the work that matters.', status: 'planned', completeness: 12, color: '#5aa6a0', start_date: '2026-09-08', end_date: '2026-10-18', project_type: 'other', created_at: '2026-08-01T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+];
+
+const previewTasks: TaskRow[] = [
+  { id: 'preview-task-1', project_id: 'preview-beta', title: 'Confirm scope for the public beta', description: null, notes: null, due_date: '2026-09-02', due_time: null, status: 'completed', priority: 'high', tags: [], created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+  { id: 'preview-task-2', project_id: 'preview-beta', title: 'Review the onboarding flow', description: null, notes: null, due_date: '2026-09-06', due_time: null, status: 'in_progress', priority: 'medium', tags: [], created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+  { id: 'preview-task-3', project_id: 'preview-foundations', title: 'Write the next release note', description: null, notes: null, due_date: '2026-09-12', due_time: null, status: 'todo', priority: 'medium', tags: [], created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+  { id: 'preview-task-4', project_id: 'preview-foundations', title: 'Test the workspace capture flow', description: null, notes: null, due_date: '2026-09-15', due_time: null, status: 'in_progress', priority: 'high', tags: [], created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+  { id: 'preview-task-5', project_id: 'preview-calendar', title: 'Define the weekly review rhythm', description: null, notes: null, due_date: '2026-09-20', due_time: null, status: 'todo', priority: 'medium', tags: [], created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+  { id: 'preview-task-6', project_id: 'preview-calendar', title: 'Connect follow-ups to projects', description: null, notes: null, due_date: '2026-09-26', due_time: null, status: 'todo', priority: 'low', tags: [], created_at: '2026-08-20T00:00:00.000Z', updated_at: '2026-08-27T00:00:00.000Z' },
+];
+
+const previewTeams: WorkspaceTeam[] = [
+  { id: 'preview-team-product', name: 'Product', identifier: 'PROD', color: '#8b78d8' },
+  { id: 'preview-team-engineering', name: 'Engineering', identifier: 'ENG', color: '#5aa6a0' },
+];
+
+const previewMembers: WorkspaceMember[] = [
+  { user_id: 'preview-lex', email: 'lex@ledger.local', full_name: 'Lex', avatar_url: null },
+  { user_id: 'preview-maya', email: 'maya@ledger.local', full_name: 'Maya Chen', avatar_url: null },
+];
+
+const previewMilestones: ProjectMilestoneRow[] = [
+  {
+    id: 'preview-milestone-scope',
+    workspace_id: 'preview-workspace',
+    project_id: 'preview-beta',
+    title: 'Beta scope locked',
+    milestone_date: '2026-09-02',
+    type: 'Decision',
+    note: 'Confirm the launch slice and owners.',
+    completed: true,
+    assigned_to_team_id: 'preview-team-product',
+    created_at: '2026-08-20T00:00:00.000Z',
+    updated_at: '2026-08-27T00:00:00.000Z',
+  },
+  {
+    id: 'preview-milestone-launch',
+    workspace_id: 'preview-workspace',
+    project_id: 'preview-beta',
+    title: 'Public beta launch',
+    milestone_date: '2026-09-12',
+    type: 'Deadline',
+    note: 'Ship the public beta and monitor the first cohort.',
+    completed: false,
+    assigned_to_team_id: 'preview-team-engineering',
+    created_at: '2026-08-20T00:00:00.000Z',
+    updated_at: '2026-08-27T00:00:00.000Z',
+  },
+  {
+    id: 'preview-milestone-review',
+    workspace_id: 'preview-workspace',
+    project_id: 'preview-foundations',
+    title: 'Workspace review',
+    milestone_date: '2026-09-18',
+    type: 'Review',
+    note: 'Review the shell, navigation, and capture flow.',
+    completed: false,
+    assigned_to_team_id: 'preview-team-product',
+    created_at: '2026-08-20T00:00:00.000Z',
+    updated_at: '2026-08-27T00:00:00.000Z',
+  },
+  {
+    id: 'preview-milestone-capture',
+    workspace_id: 'preview-workspace',
+    project_id: 'preview-foundations',
+    title: 'Capture flow ready',
+    milestone_date: '2026-09-15',
+    type: 'Handoff',
+    note: 'Make capture dependable from every surface.',
+    completed: false,
+    assigned_to_team_id: 'preview-team-engineering',
+    created_at: '2026-08-20T00:00:00.000Z',
+    updated_at: '2026-08-27T00:00:00.000Z',
+  },
+  {
+    id: 'preview-milestone-review-rhythm',
+    workspace_id: 'preview-workspace',
+    project_id: 'preview-calendar',
+    title: 'First weekly review',
+    milestone_date: '2026-09-25',
+    type: 'Review',
+    note: 'Review what moved and schedule the next follow-ups.',
+    completed: false,
+    assigned_to_team_id: 'preview-team-product',
+    created_at: '2026-08-20T00:00:00.000Z',
+    updated_at: '2026-08-27T00:00:00.000Z',
+  },
+];
+
+const previewEvents: ProjectCalendarEvent[] = [
+  {
+    id: 'preview-event-launch-review',
+    title: 'Public beta launch review',
+    start_at: '2026-09-04T10:00:00.000Z',
+    end_at: '2026-09-04T10:45:00.000Z',
+    status: 'planned',
+    project_id: 'preview-beta',
+    color: '#ff6b4a',
+  },
+  {
+    id: 'preview-event-design-handoff',
+    title: 'Design handoff',
+    start_at: '2026-09-09T14:00:00.000Z',
+    end_at: '2026-09-09T14:30:00.000Z',
+    status: 'planned',
+    project_id: 'preview-beta',
+    color: '#8b78d8',
+  },
+  {
+    id: 'preview-event-foundations-review',
+    title: 'Workspace foundations review',
+    start_at: '2026-09-16T15:00:00.000Z',
+    end_at: '2026-09-16T16:00:00.000Z',
+    status: 'planned',
+    project_id: 'preview-foundations',
+    color: '#8b78d8',
+  },
+  {
+    id: 'preview-event-weekly-planning',
+    title: 'Weekly planning block',
+    start_at: '2026-09-21T09:00:00.000Z',
+    end_at: '2026-09-21T09:30:00.000Z',
+    status: 'planned',
+    project_id: 'preview-calendar',
+    color: '#5aa6a0',
+  },
+];
+
+const previewReminders: ProjectCalendarReminder[] = [
+  {
+    id: 'preview-reminder-feedback',
+    title: 'Send beta feedback follow-up',
+    remind_at: '2026-09-07T09:00:00.000Z',
+    status: 'planned',
+    project_id: 'preview-beta',
+    color: '#ff9f43',
+    is_done: false,
+  },
+  {
+    id: 'preview-reminder-release-notes',
+    title: 'Publish release notes',
+    remind_at: '2026-09-11T16:00:00.000Z',
+    status: 'planned',
+    project_id: 'preview-beta',
+    color: '#5aa6a0',
+    is_done: false,
+  },
+  {
+    id: 'preview-reminder-check-in',
+    title: 'Send workspace check-in',
+    remind_at: '2026-09-17T11:00:00.000Z',
+    status: 'planned',
+    project_id: 'preview-foundations',
+    color: '#8b78d8',
+    is_done: false,
+  },
+  {
+    id: 'preview-reminder-plan-week',
+    title: 'Plan next week',
+    remind_at: '2026-09-24T16:30:00.000Z',
+    status: 'planned',
+    project_id: 'preview-calendar',
+    color: '#5aa6a0',
+    is_done: false,
+  },
+];
+
+const previewNoteLinks: ProjectNoteLink[] = [
+  {
+    id: 'preview-note-link-1',
+    note_id: 'preview-note-beta-brief',
+    project_id: 'preview-beta',
+    created_at: '2026-08-22T00:00:00.000Z',
+    note: {
+      id: 'preview-note-beta-brief',
+      title: 'Public beta brief',
+      preview: 'Launch scope, audience, and the first success signals.',
+      updated_at: '2026-08-27T00:00:00.000Z',
+      mode: 'note',
+    },
+  },
+  {
+    id: 'preview-note-link-2',
+    note_id: 'preview-note-onboarding',
+    project_id: 'preview-beta',
+    created_at: '2026-08-24T00:00:00.000Z',
+    note: {
+      id: 'preview-note-onboarding',
+      title: 'Onboarding decisions',
+      preview: 'Open questions and decisions from the onboarding review.',
+      updated_at: '2026-08-26T00:00:00.000Z',
+      mode: 'meeting_note',
+    },
+  },
+  {
+    id: 'preview-note-link-3',
+    note_id: 'preview-note-foundations',
+    project_id: 'preview-foundations',
+    created_at: '2026-08-23T00:00:00.000Z',
+    note: {
+      id: 'preview-note-foundations',
+      title: 'Workspace foundations map',
+      preview: 'The shell, navigation, and reliability decisions behind Ledger.',
+      updated_at: '2026-08-27T00:00:00.000Z',
+      mode: 'note',
+    },
+  },
+  {
+    id: 'preview-note-link-4',
+    note_id: 'preview-note-weekly-review',
+    project_id: 'preview-calendar',
+    created_at: '2026-08-25T00:00:00.000Z',
+    note: {
+      id: 'preview-note-weekly-review',
+      title: 'Weekly review template',
+      preview: 'A lightweight rhythm for turning calendar time into follow-through.',
+      updated_at: '2026-08-26T00:00:00.000Z',
+      mode: 'note',
+    },
+  },
+];
+
+const previewActivity: ProjectActivityItem[] = [
+  {
+    id: 'preview-activity-1',
+    label: 'Maya updated the onboarding flow action',
+    at: '2026-08-27T15:30:00.000Z',
+    type: 'task',
+  },
+  {
+    id: 'preview-activity-2',
+    label: 'Beta scope locked as a milestone',
+    at: '2026-08-26T12:00:00.000Z',
+    type: 'milestone',
+  },
+  {
+    id: 'preview-activity-3',
+    label: 'Public beta brief linked',
+    at: '2026-08-25T17:10:00.000Z',
+    type: 'note',
+  },
+  {
+    id: 'preview-activity-4',
+    project_id: 'preview-foundations',
+    label: 'Capture flow marked in progress',
+    at: '2026-08-27T13:00:00.000Z',
+    type: 'task',
+  },
+  {
+    id: 'preview-activity-5',
+    project_id: 'preview-foundations',
+    label: 'Workspace foundations map linked',
+    at: '2026-08-26T16:20:00.000Z',
+    type: 'note',
+  },
+  {
+    id: 'preview-activity-6',
+    project_id: 'preview-calendar',
+    label: 'Weekly planning block scheduled',
+    at: '2026-08-27T09:15:00.000Z',
+    type: 'event',
+  },
+  {
+    id: 'preview-activity-7',
+    project_id: 'preview-calendar',
+    label: 'Weekly review milestone added',
+    at: '2026-08-25T14:00:00.000Z',
+    type: 'milestone',
+  },
+];
+
+const previewAttachedContext: Record<string, Array<{ label: string; tone: string }>> = {
+  'preview-beta': [
+    { label: 'Figma · Beta flow', tone: '#a06bff' },
+    { label: 'GitHub · ledger-app', tone: '#8b949e' },
+    { label: 'Drive · Launch brief', tone: '#4f9cf9' },
+  ],
+  'preview-foundations': [
+    { label: 'Figma · Workspace shell', tone: '#a06bff' },
+    { label: 'GitHub · ledger-web', tone: '#8b949e' },
+    { label: 'Linear · Foundation issues', tone: '#7c6cf2' },
+  ],
+  'preview-calendar': [
+    { label: 'Google Calendar · Follow-through', tone: '#4f9cf9' },
+    { label: 'Drive · Review template', tone: '#39a56b' },
+    { label: 'Figma · Weekly rhythm', tone: '#a06bff' },
+  ],
 };
 
 type ProjectsDataCacheEntry = {
@@ -257,12 +554,14 @@ type NoteOption = {
 type ProjectNoteLink = {
   id: string;
   note_id: string;
+  project_id?: string | null;
   created_at: string;
   note: NoteOption;
 };
 
 type ProjectActivityItem = {
   id: string;
+  project_id?: string | null;
   label: string;
   at: string | null;
   route?: LedgerRoute | null;
@@ -616,7 +915,8 @@ type ProjectDraft = {
 
 export const ProjectsWindow = ({
   webQuery,
-}: { webQuery?: { projectId?: string; taskId?: string } } = {}) => {
+  previewMode = false,
+}: { webQuery?: { projectId?: string; taskId?: string }; previewMode?: boolean } = {}) => {
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout, reduceMotion } = useSidebar();
@@ -688,8 +988,19 @@ export const ProjectsWindow = ({
   useEffect(() => {
     if (isPersonalWorkspace) setFocusedTeamId(null);
   }, [activeWorkspaceId, isPersonalWorkspace]);
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      setStarterGuideHidden(false);
+      return;
+    }
+    setStarterGuideHidden(
+      window.localStorage.getItem(`ledger:starter-guide-hidden:${activeWorkspaceId}`) === 'true'
+    );
+  }, [activeWorkspaceId]);
+
   const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(() => viewportWidth < 760);
   const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
+  const [starterGuideHidden, setStarterGuideHidden] = useState(false);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState | null>(
@@ -2118,6 +2429,13 @@ export const ProjectsWindow = ({
   }, []);
 
   const loadProjects = useCallback(async () => {
+    if (previewMode) {
+      hasLoadedProjectsDataRef.current = true;
+      setProjects(previewProjects);
+      setIsLoadingProjects(false);
+      setError(null);
+      return;
+    }
     if (!user || !activeWorkspaceId) {
       hasLoadedProjectsDataRef.current = false;
       setProjects([]);
@@ -2169,9 +2487,16 @@ export const ProjectsWindow = ({
     } finally {
       setIsLoadingProjects(false);
     }
-  }, [api, activeWorkspaceId, user]);
+  }, [api, activeWorkspaceId, previewMode, user]);
 
   const loadTasks = useCallback(async () => {
+    if (previewMode) {
+      hasLoadedTasksDataRef.current = true;
+      setTasks(previewTasks);
+      setIsLoadingTasks(false);
+      setTaskError(null);
+      return;
+    }
     if (!user || !activeWorkspaceId) {
       hasLoadedTasksDataRef.current = false;
       setTasks([]);
@@ -2214,7 +2539,7 @@ export const ProjectsWindow = ({
     } finally {
       setIsLoadingTasks(false);
     }
-  }, [api, activeWorkspaceId, selectedProjectId, user]);
+  }, [api, activeWorkspaceId, previewMode, selectedProjectId, user]);
 
   useEffect(() => {
     if (!activeWorkspaceId || !hasLoadedProjectsDataRef.current || isLoadingProjects) return;
@@ -3852,6 +4177,16 @@ export const ProjectsWindow = ({
       setIsLoadingProjectCalendarItems(false);
       return;
     }
+    if (previewMode) {
+      setLinkedNotes([]);
+      setIsLoadingLinkedNotes(false);
+      setProjectEvents([]);
+      setProjectReminders([]);
+      setProjectActivity([]);
+      setIsLoadingProjectActivity(false);
+      setIsLoadingProjectCalendarItems(false);
+      return;
+    }
     setProjectEvents([]);
     setProjectReminders([]);
     setProjectActivity([]);
@@ -3862,6 +4197,7 @@ export const ProjectsWindow = ({
     loadLinkedNotes,
     loadProjectActivity,
     loadProjectCalendarItems,
+    previewMode,
     selectedProjectId,
     workspaceRefreshToken,
   ]);
@@ -3921,6 +4257,47 @@ export const ProjectsWindow = ({
       mounted = false;
     };
   }, [activeWorkspaceId, api]);
+
+  // The marketing preview uses the real ProjectsWindow presentation with a
+  // bounded, read-only fixture. Keep this entirely on the preview branch so
+  // workspace data and desktop behavior continue using the API-backed state.
+  useEffect(() => {
+    if (!previewMode) return;
+
+    setWorkspaceMembers(previewMembers);
+    setWorkspaceTeams(previewTeams);
+    setWorkspaceMilestones(previewMilestones);
+    setWorkspaceEvents(previewEvents);
+    setWorkspaceReminders(previewReminders);
+    setOverviewNoteLinkCounts(
+      previewProjects.reduce<Record<string, number>>((counts, project) => {
+        counts[project.id] = previewNoteLinks.filter(
+          (link) => link.project_id === project.id
+        ).length;
+        return counts;
+      }, {})
+    );
+
+    if (!selectedProjectId) {
+      setLinkedNotes([]);
+      setProjectEvents([]);
+      setProjectReminders([]);
+      setProjectActivity([]);
+      return;
+    }
+
+    setLinkedNotes(previewNoteLinks.filter((link) => link.project_id === selectedProjectId));
+    setProjectEvents(previewEvents.filter((event) => event.project_id === selectedProjectId));
+    setProjectReminders(
+      previewReminders.filter((reminder) => reminder.project_id === selectedProjectId)
+    );
+    setProjectActivity(
+      previewActivity.filter((activity) => activity.project_id === selectedProjectId)
+    );
+    setIsLoadingLinkedNotes(false);
+    setIsLoadingProjectCalendarItems(false);
+    setIsLoadingProjectActivity(false);
+  }, [previewMode, selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProject) return;
@@ -4336,12 +4713,70 @@ export const ProjectsWindow = ({
     return () => window.removeEventListener('keydown', onEscape);
   }, [closeActionInlineEditor, closeMilestoneInlineEditor, expandedActionId, expandedMilestoneId]);
 
+  const openStarterTask = useCallback(
+    (task: TaskRow) => {
+      if (!activeWorkspaceId || !task.starter_key) return;
+      const key = task.starter_key.split(':').slice(-1)[0];
+      if (key === 'capture' || key === 'context') {
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'quick-note', {
+          focusProjectId: selectedProjectId,
+        });
+      } else if (key === 'next-action') {
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'quick-task', {
+          focusProjectId: selectedProjectId,
+        });
+      } else if (key === 'follow-through') {
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'calendar');
+      } else if (key === 'review') {
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'dashboard', {
+          focusSection: 'review',
+        });
+      } else if (key === 'invite') {
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'settings', {
+          focusContext: 'members',
+        });
+      } else if (key === 'project') {
+        openLegacyModule(platform.navigation, activeWorkspaceId, 'projects');
+      }
+    },
+    [activeWorkspaceId, platform.navigation, selectedProjectId]
+  );
+
+  const starterTaskLinkLabel = (task: TaskRow) => {
+    if (!task.starter_key) return null;
+    const key = task.starter_key.split(':').slice(-1)[0];
+    if (key === 'invite') return 'Members';
+    if (key === 'follow-through') return 'Calendar';
+    if (key === 'review') return 'Review';
+    if (key === 'project') return 'Projects';
+    if (key === 'context') return 'Notes';
+    return 'Open';
+  };
+
+  const removeStarterContent = useCallback(async () => {
+    if (!activeWorkspaceId || !selectedProject?.starter_key) return;
+    if (!window.confirm('Remove the Ledger getting-started project, tasks, and welcome note?')) {
+      return;
+    }
+    try {
+      await api.removeWorkspaceStarterContent(activeWorkspaceId);
+      setProjects((current) => current.filter((project) => !project.starter_key));
+      setTasks((current) => current.filter((task) => !task.starter_key));
+      setSelectedProjectId(null);
+      setStarterGuideHidden(true);
+      window.localStorage.setItem(`ledger:starter-guide-hidden:${activeWorkspaceId}`, 'true');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not remove starter content.');
+    }
+  }, [activeWorkspaceId, api, selectedProject?.starter_key]);
+
   const renderTaskRow = (task: TaskRow, completed = false, interactive = false) => {
     const linkedMilestone = task.milestone_id
       ? selectedProjectMilestoneById.get(task.milestone_id) ?? null
       : null;
     const expanded = interactive && expandedActionId === task.id;
     const taskAssignmentValue = getAssignmentValue(task);
+    const starterLinkLabel = starterTaskLinkLabel(task);
     const draftDirty =
       expanded &&
       (actionDraft.title !== task.title ||
@@ -4417,6 +4852,20 @@ export const ProjectsWindow = ({
               </>
             )}
           </div>
+          {starterLinkLabel && !completed && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                openStarterTask(task);
+              }}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-[var(--ledger-accent)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-accent-hover)]"
+              aria-label={`Open ${starterLinkLabel} for ${task.title}`}
+            >
+              <Link2 size={12} />
+              {starterLinkLabel}
+            </button>
+          )}
           {(interactive || expandedActionId === task.id) && (
             <button
               type="button"
@@ -4720,9 +5169,14 @@ export const ProjectsWindow = ({
             />
             <div className="mt-3 space-y-1">
               {linkedActions.length === 0 ? (
-                <p className="px-1 py-1 text-xs text-[var(--ledger-text-muted)]">
-                  No linked actions yet.
-                </p>
+                <LedgerEmptyState
+                  state="first-use"
+                  title="No linked actions"
+                  description="Actions connected to this milestone will appear here."
+                  size="compact"
+                  testId="project-milestone-linked-actions-empty"
+                  className="justify-start px-1 py-1 text-left"
+                />
               ) : (
                 linkedActions.slice(0, 4).map((action) => (
                   <div
@@ -5100,9 +5554,14 @@ export const ProjectsWindow = ({
           'actions',
           'Next actions',
           visibleActiveTasks.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">
-              No active next actions.
-            </p>
+            <LedgerEmptyState
+              state="first-use"
+              title="No active next actions"
+              description="Add the next concrete step when this project is ready to move."
+              size="compact"
+              testId="project-next-actions-empty"
+              className="justify-start px-2 py-1 text-left"
+            />
           ) : (
             <div className="space-y-1">
               {visibleActiveTasks.map((task) => renderTaskRow(task, false, interactive))}
@@ -5121,7 +5580,14 @@ export const ProjectsWindow = ({
           'milestones',
           'Milestones',
           visibleActiveMilestones.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-[var(--ledger-text-muted)]">No milestones yet.</p>
+            <LedgerEmptyState
+              state="first-use"
+              title="No milestones yet"
+              description="Milestones will give the project’s larger steps a place on the timeline."
+              size="compact"
+              testId="project-milestones-empty"
+              className="justify-start px-2 py-1 text-left"
+            />
           ) : (
             <div className="space-y-1">
               {visibleActiveMilestones.map((milestone) =>
@@ -5178,16 +5644,15 @@ export const ProjectsWindow = ({
         {isLoadingLinkedNotes ? (
           <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
         ) : linkedNotes.length === 0 ? (
-          <div className="flex items-center gap-3 py-2 text-sm text-[var(--ledger-text-muted)]">
-            <span>No project notes yet.</span>
-            <button
-              type="button"
-              onClick={() => setIsCreateProjectNoteModalOpen(true)}
-              className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
-            >
-              +
-            </button>
-          </div>
+          <LedgerEmptyState
+            state="first-use"
+            title="No project notes yet"
+            description="Keep a short working note beside the project context."
+            size="compact"
+            testId="project-notes-empty"
+            primaryAction={{ label: 'Add note', onClick: () => setIsCreateProjectNoteModalOpen(true) }}
+            className="justify-start px-0 py-1 text-left"
+          />
         ) : (
           <div className="space-y-1">
             {linkedNotes.map((link) => (
@@ -5343,7 +5808,14 @@ export const ProjectsWindow = ({
       {isLoadingProjectActivity ? (
         <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
       ) : fullProjectActivity.length === 0 ? (
-        <p className="py-2 text-sm text-[var(--ledger-text-muted)]">No recent activity.</p>
+        <LedgerEmptyState
+          state="completed"
+          title="No recent activity"
+          description="Project changes and progress will appear here."
+          size="compact"
+          testId="project-activity-empty"
+          className="justify-start px-0 py-1 text-left"
+        />
       ) : (
         <div className="space-y-2">
           {groupedProjectActivity.map(([groupLabel, items], index) =>
@@ -5583,6 +6055,96 @@ export const ProjectsWindow = ({
     );
   };
 
+  const renderStarterGuide = () => {
+    if (!selectedProject?.starter_key?.startsWith('workspace-starter:')) {
+      return null;
+    }
+
+    if (starterGuideHidden) {
+      return (
+        <div className="mt-4 flex items-center gap-2 text-xs text-[var(--ledger-text-muted)]">
+          <span>Getting started is hidden.</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeWorkspaceId) {
+                window.localStorage.removeItem(
+                  `ledger:starter-guide-hidden:${activeWorkspaceId}`
+                );
+              }
+              setStarterGuideHidden(false);
+            }}
+            className="font-medium text-[var(--ledger-accent)] transition hover:text-[var(--ledger-accent-hover)]"
+          >
+            Show it again
+          </button>
+        </div>
+      );
+    }
+
+    const starterTasks = selectedProjectTasks.filter((task) => task.starter_key);
+    const completedCount = starterTasks.filter((task) => task.status === 'completed').length;
+    const totalCount = starterTasks.length;
+    const complete = totalCount > 0 && completedCount === totalCount;
+    const progress = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    return (
+      <section className="mt-5 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-4 py-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+              Getting started
+            </p>
+            <p className="mt-1 text-sm font-semibold text-[var(--ledger-text-primary)]">
+              {complete ? 'You’ve got the Ledger loop.' : 'Take Ledger for a first spin.'}
+            </p>
+            <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--ledger-text-secondary)]">
+              {complete
+                ? 'You captured, planned, followed through, and reviewed. Replace these starter actions with your own work whenever you’re ready.'
+                : 'These small actions show how capture, planning, follow-through, and review fit together.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeWorkspaceId) {
+                window.localStorage.setItem(
+                  `ledger:starter-guide-hidden:${activeWorkspaceId}`,
+                  'true'
+                );
+              }
+              setStarterGuideHidden(true);
+            }}
+            className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]"
+          >
+            Hide
+          </button>
+          {complete &&
+            (activeWorkspace?.role === 'owner' || activeWorkspace?.role === 'admin') && (
+              <button
+                type="button"
+                onClick={() => void removeStarterContent()}
+                className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-danger)]"
+              >
+                Remove
+              </button>
+            )}
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]">
+            <div
+              className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width]"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-[11px] font-medium text-[var(--ledger-text-muted)]">
+            {completedCount}/{totalCount}
+          </span>
+        </div>
+      </section>
+    );
+  };
+
   const renderProjectProgressStrip = () => {
     if (!selectedProject) return null;
 
@@ -5652,6 +6214,24 @@ export const ProjectsWindow = ({
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
+            {previewMode && selectedProject && (
+              <>
+                {(previewAttachedContext[selectedProject.id] ?? []).map((resource) => (
+                  <span
+                    key={resource.label}
+                    className="inline-flex h-8 items-center gap-2 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-[12px] font-medium text-[var(--ledger-text-secondary)]"
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: resource.tone }}
+                      aria-hidden="true"
+                    />
+                    {resource.label}
+                    <Link2 size={12} className="text-[var(--ledger-text-muted)]" aria-hidden="true" />
+                  </span>
+                ))}
+              </>
+            )}
             {activeWorkspaceId && selectedProject ? (
               <LinkedDesignsSection
                 target={{
@@ -5772,16 +6352,15 @@ export const ProjectsWindow = ({
       isLoadingLinkedNotes ? (
         <div className="space-y-1">{renderCompactRowSkeletons(3)}</div>
       ) : linkedNotes.length === 0 ? (
-        <div className="flex items-center gap-3 py-2 text-sm text-[var(--ledger-text-muted)]">
-          <span>No notes linked yet.</span>
-          <button
-            type="button"
-            onClick={() => void openLinkNoteModal()}
-            className="font-medium text-[var(--ledger-text-secondary)] transition hover:text-[var(--ledger-text-primary)]"
-          >
-            Link note
-          </button>
-        </div>
+        <LedgerEmptyState
+          state="first-use"
+          title="No notes linked yet"
+          description="Connect an existing note when it supports this project."
+          size="compact"
+          testId="project-linked-notes-empty"
+          primaryAction={{ label: 'Link note', onClick: () => void openLinkNoteModal() }}
+          className="justify-start px-0 py-1 text-left"
+        />
       ) : (
         <div className="space-y-1">
           {linkedNotes.slice(0, 4).map((link) => (
@@ -5892,9 +6471,14 @@ export const ProjectsWindow = ({
       isLoadingProjectCalendarItems ? (
         <div className="space-y-1">{renderCompactRowSkeletons(2)}</div>
       ) : calendarItems.length === 0 ? (
-        <p className="py-2 text-sm text-[var(--ledger-text-muted)]">
-          No events or reminders linked yet.
-        </p>
+        <LedgerEmptyState
+          state="first-use"
+          title="No linked calendar items"
+          description="Events and reminders connected to this project will appear here."
+          size="compact"
+          testId="project-calendar-empty"
+          className="justify-start px-0 py-1 text-left"
+        />
       ) : (
         <div className="space-y-1">
           {calendarItems.slice(0, 4).map((item) => (
@@ -6762,35 +7346,21 @@ export const ProjectsWindow = ({
         )}
 
         {projects.length === 0 ? (
-          <section className="flex flex-1 items-center justify-center p-6">
-            <div className="w-full max-w-sm rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-5 py-4 text-center shadow-sm">
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)]">
-                <Folder size={15} />
-              </div>
-              <h3 className="mt-3 text-sm font-medium text-[var(--ledger-text-primary)]">
-                Start a project
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
-                Projects keep outcomes, notes, calendar context, and next actions connected.
-              </p>
-              <button
-                type="button"
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={() => {
-                  if (isCreatingProject) {
-                    closeCreateProjectComposer();
-                    return;
-                  }
-                  openCreateProjectComposer();
-                }}
-                title={isCreatingProject ? 'Cancel new project' : 'Create a new project'}
-                className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white transition hover:bg-[var(--ledger-accent-hover)]"
-              >
-                <Plus size={14} />
-                {isCreatingProject ? 'Cancel' : 'New project'}
-              </button>
-            </div>
-          </section>
+          <LedgerEmptyState
+            state="first-use"
+            title="Start a project"
+            description="Keep outcomes, notes, calendar context, and next actions connected."
+            icon={Folder}
+            testId="projects-home-first-use"
+            primaryAction={{
+              label: isCreatingProject ? 'Cancel' : 'New project',
+              onClick: () => {
+                if (isCreatingProject) closeCreateProjectComposer();
+                else openCreateProjectComposer();
+              },
+            }}
+            className="flex-1"
+          />
         ) : projectsOverviewView === 'list' ? (
           <section className="min-h-0 flex-1 overflow-hidden rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-none">
             <div className="border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-5 py-4">
@@ -7582,7 +8152,7 @@ export const ProjectsWindow = ({
           })();
         }}
       />
-      <ModuleWindowHeader
+      {!previewMode && <ModuleWindowHeader
         headerRef={projectsHeaderRef}
         title="Projects"
         subtitle="Outcomes, notes, and next actions in one place."
@@ -7732,7 +8302,7 @@ export const ProjectsWindow = ({
             />
           ) : null
         }
-      />
+      />}
 
       <ContextMenu
         open={Boolean(projectsHeaderMenu)}
@@ -8053,7 +8623,7 @@ export const ProjectsWindow = ({
         className="relative flex-1 flex overflow-hidden"
         data-reduce-motion={reduceMotion ? 'true' : 'false'}
       >
-        {!isLeftPaneCollapsed ? (
+        {!previewMode && !isLeftPaneCollapsed ? (
           <>
             <aside
               className="ledger-pane-surface ledger-pane-left flex shrink-0 flex-col overflow-hidden border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
@@ -8138,17 +8708,22 @@ export const ProjectsWindow = ({
                     ))}
                   </div>
                 ) : visibleProjects.length === 0 ? (
-                  <div className="flex items-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-3 py-2.5">
-                    <Folder size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-[var(--ledger-text-primary)]">
-                        No matching projects.
-                      </p>
-                      <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">
-                        Create one for outcomes, notes, and next actions.
-                      </p>
-                    </div>
-                  </div>
+                  <LedgerEmptyState
+                    state="no-results"
+                    title="No matching projects"
+                    description="Try another search or clear the project filters to see the workspace list."
+                    size="compact"
+                    testId="projects-list-no-results"
+                    primaryAction={{
+                      label: 'Clear filters',
+                      onClick: () => {
+                        setSearch('');
+                        setStatusFilter('all');
+                        setFocusedTeamId(null);
+                      },
+                    }}
+                    className="justify-start px-1 py-3 text-left"
+                  />
                 ) : (
                   visibleProjects.map((project) => {
                     const semantic = parseProjectStatus(String(project.status));
@@ -8235,7 +8810,7 @@ export const ProjectsWindow = ({
               }}
             />
           </>
-        ) : (
+        ) : !previewMode ? (
           <div className="ledger-pane-toggle absolute left-2 top-4 z-30">
             <button
               onClick={() => setIsLeftPaneCollapsed(false)}
@@ -8246,10 +8821,21 @@ export const ProjectsWindow = ({
               <ChevronRight size={14} strokeWidth={2.25} />
             </button>
           </div>
-        )}
+        ) : null}
 
         <main className="flex-1 overflow-hidden bg-[var(--ledger-background)]">
           <div className={`h-full overflow-auto ${isCompactLayout ? 'p-4' : 'p-6'}`}>
+            {previewMode && selectedProject && (
+              <button
+                type="button"
+                onClick={() => void selectProjectsTimeline()}
+                className="mb-2 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ledger-accent)]/20"
+                aria-label="Return to Projects roadmap"
+              >
+                <ChevronLeft size={13} aria-hidden="true" />
+                Roadmap
+              </button>
+            )}
             {selectedProject ? (
               <div className="mx-auto w-full max-w-5xl min-w-0 px-0 py-4 lg:px-4 lg:py-8">
                 <section className="pb-3">
@@ -8368,7 +8954,7 @@ export const ProjectsWindow = ({
                       {renderProjectProgressStrip()}
                     </div>
 
-                    <div className="absolute right-0 top-0 flex shrink-0 items-center gap-2">
+                    {!previewMode && <div className="absolute right-0 top-0 flex shrink-0 items-center gap-2">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -8384,9 +8970,10 @@ export const ProjectsWindow = ({
                       >
                         <MoreHorizontal size={14} />
                       </button>
-                    </div>
+                    </div>}
                   </div>
 
+                  {renderStarterGuide()}
                   {renderProjectProperties()}
                   {renderProjectResources()}
                 </section>
@@ -9610,7 +10197,7 @@ export const ProjectsWindow = ({
         </div>
       </ModalOverlay>
 
-      {projectContextMenu && projectMenuPosition && (
+      {!previewMode && projectContextMenu && projectMenuPosition && (
         <div
           ref={projectContextRef}
           className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] py-1 shadow-[var(--ledger-shadow)]"
