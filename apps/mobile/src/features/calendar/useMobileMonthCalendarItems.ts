@@ -4,6 +4,8 @@ import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
 import type { CalendarItemsByDate, MobileCalendarItem } from './calendarItemNormalizer';
 import { sortCalendarItems } from './calendarItemNormalizer';
 import { subscribeCalendarDataChanges } from './calendarDataEvents';
+import { useMobileAppleCalendarItems } from './useMobileAppleCalendarItems';
+import { useAuthState } from '@/store/sessionStore';
 
 const MONTH_RANGE_CACHE_TTL_MS = 30_000;
 const monthRangeCache = new Map<string, { items: MobileCalendarItem[]; cachedAt: number }>();
@@ -20,10 +22,12 @@ export function useMobileMonthCalendarItems(
   filters?: CalendarFilters,
   enabled = true,
 ) {
+  const auth = useAuthState();
   const [items, setItems] = useState<MobileCalendarItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
+  const apple = useMobileAppleCalendarItems(workspaceId, auth.user?.id, startDate, endDate);
 
   useEffect(() => {
     if (!enabled) {
@@ -68,7 +72,8 @@ export function useMobileMonthCalendarItems(
     setRetryToken((value) => value + 1);
   }), [workspaceId]);
 
-  const visibleItems = useMemo(() => filters ? filterCalendarItems(items, filters) : items, [filters, items]);
+  const combinedItems = useMemo(() => sortCalendarItems([...items, ...apple.items]), [apple.items, items]);
+  const visibleItems = useMemo(() => filters ? filterCalendarItems(combinedItems, filters) : combinedItems, [combinedItems, filters]);
   const itemsByDate = useMemo<CalendarItemsByDate>(() => visibleItems.reduce<CalendarItemsByDate>((groups, item) => {
     (groups[item.dateKey] ??= []).push(item);
     return groups;
@@ -78,5 +83,5 @@ export function useMobileMonthCalendarItems(
     setRetryToken((value) => value + 1);
   }, [endDate, startDate, workspaceId]);
 
-  return { items: visibleItems, itemsByDate, isLoading, error, retry };
+  return { items: visibleItems, itemsByDate, isLoading: isLoading || apple.isLoading, error, retry };
 }

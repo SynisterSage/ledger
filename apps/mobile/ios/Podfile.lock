@@ -118,6 +118,8 @@ PODS:
     - Yoga
   - ExpoSecureStore (56.0.4):
     - ExpoModulesCore
+  - ExpoSharing (56.0.26):
+    - ExpoModulesCore
   - ExpoSplashScreen (56.0.10):
     - ExpoModulesCore
   - ExpoSymbols (56.0.5):
@@ -132,6 +134,8 @@ PODS:
   - hermes-engine (250829098.0.10):
     - hermes-engine/Pre-built (= 250829098.0.10)
   - hermes-engine/Pre-built (250829098.0.10)
+  - LedgerCalendar (1.0.0):
+    - ExpoModulesCore
   - LedgerWidgetBridge (1.0.0):
     - ExpoModulesCore
   - RCTDeprecation (0.85.3)
@@ -2338,12 +2342,14 @@ DEPENDENCIES:
   - ExpoRouter (from `../node_modules/expo-router/ios`)
   - ExpoScreenOrientation (from `../node_modules/expo-screen-orientation/ios`)
   - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
+  - ExpoSharing (from `../node_modules/expo-sharing/ios`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
   - ExpoSymbols (from `../node_modules/expo-symbols/ios`)
   - "ExpoUI (from `../node_modules/@expo/ui/ios`)"
   - ExpoWebBrowser (from `../node_modules/expo-web-browser/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
+  - LedgerCalendar (from `../modules/ledger-calendar/ios`)
   - LedgerWidgetBridge (from `../modules/ledger-widget/ios`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../node_modules/react-native/Libraries/Required`)
@@ -2475,6 +2481,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-screen-orientation/ios"
   ExpoSecureStore:
     :path: "../node_modules/expo-secure-store/ios"
+  ExpoSharing:
+    :path: "../node_modules/expo-sharing/ios"
   ExpoSplashScreen:
     :path: "../node_modules/expo-splash-screen/ios"
   ExpoSymbols:
@@ -2488,6 +2496,8 @@ EXTERNAL SOURCES:
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v250829098.0.10
+  LedgerCalendar:
+    :path: "../modules/ledger-calendar/ios"
   LedgerWidgetBridge:
     :path: "../modules/ledger-widget/ios"
   RCTDeprecation:
@@ -2677,12 +2687,14 @@ SPEC CHECKSUMS:
   ExpoRouter: 806ab2bc2124594c624ffe6fde15c28e4c4f0b03
   ExpoScreenOrientation: 75ebc86da7f64e94d34d10a743acbd75f9814dd6
   ExpoSecureStore: f1bd083c1b7b8d4142013ffcc0082d377d9f49f4
+  ExpoSharing: 5e3ac486863cd9fd6d8a22b11295386609cc8d33
   ExpoSplashScreen: 3fe3a57d56d7242a9109d9714a6f9fa1e256538b
   ExpoSymbols: f83c91f2897d37102b98b9224c603095630be9d0
   ExpoUI: b298305aee92ad48ca29db29b9fa9265008b218a
   ExpoWebBrowser: 6e3d90e3fe1952d21a8494872b1e1a485cd50e2f
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: b48c941c1281be2d5472bf1a6d5e74c34c11a5aa
+  LedgerCalendar: 29980c169f337ab35a0aad46553cdca923cfe88c
   LedgerWidgetBridge: f1c3b2d4197462b64152c701c135c2f2908f7c2c
   RCTDeprecation: a4c521821fab57cbb125b36effe84d897d0dfa12
   RCTRequired: 9f3a7e5645d4bc3f551593de7550bb66ab6e42bc

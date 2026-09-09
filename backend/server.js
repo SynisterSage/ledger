@@ -21468,6 +21468,55 @@ app.post(
   }
 );
 
+app.post('/api/events/:id/provider-links', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const provider = normalizeNullableText(req.body?.provider)?.toLowerCase();
+    if (provider !== 'apple' && provider !== 'google') return res.status(400).json({ error: 'Invalid calendar provider.' });
+    const providerCalendarId = normalizeNullableText(req.body?.provider_calendar_id);
+    const providerEventId = normalizeNullableText(req.body?.provider_event_id);
+    if (!providerCalendarId || !providerEventId) return res.status(400).json({ error: 'Provider calendar and event IDs are required.' });
+    const eventResult = await supabase.from('events').select('id, workspace_id, updated_at').eq('id', req.params.id).maybeSingle();
+    if (eventResult.error) throw eventResult.error;
+    if (!eventResult.data) return res.status(404).json({ error: 'Event not found.' });
+    await requireWorkspaceAccess(req.authUser.id, eventResult.data.workspace_id, 'member');
+    const payload = {
+      workspace_id: eventResult.data.workspace_id,
+      event_id: eventResult.data.id,
+      provider,
+      provider_account_key: normalizeNullableText(req.body?.provider_account_key),
+      provider_calendar_id: providerCalendarId,
+      provider_event_id: providerEventId,
+      provider_series_id: normalizeNullableText(req.body?.provider_series_id),
+      direction: normalizeNullableText(req.body?.direction) || 'exported',
+      last_provider_modified_at: normalizeNullableText(req.body?.last_provider_modified_at),
+      last_ledger_modified_at: eventResult.data.updated_at,
+      last_synced_at: new Date().toISOString(),
+      sync_state: ['synced', 'pending', 'conflict', 'error'].includes(normalizeNullableText(req.body?.sync_state) || '') ? normalizeNullableText(req.body?.sync_state) : 'synced',
+      created_by: req.authUser.id,
+      updated_at: new Date().toISOString(),
+    };
+    const result = await supabase.from('calendar_event_provider_links').upsert(payload, { onConflict: 'event_id,provider' }).select('*').single();
+    if (result.error) throw result.error;
+    return res.status(201).json(result.data);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.get('/api/events/:id/provider-links', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const eventResult = await supabase.from('events').select('id, workspace_id').eq('id', req.params.id).maybeSingle();
+    if (eventResult.error) throw eventResult.error;
+    if (!eventResult.data) return res.status(404).json({ error: 'Event not found.' });
+    await requireWorkspaceAccess(req.authUser.id, eventResult.data.workspace_id, 'member');
+    const result = await supabase.from('calendar_event_provider_links').select('*').eq('event_id', eventResult.data.id).order('updated_at', { ascending: false });
+    if (result.error) throw result.error;
+    return res.json(result.data ?? []);
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.patch('/api/events/:id', authMiddleware, rateLimit('write'), async (req, res) => {
   try {
     const { data: existingEvent, error: existingError } = await supabase

@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as WebBrowser from 'expo-web-browser';
+import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Pressable, ScrollView, Switch, View } from 'react-native';
+import { Alert, Animated, AppState, Linking, Pressable, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 
@@ -52,6 +53,12 @@ import {
 } from '@/store/workspaceStore';
 import { useLedgerTheme } from '@/theme';
 import { HeaderInsetFade } from '@/components/HeaderInsetFade';
+import {
+  appleCalendarNative,
+  type AppleCalendarAuthorizationStatus,
+  type AppleCalendarSummary,
+} from '@/native/appleCalendar';
+import { emitCalendarDataChanged } from '@/features/calendar/calendarDataEvents';
 
 const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
@@ -81,6 +88,10 @@ export default function SettingsScreen() {
   >(null);
   const [themeSheetVisible, setThemeSheetVisible] = useState(false);
   const [siriShortcutsVisible, setSiriShortcutsVisible] = useState(false);
+  const [appleCalendarStatus, setAppleCalendarStatus] = useState<AppleCalendarAuthorizationStatus>('unknown');
+  const [appleCalendars, setAppleCalendars] = useState<AppleCalendarSummary[]>([]);
+  const [selectedAppleCalendarIds, setSelectedAppleCalendarIds] = useState<string[]>([]);
+  const [appleCalendarLoading, setAppleCalendarLoading] = useState(false);
 
   const switchTrackColor = useMemo(
     () => ({
@@ -129,6 +140,38 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     void bootstrapAppPreferencesState(auth.user?.id ?? null);
+  }, [auth.user?.id]);
+
+  useEffect(() => {
+    if (!appleCalendarNative.supported || !auth.user?.id) return;
+    let cancelled = false;
+    const loadAppleCalendarState = async () => {
+      const [status, storedSelection] = await Promise.all([
+        appleCalendarNative.getAuthorizationStatus(),
+        SecureStore.getItemAsync(`ledger.apple-calendar.selection.${auth.user?.id}`),
+      ]);
+      if (cancelled) return;
+      setAppleCalendarStatus(status);
+      if (storedSelection) {
+        try {
+          const parsed = JSON.parse(storedSelection);
+          if (Array.isArray(parsed)) setSelectedAppleCalendarIds(parsed.map(String));
+        } catch {
+          // Ignore an invalid device-local selection and start empty.
+        }
+      }
+      if (status === 'granted') setAppleCalendars(await appleCalendarNative.listCalendars());
+    };
+    void loadAppleCalendarState().catch(() => {
+      if (!cancelled) setAppleCalendarStatus('unknown');
+    });
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void loadAppleCalendarState().catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
   }, [auth.user?.id]);
 
   useEffect(() => {
@@ -189,6 +232,39 @@ export default function SettingsScreen() {
   const openWorkspaceSheet = (target: 'default_capture' | 'today_scope' | 'default_siri') => {
     if (workspaceState.isLoading) return;
     setWorkspaceSheetTarget(target);
+  };
+
+  const connectAppleCalendar = async () => {
+    if (!appleCalendarNative.supported || appleCalendarLoading) return;
+    setAppleCalendarLoading(true);
+    try {
+      const status = await appleCalendarNative.requestAccess();
+      setAppleCalendarStatus(status);
+      if (status === 'granted') setAppleCalendars(await appleCalendarNative.listCalendars());
+    } catch {
+      Alert.alert('Could not connect Apple Calendar', 'Please try again on this iPhone.');
+    } finally {
+      setAppleCalendarLoading(false);
+    }
+  };
+
+  const openAppleCalendarSettings = async () => {
+    try {
+      await Linking.openSettings();
+    } catch {
+      Alert.alert('Open iOS Settings', 'Open Settings, choose Ledger, and enable Calendar access.');
+    }
+  };
+
+  const toggleAppleCalendar = async (calendar: AppleCalendarSummary, value: boolean) => {
+    const next = value
+      ? [...selectedAppleCalendarIds, calendar.id]
+      : selectedAppleCalendarIds.filter((id) => id !== calendar.id);
+    setSelectedAppleCalendarIds(next);
+    if (auth.user?.id) {
+      await SecureStore.setItemAsync(`ledger.apple-calendar.selection.${auth.user.id}`, JSON.stringify(next));
+      emitCalendarDataChanged(workspaceState.selectedWorkspaceId);
+    }
   };
 
   const patchNotificationPreferences = async (
@@ -430,6 +506,66 @@ export default function SettingsScreen() {
               }
             />
           </Section>
+
+          {appleCalendarNative.supported ? (
+            <Section title="Apple Calendar" card>
+              <SettingsRow
+                title="Apple Calendar access"
+                subtitle="Show selected Apple calendars alongside Ledger work."
+                value={
+                  appleCalendarStatus === 'granted'
+                    ? 'Connected'
+                    : appleCalendarStatus === 'denied' || appleCalendarStatus === 'restricted'
+                    ? 'Blocked'
+                    : 'Not connected'
+                }
+                chevron={appleCalendarStatus !== 'granted'}
+                onPress={appleCalendarStatus === 'denied' || appleCalendarStatus === 'restricted' ? () => void openAppleCalendarSettings() : appleCalendarStatus === 'granted' ? undefined : () => void connectAppleCalendar()}
+              />
+              {appleCalendarStatus === 'granted' && appleCalendars.length === 0 ? (
+                <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+                  <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
+                    No Apple calendars are available on this iPhone.
+                  </AppText>
+                </View>
+              ) : null}
+              {appleCalendarStatus === 'granted'
+                ? appleCalendars.map((calendar) => (
+                    <SettingsRow
+                      key={calendar.id}
+                      title={calendar.title}
+                      subtitle={calendar.sourceTitle}
+                      right={
+                        <Switch
+                          value={selectedAppleCalendarIds.includes(calendar.id)}
+                          onValueChange={(value) => void toggleAppleCalendar(calendar, value)}
+                          trackColor={switchTrackColor}
+                          thumbColor={theme.colors.surface}
+                        />
+                      }
+                    />
+                  ))
+                : null}
+              {appleCalendarStatus === 'granted' ? (
+                <SettingsRow
+                  title="Refresh calendars"
+                  subtitle={appleCalendarLoading ? 'Refreshing…' : 'Check for calendars added to this iPhone.'}
+                  chevron
+                  onPress={() => void connectAppleCalendar()}
+                />
+              ) : null}
+              {appleCalendarStatus === 'denied' || appleCalendarStatus === 'restricted' ? (
+                <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+                  <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
+                    Calendar access is off. Enable it in iOS Settings, then return to Ledger.
+                  </AppText>
+                  <Pressable accessibilityRole="button" onPress={() => void openAppleCalendarSettings()} style={{ paddingTop: 10 }}>
+                    <AppText variant="button" style={{ color: theme.colors.accent }}>Open iOS Settings</AppText>
+                  </Pressable>
+                </View>
+              ) : null}
+            </Section>
+          ) : null}
 
           <Section title="Notifications" card>
             <SettingsRow
@@ -680,6 +816,7 @@ export default function SettingsScreen() {
         visible={captureSheetTarget === 'default_type'}
         title="Default capture type"
         subtitle="Choose which capture form should be preselected for mobile capture."
+        maxHeight={560}
         selectedValue={capturePrefs.defaultCaptureType}
         options={[
           { value: 'reminder', title: 'Reminder' },

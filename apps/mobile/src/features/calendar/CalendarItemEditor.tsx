@@ -13,7 +13,7 @@ import { WorkspaceSelectorSheet } from '@/components/WorkspaceSelectorSheet';
 import { ProjectPickerSheet } from '@/features/capture/ProjectPickerSheet';
 import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePickerSheet';
 import { useCaptureProjects } from '@/features/capture/useCaptureProjects';
-import { createMobileEvent, createMobileProjectAction, createMobileReminder, createMobileTask, deleteMobileEvent, deleteMobileReminder, deleteMobileTask, updateMobileEvent, updateMobileReminder, updateMobileTask } from '@/api/captures';
+import { createMobileEvent, createMobileProjectAction, createMobileReminder, createMobileTask, deleteMobileEvent, deleteMobileReminder, deleteMobileTask, getMobileEventProviderLinks, linkMobileEventProvider, updateMobileEvent, updateMobileReminder, updateMobileTask } from '@/api/captures';
 import { bulkDeleteMobileEvents, getMobileCalendarRange, getMobileEventMatchPreview, type MobileEventMatchPreview } from '@/api/calendar';
 import { emitCalendarDataChanged } from './calendarDataEvents';
 import { getWorkspaceLabel, useWorkspaceState } from '@/store/workspaceStore';
@@ -21,6 +21,7 @@ import { useLedgerTheme } from '@/theme';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
 import { parseMobileDateInput, parseMobileDateTimeInput, formatCaptureDateLabel, formatCaptureTimeLabel } from '@/features/capture/dateUtils';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
+import { appleCalendarNative, type AppleCalendarSummary } from '@/native/appleCalendar';
 
 export type CalendarEditorItemType = 'event' | 'reminder' | 'task' | 'project_action';
 
@@ -28,6 +29,15 @@ type EditorParams = {
   mode?: string; type?: string; workspaceId?: string; dateKey?: string; startAt?: string; endAt?: string;
   itemId?: string; title?: string; notes?: string; projectId?: string; calendarId?: string; allDay?: string; readOnly?: string; sourcePlatform?: string; seriesId?: string;
 };
+
+function confirmAppleOverwrite(title: string) {
+  return new Promise<boolean>((resolve) => {
+    Alert.alert('Apple Calendar changed', `“${title}” changed in Apple Calendar since Ledger last synced it. Replace those changes with the Ledger version?`, [
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'Replace Apple version', style: 'destructive', onPress: () => resolve(true) },
+    ], { cancelable: false });
+  });
+}
 
 function first(value?: string | string[]) { return Array.isArray(value) ? value[0] : value; }
 function asType(value: string | undefined): CalendarEditorItemType { return value === 'reminder' || value === 'task' || value === 'project_action' ? value : 'event'; }
@@ -65,6 +75,7 @@ export function CalendarItemEditor() {
   const [projectId, setProjectId] = useState(first(params.projectId) ?? null);
   const [calendarId, setCalendarId] = useState(first(params.calendarId) ?? null);
   const [calendarOptions, setCalendarOptions] = useState<Array<{ id: string; name: string; color?: string }>>([]);
+  const [appleCalendarOptions, setAppleCalendarOptions] = useState<AppleCalendarSummary[]>([]);
   const [typeSheetOpen, setTypeSheetOpen] = useState(false);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
   const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false);
@@ -83,7 +94,9 @@ export function CalendarItemEditor() {
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
   const workspaceLabel = useMemo(() => getWorkspaceLabel(workspaceId, workspaceState.options), [workspaceId, workspaceState.options]);
   const selectedProjectLabel = projects.find((project) => project.id === projectId)?.name ?? 'None';
-  const selectedCalendarLabel = calendarOptions.find((calendar) => calendar.id === calendarId)?.name ?? (type === 'reminder' ? 'Default reminder list' : 'Default calendar');
+  const selectedCalendarLabel = calendarId?.startsWith('apple:')
+    ? appleCalendarOptions.find((calendar) => `apple:${calendar.id}` === calendarId)?.title ?? 'Apple Calendar'
+    : calendarOptions.find((calendar) => calendar.id === calendarId)?.name ?? (type === 'reminder' ? 'Default reminder list' : 'Default calendar');
   const parsedDate = useMemo(() => parseMobileDateInput(dateInput, new Date()), [dateInput]);
   const parsedStart = useMemo(() => parseMobileDateTimeInput(startTime, parsedDate), [parsedDate, startTime]);
   const parsedEnd = useMemo(() => parseMobileDateTimeInput(endTime, parsedDate), [parsedDate, endTime]);
@@ -94,9 +107,13 @@ export function CalendarItemEditor() {
   useEffect(() => {
     let cancelled = false;
     const now = new Date();
-    void getMobileCalendarRange(workspaceId, formatDateToLocalIsoDate(new Date(now.getFullYear(), now.getMonth(), 1)), formatDateToLocalIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))).then((payload) => {
+    void getMobileCalendarRange(workspaceId, formatDateToLocalIsoDate(new Date(now.getFullYear(), now.getMonth(), 1)), formatDateToLocalIsoDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))).then(async (payload) => {
       if (cancelled) return;
       setCalendarOptions((payload.calendars ?? []).map((calendar) => ({ id: String(calendar.id), name: String(calendar.name ?? 'Calendar'), color: String(calendar.color ?? theme.colors.accent) })));
+      if (appleCalendarNative.supported) {
+        const status = await appleCalendarNative.getAuthorizationStatus();
+        if (status === 'granted') setAppleCalendarOptions((await appleCalendarNative.listCalendars()).filter((calendar) => calendar.allowsContentModifications));
+      }
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [theme.colors.accent, workspaceId]);
@@ -107,7 +124,11 @@ export function CalendarItemEditor() {
     setIsSaving(true);
     try {
       const sourceId = itemId.replace(/^(event|reminder|task|project-action):/, '').split(':')[0];
-      if (type === 'event') await deleteMobileEvent(workspaceId, sourceId);
+      if (type === 'event') {
+        const links = await getMobileEventProviderLinks(workspaceId, sourceId).catch(() => []);
+        await deleteMobileEvent(workspaceId, sourceId);
+        for (const link of links.filter((item) => item.provider === 'apple')) await appleCalendarNative.deleteEvent(link.provider_event_id).catch(() => undefined);
+      }
       else if (type === 'reminder') await deleteMobileReminder(workspaceId, sourceId);
       else await deleteMobileTask(workspaceId, sourceId);
       close();
@@ -155,15 +176,47 @@ export function CalendarItemEditor() {
     if (type === 'project_action' && !projectId) return setError('Choose a project for this action.');
     const date = parseMobileDateInput(dateInput, new Date());
     if (!date || Number.isNaN(date.getTime())) return setError('Choose a valid date.');
-    const startAt = type === 'event' ? (allDay ? `${formatDateToLocalIsoDate(date)}T00:00:00.000Z` : toIsoDateTime(dateInput, startTime, date)) : (startTime ? toIsoDateTime(dateInput, startTime, date) : null);
+    const startAt = type === 'event' ? (allDay ? (() => { const localStart = new Date(date); localStart.setHours(0, 0, 0, 0); return localStart.toISOString(); })() : toIsoDateTime(dateInput, startTime, date)) : (startTime ? toIsoDateTime(dateInput, startTime, date) : null);
     const endAt = type === 'event' && !allDay ? toIsoDateTime(dateInput, endTime, date) : null;
-    if (type === 'event' && (!startAt || !endAt || new Date(endAt).getTime() <= new Date(startAt).getTime())) return setError('End time must be after start time.');
+    if (type === 'event' && (!startAt || (!allDay && (!endAt || new Date(endAt).getTime() <= new Date(startAt).getTime())))) return setError('End time must be after start time.');
     if ((type === 'task' || type === 'project_action' || type === 'reminder') && !dateInput.trim()) return setError('Choose a date.');
     setIsSaving(true); setError(null);
     try {
       if (type === 'event') {
-        const payload = { title: title.trim(), start_at: startAt!, end_at: endAt, all_day: allDay, notes: notes.trim() || null, location: location.trim() || null, project_id: projectId, calendar_id: calendarId, recurrence_rule: recurrenceRule || null };
-        if (mode === 'edit' && itemId) await updateMobileEvent(workspaceId, itemId.replace(/^event:/, '').split(':')[0], payload); else await createMobileEvent(workspaceId, payload);
+        const appleCalendarId = calendarId?.startsWith('apple:') ? calendarId.slice('apple:'.length) : null;
+        const payload = { title: title.trim(), start_at: startAt!, end_at: endAt, all_day: allDay, notes: notes.trim() || null, location: location.trim() || null, project_id: projectId, calendar_id: appleCalendarId ? null : calendarId, recurrence_rule: recurrenceRule || null };
+        if (mode === 'edit' && itemId) {
+          const eventId = itemId.replace(/^event:/, '').split(':')[0];
+          const links = await getMobileEventProviderLinks(workspaceId, eventId).catch(() => []);
+          const appleLink = links.find((link) => link.provider === 'apple');
+          if (appleLink) {
+            const latestApple = await appleCalendarNative.getEvent(appleLink.provider_event_id).catch(() => null);
+            const lastKnown = appleLink.last_provider_modified_at;
+            if (latestApple?.lastModified && lastKnown && latestApple.lastModified !== lastKnown && !(await confirmAppleOverwrite(title.trim()))) return;
+          }
+          await updateMobileEvent(workspaceId, eventId, payload);
+          if (appleLink) {
+            const appleEnd = endAt ?? new Date(new Date(startAt!).getTime() + 86400000).toISOString();
+            try {
+              const updatedApple = await appleCalendarNative.updateEvent(appleLink.provider_event_id, title.trim(), startAt!, appleEnd, allDay, notes.trim() || null, location.trim() || null);
+              await linkMobileEventProvider(workspaceId, eventId, { provider: 'apple', provider_calendar_id: appleLink.provider_calendar_id, provider_event_id: appleLink.provider_event_id, last_provider_modified_at: updatedApple.lastModified ?? null });
+            } catch {
+              Alert.alert('Saved to Ledger', 'Ledger saved the changes, but Apple Calendar could not be updated.');
+            }
+          }
+        }
+        else {
+          const created = await createMobileEvent(workspaceId, payload) as { id?: string };
+          if (appleCalendarId) {
+            const appleEnd = endAt ?? new Date(new Date(startAt!).getTime() + 86400000).toISOString();
+            try {
+              const appleEvent = await appleCalendarNative.createEvent(title.trim(), startAt!, appleEnd, allDay, notes.trim() || null, location.trim() || null, appleCalendarId);
+              if (created.id && appleEvent.id) await linkMobileEventProvider(workspaceId, created.id, { provider: 'apple', provider_calendar_id: appleCalendarId, provider_event_id: appleEvent.id, last_provider_modified_at: appleEvent.lastModified ?? null });
+            } catch {
+              Alert.alert('Saved to Ledger', 'Ledger saved the event, but it could not be added to Apple Calendar.');
+            }
+          }
+        }
       } else if (type === 'reminder') {
         const payload = { title: title.trim(), remind_at: startAt ?? `${formatDateToLocalIsoDate(date)}T00:00:00.000Z`, body: notes.trim() || null, project_id: projectId, calendar_id: calendarId };
         if (mode === 'edit' && itemId) await updateMobileReminder(workspaceId, itemId.replace(/^reminder:/, '').split(':')[0], payload); else await createMobileReminder(workspaceId, payload);
@@ -201,7 +254,7 @@ export function CalendarItemEditor() {
       </View>
     </CaptureFormShell>
     <CalendarChoiceSheet visible={typeSheetOpen} title="Create as" options={['event', 'reminder', 'task', 'project_action']} onSelect={chooseType} onClose={() => setTypeSheetOpen(false)} />
-    <CalendarSourceChoiceSheet visible={calendarSheetOpen} options={calendarOptions} selectedId={calendarId} onSelect={(next) => { setCalendarId(next); setCalendarSheetOpen(false); }} onClose={() => setCalendarSheetOpen(false)} />
+    <CalendarSourceChoiceSheet visible={calendarSheetOpen} options={[...calendarOptions, ...appleCalendarOptions.map((calendar) => ({ id: `apple:${calendar.id}`, name: `${calendar.title} · Apple Calendar`, color: calendar.color }))]} selectedId={calendarId} onSelect={(next) => { setCalendarId(next); setCalendarSheetOpen(false); }} onClose={() => setCalendarSheetOpen(false)} />
     <AppBottomSheet visible={Boolean(matchPreview)} onClose={() => { if (!isDeletingMatches) { setMatchPreview(null); setSelectedMatchIds(new Set()); } }} title="Delete matching events" snapPoints={['64%', '86%']} initialSnapPointIndex={0}>
       {matchPreview ? <View style={styles.matchSheet}>
         <AppText variant="caption" style={{ color: theme.colors.textMuted }}>Review the events before removing them from Ledger.</AppText>

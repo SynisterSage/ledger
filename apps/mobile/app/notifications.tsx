@@ -19,7 +19,7 @@ import { NotificationDetailSheet } from '@/features/notifications/NotificationDe
 import { NotificationFilterSheet } from '@/features/notifications/NotificationFilterSheet';
 import { NotificationList } from '@/features/notifications/NotificationList';
 import { NotificationSkeleton } from '@/features/notifications/NotificationSkeleton';
-import { getMobileNotifications, markAllMobileNotificationsRead, performMobileNotificationAction } from '@/api/notifications';
+import { getCachedMobileNotifications, markAllMobileNotificationsRead, performMobileNotificationAction } from '@/api/notifications';
 import { useFollowUpSheet } from '@/features/followup/FollowUpSheetContext';
 import { useQuickNoteSheet } from '@/features/quicknote/QuickNoteSheetContext';
 import { mobileRequest } from '@/api/client';
@@ -99,6 +99,10 @@ function NotificationsScreen() {
   const pageTranslateX = useRef(new Animated.Value(0)).current;
 
   const navigateBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     const returnTo = Array.isArray(params.returnTo) ? params.returnTo[0] : params.returnTo;
     const destination = returnTo === '/(tabs)/calendar' || returnTo === '/(tabs)/capture' || returnTo === '/(tabs)/projects' || returnTo === '/(tabs)/notes' || returnTo === '/(tabs)/today'
       ? returnTo
@@ -160,7 +164,7 @@ function NotificationsScreen() {
   }, []);
 
   const loadNotifications = useCallback(
-    async (options: { silent?: boolean } = {}) => {
+    async (options: { silent?: boolean; force?: boolean } = {}) => {
       const silent = Boolean(options.silent);
       const isInitialLoad = !hasLoadedOnceRef.current;
 
@@ -172,7 +176,7 @@ function NotificationsScreen() {
       }
 
       try {
-        const response = await getMobileNotifications(workspaceState.selectedWorkspaceId);
+        const response = await getCachedMobileNotifications(workspaceState.selectedWorkspaceId, { force: options.force });
         setNotifications(response);
         hasLoadedOnceRef.current = true;
       } catch (err) {
@@ -191,7 +195,7 @@ function NotificationsScreen() {
   const refreshNotifications = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      await loadNotifications({ silent: false });
+      await loadNotifications({ silent: false, force: true });
     } finally {
       setIsRefreshing(false);
     }
@@ -784,7 +788,7 @@ function NotificationsScreen() {
           style={{ flex: 1 }}
           removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={{
-            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE + theme.spacing['3xl'],
             paddingBottom: theme.spacing['3xl'] + insets.bottom + 24,
             flexGrow: 1,
           }}

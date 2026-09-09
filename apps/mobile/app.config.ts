@@ -27,6 +27,8 @@ const config: ExpoConfig = {
       NSSiriUsageDescription: 'Allow Ledger to capture tasks, reminders, notes, and events with Siri.',
       NSPhotoLibraryUsageDescription: 'Allow Ledger to attach photos to notes.',
       NSCameraUsageDescription: 'Allow Ledger to take photos for notes.',
+      NSCalendarsUsageDescription: 'Allow Ledger to show your selected Apple calendars alongside your Ledger work.',
+      NSCalendarsFullAccessUsageDescription: 'Allow Ledger to show your selected Apple calendars alongside your Ledger work.',
       NSLocalNetworkUsageDescription:
         'Ledger connects to the local development server on your Mac while running in development.',
       LedgerAPIBaseURL: apiUrl,
@@ -78,6 +80,7 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-screen-orientation',
     'expo-notifications',
+    'expo-sharing',
     [
       'expo-image-picker',
       {

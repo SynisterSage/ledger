@@ -13,8 +13,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
+import { File, Paths } from 'expo-file-system';
+import { shareAsync } from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MobileTopFade } from '@/components/MobileTopFade';
@@ -111,6 +113,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
   const theme = useLedgerTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const navigation = useNavigation();
   const workspaceState = useWorkspaceState();
   const workspaceId = requestedWorkspaceId ?? resolveCaptureWorkspaceId(workspaceState);
   const permissions = getMobileNotePermissions(workspaceState.options.find((option) => option.id === workspaceId));
@@ -168,6 +171,8 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
   const pendingSaveRevisionRef = useRef<number | null>(null);
   const draftWriteRef = useRef<Promise<void> | null>(null);
   const exportWaitersRef = useRef(new Map<string, () => void>());
+  const exitPromptOpenRef = useRef(false);
+  const allowRouteRemovalRef = useRef(false);
   const blockRef = useRef<'paragraph' | 'heading' | 'bullet' | 'check'>('paragraph');
   const inlineFormatRef = useRef<'none' | 'bold' | 'italic' | 'underline'>('none');
   const loadedIdRef = useRef<string | undefined>(noteId);
@@ -504,7 +509,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     if (!hydrating) { setDraftDirty(true); scheduleSave(); }
   };
 
-  const leave = useCallback(async () => {
+  const completeLeave = useCallback(async (action?: Parameters<typeof navigation.dispatch>[0]) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (dirtyRef.current && permissions.canEdit) {
       const requestId = startSave(true);
@@ -514,9 +519,47 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
         setTimeout(() => { exportWaitersRef.current.delete(requestId); resolve(); }, 500);
       });
     }
-    if (router.canGoBack()) router.back();
+    const saveWaitStartedAt = Date.now();
+    while ((savingRef.current || pendingExportRef.current) && Date.now() - saveWaitStartedAt < 5000) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    }
+    allowRouteRemovalRef.current = true;
+    if (action) navigation.dispatch(action);
+    else if (router.canGoBack()) router.back();
     else router.replace((returnTo || '/(tabs)/notes') as any);
-  }, [permissions.canEdit, persistDraft, returnTo, router, startSave]);
+  }, [navigation, permissions.canEdit, persistDraft, returnTo, router, startSave]);
+
+  const leave = useCallback(async (action?: Parameters<typeof navigation.dispatch>[0]) => {
+    if (exitPromptOpenRef.current) return;
+    const hasPendingSave = dirtyRef.current || savingRef.current || saveLifecycleRef.current.saving;
+    if (!hasPendingSave || !permissions.canEdit) {
+      await completeLeave(action);
+      return;
+    }
+
+    exitPromptOpenRef.current = true;
+    const saving = savingRef.current || saveLifecycleRef.current.saving;
+    Alert.alert(
+      saving ? 'Saving this note' : 'Unsaved changes',
+      saving ? 'The note is still being saved. Leave after the save finishes?' : 'Save your changes before leaving this note?',
+      [
+        { text: 'Keep editing', style: 'cancel', onPress: () => { exitPromptOpenRef.current = false; } },
+        ...(!saving ? [{
+          text: 'Discard',
+          style: 'destructive' as const,
+          onPress: () => {
+            exitPromptOpenRef.current = false;
+            allowRouteRemovalRef.current = true;
+            if (noteId) void clearMobileNoteDraft(workspaceId, noteId);
+            if (action) navigation.dispatch(action);
+            else if (router.canGoBack()) router.back();
+            else router.replace((returnTo || '/(tabs)/notes') as any);
+          },
+        }] : []),
+        { text: 'Save and exit', onPress: () => { exitPromptOpenRef.current = false; void completeLeave(action); } },
+      ],
+    );
+  }, [completeLeave, navigation, noteId, permissions.canEdit, returnTo, router, workspaceId]);
 
   const editorSummary: MobileNoteSummary = { id: noteId ?? '', workspace_id: workspaceId, title: title || 'Untitled', mode, section_id: sectionId, parent_id: parentId, updated_at: loadedAt, created_at: null };
   const toggleEditorPin = async () => {
@@ -525,6 +568,22 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
   };
   const duplicateEditorNote = async () => { if (!noteId) return; await save(); try { const copy = await duplicateMobileNote(workspaceId, noteId); setActionOpen(false); openMobileNote(router, copy.id, { workspaceId }); } catch (error) { Alert.alert('Could not duplicate note', error instanceof Error ? error.message : 'Please try again.'); } };
   const childEditorNote = async () => { if (!noteId) return; await save(); try { const child = await createMobileChildNote(workspaceId, noteId, { mode: 'text', section_id: sectionId }); if (sectionId) await moveMobileNote(workspaceId, child.id, { section_id: sectionId }); setActionOpen(false); openMobileNote(router, child.id, { workspaceId }); } catch (error) { Alert.alert('Could not create child note', error instanceof Error ? error.message : 'Please try again.'); } };
+  const shareNote = useCallback(async () => {
+    const noteTitle = title.trim() || 'Untitled note';
+    const safeFileName = noteTitle.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'ledger-note';
+    const file = new File(Paths.cache, `${safeFileName}.txt`);
+    const exportText = `${noteTitle}\n\n${body.trim()}`.trim();
+    try {
+      file.write(exportText);
+      await shareAsync(file.uri, {
+        dialogTitle: `Share ${noteTitle}`,
+        mimeType: 'text/plain',
+        UTI: 'public.plain-text',
+      });
+    } catch (error) {
+      Alert.alert('Could not share note', error instanceof Error ? error.message : 'Please try again.');
+    }
+  }, [body, title]);
   const deleteEditorNote = () => Alert.alert('Delete this note?', 'The note will be removed from this workspace. Linked projects, tasks, and calendar items will not be deleted.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { if (!noteId) return; try { await deleteMobileNote(workspaceId, noteId); router.back(); } catch (error) { Alert.alert('Could not delete note', error instanceof Error ? error.message : 'Please try again.'); } } }]);
   const moveEditorNote = async (nextSectionId: string | null) => { if (!noteId) return; try { await moveMobileNote(workspaceId, noteId, { section_id: nextSectionId }); setSectionId(nextSectionId); setMoveOpen(false); } catch (error) { Alert.alert('Could not move note', error instanceof Error ? error.message : 'Please try again.'); } };
   const applyRestoredNote = (value: unknown) => {
@@ -553,6 +612,14 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => { void leave(); return true; });
     return () => subscription.remove();
   }, [leave]);
+
+  useEffect(() => navigation.addListener('beforeRemove', (event) => {
+    if (allowRouteRemovalRef.current) return;
+    const hasPendingSave = dirtyRef.current || savingRef.current || saveLifecycleRef.current.saving;
+    if (!hasPendingSave || !permissions.canEdit) return;
+    event.preventDefault();
+    void leave(event.data.action);
+  }), [leave, navigation, permissions.canEdit]);
 
   useEffect(() => {
     if (!noteId || !loadedAt) return;
@@ -602,7 +669,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
         {mode === 'meeting_note' ? meetingTitle : <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }]} />}
         {readOnlyFallback ? <View style={styles.readOnlyContent}><AppText variant="body">{body || 'This note has no text content.'}</AppText><Pressable accessibilityRole="button" onPress={() => { setReadOnlyFallback(false); setEditorFailure(null); setEditorMountKey((current) => current + 1); }}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry editor</AppText></Pressable></View> : editorFailure ? <EditorFailure message={`${editorStage}: ${editorFailure}${editorStageDetail ? ` · ${editorStageDetail}` : ''}`} onRetry={() => { setEditorFailure(null); setEditorMountKey((current) => current + 1); }} onReadOnly={() => { setReadOnlyFallback(true); setEditorFailure(null); }} onBack={() => void leave()} /> : <View style={styles.embeddedEditor}><MobileLexicalEditor key={editorMountKey} ref={lexicalRef} showToolbar={permissions.canEdit} showStatus={false} workspaceId={workspaceId} noteId={noteId} onEvent={handleLexicalEvent} onEmbeddedError={setEditorFailure} onStage={handleEditorStage} onLedgerLink={(url) => { const target = resolveLedgerLink(url); if (!target) { Alert.alert('Ledger link unavailable', 'This link does not contain a valid Ledger destination.'); return; } if (target.kind === 'note' || target.kind === 'notes') { openMobileNote(router, target.id, { workspaceId, returnTo: `/note/${noteId}` }); return; } if (target.kind === 'project' || target.kind === 'projects') { router.push({ pathname: '/project/[id]', params: { id: target.id, workspaceId } }); return; } Alert.alert('Ledger link unavailable', 'This Ledger destination is not available on mobile yet.'); }} onLedgerContext={() => { Keyboard.dismiss(); setProjectOpen(true); }} />{!editorReady ? <View pointerEvents="none" style={styles.editorLoading}><AppText variant="caption">Loading editor…</AppText></View> : null}</View>}
       </View>}
-      <NoteActionSheet visible={actionOpen} note={editorSummary} permissions={permissions} pinned={pinned} onClose={() => setActionOpen(false)} onOpen={() => setActionOpen(false)} onVersionHistory={permissions.canEdit ? () => { setActionOpen(false); setVersionOpen(true); } : undefined} onTogglePin={() => void toggleEditorPin()} onMove={() => { setActionOpen(false); setMoveOpen(true); }} onDuplicate={() => void duplicateEditorNote()} onChild={() => void childEditorNote()} onProjects={() => { setActionOpen(false); setProjectOpen(true); }} onDelete={deleteEditorNote} />
+      <NoteActionSheet visible={actionOpen} note={editorSummary} permissions={permissions} pinned={pinned} onClose={() => setActionOpen(false)} onOpen={() => setActionOpen(false)} onShare={shareNote} onVersionHistory={permissions.canEdit ? () => { setActionOpen(false); setVersionOpen(true); } : undefined} onTogglePin={() => void toggleEditorPin()} onMove={() => { setActionOpen(false); setMoveOpen(true); }} onDuplicate={() => void duplicateEditorNote()} onChild={() => void childEditorNote()} onProjects={() => { setActionOpen(false); setProjectOpen(true); }} onDelete={deleteEditorNote} />
       <NoteMoveSheet visible={moveOpen} note={editorSummary} sections={sections} onClose={() => setMoveOpen(false)} onMove={(nextSectionId) => void moveEditorNote(nextSectionId)} onParentMove={async (nextParentId) => { if (!noteId) return; try { await moveMobileNote(workspaceId, noteId, { parent_id: nextParentId }); setParentId(nextParentId); setMoveOpen(false); } catch (error) { Alert.alert('Could not change parent note', error instanceof Error ? error.message : 'Please try again.'); } }} />
       <NoteProjectSheet visible={projectOpen} workspaceId={workspaceId} note={editorSummary} onClose={() => setProjectOpen(false)} onChanged={() => undefined} />
       <NoteSelectionActionsSheet visible={selectionActionsOpen} workspaceId={workspaceId} noteId={noteId ?? ''} noteTitle={title || 'Untitled'} selectedText={lexicalSelectedText || selectedText} onClose={() => setSelectionActionsOpen(false)} onProject={() => { setSelectionActionsOpen(false); setProjectOpen(true); }} />
@@ -646,11 +713,11 @@ const styles = StyleSheet.create({
   headerButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   remoteBanner: { paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 14 },
   remoteText: { flex: 1 },
-  meetingTitleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20 },
+  meetingTitleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   meetingTitle: { flex: 1, paddingHorizontal: 0 },
   modeSwitcher: { alignSelf: 'center', flexDirection: 'row', padding: 3, borderRadius: 9, marginTop: 12 },
   inlineModeSwitcher: { alignSelf: 'auto', marginTop: 0, marginLeft: 10 },
-  modeItem: { minWidth: 82, alignItems: 'center', paddingVertical: 7, borderRadius: 7 },
+  modeItem: { minWidth: 64, alignItems: 'center', paddingVertical: 7, borderRadius: 7 },
   mapEditor: { flex: 1, paddingHorizontal: 18, paddingTop: 16 },
   readOnlyBanner: { marginHorizontal: 18, marginTop: 10, padding: 10, borderRadius: 8, gap: 2 },
   editorScroll: { flex: 1 },

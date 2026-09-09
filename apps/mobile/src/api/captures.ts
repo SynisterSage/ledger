@@ -211,6 +211,26 @@ export async function updateMobileEvent(workspaceId: string, eventId: string, pa
   });
 }
 
+export function linkMobileEventProvider(workspaceId: string, eventId: string, payload: {
+  provider: 'apple' | 'google';
+  provider_calendar_id: string;
+  provider_event_id: string;
+  last_provider_modified_at?: string | null;
+  sync_state?: 'synced' | 'pending' | 'conflict' | 'error';
+}) {
+  return mobileRequest(`/api/events/${encodeURIComponent(eventId)}/provider-links`, {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getMobileEventProviderLinks(workspaceId: string, eventId: string) {
+  return mobileRequest<Array<{ provider: string; provider_calendar_id: string; provider_event_id: string; last_provider_modified_at?: string | null }>>(`/api/events/${encodeURIComponent(eventId)}/provider-links`, {
+    headers: { 'x-workspace-id': workspaceId },
+  });
+}
+
 export async function deleteMobileEvent(workspaceId: string, eventId: string) {
   return mobileRequest(`/api/events/${encodeURIComponent(eventId)}`, { method: 'DELETE', headers: { 'x-workspace-id': workspaceId } });
 }

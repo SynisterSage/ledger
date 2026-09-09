@@ -14,7 +14,7 @@ const BAR_HEIGHT_EXPANDED = 58;
 const BAR_HEIGHT_COMPACT = 44;
 const BAR_SIDE_INSET = 20;
 const BAR_BOTTOM_GAP = 0;
-const FADE_HEIGHT = 96;
+const FADE_HEIGHT = 188;
 const FADE_STEPS = 17;
 const DOCK_FADE_OPACITY_SCALE = 0.72;
 const TRACK_PADDING = 4;
@@ -84,7 +84,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
     height: BAR_HEIGHT_EXPANDED + (BAR_HEIGHT_COMPACT - BAR_HEIGHT_EXPANDED) * compactProgress.value,
   }));
   const animatedScrimStyle = useAnimatedStyle(() => ({
-    bottom: bottomOffset + BAR_HEIGHT_EXPANDED + (BAR_HEIGHT_COMPACT - BAR_HEIGHT_EXPANDED) * compactProgress.value,
+    bottom: bottomOffset,
     height: FADE_HEIGHT,
   }));
   const animatedPillStyle = useAnimatedStyle(() => ({
@@ -237,6 +237,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     overflow: 'hidden',
+    zIndex: 0,
   },
   fadeWrap: {
     overflow: 'hidden',
@@ -244,6 +245,7 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     height: BAR_HEIGHT_EXPANDED,
+    zIndex: 1,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',

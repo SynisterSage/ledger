@@ -49,10 +49,8 @@
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="Rmq-lb-GrQ"/>
                         <constraints>
-                            <constraint firstItem="EXPO-BrandContainer" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="brand-container-center-x"/>
-                            <constraint firstItem="EXPO-BrandContainer" firstAttribute="centerY" secondItem="EXPO-ContainerView" secondAttribute="centerY" constant="-6" id="brand-container-center-y"/>
-                            <constraint firstItem="EXPO-SplashFooter" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="footer-center-x"/>
-                            <constraint firstItem="EXPO-SplashFooter" firstAttribute="bottom" secondItem="EXPO-ContainerView" secondAttribute="bottom" constant="-54" id="footer-bottom"/>
+                            <constraint firstItem="EXPO-SplashScreen" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="cad2ab56f97c5429bf29decf850647a4216861d4"/>
+                            <constraint firstItem="EXPO-SplashScreen" firstAttribute="centerY" secondItem="EXPO-ContainerView" secondAttribute="centerY" id="1a145271b085b6ce89b1405a310f5b1bb7656595"/>
                         </constraints>
                         <color key="backgroundColor" name="SplashScreenBackground"/>
                     </view>
@@ -68,7 +66,7 @@
             <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
         </systemColor>
         <namedColor name="SplashScreenBackground">
-            <color alpha="1.000" blue="0.956862745098039" green="0.976470588235294" red="0.992156862745098" customColorSpace="sRGB" colorSpace="custom"/>
+            <color alpha="1.000" blue="0.956862745098039" green="0.976470588235294" red="1.00000000000000" customColorSpace="sRGB" colorSpace="custom"/>
         </namedColor>
     </resources>
 </document>

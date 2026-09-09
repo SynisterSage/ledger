@@ -5,6 +5,8 @@ import { addCalendarMonths, formatCalendarDateKey, generateCalendarMonth } from 
 import { groupCalendarItems, normalizeCalendarRange, sortCalendarItems, type CalendarItemsByDate, type MobileCalendarItem } from './calendarItemNormalizer';
 import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
 import { subscribeCalendarDataChanges } from './calendarDataEvents';
+import { useMobileAppleCalendarItems } from './useMobileAppleCalendarItems';
+import { useAuthState } from '@/store/sessionStore';
 
 type RangeCacheEntry = {
   key: string;
@@ -18,6 +20,7 @@ function formatRangeDate(date: Date) {
 }
 
 export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date, filters?: CalendarFilters) {
+  const auth = useAuthState();
   const cacheRef = useRef(sharedCalendarRangeCache);
   const requestIdRef = useRef(0);
   const [items, setItems] = useState<MobileCalendarItem[]>([]);
@@ -34,6 +37,7 @@ export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date,
     endMonth.setDate(0);
     return { startDate: formatRangeDate(start), endDate: formatRangeDate(endMonth) };
   }, [visiblePeriod]);
+  const apple = useMobileAppleCalendarItems(workspaceId, auth.user?.id, range.startDate, range.endDate);
 
   useEffect(() => subscribeCalendarDataChanges((changedWorkspaceId) => {
     if (changedWorkspaceId !== workspaceId) return;
@@ -81,10 +85,11 @@ export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date,
     return () => { cancelled = true; };
   }, [range.endDate, range.startDate, refreshToken, workspaceId]);
 
-  const visibleItems = useMemo(() => filters ? filterCalendarItems(items, filters) : items, [filters, items]);
+  const combinedItems = useMemo(() => sortCalendarItems([...items, ...apple.items]), [apple.items, items]);
+  const visibleItems = useMemo(() => filters ? filterCalendarItems(combinedItems, filters) : combinedItems, [combinedItems, filters]);
   const itemsByDate = useMemo<CalendarItemsByDate>(() => groupCalendarItems(visibleItems), [visibleItems]);
 
-  return { items: visibleItems, allItems: items, itemsByDate, isLoading, error, retry: () => {
+  return { items: visibleItems, allItems: combinedItems, itemsByDate, isLoading: isLoading || apple.isLoading, error, retry: () => {
     cacheRef.current.delete(`${workspaceId}:${range.startDate}:${range.endDate}`);
     setItems([]);
     setError(null);

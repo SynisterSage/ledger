@@ -10,11 +10,12 @@ import { useLedgerTheme } from '@/theme';
 import { MobileActionsSheet, type MobileActionSheetAction } from '@/features/today/TodayItemActionsSheet';
 import type { MobileNotePermissions } from './notePermissions';
 
-export function NoteActionSheet({ visible, note, onClose, onOpen, onTogglePin, onMove, onDuplicate, onChild, onProjects, onDelete, onVersionHistory, pinned, permissions }: { visible: boolean; note: MobileNoteSummary | null; onClose: () => void; onOpen: () => void; onTogglePin: () => void; onMove: () => void; onDuplicate: () => void; onChild: () => void; onProjects: () => void; onDelete: () => void; onVersionHistory?: () => void; pinned: boolean; permissions?: MobileNotePermissions }) {
+export function NoteActionSheet({ visible, note, onClose, onOpen, onShare, onTogglePin, onMove, onDuplicate, onChild, onProjects, onDelete, onVersionHistory, pinned, permissions }: { visible: boolean; note: MobileNoteSummary | null; onClose: () => void; onOpen: () => void; onShare?: () => void | Promise<void>; onTogglePin: () => void; onMove: () => void; onDuplicate: () => void; onChild: () => void; onProjects: () => void; onDelete: () => void; onVersionHistory?: () => void; pinned: boolean; permissions?: MobileNotePermissions }) {
   if (!note) return null;
   const access = permissions ?? { canPin: true, canMove: true, canDuplicate: true, canCreateChild: true, canLinkProject: true, canDelete: true };
   const actions: MobileActionSheetAction[] = [
     { id: 'open', label: 'Open', perform: () => { onClose(); onOpen(); } },
+    ...(onShare ? [{ id: 'share', label: 'Share or export', perform: () => { onClose(); void onShare(); } }] : []),
     ...(onVersionHistory ? [{ id: 'version-history', label: 'Version history', perform: () => { onClose(); setTimeout(onVersionHistory, 320); } }] : []),
     ...(access.canPin ? [{ id: 'pin', label: pinned ? 'Unpin' : 'Pin', perform: () => { onClose(); onTogglePin(); } }] : []),
     ...(access.canMove ? [{ id: 'move', label: 'Move', perform: () => { onClose(); onMove(); } }] : []),

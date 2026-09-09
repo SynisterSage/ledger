@@ -1,4 +1,5 @@
 import { mobileRequest } from './client';
+import { getMobileResource, invalidateMobileResource } from '@/lib/mobileResourceCache';
 
 import type { MobileNotificationCenterResponse } from '@/types/ledger';
 
@@ -12,6 +13,21 @@ export async function getMobileNotifications(workspaceId?: string) {
   return mobileRequest<MobileNotificationCenterResponse>(
     query ? `/api/notifications?${query}` : '/api/notifications',
   );
+}
+
+export const mobileNotificationsCacheKey = (workspaceId: string) =>
+  `mobile:notifications:${workspaceId}`;
+
+export function getCachedMobileNotifications(workspaceId: string, options: { force?: boolean } = {}) {
+  return getMobileResource(
+    mobileNotificationsCacheKey(workspaceId),
+    () => getMobileNotifications(workspaceId),
+    { force: options.force, ttlMs: 10_000 },
+  );
+}
+
+export function invalidateCachedMobileNotifications(workspaceId: string) {
+  invalidateMobileResource(mobileNotificationsCacheKey(workspaceId));
 }
 
 export async function performMobileNotificationAction(

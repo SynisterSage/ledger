@@ -16,13 +16,14 @@ type SettingsChoiceSheetProps = {
   onSelect: (value: string) => void;
   onClose: () => void;
   footer?: ReactNode;
+  maxHeight?: number;
 };
 
-export function SettingsChoiceSheet({ visible, title, subtitle, options, selectedValue, onSelect, onClose, footer }: SettingsChoiceSheetProps) {
+export function SettingsChoiceSheet({ visible, title, subtitle, options, selectedValue, onSelect, onClose, footer, maxHeight = 500 }: SettingsChoiceSheetProps) {
   const theme = useLedgerTheme();
 
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title={title} snapPoints={['58%', '82%']} initialSnapPointIndex={1} maxHeight={500}>
+    <AppBottomSheet visible={visible} onClose={onClose} title={title} snapPoints={['58%', '80%']} initialSnapPointIndex={1} maxHeight={maxHeight}>
       {subtitle ? <AppText variant="meta" style={{ marginBottom: theme.spacing.md }}>{subtitle}</AppText> : null}
       <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]}>
         {options.map((option, index) => {
@@ -40,7 +41,7 @@ export function SettingsChoiceSheet({ visible, title, subtitle, options, selecte
               ]}
             >
               <View style={styles.rowText}>
-                <AppText variant="bodyStrong" style={selected ? { color: theme.colors.accent } : undefined}>{option.title}</AppText>
+                <AppText variant="body" style={selected ? { color: theme.colors.accent, fontWeight: '500' } : undefined}>{option.title}</AppText>
                 {option.subtitle ? <AppText variant="meta">{option.subtitle}</AppText> : null}
               </View>
               {selected ? <AppText variant="bodyStrong" style={{ color: theme.colors.accent }}>✓</AppText> : null}

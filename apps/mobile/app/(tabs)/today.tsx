@@ -192,12 +192,6 @@ export default function TodayScreen() {
 
   useEffect(() => {
     if (hasLoadedRef.current) {
-      void loadToday({ silent: true });
-    }
-  }, [loadToday, workspaceState.selectedWorkspaceId]);
-
-  useEffect(() => {
-    if (hasLoadedRef.current) {
       updateLedgerWidgetSnapshot(today);
     }
   }, [today]);

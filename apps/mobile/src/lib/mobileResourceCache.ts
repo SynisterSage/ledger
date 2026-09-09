@@ -13,6 +13,10 @@ const DEFAULT_TTL_MS = 30_000;
 export function readMobileResource<T>(key: string): T | null {
   const entry = entries.get(key) as CacheEntry<T> | undefined;
   if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    entries.delete(key);
+    return null;
+  }
   return entry.value;
 }
 

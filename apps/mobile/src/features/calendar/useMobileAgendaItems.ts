@@ -4,6 +4,8 @@ import { formatCalendarDateKey } from './calendarMonthGenerator';
 import { normalizeCalendarRange, sortCalendarItems, type MobileCalendarItem } from './calendarItemNormalizer';
 import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
 import { subscribeCalendarDataChanges } from './calendarDataEvents';
+import { useMobileAppleCalendarItems } from './useMobileAppleCalendarItems';
+import { useAuthState } from '@/store/sessionStore';
 
 const addDays = (date: Date, amount: number) => {
   const next = new Date(date);
@@ -18,6 +20,7 @@ function startOfDay(date: Date) {
 }
 
 export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filters?: CalendarFilters) {
+  const auth = useAuthState();
   const initialStart = useMemo(() => formatCalendarDateKey(addDays(startOfDay(anchorDate), -7)), [anchorDate]);
   const initialEnd = useMemo(() => formatCalendarDateKey(addDays(startOfDay(anchorDate), 30)), [anchorDate]);
   const [startDate, setStartDate] = useState(initialStart);
@@ -29,6 +32,7 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
   const requestIdRef = useRef(0);
   const cacheRef = useRef(new Map<string, MobileCalendarItem[]>());
   const previousWorkspaceIdRef = useRef(workspaceId);
+  const apple = useMobileAppleCalendarItems(workspaceId, auth.user?.id, startDate, endDate);
 
   useEffect(() => {
     if (previousWorkspaceIdRef.current === workspaceId) return;
@@ -92,5 +96,6 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
     setRefreshToken((current) => current + 1);
   }, [endDate, startDate, workspaceId]);
 
-  return { items: filters ? filterCalendarItems(items, filters) : items, startDate, endDate, isLoading, error, extendPast, extendFuture, retry };
+  const combinedItems = useMemo(() => sortCalendarItems([...items, ...apple.items]), [apple.items, items]);
+  return { items: filters ? filterCalendarItems(combinedItems, filters) : combinedItems, startDate, endDate, isLoading: isLoading || apple.isLoading, error, extendPast, extendFuture, retry };
 }
