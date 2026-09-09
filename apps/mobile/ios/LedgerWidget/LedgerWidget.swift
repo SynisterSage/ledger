@@ -72,7 +72,7 @@ struct LedgerWidgetProvider: TimelineProvider {
   }
 
   private func loadSnapshot() -> LedgerWidgetSnapshot {
-    guard let data = UserDefaults(suiteName: "group.com.ledger.mobile")?.data(forKey: "todaySnapshot") else {
+    guard let data = UserDefaults(suiteName: "group.com.ledger.mobile.shared")?.data(forKey: "todaySnapshot") else {
       return .empty
     }
 
@@ -199,7 +199,7 @@ struct LedgerWidgetView: View {
         Text(value)
           .font(.subheadline.weight(.medium))
           .foregroundStyle(primary)
-          .lineLimit(1)
+          .lineLimit(2)
         if let meta, !meta.isEmpty {
           Text(meta)
             .font(.caption2)

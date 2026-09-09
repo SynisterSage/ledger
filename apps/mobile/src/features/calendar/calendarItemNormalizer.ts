@@ -34,6 +34,9 @@ export type MobileCalendarItem = {
   location?: string | null;
   recurrenceRule?: string | null;
   status?: string | null;
+  seriesId?: string | null;
+  importSeriesKey?: string | null;
+  sourcePlatform?: string | null;
 };
 
 export type CalendarItemsByDate = Record<string, MobileCalendarItem[]>;
@@ -115,6 +118,9 @@ export function normalizeCalendarRange(payload: CalendarRangePayload): MobileCal
         location: stringValue(event.location),
         recurrenceRule: stringValue(event.recurrence_rule),
         status: stringValue(event.status),
+        seriesId: stringValue(event.series_id),
+        importSeriesKey: stringValue(event.import_series_key),
+        sourcePlatform,
       });
       cursor = addDays(cursor, 1);
       occurrence += 1;

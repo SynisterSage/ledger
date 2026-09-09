@@ -87,6 +87,37 @@ export async function createMobileCalendar(workspaceId: string, payload: { name:
   });
 }
 
+export type MobileEventMatchPreview = {
+  scope: 'future' | 'all';
+  matches: Array<{
+    id: string;
+    title: string;
+    start_at: string;
+    end_at: string;
+    all_day?: boolean;
+    status?: string | null;
+    reason: string;
+  }>;
+  count: number;
+  can_bulk_delete: boolean;
+};
+
+export function getMobileEventMatchPreview(workspaceId: string, eventId: string, scope: 'future' | 'all' = 'future') {
+  return mobileRequest<MobileEventMatchPreview>('/api/events/match-preview', {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId },
+    body: JSON.stringify({ event_id: eventId, scope }),
+  });
+}
+
+export function bulkDeleteMobileEvents(workspaceId: string, eventIds: string[]) {
+  return mobileRequest<{ success: boolean; deleted_ids: string[] }>('/api/events/bulk-delete', {
+    method: 'POST',
+    headers: { 'x-workspace-id': workspaceId },
+    body: JSON.stringify({ event_ids: eventIds }),
+  });
+}
+
 export async function createMeetingNoteFromCalendar(workspaceId: string, payload: { eventId?: string; provider?: string; eventKey?: string; projectId?: string | null }) {
   return mobileRequest<{ note?: { id: string }; existing?: boolean }>('/api/meeting-notes/from-calendar', {
     method: 'POST',

@@ -39,6 +39,7 @@ import { GOOGLE_DRIVE_MAX_UPLOAD_BYTES, assertBase64Size } from './integrations/
 import { createCalendarSubscriptionToken, hashCalendarSubscriptionToken } from './calendar-subscription-security.js';
 import { createRelatedContextReader } from './related-context.js';
 import { dedupeActivityItems, isMeaningfulActivityAction } from './activity-contract.js';
+import { getCalendarEventMatches, calendarEventPreviewAnchor, isBulkDeleteEligibleCalendarEvent, normalizeBulkEventIds } from './calendar-event-matching.js';
 
 dotenv.config();
 
@@ -565,7 +566,8 @@ const normalizeProjectType = (value) => {
 const projectSelectColumns =
   'id, workspace_id, name, description, status, completeness, color, start_date, end_date, project_type, lead_id, owner_team_id, created_by, starter_key, created_at, updated_at';
 const eventSelectColumns =
-  'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, location, project_id, note_id, series_id, series_type, source, source_platform, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at';
+  'id, workspace_id, title, start_at, end_at, all_day, calendar_id, color, status, visibility, recurrence_rule, notes, location, project_id, note_id, series_id, series_type, import_batch_id, import_series_key, source, source_platform, assigned_to_user_id, assigned_to_team_id, assigned_by_user_id, assigned_at, created_at, updated_at';
+
 const workspaceTeamSelectColumns =
   'id, workspace_id, created_by, updated_by, name, identifier, description, color, archived_at, archived_by, default_task_scope, default_project_visibility, default_assignee_behavior, created_at, updated_at';
 const projectMilestoneSelectColumns =
@@ -21164,6 +21166,80 @@ app.get('/api/events/upcoming', authMiddleware, rateLimit('read'), async (req, r
   }
 });
 
+app.post('/api/events/match-preview', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const eventId = normalizeNullableText(req.body?.event_id);
+    const scope = req.body?.scope === 'all' ? 'all' : 'future';
+    if (!eventId || !isUuidLike(eventId)) return res.status(400).json({ error: 'Valid event_id required.' });
+
+    const { data: anchor, error: anchorError } = await supabase
+      .from('events')
+      .select('id, workspace_id, calendar_id, title, start_at, end_at, all_day, status, series_id, import_series_key, source_platform')
+      .eq('id', eventId)
+      .single();
+    if (anchorError) throw anchorError;
+    if (!anchor) return res.status(404).json({ error: 'Event not found.' });
+    await requireWorkspaceAccess(req.authUser.id, anchor.workspace_id, 'member');
+
+    const { data: candidates, error: candidatesError } = await supabase
+      .from('events')
+      .select('id, workspace_id, calendar_id, title, start_at, end_at, all_day, status, series_id, import_series_key, source_platform')
+      .eq('workspace_id', anchor.workspace_id)
+      .eq('calendar_id', anchor.calendar_id)
+      .order('start_at', { ascending: true })
+      .limit(1000);
+    if (candidatesError) throw candidatesError;
+
+    const matches = getCalendarEventMatches({ anchor, candidates, scope });
+    res.json({
+      anchor: calendarEventPreviewAnchor(anchor),
+      scope,
+      matches,
+      count: matches.length,
+      can_bulk_delete: isBulkDeleteEligibleCalendarEvent(anchor),
+    });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.post('/api/events/bulk-delete', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const eventIds = normalizeBulkEventIds(req.body?.event_ids);
+    if (!eventIds) return res.status(400).json({ error: 'Provide between 1 and 1000 valid event IDs.' });
+
+    const { data: rows, error: rowsError } = await supabase
+      .from('events')
+      .select('id, workspace_id, source_platform')
+      .in('id', eventIds);
+    if (rowsError) throw rowsError;
+    if (!Array.isArray(rows) || rows.length !== eventIds.length) {
+      return res.status(404).json({ error: 'One or more events were not found.' });
+    }
+
+    const workspaceIds = new Set(rows.map((row) => String(row.workspace_id)));
+    if (workspaceIds.size !== 1) return res.status(400).json({ error: 'Events must belong to one workspace.' });
+    const workspaceId = rows[0].workspace_id;
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'member');
+    if (rows.some((row) => !isBulkDeleteEligibleCalendarEvent(row))) {
+      return res.status(409).json({ error: 'Connected calendar events must be deleted from their source calendar.' });
+    }
+
+    const { data: deleted, error: deleteError } = await supabase.rpc('bulk_delete_calendar_events', {
+      p_workspace_id: workspaceId,
+      p_event_ids: eventIds,
+    });
+    if (deleteError) throw deleteError;
+    const deletedIds = Array.isArray(deleted) ? deleted.map((row) => String(row.id)) : [];
+    if (deletedIds.length !== eventIds.length) {
+      return res.status(409).json({ error: 'The calendar changed before deletion. Review the matches again.' });
+    }
+    res.json({ success: true, deleted_ids: deletedIds });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.post('/api/events/import', authMiddleware, async (req, res) => {
     try {
     const items = Array.isArray(req.body?.events) ? req.body.events : [];
@@ -21195,6 +21271,10 @@ app.post('/api/events/import', authMiddleware, async (req, res) => {
       const title = String(item?.title ?? '').trim();
       const startAt = String(item?.start_at ?? '');
       const start = new Date(startAt);
+      const importBatchId = normalizeNullableText(item?.import_batch_id);
+      if (importBatchId && !isUuidLike(importBatchId)) throw Object.assign(new Error('Invalid import_batch_id'), { statusCode: 400 });
+      const importSeriesKey = normalizeNullableText(item?.import_series_key);
+      if (importSeriesKey && importSeriesKey.length > 500) throw Object.assign(new Error('import_series_key is too long.'), { statusCode: 400 });
       if (!title || title.length > 300) throw Object.assign(new Error('Every imported event needs a title of 300 characters or fewer.'), { statusCode: 400 });
       if (!startAt || Number.isNaN(start.getTime())) throw Object.assign(new Error('Every imported event needs a valid start time.'), { statusCode: 400 });
       const endAt = item?.end_at ? String(item.end_at) : new Date(start.getTime() + 60 * 60 * 1000).toISOString();
@@ -21212,6 +21292,8 @@ app.post('/api/events/import', authMiddleware, async (req, res) => {
         status: item?.status || 'planned',
         visibility: 'workspace',
         recurrence_rule: null,
+        import_batch_id: importBatchId,
+        import_series_key: importSeriesKey,
         notes: item?.notes || null,
         location: item?.location || null,
         source: 'calendar',

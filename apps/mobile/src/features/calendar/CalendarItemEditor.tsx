@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { AppButton } from '@/components/AppButton';
+import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { CaptureFormShell } from '@/components/CaptureFormShell';
@@ -13,7 +14,8 @@ import { ProjectPickerSheet } from '@/features/capture/ProjectPickerSheet';
 import { CaptureDateTimePickerSheet } from '@/features/capture/CaptureDateTimePickerSheet';
 import { useCaptureProjects } from '@/features/capture/useCaptureProjects';
 import { createMobileEvent, createMobileProjectAction, createMobileReminder, createMobileTask, deleteMobileEvent, deleteMobileReminder, deleteMobileTask, updateMobileEvent, updateMobileReminder, updateMobileTask } from '@/api/captures';
-import { getMobileCalendarRange } from '@/api/calendar';
+import { bulkDeleteMobileEvents, getMobileCalendarRange, getMobileEventMatchPreview, type MobileEventMatchPreview } from '@/api/calendar';
+import { emitCalendarDataChanged } from './calendarDataEvents';
 import { getWorkspaceLabel, useWorkspaceState } from '@/store/workspaceStore';
 import { useLedgerTheme } from '@/theme';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
@@ -24,7 +26,7 @@ export type CalendarEditorItemType = 'event' | 'reminder' | 'task' | 'project_ac
 
 type EditorParams = {
   mode?: string; type?: string; workspaceId?: string; dateKey?: string; startAt?: string; endAt?: string;
-  itemId?: string; title?: string; notes?: string; projectId?: string; calendarId?: string; allDay?: string; readOnly?: string;
+  itemId?: string; title?: string; notes?: string; projectId?: string; calendarId?: string; allDay?: string; readOnly?: string; sourcePlatform?: string; seriesId?: string;
 };
 
 function first(value?: string | string[]) { return Array.isArray(value) ? value[0] : value; }
@@ -72,6 +74,11 @@ export function CalendarItemEditor() {
   const [endSheetOpen, setEndSheetOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [matchPreview, setMatchPreview] = useState<MobileEventMatchPreview | null>(null);
+  const [matchScope, setMatchScope] = useState<'future' | 'all'>('future');
+  const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set());
+  const [isLoadingMatches, setIsLoadingMatches] = useState(false);
+  const [isDeletingMatches, setIsDeletingMatches] = useState(false);
   const titleRef = useRef<any>(null);
   const { projects, isLoading: projectsLoading } = useCaptureProjects(workspaceId);
   const workspaceLabel = useMemo(() => getWorkspaceLabel(workspaceId, workspaceState.options), [workspaceId, workspaceState.options]);
@@ -105,6 +112,42 @@ export function CalendarItemEditor() {
       else await deleteMobileTask(workspaceId, sourceId);
       close();
     } catch (deleteError) { setError(deleteError instanceof Error ? deleteError.message : 'Could not delete item.'); } finally { setIsSaving(false); }
+  };
+  const sourceEventId = itemId?.replace(/^event:/, '').split(':')[0] ?? null;
+  const canDeleteMatches = mode === 'edit' && type === 'event' && !readOnly && (first(params.sourcePlatform) === 'ics' || Boolean(first(params.seriesId)));
+  const loadMatchPreview = async (scope: 'future' | 'all' = matchScope) => {
+    if (!sourceEventId || !canDeleteMatches) return;
+    setIsLoadingMatches(true);
+    setError(null);
+    try {
+      const preview = await getMobileEventMatchPreview(workspaceId, sourceEventId, scope);
+      setMatchScope(scope);
+      setMatchPreview(preview);
+      setSelectedMatchIds(new Set(preview.matches.map((match) => match.id)));
+    } catch (matchError) {
+      setError(matchError instanceof Error ? matchError.message : 'Could not find matching events.');
+    } finally {
+      setIsLoadingMatches(false);
+    }
+  };
+  const deleteSelectedMatches = async () => {
+    const ids = [...selectedMatchIds];
+    if (!ids.length) return;
+    setIsDeletingMatches(true);
+    try {
+      const result = await bulkDeleteMobileEvents(workspaceId, ids);
+      if (!result.success || !Array.isArray(result.deleted_ids) || result.deleted_ids.length !== ids.length) {
+        throw new Error('The calendar changed before deletion. Review the matches again.');
+      }
+      emitCalendarDataChanged(workspaceId);
+      setMatchPreview(null);
+      setSelectedMatchIds(new Set());
+      router.back();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Could not delete matching events.');
+    } finally {
+      setIsDeletingMatches(false);
+    }
   };
   const save = async () => {
     if (!title.trim()) return setError('Title is required.');
@@ -154,10 +197,21 @@ export function CalendarItemEditor() {
         {error ? <AppText variant="meta" style={{ color: theme.colors.danger }}>{error}</AppText> : null}
         {readOnly ? <AppText variant="meta">This item is read-only from its connected source.</AppText> : null}
         {mode === 'edit' && !readOnly ? <Pressable accessibilityRole="button" onPress={() => Alert.alert(`Delete ${typeLabel.toLowerCase()}?`, 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void remove() }])} style={styles.deleteAction}><AppText variant="body" style={{ color: theme.colors.danger }}>Delete {typeLabel.toLowerCase()}</AppText></Pressable> : null}
+        {canDeleteMatches ? <Pressable accessibilityRole="button" disabled={isLoadingMatches || isDeletingMatches} onPress={() => void loadMatchPreview()} style={styles.matchAction}><AppText variant="body" style={{ color: theme.colors.textSecondary }}>{isLoadingMatches ? 'Finding matches…' : 'Delete matching events…'}</AppText></Pressable> : null}
       </View>
     </CaptureFormShell>
     <CalendarChoiceSheet visible={typeSheetOpen} title="Create as" options={['event', 'reminder', 'task', 'project_action']} onSelect={chooseType} onClose={() => setTypeSheetOpen(false)} />
     <CalendarSourceChoiceSheet visible={calendarSheetOpen} options={calendarOptions} selectedId={calendarId} onSelect={(next) => { setCalendarId(next); setCalendarSheetOpen(false); }} onClose={() => setCalendarSheetOpen(false)} />
+    <AppBottomSheet visible={Boolean(matchPreview)} onClose={() => { if (!isDeletingMatches) { setMatchPreview(null); setSelectedMatchIds(new Set()); } }} title="Delete matching events" snapPoints={['64%', '86%']} initialSnapPointIndex={0}>
+      {matchPreview ? <View style={styles.matchSheet}>
+        <AppText variant="caption" style={{ color: theme.colors.textMuted }}>Review the events before removing them from Ledger.</AppText>
+        <View style={[styles.scopeToggle, { borderColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surface }]}>
+          {(['future', 'all'] as const).map((scope) => <Pressable key={scope} disabled={isLoadingMatches || isDeletingMatches} onPress={() => void loadMatchPreview(scope)} style={[styles.scopeButton, matchScope === scope && { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption" style={matchScope === scope ? { color: theme.colors.textPrimary } : { color: theme.colors.textMuted }}>{scope === 'future' ? 'Future events' : 'All events'}</AppText></Pressable>)}
+        </View>
+        {matchPreview.matches.length === 0 ? <AppText variant="caption" style={styles.emptyMatches}>No matching events found.</AppText> : <ScrollView style={styles.matchList}>{matchPreview.matches.map((match) => <Pressable key={match.id} disabled={isDeletingMatches} onPress={() => setSelectedMatchIds((current) => { const next = new Set(current); if (next.has(match.id)) next.delete(match.id); else next.add(match.id); return next; })} style={styles.matchRow}><AppText variant="body" style={{ color: selectedMatchIds.has(match.id) ? theme.colors.textPrimary : theme.colors.textMuted }}>{selectedMatchIds.has(match.id) ? '✓' : '○'}</AppText><View style={styles.matchCopy}><AppText variant="caption">{match.title}</AppText><AppText variant="meta">{new Date(match.start_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} · {match.reason}</AppText></View></Pressable>)}</ScrollView>}
+        <View style={styles.matchFooter}><AppText variant="meta">{selectedMatchIds.size} selected</AppText><Pressable disabled={!selectedMatchIds.size || isDeletingMatches} onPress={() => void deleteSelectedMatches()} style={[styles.deleteMatchesButton, { backgroundColor: theme.colors.danger, opacity: !selectedMatchIds.size || isDeletingMatches ? 0.5 : 1 }]}><AppText variant="button" style={{ color: theme.colors.onAccent }}>{isDeletingMatches ? 'Deleting…' : 'Delete selected'}</AppText></Pressable></View>
+      </View> : null}
+    </AppBottomSheet>
     <WorkspaceSelectorSheet visible={workspaceSheetOpen} selectedWorkspaceId={workspaceId} workspaces={workspaceState.options} onSelect={(next) => { setWorkspaceId(next); setProjectId(null); setCalendarId(null); setWorkspaceSheetOpen(false); }} onClose={() => setWorkspaceSheetOpen(false)} />
     <ProjectPickerSheet visible={projectSheetOpen} projects={projects} selectedProjectId={projectId} onSelect={(next) => { setProjectId(next); setProjectSheetOpen(false); }} onClose={() => setProjectSheetOpen(false)} loading={projectsLoading} />
     <CaptureDateTimePickerSheet visible={dateSheetOpen} title="Select date" mode="date" value={parsedDate} onSelect={(next) => setDateInput(formatDateToLocalIsoDate(next))} onClose={() => setDateSheetOpen(false)} />
@@ -177,9 +231,9 @@ function CalendarSourceChoiceSheet({ visible, options, selectedId, onSelect, onC
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 }, header: { minHeight: 58, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, headerButton: { minHeight: 44, justifyContent: 'center', minWidth: 58 }, section: { gap: 14 }, typeOverlay: { position: 'absolute', left: 16, right: 16, top: 80, zIndex: 10, padding: 16, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 }, typeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 }, typeRow: { minHeight: 56, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sourceChoice: { flexDirection: 'row', alignItems: 'center', gap: 10 }, sourceDot: { width: 8, height: 8, borderRadius: 4 }, deleteAction: { paddingTop: 14, minHeight: 44 },
+  screen: { flex: 1 }, header: { minHeight: 58, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, headerButton: { minHeight: 44, justifyContent: 'center', minWidth: 58 }, section: { gap: 14 }, typeOverlay: { position: 'absolute', left: 16, right: 16, top: 80, zIndex: 10, padding: 16, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 }, typeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 }, typeRow: { minHeight: 56, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sourceChoice: { flexDirection: 'row', alignItems: 'center', gap: 10 }, sourceDot: { width: 8, height: 8, borderRadius: 4 }, deleteAction: { paddingTop: 14, minHeight: 44 }, matchAction: { minHeight: 44, justifyContent: 'center' }, matchSheet: { gap: 14 }, scopeToggle: { flexDirection: 'row', borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 2 }, scopeButton: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 8 }, matchList: { maxHeight: 360, borderRadius: 12 }, matchRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 8 }, matchCopy: { flex: 1, gap: 2 }, emptyMatches: { paddingVertical: 28, textAlign: 'center' }, matchFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, deleteMatchesButton: { minHeight: 44, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 });
 
 export function calendarEditorParams(item: MobileCalendarItem, workspaceId: string) {
-  return { mode: 'edit', type: item.type === 'external_event' ? 'event' : item.type === 'project_action' ? 'project_action' : item.type, workspaceId, itemId: item.id, dateKey: item.dateKey, startAt: item.startAt ?? '', endAt: item.endAt ?? '', title: item.title, projectId: item.projectId ?? '', calendarId: item.calendarId ?? '', allDay: item.allDay ? '1' : '0', readOnly: item.readOnly ? '1' : '0' };
+  return { mode: 'edit', type: item.type === 'external_event' ? 'event' : item.type === 'project_action' ? 'project_action' : item.type, workspaceId, itemId: item.id, dateKey: item.dateKey, startAt: item.startAt ?? '', endAt: item.endAt ?? '', title: item.title, projectId: item.projectId ?? '', calendarId: item.calendarId ?? '', allDay: item.allDay ? '1' : '0', readOnly: item.readOnly ? '1' : '0', sourcePlatform: item.sourcePlatform ?? '', seriesId: item.seriesId ?? '' };
 }

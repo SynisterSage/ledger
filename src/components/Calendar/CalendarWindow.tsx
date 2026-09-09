@@ -173,6 +173,9 @@ type EventRow = {
   notes?: string | null;
   series_id?: string | null;
   series_type?: string | null;
+  import_batch_id?: string | null;
+  import_series_key?: string | null;
+  source_platform?: string | null;
   workspace_id?: string | null;
   workspace_name?: string | null;
   workspace_color?: string | null;
@@ -224,6 +227,21 @@ type ReminderRow = {
   provider_list_name?: string;
   provider_reminder_id?: string;
   provider_last_modified?: string | null;
+};
+
+type EventMatchPreview = {
+  scope: 'future' | 'all';
+  matches: Array<{
+    id: string;
+    title: string;
+    start_at: string;
+    end_at: string;
+    all_day?: boolean;
+    status?: string | null;
+    reason: string;
+  }>;
+  count: number;
+  can_bulk_delete: boolean;
 };
 
 type CalendarPreferenceSnapshot = {
@@ -680,6 +698,7 @@ type ParsedIcsEvent = {
   componentType: 'VEVENT' | 'VTODO' | 'VJOURNAL';
   notes?: string;
   location?: string;
+  importSeriesKey?: string;
 };
 
 const unfoldIcsLines = (raw: string) => {
@@ -995,6 +1014,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
     const dtStamp = props.DTSTAMP?.[0] ?? '';
     const due = props.DUE?.[0] ?? '';
     const rrule = props.RRULE?.[0] ?? '';
+    const importSeriesKey = props.UID?.[0]?.trim() || undefined;
     const description = (props.DESCRIPTION?.[0] ?? '')
       .replace(/\\n/g, '\n')
       .replace(/\\,/g, ',')
@@ -1027,6 +1047,7 @@ const parseIcsEvents = (rawIcs: string): ParsedIcsEvent[] => {
       componentType: blockType,
       notes: description || undefined,
       location: location || undefined,
+      importSeriesKey,
     };
 
     // Expand recurring events
@@ -1269,6 +1290,11 @@ export const CalendarWindow = ({
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const [isDeletingReminder, setIsDeletingReminder] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [eventMatchPreview, setEventMatchPreview] = useState<EventMatchPreview | null>(null);
+  const [eventMatchScope, setEventMatchScope] = useState<'future' | 'all'>('future');
+  const [selectedEventMatchIds, setSelectedEventMatchIds] = useState<Set<string>>(new Set());
+  const [isLoadingEventMatches, setIsLoadingEventMatches] = useState(false);
+  const [isBulkDeletingEvents, setIsBulkDeletingEvents] = useState(false);
   const [, setCalendarColorDrafts] = useState<Record<string, string>>({});
   const [isSavingColorId, setIsSavingColorId] = useState<string | null>(null);
   const [isSpecificDatesModalOpen, setIsSpecificDatesModalOpen] = useState(false);
@@ -4809,6 +4835,45 @@ export const CalendarWindow = ({
     }
   };
 
+  const loadEventMatchPreview = async (scope: 'future' | 'all' = eventMatchScope) => {
+    if (!eventEditorEvent || eventEditorEvent.provider === 'apple') return;
+    setIsLoadingEventMatches(true);
+    setError(null);
+    try {
+      const preview = (await api.getEventMatchPreview(baseEventId(eventEditorEvent.id), scope)) as EventMatchPreview;
+      setEventMatchScope(scope);
+      setEventMatchPreview(preview);
+      setSelectedEventMatchIds(new Set(preview.matches.map((match) => match.id)));
+    } catch (matchError) {
+      setError(matchError instanceof Error ? matchError.message : 'Could not find matching events.');
+    } finally {
+      setIsLoadingEventMatches(false);
+    }
+  };
+
+  const bulkDeleteSelectedEvents = async () => {
+    const ids = [...selectedEventMatchIds];
+    if (!ids.length) return;
+    setIsBulkDeletingEvents(true);
+    setError(null);
+    try {
+      const result = (await api.bulkDeleteEvents(ids)) as { success?: boolean; deleted_ids?: string[] };
+      if (!result.success || !Array.isArray(result.deleted_ids) || result.deleted_ids.length !== ids.length) {
+        throw new Error('The calendar changed before deletion. Review the matches again.');
+      }
+      const deletedIds = new Set(result.deleted_ids);
+      setEvents((prev) => prev.filter((event) => !deletedIds.has(baseEventId(event.id))));
+      setSelectedEvent((current) => (current && deletedIds.has(baseEventId(current.id)) ? null : current));
+      setEventMatchPreview(null);
+      setSelectedEventMatchIds(new Set());
+      notifyCalendarItemsUpdated();
+    } catch (bulkDeleteError) {
+      setError(bulkDeleteError instanceof Error ? bulkDeleteError.message : 'Could not delete matching events.');
+    } finally {
+      setIsBulkDeletingEvents(false);
+    }
+  };
+
   const quickDeleteEvent = async (eventId: string) => {
     const targetId = baseEventId(eventId);
     try {
@@ -5167,12 +5232,15 @@ export const CalendarWindow = ({
 
       const selectedCalendar = getPreferredCalendar('workspace');
       if (!selectedCalendar) return;
+      const importBatchId = crypto.randomUUID();
       const eventPayload = parsed
         .filter((evt) => evt.componentType !== 'VTODO')
         .map((evt) => ({
           calendar_id: selectedCalendar.id,
           workspace_id: selectedCalendar.workspace_id,
           created_by: user.id,
+          import_batch_id: importBatchId,
+          import_series_key: evt.importSeriesKey ?? null,
           title: evt.title,
           notes: evt.notes ?? null,
           location: evt.location ?? null,
@@ -8221,12 +8289,25 @@ export const CalendarWindow = ({
             <div className="mt-4 flex items-center justify-between">
               <div>
                 {!confirmDelete ? (
-                  <button
-                    onClick={() => setConfirmDelete(true)}
-                    className="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setConfirmDelete(true)}
+                      className="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
+                    >
+                      Delete
+                    </button>
+                    {eventEditorEvent.provider !== 'apple' &&
+                      (eventEditorEvent.source_platform === 'ics' || eventEditorEvent.series_id) && (
+                        <button
+                          type="button"
+                          onClick={() => void loadEventMatchPreview()}
+                          disabled={isLoadingEventMatches || isSavingEdit || isDeletingEvent}
+                          className="rounded-md px-2 py-2 text-xs text-[var(--ledger-text-muted)] hover:bg-[#FFF1E3] hover:text-gray-900 disabled:opacity-50"
+                        >
+                          {isLoadingEventMatches ? 'Finding matches…' : 'Delete matching events…'}
+                        </button>
+                      )}
+                  </div>
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <button
@@ -8271,6 +8352,120 @@ export const CalendarWindow = ({
                   className="rounded-md bg-gray-900 px-3 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-60"
                 >
                   {isSavingEdit ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {eventMatchPreview && (
+        <ModalOverlay
+          isOpen={Boolean(eventMatchPreview)}
+          onClose={() => {
+            if (!isBulkDeletingEvents) {
+              setEventMatchPreview(null);
+              setSelectedEventMatchIds(new Set());
+            }
+          }}
+          closeOnBackdropClick={!isBulkDeletingEvents}
+          backdropBorderRadius="inherit"
+          disablePortal
+          manageWindowChrome={false}
+          classNameContainer="w-full max-w-[460px] overflow-hidden rounded-xl border border-[#E2D4C4] bg-[#FFF8F2] shadow-xl"
+        >
+          <div className="p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Delete matching events</h3>
+                <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                  Review the events before removing them from Ledger.
+                </p>
+              </div>
+              <ModalCloseButton
+                onClick={() => {
+                  setEventMatchPreview(null);
+                  setSelectedEventMatchIds(new Set());
+                }}
+                ariaLabel="Close matching events"
+                disabled={isBulkDeletingEvents}
+              />
+            </div>
+
+            <div className="mb-3 flex rounded-md border border-[#E2D4C4] bg-white p-0.5 text-xs">
+              {(['future', 'all'] as const).map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  onClick={() => void loadEventMatchPreview(scope)}
+                  disabled={isLoadingEventMatches || isBulkDeletingEvents}
+                  className={`flex-1 rounded px-2 py-1.5 ${eventMatchScope === scope ? 'bg-[#FFF1E3] font-medium text-gray-900' : 'text-[var(--ledger-text-muted)]'}`}
+                >
+                  {scope === 'future' ? 'Future events' : 'All events'}
+                </button>
+              ))}
+            </div>
+
+            {isLoadingEventMatches ? (
+              <p className="py-6 text-center text-xs text-[var(--ledger-text-muted)]">Finding matching events…</p>
+            ) : eventMatchPreview.matches.length === 0 ? (
+              <p className="rounded-md border border-dashed border-[#E2D4C4] px-3 py-6 text-center text-xs text-[var(--ledger-text-muted)]">
+                No matching events found.
+              </p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto rounded-md border border-[#E2D4C4] bg-white">
+                {eventMatchPreview.matches.map((match) => {
+                  const checked = selectedEventMatchIds.has(match.id);
+                  const start = new Date(match.start_at);
+                  return (
+                    <label key={match.id} className="flex cursor-pointer items-center gap-2 border-b border-[#F1E5D9] px-3 py-2 last:border-b-0">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setSelectedEventMatchIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(match.id)) next.delete(match.id);
+                          else next.add(match.id);
+                          return next;
+                        })}
+                        disabled={isBulkDeletingEvents}
+                        className="accent-[#FF5F40]"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium text-gray-900">{match.title}</span>
+                        <span className="block text-[11px] text-[var(--ledger-text-muted)]">
+                          {start.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} · {match.reason}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <span className="text-xs text-[var(--ledger-text-muted)]">
+                {selectedEventMatchIds.size} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEventMatchPreview(null);
+                    setSelectedEventMatchIds(new Set());
+                  }}
+                  disabled={isBulkDeletingEvents}
+                  className="rounded-md bg-[#FFF1E3] px-3 py-2 text-xs font-medium text-gray-700 hover:bg-[#EDE3D8] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void bulkDeleteSelectedEvents()}
+                  disabled={!selectedEventMatchIds.size || isBulkDeletingEvents}
+                  className="rounded-md bg-red-600 px-3 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {isBulkDeletingEvents ? 'Deleting…' : 'Delete selected'}
                 </button>
               </div>
             </div>

@@ -1296,12 +1296,24 @@ export const useApi = () => {
         start_at: string;
         end_at?: string | null;
         calendar_id?: string;
+        import_batch_id?: string | null;
+        import_series_key?: string | null;
         notes?: string | null;
         location?: string | null;
         color?: string;
         status?: string;
         all_day?: boolean;
       }> }) => request('/api/events/import', { method: 'POST', body: JSON.stringify(payload) }),
+      getEventMatchPreview: (eventId: string, scope: 'future' | 'all' = 'future') =>
+        request('/api/events/match-preview', {
+          method: 'POST',
+          body: JSON.stringify({ event_id: eventId, scope }),
+        }),
+      bulkDeleteEvents: (eventIds: string[]) =>
+        request('/api/events/bulk-delete', {
+          method: 'POST',
+          body: JSON.stringify({ event_ids: eventIds }),
+        }),
       updateEvent: (id: string, update: Record<string, unknown>) =>
         request(`/api/events/${id}`, {
           method: 'PATCH',
