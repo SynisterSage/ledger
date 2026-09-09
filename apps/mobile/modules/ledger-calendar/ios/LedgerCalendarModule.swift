@@ -14,7 +14,7 @@ public final class LedgerCalendarModule: Module {
     AsyncFunction("requestAccess") { () async -> String in
       if #available(iOS 17.0, *) {
         await withCheckedContinuation { continuation in
-          self.eventStore.requestFullAccessToEvents { _ in
+          self.eventStore.requestFullAccessToEvents { _, _ in
             continuation.resume(returning: self.authorizationStatus())
           }
         }
