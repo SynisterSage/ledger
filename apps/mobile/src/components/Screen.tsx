@@ -13,9 +13,10 @@ type ScreenProps = {
   topFadeOffset?: number;
   topFadeOpacityScale?: number;
   topFadeHeight?: number;
+  topFade?: boolean;
 };
 
-export function Screen({ children, scroll = false, contentStyle, topFadeOffset, topFadeOpacityScale, topFadeHeight }: ScreenProps) {
+export function Screen({ children, scroll = false, contentStyle, topFadeOffset, topFadeOpacityScale, topFadeHeight, topFade = true }: ScreenProps) {
   const theme = useLedgerTheme();
   const resolvedTopFadeOffset = topFadeOffset ?? theme.spacing.screenY;
 
@@ -34,7 +35,7 @@ export function Screen({ children, scroll = false, contentStyle, topFadeOffset, 
           showsVerticalScrollIndicator={false}>
           {children}
         </ScrollView>
-        <MobileTopFade topOffset={resolvedTopFadeOffset} opacityScale={topFadeOpacityScale} height={topFadeHeight} />
+        {topFade ? <MobileTopFade topOffset={resolvedTopFadeOffset} opacityScale={topFadeOpacityScale} height={topFadeHeight} /> : null}
       </SafeAreaView>
     );
   }
@@ -42,7 +43,7 @@ export function Screen({ children, scroll = false, contentStyle, topFadeOffset, 
   return (
     <SafeAreaView style={containerStyle}>
       {children}
-      <MobileTopFade topOffset={resolvedTopFadeOffset} opacityScale={topFadeOpacityScale} height={topFadeHeight} />
+      {topFade ? <MobileTopFade topOffset={resolvedTopFadeOffset} opacityScale={topFadeOpacityScale} height={topFadeHeight} /> : null}
     </SafeAreaView>
   );
 }

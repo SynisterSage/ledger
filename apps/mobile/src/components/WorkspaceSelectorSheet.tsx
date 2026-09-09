@@ -10,10 +10,11 @@ import {
   type PanResponderGestureState,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from './AppText';
 
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 import type { MobileWorkspaceScopeOption } from '@/types/ledger';
 
 const SHEET_OFFSET = 24;
@@ -37,6 +38,7 @@ export function WorkspaceSelectorSheet({
   onClose,
 }: WorkspaceSelectorSheetProps) {
   const theme = useLedgerTheme();
+  const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
   const progress = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const backdropProgress = useRef(new Animated.Value(visible ? 1 : 0)).current;
@@ -159,7 +161,7 @@ export function WorkspaceSelectorSheet({
             style={[
               styles.backdrop,
               {
-                backgroundColor: theme.colors.textPrimary,
+                backgroundColor: theme.colors.backdrop,
                 opacity: Animated.multiply(
                   backdropOpacity.interpolate({
                     inputRange: [0, 1],
@@ -178,6 +180,9 @@ export function WorkspaceSelectorSheet({
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
+              marginHorizontal: theme.spacing.sheetInset,
+              marginBottom: Math.max(theme.spacing.xs, insets.bottom - theme.spacing.md),
+              borderRadius: theme.radius.sheet,
               paddingBottom: SHEET_BOTTOM_BUFFER,
               transform: [{ translateY: sheetTranslateY }],
             },
@@ -200,7 +205,7 @@ export function WorkspaceSelectorSheet({
               styles.list,
               {
                 backgroundColor: theme.colors.surfaceMuted,
-                borderRadius: theme.radius.window,
+                borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg),
               },
             ]}>
             {workspaces.map((option) => {

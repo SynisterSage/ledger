@@ -17,7 +17,7 @@ export default function ProjectActionCaptureScreen() {
   }, []);
 
   return (
-    <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
+    <Screen topFade={false} contentStyle={{ paddingTop: theme.spacing.lg }}>
       <CaptureHeader title="Project action" />
       <ProjectActionForm initialProjectId={params.projectId ?? null} initialWorkspaceId={params.workspaceId ?? null} onSave={() => router.replace((params.returnTo ?? '/(tabs)/capture') as never)} />
     </Screen>

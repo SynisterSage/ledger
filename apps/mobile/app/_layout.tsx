@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { Redirect, Stack, usePathname, useRouter } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
@@ -17,7 +17,7 @@ import { useAuthState } from '@/store/sessionStore';
 import { resetBootState, setBootState, useBootState } from '@/store/bootStore';
 import { bootstrapNotificationOnboardingState, useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
 import { useLedgerTheme } from '@/theme';
-import { getSafeNotificationPath, isNotificationOnboardingPath, isPublicMobilePath } from '@/utils/mobileNavigation';
+import { getSafeNotificationPath, isPublicMobilePath } from '@/utils/mobileNavigation';
 import { startMobilePerformance } from '@/lib/mobilePerformance';
 
 Notifications.setNotificationHandler({
@@ -196,6 +196,32 @@ export default function RootLayout() {
     notificationOnboarding.userId,
   ]);
 
+  useEffect(() => {
+    if (!boot.isBootReady || auth.isLoading || notificationOnboarding.isLoading) {
+      return;
+    }
+
+    let destination: '/auth/welcome' | '/' | null = null;
+
+    if (!auth.session && pathname !== '/' && !isPublicMobilePath(pathname)) {
+      destination = '/auth/welcome';
+    } else if (auth.session && isPublicMobilePath(pathname)) {
+      destination = '/';
+    }
+
+    if (destination && destination !== pathname) {
+      void router.replace(destination);
+    }
+  }, [
+    auth.isLoading,
+    auth.session,
+    boot.isBootReady,
+    notificationOnboarding.isComplete,
+    notificationOnboarding.isLoading,
+    pathname,
+    router,
+  ]);
+
   const hideNativeSplashAfterOverlayPaint = useCallback(() => {
     if (nativeSplashHiddenRef.current) {
       return;
@@ -291,20 +317,12 @@ export default function RootLayout() {
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <SafeAreaProvider>
         {boot.isBootReady ? (
-          !auth.session && !isPublicMobilePath(pathname) ? (
-            <Redirect href="/auth/welcome" />
-          ) : auth.session && isPublicMobilePath(pathname) ? (
-            <Redirect href="/" />
-          ) : auth.session && !notificationOnboarding.isComplete && !isNotificationOnboardingPath(pathname) ? (
-            <Redirect href="/onboarding/notifications" />
-          ) : (
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: theme.colors.background },
-              }}
-            />
-          )
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: theme.colors.background },
+            }}
+          />
         ) : null}
       </SafeAreaProvider>
       {showSplashOverlay ? (

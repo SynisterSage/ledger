@@ -6,6 +6,7 @@ import { SymbolView } from 'expo-symbols';
 import { AppText } from './AppText';
 
 import { useLedgerTheme } from '@/theme';
+import { MOBILE_HEADER_ROW_HEIGHT, MOBILE_HEADER_TOP_PADDING } from './mobileHeaderMetrics';
 
 type CaptureHeaderProps = {
   title: string;
@@ -48,10 +49,12 @@ export function CaptureHeader({ title, rightAccessory }: CaptureHeaderProps) {
 
 const styles = StyleSheet.create({
   headerRow: {
+    minHeight: MOBILE_HEADER_ROW_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 20,
+    marginTop: -MOBILE_HEADER_TOP_PADDING,
+    marginBottom: 10,
   },
   backButton: {
     alignItems: 'center',

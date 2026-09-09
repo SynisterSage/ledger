@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Image, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import LogoMark from '../../assets/images/logo.svg';
 
@@ -11,13 +11,9 @@ import { useLedgerTheme } from '@/theme';
 export default function WelcomeScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
-  const { width, height } = useWindowDimensions();
-  const heroWidth = Math.min(width * 1.18, 430);
-  const heroStageHeight = Math.min(height * 0.52, 390);
-  const heroStageWidth = width + theme.spacing.lg * 2;
 
   return (
-    <Screen contentStyle={{ paddingTop: 0 }}>
+    <Screen contentStyle={{ paddingTop: 0 }} topFade={false}>
       <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
         <View style={{ alignItems: 'center', gap: theme.spacing['2xl'] }}>
           <View style={styles.brandRow}>
@@ -50,29 +46,7 @@ export default function WelcomeScreen() {
             </AppText>
           </View>
 
-          <View
-            style={[
-              styles.heroStage,
-              {
-                height: heroStageHeight,
-                width: heroStageWidth,
-                marginHorizontal: -theme.spacing.lg,
-                marginTop: -4,
-              },
-            ]}>
-            <Image
-              source={require('../../assets/images/welcome.png')}
-              resizeMode="contain"
-              style={[
-                styles.heroImage,
-                {
-                  width: heroWidth,
-                  aspectRatio: 402 / 661,
-                  right: -12,
-                },
-              ]}
-            />
-          </View>
+          <CapturePreview />
         </View>
 
         <View style={styles.actionsRow}>
@@ -95,6 +69,47 @@ export default function WelcomeScreen() {
         </View>
       </View>
     </Screen>
+  );
+}
+
+function CapturePreview() {
+  const theme = useLedgerTheme();
+
+  return (
+    <View style={[styles.preview, { backgroundColor: theme.colors.surfaceCard, borderColor: theme.colors.borderSubtle }]}>
+      <View style={styles.previewHeader}>
+        <View style={[styles.previewDot, { backgroundColor: theme.colors.accent }]} />
+        <AppText variant="caption" style={{ color: theme.colors.textPrimary }}>
+          Today
+        </AppText>
+        <AppText variant="meta" style={{ color: theme.colors.textMuted, marginLeft: 'auto' }}>
+          3 items
+        </AppText>
+      </View>
+      <PreviewRow label="Review notification system" meta="Today" complete />
+      <PreviewRow label="Pick up prescription" meta="This afternoon" />
+      <PreviewRow label="Remote internship" meta="11:00 AM" />
+    </View>
+  );
+}
+
+function PreviewRow({ label, meta, complete = false }: { label: string; meta: string; complete?: boolean }) {
+  const theme = useLedgerTheme();
+
+  return (
+    <View style={[styles.previewRow, { borderTopColor: theme.colors.borderSubtle }]}>
+      <View style={[styles.check, { borderColor: complete ? theme.colors.accent : theme.colors.borderSubtle }]}>
+        {complete ? <View style={[styles.checkFill, { backgroundColor: theme.colors.accent }]} /> : null}
+      </View>
+      <View style={styles.previewRowCopy}>
+        <AppText variant="caption" numberOfLines={1} style={{ color: theme.colors.textPrimary }}>
+          {label}
+        </AppText>
+        <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
+          {meta}
+        </AppText>
+      </View>
+    </View>
   );
 }
 
@@ -122,14 +137,48 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
-  heroStage: {
-    overflow: 'visible',
+  preview: {
+    width: '100%',
+    maxWidth: 350,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 11,
+  },
+  previewDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  previewRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  check: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroImage: {
-    position: 'absolute',
-    top: -24,
+  checkFill: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  previewRowCopy: {
+    flex: 1,
+    gap: 2,
   },
   actionsRow: {
     flexDirection: 'row',

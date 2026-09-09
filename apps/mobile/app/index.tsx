@@ -23,9 +23,5 @@ export default function Index() {
     return <Redirect href="/auth/welcome" />;
   }
 
-  if (!notificationOnboarding.isComplete) {
-    return <Redirect href="/onboarding/notifications" />;
-  }
-
   return <Redirect href="/(tabs)/today" />;
 }

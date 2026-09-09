@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 
 export type SettingsEditSheetMode = 'display_name' | 'password';
 
@@ -66,7 +66,9 @@ export function SettingsEditSheet({ visible, mode, initialDisplayName, onClose, 
               <AppText variant="body" style={{ color: theme.colors.textSecondary }}>Your name as it appears in Ledger.</AppText>
               <AppText variant="body" style={{ color: theme.colors.textMuted }}>This updates your profile name on this account.</AppText>
             </View>
-            <AppTextInput label="Display name" placeholder="Lex Ferguson" value={displayName} onChangeText={setDisplayName} autoCapitalize="words" autoCorrect={false} />
+            <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}>
+              <AppTextInput label="Display name" placeholder="Lex Ferguson" value={displayName} onChangeText={setDisplayName} autoCapitalize="words" autoCorrect={false} style={styles.cardInput} />
+            </View>
           </>
         ) : (
           <>
@@ -74,8 +76,10 @@ export function SettingsEditSheet({ visible, mode, initialDisplayName, onClose, 
               <AppText variant="body" style={{ color: theme.colors.textSecondary }}>Change your account password.</AppText>
               <AppText variant="body" style={{ color: theme.colors.textMuted }}>Use a password you do not use elsewhere.</AppText>
             </View>
-            <AppTextInput label="New password" placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} autoCapitalize="none" />
-            <AppTextInput label="Confirm password" placeholder="••••••••" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} autoCapitalize="none" />
+            <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg), gap: theme.spacing.md }]}>
+              <AppTextInput label="New password" placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} autoCapitalize="none" style={styles.cardInput} />
+              <AppTextInput label="Confirm password" placeholder="••••••••" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} autoCapitalize="none" style={styles.cardInput} />
+            </View>
           </>
         )}
         {error ? <AppText variant="caption" style={{ color: theme.colors.danger }}>{error}</AppText> : null}
@@ -91,3 +95,13 @@ export function SettingsEditSheet({ visible, mode, initialDisplayName, onClose, 
     </AppBottomSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  inputCard: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  cardInput: {
+    borderBottomWidth: 0,
+  },
+});

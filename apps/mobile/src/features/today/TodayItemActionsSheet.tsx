@@ -4,7 +4,7 @@ import { SymbolView } from 'expo-symbols';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 import type { MobileTodayInteractionItem } from '@/types/ledger';
 import { getTodayItemActions } from './todayActions';
 
@@ -140,7 +140,7 @@ export function MobileActionsSheet({ visible, title, typeLabel, meta, actions, o
         <View
           style={[
             styles.actionGroup,
-            { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window },
+            { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) },
           ]}
         >
           {actions.map((action) => (

@@ -204,7 +204,7 @@ export function AppDetailSheet({
             style={[
               styles.backdrop,
               {
-                backgroundColor: theme.colors.textPrimary,
+                backgroundColor: theme.colors.backdrop,
                 opacity: backdropOpacity,
               },
             ]}
@@ -217,6 +217,8 @@ export function AppDetailSheet({
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
+              borderTopLeftRadius: theme.radius.sheet,
+              borderTopRightRadius: theme.radius.sheet,
               height: sheetMaxHeight,
               transform: [{ translateY: sheetTranslateY }],
             },

@@ -105,7 +105,7 @@ export function NotificationFilterSheet({ visible, filters, onChange, onReset, o
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
       <View style={styles.portal}>
         <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdropPressable}>
-          <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.textPrimary, opacity: backdropProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.14] }) }]} />
+          <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.backdrop, opacity: backdropProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.14] }) }]} />
         </Pressable>
         <Animated.View style={[styles.sheet, { height: sheetMaxHeight, backgroundColor: theme.colors.background, borderColor: theme.colors.borderSubtle, transform: [{ translateY: sheetTranslateY }] }]}>
           <SafeAreaView edges={['bottom']} style={styles.safeArea}>

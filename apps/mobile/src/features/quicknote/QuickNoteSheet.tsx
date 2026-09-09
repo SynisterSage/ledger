@@ -258,7 +258,7 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
             style={[
               styles.backdrop,
               {
-                backgroundColor: theme.colors.textPrimary,
+                backgroundColor: theme.colors.backdrop,
                 opacity: Animated.multiply(backdropOpacity, progress),
               },
             ]}
@@ -271,8 +271,9 @@ export function QuickNoteSheet({ visible, draft, onClose }: QuickNoteSheetProps)
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
-              borderTopLeftRadius: theme.radius.sheet,
-              borderTopRightRadius: theme.radius.sheet,
+              marginHorizontal: theme.spacing.sheetInset,
+              marginBottom: Math.max(theme.spacing.xs, insets.bottom - theme.spacing.md),
+              borderRadius: theme.radius.sheet,
               height: sheetHeight,
               transform: [{ translateY: sheetTranslateY }],
             },

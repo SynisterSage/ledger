@@ -321,7 +321,7 @@ export function TodayList({
     const date = new Date(item.startsAt ?? 0);
     return isSameLocalDay(date, now) && (date.getTime() >= now.getTime() || isCurrentEvent(item, now));
   });
-  const nextUpItems = (remainingTodayItems.length ? remainingTodayItems : timedItems.filter((item) => isTomorrowLocalDay(new Date(item.startsAt ?? 0), now)).slice(0, 1))
+  const nextUpItems = (remainingTodayItems.length ? remainingTodayItems : timedItems.filter((item) => isTomorrowLocalDay(new Date(item.startsAt ?? 0), now)))
     .sort((left, right) => {
       const leftTime = new Date(left.startsAt ?? 0).getTime();
       const rightTime = new Date(right.startsAt ?? 0).getTime();

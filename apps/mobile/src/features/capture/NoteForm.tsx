@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { CaptureFormShell } from '@/components/CaptureFormShell';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
@@ -97,23 +98,23 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
           onPress={handleSave}
         />
       }>
-      <Section childrenGap={theme.spacing.sm}>
-        <AppTextInput label="Title" labelVariant="body" placeholder="Add title" value={title} onChangeText={setTitle} />
-        <AppTextInput
-          label="Body"
-          labelVariant="body"
-          placeholder="Write a plain text note"
-          multiline
-          value={body}
-          onChangeText={setBody}
-        />
-        <Row
-          title="Workspace"
-          subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel}
-          onPress={() => setWorkspacePickerOpen(true)}
-          right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
-          titleVariant="body"
-        />
+      <Section>
+        <View style={[styles.titleCard, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <AppTextInput label="Title" labelVariant="body" placeholder="Add title" value={title} onChangeText={setTitle} style={styles.cardInput} />
+        </View>
+        <View style={[styles.bodyCard, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <AppTextInput label="Body" labelVariant="body" placeholder="Write a plain text note" multiline value={body} onChangeText={setBody} style={styles.cardInput} />
+        </View>
+        <View style={[styles.fieldCard, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <Row
+            title="Workspace"
+            subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel}
+            onPress={() => setWorkspacePickerOpen(true)}
+            right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
+            titleVariant="body"
+            bordered={false}
+          />
+        </View>
         {error ? (
           <AppText variant="meta" style={{ color: theme.colors.danger }}>
             {error}
@@ -133,3 +134,10 @@ export function NoteForm({ onSave, initialTitle, initialBody, autoSubmit = false
     </CaptureFormShell>
   );
 }
+
+const styles = StyleSheet.create({
+  titleCard: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10 },
+  bodyCard: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
+  fieldCard: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 6 },
+  cardInput: { borderBottomWidth: 0 },
+});

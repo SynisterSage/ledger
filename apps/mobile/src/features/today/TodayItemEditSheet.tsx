@@ -13,7 +13,7 @@ import {
   updateMobileTask,
 } from '@/api/captures';
 import { getMobileNote } from '@/api/notes';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 import type { MobileTodayInteractionItem } from '@/types/ledger';
 
 type TodayItemEditSheetProps = {
@@ -266,7 +266,7 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
           </AppText>
         ) : null}
 
-        <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+        <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}>
           <AppTextInput
             label="Title"
             labelVariant="bodyStrong"
@@ -298,7 +298,7 @@ export function TodayItemEditSheet({ visible, item, mode = 'edit', onClose, onSa
         ) : null}
 
         {!isRescheduleMode ? (
-          <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+          <View style={[styles.inputCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}>
             <AppTextInput
               label={notesLabel}
               labelVariant="bodyStrong"

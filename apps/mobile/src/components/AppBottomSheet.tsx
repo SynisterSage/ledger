@@ -116,6 +116,7 @@ export function AppBottomSheet({
   const closingRef = useRef(false);
 
   const sheetMaxHeight = maxHeight ?? Math.min(windowHeight * 0.9, 720);
+  const isExpandedSheet = sheetMaxHeight >= windowHeight * 0.82;
   const resolvedCornerRadius = cornerRadius ?? theme.radius.sheet;
   const resolvedSnapPoints = useMemo(
     () =>
@@ -412,7 +413,7 @@ export function AppBottomSheet({
             style={[
               styles.backdrop,
               {
-                backgroundColor: theme.colors.textPrimary,
+                backgroundColor: theme.colors.backdrop,
                 opacity: backdrop,
               },
             ]}
@@ -431,8 +432,14 @@ export function AppBottomSheet({
               shadowOffset: { width: 0, height: -theme.shadows.modal.offsetY },
               elevation: theme.shadows.modal.elevation,
               height: sheetMaxHeight,
+              marginHorizontal: isExpandedSheet ? 0 : theme.spacing.sheetInset,
+              marginBottom: isExpandedSheet
+                ? 0
+                : Math.max(theme.spacing.xs, insets.bottom - theme.spacing.md),
               borderTopLeftRadius: resolvedCornerRadius,
               borderTopRightRadius: resolvedCornerRadius,
+              borderBottomLeftRadius: isExpandedSheet ? 0 : resolvedCornerRadius,
+              borderBottomRightRadius: isExpandedSheet ? 0 : resolvedCornerRadius,
               transform: [{ translateY }],
             },
           ]}

@@ -717,7 +717,7 @@ function NotificationsScreen() {
   return (
     <Screen
       contentStyle={{ paddingTop: 0 }}
-      topFadeHeight={0}
+      topFade={false}
     >
       <View style={{ flex: 1 }}>
         <Animated.View style={[styles.pageSurface, { transform: [{ translateX: pageTranslateX }] }]}>

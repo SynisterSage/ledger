@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Pressable, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,11 +53,9 @@ import {
 import { useLedgerTheme } from '@/theme';
 import { HeaderInsetFade } from '@/components/HeaderInsetFade';
 
-const mockProfile = {
-  version: '1.0.0',
-};
+const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
-const HEADER_COLLAPSE_DISTANCE = 64;
+const HEADER_COLLAPSE_DISTANCE = 48;
 const HEADER_TRANSLATE_DISTANCE = 36;
 
 export default function SettingsScreen() {
@@ -364,9 +363,9 @@ export default function SettingsScreen() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE - 44,
+            paddingTop: MOBILE_PAGE_HEADER_SCROLL_SPACE - 32,
             paddingHorizontal: theme.spacing.screenX,
-            paddingBottom: theme.spacing['3xl'] + 96,
+            paddingBottom: theme.spacing['3xl'] + 48,
             flexGrow: 1,
           },
         ]}
@@ -598,7 +597,7 @@ export default function SettingsScreen() {
             <SettingsRow title="Terms" chevron onPress={() => void openLegalLink('terms')} />
             <SettingsRow
               title="Version"
-              value={mockProfile.version}
+              value={appVersion}
               chevron
               onPress={() => void openLegalLink('whats-new')}
             />
@@ -607,6 +606,10 @@ export default function SettingsScreen() {
           <Section card>
             <SettingsRow title="Sign out" destructive onPress={handleSignOut} />
           </Section>
+          <View style={styles.appFooter}>
+            <AppText variant="caption" style={styles.appFooterText}>Made with {'<3'} by Lex</AppText>
+            <AppText variant="caption" style={styles.appFooterText}>Version {appVersion}</AppText>
+          </View>
         </View>
       </Animated.ScrollView>
 
@@ -761,6 +764,15 @@ const styles = {
   },
   sections: {
     gap: 28,
+  },
+  appFooter: {
+    alignItems: 'center' as const,
+    gap: 4,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  appFooterText: {
+    color: '#9CA3AF',
   },
   identityBlock: {
     flexDirection: 'row' as const,

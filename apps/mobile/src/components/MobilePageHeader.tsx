@@ -9,8 +9,12 @@ import { Skeleton } from './Skeleton';
 
 import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
+import {
+  MOBILE_HEADER_ROW_HEIGHT,
+  MOBILE_HEADER_SCROLL_SPACE,
+} from './mobileHeaderMetrics';
 
-export const MOBILE_PAGE_HEADER_SCROLL_SPACE = 136;
+export const MOBILE_PAGE_HEADER_SCROLL_SPACE = MOBILE_HEADER_SCROLL_SPACE;
 export const MOBILE_PULL_TO_REFRESH_OFFSET = MOBILE_PAGE_HEADER_SCROLL_SPACE - 20;
 const HEADER_COLLAPSE_DISTANCE = 64;
 const HEADER_TRANSLATE_DISTANCE = 36;
@@ -173,6 +177,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   titleRow: {
+    minHeight: MOBILE_HEADER_ROW_HEIGHT,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',

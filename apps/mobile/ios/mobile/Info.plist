@@ -80,6 +80,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Ledger connects to the local development server on your Mac while running in development.</string>
 	<key>NSSiriUsageDescription</key>
 	<string>Allow Ledger to capture tasks, reminders, notes, and events with Siri.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

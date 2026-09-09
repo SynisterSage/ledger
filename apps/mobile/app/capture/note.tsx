@@ -32,7 +32,7 @@ export default function NoteCaptureScreen() {
   }, []);
 
   return (
-    <Screen contentStyle={{ paddingTop: theme.spacing.lg }}>
+    <Screen topFade={false} contentStyle={{ paddingTop: theme.spacing.lg }}>
       <CaptureHeader title="Note" />
       <NoteForm
         key={formKey}

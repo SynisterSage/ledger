@@ -8,6 +8,7 @@ export const spacing = {
   '3xl': 32,
   screenX: 20,
   screenY: 24,
+  sheetInset: 10,
 };
 
 export type LedgerSpacing = typeof spacing;

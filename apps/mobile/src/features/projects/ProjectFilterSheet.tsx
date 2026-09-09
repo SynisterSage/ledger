@@ -4,7 +4,7 @@ import { SymbolView } from 'expo-symbols';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 import type {
   ProjectAttentionFilter,
   ProjectDateFilter,
@@ -53,6 +53,6 @@ export function ProjectFilterSheet({ visible, filters, showOwnership = true, act
   </AppBottomSheet>;
 }
 
-function FilterGroup({ title, children }: { title: string; children: ReactNode }) { const theme = useLedgerTheme(); return <View style={styles.group}><AppText variant="label" style={{ color: theme.colors.textMuted, letterSpacing: 0.6 }}>{title}</AppText><View style={[styles.groupRows, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>{children}</View></View>; }
+function FilterGroup({ title, children }: { title: string; children: ReactNode }) { const theme = useLedgerTheme(); return <View style={styles.group}><AppText variant="label" style={{ color: theme.colors.textMuted, letterSpacing: 0.6 }}>{title}</AppText><View style={[styles.groupRows, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}>{children}</View></View>; }
 
 const styles = StyleSheet.create({ title: { flexDirection: 'row', alignItems: 'baseline', gap: 8 }, group: { gap: 7 }, groupRows: { overflow: 'hidden', paddingVertical: 6 }, row: { minHeight: 56, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, direction: { paddingHorizontal: 16, paddingVertical: 10 }, });

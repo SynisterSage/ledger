@@ -129,5 +129,6 @@ const styles = StyleSheet.create({
   actions: {
     alignItems: 'center',
     width: '100%',
+    marginTop: 8,
   },
 });

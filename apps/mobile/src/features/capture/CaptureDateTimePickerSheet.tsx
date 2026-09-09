@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/AppText';
 import { useAppPreferencesState } from '@/store/appPreferencesStore';
@@ -42,6 +43,7 @@ export function CaptureDateTimePickerSheet({
   style,
 }: CaptureDateTimePickerSheetProps) {
   const theme = useLedgerTheme();
+  const insets = useSafeAreaInsets();
   const appPreferences = useAppPreferencesState();
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const [mounted, setMounted] = useState(visible);
@@ -174,7 +176,7 @@ export function CaptureDateTimePickerSheet({
             style={[
               styles.backdrop,
               {
-                backgroundColor: theme.colors.textPrimary,
+                backgroundColor: theme.colors.backdrop,
                 opacity: Animated.multiply(
                   backdropOpacity.interpolate({
                     inputRange: [0, 1],
@@ -193,6 +195,9 @@ export function CaptureDateTimePickerSheet({
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
+              marginHorizontal: theme.spacing.sheetInset,
+              marginBottom: Math.max(theme.spacing.xs, insets.bottom - theme.spacing.md),
+              borderRadius: theme.radius.sheet,
               paddingBottom: SHEET_BOTTOM_BUFFER,
               transform: [{ translateY: sheetTranslateY }],
             },
@@ -242,8 +247,6 @@ const styles = StyleSheet.create({
   },
   sheet: {
     maxHeight: SHEET_MAX_HEIGHT,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     borderTopWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },

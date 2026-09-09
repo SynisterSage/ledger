@@ -3,9 +3,14 @@ import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/AppText';
+import {
+  MOBILE_HEADER_ROW_HEIGHT,
+  MOBILE_HEADER_SCROLL_SPACE,
+  MOBILE_HEADER_TOP_PADDING,
+} from '@/components/mobileHeaderMetrics';
 import { useLedgerTheme } from '@/theme';
 
-export const TODAY_HEADER_SCROLL_SPACE = 116;
+export const TODAY_HEADER_SCROLL_SPACE = MOBILE_HEADER_SCROLL_SPACE;
 
 type TodayHeaderProps = {
   workspaceLabel: string;
@@ -69,7 +74,7 @@ export function TodayHeader({
       style={[
         styles.wrapper,
         {
-          paddingTop: insets.top + 4,
+          paddingTop: insets.top + MOBILE_HEADER_TOP_PADDING,
           backgroundColor: theme.colors.background,
           opacity,
           transform: [{ translateY }],
@@ -177,13 +182,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: -22,
+    // Keep the shared tab header aligned with Calendar's higher toolbar start.
+    top: -50,
     zIndex: 5,
     paddingHorizontal: 0,
     paddingBottom: 6,
   },
   row: {
-    minHeight: 58,
+    minHeight: MOBILE_HEADER_ROW_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

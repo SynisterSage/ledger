@@ -4,10 +4,6 @@ export function isPublicMobilePath(pathname: string) {
   return PUBLIC_PATHS.has(pathname);
 }
 
-export function isNotificationOnboardingPath(pathname: string) {
-  return pathname === '/onboarding/notifications';
-}
-
 /** Push payloads are untrusted input. Keep this allowlist intentionally small. */
 export function getSafeNotificationPath(value: unknown) {
   if (value === '/notifications' || value === '/(tabs)/notifications') {

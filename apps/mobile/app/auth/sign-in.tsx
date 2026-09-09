@@ -9,7 +9,7 @@ import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { Screen } from '@/components/Screen';
 import { signInWithEmail } from '@/api/auth';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -51,35 +51,46 @@ export default function SignInScreen() {
           <AuthHeader title="Welcome Back" />
 
           <View style={styles.form}>
-            <AppTextInput
-              label="Email"
-              placeholder="you@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
-            <AppTextInput
-              label="Password"
-              placeholder="••••••••"
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-              rightAccessory={
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                  onPress={() => setShowPassword((value) => !value)}
-                  hitSlop={8}
-                  style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
-                  {showPassword ? (
-                    <EyeOff size={18} color={theme.colors.textMuted} />
-                  ) : (
-                    <Eye size={18} color={theme.colors.textMuted} />
-                  )}
-                </Pressable>
-              }
-            />
+            <View
+              style={[
+                styles.inputCard,
+                {
+                  backgroundColor: theme.colors.surfaceMuted,
+                  borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg),
+                },
+              ]}>
+              <AppTextInput
+                label="Email"
+                placeholder="you@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
+                style={styles.cardInput}
+              />
+              <AppTextInput
+                label="Password"
+                placeholder="••••••••"
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={setPassword}
+                style={styles.cardInput}
+                rightAccessory={
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                    onPress={() => setShowPassword((value) => !value)}
+                    hitSlop={8}
+                    style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
+                    {showPassword ? (
+                      <EyeOff size={18} color={theme.colors.textMuted} />
+                    ) : (
+                      <Eye size={18} color={theme.colors.textMuted} />
+                    )}
+                  </Pressable>
+                }
+              />
+            </View>
             {error ? <AppText variant="caption">{error}</AppText> : null}
           </View>
 
@@ -108,9 +119,16 @@ const styles = {
     justifyContent: 'space-between' as const,
   },
   form: {
-    gap: 20,
+    gap: 12,
     marginTop: 0,
     marginBottom: 170,
+  },
+  inputCard: {
+    gap: 20,
+    padding: 16,
+  },
+  cardInput: {
+    borderBottomWidth: 0,
   },
   actions: {
     gap: 14,

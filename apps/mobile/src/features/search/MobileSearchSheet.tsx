@@ -249,7 +249,7 @@ function SearchSheetShell({
             style={[
               styles.backdrop,
               {
-                backgroundColor: theme.colors.textPrimary,
+                backgroundColor: theme.colors.backdrop,
                 opacity: backdropOpacity,
               },
             ]}

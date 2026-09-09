@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Switch } from 'react-native';
+import { StyleSheet, Switch, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 
 import { CaptureFormShell } from '@/components/CaptureFormShell';
@@ -108,57 +108,22 @@ export function ProjectActionForm({ onSave, initialProjectId = null, initialWork
           onPress={handleSave}
         />
       }>
-      <Section childrenGap={theme.spacing.sm}>
-        <AppTextInput label="Action" labelVariant="body" placeholder="Add title" value={title} onChangeText={setTitle} />
-        <Row
-          title="Due date"
-          subtitle={formatCaptureDateLabel(dateInput)}
-          onPress={() => setDatePickerOpen(true)}
-          chevron
-          titleVariant="body"
-        />
-        <Row
-          title="Due time"
-          subtitle={formatCaptureTimeLabel(timeInput)}
-          onPress={() => setTimePickerOpen(true)}
-          chevron
-          titleVariant="body"
-        />
-        <AppTextInput
-          label="Notes"
-          labelVariant="body"
-          placeholder="Add details or context"
-          multiline
-          value={notes}
-          onChangeText={setNotes}
-        />
-        <Row
-          title="Workspace"
-          subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel}
-          onPress={() => setWorkspacePickerOpen(true)}
-          right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
-          titleVariant="body"
-        />
-        <Row
-          title="Project"
-          subtitle={selectedProjectLabel}
-          onPress={() => setProjectPickerOpen(true)}
-          right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />}
-          titleVariant="body"
-        />
-        <Row
-          title="Show in Today"
-          subtitle={showInToday ? 'On' : 'Off'}
-          titleVariant="body"
-          right={
-            <Switch
-              value={showInToday}
-              onValueChange={setShowInToday}
-              thumbColor={theme.colors.surface}
-              trackColor={{ false: theme.colors.borderSubtle, true: theme.colors.accent }}
-            />
-          }
-        />
+      <Section>
+        <View style={[styles.titleCard, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <AppTextInput label="Action" labelVariant="body" placeholder="Add title" value={title} onChangeText={setTitle} style={styles.cardInput} />
+        </View>
+        <View style={[styles.fieldCard, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <Row title="Due date" subtitle={formatCaptureDateLabel(dateInput)} onPress={() => setDatePickerOpen(true)} chevron titleVariant="body" bordered={false} />
+          <Row title="Due time" subtitle={formatCaptureTimeLabel(timeInput)} onPress={() => setTimePickerOpen(true)} chevron titleVariant="body" bordered={false} />
+        </View>
+        <View style={[styles.bodyCard, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <AppTextInput label="Notes" labelVariant="body" placeholder="Add details or context" multiline value={notes} onChangeText={setNotes} style={styles.cardInput} />
+        </View>
+        <View style={[styles.fieldCard, { backgroundColor: theme.colors.surfaceMuted }]}>
+          <Row title="Workspace" subtitle={workspaceState.isLoading ? 'Loading workspaces…' : workspaceLabel} onPress={() => setWorkspacePickerOpen(true)} right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />} titleVariant="body" bordered={false} />
+          <Row title="Project" subtitle={selectedProjectLabel} onPress={() => setProjectPickerOpen(true)} right={<SymbolView name="chevron.down" size={14} weight="regular" tintColor={theme.colors.textSecondary} />} titleVariant="body" bordered={false} />
+          <Row title="Show in Today" subtitle={showInToday ? 'On' : 'Off'} titleVariant="body" bordered={false} right={<Switch value={showInToday} onValueChange={setShowInToday} thumbColor={theme.colors.surface} trackColor={{ false: theme.colors.borderSubtle, true: theme.colors.accent }} />} />
+        </View>
         {error ? (
           <AppText variant="meta" style={{ color: theme.colors.danger }}>
             {error}
@@ -202,3 +167,10 @@ export function ProjectActionForm({ onSave, initialProjectId = null, initialWork
     </CaptureFormShell>
   );
 }
+
+const styles = StyleSheet.create({
+  titleCard: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10 },
+  bodyCard: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14 },
+  fieldCard: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 6 },
+  cardInput: { borderBottomWidth: 0 },
+});

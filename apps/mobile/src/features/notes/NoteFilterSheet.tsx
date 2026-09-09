@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
 import { useLedgerTheme } from '@/theme';
+import { concentricRadius } from '@/theme/radius';
 import type { MobileNoteSection } from '@/api/notes';
 import { countActiveNoteFilters, type NoteBrowseFilters, type NoteBrowseSort } from './noteBrowseTypes';
 
@@ -25,7 +26,7 @@ function OptionRow({ label, selected, onPress }: { label: string; selected: bool
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   const theme = useLedgerTheme();
-  return <View style={styles.group}><AppText variant="label" style={styles.groupLabel}>{title}</AppText><View style={[styles.groupCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>{children}</View></View>;
+  return <View style={styles.group}><AppText variant="label" style={styles.groupLabel}>{title}</AppText><View style={[styles.groupCard, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}>{children}</View></View>;
 }
 
 export function NoteFilterSheet({ visible, filters, sections, hasUnsorted, onChange, onReset, onClose }: NoteFilterSheetProps) {

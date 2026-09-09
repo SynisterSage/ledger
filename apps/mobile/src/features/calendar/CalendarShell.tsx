@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, InteractionManager, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SymbolView } from 'expo-symbols';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
@@ -26,12 +26,16 @@ import { formatCalendarDateKey } from './calendarMonthGenerator';
 import { useFocusEffect } from 'expo-router';
 import { CalendarViewMenuController, type CalendarViewMenuHandle } from './CalendarViewMenu';
 import { useFloatingTabBarScroll } from '@/components/FloatingTabBarScrollContext';
+import { MOBILE_HEADER_ROW_HEIGHT, MOBILE_HEADER_TOP_PADDING } from '@/components/mobileHeaderMetrics';
 
 const CALENDAR_PAGE_PADDING = 16;
-const GLOBAL_TAB_BAR_HEIGHT = 52;
+// Keep this aligned with FloatingTabBar's expanded height so the context
+// toolbar and scroll clearance never overlap the bottom navigation.
+const GLOBAL_TAB_BAR_HEIGHT = 58;
 const GLOBAL_TAB_BAR_GAP = 10;
 const CONTEXT_TOOLBAR_HEIGHT = 48;
-const CONTEXT_TOOLBAR_GAP = 10;
+const YEAR_VIEW_SCALE_DURATION = 170;
+const YEAR_VIEW_FADE_DURATION = 130;
 
 function formatPeriodTitle(view: MobileCalendarView, date: Date) {
   if (view === 'year') return String(date.getFullYear());
@@ -93,6 +97,18 @@ export function CalendarShell() {
   const workspaceState = useWorkspaceState();
   const { resetScrollState } = useFloatingTabBarScroll();
   const calendar = useMobileCalendarState(workspaceState.selectedWorkspaceId);
+  const params = useLocalSearchParams<{ date?: string; view?: string; openRequest?: string }>();
+  const handledOpenRequest = useRef<string | null>(null);
+  useEffect(() => {
+    if (!params.openRequest || handledOpenRequest.current === params.openRequest) return;
+    handledOpenRequest.current = params.openRequest;
+    if (typeof params.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(params.date)) return;
+    const date = new Date(`${params.date}T12:00:00`);
+    if (!Number.isFinite(date.getTime()) || formatCalendarDateKey(date) !== params.date) return;
+    calendar.selectDate(date);
+    calendar.changeVisiblePeriod(date);
+    if (params.view === 'day') calendar.setView('day');
+  }, [params.openRequest, params.date, params.view, calendar.selectDate, calendar.changeVisiblePeriod, calendar.setView]);
   // Landscape is an adaptive presentation of Day view. Keep the explicit
   // portrait Month/Week/Agenda/Year views intact when the device is rotated.
   const showLandscapeWeek = isLandscape && calendar.view === 'day';
@@ -140,8 +156,8 @@ export function CalendarShell() {
     viewTransitionScale.setValue(zoomIn ? 1.06 : 0.94);
     viewTransitionOpacity.setValue(0.94);
     Animated.parallel([
-      Animated.timing(viewTransitionScale, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(viewTransitionOpacity, { toValue: 1, duration: 170, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(viewTransitionScale, { toValue: 1, duration: YEAR_VIEW_SCALE_DURATION, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(viewTransitionOpacity, { toValue: 1, duration: YEAR_VIEW_FADE_DURATION, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     ]).start();
   }, [calendar.view, reduceMotionEnabled, viewTransitionOpacity, viewTransitionScale]);
   useFocusEffect(useCallback(() => {
@@ -281,8 +297,10 @@ export function CalendarShell() {
     >
     <View
       style={[styles.content, {
-        paddingTop: showLandscapeWeek ? 0 : 12,
-        paddingBottom: showLandscapeWeek ? 0 : GLOBAL_TAB_BAR_HEIGHT + GLOBAL_TAB_BAR_GAP + CONTEXT_TOOLBAR_HEIGHT + CONTEXT_TOOLBAR_GAP,
+        paddingTop: showLandscapeWeek ? 0 : MOBILE_HEADER_TOP_PADDING,
+        // SafeAreaView already reserves the bottom inset. End the scroll
+        // viewport at the context toolbar's top border, without an extra gap.
+        paddingBottom: showLandscapeWeek ? 0 : GLOBAL_TAB_BAR_HEIGHT + GLOBAL_TAB_BAR_GAP + CONTEXT_TOOLBAR_HEIGHT,
       }]}
     >
       <View style={[styles.toolbar, showLandscapeWeek && styles.landscapeHidden]}>
@@ -427,7 +445,7 @@ export function CalendarShell() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { flex: 1, paddingHorizontal: CALENDAR_PAGE_PADDING, paddingTop: 12 },
-  toolbar: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  toolbar: { minHeight: MOBILE_HEADER_ROW_HEIGHT, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   toolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   parentButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 2 },
   iconTarget: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },

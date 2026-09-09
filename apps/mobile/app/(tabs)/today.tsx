@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Alert, Animated, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Animated, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useRouter, useFocusEffect } from 'expo-router';
 
@@ -29,6 +29,8 @@ import { getMobileToday } from '@/api/today';
 import { performMobileTodayAction } from '@/api/todayActions';
 import { createMobileTask } from '@/api/captures';
 import { useMobileUnreadNotificationCount } from '@/features/notifications/useMobileUnreadNotificationCount';
+import { NotificationPermissionSheet } from '@/features/notifications/NotificationPermissionSheet';
+import { useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
 import { useLedgerTheme } from '@/theme';
 import { getFloatingTabBarScrollOffset, useFloatingTabBarScroll } from '@/components/FloatingTabBarScrollContext';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
@@ -83,6 +85,8 @@ export default function TodayScreen() {
   const [sheetMode, setSheetMode] = useState<TodayDetailSheetMode>('detail');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const unreadNotificationCount = useMobileUnreadNotificationCount(workspaceState.selectedWorkspaceId);
+  const notificationOnboarding = useNotificationOnboardingState();
+  const [notificationPromptDismissed, setNotificationPromptDismissed] = useState(false);
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
   const [surfaceSection, setSurfaceSection] = useState<'today' | 'attention' | 'next-up' | null>(null);
@@ -283,14 +287,7 @@ export default function TodayScreen() {
   };
 
   const openCalendarDay = () => {
-    const baseUrl = process.env.VITE_LEDGER_WEB_URL;
-    if (!baseUrl) {
-      showActionError('Calendar is available from Ledger desktop.');
-      return;
-    }
-    void Linking.openURL(
-      `${baseUrl.replace(/\/$/, '')}/calendar?view=day&date=${encodeURIComponent(today.date)}`,
-    );
+    router.navigate({ pathname: '/(tabs)/calendar', params: { date: today.date, view: 'day', openRequest: String(Date.now()) } });
   };
 
   const handleQuickNoteSaved = (note: QuickNoteSavedNote) => {
@@ -559,6 +556,15 @@ export default function TodayScreen() {
   return (
     <Screen contentStyle={{ paddingTop: 0 }}>
       <View style={{ flex: 1 }}>
+        <NotificationPermissionSheet
+          visible={
+            !notificationPromptDismissed &&
+            notificationOnboarding.isHydrated &&
+            !notificationOnboarding.isLoading &&
+            !notificationOnboarding.isComplete
+          }
+          onDismiss={() => setNotificationPromptDismissed(true)}
+        />
         <TodayHeader
           workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : selectedScopeLabel}
           workspaceLoading={workspaceState.isLoading}

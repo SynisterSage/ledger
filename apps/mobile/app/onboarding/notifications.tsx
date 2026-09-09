@@ -118,7 +118,7 @@ export default function NotificationsOnboardingScreen() {
   };
 
   return (
-    <Screen contentStyle={{ paddingTop: 0 }}>
+    <Screen contentStyle={{ paddingTop: 0 }} topFade={false}>
       <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
         <AuthHeader title="Notifications" />
 

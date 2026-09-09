@@ -14,10 +14,9 @@ const BAR_HEIGHT_EXPANDED = 58;
 const BAR_HEIGHT_COMPACT = 44;
 const BAR_SIDE_INSET = 20;
 const BAR_BOTTOM_GAP = 0;
-const FADE_HEIGHT = 136;
+const FADE_HEIGHT = 96;
 const FADE_STEPS = 17;
 const DOCK_FADE_OPACITY_SCALE = 0.72;
-const BLOCK_HEIGHT = 10;
 const TRACK_PADDING = 4;
 const PILL_ANIMATION_DURATION = 240;
 
@@ -69,30 +68,33 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   const appPreferences = useAppPreferencesState();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const [tabLayouts, setTabLayouts] = useState<Record<string, { x: number; width: number }>>({});
+  const [trackWidth, setTrackWidth] = useState(0);
   const pillX = useSharedValue(0);
   const pillWidth = useSharedValue(0);
   const compactProgress = useSharedValue(0);
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const { isCompact, resetScrollState } = useFloatingTabBarScroll();
-  const dockFadeColor = theme.colors.background;
   const dockShadowColor = theme.scheme === 'dark' ? '#000000' : theme.colors.textPrimary;
   const dockShadowOpacity = theme.scheme === 'dark' ? 0.28 : theme.shadows.surface.opacity;
+  const activeRouteKey = state.routes[state.index]?.key;
+  const isNotificationsRoute = state.routes[state.index]?.name === 'notifications';
   const bottomInset = useMemo(() => Math.max(insets.bottom, 8), [insets.bottom]);
   const bottomOffset = bottomInset + BAR_BOTTOM_GAP;
-  const dockHeight = bottomOffset + BAR_HEIGHT_EXPANDED + FADE_HEIGHT + BLOCK_HEIGHT;
   const animatedBarStyle = useAnimatedStyle(() => ({
     height: BAR_HEIGHT_EXPANDED + (BAR_HEIGHT_COMPACT - BAR_HEIGHT_EXPANDED) * compactProgress.value,
+  }));
+  const animatedScrimStyle = useAnimatedStyle(() => ({
+    bottom: bottomOffset + BAR_HEIGHT_EXPANDED + (BAR_HEIGHT_COMPACT - BAR_HEIGHT_EXPANDED) * compactProgress.value,
+    height: FADE_HEIGHT,
   }));
   const animatedPillStyle = useAnimatedStyle(() => ({
     width: pillWidth.value,
     transform: [{ translateX: pillX.value }],
   }));
-  const activeRouteKey = state.routes[state.index]?.key;
-  const isCalendarRoute = state.routes[state.index]?.name === 'calendar';
-  const isNotificationsRoute = state.routes[state.index]?.name === 'notifications';
   const visibleRoutes = state.routes.filter((route: any) => route.name !== 'notifications');
-  const activeLayout = activeRouteKey ? tabLayouts[activeRouteKey] : undefined;
+  const activeIndex = visibleRoutes.findIndex((route: any) => route.key === activeRouteKey);
+  const slotWidth = visibleRoutes.length ? Math.max(0, trackWidth - TRACK_PADDING * 2) / visibleRoutes.length : 0;
+  const activeX = TRACK_PADDING + Math.max(0, activeIndex) * slotWidth;
 
   useEffect(() => {
     resetScrollState();
@@ -108,19 +110,19 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
   }, [compactProgress, isCompact, reduceMotionEnabled]);
 
   useEffect(() => {
-    if (!activeLayout) {
+    if (slotWidth <= 0 || activeIndex < 0) {
       return;
     }
 
     if (reduceMotionEnabled) {
-      pillX.value = activeLayout.x;
-      pillWidth.value = activeLayout.width;
+      pillX.value = activeX;
+      pillWidth.value = slotWidth;
       return;
     }
 
-    pillX.value = withTiming(activeLayout.x, { duration: PILL_ANIMATION_DURATION });
-    pillWidth.value = withTiming(activeLayout.width, { duration: PILL_ANIMATION_DURATION });
-  }, [activeLayout, pillWidth, pillX, reduceMotionEnabled]);
+    pillX.value = withTiming(activeX, { duration: PILL_ANIMATION_DURATION });
+    pillWidth.value = withTiming(slotWidth, { duration: PILL_ANIMATION_DURATION });
+  }, [activeIndex, activeX, slotWidth, pillWidth, pillX, reduceMotionEnabled]);
 
   // Keep hooks above this branch so the tab bar remains valid when the
   // Calendar switches between portrait and landscape presentations.
@@ -130,21 +132,9 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
 
   return (
     <View pointerEvents="box-none" style={styles.wrapper}>
-      <View
-        pointerEvents="none"
-        style={[
-          styles.dockShell,
-          {
-            height: dockHeight,
-          },
-        ]}
-      >
-        <FadeStack opacityScale={isCalendarRoute ? 0.16 : DOCK_FADE_OPACITY_SCALE} />
-        <View
-          style={[styles.dockBlock, { height: BLOCK_HEIGHT, backgroundColor: dockFadeColor }]}
-        />
-        <View style={[styles.dockCover, { backgroundColor: dockFadeColor }]} />
-      </View>
+      <Reanimated.View pointerEvents="none" style={[styles.scrim, animatedScrimStyle]}>
+        <FadeStack opacityScale={DOCK_FADE_OPACITY_SCALE} />
+      </Reanimated.View>
 
       <Reanimated.View
         style={[
@@ -164,7 +154,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
           },
         ]}
       >
-        <View style={styles.track}>
+        <View style={styles.track} onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}>
           <Reanimated.View
             pointerEvents="none"
             style={[
@@ -172,7 +162,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
               animatedPillStyle,
               {
                 backgroundColor: theme.colors.accent,
-                opacity: activeLayout ? 1 : 0,
+                opacity: slotWidth > 0 && activeIndex >= 0 ? 1 : 0,
               },
             ]}
           />
@@ -189,20 +179,6 @@ export function FloatingTabBar({ state, descriptors, navigation }: any) {
                 accessibilityRole="button"
                 accessibilityLabel={title}
                 accessibilityState={isFocused ? { selected: true } : {}}
-                onLayout={(event) => {
-                  const { x, width } = event.nativeEvent.layout;
-                  setTabLayouts((current) => {
-                    const existing = current[route.key];
-                    if (existing && existing.x === x && existing.width === width) {
-                      return current;
-                    }
-
-                    return {
-                      ...current,
-                      [route.key]: { x, width },
-                    };
-                  });
-                }}
                 onPress={() => {
                   const event = navigation.emit({
                     type: 'tabPress',
@@ -256,21 +232,14 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     justifyContent: 'flex-end',
   },
-  dockShell: {
+  scrim: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
     overflow: 'hidden',
   },
   fadeWrap: {
     overflow: 'hidden',
-  },
-  dockCover: {
-    flex: 1,
-  },
-  dockBlock: {
-    width: '100%',
   },
   container: {
     position: 'absolute',

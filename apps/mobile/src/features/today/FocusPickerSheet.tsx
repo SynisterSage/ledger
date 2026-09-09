@@ -4,7 +4,7 @@ import { SymbolView } from 'expo-symbols';
 
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { AppText } from '@/components/AppText';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 import type { MobileTodayItem, MobileTodayInteractionItem } from '@/types/ledger';
 
 type FocusPickerSheetProps = {
@@ -60,7 +60,7 @@ export function FocusPickerSheet({
     >
       <View style={{ gap: theme.spacing.md }}>
         <View
-          style={[styles.quickAdd, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}
+          style={[styles.quickAdd, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}
         >
           <View style={styles.quickAddHeader}>
             <AppText variant="bodyStrong">Quick add focus</AppText>
@@ -102,7 +102,7 @@ export function FocusPickerSheet({
           {quickError ? <AppText variant="caption" style={{ color: theme.colors.danger }}>{quickError}</AppText> : null}
         </View>
 
-        <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+        <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}>
           {candidates.length ? (
             candidates.map((item) => (
               <Pressable
@@ -150,7 +150,7 @@ export function FocusPickerSheet({
         ) : null}
 
         {focused.length ? (
-          <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}>
+          <View style={[styles.card, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}>
             {focused.map((item, index) => (
               <View key={item.id} style={styles.row}>
                 <View style={styles.rowMain}>

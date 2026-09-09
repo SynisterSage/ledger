@@ -102,7 +102,7 @@ struct LedgerWidgetView: View {
         mediumView
       }
     }
-    .background(colorScheme == .dark ? LedgerWidgetPalette.darkBackground : LedgerWidgetPalette.lightBackground)
+    .ledgerWidgetBackground(colorScheme == .dark ? LedgerWidgetPalette.darkBackground : LedgerWidgetPalette.lightBackground)
     .widgetURL(ledgerWidgetURL)
   }
 
@@ -113,20 +113,26 @@ struct LedgerWidgetView: View {
       if entry.snapshot.hasData {
         Text("Focus")
           .font(.caption.weight(.medium))
-          .foregroundStyle(secondary)
+          .foregroundStyle(accent)
         Text(entry.snapshot.focusTitle ?? "No focus set")
           .font(.headline.weight(.semibold))
           .foregroundStyle(primary)
-          .lineLimit(3)
+          .lineLimit(2)
       } else {
-        emptyState
+        Text("No focus set")
+          .font(.headline.weight(.semibold))
+          .foregroundStyle(primary)
+        Text("Choose one thing to move today.")
+          .font(.caption)
+          .foregroundStyle(secondary)
+          .lineLimit(2)
       }
 
       Spacer(minLength: 0)
 
-      Text(entry.snapshot.hasData ? summaryLabel : "Tap to open Ledger")
+      Text(entry.snapshot.hasData || entry.snapshot.upcomingCount > 0 ? summaryLabel : "Set a focus in Ledger")
         .font(.caption)
-        .foregroundStyle(entry.snapshot.hasData ? secondary : accent)
+        .foregroundStyle(entry.snapshot.hasData || entry.snapshot.upcomingCount > 0 ? secondary : accent)
     }
     .padding(16)
   }
@@ -144,9 +150,6 @@ struct LedgerWidgetView: View {
       }
 
       Spacer(minLength: 0)
-      Text(entry.snapshot.hasData ? "Tap to open Today" : "Tap to open Ledger and sync your day")
-        .font(.caption)
-        .foregroundStyle(accent)
     }
     .padding(16)
   }
@@ -206,6 +209,19 @@ struct LedgerWidgetView: View {
             .foregroundStyle(.secondary)
         }
       }
+    }
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func ledgerWidgetBackground(_ color: Color) -> some View {
+    if #available(iOS 17.0, *) {
+      containerBackground(for: .widget) {
+        color
+      }
+    } else {
+      background(color)
     }
   }
 }

@@ -12,6 +12,7 @@ import {
   type PanResponderGestureState,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CaptureFormShell } from '@/components/CaptureFormShell';
 import { AppButton } from '@/components/AppButton';
@@ -62,6 +63,7 @@ function deriveDescription(draft: FollowUpSheetDraft | null) {
 
 export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
   const theme = useLedgerTheme();
+  const insets = useSafeAreaInsets();
   const appPreferences = useAppPreferencesState();
   const reduceMotionEnabled = appPreferences.reduceMotionEnabled;
   const workspaceState = useWorkspaceState();
@@ -240,7 +242,7 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
             style={[
               styles.backdrop,
               {
-                backgroundColor: theme.colors.textPrimary,
+                backgroundColor: theme.colors.backdrop,
                 opacity: Animated.multiply(backdropOpacity, progress),
               },
             ]}
@@ -253,6 +255,9 @@ export function FollowUpSheet({ visible, draft, onClose }: FollowUpSheetProps) {
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
+              marginHorizontal: theme.spacing.sheetInset,
+              marginBottom: Math.max(theme.spacing.xs, insets.bottom - theme.spacing.md),
+              borderRadius: theme.radius.sheet,
               height: sheetHeight,
               transform: [{ translateY: sheetTranslateY }],
             },

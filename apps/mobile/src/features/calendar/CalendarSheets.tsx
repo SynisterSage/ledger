@@ -5,7 +5,7 @@ import { SymbolView } from 'expo-symbols';
 import { AppBottomSheet } from '@/components/AppBottomSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
-import { useLedgerTheme } from '@/theme';
+import { concentricRadius, useLedgerTheme } from '@/theme';
 import { getMobileCalendarRange, createMobileCalendar } from '@/api/calendar';
 import { createMobileEvent, createMobileNote, createMobileProjectAction, createMobileReminder, createMobileTask } from '@/api/captures';
 import { AppTextInput } from '@/components/AppTextInput';
@@ -185,7 +185,7 @@ export function CalendarCreateSheet({ visible, workspaceId: initialWorkspaceId, 
 function CalendarSourceChoiceSheet({ visible, options, selectedId, onSelect, onClose }: { visible: boolean; options: Array<{ id: string; name: string; color?: string }>; selectedId: string | null; onSelect: (id: string | null) => void; onClose: () => void }) {
   const theme = useLedgerTheme();
   if (!visible) return null;
-  return <View style={[styles.typeOverlay, { backgroundColor: theme.colors.surfaceMuted, borderRadius: theme.radius.window }]}><View style={styles.typeHeader}><AppText variant="bodyStrong">Choose calendar</AppText><Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose}><SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={22} tintColor={theme.colors.accent} /></Pressable></View><Pressable onPress={() => onSelect(null)} style={styles.typeRow}><AppText variant="body">Default</AppText><AppText variant="meta">{selectedId ? '' : '✓'}</AppText></Pressable>{options.map((option) => <Pressable key={option.id} onPress={() => onSelect(option.id)} style={styles.typeRow}><View style={styles.sourceChoice}><View style={[styles.sourceDot, { backgroundColor: option.color ?? theme.colors.accent }]} /><AppText variant="body">{option.name}</AppText></View><AppText variant="meta">{selectedId === option.id ? '✓' : ''}</AppText></Pressable>)}</View>;
+  return <View style={[styles.typeOverlay, { backgroundColor: theme.colors.surfaceMuted, borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg) }]}><View style={styles.typeHeader}><AppText variant="bodyStrong">Choose calendar</AppText><Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose}><SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={22} tintColor={theme.colors.accent} /></Pressable></View><Pressable onPress={() => onSelect(null)} style={styles.typeRow}><AppText variant="body">Default</AppText><AppText variant="meta">{selectedId ? '' : '✓'}</AppText></Pressable>{options.map((option) => <Pressable key={option.id} onPress={() => onSelect(option.id)} style={styles.typeRow}><View style={styles.sourceChoice}><View style={[styles.sourceDot, { backgroundColor: option.color ?? theme.colors.accent }]} /><AppText variant="body">{option.name}</AppText></View><AppText variant="meta">{selectedId === option.id ? '✓' : ''}</AppText></Pressable>)}</View>;
 }
 
 type CalendarSource = { key: string; name: string; color: string; kind: 'ledger' | 'apple' | 'reminder'; readOnly?: boolean };

@@ -41,7 +41,7 @@ export function CaptureFormShell({ children, footer, contentStyle, footerBottomP
             contentContainerStyle={[
               styles.scrollContent,
               {
-                paddingTop: theme.spacing['2xl'],
+                paddingTop: theme.spacing.sm,
                 paddingBottom: insets.bottom + theme.spacing.lg + 48,
               },
               contentStyle,
