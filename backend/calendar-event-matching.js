@@ -28,7 +28,7 @@ export const isBulkDeletableCalendarEvent = (event) =>
 
 export const isBulkDeleteEligibleCalendarEvent = (event) =>
   isBulkDeletableCalendarEvent(event) &&
-  (event?.source_platform === 'ics' || Boolean(event?.series_id));
+  (event?.source_platform === 'ics' || Boolean(event?.series_id) || Boolean(event?.import_series_key) || Boolean(event?.import_batch_id));
 
 const isSimilarImportedEvent = (anchor, candidate) => {
   if (anchor.source_platform !== 'ics' || candidate.source_platform !== 'ics') return false;
@@ -45,7 +45,6 @@ const isSimilarImportedEvent = (anchor, candidate) => {
 };
 
 const isSameImportedBatchEvent = (anchor, candidate) => {
-  if (anchor.source_platform !== 'ics' || candidate.source_platform !== 'ics') return false;
   if (!anchor.import_batch_id || anchor.import_batch_id !== candidate.import_batch_id) return false;
   if (anchor.calendar_id !== candidate.calendar_id) return false;
   return normalizeTitle(anchor.title) === normalizeTitle(candidate.title);

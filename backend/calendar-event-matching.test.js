@@ -101,6 +101,34 @@ test('future scope excludes past matches and preserves chronological order', () 
   );
 });
 
+test('provenance-backed imports match even when source platform is missing', () => {
+  const anchor = event({ id: 'anchor', source_platform: null, import_series_key: 'class-uid' });
+  assert.equal(isBulkDeleteEligibleCalendarEvent(anchor), true);
+  const matches = getCalendarEventMatches({
+    anchor,
+    candidates: [
+      anchor,
+      event({ id: 'same-series', source_platform: null, import_series_key: 'class-uid', start_at: '2026-09-16T14:00:00.000Z', end_at: '2026-09-16T15:00:00.000Z' }),
+    ],
+    scope: 'all',
+  });
+  assert.deepEqual(matches.map((match) => match.id), ['same-series']);
+});
+
+test('same imported batch matches by title without a source platform', () => {
+  const batch = '11111111-1111-4111-8111-111111111111';
+  const anchor = event({ id: 'anchor', source_platform: null, import_batch_id: batch });
+  const matches = getCalendarEventMatches({
+    anchor,
+    candidates: [
+      anchor,
+      event({ id: 'same-batch', source_platform: null, import_batch_id: batch, start_at: '2026-09-30T18:00:00.000Z', end_at: '2026-09-30T19:00:00.000Z' }),
+    ],
+    scope: 'all',
+  });
+  assert.deepEqual(matches.map((match) => match.id), ['same-batch']);
+});
+
 test('preview anchor exposes no notes or private fields', () => {
   const preview = calendarEventPreviewAnchor(event({ notes: 'private' }));
   assert.equal(preview.title, 'BIO 101');
