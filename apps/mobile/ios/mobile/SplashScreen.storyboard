@@ -38,6 +38,7 @@
                                     <constraint firstItem="EXPO-SplashTitle" firstAttribute="leading" secondItem="EXPO-SplashScreen" secondAttribute="trailing" constant="14" id="brand-title-leading"/>
                                     <constraint firstItem="EXPO-SplashTitle" firstAttribute="centerY" secondItem="EXPO-SplashScreen" secondAttribute="centerY" id="brand-title-center-y"/>
                                     <constraint firstAttribute="trailing" secondItem="EXPO-SplashTitle" secondAttribute="trailing" id="brand-container-trailing"/>
+                                    <constraint firstAttribute="height" constant="56" id="brand-container-height"/>
                                 </constraints>
                             </view>
                             <label opaque="NO" userInteractionEnabled="false" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Preparing your workspace" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="false" id="EXPO-SplashFooter" userLabel="SplashScreenFooter">
@@ -49,8 +50,10 @@
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="Rmq-lb-GrQ"/>
                         <constraints>
-                            <constraint firstItem="EXPO-SplashScreen" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="cad2ab56f97c5429bf29decf850647a4216861d4"/>
-                            <constraint firstItem="EXPO-SplashScreen" firstAttribute="centerY" secondItem="EXPO-ContainerView" secondAttribute="centerY" id="1a145271b085b6ce89b1405a310f5b1bb7656595"/>
+                            <constraint firstItem="EXPO-BrandContainer" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="brand-container-center-x"/>
+                            <constraint firstItem="EXPO-BrandContainer" firstAttribute="centerY" secondItem="EXPO-ContainerView" secondAttribute="centerY" constant="-44" id="brand-container-center-y"/>
+                            <constraint firstItem="EXPO-SplashFooter" firstAttribute="top" secondItem="EXPO-BrandContainer" secondAttribute="bottom" constant="32" id="footer-top"/>
+                            <constraint firstItem="EXPO-SplashFooter" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="footer-center-x"/>
                         </constraints>
                         <color key="backgroundColor" name="SplashScreenBackground"/>
                     </view>

@@ -1,4 +1,5 @@
 import { Keyboard, Pressable, StyleSheet, View, TextInput, Switch, useWindowDimensions } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { SymbolView } from 'expo-symbols';
@@ -22,6 +23,8 @@ import { normalizeCalendarRange, type MobileCalendarItem } from './calendarItemN
 import { defaultCalendarFilters, type CalendarFilters } from './calendarFilters';
 import { useRouter } from 'expo-router';
 import { openMobileNote } from '@/features/notes/openMobileNote';
+import { appleCalendarNative, type AppleCalendarSummary } from '@/native/appleCalendar';
+import { useAuthState } from '@/store/sessionStore';
 
 type CalendarSymbolName = ComponentProps<typeof SymbolView>['name'];
 
@@ -190,12 +193,15 @@ function CalendarSourceChoiceSheet({ visible, options, selectedId, onSelect, onC
 
 type CalendarSource = { key: string; name: string; color: string; kind: 'ledger' | 'apple' | 'reminder'; readOnly?: boolean };
 
+const appleCalendarSelectionKey = (userId: string | null | undefined) => userId ? `ledger.apple-calendar.selection.${userId}` : null;
+
 function sourceKeyForItem(item: MobileCalendarItem) {
   return item.sourceKey ?? `${item.sourceKind ?? 'calendar'}:${item.sourceName ?? item.sourceId ?? 'default'}`;
 }
 
 export function CalendarSourcesSheet({ visible, workspaceId, workspaceLabel, filters, onChangeFilters, onResetFilters, onOpenWorkspacePicker, onManageConnection, onClose }: { visible: boolean; workspaceId: string; workspaceLabel: string; filters: CalendarFilters; onChangeFilters: (patch: Partial<CalendarFilters>) => void; onResetFilters: () => void; onOpenWorkspacePicker?: () => void; onManageConnection?: () => void; onClose: () => void }) {
   const theme = useLedgerTheme();
+  const auth = useAuthState();
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [sources, setSources] = useState<CalendarSource[]>([]);
@@ -204,6 +210,9 @@ export function CalendarSourcesSheet({ visible, workspaceId, workspaceLabel, fil
   const [newCalendarName, setNewCalendarName] = useState('');
   const [showCreateCalendar, setShowCreateCalendar] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [appleCalendars, setAppleCalendars] = useState<AppleCalendarSummary[]>([]);
+  const [selectedAppleCalendarIds, setSelectedAppleCalendarIds] = useState<string[]>([]);
+  const [appleCalendarStatus, setAppleCalendarStatus] = useState<string>('unknown');
 
   const loadSources = useCallback(() => {
     setLoading(true);
@@ -211,7 +220,7 @@ export function CalendarSourcesSheet({ visible, workspaceId, workspaceLabel, fil
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
     const end = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
-    void getMobileCalendarRange(workspaceId, start, end).then((payload) => {
+    void getMobileCalendarRange(workspaceId, start, end).then(async (payload) => {
       const normalized = normalizeCalendarRange(payload);
       const next: CalendarSource[] = (payload.calendars ?? []).map((calendar) => ({ key: `calendar:${String(calendar.id)}`, name: String(calendar.name ?? 'Calendar'), color: String(calendar.color ?? theme.colors.accent), kind: 'ledger' }));
       for (const item of normalized) {
@@ -220,10 +229,38 @@ export function CalendarSourcesSheet({ visible, workspaceId, workspaceLabel, fil
         if (kind === 'ledger' && item.calendarId) continue;
         if (!next.some((source) => source.key === sourceKeyForItem(item))) next.push({ key: sourceKeyForItem(item), name: item.sourceName, color: item.sourceColor ?? theme.colors.accent, kind, readOnly: item.readOnly });
       }
+      if (appleCalendarNative.supported) {
+        const status = await appleCalendarNative.getAuthorizationStatus();
+        setAppleCalendarStatus(status);
+        if (status === 'granted') {
+          const localCalendars = await appleCalendarNative.listCalendars();
+          setAppleCalendars(localCalendars);
+          for (const calendar of localCalendars) {
+            if (!next.some((source) => source.key === `apple-calendar:${calendar.id}`)) next.push({ key: `apple-calendar:${calendar.id}`, name: calendar.title, color: calendar.color, kind: 'apple', readOnly: !calendar.allowsContentModifications });
+          }
+          const key = appleCalendarSelectionKey(auth.user?.id);
+          const stored = key ? await SecureStore.getItemAsync(key) : null;
+          if (stored === null) {
+            const initialSelection = localCalendars.map((calendar) => calendar.id);
+            setSelectedAppleCalendarIds(initialSelection);
+            if (key) await SecureStore.setItemAsync(key, JSON.stringify(initialSelection));
+          } else {
+            try {
+              const parsed = JSON.parse(stored);
+              if (Array.isArray(parsed)) setSelectedAppleCalendarIds(parsed.map(String));
+            } catch {
+              setSelectedAppleCalendarIds([]);
+            }
+          }
+        } else {
+          setAppleCalendars([]);
+          setSelectedAppleCalendarIds([]);
+        }
+      }
       setSources(next);
       setLoading(false);
     }).catch((error: unknown) => { setLoading(false); setSyncError(error instanceof Error ? 'Could not refresh calendars' : 'Could not refresh calendars'); });
-  }, [theme.colors.accent, workspaceId]);
+  }, [auth.user?.id, theme.colors.accent, workspaceId]);
 
   useEffect(() => { if (visible) loadSources(); }, [loadSources, visible]);
 
@@ -236,6 +273,17 @@ export function CalendarSourcesSheet({ visible, workspaceId, workspaceLabel, fil
   };
 
   const isVisible = (source: CalendarSource) => { const field = source.kind === 'reminder' ? 'visibleReminderListIds' : 'visibleCalendarIds'; return filters[field].length === 0 || filters[field].includes(source.key); };
+  const toggleAppleCalendar = async (calendar: AppleCalendarSummary, value: boolean) => {
+    const next = value ? [...new Set([...selectedAppleCalendarIds, calendar.id])] : selectedAppleCalendarIds.filter((id) => id !== calendar.id);
+    setSelectedAppleCalendarIds(next);
+    const key = appleCalendarSelectionKey(auth.user?.id);
+    if (key) await SecureStore.setItemAsync(key, JSON.stringify(next));
+    emitCalendarDataChanged(workspaceId);
+  };
+  const renderAppleCalendars = () => {
+    if (!appleCalendars.length) return null;
+    return <View style={[styles.sourceGroup, { backgroundColor: theme.colors.surfaceMuted }]}><View style={styles.groupHeader}><AppText variant="meta">Apple Calendar</AppText><AppText variant="caption" style={{ color: theme.colors.textMuted }}>{selectedAppleCalendarIds.length} selected</AppText></View>{appleCalendars.map((calendar) => <View key={calendar.id} style={styles.sourceRow}><View style={[styles.sourceDot, { backgroundColor: calendar.color }]} /><AppText variant="bodyStrong" numberOfLines={1} style={styles.sourceName}>{calendar.title}</AppText><Switch value={selectedAppleCalendarIds.includes(calendar.id)} onValueChange={(value) => void toggleAppleCalendar(calendar, value)} disabled={appleCalendarStatus !== 'granted'} trackColor={{ false: theme.colors.borderSubtle, true: theme.colors.accent }} /></View>)}</View>;
+  };
   const renderGroup = (title: string, kind: CalendarSource['kind'], canCreate = false) => {
     const group = sources.filter((source) => source.kind === kind);
     if (!group.length) return null;
@@ -247,7 +295,7 @@ export function CalendarSourcesSheet({ visible, workspaceId, workspaceLabel, fil
 
   return <AppBottomSheet visible={visible} onClose={onClose} title={<View style={styles.calendarSheetTitle}><AppText variant="sectionTitle" style={styles.calendarSheetTitleText}>Calendars</AppText><AppText variant="caption" numberOfLines={1}>Choose what appears in Calendar</AppText></View>} headerAccessory={<Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose} style={styles.doneButton}><SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={22} tintColor={theme.colors.accent} /></Pressable>} snapPoints={['88%', '100%']} initialSnapPointIndex={1} maxHeight={Math.max(560, windowHeight - insets.top)} dragCloseThreshold={24} dragCloseVelocityThreshold={0.35} dragCloseSnapMargin={4} dismissKeyboardOnContentPress>
       <View style={styles.sourcesContent}><Pressable accessibilityRole="button" accessibilityLabel={`Calendar workspace, ${workspaceLabel}`} onPress={onOpenWorkspacePicker} style={[styles.sheetActions, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="meta">Workspace</AppText><AppText variant="bodyStrong" style={styles.sourceName}>{workspaceLabel}</AppText><AppText variant="meta">⌄</AppText>{JSON.stringify(filters) !== JSON.stringify(defaultCalendarFilters) ? <Pressable onPress={(event) => { event.stopPropagation(); onResetFilters(); }}><AppText variant="caption" style={{ color: theme.colors.accent }}>Reset</AppText></Pressable> : null}</Pressable>
-      {renderGroup('Ledger calendars', 'ledger', true)}{renderGroup('Apple Calendar', 'apple')}{renderGroup('Apple Reminders', 'reminder')}
+      {renderGroup('Ledger calendars', 'ledger', true)}{renderAppleCalendars()}{renderGroup('Apple Calendar', 'apple')}{renderGroup('Apple Reminders', 'reminder')}
       <View style={[styles.sourceGroup, { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="meta">Show in Calendar</AppText>{typeRows.map(([key, label]) => <Pressable key={key} accessibilityRole="checkbox" accessibilityState={{ checked: filters[key] as boolean }} accessibilityLabel={`Show ${label.toLowerCase()} in Calendar, ${filters[key] ? 'enabled' : 'disabled'}`} onPress={() => onChangeFilters({ [key]: !filters[key] })} style={({ pressed }) => [styles.sourceRow, { opacity: pressed ? 0.68 : 1 }]}><AppText variant="bodyStrong" style={styles.sourceName}>{label}</AppText><AppText variant="meta" style={{ color: filters[key] ? theme.colors.accent : theme.colors.textMuted }}>{filters[key] ? '✓' : ''}</AppText></Pressable>)}</View>
       {loading ? <AppText variant="caption" style={styles.status}>Syncing…</AppText> : syncError ? <View style={styles.statusRow}><AppText variant="caption">{syncError}</AppText><Pressable onPress={loadSources}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry</AppText></Pressable></View> : null}
       <Pressable accessibilityRole="button" style={styles.manageAction} onPress={onManageConnection ?? onClose}><AppText variant="body">Manage Apple Calendar</AppText></Pressable>

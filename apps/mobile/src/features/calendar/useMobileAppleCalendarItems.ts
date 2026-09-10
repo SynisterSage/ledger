@@ -81,14 +81,28 @@ export function useMobileAppleCalendarItems(
     if (!storedSelectionKey) return;
     let cancelled = false;
     const refresh = async () => {
-      const stored = await SecureStore.getItemAsync(storedSelectionKey);
-      const selectedIds = stored ? JSON.parse(stored) : [];
-      if (!Array.isArray(selectedIds) || selectedIds.length === 0) {
+      const status = await appleCalendarNative.getAuthorizationStatus();
+      if (status !== 'granted') {
         if (!cancelled) setItems([]);
         return;
       }
-      const status = await appleCalendarNative.getAuthorizationStatus();
-      if (status !== 'granted') {
+      const availableCalendars = await appleCalendarNative.listCalendars();
+      const stored = await SecureStore.getItemAsync(storedSelectionKey);
+      let selectedIds: string[] = [];
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) selectedIds = parsed.map(String);
+        } catch {
+          selectedIds = [];
+        }
+      }
+      const availableIds = availableCalendars.map((calendar) => calendar.id);
+      const validSelectedIds = selectedIds.filter((id) => availableIds.includes(id));
+      // A newly granted connection has no saved selection. Include every
+      // calendar by default so subscribed calendars such as Holidays appear.
+      const calendarIds = validSelectedIds.length > 0 || stored ? validSelectedIds : availableIds;
+      if (calendarIds.length === 0) {
         if (!cancelled) setItems([]);
         return;
       }
@@ -97,7 +111,7 @@ export function useMobileAppleCalendarItems(
         const events = await appleCalendarNative.fetchEvents(
           localDateBoundary(startDate),
           localDateBoundary(endDate, true),
-          selectedIds.map(String),
+          calendarIds,
         );
         if (!cancelled) setItems(normalizeEvents(events, workspaceId));
       } finally {

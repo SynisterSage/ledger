@@ -5,6 +5,8 @@ import { getMobileCalendarRange } from '@/api/calendar';
 import { normalizeCalendarRange, type MobileCalendarItem } from './calendarItemNormalizer';
 import { formatCalendarDateKey, generateCalendarMonth, getCalendarFirstWeekday } from './calendarMonthGenerator';
 import { filterCalendarItems, type CalendarFilters } from './calendarFilters';
+import { useMobileAppleCalendarItems } from './useMobileAppleCalendarItems';
+import { useAuthState } from '@/store/sessionStore';
 
 type Props = { visibleYear: number; selectedDate: Date; workspaceId: string; filters: CalendarFilters; onSelectMonth: (date: Date) => void; onSelectDate: (date: Date) => void; onVisibleYearChange: (year: number) => void };
 const YEAR_BLOCK_HEIGHT = 707;
@@ -14,7 +16,9 @@ function yearRange(year: number) {
 }
 
 function useYearItems(workspaceId: string, year: number, filters: CalendarFilters) {
+  const auth = useAuthState();
   const [items, setItems] = useState<MobileCalendarItem[]>([]);
+  const apple = useMobileAppleCalendarItems(workspaceId, auth.user?.id, yearRange(year).start, yearRange(year).end);
   useEffect(() => {
     let active = true;
     const range = yearRange(year);
@@ -25,12 +29,12 @@ function useYearItems(workspaceId: string, year: number, filters: CalendarFilter
     return () => { active = false; };
   }, [workspaceId, year]);
   return useMemo(() => {
-    const filtered = filterCalendarItems(items, filters);
+    const filtered = filterCalendarItems([...items, ...apple.items], filters);
     return filtered.reduce<Record<string, MobileCalendarItem[]>>((groups, item) => {
       (groups[item.dateKey] ??= []).push(item);
       return groups;
     }, {});
-  }, [filters, items]);
+  }, [apple.items, filters, items]);
 }
 
 type YearColors = ReturnType<typeof useLedgerTheme>['colors'];

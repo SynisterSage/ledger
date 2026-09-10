@@ -160,7 +160,15 @@ export default function SettingsScreen() {
           // Ignore an invalid device-local selection and start empty.
         }
       }
-      if (status === 'granted') setAppleCalendars(await appleCalendarNative.listCalendars());
+      if (status === 'granted') {
+        const availableCalendars = await appleCalendarNative.listCalendars();
+        setAppleCalendars(availableCalendars);
+        if (!storedSelection && auth.user?.id) {
+          const initialSelection = availableCalendars.map((calendar) => calendar.id);
+          setSelectedAppleCalendarIds(initialSelection);
+          await SecureStore.setItemAsync(`ledger.apple-calendar.selection.${auth.user.id}`, JSON.stringify(initialSelection));
+        }
+      }
     };
     void loadAppleCalendarState().catch(() => {
       if (!cancelled) setAppleCalendarStatus('unknown');
@@ -240,7 +248,16 @@ export default function SettingsScreen() {
     try {
       const status = await appleCalendarNative.requestAccess();
       setAppleCalendarStatus(status);
-      if (status === 'granted') setAppleCalendars(await appleCalendarNative.listCalendars());
+      if (status === 'granted') {
+        const availableCalendars = await appleCalendarNative.listCalendars();
+        setAppleCalendars(availableCalendars);
+        if (auth.user?.id) {
+          const initialSelection = availableCalendars.map((calendar) => calendar.id);
+          setSelectedAppleCalendarIds(initialSelection);
+          await SecureStore.setItemAsync(`ledger.apple-calendar.selection.${auth.user.id}`, JSON.stringify(initialSelection));
+        }
+        emitCalendarDataChanged(workspaceState.selectedWorkspaceId);
+      }
     } catch {
       Alert.alert('Could not connect Apple Calendar', 'Please try again on this iPhone.');
     } finally {
