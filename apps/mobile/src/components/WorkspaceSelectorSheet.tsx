@@ -44,10 +44,18 @@ export function WorkspaceSelectorSheet({
   const backdropProgress = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const dragY = useRef(new Animated.Value(0)).current;
   const closingRef = useRef(false);
+  const animationIdRef = useRef(0);
 
   useEffect(() => {
+    const animationId = animationIdRef.current + 1;
+    animationIdRef.current = animationId;
+    progress.stopAnimation();
+    backdropProgress.stopAnimation();
+    dragY.stopAnimation();
+
     if (visible) {
       setMounted(true);
+      closingRef.current = false;
       dragY.setValue(0);
       Animated.timing(progress, {
         toValue: 1,
@@ -67,7 +75,7 @@ export function WorkspaceSelectorSheet({
       duration: 180,
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (finished) {
+      if (finished && animationIdRef.current === animationId) {
         setMounted(false);
       }
     });
@@ -83,6 +91,11 @@ export function WorkspaceSelectorSheet({
     if (closingRef.current) return;
 
     closingRef.current = true;
+    const animationId = animationIdRef.current + 1;
+    animationIdRef.current = animationId;
+    progress.stopAnimation();
+    backdropProgress.stopAnimation();
+    dragY.stopAnimation();
     Animated.timing(backdropProgress, {
       toValue: 0,
       duration: 120,
@@ -100,6 +113,7 @@ export function WorkspaceSelectorSheet({
         useNativeDriver: true,
       }),
     ]).start(() => {
+      if (animationIdRef.current !== animationId) return;
       closingRef.current = false;
       onClose();
     });

@@ -85,8 +85,16 @@ export function useMobileCalendarItems(workspaceId: string, visiblePeriod: Date,
     return () => { cancelled = true; };
   }, [range.endDate, range.startDate, refreshToken, workspaceId]);
 
-  const combinedItems = useMemo(() => sortCalendarItems([...items, ...apple.items]), [apple.items, items]);
-  const visibleItems = useMemo(() => filters ? filterCalendarItems(combinedItems, filters) : combinedItems, [combinedItems, filters]);
+  const combinedItems = useMemo(() => {
+    const next = sortCalendarItems([...items, ...apple.items]);
+    if (__DEV__) console.log('[Ledger Calendar] merged', { serverItems: items.length, appleItems: apple.items.length, total: next.length });
+    return next;
+  }, [apple.items, items]);
+  const visibleItems = useMemo(() => {
+    const next = filters ? filterCalendarItems(combinedItems, filters) : combinedItems;
+    if (__DEV__) console.log('[Ledger Calendar] visible', { total: combinedItems.length, visible: next.length, filters });
+    return next;
+  }, [combinedItems, filters]);
   const itemsByDate = useMemo<CalendarItemsByDate>(() => groupCalendarItems(visibleItems), [visibleItems]);
 
   return { items: visibleItems, allItems: combinedItems, itemsByDate, isLoading: isLoading || apple.isLoading, error, retry: () => {

@@ -36,7 +36,15 @@ export function isCalendarItemVisible(item: MobileCalendarItem, filters: Calenda
   const key = typeFilter[item.type];
   if (key && filters[key] !== true) return false;
   if (item.sourceKind === 'reminder' && filters.visibleReminderListIds.length > 0 && item.sourceKey && !filters.visibleReminderListIds.includes(item.sourceKey)) return false;
-  if (item.sourceKind === 'calendar' && filters.visibleCalendarIds.length > 0 && item.sourceKey && !filters.visibleCalendarIds.includes(item.sourceKey)) return false;
+  if (item.sourceKind === 'calendar' && filters.visibleCalendarIds.length > 0 && item.sourceKey) {
+    const isAppleCalendar = item.sourceKey.startsWith('apple-calendar:');
+    const hasExplicitAppleFilter = filters.visibleCalendarIds.some((sourceKey) => sourceKey.startsWith('apple-calendar:'));
+    // Older saved filters only contain Ledger calendar keys. Do not let that
+    // legacy selection hide newly connected Apple calendars by default.
+    if (!isAppleCalendar || hasExplicitAppleFilter) {
+      if (!filters.visibleCalendarIds.includes(item.sourceKey)) return false;
+    }
+  }
   return true;
 }
 

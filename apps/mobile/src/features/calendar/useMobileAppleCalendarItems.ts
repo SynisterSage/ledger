@@ -19,11 +19,24 @@ function addDays(date: Date, amount: number) {
   return next;
 }
 
-function normalizeEvents(events: AppleCalendarEvent[], workspaceId: string): MobileCalendarItem[] {
+function parseAppleDate(value: unknown) {
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function normalizeAppleCalendarEvents(events: AppleCalendarEvent[], workspaceId: string): MobileCalendarItem[] {
   return events.flatMap((event) => {
-    const start = new Date(event.start);
-    const end = new Date(event.end);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+    // Be tolerant of Expo clients that bridge native dates as epoch values.
+    // A malformed optional end should not discard an otherwise valid event.
+    const start = parseAppleDate(event.start);
+    const end = parseAppleDate(event.end) ?? start;
+    if (!start || !end) return [];
     const firstDate = formatCalendarDateKey(start);
     const lastDate = event.allDay && end > start
       ? formatCalendarDateKey(addDays(end, -1))
@@ -37,17 +50,17 @@ function normalizeEvents(events: AppleCalendarEvent[], workspaceId: string): Mob
       items.push({
         id: `apple-event:${event.id}:${dateKey}`,
         type: 'external_event',
-        title: event.title,
+        title: String(event.title || 'Untitled event'),
         dateKey,
-        startAt: multiDay ? null : event.start,
-        endAt: multiDay ? null : event.end,
+        startAt: multiDay ? null : start.toISOString(),
+        endAt: multiDay ? null : end.toISOString(),
         allDay: event.allDay || multiDay,
-        sourceId: event.id,
-        sourceName: event.calendarTitle,
-        sourceColor: event.calendarColor,
-        sourceKey: `apple-calendar:${event.calendarId}`,
+        sourceId: String(event.id),
+        sourceName: String(event.calendarTitle || 'Apple Calendar'),
+        sourceColor: event.calendarColor || null,
+        sourceKey: `apple-calendar:${String(event.calendarId)}`,
         sourceKind: 'calendar',
-        calendarId: `apple:${event.calendarId}`,
+        calendarId: `apple:${String(event.calendarId)}`,
         workspaceId,
         readOnly: true,
         notes: event.notes ?? null,
@@ -82,6 +95,7 @@ export function useMobileAppleCalendarItems(
     let cancelled = false;
     const refresh = async () => {
       const status = await appleCalendarNative.getAuthorizationStatus();
+      if (__DEV__) console.log('[Ledger Apple Calendar] access', { supported: appleCalendarNative.supported, status, startDate, endDate });
       if (status !== 'granted') {
         if (!cancelled) setItems([]);
         return;
@@ -99,9 +113,10 @@ export function useMobileAppleCalendarItems(
       }
       const availableIds = availableCalendars.map((calendar) => calendar.id);
       const validSelectedIds = selectedIds.filter((id) => availableIds.includes(id));
-      // A newly granted connection has no saved selection. Include every
-      // calendar by default so subscribed calendars such as Holidays appear.
-      const calendarIds = validSelectedIds.length > 0 || stored ? validSelectedIds : availableIds;
+      // Use every available calendar when the saved selection is empty or
+      // stale. This keeps a granted connection from silently showing nothing.
+      const calendarIds = validSelectedIds.length > 0 ? validSelectedIds : availableIds;
+      if (__DEV__) console.log('[Ledger Apple Calendar] calendars', { available: availableCalendars.map((calendar) => ({ id: calendar.id, title: calendar.title, type: calendar.type })), selectedIds, calendarIds });
       if (calendarIds.length === 0) {
         if (!cancelled) setItems([]);
         return;
@@ -113,12 +128,24 @@ export function useMobileAppleCalendarItems(
           localDateBoundary(endDate, true),
           calendarIds,
         );
-        if (!cancelled) setItems(normalizeEvents(events, workspaceId));
+        const normalized = normalizeAppleCalendarEvents(events, workspaceId);
+        if (__DEV__) console.log('[Ledger Apple Calendar] events', {
+          count: events.length,
+          normalized: normalized.length,
+          dropped: events.length - new Set(normalized.map((item) => item.sourceId)).size,
+          sample: events[0] ? { start: events[0].start, end: events[0].end, allDay: events[0].allDay } : null,
+          startDate,
+          endDate,
+        });
+        if (!cancelled) setItems(normalized);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
     };
-    void refresh().catch(() => { if (!cancelled) setItems([]); });
+    void refresh().catch((error: unknown) => {
+      if (__DEV__) console.warn('[Ledger Apple Calendar] refresh failed', error);
+      if (!cancelled) setItems([]);
+    });
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') void refresh().catch(() => undefined);
     });

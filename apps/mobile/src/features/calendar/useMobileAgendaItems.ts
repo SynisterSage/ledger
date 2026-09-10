@@ -96,6 +96,15 @@ export function useMobileAgendaItems(workspaceId: string, anchorDate: Date, filt
     setRefreshToken((current) => current + 1);
   }, [endDate, startDate, workspaceId]);
 
-  const combinedItems = useMemo(() => sortCalendarItems([...items, ...apple.items]), [apple.items, items]);
-  return { items: filters ? filterCalendarItems(combinedItems, filters) : combinedItems, startDate, endDate, isLoading: isLoading || apple.isLoading, error, extendPast, extendFuture, retry };
+  const combinedItems = useMemo(() => {
+    const next = sortCalendarItems([...items, ...apple.items]);
+    if (__DEV__) console.log('[Ledger Calendar agenda] merged', { serverItems: items.length, appleItems: apple.items.length, total: next.length });
+    return next;
+  }, [apple.items, items]);
+  const visibleItems = useMemo(() => {
+    const next = filters ? filterCalendarItems(combinedItems, filters) : combinedItems;
+    if (__DEV__) console.log('[Ledger Calendar agenda] visible', { total: combinedItems.length, visible: next.length, filters });
+    return next;
+  }, [combinedItems, filters]);
+  return { items: visibleItems, startDate, endDate, isLoading: isLoading || apple.isLoading, error, extendPast, extendFuture, retry };
 }

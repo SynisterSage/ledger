@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, InteractionManager, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Alert, Animated, Easing, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { requireOptionalNativeModule } from 'expo-modules-core';
@@ -130,12 +130,12 @@ export function CalendarShell() {
   const previousViewRef = useRef<MobileCalendarView>(calendar.view);
   useEffect(() => {
     let active = true;
-    const task = InteractionManager.runAfterInteractions(() => {
-      if (active) setContentReady(true);
-    });
+    const requestIdle = globalThis.requestIdleCallback ?? ((callback: () => void) => setTimeout(callback, 0));
+    const cancelIdle = globalThis.cancelIdleCallback ?? ((handle: ReturnType<typeof setTimeout>) => clearTimeout(handle));
+    const task = requestIdle(() => { if (active) setContentReady(true); });
     return () => {
       active = false;
-      task.cancel();
+      cancelIdle(task);
     };
   }, []);
   useEffect(() => {

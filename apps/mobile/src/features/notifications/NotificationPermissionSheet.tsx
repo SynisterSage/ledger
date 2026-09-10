@@ -74,7 +74,7 @@ export function NotificationPermissionSheet({ visible, onDismiss }: Notification
     <AppBottomSheet
       visible={visible}
       onClose={onDismiss}
-      snapPoints={['36%', '52%']}
+      snapPoints={['44%', '58%']}
       initialSnapPointIndex={0}
       dragCloseThreshold={24}
       dragCloseVelocityThreshold={0.35}
