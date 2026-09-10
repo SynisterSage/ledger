@@ -283,7 +283,7 @@ export function LandscapeWeekView({
                       onPressIn={() => undefined}
                       accessibilityRole="button"
                       accessibilityLabel={item.title}
-                      style={[styles.eventBlock, { left: dayIndex * dayColumnWidth + positioned.column * dayColumnWidth * widthRatio + 3, top: positioned.top + 3, width: dayColumnWidth * widthRatio - 6, height: positioned.height - 6, backgroundColor: `${sourceColor}35`, borderLeftColor: sourceColor }]}
+                      style={[styles.eventBlock, { left: dayIndex * dayColumnWidth + positioned.column * dayColumnWidth * widthRatio + 3, top: positioned.top + 3, width: dayColumnWidth * widthRatio - 6, height: positioned.height - 6, backgroundColor: `${sourceColor}35`, borderLeftColor: sourceColor, borderStyle: item.type === 'external_event' ? 'dashed' : 'solid' }]}
                     >
                       <AppText numberOfLines={1} variant="caption" style={styles.eventTitle}>{getItemLabel(item)}</AppText>
                       {positioned.height >= 62 && item.startAt ? <AppText numberOfLines={1} variant="caption" style={styles.eventTime}>{`${compactTime(new Date(item.startAt))}${item.endAt ? ` – ${compactTime(new Date(item.endAt))}` : ''}`}</AppText> : null}

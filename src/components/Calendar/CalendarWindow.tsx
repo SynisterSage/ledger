@@ -2924,7 +2924,9 @@ export const CalendarWindow = ({
     if (!selectedEventPreview) return [];
     return followUpTasksByEvent[baseEventId(selectedEventPreview.id)] ?? [];
   }, [followUpTasksByEvent, selectedEventPreview]);
-  const getCalendarColor = (calendarId: string) => calendarById.get(calendarId)?.color ?? '#93C5FD';
+  const getCalendarColor = (calendarId: string, provider?: string | null) => provider === 'apple'
+    ? '#7C3AED'
+    : calendarById.get(calendarId)?.color ?? '#93C5FD';
   const getDefaultCalendar = () =>
     calendars.find(
       (calendar) => calendar.is_visible !== false && (calendar.is_default || calendar.is_personal)
@@ -6438,7 +6440,7 @@ export const CalendarWindow = ({
                             {visibleDueItems.map((item) => renderDueDateRow(item))}
                             {visibleEvents.map((event) =>
                               (() => {
-                                const calendarColor = getCalendarColor(event.calendar_id);
+                                const calendarColor = getCalendarColor(event.calendar_id, event.provider);
                                 const pastEvent = isPastEvent(event);
                                 return (
                                   <CenterInlineItemRow
@@ -6450,6 +6452,7 @@ export const CalendarWindow = ({
                                         : null
                                     }
                                     color={calendarColor}
+                                    external={event.provider === 'apple'}
                                     muted={pastEvent || event.status === 'cancelled'}
                                     completed={event.status === 'done'}
                                     selected={selectedEvent?.id === event.id}
@@ -6588,7 +6591,7 @@ export const CalendarWindow = ({
                         >
                           <div className="space-y-0.5">
                             {visibleAllDayItems.map((evt) => {
-                              const eventColor = getCalendarColor(evt.calendar_id);
+                              const eventColor = getCalendarColor(evt.calendar_id, evt.provider);
                               const pastEvent = isPastEvent(evt);
                               const pastEventMuted = isPastEventMuted(evt);
                               const selected = selectedEvent?.id === evt.id;
@@ -6895,7 +6898,7 @@ export const CalendarWindow = ({
                                       </div>
                                     )}
                                     {visibleItems.map((evt) => {
-                                      const eventColor = getCalendarColor(evt.calendar_id);
+                                      const eventColor = getCalendarColor(evt.calendar_id, evt.provider);
                                       const pastEvent = isPastEvent(evt);
                                       const pastEventMuted = isPastEventMuted(evt);
                                       const durationRows = getEventDurationRows(evt);
@@ -6906,6 +6909,7 @@ export const CalendarWindow = ({
                                         <CenterEventBlock
                                           key={evt.id}
                                           title={evt.title}
+                                          external={evt.provider === 'apple'}
                                           titleContent={
                                             <span
                                               className={pastEventMuted ? 'opacity-70' : undefined}
@@ -7033,7 +7037,7 @@ export const CalendarWindow = ({
                   {selectedEventPreview ? (
                     (() => {
                       const meta = getEventStatusMeta(selectedEventPreview.status);
-                      const selectedColor = getCalendarColor(selectedEventPreview.calendar_id);
+                      const selectedColor = getCalendarColor(selectedEventPreview.calendar_id, selectedEventPreview.provider);
                       return (
                         <div className="space-y-2">
                           <div className="flex items-start gap-2">
@@ -7412,7 +7416,7 @@ export const CalendarWindow = ({
                       <>
                         {selectedContextDayEvents.map((event) => {
                           const isSelected = selectedEventPreview?.id === event.id;
-                          const eventColor = getCalendarColor(event.calendar_id);
+                          const eventColor = getCalendarColor(event.calendar_id, event.provider);
                           return (
                             <button
                               key={event.id}

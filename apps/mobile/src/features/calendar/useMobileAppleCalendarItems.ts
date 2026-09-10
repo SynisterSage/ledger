@@ -7,6 +7,7 @@ import type { MobileCalendarItem } from './calendarItemNormalizer';
 import { subscribeCalendarDataChanges } from './calendarDataEvents';
 
 const selectionKey = (userId?: string | null) => userId ? `ledger.apple-calendar.selection.${userId}` : null;
+export const APPLE_CALENDAR_DISPLAY_COLOR = '#7C3AED';
 
 function localDateBoundary(dateKey: string, end = false) {
   const date = new Date(`${dateKey}T${end ? '23:59:59.999' : '00:00:00'}`);
@@ -38,9 +39,14 @@ export function normalizeAppleCalendarEvents(events: AppleCalendarEvent[], works
     const end = parseAppleDate(event.end) ?? start;
     if (!start || !end) return [];
     const firstDate = formatCalendarDateKey(start);
-    const lastDate = event.allDay && end > start
+    const endDate = formatCalendarDateKey(end);
+    // EventKit can represent an all-day event either as an inclusive local-day
+    // range ending at 23:59:59, or as an exclusive midnight boundary. Only
+    // subtract a day when the end has moved into a later local calendar day.
+    const endIsExclusiveMidnight = end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0 && end.getMilliseconds() === 0;
+    const lastDate = event.allDay && endDate > firstDate && endIsExclusiveMidnight
       ? formatCalendarDateKey(addDays(end, -1))
-      : formatCalendarDateKey(end);
+      : endDate;
     const items: MobileCalendarItem[] = [];
     let cursor = new Date(`${firstDate}T12:00:00`);
     let occurrence = 0;
@@ -57,7 +63,10 @@ export function normalizeAppleCalendarEvents(events: AppleCalendarEvent[], works
         allDay: event.allDay || multiDay,
         sourceId: String(event.id),
         sourceName: String(event.calendarTitle || 'Apple Calendar'),
-        sourceColor: event.calendarColor || null,
+        // Apple calendars can all arrive with the same native blue. Use a
+        // provider color in item surfaces; the source name/calendar list still
+        // carries the individual Apple calendar color and identity.
+        sourceColor: APPLE_CALENDAR_DISPLAY_COLOR,
         sourceKey: `apple-calendar:${String(event.calendarId)}`,
         sourceKind: 'calendar',
         calendarId: `apple:${String(event.calendarId)}`,

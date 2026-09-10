@@ -111,9 +111,9 @@ export function DayAgendaItemRow({ item, compact = false, agenda = false, onPres
   const stateLabel = item.completed ? ', completed' : item.overdue ? ', overdue' : current ? ', now' : item.readOnly ? ', read only' : '';
 
   if (agenda) {
-    const showGlyph = item.type !== 'event' && item.type !== 'external_event';
+    const showGlyph = item.type !== 'event';
     const trailingLabel = typeof agendaTrailing === 'string' ? agendaTrailing : agendaTrailing.start;
-    return <Pressable accessibilityRole="button" accessibilityLabel={`${item.type.replace('_', ' ')}, ${item.title}, ${trailingLabel}${typeof agendaTrailing !== 'string' && agendaTrailing.end ? `, ends ${agendaTrailing.end}` : ''}${agendaMetadata ? `, ${agendaMetadata}` : ''}${stateLabel}`} accessibilityHint="Opens item details. Long press for actions." onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.agendaRow, { minHeight: getAgendaRowHeight(item), opacity: pressed ? 0.62 : past ? 0.66 : 1 }]}>
+    return <Pressable accessibilityRole="button" accessibilityLabel={`${item.type.replace('_', ' ')}, ${item.title}, ${trailingLabel}${typeof agendaTrailing !== 'string' && agendaTrailing.end ? `, ends ${agendaTrailing.end}` : ''}${agendaMetadata ? `, ${agendaMetadata}` : ''}${stateLabel}`} accessibilityHint="Opens item details. Long press for actions." onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [styles.agendaRow, { minHeight: getAgendaRowHeight(item), opacity: pressed ? 0.62 : past ? 0.66 : 1, borderWidth: item.type === 'external_event' ? StyleSheet.hairlineWidth : 0, borderColor: item.type === 'external_event' ? item.sourceColor ?? theme.colors.textMuted : 'transparent', borderStyle: item.type === 'external_event' ? 'dashed' : 'solid' }]}>
       <View style={[styles.agendaAccent, { backgroundColor: item.sourceColor ?? theme.colors.accent }]} />
       {showGlyph ? <SymbolView name={iconByType[item.type] as never} size={11} tintColor={item.overdue ? theme.colors.warning : item.sourceColor ?? theme.colors.textMuted} /> : null}
       <View style={styles.agendaBody}>

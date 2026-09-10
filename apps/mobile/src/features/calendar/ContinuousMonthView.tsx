@@ -70,11 +70,16 @@ const MonthItem = memo(function MonthItem({ item, cellWidth, scheme, colors, onP
   const isWide = cellWidth >= 92;
   const isMedium = cellWidth >= 60;
   const showTime = Boolean(time && isWide && item.type !== 'project_deadline' && item.type !== 'milestone');
-  const showTypeIcon = isMedium && item.type !== 'event' && item.type !== 'external_event';
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${item.title}${time ? `, ${time}` : ''}`} onPress={onPress} onLongPress={onLongPress} hitSlop={{ top: 10, bottom: 10, left: 2, right: 2 }} style={({ pressed }) => [styles.item, {
+  // External calendars keep their configured source color, but also retain a
+  // provider cue so a blue Apple calendar cannot be confused with a blue
+  // Ledger calendar.
+  const showTypeIcon = isMedium && item.type !== 'event';
+  const sourceLabel = item.sourceName ? `${item.sourcePlatform === 'apple' ? 'Apple Calendar, ' : ''}${item.sourceName}` : null;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${item.title}${time ? `, ${time}` : ''}${sourceLabel ? `, ${sourceLabel}` : ''}`} onPress={onPress} onLongPress={onLongPress} hitSlop={{ top: 10, bottom: 10, left: 2, right: 2 }} style={({ pressed }) => [styles.item, {
     backgroundColor: scheme === 'dark' ? `${color}38` : `${color}24`,
-    borderColor: item.overdue ? colors.warning : 'transparent',
-    borderWidth: item.overdue ? StyleSheet.hairlineWidth : 0,
+    borderColor: item.overdue ? colors.warning : item.type === 'external_event' ? color : 'transparent',
+    borderWidth: item.overdue || item.type === 'external_event' ? StyleSheet.hairlineWidth : 0,
+    borderStyle: item.type === 'external_event' ? 'dashed' : 'solid',
     opacity: pressed ? 0.55 : item.completed ? 0.62 : 1,
   }]}>
     <View style={[styles.itemBar, { backgroundColor: color, width: item.overdue ? 3 : 2 }]} />

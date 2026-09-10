@@ -71,6 +71,7 @@ type CenterItemRowProps = {
   completed?: boolean;
   selected?: boolean;
   compact?: boolean;
+  external?: boolean;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
   onPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void;
@@ -92,6 +93,7 @@ export function CenterInlineItemRow({
   completed = false,
   selected = false,
   className = '',
+  external = false,
   titleText,
   onClick,
   onContextMenu,
@@ -119,6 +121,7 @@ export function CenterInlineItemRow({
         borderColor: selected
           ? `color-mix(in srgb, ${color} 30%, transparent)`
           : `color-mix(in srgb, ${color} 16%, transparent)`,
+        borderStyle: external ? 'dashed' : 'solid',
         boxShadow: selected ? `0 0 0 1px color-mix(in srgb, ${color} 10%, transparent)` : 'none',
       }}
     >
@@ -215,6 +218,7 @@ type CenterEventBlockProps = {
   muted?: boolean;
   selected?: boolean;
   compact?: boolean;
+  external?: boolean;
   children?: ReactNode;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -234,6 +238,7 @@ export function CenterEventBlock({
   muted = false,
   selected = false,
   compact = false,
+  external = false,
   children,
   onClick,
   onContextMenu,
@@ -255,6 +260,7 @@ export function CenterEventBlock({
       : muted
       ? 'var(--ledger-border-subtle)'
       : `color-mix(in srgb, ${color} 24%, transparent)`,
+    borderStyle: external ? 'dashed' : 'solid',
     color: muted ? 'var(--ledger-text-muted)' : 'var(--ledger-text-primary)',
     boxSizing: 'border-box',
     lineHeight: 1.2,
