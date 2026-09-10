@@ -42,7 +42,7 @@ export default function SignUpScreen() {
       const session = await signUpWithEmail(email.trim(), password, name.trim());
 
       if (session) {
-        router.replace('/');
+        router.replace('/(tabs)/today');
       } else {
         Alert.alert('Check your email', 'If confirmation is enabled, finish creating your account from the email Ledger sent.');
         router.replace('/auth/sign-in');

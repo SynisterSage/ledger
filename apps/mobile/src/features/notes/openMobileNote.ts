@@ -5,7 +5,7 @@ type NoteRouteParams = {
   mode?: 'write' | 'transcript' | 'map';
   focusSegmentId?: string;
   focusNodeId?: string;
-  focus?: 'title' | 'editor';
+  focus?: 'title' | 'editor' | 'none';
 };
 
 type MobileRouter = {

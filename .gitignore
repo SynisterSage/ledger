@@ -52,3 +52,7 @@ Thumbs.db
 
 # Local regression probes
 scripts/tests/sidebar-preferences-regressions.mjs
+
+# Local OCR development runtime and downloaded model cache
+.venv/
+.cache/paddlex/

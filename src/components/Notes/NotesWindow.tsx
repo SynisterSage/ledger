@@ -27,6 +27,7 @@ import {
   Network,
   RotateCcw,
   Search,
+  ScanText,
   Settings2,
   Square,
   StickyNote,
@@ -102,6 +103,8 @@ import {
   type NotesSelectionComposerKind,
 } from './NotesSelectionComposerModal';
 import { bulkExportNotes, bulkExportMindMaps } from '../../utils/exportUtils';
+import { NoteOcrReviewModal } from './NoteOcrReviewModal';
+import { parseNoteOcrResult, type NoteOcrResult } from '../../../packages/note-ocr-contract/index';
 import { isTeamOrientedTemplate, QUICK_TEMPLATE_DEFINITIONS } from './templateDefinitions';
 import NotesHome, { notesAskSuggestions } from './NotesHome';
 import type { NotesHomeTemplate, NotesHomeUpcomingMeeting } from './NotesHome';
@@ -2707,6 +2710,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [exportNoteIds, setExportNoteIds] = useState<string[] | null>(null);
   const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
+  const [noteOcrResult, setNoteOcrResult] = useState<NoteOcrResult | null>(null);
+  const [noteOcrText, setNoteOcrText] = useState('');
+  const [noteOcrError, setNoteOcrError] = useState<string | null>(null);
+  const [isNoteOcrLoading, setIsNoteOcrLoading] = useState(false);
+  const [isNoteOcrOpen, setIsNoteOcrOpen] = useState(false);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isRestoringVersionId, setIsRestoringVersionId] = useState<string | null>(null);
   const [noteVersions, setNoteVersions] = useState<NoteVersion[]>([]);
@@ -7396,6 +7404,60 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     }
   }, [draftContent, draftDate, draftMode, draftMood, draftTitle, flushAutosave, syncDraftFromNote]);
 
+  const closeNoteOcrReview = useCallback(() => {
+    setIsNoteOcrOpen(false);
+    setIsNoteOcrLoading(false);
+    setNoteOcrResult(null);
+    setNoteOcrText('');
+    setNoteOcrError(null);
+  }, []);
+
+  const scanTextFromImage = useCallback(async () => {
+    const noteId = selectedNoteIdRef.current;
+    if (!noteId || !window.noteOcr) {
+      setNoteOcrError('Local OCR is unavailable in this window.');
+      setIsNoteOcrOpen(true);
+      return;
+    }
+    setIsInspectorActionsOpen(false);
+    setIsNoteOcrOpen(true);
+    setIsNoteOcrLoading(true);
+    setNoteOcrResult(null);
+    setNoteOcrText('');
+    setNoteOcrError(null);
+    try {
+      const selected = await window.noteOcr.selectImage();
+      if (selected.canceled || !selected.imagePath) {
+        closeNoteOcrReview();
+        return;
+      }
+      const rawResult = await window.noteOcr.recognize({ imagePath: selected.imagePath, noteId, mode: 'handwriting' });
+      const result = parseNoteOcrResult(rawResult);
+      if (!result) throw new Error('Local OCR returned an invalid result.');
+      setNoteOcrResult(result);
+      setNoteOcrText(result.text || result.lines.map((line) => line.text).join('\n'));
+    } catch (error) {
+      setNoteOcrError(error instanceof Error ? error.message : 'Could not read text from this image.');
+    } finally {
+      setIsNoteOcrLoading(false);
+    }
+  }, [closeNoteOcrReview]);
+
+  const insertNoteOcrText = useCallback(() => {
+    const noteId = selectedNoteIdRef.current;
+    const text = noteOcrText.trim();
+    if (!noteId || !text) return;
+    window.dispatchEvent(new CustomEvent('ledger:insert-ocr-text', {
+      detail: {
+        noteId,
+        result: noteOcrResult
+          ? { ...noteOcrResult, text }
+          : { text, lines: text.split(/\n+/).map((line) => ({ text: line })), engine: 'paddleocr' },
+      },
+    }));
+    closeNoteOcrReview();
+  }, [closeNoteOcrReview, noteOcrResult, noteOcrText]);
+
   const restoreLatestVersion = useCallback(async () => {
     if (!selectedNoteId) return;
     try {
@@ -10927,6 +10989,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                               Rename
                             </button>
                             <button
+                              onClick={() => void scanTextFromImage()}
+                              disabled={draftMode === 'mind_map'}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
+                            >
+                              <ScanText size={14} /> Scan text from image
+                            </button>
+                            <button
                               disabled={draftMode === 'mind_map'}
                               onClick={() => {
                                 setIsInspectorActionsOpen(false);
@@ -12412,6 +12481,18 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           displayUserName(workspaceMemberById.get(userId ?? '') ?? null)
         }
       />
+
+      {isNoteOcrOpen && (
+        <NoteOcrReviewModal
+          result={noteOcrResult}
+          isLoading={isNoteOcrLoading}
+          error={noteOcrError}
+          text={noteOcrText}
+          onTextChange={setNoteOcrText}
+          onClose={closeNoteOcrReview}
+          onInsert={insertNoteOcrText}
+        />
+      )}
 
       <NotesSelectionComposerModal
         context={selectionComposerContext}

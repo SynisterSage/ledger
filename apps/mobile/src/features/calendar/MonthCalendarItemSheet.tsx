@@ -1,6 +1,6 @@
 import { AppDetailSheet, type AppDetailSheetAction, type AppDetailSheetMetaRow } from '@/components/AppDetailSheet';
 import { AppText } from '@/components/AppText';
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useLedgerTheme } from '@/theme';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
@@ -38,6 +38,7 @@ export function MonthCalendarItemSheet({ visible, item, actionMode = false, onCl
     { label: 'Date', value: formatDate(item) },
     ...(formatTime(item.startAt) && !item.allDay ? [{ label: 'Time', value: formatTime(item.startAt)! }] : []),
     ...(item.sourceName ? [{ label: 'Source', value: item.sourceName }] : []),
+    ...(item.location ? [{ label: 'Location', value: item.location }] : []),
     ...(item.projectName ? [{ label: 'Project', value: item.projectName }] : []),
     ...(item.completed ? [{ label: 'Status', value: 'Completed' }] : []),
     ...(item.overdue && !item.completed ? [{ label: 'Status', value: 'Overdue' }] : []),
@@ -64,8 +65,13 @@ export function MonthCalendarItemSheet({ visible, item, actionMode = false, onCl
       subtitle={item.projectName ?? typeLabel}
       meta={meta}
       metaInCard
-      body={item.overdue && !item.completed ? 'This item is past due.' : undefined}
-      footer={item.notes ? <AppText variant="caption" style={{ color: '#4B5563' }}>{item.notes}</AppText> : undefined}
+      body={item.notes || (item.overdue && !item.completed ? 'This item is past due.' : undefined) ? (
+        <View style={{ gap: 5 }}>
+          {item.notes ? <AppText variant="caption" style={{ color: theme.colors.textMuted }}>Description</AppText> : null}
+          {item.notes ? <AppText variant="body" style={{ color: theme.colors.textSecondary }}>{item.notes}</AppText> : null}
+          {item.overdue && !item.completed ? <AppText variant="caption" style={{ color: theme.colors.warning }}>This item is past due.</AppText> : null}
+        </View>
+      ) : undefined}
       actions={actions}
       actionsInCard
       headerAccessory={(

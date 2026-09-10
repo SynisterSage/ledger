@@ -71,6 +71,18 @@ function formatShortDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }).format(date);
 }
 
+function formatOverdueAmount(value: string | null | undefined) {
+  if (!value) return null;
+  const dueAt = new Date(value).getTime();
+  if (!Number.isFinite(dueAt)) return null;
+  const minutes = Math.max(0, Math.floor((Date.now() - dueAt) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
 function formatRelativeTime(value: string | null | undefined, now = new Date()) {
   if (!value) return { relative: '', absolute: '' };
   const date = new Date(value);
@@ -200,9 +212,9 @@ export function getNotificationTypeLabel(item: MobileNotificationCenterItem) {
     case 'task_due':
       return 'Task due';
     case 'overdue_item':
-      if (item.sourceType === 'task') return 'Task overdue';
-      if (item.sourceType === 'project') return 'Project deadline';
-      if (item.sourceType === 'reminder') return 'Reminder overdue';
+      if (item.sourceType === 'task') return `Task overdue${formatOverdueAmount(item.scheduledFor) ? ` · ${formatOverdueAmount(item.scheduledFor)}` : ''}`;
+      if (item.sourceType === 'project') return `Project deadline${formatOverdueAmount(item.scheduledFor) ? ` · ${formatOverdueAmount(item.scheduledFor)}` : ''}`;
+      if (item.sourceType === 'reminder') return `Reminder overdue${formatOverdueAmount(item.scheduledFor) ? ` · ${formatOverdueAmount(item.scheduledFor)}` : ''}`;
       return 'Overdue';
     case 'project_deadline':
       return 'Project deadline';
@@ -233,7 +245,11 @@ export function getNotificationSubtitle(item: MobileNotificationCenterItem, show
 }
 
 export function getNotificationDetailBody(item: MobileNotificationCenterItem) {
-  return item.body?.trim() || item.context?.trim() || null;
+  const body = item.body?.trim();
+  if (item.notificationType === 'overdue_item' && body && /^overdue since\b/i.test(body)) {
+    return null;
+  }
+  return body || item.context?.trim() || null;
 }
 
 export function getNotificationDetailMetaRows(item: MobileNotificationCenterItem): AppDetailSheetMetaRow[] {
@@ -248,8 +264,9 @@ export function getNotificationDetailMetaRows(item: MobileNotificationCenterItem
     rows.push({ label: 'Time', value: timeLabel });
   }
 
-  if (!item.body?.trim() && item.context && item.context.trim() && item.context.trim() !== getNotificationTypeLabel(item)) {
-    rows.push({ label: 'Context', value: item.context.trim() });
+  const context = item.context?.trim();
+  if (!item.body?.trim() && context && context !== getNotificationTypeLabel(item) && !(item.notificationType === 'overdue_item' && /^overdue since\b/i.test(context))) {
+    rows.push({ label: 'Context', value: context });
   }
 
   return rows;

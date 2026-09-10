@@ -107,7 +107,20 @@ export function NotificationFilterSheet({ visible, filters, onChange, onReset, o
         <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdropPressable}>
           <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.backdrop, opacity: backdropProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 0.14] }) }]} />
         </Pressable>
-        <Animated.View style={[styles.sheet, { height: sheetMaxHeight, backgroundColor: theme.colors.background, borderColor: theme.colors.borderSubtle, transform: [{ translateY: sheetTranslateY }] }]}>
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              height: sheetMaxHeight,
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.borderSubtle,
+              marginHorizontal: theme.spacing.sheetInset,
+              marginBottom: Math.max(theme.spacing.xs, insets.bottom - theme.spacing.md),
+              borderRadius: theme.radius.sheet,
+              transform: [{ translateY: sheetTranslateY }],
+            },
+          ]}
+        >
           <SafeAreaView edges={['bottom']} style={styles.safeArea}>
             <View {...panResponder.panHandlers} style={styles.handleRegion} accessibilityRole="adjustable" accessibilityLabel="Dismiss notification filters">
               <View style={[styles.handle, { backgroundColor: theme.colors.borderSubtle }]} />

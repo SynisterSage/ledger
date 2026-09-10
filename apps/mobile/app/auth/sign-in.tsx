@@ -33,7 +33,10 @@ export default function SignInScreen() {
       const session = await signInWithEmail(email.trim(), password);
 
       if (session) {
-        router.replace('/');
+        // Enter the authenticated shell directly. Going through `/` adds the
+        // index redirect as another native-stack transition, which can leave
+        // the auth screen reachable with the iOS back-swipe gesture.
+        router.replace('/(tabs)/today');
       } else {
         Alert.alert('Check your inbox', 'If verification is required, finish sign-in from your email first.');
       }

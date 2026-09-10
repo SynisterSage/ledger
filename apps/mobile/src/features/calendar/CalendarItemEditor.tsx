@@ -27,7 +27,7 @@ export type CalendarEditorItemType = 'event' | 'reminder' | 'task' | 'project_ac
 
 type EditorParams = {
   mode?: string; type?: string; workspaceId?: string; dateKey?: string; startAt?: string; endAt?: string;
-  itemId?: string; title?: string; notes?: string; projectId?: string; calendarId?: string; allDay?: string; readOnly?: string; sourcePlatform?: string; seriesId?: string; importSeriesKey?: string; openDeleteMatches?: string;
+  itemId?: string; title?: string; notes?: string; location?: string; projectId?: string; calendarId?: string; allDay?: string; readOnly?: string; sourcePlatform?: string; seriesId?: string; importSeriesKey?: string; openDeleteMatches?: string;
 };
 
 function confirmAppleOverwrite(title: string) {
@@ -70,7 +70,7 @@ export function CalendarItemEditor() {
   const [allDay, setAllDay] = useState(first(params.allDay) === '1');
   const [recurrenceRule, setRecurrenceRule] = useState('');
   const [notes, setNotes] = useState(first(params.notes) ?? '');
-  const [location, setLocation] = useState('');
+  const [location, setLocation] = useState(first(params.location) ?? '');
   const [workspaceId, setWorkspaceId] = useState(first(params.workspaceId) ?? workspaceState.selectedWorkspaceId);
   const [projectId, setProjectId] = useState(first(params.projectId) ?? null);
   const [calendarId, setCalendarId] = useState(first(params.calendarId) ?? null);
@@ -331,5 +331,5 @@ const styles = StyleSheet.create({
 });
 
 export function calendarEditorParams(item: MobileCalendarItem, workspaceId: string) {
-  return { mode: 'edit', type: item.type === 'external_event' ? 'event' : item.type === 'project_action' ? 'project_action' : item.type, workspaceId, itemId: item.id, dateKey: item.dateKey, startAt: item.startAt ?? '', endAt: item.endAt ?? '', title: item.title, projectId: item.projectId ?? '', calendarId: item.calendarId ?? '', allDay: item.allDay ? '1' : '0', readOnly: item.readOnly ? '1' : '0', sourcePlatform: item.sourcePlatform ?? '', seriesId: item.seriesId ?? '', importSeriesKey: item.importSeriesKey ?? '' };
+  return { mode: 'edit', type: item.type === 'external_event' ? 'event' : item.type === 'project_action' ? 'project_action' : item.type, workspaceId, itemId: item.id, dateKey: item.dateKey, startAt: item.startAt ?? '', endAt: item.endAt ?? '', title: item.title, notes: item.notes ?? '', location: item.location ?? '', projectId: item.projectId ?? '', calendarId: item.calendarId ?? '', allDay: item.allDay ? '1' : '0', readOnly: item.readOnly ? '1' : '0', sourcePlatform: item.sourcePlatform ?? '', seriesId: item.seriesId ?? '', importSeriesKey: item.importSeriesKey ?? '' };
 }

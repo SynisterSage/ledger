@@ -217,8 +217,12 @@ export function AppDetailSheet({
             {
               backgroundColor: theme.colors.background,
               borderColor: theme.colors.borderSubtle,
+              marginHorizontal: theme.spacing.sheetInset,
+              marginBottom: Math.max(theme.spacing.xs, insets.bottom - theme.spacing.md),
               borderTopLeftRadius: theme.radius.sheet,
               borderTopRightRadius: theme.radius.sheet,
+              borderBottomLeftRadius: theme.radius.sheet,
+              borderBottomRightRadius: theme.radius.sheet,
               height: sheetMaxHeight,
               transform: [{ translateY: sheetTranslateY }],
             },

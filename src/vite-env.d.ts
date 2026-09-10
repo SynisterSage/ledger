@@ -194,6 +194,16 @@ interface Window {
     onCompleted: (listener: (event: { noteId: string; sessionId: string }) => void) => () => void;
     onNewMeeting: (listener: (event: { noteId: string; title?: string }) => void) => () => void;
   };
+  noteOcr?: {
+    status: () => Promise<unknown>;
+    selectImage: () => Promise<{ canceled: boolean; imagePath: string | null }>;
+    recognize: (payload: {
+      imagePath: string;
+      noteId: string;
+      language?: string;
+      mode?: 'auto' | 'handwriting' | 'printed';
+    }) => Promise<unknown>;
+  };
   meetingTranscription?: {
     modelStatus: () => Promise<unknown>;
     downloadModel: () => Promise<unknown>;

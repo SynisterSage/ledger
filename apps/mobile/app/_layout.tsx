@@ -322,7 +322,11 @@ export default function RootLayout() {
               headerShown: false,
               contentStyle: { backgroundColor: theme.colors.background },
             }}
-          />
+          >
+            {/* The authenticated shell is a navigation boundary. It must not
+                expose auth/onboarding screens through the native back swipe. */}
+            <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />
+          </Stack>
         ) : null}
       </SafeAreaProvider>
       {showSplashOverlay ? (

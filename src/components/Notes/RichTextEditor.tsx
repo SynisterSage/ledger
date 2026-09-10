@@ -116,6 +116,7 @@ import type {
   AttachmentUploadRequest,
   AttachmentUploadResult,
 } from './editor/types/blocks';
+import type { NoteOcrResult } from '../../../packages/note-ocr-contract/index';
 import { sanitizeEditorHtml } from './editor/utils/html';
 
 type Props = {
@@ -929,6 +930,32 @@ const ImagePasteDropPlugin = ({ noteId }: { noteId?: string | null }) => {
       rootElement?.addEventListener('dragover', onDragOver as EventListener);
     });
   }, [editor]);
+
+  return null;
+};
+
+const OcrTextInsertionPlugin = ({ noteId }: { noteId?: string | null }) => {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<{ noteId?: unknown; result?: unknown }>).detail;
+      if (!noteId || detail?.noteId !== noteId || !detail?.result) return;
+      const result = detail.result as NoteOcrResult;
+      const lines = result.lines.map((line) => line.text).filter((line) => line.trim());
+      if (!lines.length) return;
+      editor.focus();
+      editor.update(() => {
+        $insertNodes(lines.map((line) => {
+          const paragraph = $createParagraphNode();
+          paragraph.append($createTextNode(line));
+          return paragraph;
+        }));
+      });
+    };
+    window.addEventListener('ledger:insert-ocr-text', listener);
+    return () => window.removeEventListener('ledger:insert-ocr-text', listener);
+  }, [editor, noteId]);
 
   return null;
 };
@@ -1970,6 +1997,7 @@ export function RichTextEditor({
               onLinkContext={onLinkProject}
             />
             <ImagePasteDropPlugin noteId={noteId} />
+            <OcrTextInsertionPlugin noteId={noteId} />
             <FigmaPastePlugin
               noteId={noteId}
               targetType={targetType}

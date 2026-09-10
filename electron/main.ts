@@ -33,6 +33,7 @@ import {
 import { desktopTokens } from '../src/theme/desktopTokens';
 import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
 import { LocalTranscriptionService } from './transcriptionService';
+import { LocalNoteOcrService } from './noteOcrService';
 import { ZoomSpeakerAttribution } from './zoomSpeakerAttribution';
 import { resolveZoomAccessibilityBridgePath } from './speakerTagsRuntime';
 import { createLocalAIService } from './localAIService';
@@ -265,6 +266,7 @@ const localTranscriptionService = new LocalTranscriptionService(
   recordingSessionStore,
   zoomSpeakerAttribution
 );
+const localNoteOcrService = new LocalNoteOcrService();
 let autoStopTimer: NodeJS.Timeout | null = null;
 let autoStopRequestInFlight = false;
 const localAIAssets = new LocalAIAssetManager();
@@ -739,6 +741,39 @@ ipcMain.handle(
     )
       throw new Error('Invalid audio playback request.');
     return meetingAudioCaptureService.play(payload.sessionId, payload.source);
+  }
+);
+
+ipcMain.handle('note-ocr:status', () => localNoteOcrService.status());
+ipcMain.handle('note-ocr:select-image', async () => {
+  const selection = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'Note images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'] }],
+  });
+  return selection.canceled || !selection.filePaths[0]
+    ? { canceled: true, imagePath: null }
+    : { canceled: false, imagePath: selection.filePaths[0] };
+});
+ipcMain.handle(
+  'note-ocr:recognize',
+  (_event, payload: { imagePath?: unknown; noteId?: unknown; language?: unknown; mode?: unknown }) => {
+    if (typeof payload?.imagePath !== 'string' || typeof payload.noteId !== 'string') {
+      throw new Error('Invalid note OCR request.');
+    }
+    if (payload.language !== undefined && typeof payload.language !== 'string') {
+      throw new Error('Invalid OCR language.');
+    }
+    if (payload.mode !== undefined && payload.mode !== 'auto' && payload.mode !== 'handwriting' && payload.mode !== 'printed') {
+      throw new Error('Invalid OCR mode.');
+    }
+    return localNoteOcrService.recognize({
+      imagePath: payload.imagePath,
+      request: {
+        noteId: payload.noteId,
+        ...(payload.language ? { language: payload.language } : {}),
+        ...(payload.mode ? { mode: payload.mode } : {}),
+      },
+    });
   }
 );
 

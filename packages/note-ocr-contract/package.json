@@ -1,0 +1,6 @@
+{
+  "name": "@ledger/note-ocr-contract",
+  "private": true,
+  "type": "module",
+  "main": "index.ts"
+}

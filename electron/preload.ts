@@ -962,6 +962,18 @@ contextBridge.exposeInMainWorld('meetingAutoStop', {
   },
 });
 
+contextBridge.exposeInMainWorld('noteOcr', {
+  status() {
+    return ipcRenderer.invoke('note-ocr:status');
+  },
+  selectImage() {
+    return ipcRenderer.invoke('note-ocr:select-image');
+  },
+  recognize(payload: { imagePath: string; noteId: string; language?: string; mode?: 'auto' | 'handwriting' | 'printed' }) {
+    return ipcRenderer.invoke('note-ocr:recognize', payload);
+  },
+});
+
 contextBridge.exposeInMainWorld('meetingTranscription', {
   modelStatus() {
     return ipcRenderer.invoke('meeting-transcription:model-status');
