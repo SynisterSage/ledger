@@ -17,6 +17,7 @@ import { useNavigation, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { File, Paths } from 'expo-file-system';
 import { shareAsync } from 'expo-sharing';
+import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MobileTopFade } from '@/components/MobileTopFade';
@@ -30,6 +31,8 @@ import { NoteVersionSheet } from './NoteVersionSheet';
 import { MobileTranscriptView } from './MobileTranscriptView';
 import { MobileMindMapView } from './MobileMindMapView';
 import { NoteSelectionActionsSheet } from './NoteSelectionActionsSheet';
+import { MobileNoteOcrReviewSheet } from './MobileNoteOcrReviewSheet';
+import { noteOcrNative, type MobileNoteOcrResult } from '@/native/noteOcr';
 import { getMobileNoteDraft, saveMobileNoteDraft, clearMobileNoteDraft } from './mobileNoteDrafts';
 import { getMobileNotePermissions } from './notePermissions';
 import { openMobileNote } from './openMobileNote';
@@ -156,6 +159,10 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
   const [selectionActionsOpen, setSelectionActionsOpen] = useState(false);
   const [lexicalSelectedText, setLexicalSelectedText] = useState('');
   const [versionOpen, setVersionOpen] = useState(false);
+  const [noteOcrOpen, setNoteOcrOpen] = useState(false);
+  const [noteOcrBusy, setNoteOcrBusy] = useState(false);
+  const [noteOcrText, setNoteOcrText] = useState('');
+  const [noteOcrError, setNoteOcrError] = useState<string | null>(null);
   const titleRef = useRef<TextInput>(null);
   const bodyRef = useRef<TextInput>(null);
   const lexicalRef = useRef<MobileLexicalEditorHandle>(null);
@@ -626,6 +633,39 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       Alert.alert('Could not share note', error instanceof Error ? error.message : 'Please try again.');
     }
   }, [body, title]);
+  const scanTextFromImage = useCallback(async () => {
+    setActionOpen(false);
+    setNoteOcrOpen(true);
+    setNoteOcrBusy(true);
+    setNoteOcrText('');
+    setNoteOcrError(null);
+    try {
+      if (!noteOcrNative.supported) throw new Error('On-device OCR is unavailable in this build. Rebuild the native app after installing the OCR module.');
+      const source = await new Promise<'camera' | 'library' | null>((resolve) => Alert.alert('Scan note', 'Choose where to get the note image.', [
+        { text: 'Camera', onPress: () => resolve('camera') },
+        { text: 'Photo library', onPress: () => resolve('library') },
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+      ], { cancelable: true, onDismiss: () => resolve(null) }));
+      if (!source) { setNoteOcrOpen(false); return; }
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, allowsMultipleSelection: false, quality: 1 });
+      const asset = result.canceled ? null : result.assets[0];
+      if (!asset) { setNoteOcrOpen(false); return; }
+      const ocrResult: MobileNoteOcrResult = await noteOcrNative.recognizeText(asset.uri, 'auto');
+      setNoteOcrText(ocrResult.text.trim());
+      if (!ocrResult.text.trim()) setNoteOcrError('No readable text was found in that image.');
+    } catch (error) {
+      setNoteOcrError(error instanceof Error ? error.message : 'Could not read text from this image.');
+    } finally {
+      setNoteOcrBusy(false);
+    }
+  }, []);
+  const insertNoteOcrText = useCallback(() => {
+    if (!noteOcrText.trim() || !permissions.canEdit || hydrating || mode !== 'text') return;
+    lexicalRef.current?.insertText(noteOcrText.trim());
+    setNoteOcrOpen(false);
+  }, [hydrating, mode, noteOcrText, permissions.canEdit]);
   const deleteEditorNote = () => Alert.alert('Delete this note?', 'The note will be removed from this workspace. Linked projects, tasks, and calendar items will not be deleted.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { if (!noteId) return; try { await deleteMobileNote(workspaceId, noteId); router.back(); } catch (error) { Alert.alert('Could not delete note', error instanceof Error ? error.message : 'Please try again.'); } } }]);
   const moveEditorNote = async (nextSectionId: string | null) => { if (!noteId) return; try { await moveMobileNote(workspaceId, noteId, { section_id: nextSectionId }); setSectionId(nextSectionId); setMoveOpen(false); } catch (error) { Alert.alert('Could not move note', error instanceof Error ? error.message : 'Please try again.'); } };
   const applyRestoredNote = (value: unknown) => {
@@ -711,11 +751,12 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
         {mode === 'meeting_note' ? meetingTitle : <TextInput editable={permissions.canEdit} ref={titleRef} accessibilityLabel="Note title" placeholder="Untitled" placeholderTextColor={theme.colors.placeholder} value={title} onChangeText={editTitle} returnKeyType="next" onSubmitEditing={() => lexicalRef.current?.focus()} style={[styles.title, { color: theme.colors.textPrimary }]} />}
         {readOnlyFallback ? <View style={styles.readOnlyContent}><AppText variant="body">{body || 'This note has no text content.'}</AppText><Pressable accessibilityRole="button" onPress={() => { setReadOnlyFallback(false); setEditorFailure(null); setEditorMountKey((current) => current + 1); }}><AppText variant="caption" style={{ color: theme.colors.accent }}>Retry editor</AppText></Pressable></View> : editorFailure ? <EditorFailure message={`${editorStage}: ${editorFailure}${editorStageDetail ? ` · ${editorStageDetail}` : ''}`} onRetry={() => { setEditorFailure(null); setEditorMountKey((current) => current + 1); }} onReadOnly={() => { setReadOnlyFallback(true); setEditorFailure(null); }} onBack={() => void leave()} /> : <View style={styles.embeddedEditor}><MobileLexicalEditor key={editorMountKey} ref={lexicalRef} showToolbar={permissions.canEdit} showStatus={false} workspaceId={workspaceId} noteId={noteId} onEvent={handleLexicalEvent} onEmbeddedError={setEditorFailure} onStage={handleEditorStage} onLedgerLink={(url) => { const target = resolveLedgerLink(url); if (!target) { Alert.alert('Ledger link unavailable', 'This link does not contain a valid Ledger destination.'); return; } if (target.kind === 'note' || target.kind === 'notes') { openMobileNote(router, target.id, { workspaceId, returnTo: `/note/${noteId}` }); return; } if (target.kind === 'project' || target.kind === 'projects') { router.push({ pathname: '/project/[id]', params: { id: target.id, workspaceId } }); return; } Alert.alert('Ledger link unavailable', 'This Ledger destination is not available on mobile yet.'); }} onLedgerContext={() => { Keyboard.dismiss(); setProjectOpen(true); }} />{!editorReady ? <View pointerEvents="none" style={styles.editorLoading}><AppText variant="caption">Loading editor…</AppText></View> : null}</View>}
       </View>}
-      <NoteActionSheet visible={actionOpen} note={editorSummary} permissions={permissions} pinned={pinned} onClose={() => setActionOpen(false)} onOpen={() => setActionOpen(false)} onShare={shareNote} onChangeType={mode === 'text' || mode === 'mind_map' ? changeNoteType : undefined} onVersionHistory={permissions.canEdit ? () => { setActionOpen(false); setVersionOpen(true); } : undefined} onTogglePin={() => void toggleEditorPin()} onMove={() => { setActionOpen(false); setMoveOpen(true); }} onDuplicate={() => void duplicateEditorNote()} onChild={() => void childEditorNote()} onProjects={() => { setActionOpen(false); setProjectOpen(true); }} onDelete={deleteEditorNote} />
+      <NoteActionSheet visible={actionOpen} note={editorSummary} permissions={permissions} pinned={pinned} onClose={() => setActionOpen(false)} onOpen={() => setActionOpen(false)} onShare={shareNote} onChangeType={mode === 'text' || mode === 'mind_map' ? changeNoteType : undefined} onScanText={permissions.canEdit && mode === 'text' ? scanTextFromImage : undefined} onVersionHistory={permissions.canEdit ? () => { setActionOpen(false); setVersionOpen(true); } : undefined} onTogglePin={() => void toggleEditorPin()} onMove={() => { setActionOpen(false); setMoveOpen(true); }} onDuplicate={() => void duplicateEditorNote()} onChild={() => void childEditorNote()} onProjects={() => { setActionOpen(false); setProjectOpen(true); }} onDelete={deleteEditorNote} />
       <NoteMoveSheet visible={moveOpen} note={editorSummary} sections={sections} onClose={() => setMoveOpen(false)} onMove={(nextSectionId) => void moveEditorNote(nextSectionId)} onParentMove={async (nextParentId) => { if (!noteId) return; try { await moveMobileNote(workspaceId, noteId, { parent_id: nextParentId }); setParentId(nextParentId); setMoveOpen(false); } catch (error) { Alert.alert('Could not change parent note', error instanceof Error ? error.message : 'Please try again.'); } }} />
       <NoteProjectSheet visible={projectOpen} workspaceId={workspaceId} note={editorSummary} onClose={() => setProjectOpen(false)} onChanged={() => undefined} />
       <NoteSelectionActionsSheet visible={selectionActionsOpen} workspaceId={workspaceId} noteId={noteId ?? ''} noteTitle={title || 'Untitled'} selectedText={lexicalSelectedText || selectedText} onClose={() => setSelectionActionsOpen(false)} onProject={() => { setSelectionActionsOpen(false); setTimeout(() => setProjectOpen(true), 320); }} />
       {noteId ? <NoteVersionSheet visible={versionOpen} workspaceId={workspaceId} noteId={noteId} onClose={() => setVersionOpen(false)} onRestored={applyRestoredNote} /> : null}
+      <MobileNoteOcrReviewSheet visible={noteOcrOpen} busy={noteOcrBusy} text={noteOcrText} error={noteOcrError} onChangeText={setNoteOcrText} onClose={() => setNoteOcrOpen(false)} onInsert={insertNoteOcrText} />
     </KeyboardAvoidingView>
   );
 }

@@ -17,6 +17,7 @@ export type NativeEditorCommand =
   | { type: 'REMOVE_LINK' }
   | { type: 'INSERT_CALLOUT'; variant: 'info' | 'note' | 'warning' | 'success' }
   | { type: 'INSERT_DIVIDER' }
+  | { type: 'INSERT_TEXT'; text: string }
   | { type: 'INSERT_IMAGE'; src: string; altText?: string; width?: number; height?: number }
   | { type: 'INSERT_ATTACHMENT'; attachmentId?: string; name: string; mimeType?: string; sizeBytes?: number; url?: string }
   | { type: 'UNDO' }

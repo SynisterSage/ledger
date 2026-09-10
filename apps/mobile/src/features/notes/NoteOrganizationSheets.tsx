@@ -10,7 +10,7 @@ import { concentricRadius, useLedgerTheme } from '@/theme';
 import { MobileActionsSheet, type MobileActionSheetAction } from '@/features/today/TodayItemActionsSheet';
 import type { MobileNotePermissions } from './notePermissions';
 
-export function NoteActionSheet({ visible, note, onClose, onOpen, onShare, onChangeType, onTogglePin, onMove, onDuplicate, onChild, onProjects, onDelete, onVersionHistory, pinned, permissions }: { visible: boolean; note: MobileNoteSummary | null; onClose: () => void; onOpen: () => void; onShare?: () => void | Promise<void>; onChangeType?: () => void | Promise<void>; onTogglePin: () => void; onMove: () => void; onDuplicate: () => void; onChild: () => void; onProjects: () => void; onDelete: () => void; onVersionHistory?: () => void; pinned: boolean; permissions?: MobileNotePermissions }) {
+export function NoteActionSheet({ visible, note, onClose, onOpen, onShare, onChangeType, onScanText, onTogglePin, onMove, onDuplicate, onChild, onProjects, onDelete, onVersionHistory, pinned, permissions }: { visible: boolean; note: MobileNoteSummary | null; onClose: () => void; onOpen: () => void; onShare?: () => void | Promise<void>; onChangeType?: () => void | Promise<void>; onScanText?: () => void | Promise<void>; onTogglePin: () => void; onMove: () => void; onDuplicate: () => void; onChild: () => void; onProjects: () => void; onDelete: () => void; onVersionHistory?: () => void; pinned: boolean; permissions?: MobileNotePermissions }) {
   if (!note) return null;
   const access = permissions ?? { canPin: true, canMove: true, canDuplicate: true, canCreateChild: true, canLinkProject: true, canDelete: true };
   const afterClose = (action: () => void | Promise<void>) => {
@@ -21,6 +21,7 @@ export function NoteActionSheet({ visible, note, onClose, onOpen, onShare, onCha
     { id: 'open', label: 'Open', perform: () => afterClose(onOpen) },
     ...(onShare ? [{ id: 'share', label: 'Share or export', perform: () => afterClose(onShare) }] : []),
     ...(onChangeType ? [{ id: 'type', label: 'Note type', perform: () => afterClose(onChangeType) }] : []),
+    ...(onScanText ? [{ id: 'scan-text', label: 'Scan text from image', perform: () => afterClose(onScanText) }] : []),
     ...(onVersionHistory ? [{ id: 'version-history', label: 'Version history', perform: () => afterClose(onVersionHistory) }] : []),
     ...(access.canPin ? [{ id: 'pin', label: pinned ? 'Unpin' : 'Pin', perform: () => afterClose(onTogglePin) }] : []),
     ...(access.canMove ? [{ id: 'move', label: 'Move', perform: () => afterClose(onMove) }] : []),

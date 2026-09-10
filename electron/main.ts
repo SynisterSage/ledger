@@ -40,6 +40,7 @@ import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
+import { LocalContextLibrary, LocalContextLibraryError } from './localContextLibrary.ts';
 import {
   OverviewFocusService,
   type OverviewFocusResult,
@@ -276,6 +277,9 @@ const askLedgerService = createAskLedgerService(
   localAIService,
   localAIAssets,
   path.join(app.getPath('userData'), 'ask-ledger-attachments')
+);
+const localContextLibrary = new LocalContextLibrary(
+  path.join(app.getPath('userData'), 'local-context-library')
 );
 const overviewFocusService = new OverviewFocusService(localAIService);
 const projectLensService = new ProjectLensService(
@@ -932,6 +936,46 @@ ipcMain.handle(
     return { ok: true };
   }
 );
+
+const LOCAL_CONTEXT_TARGET_TYPES = new Set(['ask_session', 'note', 'project', 'event', 'reminder']);
+
+ipcMain.handle('local-context:list', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalContextLibraryError('Account and workspace are required.');
+  return localContextLibrary.summary(payload.ownerUserId, payload.workspaceId);
+});
+
+ipcMain.handle('local-context:import', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalContextLibraryError('Account and workspace are required.');
+  const selection = await dialog.showOpenDialog({
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Ledger local context', extensions: ['pdf', 'docx', 'txt', 'md', 'csv', 'xlsx'] }],
+  });
+  if (selection.canceled || !selection.filePaths.length) return { canceled: true, files: [] };
+  return { canceled: false, files: await localContextLibrary.importFiles(selection.filePaths, payload.ownerUserId, payload.workspaceId) };
+});
+
+ipcMain.handle('local-context:open', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string') throw new LocalContextLibraryError('A local file is required.');
+  const filePath = await localContextLibrary.pathFor(payload.fileId, payload.ownerUserId, payload.workspaceId);
+  if (!filePath) return { ok: false, error: 'This local file is no longer available.' };
+  const error = await shell.openPath(filePath);
+  return error ? { ok: false, error } : { ok: true };
+});
+
+ipcMain.handle('local-context:remove', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string') throw new LocalContextLibraryError('A local file is required.');
+  return { removed: await localContextLibrary.remove(payload.fileId, payload.ownerUserId, payload.workspaceId) };
+});
+
+ipcMain.handle('local-context:link', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; targetType?: unknown; targetId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || typeof payload?.targetType !== 'string' || typeof payload?.targetId !== 'string' || !LOCAL_CONTEXT_TARGET_TYPES.has(payload.targetType)) throw new LocalContextLibraryError('A valid local context link is required.');
+  return localContextLibrary.link(payload.fileId, payload.ownerUserId, payload.workspaceId, payload.targetType as 'ask_session' | 'note' | 'project' | 'event' | 'reminder', payload.targetId);
+});
+
+ipcMain.handle('local-context:unlink', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; targetType?: unknown; targetId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || typeof payload?.targetType !== 'string' || typeof payload?.targetId !== 'string' || !LOCAL_CONTEXT_TARGET_TYPES.has(payload.targetType)) throw new LocalContextLibraryError('A valid local context link is required.');
+  return localContextLibrary.unlink(payload.fileId, payload.ownerUserId, payload.workspaceId, payload.targetType as 'ask_session' | 'note' | 'project' | 'event' | 'reminder', payload.targetId);
+});
 
 const sanitizeAskLedgerHandoff = (value: unknown) => {
   if (!value || typeof value !== 'object') return undefined;
@@ -2880,6 +2924,7 @@ type ModuleWindowKind =
   | 'settings'
   | 'inbox'
   | 'slack'
+  | 'files'
   | 'quick-task'
   | 'quick-note'
   | 'quick-event'
@@ -8179,6 +8224,7 @@ function isWorkspaceModuleKind(kind: ModuleWindowKind) {
     kind === 'settings' ||
     kind === 'inbox' ||
     kind === 'slack' ||
+    kind === 'files' ||
     kind === 'notifications'
   );
 }

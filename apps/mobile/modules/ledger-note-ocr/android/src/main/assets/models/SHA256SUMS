@@ -1,0 +1,3 @@
+a431985659dc921974177a95adcfbb90fd9e51989a5e04d70d0b75f597b6e61d  det/inference.onnx
+da72dc72ca4dc220df0dfde68c1dedc31c58d3e76a25871122e5056227d50092  rec/inference.onnx
+5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e  rec/inference.yml

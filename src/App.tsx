@@ -101,6 +101,7 @@ import {
 } from './components/Notifications/NotificationTray';
 import { NotificationCenterProvider } from './components/Notifications/NotificationCenterContext';
 import SettingsWindow from './components/Settings/SettingsWindow';
+import FilesWindow from './components/Files/FilesWindow';
 import { SearchModal } from './components/Search/SearchModal';
 import { SearchProvider } from './context/SearchContext';
 import { useSearch } from './context/SearchContext';
@@ -181,6 +182,7 @@ type ModuleKind =
   | 'settings'
   | 'inbox'
   | 'slack'
+  | 'files'
   | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
@@ -216,6 +218,7 @@ type KeepAliveModuleKey =
   | 'notifications'
   | 'inbox'
   | 'slack'
+  | 'files'
   | 'settings'
   | 'team-settings';
 
@@ -9706,6 +9709,8 @@ export function AppShell({
           return <IntakeWindow />;
         case 'slack':
           return <SlackWindow routeWorkspaceId={workspaceSlackMatch?.[1] ?? null} />;
+        case 'files':
+          return <FilesWindow />;
         case 'settings':
           return <SettingsWindow />;
       }

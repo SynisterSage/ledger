@@ -26,6 +26,7 @@ type ModuleWindowKind =
   | 'settings'
   | 'inbox'
   | 'slack'
+  | 'files'
   | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
@@ -65,6 +66,14 @@ interface ImportMeta {
 }
 
 interface Window {
+  localContext?: {
+    list: (payload: { ownerUserId: string; workspaceId: string }) => Promise<{ files: import('./types/localContextLibrary').LocalContextFile[]; totalBytes: number }>;
+    importFiles: (payload: { ownerUserId: string; workspaceId: string }) => Promise<{ canceled: boolean; files: import('./types/localContextLibrary').LocalContextFile[] }>;
+    open: (payload: { ownerUserId: string; workspaceId: string; fileId: string }) => Promise<{ ok: boolean; error?: string }>;
+    remove: (payload: { ownerUserId: string; workspaceId: string; fileId: string }) => Promise<{ removed: boolean }>;
+    link: (payload: { ownerUserId: string; workspaceId: string; fileId: string; targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder'; targetId: string }) => Promise<import('./types/localContextLibrary').LocalContextFile>;
+    unlink: (payload: { ownerUserId: string; workspaceId: string; fileId: string; targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder'; targetId: string }) => Promise<import('./types/localContextLibrary').LocalContextFile>;
+  };
   speakerTags?: {
     status: () => Promise<{
       platform: string;

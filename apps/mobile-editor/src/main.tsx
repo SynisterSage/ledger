@@ -247,6 +247,15 @@ function BridgePlugin() {
           return;
         }
         if (command.type === 'INSERT_DIVIDER') { insertNodes(() => [$createLedgerDividerNode()]); return; }
+        if (command.type === 'INSERT_TEXT') {
+          const paragraphs = command.text.split(/\r?\n/).map((line) => {
+            const paragraph = $createParagraphNode();
+            paragraph.append($createTextNode(line));
+            return paragraph;
+          });
+          insertNodes(() => paragraphs, true);
+          return;
+        }
         if (command.type === 'INSERT_IMAGE') { insertNodes(() => [$createLedgerImageNode({ src: command.src, altText: command.altText ?? '', width: command.width ? Math.min(Math.max(command.width, 160), 720) : 560 })]); return; }
         if (command.type === 'INSERT_ATTACHMENT') { insertNodes(() => [$createLedgerPreservationNode(`<div data-ledger-file-attachment="true"${command.attachmentId ? ` data-ledger-file-attachment-id="${command.attachmentId}"` : ''}${command.mimeType ? ` data-mime-type="${command.mimeType.replace(/"/g, '&quot;')}"` : ''}${command.sizeBytes ? ` data-size-bytes="${command.sizeBytes}"` : ''}${command.url ? ` data-url="${command.url.replace(/"/g, '&quot;')}"` : ''}><a href="${(command.url ?? '').replace(/"/g, '&quot;')}">${command.name.replace(/</g, '&lt;')}</a></div>`, 'div')]); return; }
         if (command.type === 'UNDO') { editor.dispatchCommand(UNDO_COMMAND, undefined); return; }

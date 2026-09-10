@@ -42,6 +42,7 @@ export type MobileLexicalEditorHandle = {
   getGeneration: () => number;
   sendMalformedMessage: () => void;
   requestSelection: (noteId?: string) => string | null;
+  insertText: (text: string) => void;
 };
 
 type Props = { showToolbar?: boolean; showStatus?: boolean; workspaceId?: string; noteId?: string; onEvent?: (event: EditorNativeEvent) => void; onEmbeddedError?: (message: string) => void; onStage?: (stage: MobileEditorStage, detail?: string) => void; onLedgerLink?: (url: string) => void; onLedgerContext?: () => void };
@@ -145,6 +146,7 @@ export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(
     enqueue({ type: 'REQUEST_SELECTION', noteId: identity.noteId, requestId: selectionRequestId, generation: identity.generation });
     return selectionRequestId;
   };
+  const insertText = (text: string) => enqueue({ type: 'INSERT_TEXT', text });
   const reload = () => {
     const nextGeneration = generationRef.current + 1;
     generationRef.current = nextGeneration;
@@ -153,7 +155,7 @@ export const MobileLexicalEditor = forwardRef<MobileLexicalEditorHandle, Props>(
     setWebViewGeneration(nextGeneration);
   };
   const sendMalformedMessage = () => webViewRef.current?.injectJavaScript("window.postMessage('not-json', '*'); true;");
-  useImperativeHandle(ref, () => ({ loadDocument, requestExport, resetDirty, setReadOnly, focus, reload, setTheme: setEditorTheme, getGeneration: () => generationRef.current, sendMalformedMessage, requestSelection }), []);
+  useImperativeHandle(ref, () => ({ loadDocument, requestExport, resetDirty, setReadOnly, focus, reload, setTheme: setEditorTheme, getGeneration: () => generationRef.current, sendMalformedMessage, requestSelection, insertText }), []);
 
   const armReadyTimeout = () => { if (readyTimeoutRef.current) clearTimeout(readyTimeoutRef.current); readyTimeoutRef.current = setTimeout(() => { if (readyRef.current) return; const message = 'The embedded editor did not finish loading.'; onStage?.('webview-error', message); setError(message); onEmbeddedError?.(message); }, 8000); };
   useEffect(() => { onStage?.('native-mounted'); onStage?.('asset-resolved'); onStage?.('webview-mounted'); armReadyTimeout(); return () => { if (readyTimeoutRef.current) clearTimeout(readyTimeoutRef.current); }; }, [onStage]);

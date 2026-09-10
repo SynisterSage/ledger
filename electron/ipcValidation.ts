@@ -10,6 +10,7 @@ const moduleWindowKinds = new Set([
   'settings',
   'inbox',
   'slack',
+  'files',
   'quick-follow-up',
   'quick-task',
   'quick-note',

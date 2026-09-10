@@ -17,6 +17,7 @@
     "verify:local-ai-release": "node --env-file=.env.local scripts/verify-local-ai-release.mjs",
     "benchmark:local-ai": "node --experimental-strip-types scripts/run-local-ai-benchmark.mjs",
     "benchmark:note-ocr": "node scripts/note-ocr-benchmark.mjs",
+    "verify:note-ocr-assets": "node scripts/verify-note-ocr-assets.mjs",
     "benchmark:whisper": "node --experimental-strip-types scripts/benchmark-whisper-transcription.mjs",
     "evaluate:ask-ledger": "node --experimental-strip-types scripts/run-ask-ledger-evaluation.mjs",
     "evaluate:phase10-routing": "node --experimental-strip-types scripts/phase10-routing-evaluation.mjs",

@@ -1170,6 +1170,27 @@ contextBridge.exposeInMainWorld('askLedger', {
   },
 });
 
+contextBridge.exposeInMainWorld('localContext', {
+  list(payload: { ownerUserId: string; workspaceId: string }) {
+    return ipcRenderer.invoke('local-context:list', payload);
+  },
+  importFiles(payload: { ownerUserId: string; workspaceId: string }) {
+    return ipcRenderer.invoke('local-context:import', payload);
+  },
+  open(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
+    return ipcRenderer.invoke('local-context:open', payload) as Promise<{ ok: boolean; error?: string }>;
+  },
+  remove(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
+    return ipcRenderer.invoke('local-context:remove', payload) as Promise<{ removed: boolean }>;
+  },
+  link(payload: { ownerUserId: string; workspaceId: string; fileId: string; targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder'; targetId: string }) {
+    return ipcRenderer.invoke('local-context:link', payload);
+  },
+  unlink(payload: { ownerUserId: string; workspaceId: string; fileId: string; targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder'; targetId: string }) {
+    return ipcRenderer.invoke('local-context:unlink', payload);
+  },
+});
+
 type SidebarWindowMode = 'auth' | 'minimized' | 'compact' | 'expanded' | 'fullscreen';
 type ModuleWindowKind =
   | 'new-tab'
@@ -1183,6 +1204,7 @@ type ModuleWindowKind =
   | 'settings'
   | 'inbox'
   | 'slack'
+  | 'files'
   | 'quick-follow-up'
   | 'quick-task'
   | 'quick-note'
