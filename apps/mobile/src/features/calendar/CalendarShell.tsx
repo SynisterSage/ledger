@@ -22,6 +22,7 @@ import { YearOverview } from './YearOverview';
 import { MonthCalendarItemSheet } from './MonthCalendarItemSheet';
 import type { MobileCalendarItem } from './calendarItemNormalizer';
 import { calendarEditorParams } from './CalendarItemEditor';
+import { emitCalendarDataChanged } from './calendarDataEvents';
 import { formatCalendarDateKey } from './calendarMonthGenerator';
 import { useFocusEffect } from 'expo-router';
 import { CalendarViewMenuController, type CalendarViewMenuHandle } from './CalendarViewMenu';
@@ -261,7 +262,16 @@ export function CalendarShell() {
       return;
     }
     if (actionId === 'delete') {
-      Alert.alert(`Delete ${item.type.replace('_', ' ')}?`, 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { void (item.type === 'event' || item.type === 'external_event' ? deleteMobileEvent(item.workspaceId, sourceId) : item.type === 'reminder' ? deleteMobileReminder(item.workspaceId, sourceId) : deleteMobileTask(item.workspaceId, sourceId)).then(() => { setSelectedCalendarItem(null); setCalendarItemActionMode(false); }); } }]);
+      const canReviewRelatedEvents = (item.type === 'event' || item.type === 'external_event')
+        && !item.readOnly
+        && (item.type === 'external_event' || item.sourcePlatform === 'ics' || Boolean(item.seriesId) || Boolean(item.importSeriesKey));
+      if (canReviewRelatedEvents) {
+        setSelectedCalendarItem(null);
+        setCalendarItemActionMode(false);
+        router.push({ pathname: '/calendar/editor', params: { ...calendarEditorParams(item, workspaceState.selectedWorkspaceId), openDeleteMatches: '1' } });
+        return;
+      }
+      Alert.alert(`Delete ${item.type.replace('_', ' ')}?`, 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { void (item.type === 'event' || item.type === 'external_event' ? deleteMobileEvent(item.workspaceId, sourceId) : item.type === 'reminder' ? deleteMobileReminder(item.workspaceId, sourceId) : deleteMobileTask(item.workspaceId, sourceId)).then(() => { emitCalendarDataChanged(item.workspaceId); setSelectedCalendarItem(null); setCalendarItemActionMode(false); }); } }]);
       return;
     }
     const workspaceHeaders = { 'x-workspace-id': item.workspaceId };

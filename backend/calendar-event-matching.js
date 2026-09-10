@@ -44,6 +44,13 @@ const isSimilarImportedEvent = (anchor, candidate) => {
   );
 };
 
+const isSameImportedBatchEvent = (anchor, candidate) => {
+  if (anchor.source_platform !== 'ics' || candidate.source_platform !== 'ics') return false;
+  if (!anchor.import_batch_id || anchor.import_batch_id !== candidate.import_batch_id) return false;
+  if (anchor.calendar_id !== candidate.calendar_id) return false;
+  return normalizeTitle(anchor.title) === normalizeTitle(candidate.title);
+};
+
 const eventPreview = (event, reason) => ({
   id: String(event.id),
   title: event.title,
@@ -72,8 +79,8 @@ export const getCalendarEventMatches = ({
       continue;
     if (scope === 'future' && new Date(candidate.start_at).getTime() < nowTime) continue;
     const reason = sameSeries(anchor, candidate);
-    if (reason || isSimilarImportedEvent(anchor, candidate)) {
-      matches.push(eventPreview(candidate, reason ?? 'same title and schedule'));
+    if (reason || isSameImportedBatchEvent(anchor, candidate) || isSimilarImportedEvent(anchor, candidate)) {
+      matches.push(eventPreview(candidate, reason ?? (isSameImportedBatchEvent(anchor, candidate) ? 'same imported class' : 'same title and schedule')));
     }
   }
   return matches.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());

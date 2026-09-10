@@ -55,8 +55,8 @@ export const StackedMonthView = memo(function StackedMonthView({ month, selected
 
 const styles = StyleSheet.create({
   monthLabel: { height: 38, justifyContent: 'flex-end', paddingBottom: 7, paddingHorizontal: 2, borderBottomWidth: StyleSheet.hairlineWidth },
-  week: { height: 78, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
-  cell: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 5, paddingHorizontal: 3 },
+  week: { height: 84, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
+  cell: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 8, paddingHorizontal: 3 },
   dateArea: { width: '100%', minHeight: 44, alignItems: 'center', justifyContent: 'flex-start' },
   number: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   stripArea: { width: '100%', minHeight: 34, gap: 2, paddingTop: 3 },

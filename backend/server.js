@@ -14020,6 +14020,9 @@ app.get('/api/mobile/calendar/month', async (req, res) => {
           notes: event.notes ?? null,
           location: event.location ?? null,
           recurrenceRule: event.recurrence_rule ?? null,
+          seriesId: event.series_id ?? null,
+          importSeriesKey: event.import_series_key ?? null,
+          sourcePlatform,
           status: event.status ?? null,
         });
         current = addDays(current, 1);
@@ -21174,7 +21177,7 @@ app.post('/api/events/match-preview', authMiddleware, rateLimit('read'), async (
 
     const { data: anchor, error: anchorError } = await supabase
       .from('events')
-      .select('id, workspace_id, calendar_id, title, start_at, end_at, all_day, status, series_id, import_series_key, source_platform')
+      .select('id, workspace_id, calendar_id, title, start_at, end_at, all_day, status, series_id, import_batch_id, import_series_key, source_platform')
       .eq('id', eventId)
       .single();
     if (anchorError) throw anchorError;
@@ -21183,7 +21186,7 @@ app.post('/api/events/match-preview', authMiddleware, rateLimit('read'), async (
 
     const { data: candidates, error: candidatesError } = await supabase
       .from('events')
-      .select('id, workspace_id, calendar_id, title, start_at, end_at, all_day, status, series_id, import_series_key, source_platform')
+      .select('id, workspace_id, calendar_id, title, start_at, end_at, all_day, status, series_id, import_batch_id, import_series_key, source_platform')
       .eq('workspace_id', anchor.workspace_id)
       .eq('calendar_id', anchor.calendar_id)
       .order('start_at', { ascending: true })

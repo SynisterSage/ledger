@@ -17,11 +17,11 @@ const MONTHS_BEFORE = 12;
 const MONTHS_AFTER = 18;
 const EXTENSION_MONTHS = 12;
 const MAX_VISIBLE_ITEMS = 3;
-const DETAILS_WEEK_HEIGHT = 112;
+const DETAILS_WEEK_HEIGHT = 120;
 const DETAILS_MONTH_HEADER_HEIGHT = 48;
-const COMPACT_WEEK_HEIGHT = 58;
+const COMPACT_WEEK_HEIGHT = 64;
 const COMPACT_MONTH_HEADER_HEIGHT = 38;
-const STACKED_WEEK_HEIGHT = 78;
+const STACKED_WEEK_HEIGHT = 84;
 const STACKED_MONTH_HEADER_HEIGHT = 38;
 
 export type ContinuousMonthViewHandle = { scrollToToday: () => void; scrollToMonth: (date: Date, animated?: boolean) => void };
@@ -92,8 +92,9 @@ const MonthItem = memo(function MonthItem({ item, cellWidth, scheme, colors, onP
 const MonthBlock = memo(function MonthBlock({ month, selectedDate, itemsByDate, cellWidth, onSelectDate, onOpenItem, onLongPressItem }: { month: CalendarMonth; selectedDate: Date; itemsByDate: Record<string, MobileCalendarItem[]>; cellWidth: number; onSelectDate: (date: Date) => void; onOpenItem: (item: MobileCalendarItem) => void; onLongPressItem: (item: MobileCalendarItem) => void }) {
   const theme = useLedgerTheme();
   const selectedKey = formatCalendarDateKey(selectedDate);
-  const dates = month.weeks.flat().filter((day) => day.isCurrentMonth);
-  const weeks = Array.from({ length: Math.ceil(dates.length / 7) }, (_, index) => dates.slice(index * 7, index * 7 + 7));
+  // Keep the leading/trailing adjacent-month cells in each seven-day week.
+  // Filtering them before chunking shifts dates under the wrong weekday label.
+  const weeks = month.weeks;
   return <View>
     <View style={styles.monthLabel}><AppText variant="bodyStrong">{month.label}</AppText></View>
     {weeks.map((week) => <Fragment key={week[0]?.dateKey ?? month.monthKey}>
@@ -202,7 +203,7 @@ const styles = StyleSheet.create({
   weekday: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '600' },
   monthLabel: { height: DETAILS_MONTH_HEADER_HEIGHT, justifyContent: 'flex-end', paddingBottom: 8, paddingHorizontal: 2 },
   week: { height: DETAILS_WEEK_HEIGHT, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  cell: { flex: 1, minWidth: 0, alignItems: 'stretch', paddingTop: 5, paddingHorizontal: 2 },
+  cell: { flex: 1, minWidth: 0, alignItems: 'stretch', paddingTop: 8, paddingHorizontal: 2 },
   cellTarget: { ...StyleSheet.absoluteFill, zIndex: 0 },
   dateTarget: { alignItems: 'flex-end', minHeight: 24, paddingRight: 1 },
   number: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },

@@ -52,8 +52,8 @@ export const CompactMonthView = memo(function CompactMonthView({ month, selected
 
 const styles = StyleSheet.create({
   monthLabel: { height: 38, justifyContent: 'flex-end', paddingBottom: 7, paddingHorizontal: 2, borderBottomWidth: StyleSheet.hairlineWidth },
-  week: { height: 58, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
-  cell: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 5 },
+  week: { height: 64, flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
+  cell: { flex: 1, minWidth: 0, minHeight: 44, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 8 },
   dateArea: { minHeight: 44, alignItems: 'center', justifyContent: 'flex-start' },
   number: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   todayNumber: { backgroundColor: 'transparent' },

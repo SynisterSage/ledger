@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
@@ -27,7 +27,7 @@ export type CalendarEditorItemType = 'event' | 'reminder' | 'task' | 'project_ac
 
 type EditorParams = {
   mode?: string; type?: string; workspaceId?: string; dateKey?: string; startAt?: string; endAt?: string;
-  itemId?: string; title?: string; notes?: string; projectId?: string; calendarId?: string; allDay?: string; readOnly?: string; sourcePlatform?: string; seriesId?: string;
+  itemId?: string; title?: string; notes?: string; projectId?: string; calendarId?: string; allDay?: string; readOnly?: string; sourcePlatform?: string; seriesId?: string; importSeriesKey?: string; openDeleteMatches?: string;
 };
 
 function confirmAppleOverwrite(title: string) {
@@ -131,11 +131,12 @@ export function CalendarItemEditor() {
       }
       else if (type === 'reminder') await deleteMobileReminder(workspaceId, sourceId);
       else await deleteMobileTask(workspaceId, sourceId);
+      emitCalendarDataChanged(workspaceId);
       close();
     } catch (deleteError) { setError(deleteError instanceof Error ? deleteError.message : 'Could not delete item.'); } finally { setIsSaving(false); }
   };
   const sourceEventId = itemId?.replace(/^event:/, '').split(':')[0] ?? null;
-  const canDeleteMatches = mode === 'edit' && type === 'event' && !readOnly && (first(params.sourcePlatform) === 'ics' || Boolean(first(params.seriesId)));
+  const canDeleteMatches = mode === 'edit' && type === 'event' && !readOnly && (first(params.openDeleteMatches) === '1' || first(params.sourcePlatform) === 'ics' || Boolean(first(params.seriesId)) || Boolean(first(params.importSeriesKey)));
   const loadMatchPreview = async (scope: 'future' | 'all' = matchScope) => {
     if (!sourceEventId || !canDeleteMatches) return;
     setIsLoadingMatches(true);
@@ -151,6 +152,12 @@ export function CalendarItemEditor() {
       setIsLoadingMatches(false);
     }
   };
+  useEffect(() => {
+    if (mode === 'edit' && params.openDeleteMatches === '1' && canDeleteMatches) void loadMatchPreview();
+    // The route parameter is a one-shot command; the preview owns subsequent
+    // scope changes and selection state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canDeleteMatches, mode, params.openDeleteMatches, sourceEventId]);
   const deleteSelectedMatches = async () => {
     const ids = [...selectedMatchIds];
     if (!ids.length) return;
@@ -230,9 +237,16 @@ export function CalendarItemEditor() {
 
   const chooseType = (next: CalendarEditorItemType) => { setType(next); setTypeSheetOpen(false); if (next !== 'event') { setEndTime(''); setAllDay(false); } };
   const typeLabel = type === 'project_action' ? 'Project action' : type.charAt(0).toUpperCase() + type.slice(1);
-  return <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: theme.colors.background }]}><View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Close calendar editor" onPress={close} style={styles.headerButton}><AppText variant="button">Cancel</AppText></Pressable><AppText variant="bodyStrong">{mode === 'edit' ? `Edit ${typeLabel.toLowerCase()}` : `New ${typeLabel.toLowerCase()}`}</AppText><Pressable accessibilityRole="button" accessibilityLabel={`Save ${typeLabel.toLowerCase()}`} onPress={() => void save()} disabled={isSaving || readOnly} style={styles.headerButton}><AppText variant="button" style={{ color: theme.colors.accent }}>{isSaving ? 'Saving…' : 'Save'}</AppText></Pressable></View>
-    <CaptureFormShell footer={<AppButton title={isSaving ? 'Saving…' : `Save ${typeLabel.toLowerCase()}`} disabled={isSaving || readOnly} onPress={() => void save()} />}>
-      <View style={styles.section}><AppTextInput ref={titleRef} label="Title" placeholder={type === 'project_action' ? 'What needs to happen?' : 'Add title'} value={title} onChangeText={setTitle} />
+  return <SafeAreaView edges={['top', 'left', 'right']} style={[styles.screen, { backgroundColor: theme.colors.background }]}><View style={[styles.header, { borderBottomColor: theme.colors.borderSubtle }]}><Pressable accessibilityRole="button" accessibilityLabel="Close calendar editor" onPress={close} style={styles.headerButton}><AppText variant="button">Cancel</AppText></Pressable><AppText variant="bodyStrong" style={styles.headerTitle}>{mode === 'edit' ? `Edit ${typeLabel.toLowerCase()}` : `New ${typeLabel.toLowerCase()}`}</AppText><Pressable accessibilityRole="button" accessibilityLabel={`Save ${typeLabel.toLowerCase()}`} onPress={() => void save()} disabled={isSaving || readOnly} style={styles.headerButton}><AppText variant="button" style={{ color: theme.colors.accent }}>{isSaving ? 'Saving…' : 'Save'}</AppText></Pressable></View>
+    <CaptureFormShell
+      footer={<AppButton title={isSaving ? 'Saving…' : `Save ${typeLabel.toLowerCase()}`} size="lg" disabled={isSaving || readOnly} onPress={() => void save()} />}
+      contentStyle={styles.formContent}
+      footerBottomPadding={theme.spacing.lg}
+    >
+      <View style={styles.form}>
+      <View style={[styles.titleGroup, { backgroundColor: theme.colors.surfaceMuted }]}><AppTextInput ref={titleRef} label="Title" placeholder={type === 'project_action' ? 'What needs to happen?' : 'Add title'} value={title} onChangeText={setTitle} style={styles.cardInput} />
+      </View>
+      <View style={[styles.fieldGroup, { backgroundColor: theme.colors.surfaceMuted }]}>
         <Row title="Type" subtitle={typeLabel} onPress={() => setTypeSheetOpen(true)} chevron titleVariant="body" />
         <Row title={type === 'event' ? 'Starts' : type === 'reminder' ? 'Remind me' : 'Due date'} subtitle={formatCaptureDateLabel(dateInput)} onPress={() => setDateSheetOpen(true)} chevron titleVariant="body" />
         {type === 'event' ? (
@@ -243,10 +257,15 @@ export function CalendarItemEditor() {
           </>
         ) : <Row title={type === 'reminder' ? 'Time' : 'Due time'} subtitle={startTime ? formatCaptureTimeLabel(startTime) : 'Optional'} onPress={() => setStartSheetOpen(true)} chevron titleVariant="body" />}
         <Row title={type === 'reminder' ? 'Reminder list' : 'Calendar'} subtitle={selectedCalendarLabel} onPress={() => setCalendarSheetOpen(true)} chevron titleVariant="body" />
+      </View>
+      <View style={[styles.fieldGroup, { backgroundColor: theme.colors.surfaceMuted }]}>
         <Row title="Workspace" subtitle={workspaceLabel} onPress={() => setWorkspaceSheetOpen(true)} chevron titleVariant="body" />
         <Row title="Project" subtitle={selectedProjectLabel} onPress={() => setProjectSheetOpen(true)} chevron titleVariant="body" />
-        <AppTextInput label="Notes" placeholder="Add details or context" multiline value={notes} onChangeText={setNotes} />
-        {type === 'event' ? <AppTextInput label="Location" placeholder="Optional" value={location} onChangeText={setLocation} /> : null}
+      </View>
+      <View style={[styles.inputGroup, { backgroundColor: theme.colors.surfaceMuted }]}>
+        <AppTextInput label="Notes" placeholder="Add details or context" multiline value={notes} onChangeText={setNotes} style={styles.cardInput} />
+        {type === 'event' ? <AppTextInput label="Location" placeholder="Optional" value={location} onChangeText={setLocation} style={styles.cardInput} /> : null}
+      </View>
         {error ? <AppText variant="meta" style={{ color: theme.colors.danger }}>{error}</AppText> : null}
         {readOnly ? <AppText variant="meta">This item is read-only from its connected source.</AppText> : null}
         {mode === 'edit' && !readOnly ? <Pressable accessibilityRole="button" onPress={() => Alert.alert(`Delete ${typeLabel.toLowerCase()}?`, 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void remove() }])} style={styles.deleteAction}><AppText variant="body" style={{ color: theme.colors.danger }}>Delete {typeLabel.toLowerCase()}</AppText></Pressable> : null}
@@ -261,7 +280,7 @@ export function CalendarItemEditor() {
         <View style={[styles.scopeToggle, { borderColor: theme.colors.borderSubtle, backgroundColor: theme.colors.surface }]}>
           {(['future', 'all'] as const).map((scope) => <Pressable key={scope} disabled={isLoadingMatches || isDeletingMatches} onPress={() => void loadMatchPreview(scope)} style={[styles.scopeButton, matchScope === scope && { backgroundColor: theme.colors.surfaceMuted }]}><AppText variant="caption" style={matchScope === scope ? { color: theme.colors.textPrimary } : { color: theme.colors.textMuted }}>{scope === 'future' ? 'Future events' : 'All events'}</AppText></Pressable>)}
         </View>
-        {matchPreview.matches.length === 0 ? <AppText variant="caption" style={styles.emptyMatches}>No matching events found.</AppText> : <ScrollView style={styles.matchList}>{matchPreview.matches.map((match) => <Pressable key={match.id} disabled={isDeletingMatches} onPress={() => setSelectedMatchIds((current) => { const next = new Set(current); if (next.has(match.id)) next.delete(match.id); else next.add(match.id); return next; })} style={styles.matchRow}><AppText variant="body" style={{ color: selectedMatchIds.has(match.id) ? theme.colors.textPrimary : theme.colors.textMuted }}>{selectedMatchIds.has(match.id) ? '✓' : '○'}</AppText><View style={styles.matchCopy}><AppText variant="caption">{match.title}</AppText><AppText variant="meta">{new Date(match.start_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} · {match.reason}</AppText></View></Pressable>)}</ScrollView>}
+        {matchPreview.matches.length === 0 ? <AppText variant="caption" style={styles.emptyMatches}>No matching events found.</AppText> : <View style={styles.matchList}>{matchPreview.matches.map((match) => <Pressable key={match.id} disabled={isDeletingMatches} onPress={() => setSelectedMatchIds((current) => { const next = new Set(current); if (next.has(match.id)) next.delete(match.id); else next.add(match.id); return next; })} style={styles.matchRow}><AppText variant="body" style={{ color: selectedMatchIds.has(match.id) ? theme.colors.textPrimary : theme.colors.textMuted }}>{selectedMatchIds.has(match.id) ? '✓' : '○'}</AppText><View style={styles.matchCopy}><AppText variant="caption">{match.title}</AppText><AppText variant="meta">{new Date(match.start_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} · {match.reason}</AppText></View></Pressable>)}</View>}
         <View style={styles.matchFooter}><AppText variant="meta">{selectedMatchIds.size} selected</AppText><Pressable disabled={!selectedMatchIds.size || isDeletingMatches} onPress={() => void deleteSelectedMatches()} style={[styles.deleteMatchesButton, { backgroundColor: theme.colors.danger, opacity: !selectedMatchIds.size || isDeletingMatches ? 0.5 : 1 }]}><AppText variant="button" style={{ color: theme.colors.onAccent }}>{isDeletingMatches ? 'Deleting…' : 'Delete selected'}</AppText></Pressable></View>
       </View> : null}
     </AppBottomSheet>
@@ -284,9 +303,34 @@ function CalendarSourceChoiceSheet({ visible, options, selectedId, onSelect, onC
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 }, header: { minHeight: 58, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, headerButton: { minHeight: 44, justifyContent: 'center', minWidth: 58 }, section: { gap: 14 }, typeOverlay: { position: 'absolute', left: 16, right: 16, top: 80, zIndex: 10, padding: 16, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 }, typeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 }, typeRow: { minHeight: 56, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sourceChoice: { flexDirection: 'row', alignItems: 'center', gap: 10 }, sourceDot: { width: 8, height: 8, borderRadius: 4 }, deleteAction: { paddingTop: 14, minHeight: 44 }, matchAction: { minHeight: 44, justifyContent: 'center' }, matchSheet: { gap: 14 }, scopeToggle: { flexDirection: 'row', borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 2 }, scopeButton: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 8 }, matchList: { maxHeight: 360, borderRadius: 12 }, matchRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 8 }, matchCopy: { flex: 1, gap: 2 }, emptyMatches: { paddingVertical: 28, textAlign: 'center' }, matchFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, deleteMatchesButton: { minHeight: 44, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  screen: { flex: 1 },
+  header: { minHeight: 58, paddingHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerButton: { minHeight: 44, justifyContent: 'center', minWidth: 58 },
+  headerTitle: { fontSize: 17, lineHeight: 22 },
+  formContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24 },
+  form: { gap: 14 },
+  titleGroup: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18 },
+  fieldGroup: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 18, gap: 2 },
+  inputGroup: { paddingHorizontal: 16, paddingVertical: 14, borderRadius: 18, gap: 14 },
+  cardInput: { borderBottomWidth: 0 },
+  typeOverlay: { position: 'absolute', left: 16, right: 16, top: 80, zIndex: 10, padding: 16, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 },
+  typeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 8 },
+  typeRow: { minHeight: 56, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sourceChoice: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sourceDot: { width: 8, height: 8, borderRadius: 4 },
+  deleteAction: { paddingTop: 14, minHeight: 44 },
+  matchAction: { minHeight: 44, justifyContent: 'center' },
+  matchSheet: { gap: 14 },
+  scopeToggle: { flexDirection: 'row', borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 2 },
+  scopeButton: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  matchList: { borderRadius: 12 },
+  matchRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
+  matchCopy: { flex: 1, gap: 2 },
+  emptyMatches: { paddingVertical: 28, textAlign: 'center' },
+  matchFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  deleteMatchesButton: { minHeight: 44, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 });
 
 export function calendarEditorParams(item: MobileCalendarItem, workspaceId: string) {
-  return { mode: 'edit', type: item.type === 'external_event' ? 'event' : item.type === 'project_action' ? 'project_action' : item.type, workspaceId, itemId: item.id, dateKey: item.dateKey, startAt: item.startAt ?? '', endAt: item.endAt ?? '', title: item.title, projectId: item.projectId ?? '', calendarId: item.calendarId ?? '', allDay: item.allDay ? '1' : '0', readOnly: item.readOnly ? '1' : '0', sourcePlatform: item.sourcePlatform ?? '', seriesId: item.seriesId ?? '' };
+  return { mode: 'edit', type: item.type === 'external_event' ? 'event' : item.type === 'project_action' ? 'project_action' : item.type, workspaceId, itemId: item.id, dateKey: item.dateKey, startAt: item.startAt ?? '', endAt: item.endAt ?? '', title: item.title, projectId: item.projectId ?? '', calendarId: item.calendarId ?? '', allDay: item.allDay ? '1' : '0', readOnly: item.readOnly ? '1' : '0', sourcePlatform: item.sourcePlatform ?? '', seriesId: item.seriesId ?? '', importSeriesKey: item.importSeriesKey ?? '' };
 }

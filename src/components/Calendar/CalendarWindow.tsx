@@ -8295,7 +8295,12 @@ export const CalendarWindow = ({
                 {!confirmDelete ? (
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setConfirmDelete(true)}
+                      onClick={() => {
+                        const canReviewRelatedEvents = eventEditorEvent.provider !== 'apple'
+                          && (eventEditorEvent.source_platform === 'ics' || Boolean(eventEditorEvent.series_id) || Boolean(eventEditorEvent.import_series_key));
+                        if (canReviewRelatedEvents) void loadEventMatchPreview();
+                        else setConfirmDelete(true);
+                      }}
                       className="rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100"
                     >
                       Delete
