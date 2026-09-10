@@ -11,7 +11,7 @@ import { getWorkspaceLabel, selectWorkspace, useWorkspaceState } from '@/store/w
 import { useAppPreferencesState } from '@/store/appPreferencesStore';
 import { useLedgerTheme } from '@/theme';
 import { mobileRequest } from '@/api/client';
-import { createMeetingNoteFromCalendar } from '@/api/calendar';
+import { createMeetingNoteFromCalendar, getMobileEventMatchPreview } from '@/api/calendar';
 import { deleteMobileEvent, deleteMobileReminder, deleteMobileTask, updateMobileEvent } from '@/api/captures';
 import { useMobileCalendarState, type CalendarViewContext, type MobileCalendarView, type MonthDisplayMode } from './useMobileCalendarState';
 import { ContinuousMonthView, type ContinuousMonthViewHandle, type MonthScrollState } from './ContinuousMonthView';
@@ -266,10 +266,17 @@ export function CalendarShell() {
         && !item.readOnly
         && (item.type === 'external_event' || item.sourcePlatform === 'ics' || Boolean(item.seriesId) || Boolean(item.importSeriesKey));
       if (canReviewRelatedEvents) {
-        setSelectedCalendarItem(null);
-        setCalendarItemActionMode(false);
-        router.push({ pathname: '/calendar/editor', params: { ...calendarEditorParams(item, workspaceState.selectedWorkspaceId), openDeleteMatches: '1' } });
-        return;
+        try {
+          const preview = await getMobileEventMatchPreview(item.workspaceId, sourceId, 'all');
+          if (preview.matches.length > 0) {
+            setSelectedCalendarItem(null);
+            setCalendarItemActionMode(false);
+            router.push({ pathname: '/calendar/editor', params: { ...calendarEditorParams(item, workspaceState.selectedWorkspaceId), openDeleteMatches: '1' } });
+            return;
+          }
+        } catch {
+          // Fall through to the ordinary single-event confirmation.
+        }
       }
       Alert.alert(`Delete ${item.type.replace('_', ' ')}?`, 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { void (item.type === 'event' || item.type === 'external_event' ? deleteMobileEvent(item.workspaceId, sourceId) : item.type === 'reminder' ? deleteMobileReminder(item.workspaceId, sourceId) : deleteMobileTask(item.workspaceId, sourceId)).then(() => { emitCalendarDataChanged(item.workspaceId); setSelectedCalendarItem(null); setCalendarItemActionMode(false); }); } }]);
       return;

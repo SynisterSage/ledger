@@ -34,6 +34,7 @@ type AppBottomSheetProps = {
   onClose: () => void;
   title?: ReactNode;
   children: ReactNode;
+  footer?: ReactNode;
   snapPoints?: AppBottomSheetSnapPoint[];
   initialSnapPointIndex?: number;
   headerAccessory?: ReactNode;
@@ -80,6 +81,7 @@ export function AppBottomSheet({
   onClose,
   title,
   children,
+  footer,
   snapPoints = DEFAULT_SNAP_POINTS,
   initialSnapPointIndex = 1,
   headerAccessory,
@@ -496,6 +498,7 @@ export function AppBottomSheet({
                 {children}
               </ScrollView>
             </View>
+            {footer ? <View style={[styles.footer, { borderTopColor: theme.colors.borderSubtle }]}>{footer}</View> : null}
             </KeyboardAvoidingView>
           </SafeAreaView>
         </Animated.View>
@@ -558,5 +561,11 @@ const styles = StyleSheet.create({
   },
   content: {
     gap: 12,
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
   },
 });
