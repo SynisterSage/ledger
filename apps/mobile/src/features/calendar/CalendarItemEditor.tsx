@@ -153,7 +153,7 @@ export function CalendarItemEditor() {
     }
   };
   useEffect(() => {
-    if (mode === 'edit' && params.openDeleteMatches === '1' && canDeleteMatches) void loadMatchPreview();
+    if (mode === 'edit' && params.openDeleteMatches === '1' && canDeleteMatches) void loadMatchPreview('all');
     // The route parameter is a one-shot command; the preview owns subsequent
     // scope changes and selection state.
     // eslint-disable-next-line react-hooks/exhaustive-deps

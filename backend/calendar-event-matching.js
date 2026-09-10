@@ -10,8 +10,6 @@ const eventSchedule = (event) => {
   const end = new Date(event?.end_at ?? '');
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   return {
-    weekday: start.getUTCDay(),
-    minutes: start.getUTCHours() * 60 + start.getUTCMinutes(),
     durationMinutes: Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000)),
   };
 };
@@ -34,12 +32,16 @@ const isSimilarImportedEvent = (anchor, candidate) => {
   if (anchor.source_platform !== 'ics' || candidate.source_platform !== 'ics') return false;
   if (anchor.calendar_id !== candidate.calendar_id) return false;
   if (normalizeTitle(anchor.title) !== normalizeTitle(candidate.title)) return false;
+  if (!normalizeTitle(anchor.title)) return false;
+  if (Boolean(anchor.all_day) !== Boolean(candidate.all_day)) return false;
+  if (anchor.series_id && candidate.series_id && anchor.series_id !== candidate.series_id) return false;
+  if (anchor.import_series_key && candidate.import_series_key && anchor.import_series_key !== candidate.import_series_key) return false;
   const anchorSchedule = eventSchedule(anchor);
   const candidateSchedule = eventSchedule(candidate);
   if (!anchorSchedule || !candidateSchedule) return false;
   return (
-    anchorSchedule.weekday === candidateSchedule.weekday &&
-    Math.abs(anchorSchedule.minutes - candidateSchedule.minutes) <= 15 &&
+    // Legacy ICS imports lack series identity. A class can meet on multiple
+    // weekdays and its UTC start changes at daylight saving boundaries.
     Math.abs(anchorSchedule.durationMinutes - candidateSchedule.durationMinutes) <= 15
   );
 };
@@ -79,7 +81,7 @@ export const getCalendarEventMatches = ({
     if (scope === 'future' && new Date(candidate.start_at).getTime() < nowTime) continue;
     const reason = sameSeries(anchor, candidate);
     if (reason || isSameImportedBatchEvent(anchor, candidate) || isSimilarImportedEvent(anchor, candidate)) {
-      matches.push(eventPreview(candidate, reason ?? (isSameImportedBatchEvent(anchor, candidate) ? 'same imported class' : 'same title and schedule')));
+      matches.push(eventPreview(candidate, reason ?? (isSameImportedBatchEvent(anchor, candidate) ? 'same imported class' : 'same imported title and duration')));
     }
   }
   return matches.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());

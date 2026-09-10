@@ -39,7 +39,7 @@ test('matches imported occurrences by exact series identity', () => {
   assert.equal(matches[0].reason, 'imported series');
 });
 
-test('similar fallback is conservative and requires same imported schedule', () => {
+test('legacy imports match across weekdays and daylight saving changes', () => {
   const anchor = event({ id: 'anchor', import_series_key: null });
   const matches = getCalendarEventMatches({
     anchor,
@@ -52,21 +52,26 @@ test('similar fallback is conservative and requires same imported schedule', () 
         import_series_key: null,
       }),
       event({
-        id: 'different-time',
-        start_at: '2026-09-21T17:00:00.000Z',
-        end_at: '2026-09-21T18:00:00.000Z',
+        id: 'wednesday-after-dst',
+        start_at: '2026-11-04T15:00:00.000Z',
+        end_at: '2026-11-04T16:00:00.000Z',
         import_series_key: null,
       }),
       event({ id: 'other-calendar', calendar_id: 'calendar-2', import_series_key: null }),
+      event({ id: 'other-workspace', workspace_id: 'workspace-2' }),
+      event({ id: 'other-title', title: 'BIO 102' }),
+      event({ id: 'all-day', all_day: true }),
+      event({ id: 'longer', end_at: '2026-09-14T17:00:00.000Z' }),
+      event({ id: 'provider', source_platform: 'google' }),
     ],
     scope: 'all',
     now: new Date('2026-09-01T00:00:00.000Z'),
   });
   assert.deepEqual(
     matches.map((match) => match.id),
-    ['same-pattern']
+    ['same-pattern', 'wednesday-after-dst']
   );
-  assert.equal(matches[0].reason, 'same title and schedule');
+  assert.equal(matches[0].reason, 'same imported title and duration');
 });
 
 test('future scope excludes past matches and preserves chronological order', () => {
