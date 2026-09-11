@@ -10,9 +10,11 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import time
+import traceback
 
 
 def configure_paddlex_cache():
@@ -21,6 +23,13 @@ def configure_paddlex_cache():
     if not cache_dir:
         cache_dir = str(Path(tempfile.gettempdir()) / 'ledger-paddlex')
     os.environ.setdefault('PADDLE_PDX_CACHE_HOME', cache_dir)
+    bundled_cache = Path(getattr(sys, '_MEIPASS', '')) / 'bundled-paddlex'
+    if bundled_cache.is_dir():
+        target = Path(cache_dir)
+        target.mkdir(parents=True, exist_ok=True)
+        official_models = target / 'official_models'
+        if not official_models.exists():
+            shutil.copytree(bundled_cache / 'official_models', official_models, dirs_exist_ok=True)
 
 
 def fail(message):
@@ -45,7 +54,19 @@ def main():
     started = time.perf_counter()
     language = 'en' if args.language in ('auto', 'en', 'en-US') else args.language
     try:
-        ocr = PaddleOCR(lang=language, use_doc_orientation_classify=True, use_doc_unwarping=True)
+        # PaddleX performs an optional-dependency metadata check at pipeline
+        # construction time. PyInstaller bundles the modules themselves but
+        # can relocate their dist-info metadata, so the check is not reliable
+        # in a frozen runtime. Missing imports still fail normally when used.
+        import paddlex.utils.deps as paddlex_deps
+        paddlex_deps.is_extra_available = lambda _extra: True
+        paddlex_deps.require_deps = lambda *_deps, **_kwargs: None
+        ocr = PaddleOCR(
+            lang=language,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+        )
         results = ocr.predict(args.input)
         lines = []
         for result in results:
@@ -93,6 +114,7 @@ def main():
         print(json.dumps(payload, ensure_ascii=False))
         return 0
     except Exception as error:  # Paddle surfaces provider-specific exceptions.
+        traceback.print_exc(file=sys.stderr)
         return fail(f'PaddleOCR failed: {error}')
 
 

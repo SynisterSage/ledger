@@ -24,7 +24,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { AutoLinkNode, LinkNode, $createLinkNode } from '@lexical/link';
-import { ListItemNode, ListNode } from '@lexical/list';
+import { ListItemNode, ListNode, $createListItemNode, $createListNode } from '@lexical/list';
 import { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import { CheckListPlugin } from '@lexical/react/LexicalCheckListPlugin';
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin';
@@ -942,15 +942,35 @@ const OcrTextInsertionPlugin = ({ noteId }: { noteId?: string | null }) => {
       const detail = (event as CustomEvent<{ noteId?: unknown; result?: unknown }>).detail;
       if (!noteId || detail?.noteId !== noteId || !detail?.result) return;
       const result = detail.result as NoteOcrResult;
+      const blocks = result.blocks?.filter((block) => block.text.trim()) ?? [];
       const lines = result.lines.map((line) => line.text).filter((line) => line.trim());
-      if (!lines.length) return;
+      if (!blocks.length && !lines.length) return;
       editor.focus();
       editor.update(() => {
-        $insertNodes(lines.map((line) => {
-          const paragraph = $createParagraphNode();
-          paragraph.append($createTextNode(line));
-          return paragraph;
-        }));
+        if (!blocks.length) {
+          $insertNodes(lines.map((line) => $createParagraphNode().append($createTextNode(line))));
+          return;
+        }
+        const nodes: LexicalNode[] = [];
+        let activeList: ListNode | null = null;
+        let activeListType: 'bullet' | 'check' | null = null;
+        for (const block of blocks) {
+          const listType = block.type === 'bullet' ? 'bullet' : block.type === 'todo' ? 'check' : null;
+          if (listType) {
+            if (!activeList || activeListType !== listType) {
+              activeList = $createListNode(listType);
+              activeListType = listType;
+              nodes.push(activeList);
+            }
+            activeList.append($createListItemNode(listType === 'check' ? block.checked === true : undefined).append($createTextNode(block.text)));
+            continue;
+          }
+          activeList = null;
+          activeListType = null;
+          if (block.type === 'heading') nodes.push($createHeadingNode('h2').append($createTextNode(block.text)));
+          else nodes.push($createParagraphNode().append($createTextNode(block.text)));
+        }
+        $insertNodes(nodes);
       });
     };
     window.addEventListener('ledger:insert-ocr-text', listener);

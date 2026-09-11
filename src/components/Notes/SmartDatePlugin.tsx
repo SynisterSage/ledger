@@ -631,7 +631,10 @@ export function SmartDatePlugin({
   useEffect(() => {
     if (!noteId) return;
     const timer = window.setTimeout(() => {
-      const fullScanKeys = collectEligibleTextKeys();
+      const fullScanKeys = new Set<NodeKey>();
+      editor.getEditorState().read(() => {
+        for (const key of collectEligibleTextKeys()) fullScanKeys.add(key);
+      });
       if (fullScanKeys.size === 0) return;
       scanRequestedRef.current = true;
       editor.update(

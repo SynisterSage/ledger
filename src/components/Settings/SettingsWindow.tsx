@@ -123,6 +123,8 @@ type UserPreferences = {
   theme: 'light' | 'dark' | 'system';
 };
 
+type LocalFileRetention = 'until_removed' | '30_days' | '90_days' | '1_year';
+
 type NotificationPreferences = {
   desktopEnabled: boolean;
   inAppEnabled: boolean;
@@ -352,6 +354,12 @@ const formatMeetingModelSize = (bytes?: number) => {
   if (!bytes || !Number.isFinite(bytes)) return 'Size unavailable';
   const gigabytes = bytes / 1_000_000_000;
   return gigabytes >= 1 ? `${gigabytes.toFixed(1)} GB` : `${(bytes / 1_000_000).toFixed(0)} MB`;
+};
+
+const formatLocalStorageSize = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+  return `${Math.max(1, Math.round(bytes / 1_000_000))} MB`;
 };
 
 const settingsNavGroups: Array<{
@@ -1162,9 +1170,18 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [meetingDefaultRetention, setMeetingDefaultRetention] = useState<'delete_after_transcription' | 'retain'>(() => {
     try { return localStorage.getItem('ledger.meeting.default-retention') === 'retain' ? 'retain' : 'delete_after_transcription'; } catch { return 'delete_after_transcription'; }
   });
+  const [scanImageRetention, setScanImageRetention] = useState<'delete_after_processing' | 'retain_until_deleted'>('delete_after_processing');
+  const [isDeletingLocalCapture, setIsDeletingLocalCapture] = useState(false);
   const [meetingConsentReminder, setMeetingConsentReminder] = useState(true);
   const [meetingDefaultTimestamps, setMeetingDefaultTimestamps] = useState(true);
   const [meetingRecordingPath, setMeetingRecordingPath] = useState<string | null>(null);
+  const [localFileRetention, setLocalFileRetention] = useState<LocalFileRetention>(() => {
+    try {
+      const value = window.localStorage.getItem('ledger.local-files.retention');
+      return value === '30_days' || value === '90_days' || value === '1_year' ? value : 'until_removed';
+    } catch { return 'until_removed'; }
+  });
+  const [localStorageUsage, setLocalStorageUsage] = useState<{ fileCount: number; totalBytes: number } | null>(null);
   const [meetingModelStatus, setMeetingModelStatus] = useState<{
     installed?: boolean;
     downloading?: boolean;
@@ -1198,6 +1215,35 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   useEffect(() => {
     try { localStorage.setItem('ledger.meeting.default-retention', meetingDefaultRetention); } catch {}
   }, [meetingDefaultRetention]);
+  useEffect(() => {
+    if (!window.localCapturePrivacy?.get) return;
+    void window.localCapturePrivacy.get().then((value) => setScanImageRetention(value.scanImageRetention)).catch(() => {});
+  }, []);
+  const updateScanImageRetention = (value: typeof scanImageRetention) => {
+    setScanImageRetention(value);
+    void window.localCapturePrivacy?.set({ scanImageRetention: value }).catch(() => {});
+  };
+  const deleteLocalCaptureData = async () => {
+    if (!window.localCapturePrivacy?.deleteAll || !window.confirm('Delete retained scan images and meeting recordings from this device?')) return;
+    setIsDeletingLocalCapture(true);
+    try { await window.localCapturePrivacy.deleteAll(); } finally { setIsDeletingLocalCapture(false); }
+  };
+  useEffect(() => {
+    try { localStorage.setItem('ledger.local-files.retention', localFileRetention); } catch {}
+  }, [localFileRetention]);
+  useEffect(() => {
+    const localContext = window.localContext;
+    if (activeSection !== 'data_privacy' || !user?.id || !activeWorkspaceId || !localContext) {
+      if (activeSection !== 'data_privacy') setLocalStorageUsage(null);
+      return;
+    }
+    const retentionDays = localFileRetention === '30_days' ? 30 : localFileRetention === '90_days' ? 90 : localFileRetention === '1_year' ? 365 : undefined;
+    void localContext.cleanupExpired({ ownerUserId: user.id, workspaceId: activeWorkspaceId, retentionDays })
+      .catch(() => null)
+      .then(() => localContext.list({ ownerUserId: user.id, workspaceId: activeWorkspaceId }))
+      .then((summary) => setLocalStorageUsage(summary ? { fileCount: summary.files.length, totalBytes: summary.totalBytes } : null))
+      .catch(() => setLocalStorageUsage(null));
+  }, [activeSection, activeWorkspaceId, user?.id, localFileRetention]);
   useEffect(() => {
     if (activeSection !== 'meeting_notes' || !window.meetingTranscription) return;
     void window.meetingTranscription.modelStatus().then((status) => {
@@ -4503,6 +4549,38 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                         </SettingsRow>
                         <SettingsRow label="Connected data" help="Manage external services and their access to this workspace.">
                           <button type="button" onClick={() => selectSettingsSection('integrations')} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>Open integrations</button>
+                        </SettingsRow>
+                      </div>
+                    </section>
+                    <section className={settingsTheme.sectionShell} aria-labelledby="local-capture-retention">
+                      <h3 id="local-capture-retention" className={settingsTheme.sectionTitle}>Local capture</h3>
+                      <p className={settingsTheme.help + ' mt-1'}>Controls Ledger-owned copies used during local OCR and meeting transcription. Original files you choose in Finder are never deleted.</p>
+                      <div className={settingsTheme.sectionRows + ' mt-4'}>
+                        <SettingsRow label="Scanned images" help="Choose whether a local copy remains after text extraction. Note attachments are unaffected.">
+                          <select value={scanImageRetention} onChange={(event) => updateScanImageRetention(event.target.value as typeof scanImageRetention)} className={preferenceSelectClassName} style={selectChevronStyle}>
+                            <option value="delete_after_processing">Delete after processing</option>
+                            <option value="retain_until_deleted">Keep until deleted</option>
+                          </select>
+                        </SettingsRow>
+                        <SettingsRow label="Delete local capture data" help="Removes retained scan images and completed/recovered meeting recordings from this device.">
+                          <button type="button" onClick={() => void deleteLocalCaptureData()} disabled={isDeletingLocalCapture} className={settingsTheme.dangerButton}>{isDeletingLocalCapture ? 'Deleting…' : 'Delete local data'}</button>
+                        </SettingsRow>
+                      </div>
+                    </section>
+                    <section className={settingsTheme.sectionShell} aria-labelledby="local-storage">
+                      <h3 id="local-storage" className={settingsTheme.sectionTitle}>Local files</h3>
+                      <p className={settingsTheme.sectionStatus + ' mt-1'}>Files and extracted context stay on this device. These preferences are personal to this installation.</p>
+                      <div className={settingsTheme.sectionRows + ' mt-4'}>
+                        <SettingsRow label="Keep Files & links files" help="How long a local file remains after its last use.">
+                          <select value={localFileRetention} onChange={(event) => setLocalFileRetention(event.target.value as LocalFileRetention)} className={preferenceSelectClassName} style={selectChevronStyle}>
+                            <option value="until_removed">Until I remove them</option>
+                            <option value="30_days">30 days after last use</option>
+                            <option value="90_days">90 days after last use</option>
+                            <option value="1_year">1 year after last use</option>
+                          </select>
+                        </SettingsRow>
+                        <SettingsRow label="Stored on this device" help="Includes managed local file copies, not connected Drive or Figma content.">
+                          <span className={settingsTheme.rowMuted}>{localStorageUsage ? `${localStorageUsage.fileCount} file${localStorageUsage.fileCount === 1 ? '' : 's'} · ${formatLocalStorageSize(localStorageUsage.totalBytes)}` : 'Unavailable'}</span>
                         </SettingsRow>
                       </div>
                     </section>

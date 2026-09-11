@@ -27,6 +27,7 @@ import { useSearchSheet } from '@/features/search/SearchSheetContext';
 import { triggerLightHaptic } from '@/lib/haptics';
 import { getMobileToday } from '@/api/today';
 import { performMobileTodayAction } from '@/api/todayActions';
+import { deleteAllMobileTeamActivity, deleteMobileTeamActivity } from '@/api/teamActivity';
 import { createMobileTask } from '@/api/captures';
 import { useMobileUnreadNotificationCount } from '@/features/notifications/useMobileUnreadNotificationCount';
 import { NotificationPermissionSheet } from '@/features/notifications/NotificationPermissionSheet';
@@ -40,6 +41,7 @@ import type {
   MobileTodayInteractionItem,
   MobileTodayItem,
   MobileTodayResponse,
+  MobileTodayTeamActivity,
 } from '@/types/ledger';
 import {
   bootstrapWorkspaceState,
@@ -542,6 +544,54 @@ export default function TodayScreen() {
     [applyOptimisticTodayAction, loadToday, openFollowUpSheet, openQuickNoteSheet, showActionError],
   );
 
+  const handleTeamActivityLongPress = useCallback(
+    (activity: MobileTodayTeamActivity) => {
+      const workspace = workspaceState.options.find((option) => option.id === activity.workspaceId);
+      if (!workspace || !['owner', 'admin'].includes(workspace.role ?? '')) {
+        showActionError('Only workspace owners and admins can delete team activity.');
+        return;
+      }
+
+      const removeActivity = async (deleteAll: boolean) => {
+        let previousSnapshot: MobileTodayResponse | null = null;
+        setToday((current) => {
+          previousSnapshot = current;
+          return {
+            ...current,
+            teamActivity: deleteAll
+              ? []
+              : (current.teamActivity ?? []).filter((entry) => entry.auditLogId !== activity.auditLogId),
+          };
+        });
+
+        try {
+          if (deleteAll) {
+            await deleteAllMobileTeamActivity(activity.workspaceId);
+          } else {
+            await deleteMobileTeamActivity(activity.workspaceId, activity.auditLogId);
+          }
+          await loadToday();
+        } catch (error) {
+          if (previousSnapshot) {
+            setToday(previousSnapshot);
+          }
+          showActionError(error instanceof Error ? error.message : 'Could not delete team activity.');
+        }
+      };
+
+      Alert.alert(
+        'Delete team activity?',
+        'Delete this entry, or clear all team activity for this workspace. This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete activity', style: 'destructive', onPress: () => void removeActivity(false) },
+          { text: 'Delete all activity', style: 'destructive', onPress: () => void removeActivity(true) },
+        ],
+      );
+    },
+    [loadToday, showActionError, workspaceState.options],
+  );
+
   const openItemSheet = (item: MobileTodayInteractionItem, mode: TodayDetailSheetMode) => {
     setSelectedItem(item);
     setSheetMode(mode);
@@ -697,6 +747,7 @@ export default function TodayScreen() {
                       router.push({ pathname: '/notifications', params: { returnTo: '/(tabs)/today' } });
                     }
                   }}
+                  onTeamActivityLongPress={handleTeamActivityLongPress}
                   onItemPress={(item) => {
                     if ('type' in item && item.type === 'project') {
                       router.push(`/project/${encodeURIComponent(item.sourceId)}`);

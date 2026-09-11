@@ -901,6 +901,14 @@ contextBridge.exposeInMainWorld('meetingAudio', {
   },
 });
 
+contextBridge.exposeInMainWorld('localCapturePrivacy', {
+  get() { return ipcRenderer.invoke('local-capture-privacy:get'); },
+  set(payload: { scanImageRetention: 'delete_after_processing' | 'retain_until_deleted' }) {
+    return ipcRenderer.invoke('local-capture-privacy:set', payload);
+  },
+  deleteAll() { return ipcRenderer.invoke('local-capture-privacy:delete-all'); },
+});
+
 contextBridge.exposeInMainWorld('speakerTags', {
   status() {
     return ipcRenderer.invoke('speaker-tags:status');
@@ -966,11 +974,30 @@ contextBridge.exposeInMainWorld('noteOcr', {
   status() {
     return ipcRenderer.invoke('note-ocr:status');
   },
+  visionStatus() {
+    return ipcRenderer.invoke('note-ocr:vision-status');
+  },
+  downloadVisionModel() {
+    return ipcRenderer.invoke('note-ocr:vision-download');
+  },
+  cancelVisionModelDownload() {
+    return ipcRenderer.invoke('note-ocr:vision-cancel-download');
+  },
+  onVisionProgress(listener: (status: { available: boolean; downloading: boolean; progressPercent: number; totalBytes: number }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, status: { available: boolean; downloading: boolean; progressPercent: number; totalBytes: number }) => listener(status);
+    ipcRenderer.on('note-ocr:vision-progress', wrapped);
+    return () => ipcRenderer.off('note-ocr:vision-progress', wrapped);
+  },
   selectImage() {
     return ipcRenderer.invoke('note-ocr:select-image');
   },
-  recognize(payload: { imagePath: string; noteId: string; language?: string; mode?: 'auto' | 'handwriting' | 'printed' }) {
+  recognize(payload: { imagePath: string; noteId: string; language?: string; mode?: 'auto' | 'handwriting' | 'printed'; requestId?: string }) {
     return ipcRenderer.invoke('note-ocr:recognize', payload);
+  },
+  onProgress(listener: (progress: { requestId: string | null; stage: 'preparing' | 'converting' | 'recognizing' | 'complete' }) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, progress: { requestId: string | null; stage: 'preparing' | 'converting' | 'recognizing' | 'complete' }) => listener(progress);
+    ipcRenderer.on('note-ocr:progress', wrapped);
+    return () => ipcRenderer.off('note-ocr:progress', wrapped);
   },
 });
 
@@ -1053,6 +1080,7 @@ contextBridge.exposeInMainWorld('askLedger', {
   selectAttachments(payload: {
     workspaceId: string;
     conversationId: string;
+    ownerUserId?: string;
     existingCount?: number;
     existingSizeBytes?: number;
   }) {
@@ -1121,6 +1149,7 @@ contextBridge.exposeInMainWorld('askLedger', {
   start(payload: {
     question: string;
     workspaceId: string;
+    ownerUserId?: string;
     documents: unknown[];
     lexicalResults: unknown[];
     conversation?: unknown;
@@ -1174,6 +1203,9 @@ contextBridge.exposeInMainWorld('localContext', {
   list(payload: { ownerUserId: string; workspaceId: string }) {
     return ipcRenderer.invoke('local-context:list', payload);
   },
+  cleanupExpired(payload: { ownerUserId: string; workspaceId: string; retentionDays?: number }) {
+    return ipcRenderer.invoke('local-context:cleanup-expired', payload) as Promise<{ removed: number }>;
+  },
   importFiles(payload: { ownerUserId: string; workspaceId: string }) {
     return ipcRenderer.invoke('local-context:import', payload);
   },
@@ -1188,6 +1220,21 @@ contextBridge.exposeInMainWorld('localContext', {
   },
   unlink(payload: { ownerUserId: string; workspaceId: string; fileId: string; targetType: 'ask_session' | 'note' | 'project' | 'event' | 'reminder'; targetId: string }) {
     return ipcRenderer.invoke('local-context:unlink', payload);
+  },
+});
+
+contextBridge.exposeInMainWorld('localAskSessions', {
+  list(payload: { userId: string; workspaceId: string; limit?: number }) {
+    return ipcRenderer.invoke('local-ask-session:list', payload);
+  },
+  get(payload: { userId: string; workspaceId: string; sessionId: string }) {
+    return ipcRenderer.invoke('local-ask-session:get', payload);
+  },
+  save(session: import('../src/types/localAskLedgerSession').LocalAskLedgerSession) {
+    return ipcRenderer.invoke('local-ask-session:save', { session });
+  },
+  delete(payload: { userId: string; workspaceId: string; sessionId: string }) {
+    return ipcRenderer.invoke('local-ask-session:delete', payload);
   },
 });
 

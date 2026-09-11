@@ -56,3 +56,6 @@ scripts/tests/sidebar-preferences-regressions.mjs
 # Local OCR development runtime and downloaded model cache
 .venv/
 .cache/paddlex/
+native/local-ocr-runtime/build/
+native/local-ocr-runtime/darwin-arm64/
+native/local-ocr-runtime/win32-x64/

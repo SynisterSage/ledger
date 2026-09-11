@@ -27,6 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
+import { useAuthContext } from '../../context/AuthContext';
 import {
   routeForCalendarEvent,
   routeForCalendarReminder,
@@ -140,6 +141,7 @@ export interface AskLedgerSession {
   summary?: string;
   initialContext?: AskLedgerInitialContext;
   skillId?: AskLedgerSkillRef;
+  privacyScope?: 'device' | 'synced';
 }
 
 type AskLedgerConversationTurn = {
@@ -679,6 +681,7 @@ const attachmentDisplayName = (name: string) => name.length > 28 ? `${name.slice
 
 export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialContext, skillId, customSkills = [], onEditCustomSkill, onConversationChange, onSessionTitleChange, onSessionPersisted, onSessionIdChange, onQuestionChange, onQuestionSubmitted, onGenerationActiveChange, preferredGenerationTier, compact = false, meetingChat = false }: { workspaceId?: string | null; resetKey?: number; initialSession?: AskLedgerSession | null; initialContext?: AskLedgerInitialContext | null; skillId?: AskLedgerSkillRef; customSkills?: AskLedgerCustomSkill[]; onEditCustomSkill?: (skill: AskLedgerCustomSkill) => void; onConversationChange?: (active: boolean) => void; onSessionTitleChange?: (title: string) => void; onSessionPersisted?: () => void; onSessionIdChange?: (id: string | null) => void; onQuestionChange?: (question: string) => void; onQuestionSubmitted?: (question: string) => void; onGenerationActiveChange?: (active: boolean) => void; preferredGenerationTier?: GenerationTier; compact?: boolean; meetingChat?: boolean }) => {
   const api = useApi();
+  const { user } = useAuthContext();
   const platform = usePlatform();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const latestMessageRef = useRef<HTMLElement | null>(null);
@@ -794,6 +797,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   const messagesRef = useRef<AskLedgerMessage[]>([]);
   const sessionIdRef = useRef<string | null>(null);
   const conversationIdRef = useRef(initialSession?.id ?? newAskLedgerConversationId());
+  const sessionCreatedAtRef = useRef(initialSession?.createdAt ?? new Date().toISOString());
+  const sessionPrivacyScopeRef = useRef<'device' | 'synced'>(initialSession?.privacyScope ?? 'synced');
   const sessionTitleRef = useRef('Ask Ledger');
   const sessionSkillIdRef = useRef<AskLedgerSkillRef | undefined>(initialSession?.skillId ?? skillId);
   const pendingSkillIdRef = useRef<AskLedgerSkillRef | undefined>(skillId);
@@ -875,7 +880,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setAttachmentError(null);
     setAttachmentIndexing(true);
     try {
-      const result = await window.askLedger.selectAttachments({ workspaceId, conversationId: conversationIdRef.current, existingCount: files.length, existingSizeBytes }) as { attachments?: AskLedgerAttachment[] };
+      const result = await window.askLedger.selectAttachments({ workspaceId, conversationId: conversationIdRef.current, ownerUserId: user?.id, existingCount: files.length, existingSizeBytes }) as { attachments?: AskLedgerAttachment[] };
       const attachments = Array.isArray(result?.attachments) ? result.attachments.filter((attachment) => attachment?.id) : [];
       const failed = attachments.find((attachment) => attachment.status === 'failed' || attachment.status === 'unsupported');
       if (failed) setAttachmentError(failed.error || `Couldn't read ${failed.name}.`);
@@ -1044,6 +1049,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     recentTurnsRef.current = [];
     messagesRef.current = [];
     sessionIdRef.current = null;
+    sessionCreatedAtRef.current = new Date().toISOString();
+    sessionPrivacyScopeRef.current = 'synced';
     onSessionIdChange?.(null);
     sessionSkillIdRef.current = skillId;
     pendingSkillIdRef.current = skillId;
@@ -1068,6 +1075,8 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     const restoredMessages = Array.isArray(initialSession.messages) ? initialSession.messages : [];
     messagesRef.current = restoredMessages;
     sessionIdRef.current = initialSession.id;
+    sessionCreatedAtRef.current = initialSession.createdAt;
+    sessionPrivacyScopeRef.current = initialSession.privacyScope ?? (initialSession.messages.some((message) => message.attachments?.some((attachment) => attachment.kind === 'file')) ? 'device' : 'synced');
     onSessionIdChange?.(initialSession.id);
     conversationIdRef.current = initialSession.id;
     sessionSkillIdRef.current = initialSession.skillId;
@@ -1400,9 +1409,32 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
   }, [question]);
 
   const queueSessionSave = (nextMessages: AskLedgerMessage[], title = sessionTitleRef.current) => {
-    if (!workspaceId) return;
+    if (!workspaceId || !user?.id) return;
     sessionSaveChainRef.current = sessionSaveChainRef.current
       .then(async () => {
+        const hasLocalFile = nextMessages.some((message) => message.attachments?.some((attachment) => attachment.kind === 'file'));
+        const isDeviceOnly = sessionPrivacyScopeRef.current === 'device' || hasLocalFile;
+        if (isDeviceOnly) {
+          sessionPrivacyScopeRef.current = 'device';
+          if (!window.localAskSessions) throw new Error('Local Ask Ledger session storage is unavailable.');
+          const sessionId = sessionIdRef.current ?? conversationIdRef.current;
+          sessionIdRef.current = sessionId;
+          onSessionIdChange?.(sessionId);
+          await window.localAskSessions.save({
+            id: sessionId,
+            workspaceId,
+            userId: user.id,
+            title: title || 'Ask Ledger',
+            createdAt: sessionCreatedAtRef.current,
+            updatedAt: new Date().toISOString(),
+            messages: nextMessages,
+            initialContext: initialContextRef.current,
+            skillId: sessionSkillIdRef.current,
+            privacyScope: 'device',
+          });
+          onSessionPersisted?.();
+          return;
+        }
         let sessionId = sessionIdRef.current;
         if (!sessionId) {
           const created = await api.createAskLedgerSession(workspaceId, { title, messages: nextMessages, initialContext: initialContextRef.current, skillId: sessionSkillIdRef.current }) as { session?: AskLedgerSession };
@@ -1602,6 +1634,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
           requestId: performanceRequestId,
           question: effectiveQuestion,
           workspaceId,
+          ownerUserId: user?.id,
           documents,
           lexicalResults,
           conversation: conversationRef.current ?? { id: conversationIdRef.current, previousQuestion: '', previousAnswer: '', previousSources: [], recentExchanges: [] },
@@ -1902,6 +1935,14 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     return () => { window.clearTimeout(focusTimer); document.removeEventListener('keydown', trapFocus); advancedButtonRef.current?.focus(); };
   }, [downloadTier]);
 
+  const openAttachment = (attachment: AskLedgerAttachment) => {
+    if (user?.id && workspaceId && attachment.localFileId && window.localContext) {
+      void window.localContext.open({ ownerUserId: user.id, workspaceId, fileId: attachment.localFileId });
+      return;
+    }
+    void window.askLedger?.openAttachment(attachment.id);
+  };
+
   const openSource = (source: AskLedgerSource) => {
     if (!workspaceId) return;
     const id = source.resourceId ?? source.id;
@@ -1946,6 +1987,9 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
         return;
       case 'attachment':
         if (source.attachmentSource?.attachmentId) void window.askLedger?.openAttachment(source.attachmentSource.attachmentId);
+        else if (user?.id && window.localContext && source.route && typeof source.route === 'object' && source.route.kind === 'local-context-file' && typeof source.route.fileId === 'string') {
+          void window.localContext.open({ ownerUserId: user.id, workspaceId, fileId: source.route.fileId });
+        }
         return;
       default:
         return;
@@ -2165,7 +2209,7 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
               {message.role === 'user' ? (
                 <div className="flex max-w-[78%] flex-col items-end gap-1">
                   {message.skillId && <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--ledger-text-muted)]"><Boxes size={12} />{skillCatalog.find((skill) => skill.id === message.skillId)?.name}</span>}
-                  {message.attachments?.length ? <div className="flex max-w-full flex-wrap justify-end gap-1.5">{message.attachments.map((attachment, index) => attachment.kind === 'file' ? <button key={`${message.id}-file-${attachment.attachment.id}`} type="button" onClick={() => void window.askLedger?.openAttachment(attachment.attachment.id)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.attachment.name}`}><FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{attachmentKindLabel(attachment.attachment)}</span><span className="min-w-0 flex-1 truncate">{attachmentDisplayName(attachment.attachment.name)}</span></button> : <button key={`${message.id}-resource-${index}`} type="button" onClick={() => openSource(attachment.resource)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.resource.title}`}><span className="min-w-0 flex-1 truncate">{attachment.resource.title}</span></button>)}</div> : null}
+                  {message.attachments?.length ? <div className="flex max-w-full flex-wrap justify-end gap-1.5">{message.attachments.map((attachment, index) => attachment.kind === 'file' ? <button key={`${message.id}-file-${attachment.attachment.id}`} type="button" onClick={() => openAttachment(attachment.attachment)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.attachment.name}`}><FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" /><span className="shrink-0 text-[10px] text-[var(--ledger-text-muted)]">{attachmentKindLabel(attachment.attachment)}</span><span className="min-w-0 flex-1 truncate">{attachmentDisplayName(attachment.attachment.name)}</span></button> : <button key={`${message.id}-resource-${index}`} type="button" onClick={() => openSource(attachment.resource)} className="inline-flex min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 py-1 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]" aria-label={`Open ${attachment.resource.title}`}><span className="min-w-0 flex-1 truncate">{attachment.resource.title}</span></button>)}</div> : null}
                   {message.content && <>
                     <p className="w-fit rounded-lg bg-[var(--ledger-surface-hover)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)]">{message.content}</p>
                     <div className="mt-1 flex justify-end opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">

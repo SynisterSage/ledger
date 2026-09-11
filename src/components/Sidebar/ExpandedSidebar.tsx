@@ -3012,6 +3012,16 @@ export const ExpandedSidebar = ({
                 <span className="truncate">All Teams</span>
               </button>
             )}
+            {platform.kind === 'desktop' && (
+              <button
+                type="button"
+                onClick={() => void window.desktopWindow?.openModule('files', { kind: 'files' })}
+                className="flex h-9 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-muted)] hover:text-[var(--ledger-text-primary)]"
+              >
+                <FileText size={15} className="shrink-0 text-[var(--ledger-text-muted)]" />
+                <span className="truncate">Files & links</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {

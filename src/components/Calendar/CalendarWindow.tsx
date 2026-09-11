@@ -88,6 +88,7 @@ import {
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
+import { LocalContextLinks } from '../Common/LocalContextLinks';
 import { useToast } from '../Common/ToastProvider';
 import {
   clearStarterOnboardingReturn,
@@ -7290,6 +7291,14 @@ export const CalendarWindow = ({
                     title="Related context"
                     emptyMessage="No project, note, or follow-up context yet."
                     className="border-t border-[color:var(--ledger-border-subtle)] pt-4"
+                  />
+                ) : null}
+
+                {(selectedEventPreview || selectedReminder) && activeWorkspaceId ? (
+                  <LocalContextLinks
+                    workspaceId={activeWorkspaceId}
+                    targetType={selectedEventPreview ? 'event' : 'reminder'}
+                    targetId={selectedEventPreview ? baseEventId(selectedEventPreview.id) ?? selectedEventPreview.id : baseReminderId(selectedReminder!.id) ?? selectedReminder!.id}
                   />
                 ) : null}
 

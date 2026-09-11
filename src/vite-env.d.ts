@@ -66,8 +66,15 @@ interface ImportMeta {
 }
 
 interface Window {
+  localAskSessions?: {
+    list: (payload: { userId: string; workspaceId: string; limit?: number }) => Promise<{ sessions: import('./types/localAskLedgerSession').LocalAskLedgerSession[] }>;
+    get: (payload: { userId: string; workspaceId: string; sessionId: string }) => Promise<{ session: import('./types/localAskLedgerSession').LocalAskLedgerSession | null }>;
+    save: (session: import('./types/localAskLedgerSession').LocalAskLedgerSession) => Promise<{ session: import('./types/localAskLedgerSession').LocalAskLedgerSession }>;
+    delete: (payload: { userId: string; workspaceId: string; sessionId: string }) => Promise<{ removed: boolean }>;
+  };
   localContext?: {
     list: (payload: { ownerUserId: string; workspaceId: string }) => Promise<{ files: import('./types/localContextLibrary').LocalContextFile[]; totalBytes: number }>;
+    cleanupExpired: (payload: { ownerUserId: string; workspaceId: string; retentionDays?: number }) => Promise<{ removed: number }>;
     importFiles: (payload: { ownerUserId: string; workspaceId: string }) => Promise<{ canceled: boolean; files: import('./types/localContextLibrary').LocalContextFile[] }>;
     open: (payload: { ownerUserId: string; workspaceId: string; fileId: string }) => Promise<{ ok: boolean; error?: string }>;
     remove: (payload: { ownerUserId: string; workspaceId: string; fileId: string }) => Promise<{ removed: boolean }>;
@@ -192,6 +199,11 @@ interface Window {
     ) => () => void;
     onDevicesChanged: (listener: () => void) => () => void;
   };
+  localCapturePrivacy?: {
+    get: () => Promise<{ scanImageRetention: 'delete_after_processing' | 'retain_until_deleted' }>;
+    set: (payload: { scanImageRetention: 'delete_after_processing' | 'retain_until_deleted' }) => Promise<unknown>;
+    deleteAll: () => Promise<{ ok: boolean; deleted: string[] }>;
+  };
   meetingAutoStop?: {
     keepRecording: () => Promise<unknown>;
     signalCallEnded: (noteId: string) => Promise<unknown>;
@@ -205,13 +217,19 @@ interface Window {
   };
   noteOcr?: {
     status: () => Promise<unknown>;
+    visionStatus: () => Promise<unknown>;
+    downloadVisionModel: () => Promise<unknown>;
+    cancelVisionModelDownload: () => Promise<unknown>;
+    onVisionProgress: (listener: (status: { available: boolean; downloading: boolean; progressPercent: number; totalBytes: number }) => void) => () => void;
     selectImage: () => Promise<{ canceled: boolean; imagePath: string | null }>;
     recognize: (payload: {
       imagePath: string;
       noteId: string;
       language?: string;
       mode?: 'auto' | 'handwriting' | 'printed';
+      requestId?: string;
     }) => Promise<unknown>;
+    onProgress: (listener: (progress: { requestId: string | null; stage: 'preparing' | 'converting' | 'recognizing' | 'complete' }) => void) => () => void;
   };
   meetingTranscription?: {
     modelStatus: () => Promise<unknown>;
@@ -255,6 +273,7 @@ interface Window {
     selectAttachments: (payload: {
       workspaceId: string;
       conversationId: string;
+      ownerUserId?: string;
       existingCount?: number;
       existingSizeBytes?: number;
     }) => Promise<unknown>;
@@ -287,6 +306,7 @@ interface Window {
       requestId?: string;
       question: string;
       workspaceId: string;
+      ownerUserId?: string;
       documents: unknown[];
       lexicalResults: unknown[];
       conversation?: unknown;

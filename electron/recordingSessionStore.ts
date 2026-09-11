@@ -221,6 +221,18 @@ export class RecordingSessionStore {
     this.persist('source_audio_removed', sessionId);
   }
 
+  clearCompletedAndRecovery(activeSessionId?: string | null) {
+    let removed = false;
+    for (const session of this.list()) {
+      if (session.sessionId === activeSessionId || !['ready', 'recovery_required', 'discarded'].includes(session.status)) continue;
+      try { fs.rmSync(this.directoryFor(session), { recursive: true, force: true }); } catch {}
+      this.sessions.delete(session.sessionId);
+      removed = true;
+    }
+    if (removed) this.persist('local_capture_data_deleted');
+    return removed;
+  }
+
   diskSpace() {
     try {
       const stats = fs.statfsSync(this.root);

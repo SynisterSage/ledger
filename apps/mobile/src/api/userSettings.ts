@@ -95,6 +95,7 @@ export function readMobileNotificationOnboardingState(
     preferences && typeof preferences === 'object' && 'mobileNotificationOnboardingChoice' in preferences
       ? (preferences as {
           mobileNotificationOnboardingChoice?: unknown;
+          mobileNotificationOnboardingCompleted?: unknown;
         })
       : null;
 
@@ -103,10 +104,15 @@ export function readMobileNotificationOnboardingState(
   )
     ? (String(mobilePreferences?.mobileNotificationOnboardingChoice) as MobileNotificationOnboardingChoice)
     : null;
+  const notificationOnboardingCompleted =
+    mobilePreferences?.mobileNotificationOnboardingCompleted === true || choice !== null;
 
   return {
-    isComplete: Boolean(settings?.onboarding_completed),
-    choice: Boolean(settings?.onboarding_completed) ? choice : null,
+    // This is intentionally distinct from the account/profile onboarding flag.
+    // Older accounts only have `onboarding_completed`, so retain it as a
+    // compatibility fallback when they also saved a notification choice.
+    isComplete: notificationOnboardingCompleted || (Boolean(settings?.onboarding_completed) && choice !== null),
+    choice,
   };
 }
 

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { test } from 'node:test';
 
 const { touchKeepAliveModules } = await import('../../src/utils/keepAliveModules.ts');
 const { isStaleNavigationGeneration } = await import('../../src/utils/navigationGeneration.ts');
+const { workspaceTabRouteKey } = await import('../../src/utils/workspaceTabIdentity.ts');
 
 const routeKey = (route) =>
   route.kind === 'notes'
@@ -10,6 +12,34 @@ const routeKey = (route) =>
     : route.kind === 'projects'
     ? `projects|${route.projectId ?? 'home'}`
     : route.kind;
+
+test('persisted tab state is workspace-scoped', () => {
+  const source = fs.readFileSync(new URL('../../src/components/Common/LedgerTabStrip.tsx', import.meta.url), 'utf8');
+  assert.match(source, /TAB_SESSION_STORAGE_KEY_PREFIX = 'ledger:window-tabs:v2'/);
+  assert.match(source, /getTabStorageKey\(activeWorkspaceId\)/);
+  assert.match(source, /hydratedTabStorageKeyRef\.current !== tabStorageKey/);
+  assert.match(source, /routeTransitionIdRef\.current !== transitionId/);
+  assert.match(source, /ledger:tab-detach-requested/);
+});
+
+test('tab identity ignores view state but separates resources', () => {
+  assert.equal(workspaceTabRouteKey({ kind: 'calendar', focusDate: '2026-09-11' }), 'calendar');
+  assert.equal(workspaceTabRouteKey({ kind: 'calendar', focusDate: '2026-09-12' }), 'calendar');
+  assert.equal(
+    workspaceTabRouteKey({ kind: 'notes', focusNoteId: 'note-1', focusSection: 'outline' }),
+    'notes|note|note-1'
+  );
+  assert.notEqual(
+    workspaceTabRouteKey({ kind: 'notes', focusNoteId: 'note-1' }),
+    workspaceTabRouteKey({ kind: 'notes', focusNoteId: 'note-2' })
+  );
+});
+
+test('detached transfers clean up their lifecycle timer', () => {
+  const source = fs.readFileSync(new URL('../../electron/main.ts', import.meta.url), 'utf8');
+  assert.match(source, /pendingTransfer\.timeout = setTimeout/);
+  assert.match(source, /if \(pending\.timeout\) clearTimeout\(pending\.timeout\)/);
+});
 
 test('desktop tab/view soak keeps route identity, generations, and keep-alive bounded', () => {
   const routes = Array.from({ length: 250 }, (_, index) =>

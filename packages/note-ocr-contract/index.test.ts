@@ -37,3 +37,32 @@ test('allows empty text so the UI can show a no-text state', () => {
     engine: 'paddleocr',
   });
 });
+
+test('accepts structured local vision output', () => {
+  assert.deepEqual(parseNoteOcrResult({
+    text: 'Project plan\nBuy milk',
+    lines: [{ text: 'Project plan' }, { text: 'Buy milk' }],
+    blocks: [
+      { type: 'heading', text: 'Project plan' },
+      { type: 'todo', text: 'Buy milk', checked: false },
+    ],
+    engine: 'local-vision',
+    uncertain: true,
+    unclearRegions: ['bottom-right'],
+  }), {
+    text: 'Project plan\nBuy milk',
+    lines: [{ text: 'Project plan' }, { text: 'Buy milk' }],
+    blocks: [
+      { type: 'heading', text: 'Project plan' },
+      { type: 'todo', text: 'Buy milk', checked: false },
+    ],
+    engine: 'local-vision',
+    uncertain: true,
+    unclearRegions: ['bottom-right'],
+  });
+});
+
+test('rejects malformed structured local vision output', () => {
+  assert.equal(parseNoteOcrResult({ text: 'bad', lines: [], engine: 'local-vision', blocks: [{ type: 'todo', text: 'bad', checked: 'no' }] }), null);
+  assert.equal(parseNoteOcrResult({ text: 'bad', lines: [], engine: 'local-vision', blocks: [{ type: 'paragraph', text: 'bad', checked: false }] }), null);
+});

@@ -1,4 +1,4 @@
-import { Loader2, ScanText } from 'lucide-react';
+import { ScanText } from 'lucide-react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import type { NoteOcrResult } from '../../../packages/note-ocr-contract/index';
@@ -8,12 +8,34 @@ type Props = {
   isLoading: boolean;
   error: string | null;
   text: string;
+  stage: 'selecting' | 'preparing' | 'converting' | 'recognizing' | 'complete' | null;
   onTextChange: (value: string) => void;
   onClose: () => void;
   onInsert: () => void;
+  visionAvailable?: boolean;
+  visionDownloading?: boolean;
+  visionProgress?: number;
+  visionTotalBytes?: number;
+  onInstallVision?: () => void;
+  onCancelVisionDownload?: () => void;
 };
 
-export const NoteOcrReviewModal = ({ result, isLoading, error, text, onTextChange, onClose, onInsert }: Props) => (
+const stageDetails = {
+  selecting: { progress: 8, title: 'Choose an image', detail: 'Select the note you want Ledger to read.' },
+  preparing: { progress: 22, title: 'Preparing image', detail: 'Checking the selected image locally.' },
+  converting: { progress: 45, title: 'Preparing HEIC image', detail: 'Rendering a local preview so text recognition receives the visible image.' },
+  recognizing: { progress: 72, title: 'Recognizing text locally', detail: 'Ledger is reading the image on this device.' },
+  complete: { progress: 100, title: 'Text ready', detail: 'Review the transcription before inserting it.' },
+} as const;
+
+const formatBytes = (bytes?: number) => {
+  if (!bytes) return null;
+  return `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
+};
+
+export const NoteOcrReviewModal = ({ result, isLoading, error, text, stage, onTextChange, onClose, onInsert, visionAvailable = true, visionDownloading = false, visionProgress = 0, visionTotalBytes, onInstallVision, onCancelVisionDownload }: Props) => {
+  const progress = stage ? stageDetails[stage] : stageDetails.preparing;
+  return (
   <ModalOverlay
     isOpen
     onClose={onClose}
@@ -34,14 +56,35 @@ export const NoteOcrReviewModal = ({ result, isLoading, error, text, onTextChang
     </div>
     <div className="space-y-3 px-5 py-4">
       {isLoading ? (
-        <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-[var(--ledger-text-muted)]"><Loader2 size={15} className="animate-spin" />Reading image locally…</div>
+        <div className="flex min-h-40 flex-col justify-center gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4">
+          <div className="flex items-baseline justify-between gap-3"><p className="text-sm font-medium text-[var(--ledger-text-primary)]">{progress.title}</p><span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">{progress.progress}%</span></div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]" role="progressbar" aria-label="OCR progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.progress}><div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300" style={{ width: `${progress.progress}%` }} /></div>
+          <p className="text-xs leading-5 text-[var(--ledger-text-muted)]">{progress.detail}</p>
+        </div>
       ) : error ? (
-        <p className="min-h-24 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3 text-sm text-[var(--ledger-danger)]">{error}</p>
+        <div className="space-y-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4">
+          <p className="text-sm text-[var(--ledger-danger)]">{error}</p>
+          {!visionAvailable && onInstallVision && (
+            <div className="space-y-3 border-t border-[color:var(--ledger-border-subtle)] pt-3">
+              <div>
+                <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Install Ledger Vision</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">A one-time local model download is required for reliable image transcription{formatBytes(visionTotalBytes) ? ` (${formatBytes(visionTotalBytes)})` : ''}.</p>
+              </div>
+              {visionDownloading ? (
+                <>
+                  <div className="flex items-baseline justify-between gap-3"><span className="text-xs text-[var(--ledger-text-muted)]">Downloading model</span><span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">{visionProgress}%</span></div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]" role="progressbar" aria-label="Ledger Vision download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={visionProgress}><div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300" style={{ width: `${visionProgress}%` }} /></div>
+                  <button type="button" onClick={onCancelVisionDownload} className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel download</button>
+                </>
+              ) : <button type="button" onClick={onInstallVision} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white">Install Ledger Vision</button>}
+            </div>
+          )}
+        </div>
       ) : (
         <>
           <label className="block text-[11px] font-medium text-[var(--ledger-text-muted)]" htmlFor="note-ocr-review-text">Extracted text</label>
           <textarea id="note-ocr-review-text" value={text} onChange={(event) => onTextChange(event.target.value)} autoFocus className="min-h-56 w-full resize-y rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2 text-sm leading-6 text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-accent)]" placeholder="No text recognized" />
-          {result && <p className="text-[11px] text-[var(--ledger-text-muted)]">Processed locally with {result.engine === 'paddleocr' ? 'PaddleOCR' : 'Apple Vision'}.</p>}
+          {result && <p className="text-[11px] text-[var(--ledger-text-muted)]">Processed locally with {result.engine === 'paddleocr' ? 'PaddleOCR' : result.engine === 'local-vision' ? 'Ledger Vision' : 'Apple Vision'}.</p>}
         </>
       )}
     </div>
@@ -50,4 +93,5 @@ export const NoteOcrReviewModal = ({ result, isLoading, error, text, onTextChang
       <button type="button" onClick={onInsert} disabled={isLoading || Boolean(error) || !text.trim()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45">Insert into note</button>
     </div>
   </ModalOverlay>
-);
+  );
+};

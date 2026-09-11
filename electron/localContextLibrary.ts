@@ -8,6 +8,8 @@ import type {
   LocalContextLibrarySummary,
   LocalContextTargetType,
 } from '../src/types/localContextLibrary.ts';
+import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
+import { chunkAttachmentBlocks, extractAttachmentBlocks, type ExtractedAttachmentBlock } from './askLedgerAttachmentService.ts';
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
@@ -23,6 +25,7 @@ const SUPPORTED = new Map([
 const extensionFor = (name: string) => path.extname(name).slice(1).toLowerCase();
 const now = () => new Date().toISOString();
 const manifestName = (id: string) => `${id}.json`;
+const indexName = (id: string) => `${id}.index.json`;
 const fileName = (id: string, extension: string) => `${id}.${extension}`;
 
 const isWithinRoot = (root: string, candidate: string) => {
@@ -55,6 +58,13 @@ export class LocalContextLibrary {
     const temporary = path.join(this.root, `${record.id}.json.tmp`);
     await fs.writeFile(temporary, JSON.stringify(record), { mode: 0o600 });
     await fs.rename(temporary, path.join(this.root, manifestName(record.id)));
+  }
+
+  private async indexRecord(record: LocalContextFile) {
+    const bytes = await fs.readFile(path.join(this.root, record.relativePath));
+    const blocks = chunkAttachmentBlocks(extractAttachmentBlocks(bytes, record.name));
+    await fs.writeFile(path.join(this.root, indexName(record.id)), JSON.stringify({ fileId: record.id, contentHash: record.contentHash, blocks }), { mode: 0o600 });
+    return blocks;
   }
 
   private validateOwnerAndWorkspace(record: LocalContextFile, ownerUserId: string, workspaceId: string) {
@@ -105,6 +115,7 @@ export class LocalContextLibrary {
       const duplicate = existingByHash.get(contentHash);
       if (duplicate) {
         const updated = { ...duplicate, lastUsedAt: now(), updatedAt: now() };
+        await this.indexRecord(updated);
         this.records.set(updated.id, updated);
         await this.writeManifest(updated);
         imported.push(updated);
@@ -131,9 +142,16 @@ export class LocalContextLibrary {
         updatedAt: timestamp,
         links: [],
       };
+      try {
+        await this.indexRecord(record);
+        await this.writeManifest(record);
+      } catch (error) {
+        await fs.rm(path.join(this.root, relativePath), { force: true });
+        await fs.rm(path.join(this.root, indexName(id)), { force: true });
+        throw error;
+      }
       this.records.set(id, record);
       existingByHash.set(contentHash, record);
-      await this.writeManifest(record);
       imported.push(record);
     }
     return imported;
@@ -154,6 +172,32 @@ export class LocalContextLibrary {
   async summary(ownerUserId: string, workspaceId: string): Promise<LocalContextLibrarySummary> {
     const files = await this.list(ownerUserId, workspaceId);
     return { files, totalBytes: files.reduce((total, record) => total + record.sizeBytes, 0) };
+  }
+
+  async contextDocuments(ownerUserId: string, workspaceId: string): Promise<AskLedgerContextItem[]> {
+    const records = await this.list(ownerUserId, workspaceId);
+    const documents: AskLedgerContextItem[] = [];
+    for (const record of records) {
+      if (record.status !== 'ready') continue;
+      try {
+        const indexed = JSON.parse(await fs.readFile(path.join(this.root, indexName(record.id)), 'utf8')) as { fileId?: string; contentHash?: string; blocks?: ExtractedAttachmentBlock[] };
+        if (indexed.fileId !== record.id || indexed.contentHash !== record.contentHash || !Array.isArray(indexed.blocks)) continue;
+        indexed.blocks.forEach((block, index) => documents.push({
+          workspaceId,
+          resourceType: 'attachment',
+          resourceId: `local:${record.id}:${index}`,
+          title: record.name,
+          content: block.text,
+          sourceLabel: `On this device · ${record.extension.toUpperCase()}${block.source.pageNumber ? ` · Page ${block.source.pageNumber}` : ''}`,
+          provenance: 'Local file library',
+          route: { kind: 'local-context-file', fileId: record.id },
+          metadata: { localFileId: record.id, localFileName: record.name },
+        }));
+      } catch {
+        // A file without a valid local index is not safe to provide as context.
+      }
+    }
+    return documents;
   }
 
   async pathFor(id: string, ownerUserId: string, workspaceId: string) {
@@ -206,8 +250,18 @@ export class LocalContextLibrary {
     if (!isWithinRoot(this.root, absolutePath)) throw new LocalContextLibraryError('Invalid local file path.');
     await fs.rm(absolutePath, { force: true });
     await fs.rm(path.join(this.root, manifestName(id)), { force: true });
+    await fs.rm(path.join(this.root, indexName(id)), { force: true });
     this.records.delete(id);
     return true;
+  }
+
+  async cleanupExpired(ownerUserId: string, workspaceId: string, retentionDays?: number) {
+    if (retentionDays === undefined) return 0;
+    const cutoff = Date.now() - retentionDays * 86_400_000;
+    const records = await this.list(ownerUserId, workspaceId);
+    const expired = records.filter((record) => Date.parse(record.lastUsedAt ?? record.updatedAt ?? record.createdAt) < cutoff);
+    await Promise.all(expired.map((record) => this.remove(record.id, ownerUserId, workspaceId)));
+    return expired.length;
   }
 
   async clearAccount(ownerUserId: string) {

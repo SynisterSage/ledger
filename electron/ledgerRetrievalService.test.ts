@@ -148,6 +148,22 @@ test('deadline intent prioritizes dated work and deduplicates chunks by resource
   assert.ok(result.debug[0]?.why.includes('due-date'));
 });
 
+test('deadline plans retain local library files as supporting context', async () => {
+  const index = new EmbeddingIndexService();
+  const retrieval = new LedgerRetrievalService(index);
+  await index.replaceWorkspace('workspace-a', [
+    resource({ resourceType: 'attachment', resourceId: 'local:file:0', title: 'Course syllabus.pdf', content: 'The final paper is due October 14.', metadata: { localFileId: 'file' } }),
+  ]);
+
+  const result = await retrieval.retrieve('workspace-a', 'when are my deadlines', [], 8, {
+    plan: buildRetrievalPlan('when are my deadlines'),
+    skipSemantic: true,
+  });
+
+  assert.equal(result.items[0]?.resourceId, 'local:file:0');
+  assert.ok(result.debug[0]?.why.includes('local-file-context'));
+});
+
 test('team-member intent prioritizes authoritative team and person resources', async () => {
   const index = new EmbeddingIndexService();
   const retrieval = new LedgerRetrievalService(index);
@@ -280,7 +296,7 @@ test('overdue retrieval excludes completed tasks and uses due dates', async () =
   await index.replaceWorkspace('workspace-a', [
     resource({ resourceType: 'task', resourceId: 'overdue-open', title: 'Overdue open task', dueAt: '2026-08-10', status: 'In Progress' }),
     resource({ resourceType: 'task', resourceId: 'overdue-complete', title: 'Overdue completed task', dueAt: '2026-08-10', status: 'Completed' }),
-    resource({ resourceType: 'task', resourceId: 'future-task', title: 'Future task', dueAt: '2026-08-30', status: 'Not started' }),
+    resource({ resourceType: 'task', resourceId: 'future-task', title: 'Future task', dueAt: '2099-08-30', status: 'Not started' }),
   ]);
   const result = await retrieval.retrieve('workspace-a', 'Show my overdue tasks', [], 8, { plan: buildRetrievalPlan('Show my overdue tasks') });
   assert.deepEqual(result.primaryItems?.map((entry) => entry.resourceId), ['overdue-open']);

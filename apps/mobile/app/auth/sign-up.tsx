@@ -9,7 +9,7 @@ import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { Screen } from '@/components/Screen';
 import { signUpWithEmail } from '@/api/auth';
-import { concentricRadius, useLedgerTheme } from '@/theme';
+import { useLedgerTheme } from '@/theme';
 import { validatePasswordRequirements } from '@/utils/passwordPolicy';
 
 export default function SignUpScreen() {
@@ -44,7 +44,10 @@ export default function SignUpScreen() {
       if (session) {
         router.replace('/(tabs)/today');
       } else {
-        Alert.alert('Check your email', 'If confirmation is enabled, finish creating your account from the email Ledger sent.');
+        Alert.alert(
+          'Check your email',
+          'If confirmation is enabled, finish creating your account from the email Ledger sent.'
+        );
         router.replace('/auth/sign-in');
       }
     } catch (signUpError) {
@@ -60,62 +63,83 @@ export default function SignUpScreen() {
     <Screen contentStyle={{ paddingTop: 0 }}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
         <View style={[styles.container, { paddingVertical: theme.spacing.lg }]}>
-          <AuthHeader title="Create Your Account" />
+          <AuthHeader
+            title="Create your account"
+            subtitle="Start with a clear view of what matters."
+            align="left"
+          />
 
           <View style={styles.form}>
             <View
               style={[
                 styles.inputCard,
                 {
-                  backgroundColor: theme.colors.surfaceMuted,
-                  borderRadius: concentricRadius(theme.radius.sheet, theme.spacing.lg),
+                  backgroundColor: theme.colors.surfaceCard,
+                  borderColor: theme.colors.borderSubtle,
+                  borderRadius: theme.radius.surface,
                 },
-              ]}>
-              <AppTextInput
-                label="Name"
-                placeholder="John Doe"
-                autoCapitalize="words"
-                value={name}
-                onChangeText={setName}
-                style={styles.cardInput}
-              />
-              <AppTextInput
-                label="Email"
-                placeholder="you@example.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
-                style={styles.cardInput}
-              />
-              <AppTextInput
-                label="Password"
-                placeholder="••••••••"
-                secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
-                style={styles.cardInput}
-                rightAccessory={
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-                    onPress={() => setShowPassword((value) => !value)}
-                    hitSlop={8}
-                    style={{ paddingHorizontal: 4, paddingVertical: 2 }}>
-                    {showPassword ? (
-                      <EyeOff size={18} color={theme.colors.textMuted} />
-                    ) : (
-                      <Eye size={18} color={theme.colors.textMuted} />
-                    )}
-                  </Pressable>
-                }
-              />
+              ]}
+            >
+              <View style={styles.inputField}>
+                <AppTextInput
+                  label="Name"
+                  placeholder="Your name"
+                  autoCapitalize="words"
+                  value={name}
+                  onChangeText={setName}
+                  style={styles.cardInput}
+                />
+              </View>
+              <View style={[styles.inputDivider, { backgroundColor: theme.colors.borderSubtle }]} />
+              <View style={styles.inputField}>
+                <AppTextInput
+                  label="Email"
+                  placeholder="you@example.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  value={email}
+                  onChangeText={setEmail}
+                  style={styles.cardInput}
+                />
+              </View>
+              <View style={[styles.inputDivider, { backgroundColor: theme.colors.borderSubtle }]} />
+              <View style={styles.inputField}>
+                <AppTextInput
+                  label="Password"
+                  placeholder="••••••••"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={setPassword}
+                  style={styles.cardInput}
+                  rightAccessory={
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                      onPress={() => setShowPassword((value) => !value)}
+                      hitSlop={8}
+                      style={{ paddingHorizontal: 4, paddingVertical: 2 }}
+                    >
+                      {showPassword ? (
+                        <EyeOff size={18} color={theme.colors.textMuted} />
+                      ) : (
+                        <Eye size={18} color={theme.colors.textMuted} />
+                      )}
+                    </Pressable>
+                  }
+                />
+              </View>
             </View>
             {error ? <AppText variant="caption">{error}</AppText> : null}
           </View>
 
           <View style={styles.actions}>
-            <AppButton title="Create Account" variant="primary" size="lg" onPress={handleSignUp} disabled={isSubmitting} />
+            <AppButton
+              title="Create account"
+              variant="primary"
+              size="lg"
+              onPress={handleSignUp}
+              disabled={isSubmitting}
+            />
             <View style={styles.footerRow}>
               <AppText variant="body" style={{ color: theme.colors.textMuted }}>
                 Already have an account?{' '}
@@ -136,22 +160,29 @@ export default function SignUpScreen() {
 const styles = {
   container: {
     flex: 1,
-    justifyContent: 'space-between' as const,
   },
   form: {
     gap: 12,
-    marginTop: 0,
-    marginBottom: 80,
+    marginTop: 32,
   },
   inputCard: {
-    gap: 20,
-    padding: 16,
+    borderWidth: 1,
+    overflow: 'hidden' as const,
+  },
+  inputField: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  inputDivider: {
+    height: 1,
+    marginLeft: 16,
   },
   cardInput: {
     borderBottomWidth: 0,
   },
   actions: {
     gap: 14,
+    marginTop: 'auto' as const,
   },
   footerRow: {
     flexDirection: 'row' as const,

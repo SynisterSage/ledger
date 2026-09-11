@@ -138,6 +138,7 @@ export type MobileTodayMention = {
 
 export type MobileTodayTeamActivity = {
   id: string;
+  auditLogId: string;
   title: string;
   metadata: string[];
   sourceId: string | null;

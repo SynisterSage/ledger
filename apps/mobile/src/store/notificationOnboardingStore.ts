@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import * as Notifications from 'expo-notifications';
 
 import {
   getMobileUserSettings,
@@ -88,7 +89,32 @@ export async function bootstrapNotificationOnboardingState(userId: string | null
       return;
     }
 
-    const onboarding = readMobileNotificationOnboardingState(settings);
+    let onboarding = readMobileNotificationOnboardingState(settings);
+
+    // iOS is authoritative about whether Ledger may notify this device. Do
+    // not keep asking someone who has already granted that permission just
+    // because an older server-side onboarding flag was never written.
+    const permission = await Notifications.getPermissionsAsync().catch(() => null);
+    if (token !== bootstrapToken) {
+      return;
+    }
+
+    if (permission?.status === 'granted' && !onboarding.isComplete) {
+      onboarding = { isComplete: true, choice: 'enabled' };
+
+      // Reconcile without changing account/profile onboarding. The optimistic
+      // state above prevents the prompt from flashing back if this best-effort
+      // write is delayed or temporarily unavailable.
+      void updateMobileUserSettings({
+        preferences: {
+          mobileNotificationOnboardingCompleted: true,
+          mobileNotificationOnboardingChoice: 'enabled',
+        },
+      }).catch(() => {
+        // A later launch can retry reconciliation; system permission remains
+        // sufficient to suppress the in-app ask for this session.
+      });
+    }
 
     setState({
       isLoading: false,
@@ -132,6 +158,7 @@ export async function setNotificationOnboardingChoice(
     const settings = await updateMobileUserSettings({
       onboarding_completed: true,
       preferences: {
+        mobileNotificationOnboardingCompleted: true,
         mobileNotificationOnboardingChoice: choice,
       },
     });

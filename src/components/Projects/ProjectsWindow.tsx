@@ -70,6 +70,7 @@ import {
 } from '../../utils/projectTypes';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
+import { LocalContextLinks } from '../Common/LocalContextLinks';
 import { UserAvatar } from '../Common/UserAvatar';
 import { AvatarGroup } from '../Common/AvatarGroup';
 import {
@@ -1185,6 +1186,7 @@ export const ProjectsWindow = ({
   >([]);
   const [isLoadingLinkableCalendarItems, setIsLoadingLinkableCalendarItems] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
+  const pendingTabCloseApprovalRef = useRef<(() => void) | null>(null);
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [activeTab, setActiveTab] = useState<ProjectTab>('overview');
   const [collapsedProjectSections, setCollapsedProjectSections] = useState<
@@ -8208,6 +8210,55 @@ export const ProjectsWindow = ({
     }
     void window.desktopWindow?.closeModule('projects');
   }, [isSavingProject, isSavingTaskNotes]);
+
+  useEffect(() => {
+    const handleTabCloseRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        route?: { kind?: string; focusProjectId?: string | null };
+        handled?: boolean;
+        approve?: () => void;
+      }>).detail;
+      if (
+        !detail?.route ||
+        detail.route.kind !== 'projects' ||
+        (detail.route.focusProjectId ?? null) !== (selectedProjectId ?? null) ||
+        typeof detail.approve !== 'function'
+      ) {
+        return;
+      }
+
+      detail.handled = true;
+      pendingTabCloseApprovalRef.current = detail.approve;
+      if (isSavingProject || isSavingTaskNotes || isDirtyRef.current) {
+        setShowCloseGuardModal(true);
+        return;
+      }
+      const approve = pendingTabCloseApprovalRef.current;
+      pendingTabCloseApprovalRef.current = null;
+      approve?.();
+    };
+
+    window.addEventListener('ledger:tab-close-requested', handleTabCloseRequest);
+    return () => window.removeEventListener('ledger:tab-close-requested', handleTabCloseRequest);
+  }, [isSavingProject, isSavingTaskNotes, selectedProjectId]);
+
+  useEffect(() => {
+    const handleTabDetachRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        route?: { kind?: string; focusProjectId?: string | null };
+        blocked?: boolean;
+      }>).detail;
+      if (
+        !detail?.route ||
+        detail.route.kind !== 'projects' ||
+        (detail.route.focusProjectId ?? null) !== (selectedProjectId ?? null)
+      ) return;
+      if (isSavingProject || isSavingTaskNotes || isDirtyRef.current) detail.blocked = true;
+    };
+
+    window.addEventListener('ledger:tab-detach-requested', handleTabDetachRequest);
+    return () => window.removeEventListener('ledger:tab-detach-requested', handleTabDetachRequest);
+  }, [isSavingProject, isSavingTaskNotes, selectedProjectId]);
   const showRightPane = !selectedProjectId && !isRightPaneCollapsed;
   const showCollapsedRightPane = !selectedProjectId && isRightPaneCollapsed;
   const projectsViewLabel = projectsOverviewView === 'timeline' ? 'Roadmap' : 'List';
@@ -8290,14 +8341,20 @@ export const ProjectsWindow = ({
         onCancel={() => setShowCloseGuardModal(false)}
         onCloseWithoutSaving={() => {
           setShowCloseGuardModal(false);
-          void window.desktopWindow?.closeModule('projects');
+          const approve = pendingTabCloseApprovalRef.current;
+          pendingTabCloseApprovalRef.current = null;
+          if (approve) approve();
+          else void window.desktopWindow?.closeModule('projects');
         }}
         onRetrySaveAndClose={() => {
           void (async () => {
             const saved = await flushProjectDraft();
             if (!saved && isDirtyRef.current) return;
             setShowCloseGuardModal(false);
-            void window.desktopWindow?.closeModule('projects');
+            const approve = pendingTabCloseApprovalRef.current;
+            pendingTabCloseApprovalRef.current = null;
+            if (approve) approve();
+            else void window.desktopWindow?.closeModule('projects');
           })();
         }}
       />
@@ -9301,6 +9358,10 @@ export const ProjectsWindow = ({
                     targetTypes={['external_reference']}
                     className="mt-5 border-t border-[color:var(--ledger-border-subtle)] pt-4"
                   />
+                ) : null}
+
+                {selectedProject && activeWorkspaceId ? (
+                  <LocalContextLinks workspaceId={activeWorkspaceId} targetType="project" targetId={selectedProject.id} className="mt-5" />
                 ) : null}
 
                 {!selectedProject ? (

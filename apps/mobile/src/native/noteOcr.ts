@@ -18,14 +18,21 @@ export type MobileNoteOcrResult = {
 
 type NoteOcrNativeModule = {
   recognizeText(imageUri: string, language?: string): Promise<MobileNoteOcrResult>;
+  visionModelStatus?: () => Promise<{ installed: boolean; bytes: number; expectedBytes: number }>;
+  installVisionModel?: (sourceUri: string) => Promise<{ installed: boolean; bytes: number; expectedBytes: number }>;
 };
 
-const nativeModule = Platform.OS === 'ios'
+const nativeModule = Platform.OS === 'ios' || Platform.OS === 'android'
   ? requireOptionalNativeModule<NoteOcrNativeModule>('LedgerNoteOcr')
   : null;
 
 export const noteOcrNative = {
   supported: nativeModule !== null,
+  visionModelStatus: async () => nativeModule?.visionModelStatus?.() ?? { installed: false, bytes: 0, expectedBytes: 0 },
+  installVisionModel: async (sourceUri: string) => {
+    if (!nativeModule?.installVisionModel) throw new Error('Android Ledger Vision installation is unavailable in this build.');
+    return nativeModule.installVisionModel(sourceUri);
+  },
   recognizeText: async (imageUri: string, language = 'auto'): Promise<MobileNoteOcrResult> => {
     if (!nativeModule) throw new Error('On-device OCR is unavailable in this build.');
     const result = parseNoteOcrResult(await nativeModule.recognizeText(imageUri, language) as unknown);

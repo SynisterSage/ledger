@@ -213,7 +213,7 @@ export class EmbeddingIndexService {
     const pending: Array<{ key: string; document: LedgerIndexDocument }> = [];
 
     for (const item of items) {
-      if (item.resourceType === 'attachment' || (item.workspaceId && item.workspaceId !== workspaceId)) continue;
+      if ((item.resourceType === 'attachment' && item.metadata?.localFileId === undefined) || (item.workspaceId && item.workspaceId !== workspaceId)) continue;
       for (const [chunkIndex, content] of chunkContent(item).entries()) {
         const chunkId = `${item.resourceType}:${item.resourceId}:${chunkIndex}`;
         // Only semantic input participates in the hash. Updated timestamps and
@@ -404,6 +404,8 @@ export class LedgerRetrievalService {
       projectWorkloadLinks.set(project.resourceId, { teamIds: [...new Set(teamIds)], assigneeIds: [...new Set(assigneeIds)] });
     });
     const allowedResourceTypes = resourceTypesForAskLedgerIntent(intent);
+    const isLocalLibraryAttachment = (document: AskLedgerContextItem) => document.resourceType === 'attachment' && document.metadata?.localFileId !== undefined;
+    const localAttachmentCanSupportPlan = isLocalLibraryAttachment;
     const entityProjectIds = new Set(resourceDocuments
       .filter((document) => document.resourceType === 'project' && plan?.entityQuery && entityMatch(plan.entityQuery, document))
       .map((document) => document.resourceId));
@@ -414,7 +416,7 @@ export class LedgerRetrievalService {
     };
     const matchesStructuredConstraints = (document: AskLedgerContextItem) => {
       if (!plan) return true;
-      if (plan.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType)) return false;
+      if (plan.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType) && !localAttachmentCanSupportPlan(document)) return false;
       if (plan.entityQuery) {
         const directEntityMatch = entityMatch(plan.entityQuery, document);
         const projectEntityMatch = Boolean(document.projectId && entityProjectIds.has(String(document.projectId)));
@@ -500,8 +502,8 @@ export class LedgerRetrievalService {
     let candidatesRemovedByResourceType = 0;
     let candidatesRemovedByStructured = 0;
     documents.forEach((document) => {
-      if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never) && !plan) { candidatesRemovedByResourceType += 1; return; }
-      if (plan?.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType)) { candidatesRemovedByResourceType += 1; return; }
+      if (allowedResourceTypes && !allowedResourceTypes.includes(document.resourceType as never) && !isLocalLibraryAttachment(document) && !plan) { candidatesRemovedByResourceType += 1; return; }
+      if (plan?.primaryResourceTypes.length && !plan.primaryResourceTypes.includes(document.resourceType) && !isLocalLibraryAttachment(document)) { candidatesRemovedByResourceType += 1; return; }
       const key = `${document.resourceType}:${document.resourceId}`;
       const lexical = lexicalByResource.get(key);
       const semantic = queryVector && document.embedding ? cosineSimilarity(queryVector, document.embedding) : 0;
@@ -551,6 +553,7 @@ export class LedgerRetrievalService {
           why.push('deadline-resource');
         }
         if (document.dueAt) { score += 0.14; why.push('due-date'); }
+        if (isLocalLibraryAttachment(document)) { score += 0.08; why.push('local-file-context'); }
         if (['note', 'transcript'].includes(document.resourceType) && !document.dueAt) score -= 0.08;
       }
       if (intent.kind === 'team_members') {
@@ -639,6 +642,7 @@ export class LedgerRetrievalService {
       }
       if (intent.kind === 'time_window') {
         if (['task', 'event', 'reminder'].includes(document.resourceType)) { score += 0.1; why.push('schedule-resource'); }
+        if (isLocalLibraryAttachment(document)) { score += 0.06; why.push('local-file-context'); }
         if (intent.window && hasScheduledDate) {
           const start = Date.parse(`${intent.window.start}T00:00:00`);
           const end = Date.parse(`${intent.window.end}T23:59:59.999`);

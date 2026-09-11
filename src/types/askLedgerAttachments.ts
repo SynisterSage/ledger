@@ -9,6 +9,8 @@ export type AskLedgerAttachment = {
   sizeBytes: number;
   status: AskLedgerAttachmentStatus;
   createdAt: string;
+  /** The reusable managed copy in Files & links, when promotion succeeded. */
+  localFileId?: string;
   error?: string;
 };
 

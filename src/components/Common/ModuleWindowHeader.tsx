@@ -243,6 +243,8 @@ const getWorkspaceRouteLabel = (route: WorkspaceRoute) => {
       return 'Slack';
     case 'notifications':
       return 'Notifications';
+    case 'files':
+      return 'Files & links';
     case 'quick-follow-up':
       return 'Quick follow-up';
     case 'quick-task':
@@ -279,6 +281,8 @@ const getWorkspaceRouteIcon = (route: WorkspaceRoute) => {
       return <IntegrationProviderMark provider="slack" size={14} className={iconClassName} />;
     case 'notifications':
       return <Bell className={iconClassName} />;
+    case 'files':
+      return <FileText className={iconClassName} />;
     case 'quick-follow-up':
     case 'quick-task':
     case 'quick-note':

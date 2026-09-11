@@ -161,6 +161,12 @@ const extractXlsx = (bytes: Uint8Array, fileName: string): ExtractedAttachmentBl
   return blocks;
 };
 
+export const extractAttachmentBlocks = (bytes: Uint8Array, fileName: string): ExtractedAttachmentBlock[] => {
+  const extension = extensionFor(fileName);
+  validateBytes(bytes, extension);
+  return extension === 'pdf' ? extractPdf(bytes) : extension === 'docx' ? extractDocx(bytes) : extension === 'csv' ? extractCsv(bytes) : extension === 'xlsx' ? extractXlsx(bytes, fileName) : extractText(bytes);
+};
+
 export const chunkAttachmentBlocks = (blocks: ExtractedAttachmentBlock[], maxCharacters = 1400): ExtractedAttachmentBlock[] => {
   const output: ExtractedAttachmentBlock[] = [];
   for (const block of blocks) {
@@ -210,7 +216,7 @@ export class AskLedgerAttachmentService {
       await fs.writeFile(temporaryPath, bytes, { flag: 'wx', mode: 0o600 });
       this.copies.set(id, temporaryPath);
       const attachment: AskLedgerAttachment = { id, conversationId, name, extension, mimeType, sizeBytes: bytes.byteLength, status: 'processing', createdAt: new Date().toISOString() };
-      const blocks = extension === 'pdf' ? extractPdf(bytes) : extension === 'docx' ? extractDocx(bytes) : extension === 'csv' ? extractCsv(bytes) : extension === 'xlsx' ? extractXlsx(bytes, name) : extractText(bytes);
+      const blocks = extractAttachmentBlocks(bytes, name);
       const chunks = chunkAttachmentBlocks(blocks);
       results.push({ attachment: { ...attachment, status: 'ready' }, blocks: chunks, temporaryPath });
       this.documents.set(id, results[results.length - 1]);

@@ -1,4 +1,12 @@
-export type NoteOcrEngine = 'apple-vision' | 'paddleocr';
+export type NoteOcrEngine = 'apple-vision' | 'paddleocr' | 'local-vision';
+
+export type NoteOcrBlockType = 'heading' | 'paragraph' | 'bullet' | 'todo';
+
+export type NoteOcrBlock = {
+  type: NoteOcrBlockType;
+  text: string;
+  checked?: boolean;
+};
 
 export type NoteOcrBoundingBox = {
   /** Normalized coordinates, origin at the top-left of the source image. */
@@ -18,6 +26,11 @@ export type NoteOcrResult = {
   text: string;
   lines: NoteOcrLine[];
   engine: NoteOcrEngine;
+  /** Structured blocks are provided by vision models and are optional for legacy OCR engines. */
+  blocks?: NoteOcrBlock[];
+  /** True when the provider detected text it could not transcribe confidently. */
+  uncertain?: boolean;
+  unclearRegions?: string[];
   language?: string;
   durationMs?: number;
 };
@@ -67,7 +80,7 @@ export const parseNoteOcrResult = (value: unknown): NoteOcrResult | null => {
   if (!isRecord(value)) return null;
   if (typeof value.text !== 'string' || value.text.length > MAX_OCR_TEXT_LENGTH) return null;
   if (!Array.isArray(value.lines) || value.lines.length > MAX_OCR_LINES) return null;
-  if (value.engine !== 'apple-vision' && value.engine !== 'paddleocr') return null;
+  if (value.engine !== 'apple-vision' && value.engine !== 'paddleocr' && value.engine !== 'local-vision') return null;
 
   const lines: NoteOcrLine[] = [];
   for (const line of value.lines) {
@@ -82,13 +95,34 @@ export const parseNoteOcrResult = (value: unknown): NoteOcrResult | null => {
     });
   }
 
+  let blocks: NoteOcrBlock[] | undefined;
+  if (value.blocks !== undefined) {
+    if (!Array.isArray(value.blocks) || value.blocks.length > MAX_OCR_LINES) return null;
+    blocks = [];
+    for (const block of value.blocks) {
+      if (!isRecord(block) || (block.type !== 'heading' && block.type !== 'paragraph' && block.type !== 'bullet' && block.type !== 'todo') || typeof block.text !== 'string' || block.text.length > 10_000) return null;
+      if (block.checked !== undefined && typeof block.checked !== 'boolean') return null;
+      if (block.type !== 'todo' && block.checked !== undefined) return null;
+      blocks.push({
+        type: block.type,
+        text: block.text,
+        ...(block.checked === undefined ? {} : { checked: block.checked }),
+      });
+    }
+  }
+
   if (value.language !== undefined && typeof value.language !== 'string') return null;
   if (value.durationMs !== undefined && (!isFiniteNumber(value.durationMs) || value.durationMs < 0)) return null;
+  if (value.uncertain !== undefined && typeof value.uncertain !== 'boolean') return null;
+  if (value.unclearRegions !== undefined && (!Array.isArray(value.unclearRegions) || value.unclearRegions.some((region) => typeof region !== 'string' || region.length > 1_000))) return null;
 
   return {
     text: value.text,
     lines,
     engine: value.engine,
+    ...(blocks === undefined ? {} : { blocks }),
+    ...(value.uncertain === undefined ? {} : { uncertain: value.uncertain }),
+    ...(value.unclearRegions === undefined ? {} : { unclearRegions: value.unclearRegions as string[] }),
     ...(value.language === undefined ? {} : { language: value.language }),
     ...(value.durationMs === undefined ? {} : { durationMs: value.durationMs as number }),
   };

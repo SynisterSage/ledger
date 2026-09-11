@@ -4196,6 +4196,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
         .slice(0, 3)
         .map((row) => ({
           id: `team_activity:${row.id}`,
+          auditLogId: row.id,
           title: `${actorNames.get(String(row.actor_user_id)) ?? 'A teammate'} ${String(row.action ?? 'updated work').replace(/[._-]/g, ' ')}`,
           metadata: [row.target_type ? String(row.target_type).replace(/[._-]/g, ' ') : null].filter(Boolean),
           sourceId: row.target_id ?? null,
@@ -4266,7 +4267,10 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     const hasProject = Boolean(task.project_id);
     const isOverdue = overrides.isOverdue ?? isTaskOverdueForSelectedDate(task);
     const type = overrides.type ?? (hasProject ? 'project_action' : 'task');
-    const sourceType = overrides.sourceType ?? (hasProject ? 'project_action' : 'task');
+    // A project action is still a task. Keep its visual type separate from
+    // its backing resource so mobile mutations never use a task ID as a
+    // project ID.
+    const sourceType = overrides.sourceType ?? 'task';
     const meta = overrides.meta ?? (isOverdue ? 'Overdue' : hasProject ? 'Project action' : 'Due today');
     const dueLabel = overrides.dueLabel ?? (isOverdue ? 'Overdue' : 'Today');
     const dateLabel =
@@ -4340,7 +4344,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
             : 'Today';
       const explicitItem = buildTaskPayload(task, {
         type: task.project_id ? 'project_action' : 'task',
-        sourceType: task.project_id ? 'project_action' : 'task',
+        sourceType: 'task',
         meta: task.project_id
           ? 'Project action'
           : isDueOnSelectedDate
@@ -4389,7 +4393,7 @@ const loadMobileTodayData = async ({ userId, scope, dateKey }) => {
     const todayItem = buildTaskPayload(task, {
       isOverdue: isTaskOverdueForSelectedDate(task),
       type: task.project_id ? 'project_action' : 'task',
-      sourceType: task.project_id ? 'project_action' : 'task',
+      sourceType: 'task',
       meta: task.project_id ? (isTaskOverdueForSelectedDate(task) ? 'Overdue' : 'Project action') : (isTaskOverdueForSelectedDate(task) ? 'Overdue' : 'Due today'),
       dueLabel: isTaskOverdueForSelectedDate(task) ? 'Overdue' : 'Today',
     });
@@ -6542,6 +6546,45 @@ app.get('/api/workspaces/:workspaceId/audit-log', authMiddleware, rateLimit('rea
         actor_name: row.actor_user_id ? actorNames.get(String(row.actor_user_id)) ?? null : null,
       })),
     });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/audit-log/:auditLogId', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId);
+    const auditLogId = String(req.params.auditLogId);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+
+    const result = await supabase
+      .from('workspace_audit_logs')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('id', auditLogId)
+      .select('id');
+    if (result.error) throw result.error;
+    if (!result.data?.length) return res.status(404).json({ error: 'Team activity not found' });
+
+    return res.json({ deleted: 1 });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/audit-log', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId);
+    await requireWorkspaceAccess(req.authUser.id, workspaceId, 'admin');
+
+    const result = await supabase
+      .from('workspace_audit_logs')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .select('id');
+    if (result.error) throw result.error;
+
+    return res.json({ deleted: result.data?.length ?? 0 });
   } catch (error) {
     return respondWithError(res, error);
   }

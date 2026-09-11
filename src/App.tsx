@@ -113,6 +113,7 @@ import { getProjectTypeOption } from './utils/projectTypes';
 import { useWorkspaceRouteHistory } from './hooks/useWorkspaceRouteHistory';
 import { touchKeepAliveModules } from './utils/keepAliveModules';
 import { isStaleNavigationGeneration } from './utils/navigationGeneration';
+import { workspaceTabRouteKey } from './utils/workspaceTabIdentity';
 import { NewTabWindow } from './components/Common/NewTabWindow';
 import { LedgerEmptyState } from './components/Common/LedgerEmptyState';
 import { PageFindBar } from './components/Common/PageFindBar';
@@ -237,6 +238,7 @@ const getKeepAliveModuleKey = (
     kind === 'notifications' ||
     kind === 'inbox' ||
     kind === 'slack' ||
+    kind === 'files' ||
     kind === 'settings'
   ) {
     return kind;
@@ -247,24 +249,7 @@ const getKeepAliveModuleKey = (
 const isNewTabRoute = (route: WorkspaceShellRoute | ModuleFocusPayload | null | undefined) =>
   route?.kind === 'new-tab';
 
-const workspaceShellRouteKey = (route: ModuleFocusPayload | null | undefined): string =>
-  route
-    ? route.kind === 'new-tab'
-      ? `new-tab|${route.focusContext ?? 'default'}`
-      : route.kind === 'notes'
-      ? route.focusNoteId
-        ? `notes|note|${route.focusNoteId}`
-        : 'notes|home'
-      : route.kind === 'projects'
-      ? route.focusProjectId
-        ? `projects|project|${route.focusProjectId}`
-        : 'projects|home'
-      : route.kind === 'circle'
-      ? 'circle'
-      : route.kind === 'teams'
-      ? 'teams'
-      : String(route.kind ?? '')
-    : '';
+const workspaceShellRouteKey = workspaceTabRouteKey;
 
 const getWorkspaceShellRouteFromLocation = (): WorkspaceShellRoute => {
   const params = new URLSearchParams(window.location.search);

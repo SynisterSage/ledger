@@ -50,6 +50,7 @@ type TodayListProps = {
   onAddFocus?: () => void;
   onQuickNote?: () => void;
   onTeamItemPress?: (sourceType: 'mention' | 'team_activity', sourceId: string | null) => void;
+  onTeamActivityLongPress?: (activity: MobileTodayTeamActivity) => void;
   surfaceSection?: 'today' | 'attention' | 'next-up' | null;
 };
 
@@ -290,6 +291,7 @@ export function TodayList({
   onAddFocus,
   onQuickNote,
   onTeamItemPress,
+  onTeamActivityLongPress,
   surfaceSection = null,
 }: TodayListProps) {
   const theme = useLedgerTheme();
@@ -329,9 +331,9 @@ export function TodayList({
     })
     .slice(0, 3);
   const eventSurfaceItems = [...today.filter((item) => item.type === 'event'), ...upcoming.filter((item) => item.type === 'event')]
-    .filter((item) => item.startsAt && new Date(item.startsAt).getTime() >= now.getTime())
-    .sort((left, right) => new Date(left.startsAt ?? 0).getTime() - new Date(right.startsAt ?? 0).getTime())
-    .slice(0, 3);
+    // The event summary button is a filter, not a preview. Keep in-progress
+    // events and do not apply the three-item Next up cap here.
+    .sort((left, right) => new Date(left.startsAt ?? 0).getTime() - new Date(right.startsAt ?? 0).getTime());
   const displayedNextUpItems = surfaceSection === 'next-up' ? eventSurfaceItems : nextUpItems;
   const nextUpIds = new Set(nextUpItems.map((item) => item.id));
   const allAttentionItems: MobileTodayInteractionItem[] = [
@@ -393,7 +395,7 @@ export function TodayList({
 
       {show('next-up') && displayedNextUpItems.length ? (
         <TodaySection
-          title="Next up"
+          title={surfaceSection === 'next-up' ? 'Events' : 'Next up'}
           count={displayedNextUpItems.length}
           collapsed={collapsed('next-up')}
           onToggle={() => toggle('next-up')}
@@ -544,6 +546,7 @@ export function TodayList({
               title={activity.title}
               metadata={compactMetadata([...activity.metadata, formatDateTimeLabel(activity.createdAt)])}
               onPress={() => onTeamItemPress?.('team_activity', activity.sourceId)}
+              onLongPress={() => onTeamActivityLongPress?.(activity)}
               accessibilityLabel={`${activity.title}. ${activity.metadata.join('. ')}`}
             />
           ))}

@@ -18,6 +18,7 @@ import { SymbolView } from 'expo-symbols';
 import { File, Paths } from 'expo-file-system';
 import { shareAsync } from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MobileTopFade } from '@/components/MobileTopFade';
@@ -39,7 +40,7 @@ import { openMobileNote } from './openMobileNote';
 import { MobileLexicalEditor, type MobileEditorStage, type MobileLexicalEditorHandle } from '../dev/MobileLexicalEditor';
 import type { EditorNativeEvent } from '@/bridge/messages';
 
-type Props = { noteId?: string; workspaceId?: string; initialView?: 'write' | 'transcript' | 'map' | 'outline'; returnTo?: string; focusSegmentId?: string; focusNodeId?: string; focus?: 'title' | 'editor' | 'none' };
+type Props = { noteId?: string; workspaceId?: string; initialView?: 'write' | 'transcript' | 'map' | 'outline'; returnTo?: string; focusSegmentId?: string; focusNodeId?: string; focus?: 'title' | 'editor' | 'none'; scanOnOpen?: boolean };
 type SaveState = 'saved' | 'saving' | 'offline' | 'error' | 'remote';
 export type MobileNoteSaveState = {
   noteId: string;
@@ -112,7 +113,7 @@ function serializeBody(body: string, initialHtml: string, initialPlain: string, 
   return `${editableHtml}${preservedBlocks}` || EMPTY_HTML;
 }
 
-export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId, initialView = 'write', returnTo, focus = 'none' }: Props) {
+export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId, initialView = 'write', returnTo, focus = 'none', scanOnOpen = false }: Props) {
   const theme = useLedgerTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -641,6 +642,19 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
     setNoteOcrError(null);
     try {
       if (!noteOcrNative.supported) throw new Error('On-device OCR is unavailable in this build. Rebuild the native app after installing the OCR module.');
+      if (Platform.OS === 'android') {
+        const modelStatus = await noteOcrNative.visionModelStatus();
+        if (!modelStatus.installed) {
+          const install = await new Promise<boolean>((resolve) => Alert.alert('Install Ledger Vision', 'Android needs the 3.1 GB Gemma 3n model file to read handwriting locally. Choose the downloaded .task file from Files.', [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Choose model', onPress: () => resolve(true) },
+          ], { cancelable: false }));
+          if (!install) { setNoteOcrOpen(false); return; }
+          const picked = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: false, multiple: false });
+          if (picked.canceled || !picked.assets[0]?.uri) { setNoteOcrOpen(false); return; }
+          await noteOcrNative.installVisionModel(picked.assets[0].uri);
+        }
+      }
       const source = await new Promise<'camera' | 'library' | null>((resolve) => Alert.alert('Scan note', 'Choose where to get the note image.', [
         { text: 'Camera', onPress: () => resolve('camera') },
         { text: 'Photo library', onPress: () => resolve('library') },
@@ -661,6 +675,12 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       setNoteOcrBusy(false);
     }
   }, []);
+  const scanOnOpenHandledRef = useRef(false);
+  useEffect(() => {
+    if (!scanOnOpen || scanOnOpenHandledRef.current || hydrating || !editorReady || mode !== 'text' || !permissions.canEdit) return;
+    scanOnOpenHandledRef.current = true;
+    void scanTextFromImage();
+  }, [editorReady, hydrating, mode, permissions.canEdit, scanOnOpen, scanTextFromImage]);
   const insertNoteOcrText = useCallback(() => {
     if (!noteOcrText.trim() || !permissions.canEdit || hydrating || mode !== 'text') return;
     lexicalRef.current?.insertText(noteOcrText.trim());

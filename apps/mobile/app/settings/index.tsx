@@ -524,6 +524,15 @@ export default function SettingsScreen() {
             />
           </Section>
 
+          <Section title="Files & links" card>
+            <SettingsRow
+              title="On this device"
+              subtitle="Private files used with Ledger stay on this phone."
+              chevron
+              onPress={() => router.push('/settings/files' as never)}
+            />
+          </Section>
+
           {appleCalendarNative.supported ? (
             <Section title="Apple Calendar" card>
               <SettingsRow

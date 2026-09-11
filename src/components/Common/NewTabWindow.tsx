@@ -89,8 +89,13 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
 
     let session = recentSessions.find((item) => item.id === sessionId) ?? null;
     try {
-      const payload = await api.getAskLedgerSession(activeWorkspaceId, sessionId) as { session?: AskLedgerSession };
-      if (payload.session) session = payload.session;
+      if (session?.privacyScope === 'device' && user && window.localAskSessions) {
+        const payload = await window.localAskSessions.get({ userId: user.id, workspaceId: activeWorkspaceId, sessionId });
+        if (payload.session) session = payload.session as AskLedgerSession;
+      } else {
+        const payload = await api.getAskLedgerSession(activeWorkspaceId, sessionId) as { session?: AskLedgerSession };
+        if (payload.session) session = payload.session;
+      }
     } catch {
       // A stale route should fall back to the empty state instead of leaving a broken loading view.
     }
@@ -149,8 +154,17 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
     }
     setRecentSessionsLoaded(false);
     try {
-      const payload = await api.getAskLedgerSessions(activeWorkspaceId, 5) as { sessions?: AskLedgerSession[] };
-      setRecentSessions(Array.isArray(payload?.sessions) ? payload.sessions.slice(0, 5) : []);
+      const [cloudResult, localResult] = await Promise.allSettled([
+        api.getAskLedgerSessions(activeWorkspaceId, 5) as Promise<{ sessions?: AskLedgerSession[] }>,
+        window.localAskSessions?.list({ userId: user.id, workspaceId: activeWorkspaceId, limit: 10 }),
+      ]);
+      const cloudSessions = cloudResult.status === 'fulfilled' && Array.isArray(cloudResult.value?.sessions) ? cloudResult.value.sessions : [];
+      const localSessions = localResult.status === 'fulfilled' && Array.isArray(localResult.value?.sessions)
+        ? localResult.value.sessions.map((session) => ({ ...session, privacyScope: 'device' as const }) as AskLedgerSession)
+        : [];
+      const mergedSessions = new Map(cloudSessions.map((session) => [session.id, session]));
+      localSessions.forEach((session) => mergedSessions.set(session.id, session));
+      setRecentSessions([...mergedSessions.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5));
     } catch {
       setRecentSessions([]);
     } finally {
@@ -318,7 +332,14 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
 
   const openAskSession = async (session: AskLedgerSession) => {
     let restoredSession = session;
-    if (activeWorkspaceId) {
+    if (session.privacyScope === 'device' && activeWorkspaceId && user && window.localAskSessions) {
+      try {
+        const payload = await window.localAskSessions.get({ userId: user.id, workspaceId: activeWorkspaceId, sessionId: session.id });
+        if (payload.session) restoredSession = payload.session as AskLedgerSession;
+      } catch {
+        // Fall back to the already-loaded row so history remains usable during a transient local-store failure.
+      }
+    } else if (activeWorkspaceId) {
       try {
         const payload = await api.getAskLedgerSession(activeWorkspaceId, session.id) as { session?: AskLedgerSession };
         if (payload.session) restoredSession = payload.session;
@@ -340,7 +361,11 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       : null;
     const deletingActiveSession = selectedAskSession?.id === session.id || routeSessionId === session.id;
     try {
-      await api.deleteAskLedgerSession(activeWorkspaceId, session.id);
+      if (session.privacyScope === 'device' && user && window.localAskSessions) {
+        await window.localAskSessions.delete({ userId: user.id, workspaceId: activeWorkspaceId, sessionId: session.id });
+      } else {
+        await api.deleteAskLedgerSession(activeWorkspaceId, session.id);
+      }
       await window.askLedger?.removeAttachments({ conversationId: session.id, attachmentIds: [] });
       setRecentSessions((current) => current.filter((item) => item.id !== session.id));
       if (deletingActiveSession) {

@@ -116,7 +116,9 @@ export async function performMobileTodayAction({
     }
   }
 
-  if (item.type === 'focus' || item.type === 'task') {
+  // Project actions can be either a project deadline or a task attached to a
+  // project. The source type—not the presentation type—owns the mutation.
+  if (item.type === 'focus' || item.type === 'task' || (item.type === 'project_action' && item.sourceType === 'task')) {
     switch (actionId) {
       case 'complete':
       case 'mark_done':

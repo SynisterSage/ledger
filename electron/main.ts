@@ -25,6 +25,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { AskLedgerExecutionMode } from '../src/types/askLedgerResponseMode.ts';
+import { workspaceTabRouteKey } from '../src/utils/workspaceTabIdentity.ts';
 import {
   clampSidebarOpacity,
   defaultSidebarPreferences,
@@ -34,6 +35,8 @@ import { desktopTokens } from '../src/theme/desktopTokens';
 import { MeetingAudioCaptureService, type AudioSourceName } from './audioCaptureService';
 import { LocalTranscriptionService } from './transcriptionService';
 import { LocalNoteOcrService } from './noteOcrService';
+import { LocalVisionAssetManager } from './localVisionAssets.ts';
+import { LocalCapturePrivacyStore } from './localCapturePrivacy.ts';
 import { ZoomSpeakerAttribution } from './zoomSpeakerAttribution';
 import { resolveZoomAccessibilityBridgePath } from './speakerTagsRuntime';
 import { createLocalAIService } from './localAIService';
@@ -41,6 +44,7 @@ import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
 import { createAskLedgerService } from './askLedgerService';
 import { LocalContextLibrary, LocalContextLibraryError } from './localContextLibrary.ts';
+import { LocalAskLedgerSessionStore, LocalAskLedgerSessionStoreError } from './localAskLedgerSessionStore.ts';
 import {
   OverviewFocusService,
   type OverviewFocusResult,
@@ -268,6 +272,13 @@ const localTranscriptionService = new LocalTranscriptionService(
   zoomSpeakerAttribution
 );
 const localNoteOcrService = new LocalNoteOcrService();
+const localVisionAssets = new LocalVisionAssetManager();
+const localCapturePrivacy = new LocalCapturePrivacyStore();
+localVisionAssets.onChange((status) => {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) window.webContents.send('note-ocr:vision-progress', status);
+  });
+});
 let autoStopTimer: NodeJS.Timeout | null = null;
 let autoStopRequestInFlight = false;
 const localAIAssets = new LocalAIAssetManager();
@@ -280,6 +291,9 @@ const askLedgerService = createAskLedgerService(
 );
 const localContextLibrary = new LocalContextLibrary(
   path.join(app.getPath('userData'), 'local-context-library')
+);
+const localAskLedgerSessionStore = new LocalAskLedgerSessionStore(
+  path.join(app.getPath('userData'), 'local-context-library', 'ask-sessions')
 );
 const overviewFocusService = new OverviewFocusService(localAIService);
 const projectLensService = new ProjectLensService(
@@ -749,6 +763,22 @@ ipcMain.handle(
 );
 
 ipcMain.handle('note-ocr:status', () => localNoteOcrService.status());
+ipcMain.handle('note-ocr:vision-status', () => localVisionAssets.status());
+ipcMain.handle('note-ocr:vision-download', () => localVisionAssets.download());
+ipcMain.handle('note-ocr:vision-cancel-download', () => localVisionAssets.cancel());
+ipcMain.handle('local-capture-privacy:get', () => localCapturePrivacy.preferences());
+ipcMain.handle('local-capture-privacy:set', (_event, payload: { scanImageRetention?: unknown }) => {
+  if (payload?.scanImageRetention !== 'delete_after_processing' && payload?.scanImageRetention !== 'retain_until_deleted') {
+    throw new Error('Invalid local capture retention setting.');
+  }
+  return localCapturePrivacy.setPreferences({ scanImageRetention: payload.scanImageRetention });
+});
+ipcMain.handle('local-capture-privacy:delete-all', async () => {
+  const activeSessionId = meetingAudioCaptureService.status().sessionId;
+  const result = await localCapturePrivacy.deleteLocalCaptureData();
+  const removedRecordings = recordingSessionStore.clearCompletedAndRecovery(activeSessionId);
+  return { ...result, deleted: removedRecordings ? [...result.deleted, 'meeting-recordings'] : result.deleted };
+});
 ipcMain.handle('note-ocr:select-image', async () => {
   const selection = await dialog.showOpenDialog({
     properties: ['openFile'],
@@ -760,7 +790,7 @@ ipcMain.handle('note-ocr:select-image', async () => {
 });
 ipcMain.handle(
   'note-ocr:recognize',
-  (_event, payload: { imagePath?: unknown; noteId?: unknown; language?: unknown; mode?: unknown }) => {
+  (event, payload: { imagePath?: unknown; noteId?: unknown; language?: unknown; mode?: unknown; requestId?: unknown }) => {
     if (typeof payload?.imagePath !== 'string' || typeof payload.noteId !== 'string') {
       throw new Error('Invalid note OCR request.');
     }
@@ -770,6 +800,9 @@ ipcMain.handle(
     if (payload.mode !== undefined && payload.mode !== 'auto' && payload.mode !== 'handwriting' && payload.mode !== 'printed') {
       throw new Error('Invalid OCR mode.');
     }
+    if (payload.requestId !== undefined && typeof payload.requestId !== 'string') {
+      throw new Error('Invalid OCR request id.');
+    }
     return localNoteOcrService.recognize({
       imagePath: payload.imagePath,
       request: {
@@ -777,7 +810,7 @@ ipcMain.handle(
         ...(payload.language ? { language: payload.language } : {}),
         ...(payload.mode ? { mode: payload.mode } : {}),
       },
-    });
+    }, undefined, (stage) => event.sender.send('note-ocr:progress', { requestId: payload.requestId ?? null, stage }));
   }
 );
 
@@ -880,6 +913,7 @@ ipcMain.handle(
     payload: {
       workspaceId?: unknown;
       conversationId?: unknown;
+      ownerUserId?: unknown;
       existingCount?: unknown;
       existingSizeBytes?: unknown;
     }
@@ -896,9 +930,7 @@ ipcMain.handle(
     });
     if (selection.canceled || !selection.filePaths.length)
       return { canceled: true, attachments: [] };
-    return {
-      canceled: false,
-      attachments: await askLedgerService.ingestAttachments(
+    const attachments = await askLedgerService.ingestAttachments(
         payload.workspaceId,
         payload.conversationId,
         selection.filePaths,
@@ -906,7 +938,19 @@ ipcMain.handle(
           count: typeof payload.existingCount === 'number' ? payload.existingCount : 0,
           sizeBytes: typeof payload.existingSizeBytes === 'number' ? payload.existingSizeBytes : 0,
         }
-      ),
+      );
+    let localFiles: Awaited<ReturnType<LocalContextLibrary['importFiles']>> = [];
+    if (typeof payload.ownerUserId === 'string' && payload.ownerUserId.trim()) {
+      try {
+        localFiles = await localContextLibrary.importFiles(selection.filePaths, payload.ownerUserId, payload.workspaceId);
+      } catch (error) {
+        console.warn('[local-context] Ask Ledger attachment was not promoted to Files & links', error instanceof Error ? error.message : error);
+      }
+    }
+    return {
+      canceled: false,
+      attachments: attachments.map((attachment, index) => ({ ...attachment, localFileId: localFiles[index]?.id })),
+      localFiles,
     };
   }
 );
@@ -939,9 +983,34 @@ ipcMain.handle(
 
 const LOCAL_CONTEXT_TARGET_TYPES = new Set(['ask_session', 'note', 'project', 'event', 'reminder']);
 
+ipcMain.handle('local-ask-session:list', async (_event, payload: { userId?: unknown; workspaceId?: unknown; limit?: unknown }) => {
+  if (typeof payload?.userId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalAskLedgerSessionStoreError('Account and workspace are required.');
+  return { sessions: await localAskLedgerSessionStore.list(payload.userId, payload.workspaceId, typeof payload.limit === 'number' ? payload.limit : 20) };
+});
+
+ipcMain.handle('local-ask-session:get', async (_event, payload: { userId?: unknown; workspaceId?: unknown; sessionId?: unknown }) => {
+  if (typeof payload?.userId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.sessionId !== 'string') throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
+  return { session: await localAskLedgerSessionStore.get(payload.sessionId, payload.userId, payload.workspaceId) };
+});
+
+ipcMain.handle('local-ask-session:save', async (_event, payload: { session?: unknown }) => {
+  if (!payload?.session || typeof payload.session !== 'object') throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
+  return { session: await localAskLedgerSessionStore.save(payload.session as import('../src/types/localAskLedgerSession.ts').LocalAskLedgerSession) };
+});
+
+ipcMain.handle('local-ask-session:delete', async (_event, payload: { userId?: unknown; workspaceId?: unknown; sessionId?: unknown }) => {
+  if (typeof payload?.userId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.sessionId !== 'string') throw new LocalAskLedgerSessionStoreError('A local Ask Ledger session is required.');
+  return { removed: await localAskLedgerSessionStore.remove(payload.sessionId, payload.userId, payload.workspaceId) };
+});
+
 ipcMain.handle('local-context:list', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
   if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalContextLibraryError('Account and workspace are required.');
   return localContextLibrary.summary(payload.ownerUserId, payload.workspaceId);
+});
+
+ipcMain.handle('local-context:cleanup-expired', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; retentionDays?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || (payload.retentionDays !== undefined && typeof payload.retentionDays !== 'number')) throw new LocalContextLibraryError('Account and workspace are required.');
+  return { removed: await localContextLibrary.cleanupExpired(payload.ownerUserId, payload.workspaceId, payload.retentionDays) };
 });
 
 ipcMain.handle('local-context:import', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
@@ -1030,12 +1099,13 @@ const sanitizeAskLedgerHandoff = (value: unknown) => {
 
 ipcMain.handle(
   'ask-ledger:start',
-  (
+  async (
     event,
     payload: {
       requestId?: unknown;
       question?: unknown;
       workspaceId?: unknown;
+      ownerUserId?: unknown;
       documents?: unknown;
       lexicalResults?: unknown;
       conversation?: unknown;
@@ -1062,7 +1132,7 @@ ipcMain.handle(
       throw new Error('Ask Ledger workspace is required.');
     if (!Array.isArray(payload.documents) || !Array.isArray(payload.lexicalResults))
       throw new Error('Ask Ledger retrieval context is invalid.');
-    const documents = payload.documents.filter(
+    let documents = payload.documents.filter(
       (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object'
     );
     if (
@@ -1071,6 +1141,10 @@ ipcMain.handle(
       )
     )
       throw new Error('Ask Ledger context workspace mismatch.');
+    if (typeof payload.ownerUserId === 'string' && payload.ownerUserId.trim()) {
+      const localDocuments = await localContextLibrary.contextDocuments(payload.ownerUserId, payload.workspaceId);
+      documents = [...documents, ...localDocuments];
+    }
     const builtinSkill =
       payload.skillId === undefined ? undefined : getAskLedgerSkill(payload.skillId);
     const customPayload =
@@ -3014,6 +3088,7 @@ const pendingTabDetaches = new Map<
     target: BrowserWindow | null;
     session: DetachedTabSession;
     resolve: (success: boolean) => void;
+    timeout?: NodeJS.Timeout;
   }
 >();
 let workspaceModuleWin: BrowserWindow | null = null;
@@ -8415,22 +8490,6 @@ function recordWorkspaceRoute(route: WorkspaceModuleRoute) {
 // Electron close tombstone in the same identity space so a late route update
 // for Notes Home (or a project view) cannot reopen the tab with different
 // focus metadata.
-function workspaceTabRouteKey(route: WorkspaceModuleRoute) {
-  if (route.kind === 'new-tab') return `new-tab|${route.focusContext ?? 'default'}`;
-  switch (route.kind) {
-    case 'notes':
-      return route.focusNoteId ? `notes|note|${route.focusNoteId}` : 'notes|home';
-    case 'projects':
-      return route.focusProjectId ? `projects|project|${route.focusProjectId}` : 'projects|home';
-    case 'circle':
-      return 'circle';
-    case 'teams':
-      return 'teams';
-    default:
-      return route.kind;
-  }
-}
-
 function isSameWorkspaceRoute(a: WorkspaceModuleRoute | null, b: WorkspaceModuleRoute) {
   return (
     a?.kind === b.kind &&
@@ -8897,6 +8956,7 @@ function openModuleWindow(
       detachedWindows.delete(detachedRecord.id);
       for (const [transferId, pending] of pendingTabDetaches) {
         if (pending.target === moduleWin) {
+          if (pending.timeout) clearTimeout(pending.timeout);
           pendingTabDetaches.delete(transferId);
           pending.resolve(false);
         }
@@ -10201,12 +10261,14 @@ ipcMain.handle(
     const transferId = randomUUID();
 
     const success = await new Promise<boolean>((resolve) => {
-      pendingTabDetaches.set(transferId, {
+      const pendingTransfer = {
         source,
         target: null,
         session: { ...session, tabId: transferId },
         resolve,
-      });
+        timeout: undefined as NodeJS.Timeout | undefined,
+      };
+      pendingTabDetaches.set(transferId, pendingTransfer);
       try {
         openModuleWindow(
           session.module,
@@ -10231,7 +10293,7 @@ ipcMain.handle(
           return;
         }
         pending.target = record.win;
-        setTimeout(() => {
+        pendingTransfer.timeout = setTimeout(() => {
           const stillPending = pendingTabDetaches.get(transferId);
           if (!stillPending) return;
           pendingTabDetaches.delete(transferId);
@@ -10239,6 +10301,7 @@ ipcMain.handle(
           resolve(false);
         }, 15000);
       } catch {
+        if (pendingTransfer.timeout) clearTimeout(pendingTransfer.timeout);
         pendingTabDetaches.delete(transferId);
         resolve(false);
       }
@@ -10252,7 +10315,15 @@ ipcMain.handle('window:confirm-tab-detach', (event, transferId: unknown) => {
   if (typeof transferId !== 'string') return false;
   const target = BrowserWindow.fromWebContents(event.sender);
   const pending = pendingTabDetaches.get(transferId);
-  if (!target || !pending || pending.target !== target) return false;
+  if (
+    !target ||
+    target.isDestroyed() ||
+    !pending ||
+    pending.target !== target ||
+    !pending.source ||
+    pending.source.isDestroyed()
+  ) return false;
+  if (pending.timeout) clearTimeout(pending.timeout);
   pendingTabDetaches.delete(transferId);
   pending.resolve(true);
   return true;

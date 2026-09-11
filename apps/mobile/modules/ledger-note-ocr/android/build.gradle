@@ -15,6 +15,7 @@ android {
 }
 
 dependencies {
+  implementation 'com.google.mediapipe:tasks-genai:0.10.35'
   implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.21.1'
   implementation 'com.quickbirdstudios:opencv:4.5.3'
   implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'

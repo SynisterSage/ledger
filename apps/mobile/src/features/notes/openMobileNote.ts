@@ -6,6 +6,7 @@ type NoteRouteParams = {
   focusSegmentId?: string;
   focusNodeId?: string;
   focus?: 'title' | 'editor' | 'none';
+  scanText?: '1';
 };
 
 type MobileRouter = {

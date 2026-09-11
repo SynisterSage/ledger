@@ -111,6 +111,7 @@ import type { NotesHomeTemplate, NotesHomeUpcomingMeeting } from './NotesHome';
 import { createNotesHomeAskContext } from './notesHomeAskContext';
 import { LinkedDesignsSection } from '../ExternalEmbeds/LinkedDesignsSection';
 import { RelatedContextList } from '../Common/RelatedContextList';
+import { LocalContextLinks } from '../Common/LocalContextLinks';
 import { LensCache } from '../../features/lens/lensCache';
 import type {
   MeetingNoteMetadata,
@@ -2710,11 +2711,18 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [exportNoteIds, setExportNoteIds] = useState<string[] | null>(null);
   const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
   const [showCloseGuardModal, setShowCloseGuardModal] = useState(false);
+  const pendingTabCloseApprovalRef = useRef<(() => void) | null>(null);
   const [noteOcrResult, setNoteOcrResult] = useState<NoteOcrResult | null>(null);
   const [noteOcrText, setNoteOcrText] = useState('');
   const [noteOcrError, setNoteOcrError] = useState<string | null>(null);
   const [isNoteOcrLoading, setIsNoteOcrLoading] = useState(false);
   const [isNoteOcrOpen, setIsNoteOcrOpen] = useState(false);
+  const [noteOcrStage, setNoteOcrStage] = useState<'selecting' | 'preparing' | 'converting' | 'recognizing' | 'complete' | null>(null);
+  const [noteOcrVisionAvailable, setNoteOcrVisionAvailable] = useState(true);
+  const [noteOcrVisionDownloading, setNoteOcrVisionDownloading] = useState(false);
+  const [noteOcrVisionProgress, setNoteOcrVisionProgress] = useState(0);
+  const [noteOcrVisionTotalBytes, setNoteOcrVisionTotalBytes] = useState<number | undefined>();
+  const noteOcrRequestIdRef = useRef<string | null>(null);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isRestoringVersionId, setIsRestoringVersionId] = useState<string | null>(null);
   const [noteVersions, setNoteVersions] = useState<NoteVersion[]>([]);
@@ -7367,6 +7375,55 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     void window.desktopWindow?.closeModule('notes');
   }, [isDirty, showSavingIndicator]);
 
+  useEffect(() => {
+    const handleTabCloseRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        route?: { kind?: string; focusNoteId?: string | null };
+        handled?: boolean;
+        approve?: () => void;
+      }>).detail;
+      if (
+        !detail?.route ||
+        detail.route.kind !== 'notes' ||
+        (detail.route.focusNoteId ?? null) !== (selectedNoteIdRef.current ?? null) ||
+        typeof detail.approve !== 'function'
+      ) {
+        return;
+      }
+
+      detail.handled = true;
+      pendingTabCloseApprovalRef.current = detail.approve;
+      if (showSavingIndicator || isDirty) {
+        setShowCloseGuardModal(true);
+        return;
+      }
+      const approve = pendingTabCloseApprovalRef.current;
+      pendingTabCloseApprovalRef.current = null;
+      approve?.();
+    };
+
+    window.addEventListener('ledger:tab-close-requested', handleTabCloseRequest);
+    return () => window.removeEventListener('ledger:tab-close-requested', handleTabCloseRequest);
+  }, [isDirty, showSavingIndicator]);
+
+  useEffect(() => {
+    const handleTabDetachRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        route?: { kind?: string; focusNoteId?: string | null };
+        blocked?: boolean;
+      }>).detail;
+      if (
+        !detail?.route ||
+        detail.route.kind !== 'notes' ||
+        (detail.route.focusNoteId ?? null) !== (selectedNoteIdRef.current ?? null)
+      ) return;
+      if (showSavingIndicator || isDirty) detail.blocked = true;
+    };
+
+    window.addEventListener('ledger:tab-detach-requested', handleTabDetachRequest);
+    return () => window.removeEventListener('ledger:tab-detach-requested', handleTabDetachRequest);
+  }, [isDirty, showSavingIndicator]);
+
   const runAutoCorrectSpelling = useCallback(async () => {
     if (draftMode === 'mind_map') return;
 
@@ -7410,6 +7467,26 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setNoteOcrResult(null);
     setNoteOcrText('');
     setNoteOcrError(null);
+    setNoteOcrStage(null);
+    noteOcrRequestIdRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!window.noteOcr?.onProgress) return;
+    return window.noteOcr.onProgress(({ requestId, stage }) => {
+      if (!requestId || requestId !== noteOcrRequestIdRef.current) return;
+      setNoteOcrStage(stage);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!window.noteOcr?.onVisionProgress) return;
+    return window.noteOcr.onVisionProgress((status) => {
+      setNoteOcrVisionAvailable(status.available);
+      setNoteOcrVisionDownloading(status.downloading);
+      setNoteOcrVisionProgress(status.progressPercent);
+      setNoteOcrVisionTotalBytes(status.totalBytes);
+    });
   }, []);
 
   const scanTextFromImage = useCallback(async () => {
@@ -7422,26 +7499,61 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setIsInspectorActionsOpen(false);
     setIsNoteOcrOpen(true);
     setIsNoteOcrLoading(true);
+    setNoteOcrStage('selecting');
     setNoteOcrResult(null);
     setNoteOcrText('');
     setNoteOcrError(null);
     try {
+      const visionStatus = await window.noteOcr.visionStatus?.() as { available?: boolean; totalBytes?: number; progressPercent?: number } | undefined;
+      setNoteOcrVisionAvailable(visionStatus?.available ?? false);
+      setNoteOcrVisionTotalBytes(visionStatus?.totalBytes);
+      if (!visionStatus?.available) {
+        setNoteOcrError('Ledger Vision is required for reliable image transcription on desktop.');
+        return;
+      }
       const selected = await window.noteOcr.selectImage();
       if (selected.canceled || !selected.imagePath) {
         closeNoteOcrReview();
         return;
       }
-      const rawResult = await window.noteOcr.recognize({ imagePath: selected.imagePath, noteId, mode: 'handwriting' });
+      const requestId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ocr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      noteOcrRequestIdRef.current = requestId;
+      setNoteOcrStage('preparing');
+      const rawResult = await window.noteOcr.recognize({ imagePath: selected.imagePath, noteId, mode: 'handwriting', requestId });
       const result = parseNoteOcrResult(rawResult);
       if (!result) throw new Error('Local OCR returned an invalid result.');
       setNoteOcrResult(result);
       setNoteOcrText(result.text || result.lines.map((line) => line.text).join('\n'));
+      setNoteOcrStage('complete');
     } catch (error) {
       setNoteOcrError(error instanceof Error ? error.message : 'Could not read text from this image.');
     } finally {
       setIsNoteOcrLoading(false);
     }
   }, [closeNoteOcrReview]);
+
+  const installNoteOcrVision = useCallback(async () => {
+    if (!window.noteOcr?.downloadVisionModel) return;
+    setNoteOcrVisionDownloading(true);
+    setNoteOcrError(null);
+    try {
+      const result = await window.noteOcr.downloadVisionModel() as { available?: boolean; progressPercent?: number; totalBytes?: number };
+      setNoteOcrVisionAvailable(Boolean(result?.available));
+      setNoteOcrVisionProgress(result?.progressPercent ?? 100);
+      setNoteOcrVisionTotalBytes(result?.totalBytes);
+      if (!result?.available) setNoteOcrError('Ledger Vision could not be installed.');
+      else setNoteOcrError(null);
+    } catch (error) {
+      setNoteOcrError(error instanceof Error ? error.message : 'Ledger Vision could not be installed.');
+    } finally {
+      setNoteOcrVisionDownloading(false);
+    }
+  }, []);
+
+  const cancelNoteOcrVisionDownload = useCallback(() => {
+    void window.noteOcr?.cancelVisionModelDownload?.();
+    setNoteOcrVisionDownloading(false);
+  }, []);
 
   const insertNoteOcrText = useCallback(() => {
     const noteId = selectedNoteIdRef.current;
@@ -7451,7 +7563,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
       detail: {
         noteId,
         result: noteOcrResult
-          ? { ...noteOcrResult, text }
+          ? { ...noteOcrResult, text, ...(text === noteOcrResult.text.trim() ? {} : { blocks: undefined }) }
           : { text, lines: text.split(/\n+/).map((line) => ({ text: line })), engine: 'paddleocr' },
       },
     }));
@@ -8709,14 +8821,20 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         onCancel={() => setShowCloseGuardModal(false)}
         onCloseWithoutSaving={() => {
           setShowCloseGuardModal(false);
-          void window.desktopWindow?.closeModule('notes');
+          const approve = pendingTabCloseApprovalRef.current;
+          pendingTabCloseApprovalRef.current = null;
+          if (approve) approve();
+          else void window.desktopWindow?.closeModule('notes');
         }}
         onRetrySaveAndClose={() => {
           void (async () => {
             const saved = await flushAutosave();
             if (!saved && isDirty) return;
             setShowCloseGuardModal(false);
-            void window.desktopWindow?.closeModule('notes');
+            const approve = pendingTabCloseApprovalRef.current;
+            pendingTabCloseApprovalRef.current = null;
+            if (approve) approve();
+            else void window.desktopWindow?.closeModule('notes');
           })();
         }}
       />
@@ -9887,6 +10005,17 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                               className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
                             >
                               Rename
+                            </button>
+                            <button
+                              type="button"
+                              disabled={draftMode === 'mind_map'}
+                              onClick={() => {
+                                setIsNoteActionsOpen(false);
+                                void scanTextFromImage();
+                              }}
+                              className="w-full rounded-lg px-2.5 py-1.5 text-left text-sm text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-not-allowed disabled:text-[var(--ledger-text-muted)]"
+                            >
+                              Scan text from image
                             </button>
                             <button
                               disabled={draftMode === 'mind_map'}
@@ -11164,6 +11293,10 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                     refreshKey={relatedContextRefreshKey}
                     className="border-t border-[color:var(--ledger-border-subtle)] pt-4"
                   />
+                ) : null}
+
+                {selectedNote && activeWorkspaceId ? (
+                  <LocalContextLinks workspaceId={activeWorkspaceId} targetType="note" targetId={selectedNote.id} />
                 ) : null}
 
                 {isMeetingNote && (
@@ -12486,8 +12619,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         <NoteOcrReviewModal
           result={noteOcrResult}
           isLoading={isNoteOcrLoading}
+          stage={noteOcrStage}
           error={noteOcrError}
           text={noteOcrText}
+          visionAvailable={noteOcrVisionAvailable}
+          visionDownloading={noteOcrVisionDownloading}
+          visionProgress={noteOcrVisionProgress}
+          visionTotalBytes={noteOcrVisionTotalBytes}
+          onInstallVision={installNoteOcrVision}
+          onCancelVisionDownload={cancelNoteOcrVisionDownload}
           onTextChange={setNoteOcrText}
           onClose={closeNoteOcrReview}
           onInsert={insertNoteOcrText}
