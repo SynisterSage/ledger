@@ -880,7 +880,12 @@ export const AskLedgerPanel = ({ workspaceId, resetKey, initialSession, initialC
     setAttachmentError(null);
     setAttachmentIndexing(true);
     try {
-      const result = await window.askLedger.selectAttachments({ workspaceId, conversationId: conversationIdRef.current, ownerUserId: user?.id, existingCount: files.length, existingSizeBytes }) as { attachments?: AskLedgerAttachment[] };
+      let localRetention: 'conversation_only' | '30_days' | 'until_removed' = 'until_removed';
+      try {
+        const storedRetention = window.localStorage.getItem('ledger.local-ask.retention');
+        if (storedRetention === 'conversation_only' || storedRetention === '30_days') localRetention = storedRetention;
+      } catch {}
+      const result = await window.askLedger.selectAttachments({ workspaceId, conversationId: conversationIdRef.current, ownerUserId: user?.id, localRetention, existingCount: files.length, existingSizeBytes }) as { attachments?: AskLedgerAttachment[] };
       const attachments = Array.isArray(result?.attachments) ? result.attachments.filter((attachment) => attachment?.id) : [];
       const failed = attachments.find((attachment) => attachment.status === 'failed' || attachment.status === 'unsupported');
       if (failed) setAttachmentError(failed.error || `Couldn't read ${failed.name}.`);

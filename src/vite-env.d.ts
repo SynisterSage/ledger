@@ -274,6 +274,7 @@ interface Window {
       workspaceId: string;
       conversationId: string;
       ownerUserId?: string;
+      localRetention?: 'conversation_only' | '30_days' | 'until_removed';
       existingCount?: number;
       existingSizeBytes?: number;
     }) => Promise<unknown>;

@@ -93,7 +93,7 @@ export class LocalContextLibrary {
     return record;
   }
 
-  async importFiles(paths: string[], ownerUserId: string, workspaceId: string): Promise<LocalContextFile[]> {
+  async importFiles(paths: string[], ownerUserId: string, workspaceId: string, options?: { expiresAt?: string }): Promise<LocalContextFile[]> {
     if (!ownerUserId.trim() || !workspaceId.trim()) throw new LocalContextLibraryError('Account and workspace are required.');
     if (!paths.length) return [];
     await this.ensureRoot();
@@ -140,6 +140,7 @@ export class LocalContextLibrary {
         relativePath,
         createdAt: timestamp,
         updatedAt: timestamp,
+        expiresAt: options?.expiresAt,
         links: [],
       };
       try {
@@ -259,7 +260,7 @@ export class LocalContextLibrary {
     if (retentionDays === undefined) return 0;
     const cutoff = Date.now() - retentionDays * 86_400_000;
     const records = await this.list(ownerUserId, workspaceId);
-    const expired = records.filter((record) => Date.parse(record.lastUsedAt ?? record.updatedAt ?? record.createdAt) < cutoff);
+    const expired = records.filter((record) => (record.expiresAt ? Date.parse(record.expiresAt) <= Date.now() : retentionDays !== undefined && Date.parse(record.lastUsedAt ?? record.updatedAt ?? record.createdAt) < cutoff));
     await Promise.all(expired.map((record) => this.remove(record.id, ownerUserId, workspaceId)));
     return expired.length;
   }

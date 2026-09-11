@@ -124,6 +124,7 @@ type UserPreferences = {
 };
 
 type LocalFileRetention = 'until_removed' | '30_days' | '90_days' | '1_year';
+type LocalAskRetention = 'conversation_only' | '30_days' | 'until_removed';
 
 type NotificationPreferences = {
   desktopEnabled: boolean;
@@ -1181,6 +1182,12 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       return value === '30_days' || value === '90_days' || value === '1_year' ? value : 'until_removed';
     } catch { return 'until_removed'; }
   });
+  const [localAskRetention, setLocalAskRetention] = useState<LocalAskRetention>(() => {
+    try {
+      const value = window.localStorage.getItem('ledger.local-ask.retention');
+      return value === 'conversation_only' || value === '30_days' ? value : 'until_removed';
+    } catch { return 'until_removed'; }
+  });
   const [localStorageUsage, setLocalStorageUsage] = useState<{ fileCount: number; totalBytes: number } | null>(null);
   const [meetingModelStatus, setMeetingModelStatus] = useState<{
     installed?: boolean;
@@ -1231,6 +1238,9 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   useEffect(() => {
     try { localStorage.setItem('ledger.local-files.retention', localFileRetention); } catch {}
   }, [localFileRetention]);
+  useEffect(() => {
+    try { localStorage.setItem('ledger.local-ask.retention', localAskRetention); } catch {}
+  }, [localAskRetention]);
   useEffect(() => {
     const localContext = window.localContext;
     if (activeSection !== 'data_privacy' || !user?.id || !activeWorkspaceId || !localContext) {
@@ -4577,6 +4587,13 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                             <option value="30_days">30 days after last use</option>
                             <option value="90_days">90 days after last use</option>
                             <option value="1_year">1 year after last use</option>
+                          </select>
+                        </SettingsRow>
+                        <SettingsRow label="Keep Ask Ledger uploads" help="Choose whether direct Ask uploads become reusable Files & links items.">
+                          <select value={localAskRetention} onChange={(event) => setLocalAskRetention(event.target.value as LocalAskRetention)} className={preferenceSelectClassName} style={selectChevronStyle}>
+                            <option value="conversation_only">Conversation only</option>
+                            <option value="30_days">Keep for 30 days</option>
+                            <option value="until_removed">Keep until I remove them</option>
                           </select>
                         </SettingsRow>
                         <SettingsRow label="Stored on this device" help="Includes managed local file copies, not connected Drive or Figma content.">

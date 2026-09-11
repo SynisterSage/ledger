@@ -914,6 +914,7 @@ ipcMain.handle(
       workspaceId?: unknown;
       conversationId?: unknown;
       ownerUserId?: unknown;
+      localRetention?: unknown;
       existingCount?: unknown;
       existingSizeBytes?: unknown;
     }
@@ -942,7 +943,12 @@ ipcMain.handle(
     let localFiles: Awaited<ReturnType<LocalContextLibrary['importFiles']>> = [];
     if (typeof payload.ownerUserId === 'string' && payload.ownerUserId.trim()) {
       try {
-        localFiles = await localContextLibrary.importFiles(selection.filePaths, payload.ownerUserId, payload.workspaceId);
+        const localRetention = payload.localRetention === '30_days' ? '30_days' : payload.localRetention === 'conversation_only' ? 'conversation_only' : 'until_removed';
+        if (localRetention !== 'conversation_only') {
+          localFiles = await localContextLibrary.importFiles(selection.filePaths, payload.ownerUserId, payload.workspaceId, {
+            expiresAt: localRetention === '30_days' ? new Date(Date.now() + 30 * 86_400_000).toISOString() : undefined,
+          });
+        }
       } catch (error) {
         console.warn('[local-context] Ask Ledger attachment was not promoted to Files & links', error instanceof Error ? error.message : error);
       }

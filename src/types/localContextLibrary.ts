@@ -31,6 +31,7 @@ export type LocalContextFile = {
   createdAt: string;
   updatedAt: string;
   lastUsedAt?: string;
+  expiresAt?: string;
   links: LocalContextLink[];
 };
 
