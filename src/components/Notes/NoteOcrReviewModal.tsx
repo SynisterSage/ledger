@@ -18,6 +18,9 @@ type Props = {
   visionTotalBytes?: number;
   onInstallVision?: () => void;
   onCancelVisionDownload?: () => void;
+  onChooseImage?: () => void;
+  onMinimize?: () => void;
+  visionInstalled?: boolean;
 };
 
 const stageDetails = {
@@ -33,7 +36,7 @@ const formatBytes = (bytes?: number) => {
   return `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
 };
 
-export const NoteOcrReviewModal = ({ result, isLoading, error, text, stage, onTextChange, onClose, onInsert, visionAvailable = true, visionDownloading = false, visionProgress = 0, visionTotalBytes, onInstallVision, onCancelVisionDownload }: Props) => {
+export const NoteOcrReviewModal = ({ result, isLoading, error, text, stage, onTextChange, onClose, onInsert, visionAvailable = true, visionDownloading = false, visionProgress = 0, visionTotalBytes, onInstallVision, onCancelVisionDownload, onChooseImage, onMinimize, visionInstalled = false }: Props) => {
   const progress = stage ? stageDetails[stage] : stageDetails.preparing;
   return (
   <ModalOverlay
@@ -52,7 +55,10 @@ export const NoteOcrReviewModal = ({ result, isLoading, error, text, stage, onTe
           <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">Review the local transcription before inserting it into this note.</p>
         </div>
       </div>
-      <ModalCloseButton onClick={onClose} ariaLabel="Close OCR review" />
+      <div className="flex shrink-0 items-center gap-1">
+        {onMinimize && <button type="button" onClick={onMinimize} aria-label="Minimize OCR download" className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><span className="text-lg leading-none">−</span></button>}
+        <ModalCloseButton onClick={onClose} ariaLabel="Close OCR review" />
+      </div>
     </div>
     <div className="space-y-3 px-5 py-4">
       {isLoading ? (
@@ -80,6 +86,12 @@ export const NoteOcrReviewModal = ({ result, isLoading, error, text, stage, onTe
             </div>
           )}
         </div>
+      ) : visionInstalled ? (
+        <div className="space-y-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4">
+          <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Ledger Vision is ready.</p>
+          <p className="text-xs leading-5 text-[var(--ledger-text-muted)]">Choose an image to begin local transcription.</p>
+          {onChooseImage && <button type="button" onClick={onChooseImage} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white">Choose image</button>}
+        </div>
       ) : (
         <>
           <label className="block text-[11px] font-medium text-[var(--ledger-text-muted)]" htmlFor="note-ocr-review-text">Extracted text</label>
@@ -89,7 +101,7 @@ export const NoteOcrReviewModal = ({ result, isLoading, error, text, stage, onTe
       )}
     </div>
     <div className="flex justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
-      <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button>
+      <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">{visionDownloading ? 'Minimize' : 'Cancel'}</button>
       <button type="button" onClick={onInsert} disabled={isLoading || Boolean(error) || !text.trim()} className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45">Insert into note</button>
     </div>
   </ModalOverlay>

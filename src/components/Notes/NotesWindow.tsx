@@ -2722,6 +2722,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [noteOcrVisionDownloading, setNoteOcrVisionDownloading] = useState(false);
   const [noteOcrVisionProgress, setNoteOcrVisionProgress] = useState(0);
   const [noteOcrVisionTotalBytes, setNoteOcrVisionTotalBytes] = useState<number | undefined>();
+  const [noteOcrVisionInstalled, setNoteOcrVisionInstalled] = useState(false);
+  const [noteOcrMinimized, setNoteOcrMinimized] = useState(false);
   const noteOcrRequestIdRef = useRef<string | null>(null);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isRestoringVersionId, setIsRestoringVersionId] = useState<string | null>(null);
@@ -7463,6 +7465,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
   const closeNoteOcrReview = useCallback(() => {
     setIsNoteOcrOpen(false);
+    setNoteOcrMinimized(false);
     setIsNoteOcrLoading(false);
     setNoteOcrResult(null);
     setNoteOcrText('');
@@ -7498,11 +7501,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     }
     setIsInspectorActionsOpen(false);
     setIsNoteOcrOpen(true);
+    setNoteOcrMinimized(false);
     setIsNoteOcrLoading(true);
     setNoteOcrStage('selecting');
     setNoteOcrResult(null);
     setNoteOcrText('');
     setNoteOcrError(null);
+    setNoteOcrVisionInstalled(false);
     try {
       const visionStatus = await window.noteOcr.visionStatus?.() as { available?: boolean; totalBytes?: number; progressPercent?: number } | undefined;
       setNoteOcrVisionAvailable(visionStatus?.available ?? false);
@@ -7535,14 +7540,16 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const installNoteOcrVision = useCallback(async () => {
     if (!window.noteOcr?.downloadVisionModel) return;
     setNoteOcrVisionDownloading(true);
-    setNoteOcrError(null);
     try {
       const result = await window.noteOcr.downloadVisionModel() as { available?: boolean; progressPercent?: number; totalBytes?: number };
       setNoteOcrVisionAvailable(Boolean(result?.available));
       setNoteOcrVisionProgress(result?.progressPercent ?? 100);
       setNoteOcrVisionTotalBytes(result?.totalBytes);
       if (!result?.available) setNoteOcrError('Ledger Vision could not be installed.');
-      else setNoteOcrError(null);
+      else {
+        setNoteOcrError(null);
+        setNoteOcrVisionInstalled(true);
+      }
     } catch (error) {
       setNoteOcrError(error instanceof Error ? error.message : 'Ledger Vision could not be installed.');
     } finally {
@@ -7553,6 +7560,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const cancelNoteOcrVisionDownload = useCallback(() => {
     void window.noteOcr?.cancelVisionModelDownload?.();
     setNoteOcrVisionDownloading(false);
+  }, []);
+
+  const minimizeNoteOcr = useCallback(() => {
+    setIsNoteOcrOpen(false);
+    setNoteOcrMinimized(true);
   }, []);
 
   const insertNoteOcrText = useCallback(() => {
@@ -12626,12 +12638,22 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           visionDownloading={noteOcrVisionDownloading}
           visionProgress={noteOcrVisionProgress}
           visionTotalBytes={noteOcrVisionTotalBytes}
+          visionInstalled={noteOcrVisionInstalled}
           onInstallVision={installNoteOcrVision}
           onCancelVisionDownload={cancelNoteOcrVisionDownload}
+          onChooseImage={scanTextFromImage}
+          onMinimize={noteOcrVisionDownloading ? minimizeNoteOcr : undefined}
           onTextChange={setNoteOcrText}
-          onClose={closeNoteOcrReview}
+          onClose={noteOcrVisionDownloading ? minimizeNoteOcr : closeNoteOcrReview}
           onInsert={insertNoteOcrText}
         />
+      )}
+      {noteOcrMinimized && !isNoteOcrOpen && (
+        <div className="fixed bottom-5 right-5 z-9998 w-80 rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-3 shadow-[var(--ledger-shadow)]">
+          <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[var(--ledger-text-primary)]">{noteOcrVisionDownloading ? 'Downloading Ledger Vision' : 'Ledger Vision is ready'}</p><span className="text-xs tabular-nums text-[var(--ledger-text-muted)]">{noteOcrVisionDownloading ? `${noteOcrVisionProgress}%` : '100%'}</span></div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--ledger-border-subtle)]"><div className="h-full rounded-full bg-[var(--ledger-accent)] transition-[width] duration-300" style={{ width: `${noteOcrVisionDownloading ? noteOcrVisionProgress : 100}%` }} /></div>
+          <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => { setIsNoteOcrOpen(true); setNoteOcrMinimized(false); }} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Show</button>{noteOcrVisionDownloading && <button type="button" onClick={cancelNoteOcrVisionDownload} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button>}</div>
+        </div>
       )}
 
       <NotesSelectionComposerModal

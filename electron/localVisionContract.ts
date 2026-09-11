@@ -1,5 +1,7 @@
 import { parseNoteOcrResult, type NoteOcrResult } from '../packages/note-ocr-contract/index.ts';
 
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object';
+
 export type LocalVisionImage = {
   /** PNG or JPEG bytes encoded for the local multimodal chat endpoint. */
   dataBase64: string;
@@ -40,9 +42,36 @@ const extractJsonObject = (value: string): string | null => {
  */
 export const parseLocalVisionResponse = (value: string, durationMs?: number): NoteOcrResult | null => {
   const json = extractJsonObject(value);
-  if (!json) return null;
+  if (!json) {
+    const text = value.trim();
+    if (!text || /^```(?:json)?$/i.test(text) || text.startsWith('{')) return null;
+    if (/^(?:I cannot|I can't|Unable to|I am unable to)\b/i.test(text)) return null;
+    return {
+      text,
+      lines: text.split(/\r?\n/).map((line) => ({ text: line })),
+      engine: 'local-vision',
+      ...(durationMs === undefined ? {} : { durationMs }),
+    };
+  }
   try {
     const parsed = JSON.parse(json) as Record<string, unknown>;
+    // Some multimodal checkpoints add confidence metadata to unclear regions
+    // even when the prompt asks for strings. Normalize that harmless variant
+    // before applying the shared OCR contract validator.
+    if (Array.isArray(parsed.unclearRegions)) {
+      parsed.unclearRegions = parsed.unclearRegions.flatMap((region) => {
+        if (typeof region === 'string') return [region];
+        if (isRecord(region) && typeof region.region === 'string') return [region.region];
+        return [];
+      });
+    }
+    if (Array.isArray(parsed.blocks)) {
+      parsed.blocks = parsed.blocks.map((block) => {
+        if (!isRecord(block) || block.type === 'todo' || block.checked !== false) return block;
+        const { checked: _checked, ...withoutChecked } = block;
+        return withoutChecked;
+      });
+    }
     return parseNoteOcrResult({
       ...parsed,
       engine: 'local-vision',
