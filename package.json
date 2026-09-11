@@ -129,19 +129,6 @@
     "vite-plugin-electron-renderer": "^0.14.5"
   },
   "main": "dist-electron/main.js",
-  "build": {
-    "extraResources": [
-      {
-        "from": "native/local-ocr-runtime",
-        "to": "local-ocr-runtime",
-        "filter": [
-          "darwin-arm64/paddleocr/**",
-          "win32-x64/paddleocr.exe",
-          "win32-x64/paddleocr/**"
-        ]
-      }
-    ]
-  },
   "optionalDependencies": {
     "electron-acrylic-window": "^0.5.11"
   },

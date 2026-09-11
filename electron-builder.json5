@@ -27,6 +27,17 @@
     output: 'release/${version}',
   },
   files: ['dist', 'dist-electron', 'public'],
+  extraResources: [
+    {
+      from: 'native/local-ocr-runtime',
+      to: 'local-ocr-runtime',
+      filter: [
+        'darwin-arm64/paddleocr/**',
+        'win32-x64/paddleocr.exe',
+        'win32-x64/paddleocr/**',
+      ],
+    },
+  ],
   mac: {
     target: ['dmg'],
     identity: 'ALEXANDER RAY FERGUSON (CAY3N8J725)',
