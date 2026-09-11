@@ -13,7 +13,7 @@
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:extension": "npm --prefix apps/browser-extension run dev",
     "build": "npm run build:apple-calendar && tsc -p tsconfig.json && vite build && electron-builder",
-    "build:windows": "npm run build:apple-calendar && tsc -p tsconfig.json && vite build && electron-builder --win",
+    "build:windows": "npm run build:apple-calendar && tsc -p tsconfig.json && vite build && electron-builder --win --config.forceCodeSigning=false --config.win.signAndEditExecutable=false",
     "verify:local-ai-release": "node --env-file=.env.local scripts/verify-local-ai-release.mjs",
     "benchmark:local-ai": "node --experimental-strip-types scripts/run-local-ai-benchmark.mjs",
     "benchmark:note-ocr": "node scripts/note-ocr-benchmark.mjs",
