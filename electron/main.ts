@@ -2223,14 +2223,26 @@ ipcMain.handle('ask-ledger:ai-provider-remove-key', (_event, provider: unknown) 
 ipcMain.handle('ask-ledger:ai-provider-test', (_event, provider: unknown) => aiProviderService.testConnection(provider as AIProvider));
 ipcMain.handle('ask-ledger:ai-provider-models', (_event, provider: unknown) => aiProviderService.listModels(provider as AIProvider));
 ipcMain.handle('ask-ledger:ai-provider-selected-model', (_event, provider: unknown) => aiProviderKeyStore.selectedModel(provider as AIProvider));
-ipcMain.handle('ask-ledger:ai-provider-select-model', (_event, payload: unknown) => {
-  const value = payload && typeof payload === 'object' ? payload as { provider?: unknown; model?: unknown } : {};
-  return aiProviderKeyStore.setSelectedModel(value.provider as AIProvider, typeof value.model === 'string' ? value.model : '');
-});
 ipcMain.handle('ask-ledger:ai-provider-selected', () => aiProviderKeyStore.selectedProvider());
 ipcMain.handle('ask-ledger:ai-provider-cloud-consent', () => aiProviderKeyStore.cloudDataConsent());
-ipcMain.handle('ask-ledger:ai-provider-set-cloud-consent', (_event, enabled: unknown) => aiProviderKeyStore.setCloudDataConsent(enabled === true));
-ipcMain.handle('ask-ledger:ai-provider-select', (_event, provider: unknown) => aiProviderKeyStore.setSelectedProvider(provider as 'local' | AIProvider));
+const broadcastAIProviderState = () => {
+  const provider = aiProviderKeyStore.selectedProvider();
+  const state = {
+    provider,
+    cloudConsent: aiProviderKeyStore.cloudDataConsent(),
+    model: provider === 'local' ? null : aiProviderKeyStore.selectedModel(provider),
+  };
+  BrowserWindow.getAllWindows().forEach((window) => { if (!window.isDestroyed()) window.webContents.send('ask-ledger:ai-provider-state', state); });
+  return state;
+};
+ipcMain.handle('ask-ledger:ai-provider-select-model', (_event, payload: unknown) => {
+  const value = payload && typeof payload === 'object' ? payload as { provider?: unknown; model?: unknown } : {};
+  const selected = aiProviderKeyStore.setSelectedModel(value.provider as AIProvider, typeof value.model === 'string' ? value.model : '');
+  broadcastAIProviderState();
+  return selected;
+});
+ipcMain.handle('ask-ledger:ai-provider-select', (_event, provider: unknown) => { const selected = aiProviderKeyStore.setSelectedProvider(provider as 'local' | AIProvider); broadcastAIProviderState(); return selected; });
+ipcMain.handle('ask-ledger:ai-provider-set-cloud-consent', (_event, enabled: unknown) => { const consent = aiProviderKeyStore.setCloudDataConsent(enabled === true); broadcastAIProviderState(); return consent; });
 ipcMain.handle('ask-ledger:local-ai-hardware', () => localAIAssets.hardware());
 ipcMain.handle('ask-ledger:local-ai-capability', () => localAICapabilityService.getCapability());
 ipcMain.handle('ask-ledger:local-ai-acknowledge-tier', (_event, tier: unknown) =>

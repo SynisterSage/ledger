@@ -7,7 +7,7 @@ import { LEGACY_MINISTRAL_MODEL_ID, LEGACY_POWERFUL_MODEL_ID, LocalAIAssetManage
 import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision, type ReasoningMode, type ReasoningRequestSignals } from './localAIReasoningPolicy.ts';
 import { resolveAskLedgerModelRoute, type AskLedgerModelRoutingSignals, type AskLedgerModelRoute } from './askLedgerModelRouting.ts';
 import type { AskLedgerPerformanceTrace } from './askLedgerPerformance.ts';
-import type { CloudAIProvider } from './cloudAIProvider';
+import { CloudAIError, type CloudAIProvider } from './cloudAIProvider.ts';
 import type { AIProviderKeyStore } from './aiProviderKeyStore';
 
 export type LocalAIErrorCode =
@@ -633,7 +633,7 @@ export class LocalAIService {
       .catch((error) => {
           const localError = controller.signal.aborted
             ? new LocalAIError('cancelled', 'Generation cancelled.', { cause: error })
-            : error instanceof LocalAIError
+            : error instanceof LocalAIError || error instanceof CloudAIError
             ? error
             : new LocalAIError('runtime_exited', readErrorMessage(error), { cause: error });
           if (localError.code === 'cancelled') request.performance?.mark('fetchAborted');
@@ -674,6 +674,10 @@ export class LocalAIService {
 
   getRequestedGenerationTier(): GenerationTier {
     return this.assets.getRequestedGenerationTier();
+  }
+
+  getSelectedAIProvider(): 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' {
+    return this.providerKeys?.selectedProvider() ?? 'local';
   }
 
   getMeetingRecapGenerationTier(): 'balanced' | 'fast' {

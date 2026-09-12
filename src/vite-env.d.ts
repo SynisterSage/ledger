@@ -408,6 +408,7 @@ interface Window {
     getAIProviderCloudConsent: () => Promise<boolean>;
     setAIProviderCloudConsent: (enabled: boolean) => Promise<boolean>;
     setSelectedAIProvider: (provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity') => Promise<unknown>;
+    onAIProviderState?: (listener: (state: { provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'; cloudConsent: boolean; model: string | null }) => void) => () => void;
     localAIHardware: () => Promise<unknown>;
     localAICapability: () => Promise<unknown>;
     acknowledgeLocalAITier: (tier: 'fast' | 'balanced') => Promise<unknown>;

@@ -512,10 +512,10 @@ const localAIErrorMessage = (code?: string, detail?: string) => {
   if (code === 'cancelled') return 'Generation cancelled.';
   if (code === 'runtime_start_failed' || code === 'runtime_exited') {
     return detail?.trim()
-      ? `Local AI could not start: ${detail.trim()}`
-      : 'Local AI could not start. Try again.';
+      ? `AI provider could not respond: ${detail.trim()}`
+      : 'AI provider could not respond. Try again.';
   }
-  if (code === 'request_timeout') return 'Local AI took too long to respond. Try again.';
+  if (code === 'request_timeout') return detail?.trim() || 'AI provider took too long to respond. Try again.';
   if (code === 'retrieval_failed') {
     const safeDetail = detail?.trim();
     return safeDetail
@@ -1203,8 +1203,9 @@ export const AskLedgerPanel = ({
     failure?: unknown;
   } | null>(null);
   const [localAICapability, setLocalAICapability] = useState<LocalAICapabilityView | null>(null);
-  const [activeAIProvider, setActiveAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'>('local');
-  const [activeAIModel, setActiveAIModel] = useState<string>('');
+  const [selectedAIProvider, setSelectedAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'>('local');
+  const [selectedAIProviderModel, setSelectedAIProviderModel] = useState('');
+  const [selectedAIProviderModels, setSelectedAIProviderModels] = useState<string[]>([]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tierSwitchError, setTierSwitchError] = useState<string | null>(null);
   const [switchingTier, setSwitchingTier] = useState<GenerationTier | null>(null);
@@ -1352,17 +1353,40 @@ export const AskLedgerPanel = ({
   };
 
   useEffect(() => {
-    const refreshAIProvider = async () => {
+    let disposed = false;
+    const loadProvider = async (state?: { provider: string; model: string | null }) => {
       const askLedger = window.askLedger;
       if (!askLedger?.getSelectedAIProvider) return;
-      const provider = await askLedger.getSelectedAIProvider();
+      const provider = state?.provider ?? await askLedger.getSelectedAIProvider();
       if (provider !== 'local' && provider !== 'openai' && provider !== 'anthropic' && provider !== 'google' && provider !== 'perplexity') return;
-      setActiveAIProvider(provider);
-      if (provider !== 'local' && askLedger.getSelectedAIProviderModel) setActiveAIModel(await askLedger.getSelectedAIProviderModel(provider));
-      else setActiveAIModel('');
+      if (disposed) return;
+      setSelectedAIProvider(provider);
+      if (provider !== 'local' && askLedger.getSelectedAIProviderModel) {
+        const selectedModel = state?.model ?? await askLedger.getSelectedAIProviderModel(provider);
+        if (disposed) return;
+        setSelectedAIProviderModel(selectedModel);
+        if (askLedger.listAIProviderModels) {
+          const result = await askLedger.listAIProviderModels(provider) as { models?: unknown[] };
+          if (disposed) return;
+          setSelectedAIProviderModels(Array.isArray(result?.models) ? result.models.filter((model): model is string => typeof model === 'string') : []);
+        }
+      } else { setSelectedAIProviderModel(''); setSelectedAIProviderModels([]); }
     };
-    void refreshAIProvider();
+    void loadProvider();
+    const unsubscribe = window.askLedger?.onAIProviderState?.((state) => { void loadProvider(state); });
+    return () => { disposed = true; unsubscribe?.(); };
   }, []);
+
+  const selectComposerAIModel = async (model: string) => {
+    if (selectedAIProvider === 'local' || !window.askLedger?.setSelectedAIProviderModel) return;
+    try {
+      await window.askLedger.setSelectedAIProviderModel({ provider: selectedAIProvider, model });
+      setSelectedAIProviderModel(model);
+      setAdvancedOpen(false);
+    } catch {
+      // Keep the current model selected if the secure preference cannot be saved.
+    }
+  };
 
   useEffect(() => {
     if (!attachmentMenuOpen) return undefined;
@@ -2050,14 +2074,14 @@ export const AskLedgerPanel = ({
             (currentState.status === 'streaming' || currentState.status === 'submitting') &&
             partialResponse.answer.trim()
           ) {
-            const timedOut = value.error?.code === 'request_timeout';
             const partialMessage: AskLedgerMessage = {
               id: newAskLedgerMessageId(),
               role: 'assistant',
               content: partialResponse.answer.trim(),
               createdAt: new Date().toISOString(),
               sources: partialResponse.sources,
-              ...(timedOut ? {} : { interrupted: true }),
+              // A provider/runtime failure is not a user interruption. Keep
+              // the partial answer readable without showing “Chat interrupted”.
               activity: { durationMs: liveActivityDurationMs, steps: activityStepsRef.current },
             };
             const nextMessages = [...messagesRef.current, partialMessage];
@@ -3697,7 +3721,7 @@ export const AskLedgerPanel = ({
           )}
           {state.status === 'error' && (
             <article className="max-w-[640px] text-sm text-[var(--ledger-text-muted)]" role="alert">
-              <p>Ledger couldn’t answer this question.</p>
+              <p>{state.status === 'error' ? state.message : 'Ledger couldn’t answer this question.'}</p>
               <button
                 type="button"
                 onClick={retryLastQuestion}
@@ -4088,10 +4112,6 @@ export const AskLedgerPanel = ({
                 document.documentElement
               )}
           </div>
-          <div className="mb-1 flex items-center gap-1 px-1 text-[10px] text-[var(--ledger-text-muted)]" title={activeAIProvider === 'local' ? 'Runs on this device.' : 'Uses your connected provider and may send relevant context.'}>
-            <span className={`h-1.5 w-1.5 rounded-full ${activeAIProvider === 'local' ? 'bg-emerald-500' : 'bg-[var(--ledger-accent)]'}`} />
-            <span>{activeAIProvider === 'local' ? 'Local Ledger AI' : `${activeAIProvider === 'openai' ? 'OpenAI' : activeAIProvider === 'anthropic' ? 'Anthropic' : activeAIProvider === 'google' ? 'Google Gemini' : 'Perplexity'} · ${activeAIModel || 'connected model'}`}</span>
-          </div>
           <div className="flex items-center gap-1">
             {downloadMinimized && downloadTier && downloadPhase === 'downloading' && (
               <button
@@ -4280,7 +4300,7 @@ export const AskLedgerPanel = ({
                   className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-60"
                 >
                   <SlidersHorizontal size={13} />
-                  <span>{generationModeLabels[generationMode]}</span>
+                  <span>{selectedAIProvider === 'local' ? generationModeLabels[generationMode] : (selectedAIProviderModel || (selectedAIProvider === 'google' ? 'Gemini' : selectedAIProvider === 'perplexity' ? 'Perplexity' : selectedAIProvider === 'openai' ? 'OpenAI' : 'Anthropic'))}</span>
                 </button>
                 {advancedOpen && (
                   <div
@@ -4302,7 +4322,7 @@ export const AskLedgerPanel = ({
                         />
                       )}
                     </div>
-                    <div className="mt-2 space-y-0.5" role="radiogroup" aria-label="Response mode">
+                    {selectedAIProvider !== 'local' ? <div className="mt-2 text-xs text-[var(--ledger-text-secondary)]"><p className="mb-1 px-2.5 font-medium text-[var(--ledger-text-primary)]">Cloud models</p><div className="max-h-56 space-y-0.5 overflow-y-auto" role="listbox" aria-label="Cloud models">{selectedAIProviderModels.length ? selectedAIProviderModels.map((model) => <button key={model} type="button" role="option" aria-selected={selectedAIProviderModel === model} onClick={() => void selectComposerAIModel(model)} className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs transition hover:bg-[var(--ledger-surface-hover)] ${selectedAIProviderModel === model ? 'bg-[var(--ledger-surface-hover)] font-medium text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}><span className="min-w-0 flex-1 truncate">{model}</span>{selectedAIProviderModel === model && <span className="ml-2 text-[10px] text-[var(--ledger-accent)]">Selected</span>}</button>) : <p className="px-2.5 py-2 text-[10px] text-[var(--ledger-text-muted)]">No models available. Check the provider connection in Settings.</p>}</div></div> : <div className="mt-2 space-y-0.5" role="radiogroup" aria-label="Response mode">
                       {generationModeOrder.map((mode) => {
                         const tier = mode === 'thinking' ? 'balanced' : mode;
                         const model = modelForTier(tier);
@@ -4366,11 +4386,11 @@ export const AskLedgerPanel = ({
                           </button>
                         );
                       })}
-                    </div>
+                    </div>}
                     <span className="sr-only" aria-live="polite">
                       {tierSwitchInProgress
                         ? 'Switching response mode…'
-                        : `${generationModeLabels[generationMode]} selected`}
+                      : selectedAIProvider === 'local' ? `${generationModeLabels[generationMode]} selected` : `${selectedAIProviderModel || 'Cloud model'} selected`}
                     </span>
                     {tierSwitchError && (
                       <p className="mt-2 text-[11px] text-[var(--ledger-danger)]" role="alert">

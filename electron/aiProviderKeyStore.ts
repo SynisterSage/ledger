@@ -21,7 +21,7 @@ type StoredProviderKey = {
 type StoredKeysFile = Partial<Record<AIProvider, StoredProviderKey>> & { selectedProvider?: 'local' | AIProvider; cloudDataConsent?: boolean };
 const defaultModelFor = (provider: AIProvider) => provider === 'openai' ? 'gpt-5-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'google' ? 'gemini-2.5-flash' : 'sonar-pro';
 
-const isProvider = (value: unknown): value is AIProvider => value === 'openai' || value === 'anthropic';
+const isProvider = (value: unknown): value is AIProvider => value === 'openai' || value === 'anthropic' || value === 'google' || value === 'perplexity';
 
 /**
  * Stores BYOK credentials in the operating system-backed Electron safeStorage
@@ -46,7 +46,7 @@ export class AIProviderKeyStore {
 
   selectedProvider(): 'local' | AIProvider {
     const selected = this.read().selectedProvider;
-    return selected === 'openai' || selected === 'anthropic' ? selected : 'local';
+    return isProvider(selected) ? selected : 'local';
   }
 
   setSelectedProvider(provider: 'local' | AIProvider) {

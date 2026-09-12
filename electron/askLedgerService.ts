@@ -844,7 +844,9 @@ export class AskLedgerService {
         return;
       }
       performanceTrace.set('existingGroundedContextReusable', reusableContextAvailable);
-      const generationTimeoutMs = skill
+      const generationTimeoutMs = (this.localAI.getSelectedAIProvider?.() ?? 'local') !== 'local'
+        ? 120_000
+        : skill
         ? 120_000
         : route.executionMode === 'conversation'
         ? 30_000
@@ -919,6 +921,7 @@ export class AskLedgerService {
         answerDepth: route.answerDepth,
         depthExplicit: route.depthExplicit,
         modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier,
+        provider: this.localAI.getSelectedAIProvider?.() ?? 'local',
       });
       routingMs = Date.now() - routingStartedAt;
       if (!shouldRetrieve) {

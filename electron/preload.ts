@@ -1168,6 +1168,11 @@ contextBridge.exposeInMainWorld('askLedger', {
   setSelectedAIProvider(provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity') {
     return ipcRenderer.invoke('ask-ledger:ai-provider-select', provider);
   },
+  onAIProviderState(listener: (state: { provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'; cloudConsent: boolean; model: string | null }) => void) {
+    const handler = (_event: unknown, state: { provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'; cloudConsent: boolean; model: string | null }) => listener(state);
+    ipcRenderer.on('ask-ledger:ai-provider-state', handler);
+    return () => ipcRenderer.removeListener('ask-ledger:ai-provider-state', handler);
+  },
   localAIHardware() {
     return ipcRenderer.invoke('ask-ledger:local-ai-hardware');
   },
