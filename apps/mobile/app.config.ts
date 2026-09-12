@@ -25,8 +25,8 @@ const config: ExpoConfig = {
     },
     infoPlist: {
       NSSiriUsageDescription: 'Allow Ledger to capture tasks, reminders, notes, and events with Siri.',
-      NSPhotoLibraryUsageDescription: 'Allow Ledger to attach photos to notes.',
-      NSCameraUsageDescription: 'Allow Ledger to take photos for notes.',
+      NSPhotoLibraryUsageDescription: 'Allow Ledger to choose an image for a note or read its text on this device.',
+      NSCameraUsageDescription: 'Allow Ledger to take a note photo for on-device text recognition.',
       NSCalendarsUsageDescription: 'Allow Ledger to show your selected Apple calendars alongside your Ledger work.',
       NSCalendarsFullAccessUsageDescription: 'Allow Ledger to show your selected Apple calendars alongside your Ledger work.',
       NSLocalNetworkUsageDescription:
@@ -84,8 +84,8 @@ const config: ExpoConfig = {
     [
       'expo-image-picker',
       {
-        photosPermission: 'Allow Ledger to attach photos to notes.',
-        cameraPermission: 'Allow Ledger to take photos for notes.',
+        photosPermission: 'Allow Ledger to choose an image for a note or read its text on this device.',
+        cameraPermission: 'Allow Ledger to take a note photo for on-device text recognition.',
         microphonePermission: false,
       },
     ],

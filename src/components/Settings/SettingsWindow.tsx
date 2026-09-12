@@ -340,6 +340,13 @@ type LocalAIModelSettingsRow = {
   progressPercent?: number | null;
 };
 
+type AIProviderConnectionSettings = {
+  provider: 'openai' | 'anthropic' | 'google' | 'perplexity';
+  connected: boolean;
+  keySuffix: string | null;
+  updatedAt: string | null;
+};
+
 const localAISettingsTierLabels: Record<LocalAIModelSettingsRow['tier'], string> = {
   fast: 'Fast',
   balanced: 'Balanced',
@@ -1038,6 +1045,15 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [localAISelectedTier, setLocalAISelectedTier] = useState<LocalAIModelSettingsRow['tier']>('fast');
   const [localAIModelAction, setLocalAIModelAction] = useState<string | null>(null);
   const [localAIModelError, setLocalAIModelError] = useState<string | null>(null);
+  const [aiProviderConnections, setAIProviderConnections] = useState<AIProviderConnectionSettings[]>([]);
+  const [aiProviderKeys, setAIProviderKeys] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity', string>>({ openai: '', anthropic: '', google: '', perplexity: '' });
+  const [aiProviderAction, setAIProviderAction] = useState<string | null>(null);
+  const [aiProviderError, setAIProviderError] = useState<string | null>(null);
+  const [aiProviderTestStatus, setAIProviderTestStatus] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity', string>>({ openai: '', anthropic: '', google: '', perplexity: '' });
+  const [selectedAIProvider, setSelectedAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'>('local');
+  const [aiProviderCloudConsent, setAIProviderCloudConsent] = useState(false);
+  const [aiProviderModels, setAIProviderModels] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity', string[]>>({ openai: [], anthropic: [], google: [], perplexity: [] });
+  const [aiProviderSelectedModels, setAIProviderSelectedModels] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity', string>>({ openai: '', anthropic: '', google: '', perplexity: '' });
   const cancelledLocalAIDownloadsRef = useRef(new Set<string>());
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
@@ -1096,9 +1112,107 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     }
   };
 
+  const loadAIProviderConnections = async () => {
+    const askLedger = window.askLedger;
+    if (!askLedger?.getAIProviderConnections || !askLedger.getSelectedAIProvider) return;
+    try {
+      const result = await askLedger.getAIProviderConnections();
+      setAIProviderConnections(Array.isArray(result) ? result as AIProviderConnectionSettings[] : []);
+      const selected = await askLedger.getSelectedAIProvider();
+      if (selected === 'local' || selected === 'openai' || selected === 'anthropic' || selected === 'google' || selected === 'perplexity') setSelectedAIProvider(selected);
+      setAIProviderCloudConsent(await askLedger.getAIProviderCloudConsent());
+      const connected = (Array.isArray(result) ? result as AIProviderConnectionSettings[] : []).filter((item) => item.connected);
+      for (const item of connected) {
+        const modelsResult = await askLedger.listAIProviderModels(item.provider) as { models?: unknown[] };
+        const models = Array.isArray(modelsResult?.models) ? modelsResult.models.filter((model): model is string => typeof model === 'string') : [];
+        const chosen = await askLedger.getSelectedAIProviderModel(item.provider);
+        setAIProviderModels((current) => ({ ...current, [item.provider]: models }));
+        setAIProviderSelectedModels((current) => ({ ...current, [item.provider]: chosen || models[0] || '' }));
+      }
+    } catch (error) {
+      setAIProviderError(error instanceof Error ? error.message : 'Could not load AI provider connections.');
+    }
+  };
+
+  const selectAIProvider = async (provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity') => {
+    const askLedger = window.askLedger;
+    if (!askLedger?.setSelectedAIProvider) return;
+    setAIProviderError(null);
+    try {
+      await askLedger.setSelectedAIProvider(provider);
+      setSelectedAIProvider(provider);
+    } catch (error) {
+      setAIProviderError(error instanceof Error ? error.message : 'Could not select the AI provider.');
+    }
+  };
+
+  const toggleAIProviderCloudConsent = async (enabled: boolean) => {
+    const askLedger = window.askLedger;
+    if (!askLedger?.setAIProviderCloudConsent) return;
+    try {
+      const next = await askLedger.setAIProviderCloudConsent(enabled);
+      setAIProviderCloudConsent(next);
+      if (!next) setSelectedAIProvider('local');
+    } catch (error) { setAIProviderError(error instanceof Error ? error.message : 'Could not update cloud AI consent.'); }
+  };
+
+  const selectAIProviderModel = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity', model: string) => {
+    try {
+      await window.askLedger?.setSelectedAIProviderModel({ provider, model });
+      setAIProviderSelectedModels((current) => ({ ...current, [provider]: model }));
+    } catch (error) { setAIProviderError(error instanceof Error ? error.message : 'Could not select the AI model.'); }
+  };
+
+  const saveAIProviderKey = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity') => {
+    const apiKey = aiProviderKeys[provider].trim();
+    if (!apiKey || !window.askLedger?.setAIProviderKey) return;
+    setAIProviderAction(`save:${provider}`);
+    setAIProviderError(null);
+    try {
+      await window.askLedger.setAIProviderKey({ provider, apiKey });
+      setAIProviderKeys((current) => ({ ...current, [provider]: '' }));
+      await loadAIProviderConnections();
+    } catch (error) {
+      setAIProviderError(error instanceof Error ? error.message : 'Could not save the API key.');
+    } finally {
+      setAIProviderAction(null);
+    }
+  };
+
+  const removeAIProviderKey = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity') => {
+    if (!window.askLedger?.removeAIProviderKey) return;
+    setAIProviderAction(`remove:${provider}`);
+    setAIProviderError(null);
+    try {
+      await window.askLedger.removeAIProviderKey(provider);
+      await loadAIProviderConnections();
+    } catch (error) {
+      setAIProviderError(error instanceof Error ? error.message : 'Could not remove the API key.');
+    } finally {
+      setAIProviderAction(null);
+    }
+  };
+
+  const testAIProvider = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity') => {
+    if (!window.askLedger?.testAIProvider) return;
+    setAIProviderAction(`test:${provider}`);
+    setAIProviderError(null);
+    setAIProviderTestStatus((current) => ({ ...current, [provider]: '' }));
+    try {
+      const result = await window.askLedger.testAIProvider(provider) as { ok?: boolean; modelCount?: number; error?: string };
+      if (!result?.ok) throw new Error(result?.error || 'The provider connection could not be verified.');
+      setAIProviderTestStatus((current) => ({ ...current, [provider]: `Connection verified${typeof result.modelCount === 'number' ? ` · ${result.modelCount} models available` : ''}` }));
+    } catch (error) {
+      setAIProviderError(error instanceof Error ? error.message : 'Could not test the provider connection.');
+    } finally {
+      setAIProviderAction(null);
+    }
+  };
+
   useEffect(() => {
     if (activeSection !== 'local_ai') return;
     void loadLocalAIModels();
+    void loadAIProviderConnections();
     const unsubscribe = window.askLedger?.onLocalAIStatus(() => { void loadLocalAIModels(); });
     return () => unsubscribe?.();
   }, [activeSection]);
@@ -4546,6 +4660,13 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                     <h2 id="settings-data-privacy" className={settingsTheme.pageTitle}>Data & privacy</h2>
                     <p className={settingsTheme.pageSubtitle}>Control how Ledger stores and removes workspace data.</p>
                     <p className={settingsTheme.pageStatus} role="status">Changes save automatically where a control is available.</p>
+                    <p className={settingsTheme.help + ' max-w-180'}>
+                      Local files, capture data, downloaded models, and meeting audio are handled on this device. Notes,
+                      transcripts, and other content you save to a workspace may sync to that workspace. Read the{' '}
+                      <a href="https://ledgerworkspace.com/privacy" target="_blank" rel="noreferrer" className="font-medium text-[var(--ledger-accent)] hover:underline">Privacy Policy</a>
+                      {' '}and{' '}
+                      <a href="https://ledgerworkspace.com/terms" target="_blank" rel="noreferrer" className="font-medium text-[var(--ledger-accent)] hover:underline">Terms</a>.
+                    </p>
                   </div>
                   <div className="mt-8 flex flex-col gap-8">
                     <section className={settingsTheme.sectionShell} aria-labelledby="data-retention">
@@ -5919,6 +6040,43 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                   <h2 id="settings-local-ai" className={settingsTheme.pageTitle}>Local AI</h2>
                   <p className={settingsTheme.pageSubtitle + ' mt-1'}>Manage the generation models Ledger uses on this device.</p>
                   <p className={settingsTheme.pageStatus + ' mt-2'}>Fast is the required baseline. Balanced and Thinking use the same Qwen3 4B model when the stronger model is installed; Thinking changes reasoning mode, not the download.</p>
+
+                  <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="settings-byok">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 id="settings-byok" className={settingsTheme.sectionTitle}>Bring your own provider</h3>
+                        <p className={settingsTheme.sectionStatus + ' mt-1'}>Optional API keys let Ledger use a provider’s cloud models for text generation. Keys stay in this device’s secure storage and are never uploaded to Ledger.</p>
+                      </div>
+                      <Globe2 size={16} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" aria-hidden="true" />
+                    </div>
+                    <div className={settingsTheme.sectionRows + ' mt-4'}>
+                      <div className="flex items-center gap-3 px-4 py-3">
+                        <div className="min-w-0 flex-1"><p className={settingsTheme.rowLabel}>Default text generation provider</p><p className={settingsTheme.rowMuted}>Used by Ask Ledger while cloud routing is enabled.</p></div>
+                        <select value={selectedAIProvider} onChange={(event) => void selectAIProvider(event.target.value as 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity')} className="h-8 rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)]" aria-label="Default text generation provider">
+                          <option value="local">Local Ledger AI</option>
+                          {aiProviderConnections.some((item) => item.provider === 'openai' && item.connected) && <option value="openai">OpenAI</option>}
+                          {aiProviderConnections.some((item) => item.provider === 'google' && item.connected) && <option value="google">Google Gemini</option>}
+                          {aiProviderConnections.some((item) => item.provider === 'perplexity' && item.connected) && <option value="perplexity">Perplexity</option>}
+                          {aiProviderConnections.some((item) => item.provider === 'anthropic' && item.connected) && <option value="anthropic">Anthropic</option>}
+                        </select>
+                      </div>
+                      <label className="flex items-start gap-3 border-t border-[var(--ledger-border-subtle)] px-4 py-3 text-xs text-[var(--ledger-text-secondary)]"><input type="checkbox" checked={aiProviderCloudConsent} onChange={(event) => void toggleAIProviderCloudConsent(event.target.checked)} className="mt-0.5 accent-[var(--ledger-accent)]" /><span><span className="block font-medium text-[var(--ledger-text-primary)]">Allow cloud AI context</span><span className="block mt-0.5">When enabled, Ledger may send only the relevant context for a request to your selected provider. Automatic cloud generation remains off unless separately enabled.</span></span></label>
+                      {(['openai', 'anthropic', 'google', 'perplexity'] as const).map((provider) => {
+                        const connection = aiProviderConnections.find((item) => item.provider === provider);
+                        const busy = aiProviderAction === `save:${provider}` || aiProviderAction === `remove:${provider}`;
+                        const label = provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : provider === 'google' ? 'Google Gemini' : 'Perplexity';
+                        return <div key={provider} className="flex flex-wrap items-center gap-3 px-4 py-4">
+                          <div className="min-w-0 flex-1">
+                            <p className={settingsTheme.rowLabel}>{label}</p>
+                            <p className={settingsTheme.rowMuted}>{connection?.connected ? `Connected · key ending in ${connection.keySuffix ?? '••••'}` : 'Not connected'}</p>
+                          </div>
+                          {connection?.connected ? <div className="flex flex-wrap items-center justify-end gap-2">{aiProviderModels[provider].length > 0 && <select value={aiProviderSelectedModels[provider]} onChange={(event) => void selectAIProviderModel(provider, event.target.value)} className="h-8 max-w-[220px] rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)]" aria-label={`${label} model`}><option value="" disabled>Select model</option>{aiProviderModels[provider].map((model) => <option key={model} value={model}>{model}</option>)}</select>}<button type="button" onClick={() => void testAIProvider(provider)} disabled={busy} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{aiProviderAction === `test:${provider}` ? 'Testing…' : 'Test'}</button><button type="button" onClick={() => void removeAIProviderKey(provider)} disabled={busy} className={settingsTheme.dangerButton}>{aiProviderAction === `remove:${provider}` ? 'Removing…' : 'Remove key'}</button></div> : <div className="flex min-w-[280px] flex-1 justify-end gap-2"><input type="password" value={aiProviderKeys[provider]} onChange={(event) => setAIProviderKeys((current) => ({ ...current, [provider]: event.target.value }))} placeholder={`${label} API key`} aria-label={`${label} API key`} className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2.5 text-xs text-[var(--ledger-text-primary)] outline-none focus:border-[var(--ledger-accent)]" autoComplete="off" /><button type="button" onClick={() => void saveAIProviderKey(provider)} disabled={busy || !aiProviderKeys[provider].trim()} className={settingsTheme.controlButtonNeutral + ' rounded-lg'}>{busy ? 'Saving…' : 'Connect'}</button></div>}
+                          {aiProviderTestStatus[provider] && <p className="basis-full text-[11px] text-[var(--ledger-text-secondary)]">{aiProviderTestStatus[provider]}</p>}
+                        </div>;
+                      })}
+                    </div>
+                    {aiProviderError && <p className="mt-3 text-xs text-[var(--ledger-danger)]" role="alert">{aiProviderError}</p>}
+                  </section>
 
                   <section className={settingsTheme.sectionShell + ' mt-6'} aria-labelledby="settings-generation-models">
                     <div className="flex items-start justify-between gap-4">

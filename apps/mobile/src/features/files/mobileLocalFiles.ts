@@ -32,7 +32,17 @@ async function writeManifest(files: MobileLocalFile[], userId: string, workspace
 }
 
 export async function listMobileLocalFiles(userId: string, workspaceId: string) {
-  return readManifest(userId, workspaceId);
+  const files = await readManifest(userId, workspaceId);
+  const accessible = (
+    await Promise.all(
+      files.map(async (file) => {
+        const info = await FileSystem.getInfoAsync(file.uri);
+        return info.exists ? file : null;
+      })
+    )
+  ).filter((file): file is MobileLocalFile => Boolean(file));
+  if (accessible.length !== files.length) await writeManifest(accessible, userId, workspaceId);
+  return accessible;
 }
 
 export async function importMobileLocalFile(
@@ -61,7 +71,12 @@ export async function removeMobileLocalFile(id: string, userId: string, workspac
   const files = await readManifest(userId, workspaceId);
   const file = files.find((item) => item.id === id);
   if (!file) return false;
-  await FileSystem.deleteAsync(file.uri, { idempotent: true });
+  try {
+    await FileSystem.deleteAsync(file.uri, { idempotent: true });
+  } catch {
+    // The manifest is still authoritative for Ledger. A stale/inaccessible
+    // managed copy should not block removing the item from the workspace view.
+  }
   await writeManifest(
     files.filter((item) => item.id !== id),
     userId,

@@ -56,11 +56,11 @@
     <key>NSCalendarsUsageDescription</key>
     <string>Allow Ledger to show your selected Apple calendars alongside your Ledger work.</string>
     <key>NSCameraUsageDescription</key>
-    <string>Allow Ledger to take photos for notes.</string>
+    <string>Allow Ledger to take a note photo for on-device text recognition.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Ledger connects to the local development server on your Mac while running in development.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Allow Ledger to attach photos to notes.</string>
+    <string>Allow Ledger to choose an image for a note or read its text on this device.</string>
     <key>NSSiriUsageDescription</key>
     <string>Allow Ledger to capture tasks, reminders, notes, and events with Siri.</string>
     <key>NSUserActivityTypes</key>

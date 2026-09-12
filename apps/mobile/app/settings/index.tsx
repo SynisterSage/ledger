@@ -525,6 +525,12 @@ export default function SettingsScreen() {
           </Section>
 
           <Section title="Files & links" card>
+            <View style={[styles.settingsNotice, { borderBottomColor: theme.colors.borderSubtle }]}>
+              <AppText variant="meta" style={{ color: theme.colors.textSecondary }}>
+                Files added here stay on this device. Connected links and workspace content may sync. Local copies and
+                OCR results can be removed from Files &amp; links.
+              </AppText>
+            </View>
             <SettingsRow
               title="On this device"
               subtitle="Private files used with Ledger stay on this phone."
@@ -943,6 +949,12 @@ const styles = {
     gap: 12,
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 0.5,
+  },
+  settingsNotice: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
     paddingBottom: 12,
     borderBottomWidth: 0.5,
   },

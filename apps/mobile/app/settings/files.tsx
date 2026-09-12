@@ -17,6 +17,10 @@ import {
 import { useAuthState } from '@/store/sessionStore';
 import { useWorkspaceState } from '@/store/workspaceStore';
 import { getMobileConnectedLinks, type MobileConnectedLink } from '@/api/files';
+import {
+  hasIntegrationProviderIcon,
+  IntegrationProviderIcon,
+} from '@/features/projects/IntegrationProviderIcon';
 
 export default function FilesScreen() {
   const router = useRouter();
@@ -27,20 +31,27 @@ export default function FilesScreen() {
   const workspaceId = workspaceState.selectedWorkspaceId ?? '';
   const [files, setFiles] = useState<MobileLocalFile[]>([]);
   const [links, setLinks] = useState<MobileConnectedLink[]>([]);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    setLoading(true);
     if (!userId || !workspaceId) {
       setFiles([]);
       setLinks([]);
+      setLoading(false);
       return;
     }
-    const [localFiles, connectedLinks] = await Promise.all([
-      listMobileLocalFiles(userId, workspaceId),
-      getMobileConnectedLinks(workspaceId).catch(() => []),
-    ]);
-    setFiles(localFiles);
-    setLinks(connectedLinks);
+    try {
+      const [localFiles, connectedLinks] = await Promise.all([
+        listMobileLocalFiles(userId, workspaceId),
+        getMobileConnectedLinks(workspaceId).catch(() => []),
+      ]);
+      setFiles(localFiles);
+      setLinks(connectedLinks);
+    } finally {
+      setLoading(false);
+    }
   }, [userId, workspaceId]);
   useFocusEffect(
     useCallback(() => {
@@ -74,10 +85,17 @@ export default function FilesScreen() {
       );
       return;
     }
-    await Sharing.shareAsync(file.uri, {
-      mimeType: file.mimeType ?? undefined,
-      dialogTitle: file.name,
-    });
+    try {
+      await Sharing.shareAsync(file.uri, {
+        mimeType: file.mimeType ?? undefined,
+        dialogTitle: file.name,
+      });
+    } catch {
+      Alert.alert(
+        'Could not open file',
+        'This local copy is no longer accessible. Remove it and add the file again.'
+      );
+    }
   };
 
   const deleteFile = (file: MobileLocalFile) =>
@@ -87,8 +105,12 @@ export default function FilesScreen() {
         text: 'Remove',
         style: 'destructive',
         onPress: async () => {
-          if (userId && workspaceId) await removeMobileLocalFile(file.id, userId, workspaceId);
-          await load();
+          try {
+            if (userId && workspaceId) await removeMobileLocalFile(file.id, userId, workspaceId);
+            await load();
+          } catch {
+            Alert.alert('Could not remove file', 'Please try again.');
+          }
         },
       },
     ]);
@@ -143,7 +165,9 @@ export default function FilesScreen() {
             </AppText>
           </Pressable>
         </View>
-        {files.length ? (
+        {loading ? (
+          <FilesLinksSkeleton theme={theme} />
+        ) : files.length ? (
           files.map((file) => (
             <View
               key={file.id}
@@ -209,7 +233,9 @@ export default function FilesScreen() {
       </View>
       <View style={styles.section}>
         <AppText variant="sectionTitle">Connected links</AppText>
-        {links.length ? (
+        {loading ? (
+          <FilesLinksSkeleton theme={theme} />
+        ) : links.length ? (
           links.map((link) => (
             <Pressable
               key={link.id}
@@ -218,17 +244,21 @@ export default function FilesScreen() {
               }
               style={[styles.row, { borderBottomColor: theme.colors.borderSubtle }]}
             >
-              <SymbolView
-                name={{ ios: 'link', android: 'link', web: 'link' }}
-                size={18}
-                tintColor={theme.colors.accent}
-              />
+              {hasIntegrationProviderIcon(link.provider) ? (
+                <IntegrationProviderIcon provider={link.provider} />
+              ) : (
+                <SymbolView
+                  name={{ ios: 'link', android: 'link', web: 'link' }}
+                  size={18}
+                  tintColor={theme.colors.accent}
+                />
+              )}
               <View style={styles.rowCopy}>
                 <AppText variant="body" numberOfLines={1}>
                   {linkTitle(link)}
                 </AppText>
                 <AppText variant="meta" style={{ color: theme.colors.textMuted }}>
-                  {link.provider ?? 'Connected service'}
+                  {providerLabel(link.provider)}
                 </AppText>
               </View>
               <SymbolView
@@ -299,6 +329,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   emptyCopy: { flex: 1, gap: 4 },
+  skeletonGroup: { gap: 10, paddingVertical: 8 },
+  skeletonLine: { height: 12, borderRadius: 6, opacity: 0.65 },
 });
 
 function linkTitle(link: MobileConnectedLink) {
@@ -310,5 +342,31 @@ function linkTitle(link: MobileConnectedLink) {
       metadata.documentName ??
       link.external_type ??
       'Connected link'
+  );
+}
+
+function providerLabel(value?: string | null) {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+  if (normalized.includes('google_drive') || normalized === 'drive') return 'Google Drive';
+  if (normalized.includes('github')) return 'GitHub';
+  if (normalized.includes('figma')) return 'Figma';
+  return normalized
+    ? normalized.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+    : 'Connected service';
+}
+
+function FilesLinksSkeleton({ theme }: { theme: ReturnType<typeof useLedgerTheme> }) {
+  return (
+    <View accessibilityLabel="Loading files and links" style={styles.skeletonGroup}>
+      <View
+        style={[styles.skeletonLine, { backgroundColor: theme.colors.borderSubtle, width: '78%' }]}
+      />
+      <View
+        style={[styles.skeletonLine, { backgroundColor: theme.colors.borderSubtle, width: '58%' }]}
+      />
+    </View>
   );
 }

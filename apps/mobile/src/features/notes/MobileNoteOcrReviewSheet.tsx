@@ -9,7 +9,7 @@ export function MobileNoteOcrReviewSheet({ visible, busy, text, error, onChangeT
   return <AppBottomSheet visible={visible} onClose={onClose} title={<AppText variant="sectionTitle">Scan text from image</AppText>} snapPoints={['64%', '88%']} initialSnapPointIndex={1}>
     <View style={styles.content}>
       {busy ? <View style={styles.loading}><ActivityIndicator color={theme.colors.accent} /><AppText variant="caption">Reading the image on this device…</AppText></View> : error ? <AppText variant="caption" style={{ color: theme.colors.danger }}>{error}</AppText> : <>
-        <AppText variant="caption" style={styles.hint}>Review the transcription before adding it to this note.</AppText>
+        <AppText variant="caption" style={styles.hint}>Text was read on this device. Review it before adding it to this note; only text you insert can sync to your workspace.</AppText>
         <TextInput multiline textAlignVertical="top" value={text} onChangeText={onChangeText} placeholder="No text found" placeholderTextColor={theme.colors.placeholder} style={[styles.input, { color: theme.colors.textPrimary, backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle }]} />
       </>}
       <View style={styles.actions}>

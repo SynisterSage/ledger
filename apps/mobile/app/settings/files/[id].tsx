@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { WebView } from 'react-native-webview';
 import * as FileSystem from 'expo-file-system/legacy';
+import Pdf from 'react-native-pdf';
 
 import { AppText } from '@/components/AppText';
 import { Screen } from '@/components/Screen';
@@ -31,6 +31,7 @@ export default function MobileFileDetailScreen() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     if (!userId || !workspaceId || !id) return;
@@ -58,6 +59,9 @@ export default function MobileFileDetailScreen() {
       canceled = true;
     };
   }, [file]);
+  useEffect(() => {
+    setImageFailed(false);
+  }, [file]);
 
   const saveText = async () => {
     if (!file || !userId || !workspaceId || !isTextLike(file)) return;
@@ -83,10 +87,17 @@ export default function MobileFileDetailScreen() {
       );
       return;
     }
-    await Sharing.shareAsync(file.uri, {
-      mimeType: file.mimeType ?? undefined,
-      dialogTitle: file.name,
-    });
+    try {
+      await Sharing.shareAsync(file.uri, {
+        mimeType: file.mimeType ?? undefined,
+        dialogTitle: file.name,
+      });
+    } catch {
+      Alert.alert(
+        'Could not open file',
+        'This local copy is no longer accessible. Remove it and add the file again.'
+      );
+    }
   };
 
   const removeFile = () => {
@@ -97,8 +108,12 @@ export default function MobileFileDetailScreen() {
         text: 'Remove',
         style: 'destructive',
         onPress: async () => {
-          await removeMobileLocalFile(file.id, userId, workspaceId);
-          router.back();
+          try {
+            await removeMobileLocalFile(file.id, userId, workspaceId);
+            router.back();
+          } catch {
+            Alert.alert('Could not remove file', 'Please try again.');
+          }
         },
       },
     ]);
@@ -149,10 +164,41 @@ export default function MobileFileDetailScreen() {
           { backgroundColor: theme.colors.surfaceMuted, borderColor: theme.colors.borderSubtle },
         ]}
       >
-        {isImage(file) ? (
-          <Image source={{ uri: file.uri }} style={styles.imagePreview} resizeMode="contain" />
+        {isImage(file) && !imageFailed ? (
+          <Image
+            source={{ uri: file.uri }}
+            style={styles.imagePreview}
+            resizeMode="contain"
+            onError={() => setImageFailed(true)}
+          />
+        ) : isImage(file) ? (
+          <View style={styles.pdfFallback}>
+            <SymbolView
+              name={{ ios: 'photo', android: 'broken_image', web: 'broken_image' }}
+              size={34}
+              tintColor={theme.colors.accent}
+            />
+            <AppText variant="bodyStrong">Image preview unavailable</AppText>
+            <AppText
+              variant="caption"
+              style={{ color: theme.colors.textSecondary, textAlign: 'center' }}
+            >
+              Use Open or share to view this image with another app.
+            </AppText>
+          </View>
         ) : isPdf(file) ? (
-          <WebView source={{ uri: file.uri }} style={styles.pdfPreview} originWhitelist={['*']} />
+          <Pdf
+            source={{ uri: file.uri, cache: true }}
+            style={styles.pdfPreview}
+            onError={() =>
+              Alert.alert(
+                'PDF preview unavailable',
+                'Use Open or share to view this PDF with a native viewer.'
+              )
+            }
+            enablePaging
+            fitPolicy={0}
+          />
         ) : textPreview !== null ? (
           <>
             {editing ? (
@@ -288,6 +334,13 @@ const styles = StyleSheet.create({
   },
   imagePreview: { width: '100%', height: 260, borderRadius: 10 },
   pdfPreview: { width: '100%', height: 360, borderRadius: 10, backgroundColor: '#fff' },
+  pdfFallback: {
+    width: '100%',
+    minHeight: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
   textPreview: {
     width: '100%',
     maxHeight: 300,

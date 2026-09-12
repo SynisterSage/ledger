@@ -1203,6 +1203,8 @@ export const AskLedgerPanel = ({
     failure?: unknown;
   } | null>(null);
   const [localAICapability, setLocalAICapability] = useState<LocalAICapabilityView | null>(null);
+  const [activeAIProvider, setActiveAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'>('local');
+  const [activeAIModel, setActiveAIModel] = useState<string>('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [tierSwitchError, setTierSwitchError] = useState<string | null>(null);
   const [switchingTier, setSwitchingTier] = useState<GenerationTier | null>(null);
@@ -1348,6 +1350,19 @@ export const AskLedgerPanel = ({
     setSkillPickerOpen(false);
     inputRef.current?.focus();
   };
+
+  useEffect(() => {
+    const refreshAIProvider = async () => {
+      const askLedger = window.askLedger;
+      if (!askLedger?.getSelectedAIProvider) return;
+      const provider = await askLedger.getSelectedAIProvider();
+      if (provider !== 'local' && provider !== 'openai' && provider !== 'anthropic' && provider !== 'google' && provider !== 'perplexity') return;
+      setActiveAIProvider(provider);
+      if (provider !== 'local' && askLedger.getSelectedAIProviderModel) setActiveAIModel(await askLedger.getSelectedAIProviderModel(provider));
+      else setActiveAIModel('');
+    };
+    void refreshAIProvider();
+  }, []);
 
   useEffect(() => {
     if (!attachmentMenuOpen) return undefined;
@@ -4072,6 +4087,10 @@ export const AskLedgerPanel = ({
                 </div>,
                 document.documentElement
               )}
+          </div>
+          <div className="mb-1 flex items-center gap-1 px-1 text-[10px] text-[var(--ledger-text-muted)]" title={activeAIProvider === 'local' ? 'Runs on this device.' : 'Uses your connected provider and may send relevant context.'}>
+            <span className={`h-1.5 w-1.5 rounded-full ${activeAIProvider === 'local' ? 'bg-emerald-500' : 'bg-[var(--ledger-accent)]'}`} />
+            <span>{activeAIProvider === 'local' ? 'Local Ledger AI' : `${activeAIProvider === 'openai' ? 'OpenAI' : activeAIProvider === 'anthropic' ? 'Anthropic' : activeAIProvider === 'google' ? 'Google Gemini' : 'Perplexity'} · ${activeAIModel || 'connected model'}`}</span>
           </div>
           <div className="flex items-center gap-1">
             {downloadMinimized && downloadTier && downloadPhase === 'downloading' && (

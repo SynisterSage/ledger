@@ -7,6 +7,8 @@ import { LEGACY_MINISTRAL_MODEL_ID, LEGACY_POWERFUL_MODEL_ID, LocalAIAssetManage
 import { applyQwenReasoningControl, resolveGenerationBudgets, resolveReasoningDecision, type ReasoningMode, type ReasoningRequestSignals } from './localAIReasoningPolicy.ts';
 import { resolveAskLedgerModelRoute, type AskLedgerModelRoutingSignals, type AskLedgerModelRoute } from './askLedgerModelRouting.ts';
 import type { AskLedgerPerformanceTrace } from './askLedgerPerformance.ts';
+import type { CloudAIProvider } from './cloudAIProvider';
+import type { AIProviderKeyStore } from './aiProviderKeyStore';
 
 export type LocalAIErrorCode =
   | 'model_missing'
@@ -602,7 +604,7 @@ export class LocalAIService {
   private readonly runtimeStateListeners = new Set<(state: GenerationRuntimeState) => void>();
   private readonly requests = new Map<string, { controller: AbortController; completion: Promise<void>; performance?: AskLedgerPerformanceTrace; started: boolean }>();
 
-  constructor(assets: LocalAIAssetManager, runtimeFactory: (modelId: string) => LocalModelRuntime) {
+  constructor(assets: LocalAIAssetManager, runtimeFactory: (modelId: string) => LocalModelRuntime, private readonly cloud?: CloudAIProvider, private readonly providerKeys?: AIProviderKeyStore) {
     this.assets = assets;
     this.runtimeFactory = runtimeFactory;
     this.runtimeModelId = assets.getSelectedGenerationModel().id;
@@ -621,7 +623,10 @@ export class LocalAIService {
         if (this.switchPromise) await this.switchPromise;
         if (controller.signal.aborted) throw new LocalAIError('cancelled', 'Generation cancelled.');
         requestState.started = true;
-        await this.runtime.stream(request, callbacks, controller.signal, requestId);
+        const selectedProvider = this.providerKeys?.selectedProvider() ?? 'local';
+        if (selectedProvider === 'local') await this.runtime.stream(request, callbacks, controller.signal, requestId);
+        else if (this.cloud) await this.cloud.stream(selectedProvider, request, callbacks, controller.signal, requestId);
+        else throw new LocalAIError('runtime_exited', 'The selected cloud provider is not available.');
         this.loadedModelId = this.runtimeModelId;
         this.switchState = { ...this.switchState, ready: true, failure: null };
       })()
@@ -699,6 +704,9 @@ export class LocalAIService {
       return Promise.reject(new Error('Invalid generation tier.'));
     }
     const normalizedTargetTier: GenerationTier = targetTier === 'powerful' ? 'balanced' : targetTier;
+    if (this.providerKeys?.selectedProvider() !== 'local') {
+      return Promise.resolve({ ok: true, state: 'noop', tier: normalizedTargetTier, modelId: this.providerKeys?.selectedModel(this.providerKeys.selectedProvider() as 'openai' | 'anthropic' | 'google') ?? 'cloud' });
+    }
     // Queue a later request behind the active switch instead of returning the
     // earlier request's result. This keeps rapid Balanced -> Fast interactions
     // deterministic: every requested target is handled, and the last request
@@ -817,7 +825,7 @@ export type GenerationModelSwitchResult =
   | { ok: false; state: 'requires_download'; tier: GenerationTier; modelId: string; expectedSize?: number }
   | { ok: false; state: 'failed'; tier: GenerationTier; modelId: string; error: { code: string; message: string } };
 
-export const createLocalAIService = (assets = new LocalAIAssetManager(), overrides: { contextSize?: number; runtimeArgs?: string[] } = {}) => {
+export const createLocalAIService = (assets = new LocalAIAssetManager(), overrides: { contextSize?: number; runtimeArgs?: string[]; cloud?: CloudAIProvider; providerKeys?: AIProviderKeyStore } = {}) => {
   // Dev Electron restarts can leave an older llama-server alive on the
   // default port. Reusing it silently preserves its old --ctx-size and makes
   // the new runtime configuration ineffective. Use a process-scoped port by
@@ -841,5 +849,5 @@ export const createLocalAIService = (assets = new LocalAIAssetManager(), overrid
       idleTimeoutMs: Number(process.env.LEDGER_LOCAL_AI_IDLE_MS || DEFAULT_LOCAL_AI_IDLE_TIMEOUT_MS),
     });
   };
-  return new LocalAIService(assets, runtimeFactory);
+  return new LocalAIService(assets, runtimeFactory, overrides.cloud, overrides.providerKeys);
 };

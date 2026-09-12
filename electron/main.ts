@@ -42,6 +42,9 @@ import { resolveZoomAccessibilityBridgePath } from './speakerTagsRuntime';
 import { createLocalAIService } from './localAIService';
 import { LocalAIAssetManager } from './localAIAssets';
 import { LocalAICapabilityService } from './localAICapabilityService';
+import { AIProviderKeyStore, type AIProvider } from './aiProviderKeyStore';
+import { AIProviderService } from './aiProviderService';
+import { CloudAIProvider } from './cloudAIProvider';
 import { createAskLedgerService } from './askLedgerService';
 import { LocalContextLibrary, LocalContextLibraryError } from './localContextLibrary.ts';
 import {
@@ -296,7 +299,10 @@ let autoStopTimer: NodeJS.Timeout | null = null;
 let autoStopRequestInFlight = false;
 const localAIAssets = new LocalAIAssetManager();
 const localAICapabilityService = new LocalAICapabilityService();
-const localAIService = createLocalAIService(localAIAssets);
+const aiProviderKeyStore = new AIProviderKeyStore(app.getPath('userData'));
+const aiProviderService = new AIProviderService(aiProviderKeyStore);
+const cloudAIProvider = new CloudAIProvider(aiProviderKeyStore);
+const localAIService = createLocalAIService(localAIAssets, { cloud: cloudAIProvider, providerKeys: aiProviderKeyStore });
 const askLedgerService = createAskLedgerService(
   localAIService,
   localAIAssets,
@@ -2208,6 +2214,23 @@ ipcMain.handle('meeting-prep:generate', async (_event, payload: unknown) => {
 });
 
 ipcMain.handle('ask-ledger:local-ai-status', () => localAIAssets.status());
+ipcMain.handle('ask-ledger:ai-provider-connections', () => aiProviderKeyStore.list());
+ipcMain.handle('ask-ledger:ai-provider-set-key', async (_event, payload: unknown) => {
+  const value = payload && typeof payload === 'object' ? payload as { provider?: unknown; apiKey?: unknown } : {};
+  return aiProviderKeyStore.set(value.provider as AIProvider, typeof value.apiKey === 'string' ? value.apiKey : '');
+});
+ipcMain.handle('ask-ledger:ai-provider-remove-key', (_event, provider: unknown) => aiProviderKeyStore.remove(provider as AIProvider));
+ipcMain.handle('ask-ledger:ai-provider-test', (_event, provider: unknown) => aiProviderService.testConnection(provider as AIProvider));
+ipcMain.handle('ask-ledger:ai-provider-models', (_event, provider: unknown) => aiProviderService.listModels(provider as AIProvider));
+ipcMain.handle('ask-ledger:ai-provider-selected-model', (_event, provider: unknown) => aiProviderKeyStore.selectedModel(provider as AIProvider));
+ipcMain.handle('ask-ledger:ai-provider-select-model', (_event, payload: unknown) => {
+  const value = payload && typeof payload === 'object' ? payload as { provider?: unknown; model?: unknown } : {};
+  return aiProviderKeyStore.setSelectedModel(value.provider as AIProvider, typeof value.model === 'string' ? value.model : '');
+});
+ipcMain.handle('ask-ledger:ai-provider-selected', () => aiProviderKeyStore.selectedProvider());
+ipcMain.handle('ask-ledger:ai-provider-cloud-consent', () => aiProviderKeyStore.cloudDataConsent());
+ipcMain.handle('ask-ledger:ai-provider-set-cloud-consent', (_event, enabled: unknown) => aiProviderKeyStore.setCloudDataConsent(enabled === true));
+ipcMain.handle('ask-ledger:ai-provider-select', (_event, provider: unknown) => aiProviderKeyStore.setSelectedProvider(provider as 'local' | AIProvider));
 ipcMain.handle('ask-ledger:local-ai-hardware', () => localAIAssets.hardware());
 ipcMain.handle('ask-ledger:local-ai-capability', () => localAICapabilityService.getCapability());
 ipcMain.handle('ask-ledger:local-ai-acknowledge-tier', (_event, tier: unknown) =>

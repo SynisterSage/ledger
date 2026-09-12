@@ -1135,6 +1135,39 @@ contextBridge.exposeInMainWorld('askLedger', {
   localAIStatus() {
     return ipcRenderer.invoke('ask-ledger:local-ai-status');
   },
+  getAIProviderConnections() {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-connections');
+  },
+  setAIProviderKey(payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity'; apiKey: string }) {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-set-key', payload);
+  },
+  removeAIProviderKey(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-remove-key', provider);
+  },
+  testAIProvider(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-test', provider);
+  },
+  listAIProviderModels(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-models', provider);
+  },
+  getSelectedAIProviderModel(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-selected-model', provider);
+  },
+  setSelectedAIProviderModel(payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity'; model: string }) {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-select-model', payload);
+  },
+  getSelectedAIProvider() {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-selected');
+  },
+  getAIProviderCloudConsent() {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-cloud-consent');
+  },
+  setAIProviderCloudConsent(enabled: boolean) {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-set-cloud-consent', enabled);
+  },
+  setSelectedAIProvider(provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity') {
+    return ipcRenderer.invoke('ask-ledger:ai-provider-select', provider);
+  },
   localAIHardware() {
     return ipcRenderer.invoke('ask-ledger:local-ai-hardware');
   },

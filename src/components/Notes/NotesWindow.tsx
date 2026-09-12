@@ -1953,6 +1953,55 @@ type MeetingAudioSetupProps = {
   canCaptureMicrophone?: boolean;
 };
 
+const MeetingRecordingConsentModal = ({
+  onConfirm,
+  onClose,
+}: {
+  onConfirm: () => void;
+  onClose: () => void;
+}) => (
+  <ModalOverlay
+    isOpen
+    onClose={onClose}
+    backdropBorderRadius="inherit"
+    disablePortal
+    manageWindowChrome={false}
+    classNameContainer="w-full max-w-[440px] overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-primary)] shadow-[var(--ledger-shadow)]"
+  >
+    <div role="dialog" aria-modal="true" aria-labelledby="meeting-recording-consent-title">
+      <div className="border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
+        <h2 id="meeting-recording-consent-title" className="text-[15px] font-semibold">
+          Before you start recording
+        </h2>
+        <p className="mt-1.5 text-xs leading-5 text-[var(--ledger-text-muted)]">
+          Ledger will capture the selected microphone and/or system audio and may create a local recording and
+          transcript. Notes and transcripts you save may sync to your workspace.
+        </p>
+      </div>
+      <div className="px-5 py-4 text-xs leading-5 text-[var(--ledger-text-secondary)]">
+        Notify participants and obtain any consent required where you are before recording or transcribing other
+        people. You can stop or delete the recording from Meeting Notes.
+      </div>
+      <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg border border-[color:var(--ledger-border-subtle)] px-3 py-2 text-[11px] font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+        >
+          Not now
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-[11px] font-medium text-white hover:brightness-95"
+        >
+          I understand, continue
+        </button>
+      </div>
+    </div>
+  </ModalOverlay>
+);
+
 const MeetingAudioSetup = ({
   permissions,
   devices,
@@ -1988,7 +2037,7 @@ const MeetingAudioSetup = ({
           <div>
             <h2 className="text-[15px] font-semibold">Meeting audio setup</h2>
             <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-              Choose what Ledger should hear. Audio stays on this computer.
+              Choose what Ledger should hear. Audio capture stays on this computer; notes and transcripts you save may sync to your workspace.
             </p>
           </div>
         </div>
@@ -2140,7 +2189,15 @@ const MeetingAudioSetup = ({
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
         <span className="text-[10px] text-[var(--ledger-text-muted)]">
-          Meeting consent may be required in your location.
+          Only record or transcribe people after providing any notice and getting any consent required where you are.
+          <a
+            href="https://ledgerworkspace.com/privacy"
+            target="_blank"
+            rel="noreferrer"
+            className="ml-1 font-medium text-[var(--ledger-accent)] hover:underline"
+          >
+            Privacy details
+          </a>
         </span>
         <div className="flex items-center gap-2">
           {window.meetingAudio && (
@@ -2634,6 +2691,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   });
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isAudioSetupOpen, setIsAudioSetupOpen] = useState(false);
+  const [isRecordingConsentOpen, setIsRecordingConsentOpen] = useState(false);
   const [isAudioBusy, setIsAudioBusy] = useState(false);
   const [testingAudioSource, setTestingAudioSource] = useState<
     'user_microphone' | 'system_audio' | null
@@ -5239,7 +5297,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     }
   }, []);
 
-  const startMeeting = useCallback(async () => {
+  const startMeetingCapture = useCallback(async () => {
     if (!meetingMetadata || !['idle', 'complete'].includes(meetingMetadata.transcription_status)) return;
     if (!window.meetingAudio) {
       setIsAudioSetupOpen(true);
@@ -5353,6 +5411,11 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     transcriptSegments,
     updateMeetingMetadata,
   ]);
+
+  const startMeeting = useCallback(() => {
+    if (!meetingMetadata || !['idle', 'complete'].includes(meetingMetadata.transcription_status)) return;
+    setIsRecordingConsentOpen(true);
+  }, [meetingMetadata]);
 
   const pauseMeeting = useCallback(async () => {
     if (!meetingMetadata || meetingMetadata.transcription_status !== 'recording') return;
@@ -12779,6 +12842,15 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           }}
           isBrowser={platform.kind === 'web'}
           canCaptureMicrophone={platform.capabilities.canCaptureMicrophone}
+        />
+      )}
+      {isRecordingConsentOpen && (
+        <MeetingRecordingConsentModal
+          onClose={() => setIsRecordingConsentOpen(false)}
+          onConfirm={() => {
+            setIsRecordingConsentOpen(false);
+            void startMeetingCapture();
+          }}
         />
       )}
       {isTranscriptionSetupOpen && (

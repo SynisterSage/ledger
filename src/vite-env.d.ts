@@ -397,6 +397,17 @@ interface Window {
       attachmentIds: string[];
     }) => Promise<{ ok: boolean }>;
     localAIStatus: () => Promise<unknown>;
+    getAIProviderConnections: () => Promise<unknown>;
+    setAIProviderKey: (payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity'; apiKey: string }) => Promise<unknown>;
+    removeAIProviderKey: (provider: 'openai' | 'anthropic' | 'google' | 'perplexity') => Promise<unknown>;
+    testAIProvider: (provider: 'openai' | 'anthropic' | 'google' | 'perplexity') => Promise<unknown>;
+    listAIProviderModels: (provider: 'openai' | 'anthropic' | 'google' | 'perplexity') => Promise<unknown>;
+    getSelectedAIProviderModel: (provider: 'openai' | 'anthropic' | 'google' | 'perplexity') => Promise<string>;
+    setSelectedAIProviderModel: (payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity'; model: string }) => Promise<unknown>;
+    getSelectedAIProvider: () => Promise<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'>;
+    getAIProviderCloudConsent: () => Promise<boolean>;
+    setAIProviderCloudConsent: (enabled: boolean) => Promise<boolean>;
+    setSelectedAIProvider: (provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity') => Promise<unknown>;
     localAIHardware: () => Promise<unknown>;
     localAICapability: () => Promise<unknown>;
     acknowledgeLocalAITier: (tier: 'fast' | 'balanced') => Promise<unknown>;

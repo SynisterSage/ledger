@@ -10,7 +10,10 @@ export type MobileConnectedLink = {
 
 export async function getMobileConnectedLinks(workspaceId: string) {
   const result = await mobileRequest<MobileConnectedLink[]>(
-    `/api/external-references?workspaceId=${encodeURIComponent(workspaceId)}`
+    '/api/external-references/search?query=',
+    {
+      headers: { 'X-Workspace-Id': workspaceId },
+    }
   );
   return Array.isArray(result) ? result : [];
 }

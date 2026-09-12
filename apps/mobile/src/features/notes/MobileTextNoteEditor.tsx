@@ -645,7 +645,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
       if (Platform.OS === 'android') {
         const modelStatus = await noteOcrNative.visionModelStatus();
         if (!modelStatus.installed) {
-          const install = await new Promise<boolean>((resolve) => Alert.alert('Install Ledger Vision', 'Android needs the 3.1 GB Gemma 3n model file to read handwriting locally. Choose the downloaded .task file from Files.', [
+          const install = await new Promise<boolean>((resolve) => Alert.alert('Install Ledger Vision', 'Ledger reads this image on your phone. Android needs the 3.1 GB Gemma 3n model file for handwriting recognition; the model stays on this device. Choose the downloaded .task file from Files.', [
             { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
             { text: 'Choose model', onPress: () => resolve(true) },
           ], { cancelable: false }));
@@ -655,7 +655,7 @@ export function MobileTextNoteEditor({ noteId, workspaceId: requestedWorkspaceId
           await noteOcrNative.installVisionModel(picked.assets[0].uri);
         }
       }
-      const source = await new Promise<'camera' | 'library' | null>((resolve) => Alert.alert('Scan note', 'Choose where to get the note image.', [
+      const source = await new Promise<'camera' | 'library' | null>((resolve) => Alert.alert('Scan note on this device', 'Ledger will use the selected image only to extract text on this device. The image is not uploaded by OCR. Only text you review and insert into the note can sync to your workspace.', [
         { text: 'Camera', onPress: () => resolve('camera') },
         { text: 'Photo library', onPress: () => resolve('library') },
         { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
