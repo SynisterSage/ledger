@@ -41,6 +41,22 @@ test('parses Kimi streamed text through its OpenAI-compatible response shape', a
   assert.equal(events.at(-1)?.type, 'done');
 });
 
+test('streams DeepSeek through its OpenAI-compatible endpoint', async () => {
+  const events: any[] = [];
+  const body = 'data: {"choices":[{"delta":{"content":"Hello DeepSeek"}}]}\n\ndata: [DONE]\n\n';
+  const fakeFetch = async (url: string, init?: RequestInit) => {
+    assert.equal(url, 'https://api.deepseek.com/chat/completions');
+    assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer test-secret');
+    const requestBody = JSON.parse(String(init?.body)) as { model: string; stream: boolean };
+    assert.deepEqual(requestBody, { model: 'deepseek-v4-flash', stream: true, messages: [{ role: 'user', content: 'c' }], max_completion_tokens: 512 });
+    return new Response(body, { status: 200 });
+  };
+  const deepseekKeys = { get: () => 'test-secret', selectedModel: () => 'deepseek-v4-flash', cloudDataConsent: () => true } as never;
+  await new CloudAIProvider(deepseekKeys, fakeFetch as never).stream('deepseek', { question: 'q', context: 'c' }, { onEvent: (event) => events.push(event) }, new AbortController().signal, 'deepseek');
+  assert.deepEqual(events.filter((event) => event.type === 'delta').map((event) => event.text), ['Hello DeepSeek']);
+  assert.equal(events.at(-1)?.type, 'done');
+});
+
 test('uses a bounded no-thinking request for Gemini 2.5 Flash and emits its answer', async () => {
   let requestBody: unknown;
   const fakeFetch = async (_url: string, init?: RequestInit) => {

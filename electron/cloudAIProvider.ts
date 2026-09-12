@@ -42,7 +42,7 @@ export class CloudAIProvider {
         : model.startsWith('gemini-3')
           ? { thinkingLevel: 'low' }
           : undefined;
-      const body = provider === 'openai' || provider === 'perplexity' || provider === 'kimi'
+      const body = provider === 'openai' || provider === 'perplexity' || provider === 'kimi' || provider === 'deepseek'
         ? { model, stream: true, messages: [{ role: 'user', content: request.context }], max_completion_tokens: request.generationBudget ?? 512 }
         : provider === 'anthropic'
           ? { model, stream: true, max_tokens: request.generationBudget ?? 512, messages: [{ role: 'user', content: request.context }] }
@@ -55,10 +55,10 @@ export class CloudAIProvider {
             };
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (provider === 'google') headers.accept = 'application/json';
-      if (provider === 'openai' || provider === 'perplexity' || provider === 'kimi') headers.Authorization = `Bearer ${key}`;
+      if (provider === 'openai' || provider === 'perplexity' || provider === 'kimi' || provider === 'deepseek') headers.Authorization = `Bearer ${key}`;
       else if (provider === 'anthropic') { headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; }
       else headers['x-goog-api-key'] = key;
-      const endpoint = provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' : provider === 'google' ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` : provider === 'perplexity' ? 'https://api.perplexity.ai/chat/completions' : 'https://api.moonshot.ai/v1/chat/completions';
+      const endpoint = provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : provider === 'anthropic' ? 'https://api.anthropic.com/v1/messages' : provider === 'google' ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` : provider === 'perplexity' ? 'https://api.perplexity.ai/chat/completions' : provider === 'kimi' ? 'https://api.moonshot.ai/v1/chat/completions' : 'https://api.deepseek.com/chat/completions';
       const response = await this.fetcher(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
       phase = 'reading response body';
       if (!response.ok || !response.body) {
@@ -91,7 +91,7 @@ export class CloudAIProvider {
         try {
           const event = JSON.parse(value) as any;
           finishReason = event.choices?.[0]?.finish_reason ?? event.stop_reason ?? finishReason;
-          const text = provider === 'openai' || provider === 'perplexity' || provider === 'kimi'
+          const text = provider === 'openai' || provider === 'perplexity' || provider === 'kimi' || provider === 'deepseek'
             ? event.choices?.[0]?.delta?.content
             : provider === 'anthropic'
               ? event.delta?.text

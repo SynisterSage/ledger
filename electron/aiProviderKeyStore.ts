@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { safeStorage } from 'electron';
 
-export type AIProvider = 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi';
+export type AIProvider = 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek';
 
 export type AIProviderConnection = {
   provider: AIProvider;
@@ -19,7 +19,7 @@ type StoredProviderKey = {
 };
 
 type StoredKeysFile = Partial<Record<AIProvider, StoredProviderKey>> & { selectedProvider?: 'local' | AIProvider; cloudDataConsent?: boolean };
-const defaultModelFor = (provider: AIProvider) => provider === 'openai' ? 'gpt-5-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'google' ? 'gemini-2.5-flash' : provider === 'perplexity' ? 'sonar-pro' : 'kimi-k2.6';
+const defaultModelFor = (provider: AIProvider) => provider === 'openai' ? 'gpt-5-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'google' ? 'gemini-2.5-flash' : provider === 'perplexity' ? 'sonar-pro' : provider === 'kimi' ? 'kimi-k2.6' : 'deepseek-v4-flash';
 
 const hasSupportedModelName = (provider: AIProvider, model: string) => {
   const normalized = model.replace(/^models\//, '').trim();
@@ -28,10 +28,11 @@ const hasSupportedModelName = (provider: AIProvider, model: string) => {
   if (provider === 'openai') return /^(gpt-|o[1-9]-|chatgpt-)/i.test(normalized) && !/(image|audio|realtime|transcrib|tts)/i.test(normalized);
   if (provider === 'anthropic') return /^claude-/i.test(normalized);
   if (provider === 'perplexity') return /^(sonar|pplx-)/i.test(normalized);
-  return /^kimi-/i.test(normalized);
+  if (provider === 'kimi') return /^kimi-/i.test(normalized);
+  return /^deepseek-/i.test(normalized);
 };
 
-const isProvider = (value: unknown): value is AIProvider => value === 'openai' || value === 'anthropic' || value === 'google' || value === 'perplexity' || value === 'kimi';
+const isProvider = (value: unknown): value is AIProvider => value === 'openai' || value === 'anthropic' || value === 'google' || value === 'perplexity' || value === 'kimi' || value === 'deepseek';
 
 /**
  * Stores BYOK credentials in the operating system-backed Electron safeStorage
@@ -46,7 +47,7 @@ export class AIProviderKeyStore {
 
   list(): AIProviderConnection[] {
     const stored = this.read();
-    return (['openai', 'anthropic', 'google', 'perplexity', 'kimi'] as const).map((provider) => ({
+    return (['openai', 'anthropic', 'google', 'perplexity', 'kimi', 'deepseek'] as const).map((provider) => ({
       provider,
       connected: Boolean(stored[provider]),
       keySuffix: stored[provider]?.keySuffix ?? null,

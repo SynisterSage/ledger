@@ -341,7 +341,7 @@ type LocalAIModelSettingsRow = {
 };
 
 type AIProviderConnectionSettings = {
-  provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi';
+  provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek';
   connected: boolean;
   keySuffix: string | null;
   updatedAt: string | null;
@@ -1046,14 +1046,14 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
   const [localAIModelAction, setLocalAIModelAction] = useState<string | null>(null);
   const [localAIModelError, setLocalAIModelError] = useState<string | null>(null);
   const [aiProviderConnections, setAIProviderConnections] = useState<AIProviderConnectionSettings[]>([]);
-  const [aiProviderKeys, setAIProviderKeys] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi', string>>({ openai: '', anthropic: '', google: '', perplexity: '', kimi: '' });
+  const [aiProviderKeys, setAIProviderKeys] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek', string>>({ openai: '', anthropic: '', google: '', perplexity: '', kimi: '', deepseek: '' });
   const [aiProviderAction, setAIProviderAction] = useState<string | null>(null);
   const [aiProviderError, setAIProviderError] = useState<string | null>(null);
-  const [aiProviderTestStatus, setAIProviderTestStatus] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi', string>>({ openai: '', anthropic: '', google: '', perplexity: '', kimi: '' });
-  const [selectedAIProvider, setSelectedAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi'>('local');
+  const [aiProviderTestStatus, setAIProviderTestStatus] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek', string>>({ openai: '', anthropic: '', google: '', perplexity: '', kimi: '', deepseek: '' });
+  const [selectedAIProvider, setSelectedAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek'>('local');
   const [aiProviderCloudConsent, setAIProviderCloudConsent] = useState(false);
-  const [aiProviderModels, setAIProviderModels] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi', string[]>>({ openai: [], anthropic: [], google: [], perplexity: [], kimi: [] });
-  const [aiProviderSelectedModels, setAIProviderSelectedModels] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi', string>>({ openai: '', anthropic: '', google: '', perplexity: '', kimi: '' });
+  const [aiProviderModels, setAIProviderModels] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek', string[]>>({ openai: [], anthropic: [], google: [], perplexity: [], kimi: [], deepseek: [] });
+  const [aiProviderSelectedModels, setAIProviderSelectedModels] = useState<Record<'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek', string>>({ openai: '', anthropic: '', google: '', perplexity: '', kimi: '', deepseek: '' });
   const cancelledLocalAIDownloadsRef = useRef(new Set<string>());
   const pendingSettingsAnchorRef = useRef<string | null>(null);
 
@@ -1119,7 +1119,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
       const result = await askLedger.getAIProviderConnections();
       setAIProviderConnections(Array.isArray(result) ? result as AIProviderConnectionSettings[] : []);
       const selected = await askLedger.getSelectedAIProvider();
-      if (selected === 'local' || selected === 'openai' || selected === 'anthropic' || selected === 'google' || selected === 'perplexity' || selected === 'kimi') setSelectedAIProvider(selected);
+      if (selected === 'local' || selected === 'openai' || selected === 'anthropic' || selected === 'google' || selected === 'perplexity' || selected === 'kimi' || selected === 'deepseek') setSelectedAIProvider(selected);
       setAIProviderCloudConsent(await askLedger.getAIProviderCloudConsent());
       const connected = (Array.isArray(result) ? result as AIProviderConnectionSettings[] : []).filter((item) => item.connected);
       for (const item of connected) {
@@ -1134,7 +1134,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     }
   };
 
-  const selectAIProvider = async (provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') => {
+  const selectAIProvider = async (provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek') => {
     const askLedger = window.askLedger;
     if (!askLedger?.setSelectedAIProvider) return;
     setAIProviderError(null);
@@ -1156,14 +1156,14 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     } catch (error) { setAIProviderError(error instanceof Error ? error.message : 'Could not update cloud AI consent.'); }
   };
 
-  const selectAIProviderModel = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi', model: string) => {
+  const selectAIProviderModel = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek', model: string) => {
     try {
       await window.askLedger?.setSelectedAIProviderModel({ provider, model });
       setAIProviderSelectedModels((current) => ({ ...current, [provider]: model }));
     } catch (error) { setAIProviderError(error instanceof Error ? error.message : 'Could not select the AI model.'); }
   };
 
-  const saveAIProviderKey = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') => {
+  const saveAIProviderKey = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek') => {
     const apiKey = aiProviderKeys[provider].trim();
     if (!apiKey || !window.askLedger?.setAIProviderKey) return;
     setAIProviderAction(`save:${provider}`);
@@ -1182,7 +1182,7 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
     }
   };
 
-  const removeAIProviderKey = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') => {
+  const removeAIProviderKey = async (provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek') => {
     if (!window.askLedger?.removeAIProviderKey) return;
     setAIProviderAction(`remove:${provider}`);
     setAIProviderError(null);
@@ -6052,20 +6052,21 @@ export const SettingsWindow = ({ initialSection }: { initialSection?: SettingsSe
                     <div className={settingsTheme.sectionRows + ' mt-4'}>
                       <div className="flex items-center gap-3 px-4 py-3">
                         <div className="min-w-0 flex-1"><p className={settingsTheme.rowLabel}>Default provider</p><p className={settingsTheme.rowMuted}>Used for Ask Ledger and text lenses when cloud access is allowed.</p></div>
-                        <select value={selectedAIProvider} onChange={(event) => void selectAIProvider(event.target.value as 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi')} className="h-8 rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)]" aria-label="Default text generation provider">
+                        <select value={selectedAIProvider} onChange={(event) => void selectAIProvider(event.target.value as 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek')} className="h-8 rounded-lg border border-[var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-2 text-xs text-[var(--ledger-text-primary)]" aria-label="Default text generation provider">
                           <option value="local">Local Ledger AI</option>
                           {aiProviderConnections.some((item) => item.provider === 'openai' && item.connected) && <option value="openai">OpenAI</option>}
                           {aiProviderConnections.some((item) => item.provider === 'google' && item.connected) && <option value="google">Google Gemini</option>}
                           {aiProviderConnections.some((item) => item.provider === 'perplexity' && item.connected) && <option value="perplexity">Perplexity</option>}
                           {aiProviderConnections.some((item) => item.provider === 'kimi' && item.connected) && <option value="kimi">Kimi</option>}
+                          {aiProviderConnections.some((item) => item.provider === 'deepseek' && item.connected) && <option value="deepseek">DeepSeek</option>}
                           {aiProviderConnections.some((item) => item.provider === 'anthropic' && item.connected) && <option value="anthropic">Anthropic</option>}
                         </select>
                       </div>
                       <label className="flex items-start gap-3 border-t border-[var(--ledger-border-subtle)] px-4 py-3 text-xs text-[var(--ledger-text-secondary)]"><input type="checkbox" checked={aiProviderCloudConsent} onChange={(event) => void toggleAIProviderCloudConsent(event.target.checked)} className="mt-0.5 accent-[var(--ledger-accent)]" /><span><span className="block font-medium text-[var(--ledger-text-primary)]">Allow relevant context to leave this device</span><span className="block mt-0.5">Ledger sends only the context needed for the request. Automatic cloud generation remains off.</span></span></label>
-                      {(['openai', 'anthropic', 'google', 'perplexity', 'kimi'] as const).map((provider) => {
+                      {(['openai', 'anthropic', 'google', 'perplexity', 'kimi', 'deepseek'] as const).map((provider) => {
                         const connection = aiProviderConnections.find((item) => item.provider === provider);
                         const busy = aiProviderAction === `save:${provider}` || aiProviderAction === `remove:${provider}`;
-                        const label = provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : provider === 'google' ? 'Google Gemini' : provider === 'perplexity' ? 'Perplexity' : 'Kimi';
+                        const label = provider === 'openai' ? 'OpenAI' : provider === 'anthropic' ? 'Anthropic' : provider === 'google' ? 'Google Gemini' : provider === 'perplexity' ? 'Perplexity' : provider === 'kimi' ? 'Kimi' : 'DeepSeek';
                         return <div key={provider} className="flex flex-wrap items-center gap-3 px-4 py-4">
                           <div className="min-w-0 flex-1">
                             <p className={settingsTheme.rowLabel}>{label}</p>

@@ -24,3 +24,15 @@ test('lists Kimi text models without applying OpenAI-specific filtering', async 
   const result = await new AIProviderService(keys, fakeFetch as never).listModels('kimi');
   assert.deepEqual(result.models, ['kimi-k2.6', 'kimi-k3']);
 });
+
+test('lists DeepSeek text models from its OpenAI-compatible models endpoint', async () => {
+  let requestedUrl = '';
+  const fakeFetch = async (url: string) => {
+    requestedUrl = url;
+    return new Response(JSON.stringify({ data: [{ id: 'deepseek-v4-flash' }, { id: 'deepseek-v4-pro' }, { id: 'deepseek-embedding' }] }), { status: 200 });
+  };
+  const deepseekKeys = { get: () => 'test-secret' } as never;
+  const result = await new AIProviderService(deepseekKeys, fakeFetch as never).listModels('deepseek');
+  assert.equal(requestedUrl, 'https://api.deepseek.com/models');
+  assert.deepEqual(result.models, ['deepseek-v4-flash', 'deepseek-v4-pro']);
+});

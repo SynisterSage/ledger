@@ -676,7 +676,7 @@ export class LocalAIService {
     return this.assets.getRequestedGenerationTier();
   }
 
-  getSelectedAIProvider(): 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' {
+  getSelectedAIProvider(): 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi' | 'deepseek' {
     return this.providerKeys?.selectedProvider() ?? 'local';
   }
 
