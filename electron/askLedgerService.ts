@@ -1238,7 +1238,8 @@ export class AskLedgerService {
         relatedResourceCount: retrieval.relatedItems?.length ?? 0,
       });
       emit({ type: 'sources', requestId, sources, diagnostics });
-      if (!skill && route.retrievalRequired && request.documents.length === 0) {
+      const hasAttachmentContext = Boolean(request.attachmentIds?.length || explicitContext?.resourceType === 'attachment');
+      if (!skill && route.retrievalRequired && request.documents.length === 0 && !hasAttachmentContext) {
         emit({
           type: 'delta',
           requestId,

@@ -13,6 +13,7 @@ import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
 import {
   chunkAttachmentBlocks,
   extractAttachmentBlocks,
+  AskLedgerAttachmentError,
   type ExtractedAttachmentBlock,
 } from './askLedgerAttachmentService.ts';
 
@@ -73,9 +74,21 @@ export class LocalContextLibrary {
 
   private async indexRecord(record: LocalContextFile) {
     const bytes = await fs.readFile(path.join(this.root, record.relativePath));
-    const blocks = record.mimeType.startsWith('image/')
-      ? []
-      : chunkAttachmentBlocks(extractAttachmentBlocks(bytes, record.name));
+    let blocks: ReturnType<typeof chunkAttachmentBlocks> = [];
+    if (!record.mimeType.startsWith('image/')) {
+      try {
+        blocks = chunkAttachmentBlocks(extractAttachmentBlocks(bytes, record.name));
+      } catch (error) {
+        // Preview and text indexing are separate concerns. Scanned/image-only
+        // PDFs and textless office files remain valid local files; they simply
+        // have no Ask Ledger text context until OCR is available.
+        if (
+          !(error instanceof AskLedgerAttachmentError) ||
+          !/contains no usable text|no readable document body/i.test(error.message)
+        )
+          throw error;
+      }
+    }
     await fs.writeFile(
       path.join(this.root, indexName(record.id)),
       JSON.stringify({ fileId: record.id, contentHash: record.contentHash, blocks }),

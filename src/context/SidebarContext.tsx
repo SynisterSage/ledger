@@ -38,7 +38,8 @@ type WorkspaceShellKind =
   | 'settings'
   | 'inbox'
   | 'slack'
-  | 'notifications';
+  | 'notifications'
+  | 'files';
 type FloatingDockPayload = {
   isDocked?: boolean;
   isWorkspaceDocked?: boolean;
@@ -71,6 +72,7 @@ const workspaceShellKinds = new Set<WorkspaceShellKind>([
   'inbox',
   'slack',
   'notifications',
+  'files',
 ]);
 
 interface SidebarContextType {
@@ -153,8 +155,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
   const [materialMacVibrancy, setMaterialMacVibrancy] = useState<
     'under-window' | 'sidebar' | 'hud' | null
   >(null);
-  const [materialMacVisualEffectState, setMaterialMacVisualEffectState] =
-    useState<'followWindow' | 'active'>('followWindow');
+  const [materialMacVisualEffectState, setMaterialMacVisualEffectState] = useState<
+    'followWindow' | 'active'
+  >('followWindow');
   const [forcedColorsActive, setForcedColorsActive] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(() => {
     let appPreference = false;
@@ -221,7 +224,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
         visualEffectState?: unknown;
       }
     ) => {
-      setMaterialEngine(isMaterialEngine(payload?.resolvedEngine) ? payload.resolvedEngine : 'renderer');
+      setMaterialEngine(
+        isMaterialEngine(payload?.resolvedEngine) ? payload.resolvedEngine : 'renderer'
+      );
       setMaterialRequestedEngine(
         isMaterialEngine(payload?.requestedEngine) ? payload.requestedEngine : 'renderer'
       );
@@ -238,37 +243,46 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
           ? payload.requestedMacVibrancy
           : null
       );
-      setMaterialMacVisualEffectState(payload?.visualEffectState === 'active' ? 'active' : 'followWindow');
+      setMaterialMacVisualEffectState(
+        payload?.visualEffectState === 'active' ? 'active' : 'followWindow'
+      );
     };
 
     window.ledgerIpc?.events?.onSidebarMaterialState(handleMaterialState);
-    void window.desktopWindow?.getSidebarMaterialState?.().then((payload) => {
-      setMaterialEngine(isMaterialEngine(payload?.resolvedEngine) ? payload.resolvedEngine : 'renderer');
-      setMaterialRequestedEngine(
-        isMaterialEngine(payload?.requestedEngine) ? payload.requestedEngine : 'renderer'
-      );
-      setMaterialFallbackReason(
-        typeof payload?.fallbackReason === 'string'
-          ? (payload.fallbackReason as SidebarMaterialFallbackReason)
-          : null
-      );
-      setNativeMaterialActive(payload?.nativeMaterialActive === true);
-      setMaterialMacVibrancy(
-        payload?.requestedMacVibrancy === 'under-window' ||
-          payload?.requestedMacVibrancy === 'sidebar' ||
-          payload?.requestedMacVibrancy === 'hud'
-          ? payload.requestedMacVibrancy
-          : null
-      );
-      setMaterialMacVisualEffectState(payload?.visualEffectState === 'active' ? 'active' : 'followWindow');
-    }).catch(() => {
-      setMaterialEngine('renderer');
-      setMaterialRequestedEngine('renderer');
-      setMaterialFallbackReason(null);
-      setNativeMaterialActive(false);
-      setMaterialMacVibrancy(null);
-      setMaterialMacVisualEffectState('followWindow');
-    });
+    void window.desktopWindow
+      ?.getSidebarMaterialState?.()
+      .then((payload) => {
+        setMaterialEngine(
+          isMaterialEngine(payload?.resolvedEngine) ? payload.resolvedEngine : 'renderer'
+        );
+        setMaterialRequestedEngine(
+          isMaterialEngine(payload?.requestedEngine) ? payload.requestedEngine : 'renderer'
+        );
+        setMaterialFallbackReason(
+          typeof payload?.fallbackReason === 'string'
+            ? (payload.fallbackReason as SidebarMaterialFallbackReason)
+            : null
+        );
+        setNativeMaterialActive(payload?.nativeMaterialActive === true);
+        setMaterialMacVibrancy(
+          payload?.requestedMacVibrancy === 'under-window' ||
+            payload?.requestedMacVibrancy === 'sidebar' ||
+            payload?.requestedMacVibrancy === 'hud'
+            ? payload.requestedMacVibrancy
+            : null
+        );
+        setMaterialMacVisualEffectState(
+          payload?.visualEffectState === 'active' ? 'active' : 'followWindow'
+        );
+      })
+      .catch(() => {
+        setMaterialEngine('renderer');
+        setMaterialRequestedEngine('renderer');
+        setMaterialFallbackReason(null);
+        setNativeMaterialActive(false);
+        setMaterialMacVibrancy(null);
+        setMaterialMacVisualEffectState('followWindow');
+      });
     return () => {
       window.ledgerIpc?.events?.offSidebarMaterialState(handleMaterialState);
     };
@@ -326,11 +340,14 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     };
 
     window.ledgerIpc?.events?.onSidebarAccessibilityUpdated(handleAccessibilityState);
-    void window.desktopWindow?.getSidebarAccessibilityState?.().then((payload) => {
-      setSystemPrefersReducedTransparency(payload?.prefersReducedTransparency === true);
-    }).catch(() => {
-      // Browser development mode and older preload bridges keep the false fallback.
-    });
+    void window.desktopWindow
+      ?.getSidebarAccessibilityState?.()
+      .then((payload) => {
+        setSystemPrefersReducedTransparency(payload?.prefersReducedTransparency === true);
+      })
+      .catch(() => {
+        // Browser development mode and older preload bridges keep the false fallback.
+      });
     return () => {
       window.ledgerIpc?.events?.offSidebarAccessibilityUpdated(handleAccessibilityState);
     };
@@ -411,8 +428,9 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
     const applyFloatingDockPayload = (payload: FloatingDockPayload | null | undefined) => {
       const nextIsDocked = Boolean(payload?.isDocked);
       const nextIsWorkspaceDocked = Boolean(payload?.isWorkspaceDocked);
-      const nextWorkspaceDockAutoAttachSuppressed =
-        Boolean(payload?.workspaceDockAutoAttachSuppressed);
+      const nextWorkspaceDockAutoAttachSuppressed = Boolean(
+        payload?.workspaceDockAutoAttachSuppressed
+      );
       const nextSide =
         payload && typeof (payload as { side?: unknown }).side === 'string'
           ? ((payload as { side?: unknown }).side as SidebarPosition)
@@ -507,7 +525,8 @@ export const SidebarProvider = ({ children }: { children: ReactNode }) => {
 
     const subscription = window.ledgerIpc?.events?.onModuleStateChanged(handleModuleStateChanged);
     return () => {
-      if (typeof subscription === 'string') window.ledgerIpc?.events?.offModuleStateChanged(subscription);
+      if (typeof subscription === 'string')
+        window.ledgerIpc?.events?.offModuleStateChanged(subscription);
     };
   }, [collapseSidebar, shellFullscreen]);
 

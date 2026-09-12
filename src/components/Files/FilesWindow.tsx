@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ExternalLink, FileText, HardDrive, Link2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  HardDrive,
+  Link2,
+  Plus,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useSidebar } from '../../context/SidebarContext';
 import { useApi } from '../../hooks/useApi';
 import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import {
@@ -167,6 +178,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const api = useApi();
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
+  const { workspaceShellLayout } = useSidebar();
   const [files, setFiles] = useState<LocalContextFile[]>([]);
   const [references, setReferences] = useState<ExternalReference[]>([]);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
@@ -189,6 +201,8 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     Array<{ id: string; createdAt: string; sizeBytes: number }>
   >([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false);
   const loadRequestRef = useRef(0);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
@@ -554,6 +568,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   return (
     <div
       className="relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] bg-[var(--ledger-background)]"
+      style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
       onDragOver={(event) => {
         event.preventDefault();
         setIsDragging(true);
@@ -605,87 +620,118 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         }
       />
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-[300px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]">
-          <div className="border-b border-[color:var(--ledger-border-subtle)] p-3">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search files and links"
-              aria-label="Search files and links"
-              className="h-8 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-xs text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[var(--ledger-accent)]"
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {loading || loadedWorkspaceId !== activeWorkspaceId ? (
-              <p className="p-4 text-xs text-[var(--ledger-text-muted)]">Loading context…</p>
-            ) : visibleItems.length ? (
-              visibleItems.map((item) => {
-                const isSelected =
-                  activeSelected &&
-                  ((item.kind === 'local' &&
-                    activeSelected.kind === 'local' &&
-                    activeSelected.file.id === item.file.id) ||
-                    (item.kind === 'connected' &&
-                      activeSelected.kind === 'connected' &&
-                      activeSelected.reference.id === item.reference.id));
-                const title =
-                  item.kind === 'local' ? item.file.name : referenceTitle(item.reference);
-                const meta =
-                  item.kind === 'local'
-                    ? `On this device · ${formatBytes(item.file.sizeBytes)}`
-                    : `${providerLabel(item.reference.provider)} · ${
-                        item.reference.access_status ?? 'Linked'
-                      }`;
-                return (
-                  <button
-                    key={`${item.kind}:${item.kind === 'local' ? item.file.id : item.reference.id}`}
-                    type="button"
-                    onClick={() =>
-                      activeWorkspaceId && setSelected({ ...item, workspaceId: activeWorkspaceId })
-                    }
-                    className={`flex w-full items-center gap-2.5 border-b border-[color:var(--ledger-border-subtle)] px-3 py-2.5 text-left transition ${
-                      isSelected
-                        ? 'bg-[color:rgba(255,95,64,0.10)]'
-                        : 'hover:bg-[var(--ledger-surface-hover)]'
-                    }`}
-                  >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)]">
-                      {item.kind === 'local' ? (
-                        <FileText size={14} />
-                      ) : (
-                        <ConnectedProviderIcon provider={item.reference.provider} />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-medium text-[var(--ledger-text-primary)]">
-                        {title}
-                      </span>
-                      <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
-                        {meta}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })
-            ) : (
-              <LedgerEmptyState
-                state="first-use"
-                testId="files-empty"
-                title="No context yet"
-                description={
-                  filter === 'connected'
-                    ? 'Connect a provider to see links here.'
-                    : 'Import a file when it becomes useful to your work.'
-                }
-                primaryAction={
-                  filter !== 'connected'
-                    ? { label: 'Import local file', onClick: () => void importLocalFiles() }
-                    : undefined
-                }
+        {!isLeftPaneCollapsed ? (
+          <aside className="ledger-pane-surface ledger-pane-left flex w-[256px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] transition-[width] duration-200">
+            <div className="border-b border-[color:var(--ledger-border-subtle)] p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
+                  Files & links
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsLeftPaneCollapsed(true)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                  aria-label="Hide left panel"
+                  title="Hide left panel"
+                >
+                  <ChevronLeft size={13} />
+                </button>
+              </div>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search files and links"
+                aria-label="Search files and links"
+                className="h-8 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-xs text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[var(--ledger-accent)]"
               />
-            )}
+            </div>
+            <div className="ledger-pane-scrollbar min-h-0 flex-1 overflow-auto p-2.5 space-y-1">
+              {loading || loadedWorkspaceId !== activeWorkspaceId ? (
+                <p className="p-4 text-xs text-[var(--ledger-text-muted)]">Loading context…</p>
+              ) : visibleItems.length ? (
+                visibleItems.map((item) => {
+                  const isSelected =
+                    activeSelected &&
+                    ((item.kind === 'local' &&
+                      activeSelected.kind === 'local' &&
+                      activeSelected.file.id === item.file.id) ||
+                      (item.kind === 'connected' &&
+                        activeSelected.kind === 'connected' &&
+                        activeSelected.reference.id === item.reference.id));
+                  const title =
+                    item.kind === 'local' ? item.file.name : referenceTitle(item.reference);
+                  const meta =
+                    item.kind === 'local'
+                      ? `On this device · ${formatBytes(item.file.sizeBytes)}`
+                      : `${providerLabel(item.reference.provider)} · ${
+                          item.reference.access_status ?? 'Linked'
+                        }`;
+                  return (
+                    <button
+                      key={`${item.kind}:${
+                        item.kind === 'local' ? item.file.id : item.reference.id
+                      }`}
+                      type="button"
+                      onClick={() =>
+                        activeWorkspaceId &&
+                        setSelected({ ...item, workspaceId: activeWorkspaceId })
+                      }
+                      className={`group flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-left transition ${
+                        isSelected
+                          ? 'bg-[var(--ledger-surface-hover)]'
+                          : 'bg-transparent hover:bg-[var(--ledger-surface-hover)]'
+                      }`}
+                    >
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)]">
+                        {item.kind === 'local' ? (
+                          <FileText size={14} />
+                        ) : (
+                          <ConnectedProviderIcon provider={item.reference.provider} />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium text-[var(--ledger-text-primary)]">
+                          {title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                          {meta}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <LedgerEmptyState
+                  state="first-use"
+                  testId="files-empty"
+                  title="No context yet"
+                  description={
+                    filter === 'connected'
+                      ? 'Connect a provider to see links here.'
+                      : 'Import a file when it becomes useful to your work.'
+                  }
+                  primaryAction={
+                    filter !== 'connected'
+                      ? { label: 'Import local file', onClick: () => void importLocalFiles() }
+                      : undefined
+                  }
+                />
+              )}
+            </div>
+          </aside>
+        ) : (
+          <div className="flex w-10 shrink-0 items-start justify-center border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-3">
+            <button
+              type="button"
+              onClick={() => setIsLeftPaneCollapsed(false)}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+              aria-label="Show left panel"
+              title="Show left panel"
+            >
+              <ChevronRight size={14} />
+            </button>
           </div>
-        </aside>
+        )}
         <main className="min-w-0 flex-1 overflow-y-auto bg-[var(--ledger-surface-card)]">
           {error ? (
             <div className="m-5 rounded-lg border border-[color:var(--ledger-danger)]/20 bg-[color:var(--ledger-danger)]/5 px-3 py-2 text-xs text-[var(--ledger-danger)]">
@@ -764,15 +810,17 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
               </div>
               <div className="flex flex-1 items-center justify-center bg-[var(--ledger-surface-muted)] p-8">
                 <div className="w-full max-w-xl rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-10 text-center shadow-[var(--ledger-shadow)]">
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-accent)]">
-                    {activeSelected.kind === 'local' ? (
-                      <HardDrive size={21} />
-                    ) : (
-                      <ConnectedProviderIcon
-                        provider={activeSelected.reference.provider}
-                        size={21}
-                      />
-                    )}
+                  <div className="mb-5 text-left">
+                    <p className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
+                      {activeSelected.kind === 'local'
+                        ? activeSelected.file.name
+                        : referenceTitle(activeSelected.reference)}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                      {activeSelected.kind === 'local'
+                        ? activeSelected.file.extension.toUpperCase()
+                        : providerLabel(activeSelected.reference.provider)}
+                    </p>
                   </div>
                   {activeSelected.kind === 'local' && localPreviewLoading ? (
                     <p className="mt-4 text-sm text-[var(--ledger-text-muted)]">Loading preview…</p>
@@ -1088,141 +1136,182 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           )}
         </main>
         {activeSelected ? (
-          <aside className="hidden w-[280px] shrink-0 border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] lg:block">
-            <div className="flex border-b border-[color:var(--ledger-border-subtle)] px-3 pt-2">
-              {(['details', 'ask'] as const).map((tab) => (
+          !isRightPaneCollapsed ? (
+            <aside className="ledger-pane-surface ledger-pane-right hidden w-[260px] shrink-0 overflow-y-auto border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4 min-[1200px]:block">
+              <div className="flex items-center border-b border-[color:var(--ledger-border-subtle)] px-3 pt-2">
+                {(['details', 'ask'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setInspectorTab(tab)}
+                    className={`border-b-2 px-3 py-2 text-xs font-medium capitalize ${
+                      inspectorTab === tab
+                        ? 'border-[var(--ledger-accent)] text-[var(--ledger-text-primary)]'
+                        : 'border-transparent text-[var(--ledger-text-muted)]'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
                 <button
-                  key={tab}
                   type="button"
-                  onClick={() => setInspectorTab(tab)}
-                  className={`border-b-2 px-3 py-2 text-xs font-medium capitalize ${
-                    inspectorTab === tab
-                      ? 'border-[var(--ledger-accent)] text-[var(--ledger-text-primary)]'
-                      : 'border-transparent text-[var(--ledger-text-muted)]'
-                  }`}
+                  onClick={() => setIsRightPaneCollapsed(true)}
+                  className="ml-auto mb-1 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  aria-label="Hide right panel"
+                  title="Hide right panel"
                 >
-                  {tab}
+                  <ChevronRight size={14} />
                 </button>
-              ))}
-            </div>
-            {inspectorTab === 'details' ? (
-              <div className="divide-y divide-[color:var(--ledger-border-subtle)] px-4 text-xs">
-                <div className="py-4">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
-                    Details
-                  </p>
-                  <p className="mt-2 text-[var(--ledger-text-primary)]">
-                    {activeSelected.kind === 'local'
-                      ? activeSelected.file.extension.toUpperCase()
-                      : providerLabel(activeSelected.reference.provider)}
-                  </p>
-                  <p className="mt-1 text-[var(--ledger-text-muted)]">
-                    {activeSelected.kind === 'local'
-                      ? formatBytes(activeSelected.file.sizeBytes)
-                      : activeSelected.reference.access_status ?? 'Linked'}
-                  </p>
-                </div>
-                <div className="py-4">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
-                    Workspace
-                  </p>
-                  <p className="mt-2 text-[var(--ledger-text-primary)]">
-                    {activeWorkspace?.name ?? 'Current workspace'}
-                  </p>
-                </div>
-                <div className="py-4">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
-                    Used with
-                  </p>
-                  <p className="mt-2 text-[var(--ledger-text-primary)]">
-                    {activeSelected.kind === 'local'
-                      ? `${activeSelected.file.links.length} Ledger item${
-                          activeSelected.file.links.length === 1 ? '' : 's'
-                        }`
-                      : 'Linked context'}
-                  </p>
-                </div>
-                {activeSelected.kind === 'local' ? (
-                  <button
-                    type="button"
-                    onClick={() => void removeSelectedLocalFile()}
-                    disabled={busy !== null}
-                    className="mt-4 inline-flex h-8 items-center gap-2 rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-[var(--ledger-danger)] disabled:opacity-50"
-                  >
-                    <Trash2 size={13} />
-                    Remove local copy
-                  </button>
-                ) : null}
-                {activeSelected.kind === 'local' && !editing ? (
-                  <button
-                    type="button"
-                    onClick={() => void loadRevisions()}
-                    className="mt-3 inline-flex h-8 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs text-[var(--ledger-text-secondary)]"
-                  >
-                    History{revisions.length ? ` · ${revisions.length}` : ''}
-                  </button>
-                ) : null}
-                {activeSelected.kind === 'local' && revisions.length > 0 ? (
-                  <div className="mt-3 space-y-1 border-t border-[color:var(--ledger-border-subtle)] pt-3">
-                    <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
-                      Previous versions
+              </div>
+              {inspectorTab === 'details' ? (
+                <div className="divide-y divide-[color:var(--ledger-border-subtle)] px-4 text-xs">
+                  <div className="py-4">
+                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Details
                     </p>
-                    {revisions.slice(0, 5).map((revision) => (
-                      <button
-                        key={revision.id}
-                        type="button"
-                        onClick={() => void restoreRevision(revision.id)}
-                        disabled={saving}
-                        className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                      >
-                        <span>
-                          {new Date(revision.createdAt).toLocaleString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                        <span className="text-[var(--ledger-text-muted)]">Restore</span>
-                      </button>
-                    ))}
+                    <p className="mt-2 text-[var(--ledger-text-primary)]">
+                      {activeSelected.kind === 'local'
+                        ? activeSelected.file.extension.toUpperCase()
+                        : providerLabel(activeSelected.reference.provider)}
+                    </p>
+                    <p className="mt-1 text-[var(--ledger-text-muted)]">
+                      {activeSelected.kind === 'local'
+                        ? formatBytes(activeSelected.file.sizeBytes)
+                        : activeSelected.reference.access_status ?? 'Linked'}
+                    </p>
                   </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="p-4">
-                <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                  Ask about this file
-                </p>
-                <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
-                  Open a file-scoped Ask Ledger session with this item as the starting context.
-                </p>
-                <div className="mt-4 space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => askAboutSelected('Summarize this file.')}
-                    className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                  >
-                    Summarize this file
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => askAboutSelected('Find the action items in this file.')}
-                    className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                  >
-                    Find action items
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => askAboutSelected()}
-                    className="mt-2 inline-flex h-8 w-full items-center justify-center rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"
-                  >
-                    Open Ask Ledger
-                  </button>
+                  <div className="py-4">
+                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Workspace
+                    </p>
+                    <p className="mt-2 text-[var(--ledger-text-primary)]">
+                      {activeWorkspace?.name ?? 'Current workspace'}
+                    </p>
+                  </div>
+                  <div className="py-4">
+                    <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                      Used with
+                    </p>
+                    <p className="mt-2 text-[var(--ledger-text-primary)]">
+                      {activeSelected.kind === 'local'
+                        ? `${activeSelected.file.links.length} Ledger item${
+                            activeSelected.file.links.length === 1 ? '' : 's'
+                          }`
+                        : 'Linked context'}
+                    </p>
+                  </div>
+                  {activeSelected.kind === 'local' ? (
+                    <button
+                      type="button"
+                      onClick={() => void removeSelectedLocalFile()}
+                      disabled={busy !== null}
+                      className="mt-4 flex h-8 w-fit items-center gap-2 rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-[var(--ledger-danger)] disabled:opacity-50"
+                    >
+                      <Trash2 size={13} />
+                      Remove local copy
+                    </button>
+                  ) : null}
+                  {activeSelected.kind === 'local' && !editing ? (
+                    <button
+                      type="button"
+                      onClick={() => void loadRevisions()}
+                      className="mt-3 flex h-8 w-fit items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs text-[var(--ledger-text-secondary)]"
+                    >
+                      History{revisions.length ? ` · ${revisions.length}` : ''}
+                    </button>
+                  ) : null}
+                  {activeSelected.kind === 'local' && revisions.length > 0 ? (
+                    <div className="mt-3 space-y-1 border-t border-[color:var(--ledger-border-subtle)] pt-3">
+                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                        Previous versions
+                      </p>
+                      {revisions.slice(0, 5).map((revision) => (
+                        <button
+                          key={revision.id}
+                          type="button"
+                          onClick={() => void restoreRevision(revision.id)}
+                          disabled={saving}
+                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                        >
+                          <span>
+                            {new Date(revision.createdAt).toLocaleString([], {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <span className="text-[var(--ledger-text-muted)]">Restore</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            )}
-          </aside>
+              ) : (
+                <div className="p-4">
+                  <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+                    Ask about this file
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
+                    Open a file-scoped Ask Ledger session with this item as the starting context.
+                  </p>
+                  <div className="mt-4 space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => askAboutSelected('Summarize this file.')}
+                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      Summarize this file
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => askAboutSelected('Find the action items in this file.')}
+                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      Find action items
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        askAboutSelected(
+                          'Extract the key dates, deadlines, and commitments in this file.'
+                        )
+                      }
+                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      Extract dates and commitments
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => askAboutSelected('What should I do next based on this file?')}
+                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                    >
+                      Suggest next steps
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => askAboutSelected()}
+                      className="mt-2 inline-flex h-8 w-full items-center justify-center rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"
+                    >
+                      Open Ask Ledger
+                    </button>
+                  </div>
+                </div>
+              )}
+            </aside>
+          ) : (
+            <div className="hidden w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-3 min-[1200px]:flex">
+              <button
+                type="button"
+                onClick={() => setIsRightPaneCollapsed(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
+                aria-label="Show right panel"
+                title="Show right panel"
+              >
+                <ChevronLeft size={14} />
+              </button>
+            </div>
+          )
         ) : null}
       </div>
       {isDragging ? (

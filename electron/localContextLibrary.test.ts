@@ -178,3 +178,14 @@ test('edits XLSX cell data and keeps spreadsheet sheets workspace-scoped', async
     LocalContextLibraryError
   );
 });
+
+test('imports image-only PDFs for preview even when text extraction is unavailable', async () => {
+  const dir = await tempDir();
+  const source = path.join(dir, 'scan.pdf');
+  await fs.writeFile(source, Buffer.from('%PDF-1.4\n% scanned image only'));
+  const library = new LocalContextLibrary(path.join(dir, 'library'));
+  const [record] = await library.importFiles([source], 'user-a', 'workspace-a');
+  assert.ok(record);
+  assert.equal((await library.preview(record!.id, 'user-a', 'workspace-a'))?.kind, 'binary');
+  assert.equal((await library.contextDocuments('user-a', 'workspace-a')).length, 0);
+});
