@@ -36,6 +36,14 @@ test('accepts TXT, Markdown, CSV, DOCX, and readable PDF and preserves source me
   await service.cleanupAll();
 });
 
+test('extracts hexadecimal PDF text strings used by exported PDFs', async () => {
+  const dir = await fixtureDir();
+  const pdf = await write(dir, 'hex.pdf', '%PDF-1.7\nstream\nBT\n<5361756E64657273207075707079> Tj\nET\nendstream\n%%EOF');
+  const service = new AskLedgerAttachmentService(path.join(dir, 'stored'));
+  const [document] = await service.ingest([pdf], 'conversation-a', 'workspace-a');
+  assert.match(document!.blocks[0]?.text ?? '', /Saunders puppy/);
+});
+
 test('extracts XLSX sheets, headers, formatted cells, cached formulas, and provenance', async () => {
   const dir = await fixtureDir();
   const sheet = XLSX.utils.aoa_to_sheet([

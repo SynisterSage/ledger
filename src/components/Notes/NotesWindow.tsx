@@ -19,6 +19,7 @@ import {
   Minus,
   Mic,
   MoreHorizontal,
+  MessageSquarePlus,
   PanelRightClose,
   Pause,
   PenLine,
@@ -94,6 +95,10 @@ import { openAskLedgerWithContext } from '../Common/askLedgerContext';
 import { AskLedgerPanel, type AskLedgerSession } from '../Common/AskLedgerPanel';
 import { LocalAIUnavailableState } from '../Common/LocalAIUnavailableState';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
+import {
+  mergeAskLedgerSessions,
+  sessionMatchesAskLedgerResource,
+} from '../../utils/askLedgerSessionRestore';
 import { CreateNoteModal } from './CreateNoteModal';
 import { BulkExportModal } from './BulkExportModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
@@ -2808,6 +2813,7 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [askSession, setAskSession] = useState<AskLedgerSession | null>(null);
   const [askSessionLoading, setAskSessionLoading] = useState(false);
   const askSessionIdsRef = useRef(new Map<string, string>());
+  const freshAskSessionKeysRef = useRef(new Set<string>());
   useEffect(() => {
     setRightPaneMode('inspector');
     setMeetingAskContext(null);
@@ -2815,6 +2821,14 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const askResourceKey = meetingAskContext
     ? `${meetingAskContext.resourceType}:${meetingAskContext.resourceId}`
     : null;
+  const startNewAskConversation = () => {
+    if (!askResourceKey) return;
+    askSessionIdsRef.current.delete(askResourceKey);
+    freshAskSessionKeysRef.current.add(askResourceKey);
+    setAskSession(null);
+    setAskSessionLoading(false);
+    setAskPaneResetKey((current) => current + 1);
+  };
   useEffect(() => {
     let canceled = false;
     if (!activeWorkspaceId || !user?.id || !meetingAskContext || !askResourceKey) {
@@ -2826,7 +2840,26 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
     setAskSessionLoading(true);
     const restore = async () => {
       let restored: AskLedgerSession | null = null;
-      const knownId = askSessionIdsRef.current.get(askResourceKey);
+      const isFreshConversation = freshAskSessionKeysRef.current.has(askResourceKey);
+      let knownId = askSessionIdsRef.current.get(askResourceKey);
+      if (isFreshConversation) {
+        setAskSession(null);
+        setAskSessionLoading(false);
+        return;
+      }
+      if (!knownId) {
+        try {
+          const resourceResult = await api.getAskLedgerResourceSession(
+            activeWorkspaceId,
+            meetingAskContext.resourceType,
+            meetingAskContext.resourceId
+          ) as { sessionId?: string | null };
+          knownId = resourceResult.sessionId ?? undefined;
+        } catch {
+          // History discovery remains the compatibility fallback while the
+          // resource-session mapping is unavailable.
+        }
+      }
       if (knownId) {
         const [cloudResult, localResult] = await Promise.allSettled([
           api.getAskLedgerSession(activeWorkspaceId, knownId) as Promise<{ session?: AskLedgerSession }>,
@@ -2836,10 +2869,12 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
           restored = cloudResult.value.session;
         if (localResult.status === 'fulfilled' && localResult.value?.session)
           restored = { ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession;
-      } else {
+        if (!restored) askSessionIdsRef.current.delete(askResourceKey);
+      }
+      if (!restored && !isFreshConversation) {
         const [cloudResult, localResult] = await Promise.allSettled([
-          api.getAskLedgerSessions(activeWorkspaceId, 50) as Promise<{ sessions?: AskLedgerSession[] }>,
-          window.localAskSessions?.list({ userId: user.id, workspaceId: activeWorkspaceId, limit: 50 }),
+          api.getAskLedgerSessions(activeWorkspaceId, 100) as Promise<{ sessions?: AskLedgerSession[] }>,
+          window.localAskSessions?.list({ userId: user.id, workspaceId: activeWorkspaceId, limit: 100 }),
         ]);
         const cloudSessions = cloudResult.status === 'fulfilled' && Array.isArray(cloudResult.value?.sessions)
           ? cloudResult.value.sessions
@@ -2847,11 +2882,8 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
         const localSessions = localResult.status === 'fulfilled' && Array.isArray(localResult.value?.sessions)
           ? localResult.value.sessions.map((session) => ({ ...session, privacyScope: 'device' as const }) as AskLedgerSession)
           : [];
-        restored = [...cloudSessions, ...localSessions]
-          .filter((session) =>
-            session.initialContext?.resourceType === meetingAskContext.resourceType &&
-            session.initialContext?.resourceId === meetingAskContext.resourceId
-          )
+        restored = mergeAskLedgerSessions([...cloudSessions, ...localSessions])
+          .filter((session) => sessionMatchesAskLedgerResource(session, meetingAskContext))
           .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null;
       }
       if (canceled) return;
@@ -11184,7 +11216,13 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                 <div className={`flex items-start justify-between gap-3 ${rightPaneMode === 'ask' ? 'border-b border-[color:var(--ledger-border-subtle)] pb-3' : 'pb-1'}`}>
                   <div className="min-w-0 flex-1">
                     <p className="whitespace-nowrap text-xs font-medium text-[var(--ledger-text-muted)]">{rightPaneMode === 'ask' ? 'Ask Ledger' : 'Inspector'}</p>
-                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{rightPaneMode === 'ask' ? (meetingAskContext?.contextType === 'notes_home' ? 'Notes workspace' : 'Meeting chat') : selectedNote?.title || (selectedNote ? 'Untitled note' : 'Quick actions')}</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">{rightPaneMode === 'ask'
+                      ? meetingAskContext?.contextType === 'notes_home'
+                        ? 'Notes workspace'
+                        : meetingAskContext?.contextType === 'meeting'
+                        ? 'Meeting chat'
+                        : meetingAskContext?.title || selectedNote?.title || 'Note chat'
+                      : selectedNote?.title || (selectedNote ? 'Untitled note' : 'Quick actions')}</p>
                     {rightPaneMode === 'ask' && selectedNote?.title && <p className="mt-0.5 truncate text-[11px] text-[var(--ledger-text-muted)]">{selectedNote.title}</p>}
                     {rightPaneMode !== 'ask' && <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
                       {selectedNote
@@ -11196,6 +11234,17 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {rightPaneMode === 'ask' && (
+                      <button
+                        type="button"
+                        onClick={startNewAskConversation}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition-colors hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                        aria-label="Start a new conversation"
+                        title="New conversation"
+                      >
+                        <MessageSquarePlus size={14} />
+                      </button>
+                    )}
                     {rightPaneMode === 'ask' && (
                       <button
                         type="button"
@@ -11375,9 +11424,12 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
                         preferredGenerationTier="fast"
                         compact
                         meetingChat={meetingAskContext.contextType === 'meeting'}
+                        lockedContext
                         onSessionIdChange={(sessionId) => {
-                          if (sessionId && askResourceKey)
+                          if (sessionId && askResourceKey) {
+                            freshAskSessionKeysRef.current.delete(askResourceKey);
                             askSessionIdsRef.current.set(askResourceKey, sessionId);
+                          }
                         }}
                         onSessionSnapshot={setAskSession}
                       />

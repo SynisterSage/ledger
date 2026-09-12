@@ -114,6 +114,16 @@ export const buildAskLedgerPrompt = ({ question, contextItems = [], context, pri
   const answerStyle = buildAskLedgerAnswerStyleContract({ executionMode: executionMode ?? (responseMode === 'conversational' ? 'conversation' : responseMode === 'follow_up' ? 'conversation' : 'workspace_synthesis'), profile: presentationProfile ?? skill?.presentationProfile ?? 'default' });
   const selectedProfile = presentationProfile ?? skill?.presentationProfile ?? 'default';
   const customSkill = Boolean(skill && !skill.outputSections);
+  const hasAttachmentContext = normalized.items.some((item) => item.resourceType === 'attachment');
+  const attachmentInstructions = hasAttachmentContext
+    ? `
+For an attachment question:
+- Answer from the extracted attachment text, not from the filename or attachment metadata.
+- For “what is this about?” or similar questions, summarize the document’s actual subject using its headings and body text.
+- Never say that the attachment contains the request, is fully resolved, or needs no further action unless the extracted text explicitly supports that claim.
+- If the extracted text is only a label such as “CONTENTS,” or is too limited to identify the subject, say exactly what was recognized and that the document’s subject cannot yet be determined from the available text. Do not invent a topic.
+`
+    : '';
   const selectedExecutionMode = executionMode ?? (responseMode === 'conversational' || responseMode === 'follow_up' ? 'conversation' : 'workspace_synthesis');
   const presentationSignals = presentationSignalsText ?? (!['conversation', 'workspace_lookup'].includes(selectedExecutionMode) || selectedProfile !== 'default'
     ? formatAskLedgerPresentationSignals(deriveAskLedgerPresentationSignals(evidencePackage?.sections.flatMap((section) => section.items.map(({ resource }) => resource)) ?? normalized.items, { timeZone, timeFormat }))
@@ -188,6 +198,7 @@ ${projectContextInstructions}
 ${recentUpdatesInstructions}
 ${meetingPrepInstructions}
 ${lastWorkdayInstructions}
+${attachmentInstructions}
 
 EVIDENCE PACKAGE
 ${structuredPacket ? `${structuredPacket}\n\n` : ''}${contextText}

@@ -11,6 +11,7 @@ import {
   Folder,
   FolderPlus,
   Link2,
+  MessageSquarePlus,
   MoreHorizontal,
   Plus,
   ShieldCheck,
@@ -41,6 +42,10 @@ import { AskLedgerPanel, type AskLedgerSession } from '../Common/AskLedgerPanel'
 import { SkeletonCompactRow } from '../Common/Skeleton';
 import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, usePlatform } from '../../platform';
 import type { LocalContextFile } from '../../types/localContextLibrary';
+import {
+  mergeAskLedgerSessions,
+  sessionMatchesAskLedgerResource,
+} from '../../utils/askLedgerSessionRestore';
 
 type ExternalReference = {
   id: string;
@@ -267,6 +272,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const [inspectorTab, setInspectorTab] = useState<'details' | 'ask'>('details');
   const [askSession, setAskSession] = useState<AskLedgerSession | null>(null);
   const [askSessionLoading, setAskSessionLoading] = useState(false);
+  const [askPaneResetKey, setAskPaneResetKey] = useState(0);
   const [localPreview, setLocalPreview] = useState<LocalPreview | null>(null);
   const [localPreviewLoading, setLocalPreviewLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -301,6 +307,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   });
   const localSelectionAnchorRef = useRef<string | null>(null);
   const askSessionIdsRef = useRef(new Map<string, string>());
+  const freshAskSessionKeysRef = useRef(new Set<string>());
   const loadRequestRef = useRef(0);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
@@ -316,6 +323,14 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const activeAskResourceKey = activeAskResource
     ? `${activeAskResource.resourceType}:${activeAskResource.resourceId}`
     : null;
+  const startNewAskConversation = () => {
+    if (!activeAskResourceKey) return;
+    askSessionIdsRef.current.delete(activeAskResourceKey);
+    freshAskSessionKeysRef.current.add(activeAskResourceKey);
+    setAskSession(null);
+    setAskSessionLoading(false);
+    setAskPaneResetKey((current) => current + 1);
+  };
   const focusedMatch = String(focusContext ?? '').match(
     /^focus-file:([^:]+)(?::(page|sheet|row):(.+?))?(?::row:(\d+))?$/
   );
@@ -431,7 +446,28 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     setAskSessionLoading(true);
     const restore = async () => {
       let restored: AskLedgerSession | null = null;
-      const knownId = askSessionIdsRef.current.get(activeAskResourceKey);
+      const isFreshConversation = freshAskSessionKeysRef.current.has(activeAskResourceKey);
+      let knownId = askSessionIdsRef.current.get(activeAskResourceKey);
+      if (isFreshConversation) {
+        // A deliberate New conversation must remain empty when the user
+        // leaves and returns before sending the first message.
+        setAskSession(null);
+        setAskSessionLoading(false);
+        return;
+      }
+      if (!knownId) {
+        try {
+          const resourceResult = await api.getAskLedgerResourceSession(
+            activeWorkspaceId,
+            activeAskResource.resourceType,
+            activeAskResource.resourceId
+          ) as { sessionId?: string | null };
+          knownId = resourceResult.sessionId ?? undefined;
+        } catch {
+          // History discovery remains the compatibility fallback while the
+          // resource-session mapping is unavailable.
+        }
+      }
       if (knownId) {
         const [cloudResult, localResult] = await Promise.allSettled([
           api.getAskLedgerSession(activeWorkspaceId, knownId) as Promise<{ session?: AskLedgerSession }>,
@@ -441,10 +477,16 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           restored = cloudResult.value.session;
         if (localResult.status === 'fulfilled' && localResult.value?.session)
           restored = { ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession;
-      } else {
+        if (!restored) {
+          // The in-memory pointer can outlive a deleted local/cloud record.
+          // Clear it and use the same discovery path as a cold restore.
+          askSessionIdsRef.current.delete(activeAskResourceKey);
+        }
+      }
+      if (!restored && !isFreshConversation) {
         const [cloudResult, localResult] = await Promise.allSettled([
-          api.getAskLedgerSessions(activeWorkspaceId, 50) as Promise<{ sessions?: AskLedgerSession[] }>,
-          window.localAskSessions?.list({ userId: user.id, workspaceId: activeWorkspaceId, limit: 50 }),
+          api.getAskLedgerSessions(activeWorkspaceId, 100) as Promise<{ sessions?: AskLedgerSession[] }>,
+          window.localAskSessions?.list({ userId: user.id, workspaceId: activeWorkspaceId, limit: 100 }),
         ]);
         const cloudSessions = cloudResult.status === 'fulfilled' && Array.isArray(cloudResult.value?.sessions)
           ? cloudResult.value.sessions
@@ -452,19 +494,8 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         const localSessions = localResult.status === 'fulfilled' && Array.isArray(localResult.value?.sessions)
           ? localResult.value.sessions.map((session) => ({ ...session, privacyScope: 'device' as const }) as AskLedgerSession)
           : [];
-        restored = [...cloudSessions, ...localSessions]
-          .filter((session) =>
-            (session.initialContext?.resourceType === activeAskResource.resourceType &&
-              session.initialContext?.resourceId === activeAskResource.resourceId) ||
-            (activeAskResource.resourceType === 'attachment' &&
-              session.messages.some((message) =>
-                message.attachments?.some(
-                  (attachment) =>
-                    attachment.kind === 'file' &&
-                    attachment.attachment.localFileId === activeAskResource.resourceId
-                )
-              ))
-          )
+        restored = mergeAskLedgerSessions([...cloudSessions, ...localSessions])
+          .filter((session) => sessionMatchesAskLedgerResource(session, activeAskResource))
           .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null;
       }
       if (canceled) return;
@@ -847,7 +878,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     return (
       <div key={folder.id} style={{ marginLeft: `${(folderDepthById.get(folder.id) ?? 0) * 12}px` }}>
         <div
-          className={`group flex items-center gap-1 rounded-md px-1.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)] ${localFolderContextMenu?.folderId === folder.id ? 'bg-[var(--ledger-surface-hover)]' : ''}`}
+          className={`group flex items-center gap-1 text-left transition ${localFolderContextMenu?.folderId === folder.id ? 'bg-[var(--ledger-surface-hover)]' : ''}`}
           onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; }}
           onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const fileId = event.dataTransfer.getData('application/x-ledger-local-file-id'); if (fileId) { const ids = bulkSelectedIds.has(fileId) ? [...bulkSelectedIds] : [fileId]; void Promise.all(ids.map((id) => moveFileToFolder(id, folder.id))); } }}
           onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setLocalFolderContextMenu({ x: event.clientX, y: event.clientY, folderId: folder.id }); }}
@@ -1711,15 +1742,28 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                       : providerLabel(activeSelected.reference.provider)}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsRightPaneCollapsed(true)}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                  aria-label="Hide right panel"
-                  title="Hide right panel"
-                >
-                  <ChevronRight size={14} />
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {inspectorTab === 'ask' ? (
+                    <button
+                      type="button"
+                      onClick={startNewAskConversation}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                      aria-label="Start a new conversation"
+                      title="New conversation"
+                    >
+                      <MessageSquarePlus size={14} />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setIsRightPaneCollapsed(true)}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    aria-label="Hide right panel"
+                    title="Hide right panel"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
               <div className="flex items-center border-b border-[color:var(--ledger-border-subtle)]">
                 {(['details', 'ask'] as const).map((tab) => (
@@ -1856,6 +1900,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                     </div>
                   ) : activeAskResource ? (
                     <AskLedgerPanel
+                        resetKey={askPaneResetKey}
                         workspaceId={activeWorkspaceId}
                         initialSession={askSession}
                         initialContext={{
@@ -1865,8 +1910,10 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                           workspaceId: activeWorkspaceId!,
                         }}
                         onSessionIdChange={(sessionId) => {
-                          if (sessionId && activeAskResourceKey)
+                          if (sessionId && activeAskResourceKey) {
+                            freshAskSessionKeysRef.current.delete(activeAskResourceKey);
                             askSessionIdsRef.current.set(activeAskResourceKey, sessionId);
+                          }
                         }}
                         onSessionSnapshot={setAskSession}
                         preferredGenerationTier="fast"

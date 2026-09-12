@@ -2263,6 +2263,19 @@ export const AskLedgerPanel = ({
           initialContext: sessionInitialContextRef.current,
           skillId: sessionSkillIdRef.current,
         });
+        const resource = sessionInitialContextRef.current;
+        if (resource?.resourceType && resource.resourceId) {
+          try {
+            await api.linkAskLedgerResourceSession(workspaceId, {
+              resourceType: resource.resourceType,
+              resourceId: resource.resourceId,
+              sessionId,
+            });
+          } catch {
+            // Session content remains persisted; the next restore can use
+            // the existing history fallback if mapping is unavailable.
+          }
+        }
         onSessionSnapshot?.({
           id: sessionId,
           workspaceId,
@@ -2300,7 +2313,7 @@ export const AskLedgerPanel = ({
     const submittedInitialContext =
       activeInitialContext ??
       initialContextRef.current ??
-      (!conversationActive ? initialContext : null);
+      (!conversationActive ? initialContext : lockedContext ? sessionInitialContextRef.current : null);
     const submittedMessageAttachments: AskLedgerMessageAttachment[] = submittedInitialContext
       ? [
           ...submittedAttachments,
@@ -2324,7 +2337,11 @@ export const AskLedgerPanel = ({
     const submittedContext =
       activeInitialContext ??
       initialContextRef.current ??
-      (!conversationActive ? initialContext ?? undefined : undefined);
+      (!conversationActive
+        ? initialContext ?? undefined
+        : lockedContext
+        ? sessionInitialContextRef.current ?? undefined
+        : undefined);
     const request: AskLedgerRequest = {
       question: effectiveQuestion,
       workspaceId,

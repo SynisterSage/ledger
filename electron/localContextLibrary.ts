@@ -20,6 +20,7 @@ import {
 } from './askLedgerAttachmentService.ts';
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
+const LOCAL_CONTEXT_INDEX_VERSION = 2;
 
 const SUPPORTED = new Map([
   ['pdf', 'application/pdf'],
@@ -80,7 +81,7 @@ export class LocalContextLibrary {
     let blocks: ReturnType<typeof chunkAttachmentBlocks> = [];
     if (!record.mimeType.startsWith('image/')) {
       try {
-        blocks = chunkAttachmentBlocks(extractAttachmentBlocks(bytes, record.name));
+        blocks = chunkAttachmentBlocks(await extractAttachmentBlocks(bytes, record.name));
       } catch (error) {
         // Preview and text indexing are separate concerns. Scanned/image-only
         // PDFs and textless office files remain valid local files; they simply
@@ -94,7 +95,7 @@ export class LocalContextLibrary {
     }
     await fs.writeFile(
       path.join(this.root, indexName(record.id)),
-      JSON.stringify({ fileId: record.id, contentHash: record.contentHash, blocks }),
+      JSON.stringify({ fileId: record.id, contentHash: record.contentHash, extractorVersion: LOCAL_CONTEXT_INDEX_VERSION, blocks }),
       { mode: 0o600 }
     );
     return blocks;
@@ -341,16 +342,17 @@ export class LocalContextLibrary {
       try {
         let indexed = JSON.parse(
           await fs.readFile(path.join(this.root, indexName(record.id)), 'utf8')
-        ) as { fileId?: string; contentHash?: string; blocks?: ExtractedAttachmentBlock[] };
+        ) as { fileId?: string; contentHash?: string; extractorVersion?: number; blocks?: ExtractedAttachmentBlock[] };
         if (
           indexed.fileId !== record.id ||
           indexed.contentHash !== record.contentHash ||
-          !Array.isArray(indexed.blocks)
+          !Array.isArray(indexed.blocks) ||
+          (record.extension === 'pdf' && (indexed.extractorVersion !== LOCAL_CONTEXT_INDEX_VERSION || indexed.blocks.length === 0))
         ) {
           await this.indexRecord(record);
           indexed = JSON.parse(
             await fs.readFile(path.join(this.root, indexName(record.id)), 'utf8')
-          ) as { fileId?: string; contentHash?: string; blocks?: ExtractedAttachmentBlock[] };
+          ) as { fileId?: string; contentHash?: string; extractorVersion?: number; blocks?: ExtractedAttachmentBlock[] };
         }
         if (
           indexed.fileId !== record.id ||
@@ -456,7 +458,7 @@ export class LocalContextLibrary {
       const text =
         record.extension === 'txt' || record.extension === 'md' || record.extension === 'csv'
           ? bytes.toString('utf8')
-          : extractAttachmentBlocks(bytes, record.name)
+          : (await extractAttachmentBlocks(bytes, record.name))
               .map((block) => block.text)
               .join('\n\n');
       return {
@@ -573,7 +575,7 @@ export class LocalContextLibrary {
       throw new LocalContextLibraryError('Only DOCX files can be copied as editable text.');
     const bytes = await fs.readFile(path.resolve(this.root, record.relativePath));
     const copyBytes = Buffer.from(
-      extractAttachmentBlocks(bytes, record.name)
+      (await extractAttachmentBlocks(bytes, record.name))
         .map((block) => block.text)
         .join('\n\n'),
       'utf8'

@@ -22895,12 +22895,72 @@ const askLedgerSessionQuery = (workspaceId, userId, sessionId) => {
   return query;
 };
 
+app.get('/api/workspaces/:workspaceId/ask-ledger/resource-session', authMiddleware, rateLimit('read'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const resourceType = String(req.query?.resource_type ?? '').trim();
+    const resourceId = String(req.query?.resource_id ?? '').trim();
+    if (!workspaceId || !resourceType || !resourceId)
+      return res.status(400).json({ error: 'Workspace, resource type, and resource id are required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId)))
+      return res.status(404).json({ error: 'Workspace not found' });
+    const result = await supabase
+      .from('ask_ledger_resource_sessions')
+      .select('session_id, updated_at')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('resource_type', resourceType)
+      .eq('resource_id', resourceId)
+      .maybeSingle();
+    if (result.error) throw result.error;
+    res.json({ sessionId: result.data?.session_id ?? null, updatedAt: result.data?.updated_at ?? null });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
+app.put('/api/workspaces/:workspaceId/ask-ledger/resource-session', authMiddleware, rateLimit('write'), async (req, res) => {
+  try {
+    const workspaceId = String(req.params.workspaceId ?? '').trim();
+    const resourceType = clampText(req.body?.resourceType, 40);
+    const resourceId = clampText(req.body?.resourceId, 200);
+    const sessionId = clampText(req.body?.sessionId, 100);
+    if (!workspaceId || !resourceType || !resourceId || !sessionId)
+      return res.status(400).json({ error: 'Workspace, resource, and session are required' });
+    if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId)))
+      return res.status(404).json({ error: 'Workspace not found' });
+    const session = await supabase
+      .from('ask_ledger_sessions')
+      .select('id')
+      .eq('workspace_id', workspaceId)
+      .eq('user_id', req.authUser.id)
+      .eq('id', sessionId)
+      .maybeSingle();
+    if (session.error) throw session.error;
+    if (!session.data) return res.status(404).json({ error: 'Ask Ledger session not found' });
+    const result = await supabase.from('ask_ledger_resource_sessions').upsert({
+      workspace_id: workspaceId,
+      user_id: req.authUser.id,
+      resource_type: resourceType,
+      resource_id: resourceId,
+      session_id: sessionId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'workspace_id,user_id,resource_type,resource_id' })
+      .select('session_id, updated_at')
+      .single();
+    if (result.error) throw result.error;
+    res.json({ sessionId: result.data.session_id, updatedAt: result.data.updated_at });
+  } catch (error) {
+    return respondWithError(res, error);
+  }
+});
+
 app.get('/api/workspaces/:workspaceId/ask-ledger/sessions', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
     const workspaceId = String(req.params.workspaceId ?? '').trim();
     if (!workspaceId) return res.status(400).json({ error: 'Workspace id required' });
     if (!(await isWorkspaceAccessibleToUser(req.authUser.id, workspaceId))) return res.status(404).json({ error: 'Workspace not found' });
-    const limit = Math.min(20, Math.max(1, Number.parseInt(String(req.query?.limit ?? '5'), 10) || 5));
+    const limit = Math.min(100, Math.max(1, Number.parseInt(String(req.query?.limit ?? '5'), 10) || 5));
     const result = await askLedgerSessionQuery(workspaceId, req.authUser.id)
       .order('updated_at', { ascending: false })
       .limit(limit);

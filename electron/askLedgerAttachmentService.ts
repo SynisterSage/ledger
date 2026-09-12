@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { unzipSync, strFromU8, inflateSync } from 'fflate';
+import { unzipSync, strFromU8, unzlibSync } from 'fflate';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import * as XLSX from 'xlsx';
 import type { AskLedgerAttachment, AskLedgerAttachmentSource } from '../src/types/askLedgerAttachments.ts';
 import type { AskLedgerContextItem } from '../src/types/askLedgerContext.ts';
@@ -51,28 +52,175 @@ const validateBytes = (bytes: Uint8Array, extension: string) => {
   if (extension === 'xlsx' && (bytes[0] !== 0x50 || bytes[1] !== 0x4b)) throw new AskLedgerAttachmentError('This file is not a readable XLSX workbook.');
 };
 
-const extractPdf = (bytes: Uint8Array): ExtractedAttachmentBlock[] => {
-  const raw = strFromU8(bytes, true);
+const decodePdfTextToken = (token: string) => {
+  if (token.startsWith('<')) {
+    const hex = token.slice(1, -1).replace(/\s+/g, '');
+    if (!hex || !/^[0-9a-f]+$/i.test(hex)) return '';
+    const normalized = hex.length % 2 ? `${hex}0` : hex;
+    const bytes = new Uint8Array(normalized.match(/../g)!.map((value) => parseInt(value, 16)));
+    if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+      return new TextDecoder('utf-16be').decode(bytes.slice(2));
+    }
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  }
+  return token
+    .slice(1, -1)
+    .replace(/\\([\\()])/g, '$1')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r');
+};
+
+const pdfHexBytes = (token: string) => {
+  const hex = token.startsWith('<') ? token.slice(1, -1).replace(/\s+/g, '') : '';
+  const normalized = hex.length % 2 ? `${hex}0` : hex;
+  return hex && /^[0-9a-f]+$/i.test(hex) ? new Uint8Array(normalized.match(/../g)!.map((value) => parseInt(value, 16))) : new Uint8Array();
+};
+
+const pdfUnicodeFromHex = (token: string) => {
+  const bytes = pdfHexBytes(token);
+  if (!bytes.length) return '';
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes.slice(2));
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+};
+
+const pdfCmap = (stream: string) => {
+  const map = new Map<number, string>();
+  for (const block of stream.matchAll(/beginbfchar([\s\S]*?)endbfchar/gi)) for (const match of (block[1] ?? '').matchAll(/<([0-9a-f]+)>\s*<([0-9a-f]+)>/gi)) {
+    const source = parseInt(match[1]!, 16);
+    const destination = pdfUnicodeFromHex(`<${match[2]}>`);
+    if (Number.isFinite(source) && destination) map.set(source, destination);
+  }
+  for (const block of stream.matchAll(/beginbfrange([\s\S]*?)endbfrange/gi)) for (const match of (block[1] ?? '').matchAll(/<([0-9a-f]+)>\s*<([0-9a-f]+)>\s*<([0-9a-f]+)>/gi)) {
+    const start = parseInt(match[1]!, 16);
+    const end = parseInt(match[2]!, 16);
+    const first = parseInt(match[3]!, 16);
+    for (let source = start; source <= end; source += 1) {
+      const destination = String.fromCodePoint(first + source - start);
+      map.set(source, destination);
+    }
+  }
+  return map;
+};
+
+const decodePdfTextTokenWithCmap = (token: string, cmap?: Map<number, string>) => {
+  if (!cmap?.size) return decodePdfTextToken(token);
+  const bytes = token.startsWith('<') ? pdfHexBytes(token) : new Uint8Array([...token.slice(1, -1)].map((char) => char.charCodeAt(0) & 0xff));
+  return [...bytes].map((value) => cmap.get(value) ?? String.fromCharCode(value)).join('');
+};
+
+const pdfAscii = (bytes: Uint8Array) => {
+  let value = '';
+  for (let start = 0; start < bytes.length; start += 0x8000) value += String.fromCharCode(...bytes.subarray(start, Math.min(bytes.length, start + 0x8000)));
+  return value;
+};
+const pdfIndexOf = (bytes: Uint8Array, needle: string, from = 0) => {
+  const target = new TextEncoder().encode(needle);
+  outer: for (let index = from; index <= bytes.length - target.length; index += 1) {
+    for (let offset = 0; offset < target.length; offset += 1) if (bytes[index + offset] !== target[offset]) continue outer;
+    return index;
+  }
+  return -1;
+};
+
+const extractPdfLegacy = (bytes: Uint8Array): ExtractedAttachmentBlock[] => {
+  const raw = pdfAscii(bytes);
+  const objectBodies = new Map<number, string>();
+  for (const match of raw.matchAll(/(\d+)\s+0\s+obj([\s\S]*?)endobj/g)) objectBodies.set(Number(match[1]), match[2] ?? '');
   const streams: string[] = [];
-  for (const match of raw.matchAll(/stream\s*\r?\n([\s\S]*?)\r?\nendstream/g)) {
-    const value = match[1] ?? '';
-    const start = Math.max(0, (match.index ?? 0) - 300);
-    const dictionary = raw.slice(start, match.index ?? 0);
+  const streamObjects: number[] = [];
+  let cursor = 0;
+  while (cursor < bytes.length) {
+    const streamStart = pdfIndexOf(bytes, 'stream', cursor);
+    if (streamStart < 0) break;
+    const streamEndMarker = pdfIndexOf(bytes, 'endstream', streamStart + 6);
+    if (streamEndMarker < 0) break;
+    let dataStart = streamStart + 6;
+    if (bytes[dataStart] === 0x0d && bytes[dataStart + 1] === 0x0a) dataStart += 2;
+    else if (bytes[dataStart] === 0x0a || bytes[dataStart] === 0x0d) dataStart += 1;
+    const dictionary = pdfAscii(bytes.slice(Math.max(0, streamStart - 1200), streamStart));
+    const declaredLength = Number(dictionary.match(/\/Length\s+(\d+)/)?.[1] ?? NaN);
+    let dataEnd = Number.isFinite(declaredLength) ? dataStart + declaredLength : streamEndMarker;
+    if (dataEnd > bytes.length || (dataEnd > streamEndMarker && !Number.isFinite(declaredLength))) dataEnd = streamEndMarker;
+    if (!Number.isFinite(declaredLength)) {
+      if (dataEnd > dataStart && bytes[dataEnd - 1] === 0x0a) dataEnd -= 1;
+      if (dataEnd > dataStart && bytes[dataEnd - 1] === 0x0d) dataEnd -= 1;
+    }
+    const value = bytes.slice(dataStart, dataEnd);
     try {
-      const decoded = dictionary.includes('/FlateDecode') ? strFromU8(inflateSync(new Uint8Array([...value].map((char) => char.charCodeAt(0) & 255))), true) : value;
-      streams.push(decoded);
-    } catch { streams.push(value); }
+      const decodedBytes = dictionary.includes('/FlateDecode') ? unzlibSync(value) : value;
+      streams.push(pdfAscii(decodedBytes));
+      const objectMatches = [...raw.slice(0, streamStart).matchAll(/(\d+)\s+0\s+obj/g)];
+      streamObjects.push(Number(objectMatches.at(-1)?.[1] ?? 0));
+    } catch {
+      // A malformed or non-content stream should not prevent other page streams from being read.
+    }
+    cursor = streamEndMarker + 9;
+  }
+  const toUnicodeByFontObject = new Map<number, number>();
+  for (const [objectNumber, body] of objectBodies) {
+    const toUnicode = body.match(/\/ToUnicode\s+(\d+)\s+0\s+R/);
+    if (toUnicode) toUnicodeByFontObject.set(objectNumber, Number(toUnicode[1]));
+  }
+  const cmapByFontName = new Map<string, Map<number, string>>();
+  for (const match of raw.matchAll(/\/([A-Za-z][A-Za-z0-9]+)\s+(\d+)\s+0\s+R/g)) {
+    const fontName = match[1] ?? '';
+    const cmapObject = toUnicodeByFontObject.get(Number(match[2]));
+    if (!cmapObject) continue;
+    const cmapStreamIndex = streamObjects.indexOf(cmapObject);
+    if (cmapStreamIndex >= 0) cmapByFontName.set(fontName, pdfCmap(streams[cmapStreamIndex] ?? ''));
   }
   const text = streams.map((stream) => {
     const pieces: string[] = [];
-    for (const literal of stream.matchAll(/\(([^()]*)\)\s*Tj/g)) pieces.push(literal[1] ?? '');
-    for (const array of stream.matchAll(/\[([\s\S]*?)\]\s*TJ/g)) {
-      for (const literal of (array[1] ?? '').matchAll(/\(([^()]*)\)/g)) pieces.push(literal[1] ?? '');
+    let cmap: Map<number, string> | undefined;
+    const operators = /\/([A-Za-z][A-Za-z0-9]+)\s+[-+\d.]+\s+Tf|(\((?:\\.|[^\\()])*\)|<[0-9a-f\s]+>)\s*Tj|\[([\s\S]*?)\]\s*TJ/gi;
+    for (const operator of stream.matchAll(operators)) {
+      if (operator[1]) {
+        cmap = cmapByFontName.get(operator[1]) ?? cmap;
+        continue;
+      }
+      if (operator[2]) {
+        pieces.push(decodePdfTextTokenWithCmap(operator[2], cmap));
+        continue;
+      }
+      for (const token of (operator[3] ?? '').matchAll(/\((?:\\.|[^\\()])*\)|<[0-9a-f\s]+>/gi)) pieces.push(decodePdfTextTokenWithCmap(token[0] ?? '', cmap));
     }
     return clean(pieces.join(' '));
   }).filter(Boolean);
   if (!text.length) throw new AskLedgerAttachmentError('This PDF contains no usable text. It may be scanned or image-only.');
   return text.map((value, index) => ({ text: value, source: { pageNumber: index + 1 } }));
+};
+
+const extractPdf = async (bytes: Uint8Array): Promise<ExtractedAttachmentBlock[]> => {
+  try {
+    const document = await getDocument({
+      data: new Uint8Array(bytes),
+      isEvalSupported: false,
+      useWorkerFetch: false,
+    }).promise;
+    try {
+      const blocks: ExtractedAttachmentBlock[] = [];
+      for (let pageNumber = 1; pageNumber <= Math.min(document.numPages, 100); pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const text = clean(
+          content.items
+            .flatMap((item) =>
+              item && typeof item === 'object' && 'str' in item && typeof item.str === 'string'
+                ? [item.str]
+                : []
+            )
+            .join(' ')
+        );
+        if (text) blocks.push({ text, source: { pageNumber } });
+      }
+      if (blocks.length) return blocks;
+    } finally {
+      await document.destroy();
+    }
+  } catch {
+    // Retain the lightweight reader for malformed PDFs that Chromium can still display.
+  }
+  return extractPdfLegacy(bytes);
 };
 
 const extractDocx = (bytes: Uint8Array): ExtractedAttachmentBlock[] => {
@@ -161,7 +309,7 @@ const extractXlsx = (bytes: Uint8Array, fileName: string): ExtractedAttachmentBl
   return blocks;
 };
 
-export const extractAttachmentBlocks = (bytes: Uint8Array, fileName: string): ExtractedAttachmentBlock[] => {
+export const extractAttachmentBlocks = async (bytes: Uint8Array, fileName: string): Promise<ExtractedAttachmentBlock[]> => {
   const extension = extensionFor(fileName);
   validateBytes(bytes, extension);
   return extension === 'pdf' ? extractPdf(bytes) : extension === 'docx' ? extractDocx(bytes) : extension === 'csv' ? extractCsv(bytes) : extension === 'xlsx' ? extractXlsx(bytes, fileName) : extractText(bytes);
@@ -216,7 +364,7 @@ export class AskLedgerAttachmentService {
       await fs.writeFile(temporaryPath, bytes, { flag: 'wx', mode: 0o600 });
       this.copies.set(id, temporaryPath);
       const attachment: AskLedgerAttachment = { id, conversationId, name, extension, mimeType, sizeBytes: bytes.byteLength, status: 'processing', createdAt: new Date().toISOString() };
-      const blocks = extractAttachmentBlocks(bytes, name);
+      const blocks = await extractAttachmentBlocks(bytes, name);
       const chunks = chunkAttachmentBlocks(blocks);
       results.push({ attachment: { ...attachment, status: 'ready' }, blocks: chunks, temporaryPath });
       this.documents.set(id, results[results.length - 1]);

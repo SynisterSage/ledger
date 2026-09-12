@@ -1392,9 +1392,16 @@ export const useApi = () => {
       updateAskLedgerSkill: (workspaceId: string, skillId: string, payload: { name: string; instructions: string }) => request(`/api/workspaces/${workspaceId}/ask-ledger/skills/${skillId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
       deleteAskLedgerSkill: (workspaceId: string, skillId: string) => request(`/api/workspaces/${workspaceId}/ask-ledger/skills/${skillId}`, { method: 'DELETE' }),
       getAskLedgerSessions: (workspaceId: string, limit = 5) =>
-        request(`/api/workspaces/${workspaceId}/ask-ledger/sessions?limit=${Math.max(1, Math.min(20, limit))}`),
+        request(`/api/workspaces/${workspaceId}/ask-ledger/sessions?limit=${Math.max(1, Math.min(100, limit))}`),
       getAskLedgerSession: (workspaceId: string, sessionId: string) =>
         request(`/api/workspaces/${workspaceId}/ask-ledger/sessions/${sessionId}`),
+      getAskLedgerResourceSession: (workspaceId: string, resourceType: string, resourceId: string) =>
+        request(`/api/workspaces/${workspaceId}/ask-ledger/resource-session?resource_type=${encodeURIComponent(resourceType)}&resource_id=${encodeURIComponent(resourceId)}`),
+      linkAskLedgerResourceSession: (workspaceId: string, payload: { resourceType: string; resourceId: string; sessionId: string }) =>
+        request(`/api/workspaces/${workspaceId}/ask-ledger/resource-session`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        }),
       createAskLedgerSession: (workspaceId: string, payload: Record<string, unknown>) =>
         request(`/api/workspaces/${workspaceId}/ask-ledger/sessions`, {
           method: 'POST',

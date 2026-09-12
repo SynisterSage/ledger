@@ -147,6 +147,28 @@ const outputMappingsFor = (items: AskLedgerContextItem[], timeZone?: string, tim
   return mappings;
 });
 
+const guardAttachmentAnswer = (
+  question: string,
+  answer: string,
+  items: AskLedgerContextItem[]
+) => {
+  const attachments = items.filter((item) => item.resourceType === 'attachment');
+  if (!attachments.length) return answer;
+  const asksAboutDocument = /\b(what(?:'s| is) this(?: document| pdf)? about|summari[sz]e|describe this (?:document|pdf)|what does this (?:document|pdf) contain)\b/i.test(question);
+  const generic = /contains the content of the request|directly related to the (original )?query|no further action is required|document is fully resolved|content that was originally (requested|sought)/i.test(answer);
+  if (!asksAboutDocument && !generic) return answer;
+  const extracted = attachments
+    .map((item) => item.content.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ')
+    .slice(0, 600);
+  if (!extracted) return ASK_LEDGER_ABSTENTION;
+  if (extracted.length < 120 || generic) {
+    return `I could not determine the document’s subject from the available extracted text. The OCR recognized: “${extracted}”${extracted.length >= 600 ? '…' : ''}. The PDF needs more readable page content before I can summarize what it is about.`;
+  }
+  return answer;
+};
+
 const structuredGroupLabel = (resourceType: string) => ({
   project: 'Projects',
   task: 'Tasks',
@@ -1359,7 +1381,8 @@ export class AskLedgerService {
                 return;
               }
               const rawGeneratedAnswer = generatedAnswerChunks.join('');
-              const generatedAnswer = sanitizeAskLedgerOutput(completeTerminalSection(rawGeneratedAnswer, normalized.items), outputMappings).answer;
+              let generatedAnswer = sanitizeAskLedgerOutput(completeTerminalSection(rawGeneratedAnswer, normalized.items), outputMappings).answer;
+              generatedAnswer = guardAttachmentAnswer(request.question, generatedAnswer, normalized.items);
               if (generatedAnswer !== rawGeneratedAnswer) emit({ type: 'replace', requestId, text: generatedAnswer });
               if (!generatedAnswer.trim()) {
                 emit({ ...event, requestId });
