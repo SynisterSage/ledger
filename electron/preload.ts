@@ -1138,22 +1138,22 @@ contextBridge.exposeInMainWorld('askLedger', {
   getAIProviderConnections() {
     return ipcRenderer.invoke('ask-ledger:ai-provider-connections');
   },
-  setAIProviderKey(payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity'; apiKey: string }) {
+  setAIProviderKey(payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi'; apiKey: string }) {
     return ipcRenderer.invoke('ask-ledger:ai-provider-set-key', payload);
   },
-  removeAIProviderKey(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+  removeAIProviderKey(provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') {
     return ipcRenderer.invoke('ask-ledger:ai-provider-remove-key', provider);
   },
-  testAIProvider(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+  testAIProvider(provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') {
     return ipcRenderer.invoke('ask-ledger:ai-provider-test', provider);
   },
-  listAIProviderModels(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+  listAIProviderModels(provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') {
     return ipcRenderer.invoke('ask-ledger:ai-provider-models', provider);
   },
-  getSelectedAIProviderModel(provider: 'openai' | 'anthropic' | 'google' | 'perplexity') {
+  getSelectedAIProviderModel(provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') {
     return ipcRenderer.invoke('ask-ledger:ai-provider-selected-model', provider);
   },
-  setSelectedAIProviderModel(payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity'; model: string }) {
+  setSelectedAIProviderModel(payload: { provider: 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi'; model: string }) {
     return ipcRenderer.invoke('ask-ledger:ai-provider-select-model', payload);
   },
   getSelectedAIProvider() {
@@ -1165,11 +1165,11 @@ contextBridge.exposeInMainWorld('askLedger', {
   setAIProviderCloudConsent(enabled: boolean) {
     return ipcRenderer.invoke('ask-ledger:ai-provider-set-cloud-consent', enabled);
   },
-  setSelectedAIProvider(provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity') {
+  setSelectedAIProvider(provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi') {
     return ipcRenderer.invoke('ask-ledger:ai-provider-select', provider);
   },
-  onAIProviderState(listener: (state: { provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'; cloudConsent: boolean; model: string | null }) => void) {
-    const handler = (_event: unknown, state: { provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'; cloudConsent: boolean; model: string | null }) => listener(state);
+  onAIProviderState(listener: (state: { provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi'; cloudConsent: boolean; model: string | null }) => void) {
+    const handler = (_event: unknown, state: { provider: 'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi'; cloudConsent: boolean; model: string | null }) => listener(state);
     ipcRenderer.on('ask-ledger:ai-provider-state', handler);
     return () => ipcRenderer.removeListener('ask-ledger:ai-provider-state', handler);
   },

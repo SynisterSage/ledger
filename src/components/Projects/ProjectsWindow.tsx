@@ -109,6 +109,12 @@ import {
 } from '../../features/projects/projectLens';
 import { ProjectLensCache } from '../../features/projects/projectLensCache';
 import { LensRequestRegistry } from '../../features/lens/lensRequestRegistry';
+import {
+  getProjectTimelineSpan,
+  getProjectTimelineVisibility,
+  parseProjectTimelineDate as parseTimelineDate,
+  projectOverlapsTimelineRange,
+} from '../../features/projects/projectTimeline';
 
 const projectLensCache = new ProjectLensCache();
 type ProjectLensGenerationResponse = {
@@ -806,13 +812,6 @@ const formatDateKey = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const parseTimelineDate = (value: string | null | undefined) => {
-  const date = parseDateValue(value);
-  if (!date) return null;
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
-
 const addDays = (date: Date, days: number) => {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -820,11 +819,6 @@ const addDays = (date: Date, days: number) => {
 };
 
 const startOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
-
-const startOfQuarter = (date: Date) => {
-  const quarterMonth = Math.floor(date.getMonth() / 3) * 3;
-  return new Date(date.getFullYear(), quarterMonth, 1);
-};
 
 const addMonths = (date: Date, months: number) =>
   new Date(date.getFullYear(), date.getMonth() + months, 1);
@@ -956,6 +950,7 @@ export const ProjectsWindow = ({
   const timelineSurfaceRef = useRef<HTMLDivElement | null>(null);
   const timelineFieldRef = useRef<HTMLDivElement | null>(null);
   const timelineCanvasRef = useRef<HTMLDivElement | null>(null);
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
   const milestoneEditorRef = useRef<HTMLDivElement | null>(null);
   const milestoneDetailRef = useRef<HTMLDivElement | null>(null);
   const milestoneNameInputRef = useRef<HTMLInputElement | null>(null);
@@ -2105,12 +2100,10 @@ export const ProjectsWindow = ({
   ]);
 
   const timelineRange = useMemo(() => {
-    const dated = statusFilteredProjects
-      .flatMap((project) => [
-        parseTimelineDate(project.start_date),
-        parseTimelineDate(project.end_date),
-      ])
-      .filter((date): date is Date => Boolean(date));
+    const dated = visibleProjects.flatMap((project) => {
+      const span = getProjectTimelineSpan(project);
+      return span ? [span.start, span.end] : [];
+    });
     const now = new Date();
     const fallbackStart = startOfMonth(now);
     const fallbackEnd = addMonths(fallbackStart, projectsOverviewRange === 'month' ? 1 : 3);
@@ -2122,7 +2115,10 @@ export const ProjectsWindow = ({
       return { start: anchor, end: addMonths(anchor, 1) };
     }
     if (projectsOverviewRange === 'quarter') {
-      const anchor = startOfQuarter(now);
+      // Roadmap quarter means the next three months from the current month,
+      // so upcoming work is visible instead of disappearing at a calendar-
+      // quarter boundary (for example, October through December in September).
+      const anchor = startOfMonth(now);
       return { start: anchor, end: addMonths(anchor, 3) };
     }
     const min = new Date(Math.min(...dated.map((date) => date.getTime())));
@@ -2131,46 +2127,101 @@ export const ProjectsWindow = ({
       start: startOfMonth(addMonths(min, -1)),
       end: addMonths(startOfMonth(max), 3),
     };
-  }, [projectsOverviewRange, statusFilteredProjects]);
+  }, [projectsOverviewRange, visibleProjects]);
 
   const timelineMonths = useMemo(() => {
     const months: Date[] = [];
     let cursor = startOfMonth(timelineRange.start);
-    const maxMonths =
-      projectsOverviewRange === 'all' ? 18 : projectsOverviewRange === 'quarter' ? 3 : 1;
-    while (cursor < timelineRange.end && months.length < maxMonths) {
+    // Keep the calendar header and the date-position math on the same range.
+    // Capping the visible headers at 18 months while calculating bar positions
+    // across a longer range made the roadmap appear to begin in the wrong year.
+    while (cursor < timelineRange.end && months.length < 120) {
       months.push(cursor);
       cursor = addMonths(cursor, 1);
     }
     return months;
-  }, [projectsOverviewRange, timelineRange]);
+  }, [timelineRange]);
 
   const timelineDays = daysBetween(timelineRange.start, timelineRange.end);
+
+  useEffect(() => {
+    if (projectsOverviewView !== 'timeline' || selectedProjectId) return;
+
+    const scrollToToday = () => {
+      const scroll = timelineScrollRef.current;
+      const canvas = timelineCanvasRef.current;
+      const today = parseTimelineDate(todayKey());
+      if (!scroll || !canvas || !today || timelineDays <= 0) return;
+
+      const todayRatio = timelineOffsetPercent(timelineRange.start, today, timelineDays) / 100;
+      const todayX = todayRatio * canvas.offsetWidth;
+      const preferredLeft = todayX - scroll.clientWidth * 0.35;
+      scroll.scrollLeft = Math.max(
+        0,
+        Math.min(preferredLeft, scroll.scrollWidth - scroll.clientWidth)
+      );
+    };
+
+    // The canvas gets its measured width after this effect's first frame.
+    // Wait for that layout pass before moving the sole timeline scroller.
+    let settleFrame = 0;
+    const frame = window.requestAnimationFrame(() => {
+      settleFrame = window.requestAnimationFrame(scrollToToday);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(settleFrame);
+    };
+  }, [projects.length, projectsOverviewRange, projectsOverviewView, selectedProjectId, timelineDays, timelineRange]);
+
   const datedProjects = useMemo(
     () =>
-      statusFilteredProjects
-        .filter((project) => project.start_date || project.end_date)
+      visibleProjects
+        .filter((project) => Boolean(getProjectTimelineSpan(project)))
         .sort((left, right) =>
           String(left.start_date ?? left.end_date ?? '').localeCompare(
             String(right.start_date ?? right.end_date ?? '')
           )
         ),
-    [statusFilteredProjects]
+    [visibleProjects]
   );
   const visibleDatedProjects = useMemo(
     () =>
       datedProjects.filter((project) => {
         if (projectsOverviewRange === 'all') return true;
-        const start = parseTimelineDate(project.start_date) ?? parseTimelineDate(project.end_date);
-        const end = parseTimelineDate(project.end_date) ?? parseTimelineDate(project.start_date);
-        if (!start || !end) return false;
-        return end >= timelineRange.start && start < timelineRange.end;
+        return projectOverlapsTimelineRange(project, timelineRange);
       }),
     [datedProjects, projectsOverviewRange, timelineRange]
   );
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || projectsOverviewRange === 'all') return;
+
+    const excludedProjects = visibleProjects
+      .filter((project) => !projectOverlapsTimelineRange(project, timelineRange))
+      .map((project) => ({
+        id: project.id,
+        name: project.name,
+        startDate: project.start_date,
+        endDate: project.end_date,
+        visibility: getProjectTimelineVisibility(project, timelineRange),
+        normalizedSpan: getProjectTimelineSpan(project),
+      }));
+
+    if (excludedProjects.length > 0) {
+      console.debug('[projects timeline] excluded projects', {
+        range: {
+          start: timelineRange.start.toISOString(),
+          endExclusive: timelineRange.end.toISOString(),
+        },
+        excludedProjects,
+      });
+    }
+  }, [projectsOverviewRange, timelineRange, visibleProjects]);
+
   const datelessProjects = useMemo(
-    () => statusFilteredProjects.filter((project) => !project.start_date && !project.end_date),
-    [statusFilteredProjects]
+    () => visibleProjects.filter((project) => !project.start_date && !project.end_date),
+    [visibleProjects]
   );
   const workspaceMilestonesByProject = useMemo(() => {
     const grouped = new Map<string, ProjectMilestoneRow[]>();
@@ -7627,9 +7678,9 @@ export const ProjectsWindow = ({
         ) : (
           <section className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[0_18px_50px_rgba(17,24,39,0.06)]">
             <div className="relative flex min-h-0 flex-1 overflow-hidden">
-              <div className="flex-1 overflow-auto">
+              <div ref={timelineScrollRef} className="flex-1 overflow-auto">
                 <div
-                  className="relative flex min-h-full flex-1 flex-col"
+                  className="relative flex min-h-full flex-none flex-col"
                   style={{
                     width: `${timelineWidth}px`,
                     minHeight: `${timelineCanvasHeight}px`,
@@ -7645,7 +7696,7 @@ export const ProjectsWindow = ({
                       <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-linear-to-r from-[var(--ledger-surface-card)] to-transparent" />
                       <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-linear-to-l from-[var(--ledger-surface-card)] to-transparent" />
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24 bg-linear-to-t from-[var(--ledger-surface-card)] to-transparent" />
-                      <div className="h-full overflow-auto">
+                      <div className="h-full">
                         <div
                           ref={timelineCanvasRef}
                           className="relative min-h-full"
@@ -7752,6 +7803,8 @@ export const ProjectsWindow = ({
                                 {visibleDatedProjects.map((project, index) => {
                                   const semantic = parseProjectStatus(String(project.status));
                                   const lane = getProjectLane(project);
+                                  const laneLeftPx = (lane.left / 100) * timelineWidth;
+                                  const laneWidthPx = (lane.width / 100) * timelineWidth;
                                   const completeness = Math.max(
                                     0,
                                     Math.min(100, Number(project.completeness) || 0)
@@ -7985,10 +8038,14 @@ export const ProjectsWindow = ({
                                             : ''
                                         }`}
                                         style={{
-                                          left: `${lane.left}%`,
+                                          left: `${laneLeftPx}px`,
                                           top: '28px',
-                                          width: `${Math.max(5, lane.width)}%`,
+                                          width: `${Math.max(30, laneWidthPx)}px`,
                                           height: `${timelineBarHeight}px`,
+                                          borderColor: project.color || '#FF5F40',
+                                          backgroundColor: `color-mix(in srgb, ${
+                                            project.color || '#FF5F40'
+                                          } 10%, var(--ledger-surface-card))`,
                                         }}
                                       >
                                         <div
@@ -8136,7 +8193,7 @@ export const ProjectsWindow = ({
                                           handleTimelineProjectRowContextMenu(event, project.id)
                                         }
                                         style={{
-                                          left: `${Math.max(0, Math.min(94, lane.left))}%`,
+                                          left: `${laneLeftPx}px`,
                                           top: '0px',
                                         }}
                                       >
@@ -8331,6 +8388,7 @@ export const ProjectsWindow = ({
 
   return (
     <div
+      data-ledger-projects-shell="true"
       className="relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-background)] text-[var(--ledger-text-primary)] shadow-none"
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
     >
@@ -9230,7 +9288,7 @@ export const ProjectsWindow = ({
               className="ledger-pane-surface ledger-pane-right flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]"
               style={{ width: `${rightPaneWidth}px` }}
             >
-              <div className="ledger-pane-scrollbar flex-1 overflow-auto p-4">
+              <div className="ledger-pane-scrollbar flex-1 overflow-auto p-4 pb-36">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">

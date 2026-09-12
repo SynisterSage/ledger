@@ -30,7 +30,17 @@ export function LocalContextLinks({
     }
   };
 
-  useEffect(() => { void load(); }, [user?.id, workspaceId, targetType, targetId]);
+  useEffect(() => {
+    void load();
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId?: string; targetType?: string; targetId?: string }>).detail;
+      if (detail?.workspaceId === workspaceId && detail.targetType === targetType && detail.targetId === targetId) {
+        void load();
+      }
+    };
+    window.addEventListener('ledger:local-context-changed', refresh);
+    return () => window.removeEventListener('ledger:local-context-changed', refresh);
+  }, [user?.id, workspaceId, targetType, targetId]);
 
   const importAndLink = async () => {
     if (!user?.id || !window.localContext || busy) return;

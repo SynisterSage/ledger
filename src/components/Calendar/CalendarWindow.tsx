@@ -6588,7 +6588,7 @@ export const CalendarWindow = ({
                       return (
                         <div
                           key={`all-day-${key}`}
-                          className="relative h-10 border-b border-l border-[color:var(--ledger-border-subtle)] bg-transparent px-1 py-1"
+                          className="relative min-h-10 overflow-hidden border-b border-l border-[color:var(--ledger-border-subtle)] bg-transparent px-1 py-1"
                         >
                           <div className="space-y-0.5">
                             {visibleAllDayItems.map((evt) => {

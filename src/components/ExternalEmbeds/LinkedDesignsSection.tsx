@@ -12,6 +12,7 @@ import {
   LockKeyhole,
 } from 'lucide-react';
 import { useApi } from '../../hooks/useApi';
+import { useAuthContext } from '../../context/AuthContext';
 import { useToast } from '../Common/ToastProvider';
 import { FigmaMark } from '../Common/FigmaMark';
 import type { ExternalEmbedTargetType } from './ExternalEmbedNode';
@@ -38,6 +39,7 @@ import {
 } from '../../platform';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { ModalOverlay } from '../Common/ModalOverlay';
+import type { LocalContextFile } from '../../types/localContextLibrary';
 
 export type LinkedDesignTarget = {
   workspaceId: string;
@@ -156,6 +158,7 @@ export function LinkedDesignsSection({
   openRequest?: { source: LinkedContextSource; token: number };
 }) {
   const api = useApi();
+  const { user } = useAuthContext();
   const toast = useToast();
   const platform = usePlatform();
   const openExternal = (url: string) => {
@@ -190,6 +193,10 @@ export function LinkedDesignsSection({
   const [contextLinks, setContextLinks] = useState<Array<{ id: string; resource: { type: string; id: string; title: string; status?: string | null; dueDate?: string | null; dueTime?: string | null; assignee?: string | null; projectId?: string | null } }>>([]);
   const [linkableTasks, setLinkableTasks] = useState<LinkedTask[]>([]);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [localFiles, setLocalFiles] = useState<LocalContextFile[]>([]);
+  const [linkedLocalFiles, setLinkedLocalFiles] = useState<LocalContextFile[]>([]);
+  const [selectedLocalFileIds, setSelectedLocalFileIds] = useState<string[]>([]);
+  const [isLoadingLocalFiles, setIsLoadingLocalFiles] = useState(false);
   const [connectedFolders, setConnectedFolders] = useState<ConnectedFolder[]>([]);
   const [menuFolderId, setMenuFolderId] = useState<string | null>(null);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
@@ -340,7 +347,84 @@ export function LinkedDesignsSection({
     if (nextSource === 'notes') void onLoadNotes?.();
     if (nextSource === 'projects') void onLoadProjects?.();
     if (nextSource === 'tasks') void loadTasks();
+    if (nextSource === 'local_files') void loadLocalFiles();
     if (nextSource === 'slack') void loadSlackContexts();
+  };
+
+  const loadLocalFiles = async () => {
+    if (target.targetType !== 'project' || !user?.id || !window.localContext) {
+      setLocalFiles([]);
+      setLinkedLocalFiles([]);
+      return;
+    }
+    setIsLoadingLocalFiles(true);
+    try {
+      const result = await window.localContext.list({ ownerUserId: user.id, workspaceId: target.workspaceId });
+      const linked = result.files.filter((file) => file.links.some((link) => link.targetType === 'project' && link.targetId === target.targetId));
+      setLinkedLocalFiles(linked);
+      setLocalFiles(result.files.filter((file) => !linked.some((linkedFile) => linkedFile.id === file.id)));
+    } catch {
+      setLocalFiles([]);
+      setLinkedLocalFiles([]);
+      toast.show('Local files could not be loaded.', { variant: 'error' });
+    } finally {
+      setIsLoadingLocalFiles(false);
+    }
+  };
+
+  const toggleLocalFile = (fileId: string) => {
+    setSelectedLocalFileIds((current) => current.includes(fileId) ? current.filter((id) => id !== fileId) : [...current, fileId]);
+  };
+
+  const importLocalFiles = async () => {
+    if (target.targetType !== 'project' || !user?.id || !window.localContext || !canEdit) return;
+    setBusyId('local-file-import');
+    try {
+      const result = await window.localContext.importFiles({ ownerUserId: user.id, workspaceId: target.workspaceId });
+      if (result.canceled) return;
+      setSelectedLocalFileIds((current) => Array.from(new Set([...current, ...result.files.map((file) => file.id)])));
+      await loadLocalFiles();
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not add local files.', { variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const linkLocalFiles = async (fileIds: string[]) => {
+    if (target.targetType !== 'project' || !user?.id || !window.localContext || !canEdit) return;
+    setBusyId('local-file-link');
+    try {
+      for (const fileId of fileIds) {
+        await window.localContext.link({ ownerUserId: user.id, workspaceId: target.workspaceId, fileId, targetType: 'project', targetId: target.targetId });
+      }
+      setSelectedLocalFileIds([]);
+      await loadLocalFiles();
+      window.dispatchEvent(new CustomEvent('ledger:local-context-changed', {
+        detail: { workspaceId: target.workspaceId, targetType: 'project', targetId: target.targetId },
+      }));
+      toast.show(`Linked ${fileIds.length} local file${fileIds.length === 1 ? '' : 's'}.`, { variant: 'success' });
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not link local files.', { variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const unlinkLocalFile = async (file: LocalContextFile) => {
+    if (target.targetType !== 'project' || !user?.id || !window.localContext || !canEdit) return;
+    setBusyId(`local-file:${file.id}`);
+    try {
+      await window.localContext.unlink({ ownerUserId: user.id, workspaceId: target.workspaceId, fileId: file.id, targetType: 'project', targetId: target.targetId });
+      await loadLocalFiles();
+      window.dispatchEvent(new CustomEvent('ledger:local-context-changed', {
+        detail: { workspaceId: target.workspaceId, targetType: 'project', targetId: target.targetId },
+      }));
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : 'Could not unlink local file.', { variant: 'error' });
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const loadSlackContexts = async () => {
@@ -514,6 +598,19 @@ export function LinkedDesignsSection({
     optimisticUnlinkedIds.current.clear();
     void load();
   }, [target.targetId, target.targetType]);
+  useEffect(() => {
+    if (target.targetType === 'project') void loadLocalFiles();
+  }, [target.targetId, target.targetType, target.workspaceId, user?.id]);
+  useEffect(() => {
+    const refreshLocalFiles = (event: Event) => {
+      const detail = (event as CustomEvent<{ workspaceId?: string; targetType?: string; targetId?: string }>).detail;
+      if (detail?.workspaceId === target.workspaceId && detail.targetType === target.targetType && detail.targetId === target.targetId) {
+        void loadLocalFiles();
+      }
+    };
+    window.addEventListener('ledger:local-context-changed', refreshLocalFiles);
+    return () => window.removeEventListener('ledger:local-context-changed', refreshLocalFiles);
+  }, [target.workspaceId, target.targetId, target.targetType, user?.id]);
   useEffect(() => {
     if (!openRequest || openRequest.token === 0) return;
     setContextSource(openRequest.source);
@@ -989,6 +1086,7 @@ export function LinkedDesignsSection({
     ).values()
   );
   const visibleCalendarItems = compactExternalOnly || target.targetType === 'meetingNote' ? [] : calendarItems;
+  const visibleLocalFiles = target.targetType === 'project' ? linkedLocalFiles : [];
   const hasConnectedFolders = target.targetType === 'project' && connectedFolders.length > 0;
   return (
     <section
@@ -1008,8 +1106,8 @@ export function LinkedDesignsSection({
               <Loader2 size={11} className="animate-spin" /> Updating
             </span>
           )}
-          {(rows.length > 0 || visibleCalendarItems.length > 0 || visibleContextLinks.length > 0 || slackContexts.length > 0 || connectedFolders.length > 0) && (
-            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + visibleCalendarItems.length + visibleContextLinks.length + slackContexts.length + connectedFolders.length}</span>
+          {(rows.length > 0 || visibleCalendarItems.length > 0 || visibleContextLinks.length > 0 || visibleLocalFiles.length > 0 || slackContexts.length > 0 || connectedFolders.length > 0) && (
+            <span className="text-[11px] text-[var(--ledger-text-muted)]">{rows.length + visibleCalendarItems.length + visibleContextLinks.length + visibleLocalFiles.length + slackContexts.length + connectedFolders.length}</span>
           )}
           {target.targetType === 'project' && hasGithubWork && (
             <span className="text-[11px] text-[var(--ledger-text-muted)]">{githubIssues} open issues · {githubPullRequests} open PRs{githubAttention ? ` · ${githubAttention} needs attention` : ''}</span>
@@ -1044,7 +1142,7 @@ export function LinkedDesignsSection({
             Loading linked work…
           </div>
         )
-      ) : visibleRows.length === 0 && visibleCalendarItems.length === 0 && visibleContextLinks.length === 0 && slackContexts.length === 0 && !hasConnectedFolders ? (
+      ) : visibleRows.length === 0 && visibleCalendarItems.length === 0 && visibleContextLinks.length === 0 && visibleLocalFiles.length === 0 && slackContexts.length === 0 && !hasConnectedFolders ? (
         compact ? (
           <>
             {canEdit && <button type="button" onClick={() => setDialogOpen(true)} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"><Link2 size={12} />Link</button>}
@@ -1071,6 +1169,16 @@ export function LinkedDesignsSection({
         )
       ) : (
         <div className={compact ? 'contents' : 'space-y-1'}>
+          {visibleLocalFiles.map((file) => (
+            <div key={`local-file-${file.id}`} className={compact ? 'relative flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}>
+              <span className={compact ? 'flex h-5 w-5 shrink-0 items-center justify-center text-[var(--ledger-text-muted)]' : 'flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-muted)]'}><FileText size={compact ? 13 : 15} /></span>
+              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => void window.localContext?.open({ ownerUserId: user?.id ?? '', workspaceId: target.workspaceId, fileId: file.id })}>
+                <p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{file.name}</p>
+                {!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">On this device · {file.extension ? file.extension.toUpperCase().replace(/^\./, '') : 'File'}</p>}
+              </button>
+              {canEdit && <button type="button" aria-label={`Remove linked ${file.name}`} title={`Remove linked ${file.name}`} disabled={Boolean(busyId)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-danger)] disabled:opacity-50" onClick={() => void unlinkLocalFile(file)}>{busyId === `local-file:${file.id}` ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}</button>}
+            </div>
+          ))}
           {connectedFolders.map((folder) => <div data-drive-folder-row="true" key={`drive-folder-${folder.id}`} className={compact ? 'relative z-10 flex h-8 max-w-56 items-center gap-1.5 overflow-visible rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-2 transition hover:bg-[var(--ledger-surface-hover)]' : 'relative flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-2.5 py-2'}><span className="flex h-5 w-5 shrink-0 items-center justify-center"><img src="/drive.svg" alt="" className="h-4 w-4 object-contain" /></span><button type="button" className="min-w-0 flex-1 text-left" onClick={() => openExternal(connectedFolderUrl(folder))}><p className="truncate text-xs font-medium text-[var(--ledger-text-primary)]">{folder.name}</p>{!compact && <p className="truncate text-[11px] text-[var(--ledger-text-muted)]">Google Drive · Connected folder{folder.external_metadata?.monitorChanges === false ? '' : ' · Monitoring on'}</p>}</button><button type="button" aria-label="Folder actions" onClick={() => setMenuFolderId(menuFolderId === folder.id ? null : folder.id)} className="rounded p-1 text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-hover)]"><MoreHorizontal size={14} /></button>{menuFolderId === folder.id && <div data-drive-folder-menu="true" className="absolute bottom-9 right-1 z-50 w-44 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]"><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { openExternal(connectedFolderUrl(folder)); setMenuFolderId(null); }}>Open in Google Drive</button><button type="button" className="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-[var(--ledger-surface-hover)]" onClick={() => { platform.navigation.openRoute(routeForWorkspaceSettings(target.workspaceId, 'google-drive')); setMenuFolderId(null); }}>Folder settings</button><button type="button" disabled={!canEdit} className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-[var(--ledger-danger)] hover:bg-[color:rgba(217,45,32,0.08)] disabled:opacity-50" onClick={() => { void api.disconnectConnectedSource(folder.id, target.targetId).then(load); setMenuFolderId(null); }}>Disconnect from project</button></div>}</div>)}
           {slackContexts.map((context) => <SlackContextCard key={`slack-context-${context.id}`} context={context} compact={compact} />)}
           {visibleContextLinks.filter((link) => ['note', 'project'].includes(link.resource.type)).map((link) => {
@@ -1308,12 +1416,12 @@ export function LinkedDesignsSection({
               target.targetType === 'project'
                 ? ['projects', 'tasks']
                 : target.targetType === 'note' || target.targetType === 'meetingNote'
-                  ? ['notes']
+                  ? ['notes', 'local_files']
                 : target.targetType === 'task'
-                  ? ['tasks', 'projects']
+                  ? ['tasks', 'projects', 'local_files']
                 : String(target.targetType) === 'event' || String(target.targetType) === 'reminder'
-                    ? ['calendar']
-                    : []
+                    ? ['calendar', 'local_files']
+                    : ['local_files']
             }
             notes={notes}
             isLoadingNotes={isLoadingNotes}
@@ -1346,6 +1454,16 @@ export function LinkedDesignsSection({
               await linkTasks(taskIds);
               setDialogOpen(false);
             }}
+            localFiles={localFiles}
+            isLoadingLocalFiles={isLoadingLocalFiles}
+            selectedLocalFileIds={selectedLocalFileIds}
+            onToggleLocalFile={toggleLocalFile}
+            onLinkLocalFiles={async (fileIds) => {
+              await linkLocalFiles(fileIds);
+              setDialogOpen(false);
+            }}
+            onImportLocalFiles={importLocalFiles}
+            portalTarget={target.targetType === 'project' && typeof document !== 'undefined' ? document.querySelector('[data-ledger-projects-shell]') : undefined}
             slackContexts={slackContexts}
             isLoadingSlackContexts={isLoadingSlackContexts}
             selectedSlackContextIds={selectedSlackContextIds}

@@ -10,20 +10,33 @@ export type AIProviderModels = { ok: boolean; provider: AIProvider; models: stri
 
 const endpointFor = (provider: AIProvider) => provider === 'openai'
   ? 'https://api.openai.com/v1/models'
-  : provider === 'anthropic' ? 'https://api.anthropic.com/v1/models' : provider === 'google' ? 'https://generativelanguage.googleapis.com/v1beta/models' : 'https://api.perplexity.ai/v1/models';
+  : provider === 'anthropic' ? 'https://api.anthropic.com/v1/models' : provider === 'google' ? 'https://generativelanguage.googleapis.com/v1beta/models' : provider === 'perplexity' ? 'https://api.perplexity.ai/v1/models' : 'https://api.moonshot.ai/v1/models';
 
 const isTextGenerationModel = (id: string) => !/(embedding|moderation|whisper|tts|dall-e|image|audio|search|rerank)/i.test(id);
+const isLegacyOrUnsupportedModel = (provider: AIProvider, id: string) => {
+  if (provider !== 'openai') return false;
+  return /(?:^|[-.])(?:preview|instruct|turbo|davinci|babbage|ada|curie)(?:$|[-.])/i.test(id)
+    || /^gpt-(?:3\.5|4(?:$|-turbo))/i.test(id)
+    || /(?:realtime|transcrib|tts|audio|image|search|computer-use)/i.test(id);
+};
 const isSupportedGenerationModel = (provider: AIProvider, id: string) => {
-  if (!isTextGenerationModel(id)) return false;
+  if (!isTextGenerationModel(id) || isLegacyOrUnsupportedModel(provider, id)) return false;
   if (provider === 'openai') return /^(gpt-|o[1-9]-|chatgpt-)/i.test(id) && !/realtime/i.test(id);
   if (provider === 'anthropic') return /^claude-/i.test(id);
   if (provider === 'perplexity') return /^(sonar|pplx-)/i.test(id);
+  if (provider === 'kimi') return /^kimi-/i.test(id);
   return /^gemini-/i.test(id);
 };
 
 /** Validates a stored credential without sending Ledger content. */
 export class AIProviderService {
-  constructor(private readonly keys: AIProviderKeyStore, private readonly fetcher: typeof fetch = fetch) {}
+  private readonly keys: AIProviderKeyStore;
+  private readonly fetcher: typeof fetch;
+
+  constructor(keys: AIProviderKeyStore, fetcher: typeof fetch = fetch) {
+    this.keys = keys;
+    this.fetcher = fetcher;
+  }
 
   async testConnection(provider: AIProvider): Promise<AIProviderConnectionTest> {
     const key = this.keys.get(provider);
@@ -31,7 +44,7 @@ export class AIProviderService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
     try {
-      const headers: Record<string, string> = provider === 'openai' || provider === 'perplexity' ? { Authorization: `Bearer ${key}` } : provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : { 'x-goog-api-key': key };
+      const headers: Record<string, string> = provider === 'openai' || provider === 'perplexity' || provider === 'kimi' ? { Authorization: `Bearer ${key}` } : provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : { 'x-goog-api-key': key };
       const response = await this.fetcher(endpointFor(provider), { method: 'GET', headers, signal: controller.signal });
       if (!response.ok) {
         const status = response.status;
@@ -51,7 +64,7 @@ export class AIProviderService {
     const key = this.keys.get(provider);
     if (!key) return { ok: false, provider, models: [], error: `No ${provider} API key is connected.` };
     try {
-      const headers: Record<string, string> = provider === 'openai' || provider === 'perplexity' ? { Authorization: `Bearer ${key}` } : provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : { 'x-goog-api-key': key };
+      const headers: Record<string, string> = provider === 'openai' || provider === 'perplexity' || provider === 'kimi' ? { Authorization: `Bearer ${key}` } : provider === 'anthropic' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : { 'x-goog-api-key': key };
       const response = await this.fetcher(endpointFor(provider), { headers });
       if (!response.ok) return { ok: false, provider, models: [], error: `The provider returned HTTP ${response.status}.` };
       const payload = await response.json() as { data?: Array<{ id?: unknown }>; models?: Array<{ name?: unknown; supportedGenerationMethods?: unknown[] }> };
@@ -63,7 +76,10 @@ export class AIProviderService {
         : (payload.data ?? [])
           .map((item) => typeof item.id === 'string' ? item.id : '')
           .filter((id): id is string => Boolean(id) && isSupportedGenerationModel(provider, id));
-      return { ok: true, provider, models };
+      const uniqueModels = [...new Set(models)];
+      const lowCostFirst = (id: string) => /(?:nano|mini|flash|haiku|small|lite)/i.test(id) ? 0 : 1;
+      uniqueModels.sort((left, right) => lowCostFirst(left) - lowCostFirst(right) || left.localeCompare(right));
+      return { ok: true, provider, models: uniqueModels };
     } catch { return { ok: false, provider, models: [], error: 'Could not load models from the provider.' }; }
   }
 }

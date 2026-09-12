@@ -1,12 +1,13 @@
-import { Check, CalendarDays, Folder, StickyNote, FileImage, ListChecks, Loader2, Search } from 'lucide-react';
+import { Check, CalendarDays, Folder, StickyNote, FileImage, ListChecks, Loader2, Search, HardDrive, FilePlus2 } from 'lucide-react';
 import { ModalOverlay } from '../Common/ModalOverlay';
 import { ModalCloseButton } from '../Common/ModalCloseButton';
 import { FigmaMark } from '../Common/FigmaMark';
 import { IntegrationProviderMark } from '../Common/IntegrationProviderMark';
 import { GoogleDriveIcon } from '../Common/GoogleDriveIcon';
 import { GoogleDriveWriteActions } from '../Projects/GoogleDriveWriteActions';
+import type { LocalContextFile } from '../../types/localContextLibrary';
 
-export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'figma' | 'github' | 'google_drive' | 'slack';
+export type LinkedContextSource = 'notes' | 'projects' | 'calendar' | 'tasks' | 'local_files' | 'figma' | 'github' | 'google_drive' | 'slack';
 export type LinkedContextMode = 'paste' | 'existing';
 
 export type LinkedContextNote = {
@@ -90,6 +91,12 @@ type Props = {
   selectedTaskIds?: string[];
   onToggleTask?: (taskId: string) => void;
   onLinkTasks?: (taskIds: string[]) => void | Promise<void>;
+  localFiles?: LocalContextFile[];
+  isLoadingLocalFiles?: boolean;
+  selectedLocalFileIds?: string[];
+  onToggleLocalFile?: (fileId: string) => void;
+  onLinkLocalFiles?: (fileIds: string[]) => void | Promise<void>;
+  onImportLocalFiles?: () => void | Promise<void>;
   slackContexts?: LinkedSlackContext[];
   isLoadingSlackContexts?: boolean;
   selectedSlackContextIds?: string[];
@@ -121,10 +128,11 @@ type Props = {
   onApplyGoogleDriveTemplate?: () => void | Promise<void>;
   onGoogleDriveWriteComplete?: () => void | Promise<void>;
   onBeforeGoogleDriveAction?: () => void | Promise<void>;
+  portalTarget?: Element | null;
 };
 
 const sourceGroups = [
-  { label: 'Ledger', items: [{ id: 'notes' as const, label: 'Notes', icon: StickyNote }, { id: 'projects' as const, label: 'Projects', icon: Folder }, { id: 'calendar' as const, label: 'Calendar', icon: CalendarDays }, { id: 'tasks' as const, label: 'Tasks', icon: ListChecks }] },
+  { label: 'Ledger', items: [{ id: 'notes' as const, label: 'Notes', icon: StickyNote }, { id: 'projects' as const, label: 'Projects', icon: Folder }, { id: 'calendar' as const, label: 'Calendar', icon: CalendarDays }, { id: 'tasks' as const, label: 'Tasks', icon: ListChecks }, { id: 'local_files' as const, label: 'Local files', icon: HardDrive }] },
   {
     label: 'Integrations',
     items: [
@@ -161,6 +169,12 @@ export function AddLinkedContextModal({
   selectedTaskIds = [],
   onToggleTask,
   onLinkTasks,
+  localFiles = [],
+  isLoadingLocalFiles = false,
+  selectedLocalFileIds = [],
+  onToggleLocalFile,
+  onLinkLocalFiles,
+  onImportLocalFiles,
   slackContexts = [],
   isLoadingSlackContexts = false,
   selectedSlackContextIds = [],
@@ -192,11 +206,12 @@ export function AddLinkedContextModal({
   onApplyGoogleDriveTemplate,
   onGoogleDriveWriteComplete,
   onBeforeGoogleDriveAction,
+  portalTarget,
 }: Props) {
   const visibleSourceGroups = sourceGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => !hiddenSources.includes(item.id)) }))
     .filter((group) => group.items.length > 0);
-  const selectedCount = source === 'notes' ? selectedNoteIds.length : source === 'projects' ? selectedProjectIds.length : source === 'calendar' ? selectedCalendarItemIds.length : source === 'tasks' ? selectedTaskIds.length : source === 'slack' ? selectedSlackContextIds.length : 0;
+  const selectedCount = source === 'notes' ? selectedNoteIds.length : source === 'projects' ? selectedProjectIds.length : source === 'calendar' ? selectedCalendarItemIds.length : source === 'tasks' ? selectedTaskIds.length : source === 'local_files' ? selectedLocalFileIds.length : source === 'slack' ? selectedSlackContextIds.length : 0;
   const primaryLabel =
     source === 'notes'
       ? selectedCount === 0
@@ -212,6 +227,8 @@ export function AddLinkedContextModal({
             : `Link ${selectedCount} calendar items`
       : source === 'tasks'
         ? selectedCount === 0 ? 'Link selected' : `Link ${selectedCount} task${selectedCount === 1 ? '' : 's'}`
+      : source === 'local_files'
+        ? selectedCount === 0 ? 'Link selected' : `Link ${selectedCount} file${selectedCount === 1 ? '' : 's'}`
       : source === 'slack'
         ? selectedCount === 0 ? 'Link selected' : `Link ${selectedCount} Slack context${selectedCount === 1 ? '' : 's'}`
       : source === 'figma' || source === 'google_drive'
@@ -226,7 +243,9 @@ export function AddLinkedContextModal({
     <ModalOverlay
       isOpen={isOpen}
       onClose={onClose}
-      backdropBorderRadius="var(--ledger-window-radius)"
+      backdropBorderRadius={portalTarget ? 'inherit' : 'var(--ledger-window-radius)'}
+      portalTarget={portalTarget}
+      manageWindowChrome={portalTarget ? false : undefined}
       classNameContainer="w-full max-w-[620px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
     >
       <div className="flex h-[min(640px,calc(100vh-56px))] flex-col">
@@ -242,7 +261,7 @@ export function AddLinkedContextModal({
           <nav className="hidden w-44 shrink-0 border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-3 sm:block" aria-label="Linked context sources">
             {visibleSourceGroups.map((group) => (
               <div key={group.label} className="mb-5 last:mb-0">
-                <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--ledger-text-muted)]">{group.label}</p>
+                <p className="px-2 pb-2 text-[11px] font-medium text-[var(--ledger-text-muted)]">{group.label}</p>
                 <div className="space-y-0.5">
                   {group.items.map((item) => {
                     const Icon = item.icon;
@@ -266,6 +285,7 @@ export function AddLinkedContextModal({
                 {!hiddenSources.includes('projects') && <option value="projects">Ledger · Projects</option>}
                 {!hiddenSources.includes('calendar') && <option value="calendar">Ledger · Calendar</option>}
                 {!hiddenSources.includes('tasks') && <option value="tasks">Ledger · Tasks</option>}
+                {!hiddenSources.includes('local_files') && <option value="local_files">Ledger · Local files</option>}
                 <option value="figma">Integrations · Figma</option>
                 <option value="github">Integrations · GitHub</option>
                 <option value="google_drive">Integrations · Google Drive</option>
@@ -274,7 +294,42 @@ export function AddLinkedContextModal({
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              {source === 'slack' ? (
+              {source === 'local_files' ? (
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] px-3 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--ledger-text-primary)]">Files on this device</p>
+                      <p className="mt-0.5 text-xs text-[var(--ledger-text-muted)]">These files stay private to this computer.</p>
+                    </div>
+                    <button type="button" onClick={() => void onImportLocalFiles?.()} disabled={Boolean(busyId)} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 py-1.5 text-xs font-medium text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50"><FilePlus2 size={13} />Choose files</button>
+                  </div>
+                  <div className="overflow-hidden rounded-lg bg-[var(--ledger-surface-muted)]">
+                    {isLoadingLocalFiles ? <p className="p-4 text-sm text-[var(--ledger-text-muted)]">Loading local files…</p> : localFiles.map((file) => {
+                      const selected = selectedLocalFileIds.includes(file.id);
+                      return (
+                        <button
+                          key={file.id}
+                          type="button"
+                          onClick={() => onToggleLocalFile?.(file.id)}
+                          disabled={Boolean(busyId)}
+                          className={`flex w-full items-start gap-3 border-b border-[color:var(--ledger-border-subtle)] px-3 py-3 text-left last:border-b-0 hover:bg-[var(--ledger-surface-hover)] disabled:opacity-50 ${selected ? 'bg-[color:rgba(255,95,64,0.08)]' : ''}`}
+                        >
+                          <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selected ? 'border-[var(--ledger-accent)] bg-[color:rgba(255,95,64,0.14)]' : 'border-[var(--ledger-border-subtle)]'}`}>
+                            {selected && <Check size={11} className="text-[var(--ledger-accent)]" />}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-[var(--ledger-text-primary)]">{file.name}</span>
+                            <span className="block truncate text-xs text-[var(--ledger-text-muted)]">
+                              {file.extension ? file.extension.toUpperCase().replace(/^\./, '') : 'File'} · {Math.max(1, Math.ceil(file.sizeBytes / 1024)).toLocaleString()} KB
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {!isLoadingLocalFiles && localFiles.length === 0 && <p className="p-4 text-sm text-[var(--ledger-text-muted)]">No local files yet. Choose files to add one from this computer.</p>}
+                  </div>
+                </div>
+              ) : source === 'slack' ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] px-3"><Search size={14} className="text-[var(--ledger-text-muted)]" /><input autoFocus value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search captured Slack messages" className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
                   <div className="overflow-hidden rounded-lg bg-[var(--ledger-surface-muted)]">
@@ -350,8 +405,8 @@ export function AddLinkedContextModal({
             </div>
 
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[color:var(--ledger-border-subtle)] px-5 py-3">
-              <p className="text-xs text-[var(--ledger-text-muted)]">{['notes', 'projects', 'calendar', 'tasks', 'slack'].includes(source) ? `${selectedCount} selected` : source === 'github' && githubRepositoryId ? '1 selected' : ''}</p>
-              <div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={() => void (source === 'notes' ? onLinkNotes?.(selectedNoteIds) : source === 'projects' ? onLinkProjects?.(selectedProjectIds) : source === 'calendar' ? onLinkCalendarItems?.(selectedCalendarItemIds) : source === 'tasks' ? onLinkTasks?.(selectedTaskIds) : source === 'slack' ? onLinkSlackContexts?.(selectedSlackContextIds) : source === 'github' && githubRepositoryId ? onLinkRepository(githubRepositories.find((repo) => repo.github_repository_id === githubRepositoryId)!) : mode === 'existing' ? onLinkSelectedReference?.(existing.find((reference) => reference.id === selectedReferenceId)!) : onPasteLink())} disabled={Boolean(busyId) || (['notes', 'projects', 'calendar', 'tasks', 'slack'].includes(source) ? selectedCount === 0 : source === 'github' ? !githubRepositoryId : mode === 'paste' ? !url.trim() : !selectedReferenceId)} className="inline-flex items-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{busyId && <Loader2 size={14} className="animate-spin" />}{primaryLabel}</button></div>
+              <p className="text-xs text-[var(--ledger-text-muted)]">{['notes', 'projects', 'calendar', 'tasks', 'local_files', 'slack'].includes(source) ? `${selectedCount} selected` : source === 'github' && githubRepositoryId ? '1 selected' : ''}</p>
+              <div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]">Cancel</button><button type="button" onClick={() => void (source === 'notes' ? onLinkNotes?.(selectedNoteIds) : source === 'projects' ? onLinkProjects?.(selectedProjectIds) : source === 'calendar' ? onLinkCalendarItems?.(selectedCalendarItemIds) : source === 'tasks' ? onLinkTasks?.(selectedTaskIds) : source === 'local_files' ? onLinkLocalFiles?.(selectedLocalFileIds) : source === 'slack' ? onLinkSlackContexts?.(selectedSlackContextIds) : source === 'github' && githubRepositoryId ? onLinkRepository(githubRepositories.find((repo) => repo.github_repository_id === githubRepositoryId)!) : mode === 'existing' ? onLinkSelectedReference?.(existing.find((reference) => reference.id === selectedReferenceId)!) : onPasteLink())} disabled={Boolean(busyId) || (['notes', 'projects', 'calendar', 'tasks', 'local_files', 'slack'].includes(source) ? selectedCount === 0 : source === 'github' ? !githubRepositoryId : mode === 'paste' ? !url.trim() : !selectedReferenceId)} className="inline-flex items-center gap-2 rounded-lg bg-[var(--ledger-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{busyId && <Loader2 size={14} className="animate-spin" />}{primaryLabel}</button></div>
             </div>
           </div>
         </div>

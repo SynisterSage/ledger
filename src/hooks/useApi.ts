@@ -27,22 +27,6 @@ export const useApi = () => {
   const { session } = useAuthContext();
   const { activeWorkspaceId } = useWorkspaceContext();
 
-  const normalizeNameKey = (value: unknown) =>
-    String(value ?? '')
-      .trim()
-      .toLowerCase();
-
-  const dedupeProjects = <T extends { id?: string; name?: string }>(items: T[]) => {
-    const seen = new Set<string>();
-    return items.filter((item) => {
-      const key = normalizeNameKey(item?.name);
-      if (!key) return true;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  };
-
   const dedupeById = <T extends { id?: string }>(items: T[]) => {
     const seen = new Set<string>();
     return items.filter((item) => {
@@ -716,7 +700,7 @@ export const useApi = () => {
         const query = params.toString();
         return request(`/api/projects${query ? `?${query}` : ''}`).then((data) => {
           if (!Array.isArray(data)) return data;
-          return dedupeProjects(data);
+          return dedupeById(data);
         });
       },
       getProjectActivity: (projectId: string) => request(`/api/projects/${encodeURIComponent(projectId)}/activity`),

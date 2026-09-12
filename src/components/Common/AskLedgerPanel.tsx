@@ -1203,7 +1203,7 @@ export const AskLedgerPanel = ({
     failure?: unknown;
   } | null>(null);
   const [localAICapability, setLocalAICapability] = useState<LocalAICapabilityView | null>(null);
-  const [selectedAIProvider, setSelectedAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity'>('local');
+  const [selectedAIProvider, setSelectedAIProvider] = useState<'local' | 'openai' | 'anthropic' | 'google' | 'perplexity' | 'kimi'>('local');
   const [selectedAIProviderModel, setSelectedAIProviderModel] = useState('');
   const [selectedAIProviderModels, setSelectedAIProviderModels] = useState<string[]>([]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -1358,7 +1358,7 @@ export const AskLedgerPanel = ({
       const askLedger = window.askLedger;
       if (!askLedger?.getSelectedAIProvider) return;
       const provider = state?.provider ?? await askLedger.getSelectedAIProvider();
-      if (provider !== 'local' && provider !== 'openai' && provider !== 'anthropic' && provider !== 'google' && provider !== 'perplexity') return;
+      if (provider !== 'local' && provider !== 'openai' && provider !== 'anthropic' && provider !== 'google' && provider !== 'perplexity' && provider !== 'kimi') return;
       if (disposed) return;
       setSelectedAIProvider(provider);
       if (provider !== 'local' && askLedger.getSelectedAIProviderModel) {
@@ -4300,7 +4300,7 @@ export const AskLedgerPanel = ({
                   className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:cursor-wait disabled:opacity-60"
                 >
                   <SlidersHorizontal size={13} />
-                  <span>{selectedAIProvider === 'local' ? generationModeLabels[generationMode] : (selectedAIProviderModel || (selectedAIProvider === 'google' ? 'Gemini' : selectedAIProvider === 'perplexity' ? 'Perplexity' : selectedAIProvider === 'openai' ? 'OpenAI' : 'Anthropic'))}</span>
+                  <span>{selectedAIProvider === 'local' ? generationModeLabels[generationMode] : (selectedAIProviderModel || (selectedAIProvider === 'google' ? 'Gemini' : selectedAIProvider === 'perplexity' ? 'Perplexity' : selectedAIProvider === 'kimi' ? 'Kimi' : selectedAIProvider === 'openai' ? 'OpenAI' : 'Anthropic'))}</span>
                 </button>
                 {advancedOpen && (
                   <div

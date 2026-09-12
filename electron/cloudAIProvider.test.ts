@@ -27,6 +27,20 @@ test('parses Anthropic and Perplexity streamed text', async () => {
   }
 });
 
+test('parses Kimi streamed text through its OpenAI-compatible response shape', async () => {
+  const events: any[] = [];
+  const body = 'data: {"choices":[{"delta":{"content":"Hello Kimi"}}]}\n\ndata: [DONE]\n\n';
+  const fakeFetch = async (url: string, init?: RequestInit) => {
+    assert.equal(url, 'https://api.moonshot.ai/v1/chat/completions');
+    assert.equal((init?.headers as Record<string, string>).Authorization, 'Bearer test-secret');
+    return new Response(body, { status: 200 });
+  };
+  const kimiKeys = { get: () => 'test-secret', selectedModel: () => 'kimi-k2.6', cloudDataConsent: () => true } as never;
+  await new CloudAIProvider(kimiKeys, fakeFetch as never).stream('kimi', { question: 'q', context: 'c' }, { onEvent: (event) => events.push(event) }, new AbortController().signal, 'kimi');
+  assert.deepEqual(events.filter((event) => event.type === 'delta').map((event) => event.text), ['Hello Kimi']);
+  assert.equal(events.at(-1)?.type, 'done');
+});
+
 test('uses a bounded no-thinking request for Gemini 2.5 Flash and emits its answer', async () => {
   let requestBody: unknown;
   const fakeFetch = async (_url: string, init?: RequestInit) => {

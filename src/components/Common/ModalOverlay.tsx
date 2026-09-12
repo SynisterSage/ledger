@@ -32,6 +32,7 @@ export interface ModalOverlayProps {
   backdropInset?: string;
   manageWindowChrome?: boolean;
   disablePortal?: boolean;
+  portalTarget?: Element | null;
 }
 
 /**
@@ -51,8 +52,14 @@ export const ModalOverlay = ({
   backdropInset,
   manageWindowChrome = true,
   disablePortal = false,
+  portalTarget,
 }: ModalOverlayProps) => {
   if (!isOpen) return null;
+  // A portal hosted by a module shell must use that shell's coordinate space.
+  // This is how top-level module modals cover the header but stop before any
+  // app-owned footer outside the shell.
+  const isShellPortal = Boolean(portalTarget);
+  const useAbsolutePosition = disablePortal || isShellPortal;
   const handleBackdropClick = (event: React.MouseEvent) => {
     if (closeOnBackdropClick && event.target === event.currentTarget) {
       onClose();
@@ -64,8 +71,8 @@ export const ModalOverlay = ({
   const wrapperStyle: React.CSSProperties = {
     borderRadius: backdropBorderRadius,
     overflow: 'hidden',
-    position: disablePortal ? 'absolute' : 'fixed',
-    inset: backdropInset ?? (disablePortal ? 'calc(-2px)' : 'calc(-1px)'),
+    position: useAbsolutePosition ? 'absolute' : 'fixed',
+    inset: backdropInset ?? (useAbsolutePosition ? 'calc(-2px)' : 'calc(-1px)'),
     // Ensure overlay sits above shadows and outlines
     boxShadow: 'none',
   };
@@ -88,7 +95,7 @@ export const ModalOverlay = ({
   const overlay = (
     <div
       className={`${
-        disablePortal ? 'absolute' : 'fixed'
+        useAbsolutePosition ? 'absolute' : 'fixed'
       } inset-0 z-9999 isolate ${classNameBackdrop}`}
       style={wrapperStyle}
     >
@@ -114,5 +121,5 @@ export const ModalOverlay = ({
     </div>
   );
 
-  return disablePortal ? overlay : createPortal(overlay, document.body);
+  return disablePortal ? overlay : createPortal(overlay, portalTarget ?? document.body);
 };

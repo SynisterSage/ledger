@@ -683,21 +683,6 @@ const normalizeIntakeSuggestedType = (value) => {
   return type;
 };
 
-const normalizeProjectNameKey = (value) =>
-  String(value ?? '')
-    .trim()
-    .toLowerCase();
-
-const dedupeProjectsByName = (projects) => {
-  const seen = new Set();
-  return (projects ?? []).filter((project) => {
-    const key = `${project.workspace_id ?? ''}:${normalizeProjectNameKey(project.name)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-};
-
 const normalizeNullableText = (value) => {
   if (value === null || value === undefined) return null;
   const trimmed = String(value).trim();
@@ -17882,11 +17867,10 @@ app.get('/api/projects', authMiddleware, rateLimit('read'), async (req, res) => 
       .from('projects')
       .select(projectSelectColumns)
       .eq('workspace_id', workspaceId)
-      .order('created_at', { ascending: false })
-      .limit(24);
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
-    const projects = dedupeProjectsByName(data ?? []);
+    const projects = data ?? [];
     res.json(
       includeCompleted
         ? projects

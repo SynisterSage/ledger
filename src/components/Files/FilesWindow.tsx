@@ -13,8 +13,15 @@ import {
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useSidebar } from '../../context/SidebarContext';
+import {
+  modulePaneSizing,
+  clampPaneWidth,
+  getPaneWidthForViewport,
+} from '../../config/modulePaneSizes';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useApi } from '../../hooks/useApi';
 import { LedgerEmptyState } from '../Common/LedgerEmptyState';
+import { ContextMenu } from '../Common/ContextMenu';
 import {
   ModuleHeaderActionButton,
   ModuleHeaderSegmentedButton,
@@ -43,6 +50,7 @@ type LibraryItem =
   | { kind: 'local'; file: LocalContextFile }
   | { kind: 'connected'; reference: ExternalReference };
 type SelectedItem = LibraryItem & { workspaceId: string };
+type LocalFileContextMenu = { x: number; y: number; file: LocalContextFile };
 type LocalPreview =
   | { kind: 'binary'; mimeType: string; dataUrl: string }
   | { kind: 'table'; sheets: Array<{ name: string; headers: string[]; rows: string[][] }> }
@@ -178,7 +186,8 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const api = useApi();
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
-  const { workspaceShellLayout } = useSidebar();
+  const { workspaceShellLayout, reduceMotion } = useSidebar();
+  const viewportWidth = useViewportWidth();
   const [files, setFiles] = useState<LocalContextFile[]>([]);
   const [references, setReferences] = useState<ExternalReference[]>([]);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
@@ -201,8 +210,17 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     Array<{ id: string; createdAt: string; sizeBytes: number }>
   >([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(false);
-  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(false);
+  const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.files.left)
+  );
+  const [rightPaneWidth, setRightPaneWidth] = useState(() =>
+    getPaneWidthForViewport(viewportWidth, modulePaneSizing.files.right)
+  );
+  const [isLeftPaneCollapsed, setIsLeftPaneCollapsed] = useState(() => viewportWidth < 760);
+  const [isRightPaneCollapsed, setIsRightPaneCollapsed] = useState(true);
+  const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
+  const [isResizingRightPane, setIsResizingRightPane] = useState(false);
+  const [localFileContextMenu, setLocalFileContextMenu] = useState<LocalFileContextMenu | null>(null);
   const loadRequestRef = useRef(0);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
@@ -221,6 +239,40 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       : focusedMatch?.[4]
       ? Number(focusedMatch[4])
       : null;
+
+  useEffect(() => {
+    setLeftPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.files.left));
+    setRightPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.files.right));
+    if (viewportWidth < 760) setIsLeftPaneCollapsed(true);
+  }, [viewportWidth]);
+
+  useEffect(() => {
+    if (!isResizingLeftPane) return;
+    const handleMove = (event: MouseEvent) => {
+      setLeftPaneWidth(clampPaneWidth(event.clientX, viewportWidth, modulePaneSizing.files.left));
+    };
+    const handleUp = () => setIsResizingLeftPane(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingLeftPane, viewportWidth]);
+
+  useEffect(() => {
+    if (!isResizingRightPane) return;
+    const handleMove = (event: MouseEvent) => {
+      setRightPaneWidth(clampPaneWidth(window.innerWidth - event.clientX, viewportWidth, modulePaneSizing.files.right));
+    };
+    const handleUp = () => setIsResizingRightPane(false);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [isResizingRightPane, viewportWidth]);
 
   const load = useCallback(async () => {
     const workspaceId = activeWorkspaceId;
@@ -376,12 +428,12 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       setBusy(null);
     }
   };
-  const removeSelectedLocalFile = async () => {
-    if (activeSelected?.kind !== 'local' || !user?.id || !activeWorkspaceId || !window.localContext)
+  const removeLocalFile = async (file: LocalContextFile) => {
+    if (!user?.id || !activeWorkspaceId || !window.localContext)
       return;
     if (
       !window.confirm(
-        `Remove “${activeSelected.file.name}” from Ledger? The original file will not be deleted.`
+        `Remove “${file.name}” from Ledger? The original file will not be deleted.`
       )
     )
       return;
@@ -390,15 +442,19 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       await window.localContext.remove({
         ownerUserId: user.id,
         workspaceId: activeWorkspaceId,
-        fileId: activeSelected.file.id,
+        fileId: file.id,
       });
-      setSelected(null);
+      if (activeSelected?.kind === 'local' && activeSelected.file.id === file.id) setSelected(null);
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not remove that local file.');
     } finally {
       setBusy(null);
     }
+  };
+  const removeSelectedLocalFile = async () => {
+    if (activeSelected?.kind !== 'local') return;
+    await removeLocalFile(activeSelected.file);
   };
   const openSelected = async () => {
     if (!activeSelected) return;
@@ -619,10 +675,14 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           </ModuleHeaderActionButton>
         }
       />
-      <div className="flex min-h-0 flex-1">
+      <div
+        className="relative flex min-h-0 flex-1 overflow-hidden"
+        data-reduce-motion={reduceMotion ? 'true' : 'false'}
+      >
         {!isLeftPaneCollapsed ? (
-          <aside className="ledger-pane-surface ledger-pane-left flex w-[256px] shrink-0 flex-col border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] transition-[width] duration-200">
-            <div className="border-b border-[color:var(--ledger-border-subtle)] p-3">
+          <>
+          <aside className="ledger-pane-surface ledger-pane-left flex shrink-0 flex-col overflow-hidden border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" style={{ width: `${leftPaneWidth}px` }}>
+            <div className={`${viewportWidth < modulePaneSizing.files.left.compactBreakpoint ? 'p-3' : 'p-4'} border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]`}>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
                   Files & links
@@ -676,6 +736,12 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         activeWorkspaceId &&
                         setSelected({ ...item, workspaceId: activeWorkspaceId })
                       }
+                      onContextMenu={(event) => {
+                        if (item.kind !== 'local') return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setLocalFileContextMenu({ x: event.clientX, y: event.clientY, file: item.file });
+                      }}
                       className={`group flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-left transition ${
                         isSelected
                           ? 'bg-[var(--ledger-surface-hover)]'
@@ -719,8 +785,19 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
               )}
             </div>
           </aside>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              setIsResizingLeftPane(true);
+            }}
+            className={`w-1.5 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--ledger-surface-hover)] ${isResizingLeftPane ? 'bg-[var(--ledger-border-strong)]' : ''}`}
+            title="Drag to resize left panel"
+          />
+          </>
         ) : (
-          <div className="flex w-10 shrink-0 items-start justify-center border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-3">
+          <div className="ledger-pane-toggle absolute left-2 top-4 z-30">
             <button
               type="button"
               onClick={() => setIsLeftPaneCollapsed(false)}
@@ -728,9 +805,9 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
               aria-label="Show left panel"
               title="Show left panel"
             >
-              <ChevronRight size={14} />
+              <ChevronRight size={14} strokeWidth={2.25} />
             </button>
-          </div>
+            </div>
         )}
         <main className="min-w-0 flex-1 overflow-y-auto bg-[var(--ledger-surface-card)]">
           {error ? (
@@ -1137,8 +1214,45 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         </main>
         {activeSelected ? (
           !isRightPaneCollapsed ? (
-            <aside className="ledger-pane-surface ledger-pane-right hidden w-[260px] shrink-0 overflow-y-auto border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-4 min-[1200px]:block">
-              <div className="flex items-center border-b border-[color:var(--ledger-border-subtle)] px-3 pt-2">
+            <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                setIsResizingRightPane(true);
+              }}
+              className={`w-1.5 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--ledger-surface-hover)] ${isResizingRightPane ? 'bg-[var(--ledger-border-strong)]' : ''}`}
+              title="Drag to resize right panel"
+            />
+            <aside className={`ledger-pane-surface ledger-pane-right flex shrink-0 flex-col overflow-hidden border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] ${viewportWidth < modulePaneSizing.files.right.compactBreakpoint ? 'p-3' : 'p-4'}`} style={{ width: `${rightPaneWidth}px` }}>
+              <div className="flex items-start justify-between gap-3 border-b border-[color:var(--ledger-border-subtle)] pb-4">
+                <div className="min-w-0 flex-1">
+                  <p className="whitespace-nowrap text-xs font-medium text-[var(--ledger-text-muted)]">
+                    Inspector
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
+                    {activeSelected.kind === 'local'
+                      ? activeSelected.file.name
+                      : referenceTitle(activeSelected.reference)}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-[var(--ledger-text-muted)]">
+                    {activeSelected.kind === 'local'
+                      ? `${activeSelected.file.extension.toUpperCase()} · On this device`
+                      : providerLabel(activeSelected.reference.provider)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsRightPaneCollapsed(true)}
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                  aria-label="Hide right panel"
+                  title="Hide right panel"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+              <div className="flex items-center border-b border-[color:var(--ledger-border-subtle)]">
                 {(['details', 'ask'] as const).map((tab) => (
                   <button
                     key={tab}
@@ -1150,21 +1264,12 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         : 'border-transparent text-[var(--ledger-text-muted)]'
                     }`}
                   >
-                    {tab}
+                    {tab === 'details' ? 'Details' : 'Ask'}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setIsRightPaneCollapsed(true)}
-                  className="ml-auto mb-1 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
-                  aria-label="Hide right panel"
-                  title="Hide right panel"
-                >
-                  <ChevronRight size={14} />
-                </button>
               </div>
               {inspectorTab === 'details' ? (
-                <div className="divide-y divide-[color:var(--ledger-border-subtle)] px-4 text-xs">
+                <div className="divide-y divide-[color:var(--ledger-border-subtle)] text-xs">
                   <div className="py-4">
                     <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                       Details
@@ -1248,7 +1353,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                   ) : null}
                 </div>
               ) : (
-                <div className="p-4">
+                <div className="pt-4">
                   <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
                     Ask about this file
                   </p>
@@ -1299,8 +1404,9 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                 </div>
               )}
             </aside>
+            </>
           ) : (
-            <div className="hidden w-10 shrink-0 items-start justify-center border-l border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] pt-3 min-[1200px]:flex">
+            <div className="ledger-pane-toggle ledger-pane-toggle-right absolute right-2 top-4 z-30">
               <button
                 type="button"
                 onClick={() => setIsRightPaneCollapsed(false)}
@@ -1326,6 +1432,24 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           </div>
         </div>
       ) : null}
+      <ContextMenu
+        open={Boolean(localFileContextMenu)}
+        x={localFileContextMenu?.x ?? 0}
+        y={localFileContextMenu?.y ?? 0}
+        onClose={() => setLocalFileContextMenu(null)}
+        ariaLabel="Local file actions"
+        groups={[{
+          items: [{
+            id: 'remove-local-file',
+            label: 'Remove local copy',
+            icon: <Trash2 size={14} />,
+            destructive: true,
+            onClick: () => {
+              if (localFileContextMenu) void removeLocalFile(localFileContextMenu.file);
+            },
+          }],
+        }]}
+      />
     </div>
   );
 }

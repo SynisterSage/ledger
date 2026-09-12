@@ -1500,6 +1500,7 @@ export function DashboardContent({
       priority?: string | null;
       project_id?: string | null;
       project_name?: string | null;
+      note_id?: string | null;
       workspace_id?: string | null;
       workspace_name?: string | null;
       workspace_color?: string | null;
@@ -1530,6 +1531,7 @@ export function DashboardContent({
       priority?: string | null;
       project_id?: string | null;
       milestone_id?: string | null;
+      note_id?: string | null;
       assigned_to?: string | null;
       assigned_to_user_id?: string | null;
       assigned_to_team_id?: string | null;
@@ -1582,6 +1584,9 @@ export function DashboardContent({
       assigned_to_user_id?: string | null;
       assigned_to_team_id?: string | null;
       assigned_team_id?: string | null;
+      project_id?: string | null;
+      note_id?: string | null;
+      calendar_id?: string | null;
       workspace_name?: string | null;
       workspace_color?: string | null;
       created_at?: string | null;
@@ -2806,6 +2811,9 @@ export function DashboardContent({
                   assigned_to_team_id?: string | null;
                   assigned_team_id?: string | null;
                   status?: string | null;
+                  project_id?: string | null;
+                  note_id?: string | null;
+                  calendar_id?: string | null;
                   workspace_name?: string | null;
                   workspace_color?: string | null;
                   created_at?: string | null;
@@ -2832,6 +2840,7 @@ export function DashboardContent({
                   status?: string | null;
                   project_id?: string | null;
                   project_name?: string | null;
+                  note_id?: string | null;
                   workspace_id?: string | null;
                   workspace_name?: string | null;
                   workspace_color?: string | null;
@@ -5040,6 +5049,7 @@ export function DashboardContent({
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
   );
+  const noteById = useMemo(() => new Map(notes.map((note) => [note.id, note])), [notes]);
   const projectNoteCountById = useMemo(() => {
     const map = new Map<string, number>();
     for (const link of noteProjectLinks) {
@@ -5273,6 +5283,10 @@ export function DashboardContent({
     const teamRecord = teamId ? workspaceTeamById.get(teamId) ?? null : null;
     const teamName = teamRecord?.name?.trim() || '';
     const teamIdentifier = teamRecord?.identifier?.trim() || teamName;
+    const linkedProjectName =
+      resolvedTask.project_name?.trim() || projectById.get(resolvedTask.project_id ?? '')?.name || '';
+    const linkedNoteName =
+      resolvedTask.note_id ? noteById.get(resolvedTask.note_id)?.title?.trim() || '' : '';
     const assignmentLabel = teamId
       ? teamIdentifier
         ? `Assigned to Team ${teamIdentifier}`
@@ -5321,7 +5335,7 @@ export function DashboardContent({
       kind: isReminder ? 'reminder' : 'task',
       title: resolvedTask.title,
       meta: [
-        resolvedTask.project_name ||
+        linkedProjectName ||
           resolvedTask.workspace_name ||
           activeWorkspace?.name ||
           'Workspace',
@@ -5406,7 +5420,8 @@ export function DashboardContent({
         ? dueLabel || 'Not set'
         : 'Today',
       linkedContext: [
-        resolvedTask.project_name ? ['Project', resolvedTask.project_name] : null,
+        linkedProjectName ? ['Project', linkedProjectName] : null,
+        linkedNoteName ? ['Note', linkedNoteName] : null,
         assignmentLabel ? ['Assignment', assignmentLabel] : null,
       ].filter((entry): entry is [string, string] => Boolean(entry)),
       isOverdue: isOverdueTask(resolvedTask),
@@ -5555,12 +5570,15 @@ export function DashboardContent({
       .join(' · '),
     chips: noteProjectNamesById.get(note.id)?.length ? ['Linked note'] : ['Regular note'],
     contextLabel: noteProjectNamesById.get(note.id)?.length
-      ? `Linked to ${noteProjectNamesById.get(note.id)?.[0]}`
+      ? `Linked to ${noteProjectNamesById.get(note.id)?.join(', ')}`
       : undefined,
     contextIcon: noteProjectNamesById.get(note.id)?.length ? <Link2 size={10} /> : undefined,
     dateLabel: formatShortDate(note.updated_at) ?? undefined,
     group: 'Recent notes',
     icon: <StickyNote size={13} />,
+    linkedContext: (noteProjectNamesById.get(note.id) ?? []).map(
+      (projectName) => ['Project', projectName] as [string, string]
+    ),
     filterValues: buildOverviewFilterValues({
       type: ['note'],
       status: [noteProjectIdsById.get(note.id)?.length ? 'linked_note' : 'regular_note'],
@@ -5608,6 +5626,14 @@ export function DashboardContent({
       : eventTeamLabel
       ? `Assigned to Team ${eventTeamLabel}`
       : '';
+    const eventProjectName =
+      projectById.get(event.project_id ?? '')?.name?.trim() || '';
+    const eventNoteName = event.note_id ? noteById.get(event.note_id)?.title?.trim() || '' : '';
+    const eventLinkedContext: Array<[string, string]> = [
+      eventProjectName ? ['Project', eventProjectName] : null,
+      eventNoteName ? ['Note', eventNoteName] : null,
+      eventAssignmentLabel ? ['Assignment', eventAssignmentLabel] : null,
+    ].filter((entry): entry is [string, string] => Boolean(entry));
     const filterValues = buildOverviewFilterValues({
       type: ['event'],
       status: ['open', 'upcoming'],
@@ -5617,7 +5643,7 @@ export function DashboardContent({
         ? ['assigned', 'my_teams', `team:${eventTeamId}`]
         : ['unassigned'],
       team: eventTeamId ? [`team:${eventTeamId}`] : [],
-      project: [],
+      project: event.project_id ? [`project:${event.project_id}`] : [],
       date: [getOverviewDateBucket(event.start_at)],
       priority: ['no_priority'],
       progress: [],
@@ -5667,6 +5693,7 @@ export function DashboardContent({
       ) : eventTeamId ? (
         <Users size={10} />
       ) : undefined,
+      linkedContext: eventLinkedContext,
       filterValues,
       open: () =>
         openModule('calendar', {
@@ -6131,41 +6158,34 @@ export function DashboardContent({
                   ],
                   ['Team', selectedOverviewRow.ownerTeam?.name || 'None'],
                   ['Lead', selectedOverviewRow.leadName || 'None'],
-                  ['Active actions', selectedOverviewRow.chips.includes('Near done') ? '2' : '0'],
-                  ['Milestones', '0'],
-                  ['Recent notes', '0'],
+                  [
+                    'Active actions',
+                    String(projectOpenActionCountById.get(selectedOverviewRow.sourceId) ?? 0),
+                  ],
+                  [
+                    'Milestones',
+                    String(projectMilestoneProxyCountById.get(selectedOverviewRow.sourceId) ?? 0),
+                  ],
+                  [
+                    'Recent notes',
+                    String(projectNoteCountById.get(selectedOverviewRow.sourceId) ?? 0),
+                  ],
                 ]
               : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
               ? selectedOverviewRow.linkedContext?.length
                 ? selectedOverviewRow.linkedContext
                 : [['Linked', 'None']]
               : selectedOverviewRow.kind === 'event'
-              ? [
-                  ...(selectedOverviewRow.assignment?.userLabel ||
-                  selectedOverviewRow.assignment?.teamLabel
-                    ? [
-                        [
-                          'Assignment',
-                          selectedOverviewRow.assignment?.userLabel
-                            ? `Assigned to ${selectedOverviewRow.assignment.userLabel}`
-                            : `Assigned to Team ${selectedOverviewRow.assignment.teamLabel}`,
-                        ] as [string, string],
-                      ]
-                    : []),
-                  ['Project', 'None'],
-                  ['Actions', '0'],
-                  ['Milestones', '0'],
-                ]
+              ? selectedOverviewRow.linkedContext?.length
+                ? selectedOverviewRow.linkedContext
+                : [['Linked', 'None']]
               : selectedOverviewRow.kind === 'note'
-              ? [
-                  ['Actions', '0'],
-                  ['Milestones', '0'],
-                ]
-              : [
-                  ['Project', 'None'],
-                  ['Actions', '0'],
-                  ['Milestones', '0'],
-                ],
+              ? selectedOverviewRow.linkedContext?.length
+                ? selectedOverviewRow.linkedContext
+                : [['Linked', 'None']]
+              : selectedOverviewRow.linkedContext?.length
+              ? selectedOverviewRow.linkedContext
+              : [['Linked', 'None']],
         },
       ]
     : [];
