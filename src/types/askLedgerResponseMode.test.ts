@@ -44,6 +44,12 @@ test('routes workspace facts through grounding', () => {
   }
 });
 
+test('routes direct workspace-overview requests through retrieval', () => {
+  const route = routeAskLedgerMessage('This workspace is for my Fall 2026 semester at Monmouth. Can you view what is in it and give me a breakdown so far?');
+  assert.equal(route.executionMode, 'workspace_synthesis');
+  assert.equal(route.retrievalRequired, true);
+});
+
 test('keeps meeting-planning requests grounded despite capability wording', () => {
   const route = routeAskLedgerMessage('Can you help me plan a meeting I have soon? Look through my recent notes and help me be detailed.');
   assert.equal(route.mode, 'workspace_grounded');
@@ -59,6 +65,14 @@ test('distinguishes factual and transformation follow-ups', () => {
   assert.equal(transformation.mode, 'follow_up');
   assert.equal(transformation.retrievalRequired, false);
   assert.equal(transformation.reusePreviousGroundedContext, true);
+});
+
+test('lets casual reactions leave workspace grounding cleanly', () => {
+  const route = routeAskLedgerMessage('betttt fridays off lfg', groundedSession);
+  assert.equal(route.executionMode, 'conversation');
+  assert.equal(route.mode, 'conversational');
+  assert.equal(route.retrievalRequired, false);
+  assert.equal(route.reusePreviousGroundedContext, false);
 });
 
 test('reuses grounded context when the user explicitly asks not to search again', () => {

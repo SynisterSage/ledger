@@ -82,6 +82,7 @@ const transformationSignals =
   /\b(?:explain|clarify|rewrite|rephrase|shorten|shorter|simplif(?:y|ier)|checklist|summari[sz]e|expand|elaborate|say that|make that|put that)\b/i;
 const referenceSignals =
   /\b(?:that|this|it|those|these|the other|what about|and what|how about|anything else|tell me more|go deeper|what else)\b/i;
+const contextualReactionSignals = /\b(?:thats|its|this|it)\b/i;
 const continuationSignals =
   /^(?:continue|keep going|try again|another pass|another sweep|do another pass|do another sweep|tell me more|go deeper|what else|anything else)\b/i;
 const reasoningFollowUpSignals = /^(?:why|how)\b/i;
@@ -102,6 +103,7 @@ const productSkillHelpSignals = /\b(?:what|how)\s+(?:does|do)\s+(?:the\s+)?plan\
 const notesPeopleCapabilitySignals = /\b(?:mention|mentions|people|ppl|person)\b[\s\S]*\bnotes?\b|\bnotes?\b[\s\S]*\b(?:mention|mentions|people|ppl|person)\b/i;
 const notesDateCapabilitySignals = /\bhow\s+does\s+(?:that\s+)?date\s+thing\s+work\b/i;
 const workspaceDataIntentSignals = /\b(?:my|mine|our|today|yesterday|tomorrow|this\s+(?:task|project|meeting|note|event|reminder)|on my|show|list|find|due|overdue|have i|what did i\s+(?:write|put|save|capture|say|do)|(?:what|which) .* (?:do i have|is due))\b/i;
+const workspaceOverviewSignals = /\b(?:this|my|our|the)\s+workspace\b[\s\S]{0,100}\b(?:view|show|look|review|breakdown|summari[sz]e|recap|what(?:s| is) in|contents?|so far)\b|\b(?:view|show|look|review|breakdown|summari[sz]e|recap)\b[\s\S]{0,80}\b(?:this|my|our|the)\s+workspace\b/i;
 const workspaceResourceWords = /\b(?:project|projects|task|tasks|action|actions|milestone|milestones|note|notes|meeting|meetings|event|events|reminder|reminders|transcript|transcripts)\b/i;
 const workspaceResourceStateSignals = /\b(?:what\b[\s\S]{0,40}\b(?:left|remain(?:s|ing)?)|remaining|next action|next step|status|progress|prepare(?: for)?|due|overdue|blocked|blocking|stuck|what happened|what changed|needs? to happen|needs? attention|what should i do)\b/i;
 const researchSignals = /\b(?:across (?:all|the workspace|Atlas)|look through|actually blocking|where .* really stand\b|where .* really stands\b|connect|analy[sz]e .*dependencies|dependencies|compare .* and|compare .* evidence|all the context|contradictions?|cross[- ]resource|biggest .* risks?|keeping .* from moving)\b/i;
@@ -271,6 +273,15 @@ export const routeAskLedgerMessage = (
       },
       { conversational: true }
     );
+  if (workspaceOverviewSignals.test(normalized)) {
+    return withDepth({
+      mode: 'workspace_grounded',
+      executionMode: 'workspace_synthesis',
+      retrievalRequired: true,
+      reusePreviousGroundedContext: false,
+      reason: 'workspace_fact_or_entity',
+    });
+  }
   // A resource question that refers back to a workspace team must stay in
   // workspace retrieval, even when the resource name (for example, "notes")
   // also looks like a Ledger product-help question. Product help describes
@@ -347,8 +358,15 @@ export const routeAskLedgerMessage = (
       || (possessiveWorkspaceSignals.test(normalized) && factualQuestionSignals.test(normalized))
       || (workspaceSignals.test(normalized) && factualQuestionSignals.test(normalized))
       || (/^(?:what|when|where|who|which|is|are|did|does|do|has|have)\b/i.test(normalized) && /^(?:what|how) about\b/i.test(normalized));
-    if (!newFactsRequested && (referenceSignals.test(normalized) || continuationSignals.test(normalized) || reasoningFollowUpSignals.test(normalized) || casualSignals.test(normalized) || !factualQuestionSignals.test(normalized))) {
-      const casual = casualSignals.test(normalized);
+    const conversationalReaction = !factualQuestionSignals.test(normalized)
+      && !referenceSignals.test(normalized)
+      && !contextualReactionSignals.test(normalized)
+      && !continuationSignals.test(normalized)
+      && !reasoningFollowUpSignals.test(normalized)
+      && !workspaceDataIntentDetected
+      && !workspaceSignals.test(normalized);
+    if (!newFactsRequested && (referenceSignals.test(normalized) || contextualReactionSignals.test(normalized) || continuationSignals.test(normalized) || reasoningFollowUpSignals.test(normalized) || casualSignals.test(normalized) || conversationalReaction)) {
+      const casual = casualSignals.test(normalized) || conversationalReaction;
       return withDepth({
         mode: casual ? 'conversational' : 'follow_up',
         retrievalRequired: false,

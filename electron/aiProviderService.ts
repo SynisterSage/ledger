@@ -13,6 +13,13 @@ const endpointFor = (provider: AIProvider) => provider === 'openai'
   : provider === 'anthropic' ? 'https://api.anthropic.com/v1/models' : provider === 'google' ? 'https://generativelanguage.googleapis.com/v1beta/models' : 'https://api.perplexity.ai/v1/models';
 
 const isTextGenerationModel = (id: string) => !/(embedding|moderation|whisper|tts|dall-e|image|audio|search|rerank)/i.test(id);
+const isSupportedGenerationModel = (provider: AIProvider, id: string) => {
+  if (!isTextGenerationModel(id)) return false;
+  if (provider === 'openai') return /^(gpt-|o[1-9]-|chatgpt-)/i.test(id) && !/realtime/i.test(id);
+  if (provider === 'anthropic') return /^claude-/i.test(id);
+  if (provider === 'perplexity') return /^(sonar|pplx-)/i.test(id);
+  return /^gemini-/i.test(id);
+};
 
 /** Validates a stored credential without sending Ledger content. */
 export class AIProviderService {
@@ -49,8 +56,13 @@ export class AIProviderService {
       if (!response.ok) return { ok: false, provider, models: [], error: `The provider returned HTTP ${response.status}.` };
       const payload = await response.json() as { data?: Array<{ id?: unknown }>; models?: Array<{ name?: unknown; supportedGenerationMethods?: unknown[] }> };
       const models = provider === 'google'
-        ? (payload.models ?? []).filter((item) => Array.isArray(item.supportedGenerationMethods) && item.supportedGenerationMethods.includes('generateContent')).map((item) => typeof item.name === 'string' ? item.name.replace(/^models\//, '') : '').filter(Boolean)
-        : (payload.data ?? []).map((item) => typeof item.id === 'string' ? item.id : '').filter((id): id is string => Boolean(id) && isTextGenerationModel(id));
+        ? (payload.models ?? [])
+          .filter((item) => Array.isArray(item.supportedGenerationMethods) && item.supportedGenerationMethods.includes('generateContent'))
+          .map((item) => typeof item.name === 'string' ? item.name.replace(/^models\//, '') : '')
+          .filter((id): id is string => isSupportedGenerationModel('google', id))
+        : (payload.data ?? [])
+          .map((item) => typeof item.id === 'string' ? item.id : '')
+          .filter((id): id is string => Boolean(id) && isSupportedGenerationModel(provider, id));
       return { ok: true, provider, models };
     } catch { return { ok: false, provider, models: [], error: 'Could not load models from the provider.' }; }
   }

@@ -1238,6 +1238,15 @@ export class AskLedgerService {
         relatedResourceCount: retrieval.relatedItems?.length ?? 0,
       });
       emit({ type: 'sources', requestId, sources, diagnostics });
+      if (!skill && route.retrievalRequired && request.documents.length === 0) {
+        emit({
+          type: 'delta',
+          requestId,
+          text: 'I checked this workspace, but there are no notes, projects, tasks, events, reminders, or captures available to summarize yet.',
+        });
+        emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs, workspaceEvidence: 0, workspaceSources: 0 }) } });
+        return;
+      }
       if (!skill && isTeamWorkloadQuestion(request.question)) {
         emit({ type: 'delta', requestId, text: formatTeamWorkloadAnswer(normalized.items, request.timeZone) });
         emit({ type: 'done', requestId, metrics: { totalMs: 0, performance: performanceTrace.snapshot({ indexingMs: 0, embeddingStartupMs: 0, retrievalMs: 0, workspaceEvidence: normalized.items.length, workspaceSources: sources.length }) } });

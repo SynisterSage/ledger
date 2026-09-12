@@ -21,6 +21,14 @@ type StoredProviderKey = {
 type StoredKeysFile = Partial<Record<AIProvider, StoredProviderKey>> & { selectedProvider?: 'local' | AIProvider; cloudDataConsent?: boolean };
 const defaultModelFor = (provider: AIProvider) => provider === 'openai' ? 'gpt-5-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'google' ? 'gemini-2.5-flash' : 'sonar-pro';
 
+const hasSupportedModelName = (provider: AIProvider, model: string) => {
+  const normalized = model.replace(/^models\//, '').trim();
+  if (provider === 'google') return /^gemini-/i.test(normalized);
+  if (provider === 'openai') return /^(gpt-|o[1-9]-|chatgpt-)/i.test(normalized) && !/(image|audio|realtime|transcrib|tts)/i.test(normalized);
+  if (provider === 'anthropic') return /^claude-/i.test(normalized);
+  return /^(sonar|pplx-)/i.test(normalized);
+};
+
 const isProvider = (value: unknown): value is AIProvider => value === 'openai' || value === 'anthropic' || value === 'google' || value === 'perplexity';
 
 /**
@@ -70,13 +78,13 @@ export class AIProviderKeyStore {
 
   selectedModel(provider: AIProvider): string {
     const value = this.read()[provider];
-    return value && typeof value.model === 'string'
-      ? value.model
-      : defaultModelFor(provider);
+    const model = value && typeof value.model === 'string' ? value.model : undefined;
+    return model && hasSupportedModelName(provider, model) ? model : defaultModelFor(provider);
   }
 
   setSelectedModel(provider: AIProvider, model: string) {
     if (!isProvider(provider) || !model.trim() || model.length > 200) throw new Error('Invalid AI model.');
+    if (!hasSupportedModelName(provider, model)) throw new Error(`Choose a supported text model for ${provider}.`);
     const stored = this.read();
     const entry = stored[provider];
     if (!entry) throw new Error(`No ${provider} API key is connected.`);
