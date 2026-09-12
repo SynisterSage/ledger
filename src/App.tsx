@@ -2795,7 +2795,6 @@ export function DashboardContent({
                     new Date(getSortTimestamp(right)).getTime() -
                     new Date(getSortTimestamp(left)).getTime()
                 )
-                .slice(0, 4)
             : []
         );
         setUpcoming(
@@ -5326,7 +5325,11 @@ export function DashboardContent({
     ];
     filterValues.priority = [normalizeOverviewPriority(resolvedTask.priority)];
     filterValues.noteType = [];
-    filterValues.linkedContext = [];
+    filterValues.linkedContext = [
+      ...(linkedProjectName ? ['linked_to_project'] : []),
+      ...(linkedNoteName ? ['linked_to_note'] : []),
+      ...(assignmentLabel ? ['assigned'] : []),
+    ];
     filterValues.progress = [];
     filterValues.has = [];
     return {
@@ -5646,6 +5649,11 @@ export function DashboardContent({
       project: event.project_id ? [`project:${event.project_id}`] : [],
       date: [getOverviewDateBucket(event.start_at)],
       priority: ['no_priority'],
+      linkedContext: [
+        ...(eventProjectName ? ['linked_to_project'] : []),
+        ...(eventNoteName ? ['linked_to_note'] : []),
+        ...(eventAssignmentLabel ? ['assigned'] : []),
+      ],
       progress: [],
       has: [],
     });
