@@ -53,7 +53,9 @@ import {
 import { ToastProvider } from './components/Common/ToastProvider';
 import { NotificationMonitor } from './components/Common/NotificationMonitor';
 import {
+  Component,
   type CSSProperties,
+  type ErrorInfo,
   type ReactNode,
   lazy,
   Suspense,
@@ -160,6 +162,45 @@ const AgentAskLedgerPanel = lazy(() =>
   }))
 );
 const ASK_LEDGER_SESSION_PERSISTED_EVENT = 'ledger:ask-ledger-session-persisted';
+
+class AgentAskLedgerErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[ask-ledger] footer agent render failed', { error, componentStack: info.componentStack });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="flex h-full min-h-0 flex-col justify-end gap-2 p-2 text-xs text-[var(--ledger-text-muted)]">
+        <p>Ask Ledger could not load.</p>
+        <button
+          type="button"
+          className="w-fit rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-1.5 text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+          onClick={() => window.location.reload()}
+        >
+          Reload agent
+        </button>
+      </div>
+    );
+  }
+}
+
+const AgentAskLedgerLoading = () => (
+  <div className="flex h-full min-h-0 flex-col justify-end p-2">
+    <div className="rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)] px-3 py-2.5 text-xs text-[var(--ledger-text-muted)]">
+      Ask Ledger…
+    </div>
+  </div>
+);
 
 type PostAuthStage = 'idle' | 'loading' | 'onboarding' | 'ready';
 type OnboardingStep =
@@ -7996,43 +8037,45 @@ export function DashboardContent({
                   </>
                 ) : (
                   <>
-                    <div className="pb-2.5">
-                      <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                        {selectedOverviewTypeLabel}
-                      </p>
-                      <h3 className="mt-1.5 text-[17px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
-                        {selectedOverviewRow.title}
-                      </h3>
-                      <p className="mt-1 text-[11px] leading-5 text-[var(--ledger-text-muted)]">
-                        {selectedOverviewRow.meta}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {selectedOverviewRow.chips.map((chip) => (
-                          <span
-                            key={chip}
-                            className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] text-[var(--ledger-text-secondary)]"
-                          >
-                            {chip}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {overviewDetailSections.map((section, sectionIndex) => (
-                      <section
-                        key={section.title}
-                        className={`space-y-1.5 ${sectionIndex > 0 ? 'pt-2.5' : 'pt-1'}`}
-                      >
-                        <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                          {section.title}
+                    <div className="pb-32">
+                      <div className="pb-2.5">
+                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                          {selectedOverviewTypeLabel}
                         </p>
-                        <div className="space-y-0.5">
-                          {section.rows.map(([label, value]) =>
-                            renderOverviewDetailRow(label, value)
-                          )}
+                        <h3 className="mt-1.5 text-[17px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
+                          {selectedOverviewRow.title}
+                        </h3>
+                        <p className="mt-1 text-[11px] leading-5 text-[var(--ledger-text-muted)]">
+                          {selectedOverviewRow.meta}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {selectedOverviewRow.chips.map((chip) => (
+                            <span
+                              key={chip}
+                              className="rounded-full border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2 py-0.5 text-[10px] text-[var(--ledger-text-secondary)]"
+                            >
+                              {chip}
+                            </span>
+                          ))}
                         </div>
-                      </section>
-                    ))}
+                      </div>
+
+                      {overviewDetailSections.map((section, sectionIndex) => (
+                        <section
+                          key={section.title}
+                          className={`space-y-1.5 ${sectionIndex > 0 ? 'pt-2.5' : 'pt-1'}`}
+                        >
+                          <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                            {section.title}
+                          </p>
+                          <div className="space-y-0.5">
+                            {section.rows.map(([label, value]) =>
+                              renderOverviewDetailRow(label, value)
+                            )}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
 
                     <section
                       className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] pt-2.5 pb-2"
@@ -11116,28 +11159,24 @@ function AgentMockupPopover() {
         </div>
       </header>
       <div className={`${isMinimized ? 'hidden' : ''} min-h-0 flex-1 overflow-hidden px-2`}>
-        <Suspense
-          fallback={
-            <div className="flex h-full items-end p-2 text-xs text-[var(--ledger-text-muted)]">
-              Ask Ledger…
-            </div>
-          }
-        >
-          <AgentAskLedgerPanel
-            key={`${activeWorkspaceId ?? 'workspace'}:${openGeneration}`}
-            workspaceId={activeWorkspaceId}
-            resetKey={resetKey}
-            compact
-            onSessionIdChange={setSessionId}
-            onSessionTitleChange={setSessionTitle}
-            onQuestionChange={setQuestionDraft}
-            onQuestionSubmitted={setActiveQuestion}
-            onGenerationActiveChange={setIsGenerating}
-            onSessionPersisted={() =>
-              window.dispatchEvent(new Event(ASK_LEDGER_SESSION_PERSISTED_EVENT))
-            }
-          />
-        </Suspense>
+        <AgentAskLedgerErrorBoundary>
+          <Suspense fallback={<AgentAskLedgerLoading />}>
+            <AgentAskLedgerPanel
+              key={`${activeWorkspaceId ?? 'workspace'}:${openGeneration}`}
+              workspaceId={activeWorkspaceId}
+              resetKey={resetKey}
+              compact
+              onSessionIdChange={setSessionId}
+              onSessionTitleChange={setSessionTitle}
+              onQuestionChange={setQuestionDraft}
+              onQuestionSubmitted={setActiveQuestion}
+              onGenerationActiveChange={setIsGenerating}
+              onSessionPersisted={() =>
+                window.dispatchEvent(new Event(ASK_LEDGER_SESSION_PERSISTED_EVENT))
+              }
+            />
+          </Suspense>
+        </AgentAskLedgerErrorBoundary>
       </div>
     </section>,
     document.body

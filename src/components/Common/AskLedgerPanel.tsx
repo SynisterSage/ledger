@@ -1095,6 +1095,7 @@ export const AskLedgerPanel = ({
   preferredGenerationTier,
   compact = false,
   meetingChat = false,
+  hideModelSelector = false,
 }: {
   workspaceId?: string | null;
   resetKey?: number;
@@ -1113,6 +1114,7 @@ export const AskLedgerPanel = ({
   preferredGenerationTier?: GenerationTier;
   compact?: boolean;
   meetingChat?: boolean;
+  hideModelSelector?: boolean;
 }) => {
   const api = useApi();
   const { user } = useAuthContext();
@@ -4270,7 +4272,7 @@ export const AskLedgerPanel = ({
                 <Send size={15} />
               )}
             </button>
-            {localAIReady && !meetingChat && (
+            {localAIReady && !meetingChat && !hideModelSelector && (
               <div className="ledger-ask-model-control relative order-first">
                 <button
                   ref={advancedButtonRef}

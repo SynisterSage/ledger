@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as XLSX from 'xlsx';
 import type {
   LocalContextFile,
@@ -299,6 +300,12 @@ export class LocalContextLibrary {
         kind: 'binary' as const,
         mimeType: record.mimeType,
         dataUrl: `data:${record.mimeType};base64,${bytes.toString('base64')}`,
+        // Chromium's PDF viewer can silently fail to paint a PDF loaded from
+        // a data URL inside an iframe. Use the managed file URL for PDFs so
+        // the embedded viewer follows the same file-backed path as “Open file”.
+        ...(record.mimeType === 'application/pdf'
+          ? { fileUrl: pathToFileURL(absolutePath).href }
+          : {}),
       };
     }
     if (record.extension === 'csv' || record.extension === 'xlsx') {

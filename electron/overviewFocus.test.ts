@@ -90,6 +90,21 @@ test('builds factual fallback insights when structured model output is rejected'
   assert.equal(result.insights.some((insight) => /immediate|urgent|critical/i.test(`${insight.title} ${insight.summary}`)), false);
 });
 
+test('uses deterministic Focus fallback when a completed model turn is not JSON', async () => {
+  const service = new OverviewFocusService({
+    switchGenerationTier: async () => ({ ok: true }),
+    start: (_request: LocalAIRequest, callbacks: { onEvent: (event: LocalAIStreamEvent) => void }, requestId: string) => {
+      callbacks.onEvent({ type: 'delta', requestId, text: 'I found a few things worth reviewing.' });
+      callbacks.onEvent({ type: 'done', requestId, metrics: { totalMs: 1 } });
+      return requestId;
+    },
+    cancel: () => ({ ok: true }),
+  } as never);
+  const result = await service.generate(snapshot);
+  assert.ok(result.insights.length > 0);
+  assert.ok(result.insights.every((insight) => insight.resourceRefs.length > 0));
+});
+
 test('prefers the Fast tier before falling back to Balanced', async () => {
   let selectedTier = '';
   let requestedBudget = 0;
@@ -103,7 +118,8 @@ test('prefers the Fast tier before falling back to Balanced', async () => {
     },
     cancel: () => ({ ok: true }),
   } as never);
-  assert.deepEqual(await service.generate(snapshot), { insights: [] });
+  const result = await service.generate(snapshot);
+  assert.ok(result.insights.length > 0);
   assert.equal(selectedTier, 'fast');
   assert.equal(requestedBudget, 768);
 });

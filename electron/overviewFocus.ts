@@ -177,7 +177,15 @@ export const buildOverviewFocusFallbackResult = (snapshot: OverviewFocusSnapshot
 
 const parseJson = (answer: string) => {
   const fenced = answer.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? answer;
-  try { return JSON.parse(fenced); } catch { return null; }
+  const candidates = [fenced.trim()];
+  const objectStart = fenced.indexOf('{');
+  const objectEnd = fenced.lastIndexOf('}');
+  if (objectStart >= 0 && objectEnd > objectStart)
+    candidates.push(fenced.slice(objectStart, objectEnd + 1));
+  for (const candidate of candidates) {
+    try { return JSON.parse(candidate); } catch { /* Try the next bounded JSON candidate. */ }
+  }
+  return null;
 };
 
 export class OverviewFocusService {
@@ -213,7 +221,13 @@ export class OverviewFocusService {
                 const tokens = tokenize(`${insight.title} ${insight.summary}`);
                 return !acceptedText.some((candidate) => overlap(candidate, tokens) >= 0.8);
               });
-              const fallback = validation.result.insights.length === 0 && validation.rawInsightCount > 0 ? buildOverviewFocusFallbackResult(snapshot) : { insights: [] };
+              // A completed model turn can contain malformed JSON or a short
+              // natural-language answer. If deterministic signals exist, keep
+              // the Lens useful instead of treating that as proof that nothing
+              // deserves attention. Provider/runtime errors remain empty.
+              const fallback = event.type === 'done' && validation.result.insights.length === 0
+                ? buildOverviewFocusFallbackResult(snapshot)
+                : { insights: [] };
               const result = { insights: [...(validation.result.insights.length ? validation.result.insights : fallback.insights), ...retainedPrior].slice(0, 3) };
               if (process.env.NODE_ENV !== 'production' && !process.execArgv.includes('--test')) console.info('[overview-focus] generation complete', { modelTier: this.localAI.getGenerationRuntimeState?.().selectedTier, snapshot: { tasks: snapshot.tasks.length, projects: snapshot.projects.length, events: snapshot.events.length, notes: snapshot.recentNotes.length }, promptChars: prompt.length, answerChars: answer.length, durationMs: Date.now() - startedAt, modelDurationMs: event.type === 'done' ? event.metrics?.totalMs : undefined, rawInsightCount: validation.rawInsightCount, acceptedInsightCount: result.insights.length, fallbackUsed: fallback.insights.length > 0, retainedPriorCount: retainedPrior.length, rejectionReasons: validation.rejectionReasons });
               finish(result);

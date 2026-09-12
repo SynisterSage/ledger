@@ -1012,8 +1012,10 @@ export class AskLedgerService {
       // Attachment-routed turns are already scoped to the user-selected file.
       // Keep them out of workspace research objectives even when the wording
       // is conversational, e.g. "look through this".
-      const genericAttachmentQuestion = Boolean(request.attachmentIds?.length || route.reason === 'attachment');
-      const attachmentFocusKeys = genericAttachmentQuestion
+      const attachmentAnchoredRequest = Boolean(
+        request.attachmentIds?.length || explicitContext?.resourceType === 'attachment' || route.reason === 'attachment'
+      );
+      const attachmentFocusKeys = attachmentAnchoredRequest
         ? request.documents.filter((item) => item.resourceType === 'attachment').map((item) => `${item.resourceType}:${item.resourceId}`)
         : [];
       const isCustomSkill = Boolean(skill && !getAskLedgerSkill(skill.id));
@@ -1028,7 +1030,7 @@ export class AskLedgerService {
       const projectAnchoredRequest = Boolean(explicitContext?.resourceType === 'project');
       const retrievalDocuments = scheduleOverviewItem
         ? [...request.documents, scheduleOverviewItem]
-        : semanticIndexRequired || projectAnchoredRequest ? undefined : request.documents;
+        : attachmentAnchoredRequest || (!semanticIndexRequired && !projectAnchoredRequest) ? request.documents : undefined;
       const retrievalStartedAt = Date.now();
       performanceTrace.mark('retrievalStarted');
       // Custom skills can intentionally submit an empty question. Give the
@@ -1043,8 +1045,8 @@ export class AskLedgerService {
         skillId: skill?.id,
         ...(isCustomSkill ? { customSkillResourceTypes: skill?.executionContract?.resources } : {}),
         boostResourceKeys: [...(explicitContext ? [`${explicitContext.resourceType}:${explicitContext.resourceId}`] : []), ...(scheduleOverviewItem ? ['event:calendar-schedule-overview'] : []), ...(overviewFocusHandoff(explicitContext ?? request.conversation?.initialContext)?.resourceRefs.map((resource) => `${resource.resourceType}:${resource.resourceId}`) ?? []), ...conversationResolution.resourceKeys, ...attachmentFocusKeys],
-        attachmentFocus: genericAttachmentQuestion,
-        skipSemantic: genericAttachmentQuestion || route.mode === 'follow_up' || route.executionMode === 'workspace_lookup',
+        attachmentFocus: attachmentAnchoredRequest,
+        skipSemantic: attachmentAnchoredRequest || route.mode === 'follow_up' || route.executionMode === 'workspace_lookup',
         resolvedResourceKeys: [
           ...conversationResolution.resourceKeys,
           ...(explicitContext?.resourceType === 'project'
@@ -1059,8 +1061,16 @@ export class AskLedgerService {
       const allowedSkillItems = skill
         ? retrieval.items.filter((item) => skill.allowedContextTypes.includes(item.resourceType))
         : retrieval.items;
+      const explicitContextMatches = (item: AskLedgerContextItem) =>
+        Boolean(
+          explicitContext &&
+            item.resourceType === explicitContext.resourceType &&
+            (item.resourceId === explicitContext.resourceId ||
+              (explicitContext.resourceType === 'attachment' &&
+                item.metadata?.localFileId === explicitContext.resourceId))
+        );
       const explicitItem = explicitContext
-        ? request.documents.find((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId)
+        ? request.documents.find(explicitContextMatches)
         : undefined;
       const skillItems = explicitItem && !allowedSkillItems.some((item) => item.resourceId === explicitItem.resourceId && item.resourceType === explicitItem.resourceType)
         ? [explicitItem, ...allowedSkillItems]
@@ -1238,7 +1248,7 @@ export class AskLedgerService {
         relatedResourceCount: retrieval.relatedItems?.length ?? 0,
       });
       emit({ type: 'sources', requestId, sources, diagnostics });
-      const hasAttachmentContext = Boolean(request.attachmentIds?.length || explicitContext?.resourceType === 'attachment');
+      const hasAttachmentContext = attachmentAnchoredRequest;
       if (!skill && route.retrievalRequired && request.documents.length === 0 && !hasAttachmentContext) {
         emit({
           type: 'delta',
@@ -1280,8 +1290,8 @@ export class AskLedgerService {
         || (intent.kind === 'recent_updates' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('recent:')))
         || (intent.kind === 'meeting_prep' && retrieval.debug[0]?.why.some((reason) => reason.startsWith('meeting-prep-')));
       const hasPlannedPrimary = Boolean(retrieval.primaryItems?.length);
-      const hasExplicitContextEvidence = Boolean(explicitContext && normalized.items.some((item) => item.resourceType === explicitContext.resourceType && item.resourceId === explicitContext.resourceId));
-      const hasAttachmentEvidence = genericAttachmentQuestion && retrieval.debug[0]?.resourceType === 'attachment' && retrieval.debug[0]?.why.includes('explicit-context');
+      const hasExplicitContextEvidence = Boolean(explicitContext && normalized.items.some(explicitContextMatches));
+      const hasAttachmentEvidence = attachmentAnchoredRequest && retrieval.debug[0]?.resourceType === 'attachment' && retrieval.debug[0]?.why.includes('explicit-context');
       if (!normalized.items.length || (!skill && !hasPlannedPrimary && !hasExplicitContextEvidence && !hasAttachmentEvidence && (!retrieval.items.length || !hasSignal || topScore < 0.18))) {
         askLedgerDiagnostic('[local-ai] Ask Ledger grounding diagnostics', {
           messageId: request.messageId,

@@ -1297,7 +1297,7 @@ contextBridge.exposeInMainWorld('localContext', {
   },
   preview(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
     return ipcRenderer.invoke('local-context:preview', payload) as Promise<
-      | { kind: 'binary'; mimeType: string; dataUrl: string }
+      | { kind: 'binary'; mimeType: string; dataUrl: string; fileUrl?: string }
       | { kind: 'table'; sheets: Array<{ name: string; headers: string[]; rows: string[][] }> }
       | { kind: 'text'; text: string; readOnly?: boolean }
       | { kind: 'unavailable'; message: string }

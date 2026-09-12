@@ -186,6 +186,8 @@ test('imports image-only PDFs for preview even when text extraction is unavailab
   const library = new LocalContextLibrary(path.join(dir, 'library'));
   const [record] = await library.importFiles([source], 'user-a', 'workspace-a');
   assert.ok(record);
-  assert.equal((await library.preview(record!.id, 'user-a', 'workspace-a'))?.kind, 'binary');
+  const preview = await library.preview(record!.id, 'user-a', 'workspace-a');
+  assert.equal(preview?.kind, 'binary');
+  assert.match((preview as { fileUrl?: string }).fileUrl ?? '', /^file:\/\//);
   assert.equal((await library.contextDocuments('user-a', 'workspace-a')).length, 0);
 });

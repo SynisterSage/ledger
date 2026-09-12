@@ -1824,6 +1824,12 @@ button:focus {
 .agent-ask-ledger-popover .ask-ledger-composer .mt-2 {
   margin-top: 4px;
 }
+/* The compact conversation fade belongs between the message list and the
+   composer. In the footer shell it is rendered inside the composer and can
+   darken the controls along its lower edge. */
+.agent-ask-ledger-popover .ask-ledger-composer-fade {
+  display: none;
+}
 .agent-ask-ledger-popover .agent-ask-ledger-portal {
   max-height: 240px !important;
   width: 180px;

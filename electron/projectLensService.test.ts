@@ -52,6 +52,15 @@ test('falls back to Balanced when Fast is unavailable', async () => {
   assert.deepEqual(localAI.switches, ['fast', 'balanced']);
 });
 
+test('uses a grounded fallback when available models return invalid output', async () => {
+  const localAI = fakeLocalAI(['fast', 'balanced'], 'The project needs attention.');
+  const result = await new ProjectLensService(localAI as never, fakeRetrieval as never).generate({ workspaceId: 'workspace-a', context });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.status === 'ready' ? result.tier : null, 'fallback');
+  assert.match(result.status === 'ready' ? result.result.summary : '', /active work|attention|next action/i);
+  assert.deepEqual(localAI.switches, ['fast', 'balanced']);
+});
+
 test('returns an unavailable state when neither model is installed', async () => {
   const localAI = fakeLocalAI([]);
   const result = await new ProjectLensService(localAI as never, fakeRetrieval as never).generate({ workspaceId: 'workspace-a', context });

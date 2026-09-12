@@ -1,6 +1,8 @@
 import {
   app,
   BrowserWindow,
+  net,
+  protocol,
   session,
   dialog,
   Notification,
@@ -20,7 +22,7 @@ import { autoUpdater } from 'electron-updater';
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -108,6 +110,7 @@ import type {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
 const LEDGER_PROTOCOL = 'ledger';
+const LOCAL_CONTEXT_PROTOCOL = 'ledger-local-context';
 const SETTINGS_SECTIONS = new Set([
   'account',
   'workspace',
@@ -120,9 +123,17 @@ const SETTINGS_SECTIONS = new Set([
 
 let pendingLedgerProtocolUrl: string | null = null;
 let pendingInviteToken: string | null = null;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: LOCAL_CONTEXT_PROTOCOL,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
+]);
 let touchBarController: TouchBarController | null = null;
 let touchBarContextCoordinator: ReturnType<typeof createTouchBarContextCoordinator> | null = null;
 let touchBarMeetingContext: LedgerTouchBarMeetingContext | undefined;
+let ledgerActionDispatcher: ReturnType<typeof createLedgerActionDispatcher> | null = null;
 let tray: Tray | null = null;
 let isQuittingApp = false;
 let explicitQuitPromise: Promise<void> | null = null;
@@ -311,6 +322,23 @@ const askLedgerService = createAskLedgerService(
 const localContextLibrary = new LocalContextLibrary(
   path.join(app.getPath('userData'), 'local-context-library')
 );
+const registerLocalContextProtocol = () => {
+  protocol.handle(LOCAL_CONTEXT_PROTOCOL, async (request) => {
+    try {
+      const url = new URL(request.url);
+      const fileId = url.searchParams.get('fileId') ?? '';
+      const ownerUserId = url.searchParams.get('ownerUserId') ?? '';
+      const workspaceId = url.searchParams.get('workspaceId') ?? '';
+      if (!fileId || !ownerUserId || !workspaceId)
+        return new Response('Not found', { status: 404 });
+      const filePath = await localContextLibrary.pathFor(fileId, ownerUserId, workspaceId);
+      if (!filePath) return new Response('Not found', { status: 404 });
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
+  });
+};
 const localAskLedgerSessionStore = new LocalAskLedgerSessionStore(
   path.join(app.getPath('userData'), 'local-context-library', 'ask-sessions')
 );
@@ -1268,7 +1296,22 @@ ipcMain.handle(
       typeof payload?.fileId !== 'string'
     )
       throw new LocalContextLibraryError('A local file is required.');
-    return localContextLibrary.preview(payload.fileId, payload.ownerUserId, payload.workspaceId);
+    const preview = await localContextLibrary.preview(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId
+    );
+    if (preview?.kind === 'binary' && preview.mimeType === 'application/pdf') {
+      return {
+        ...preview,
+        fileUrl: `${LOCAL_CONTEXT_PROTOCOL}://file?fileId=${encodeURIComponent(
+          payload.fileId
+        )}&ownerUserId=${encodeURIComponent(payload.ownerUserId)}&workspaceId=${encodeURIComponent(
+          payload.workspaceId
+        )}`,
+      };
+    }
+    return preview;
   }
 );
 
@@ -8269,6 +8312,7 @@ function applySidebarVisibility(isVisible: boolean, activate = false) {
   if (!isVisible) {
     sidebarWin.hide();
     sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: false });
+    syncApplicationMenuState();
     return;
   }
 
@@ -8280,6 +8324,7 @@ function applySidebarVisibility(isVisible: boolean, activate = false) {
   }
   applySidebarWindowMode(currentSidebarMode);
   sidebarWin.webContents.send('sidebar:visibility-changed', { isVisible: true });
+  syncApplicationMenuState();
 }
 
 function focusSidebarWindow() {
@@ -8301,6 +8346,147 @@ function focusSidebarWindow() {
   }
 
   sidebarWin.focus();
+}
+
+function dispatchApplicationMenuAction(actionId: string) {
+  const result = ledgerActionDispatcher?.dispatchLedgerAction(actionId, {
+    source: 'menu',
+    authenticated: currentSidebarMode !== 'auth',
+    appReady: Boolean(sidebarWin && !sidebarWin.isDestroyed()),
+    touchBarContext: touchBarController?.getContext(),
+  });
+  if (result?.executed !== true) {
+    console.warn(`[menu] Action unavailable: ${actionId}`);
+  }
+}
+
+function syncApplicationMenuState() {
+  const toggleItem = Menu.getApplicationMenu()?.getMenuItemById('view-toggle-sidebar');
+  if (toggleItem) toggleItem.checked = sidebarIsVisible;
+}
+
+function buildKeyboardShortcutsMenu(): Electron.MenuItemConstructorOptions[] {
+  const mod = process.platform === 'darwin' ? '⌘' : 'Ctrl';
+  const alt = process.platform === 'darwin' ? '⌥' : 'Alt';
+  const shortcut = (keys: string, description: string): Electron.MenuItemConstructorOptions => ({
+    label: `${description}  ${keys}`,
+    enabled: false,
+  });
+  const section = (title: string): Electron.MenuItemConstructorOptions[] => [
+    { label: title, enabled: false },
+  ];
+
+  return [
+    ...section('Global'),
+    shortcut(`${mod} ⇧ B`, 'Toggle sidebar'),
+    shortcut(`${mod} ⇧ L`, 'Toggle all Ledger windows'),
+    shortcut(`${mod} K`, 'Search everything'),
+    { type: 'separator' },
+    ...section('Navigation'),
+    shortcut(`${mod} ${alt} 1–5`, 'Open Dashboard, Calendar, Notes, Projects, or Settings'),
+    shortcut(`${mod} ⇧ M`, 'Switch workspace'),
+    { type: 'separator' },
+    ...section('Tabs'),
+    shortcut(`${mod} T`, 'Open a new tab'),
+    shortcut(`${mod} W`, 'Close the active tab'),
+    shortcut(`${mod} 1–9`, 'Switch to a tab by number'),
+    { type: 'separator' },
+    ...section('Notes and editors'),
+    shortcut(`${mod} S`, 'Save the current note'),
+    shortcut(`${mod} Z`, 'Undo'),
+    shortcut(`${mod} ⇧ Z`, 'Redo'),
+    { type: 'separator' },
+    {
+      label: 'Open shortcut settings…',
+      enabled: true,
+      click: () => openModuleWindow('settings', null, null, null, null, null, 'shortcuts'),
+    },
+  ];
+}
+
+function installApplicationMenu() {
+  const isMac = process.platform === 'darwin';
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              { label: 'Settings…', accelerator: 'Command+,', click: () => openModuleWindow('settings') },
+              { type: 'separator' },
+              { role: 'services', submenu: [] },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          } satisfies Electron.MenuItemConstructorOptions,
+        ]
+      : []),
+    {
+      label: 'File',
+      submenu: [
+        { label: 'Quick capture', accelerator: isMac ? 'Command+Shift+Space' : 'Ctrl+Shift+Space', click: () => dispatchApplicationMenuAction('task.create') },
+        { type: 'separator' },
+        { label: 'New task', click: () => dispatchApplicationMenuAction('task.create') },
+        { label: 'New note', click: () => dispatchApplicationMenuAction('note.create') },
+        { label: 'New event', click: () => dispatchApplicationMenuAction('event.create') },
+        { label: 'Open projects', click: () => openModuleWindow('projects') },
+        { type: 'separator' },
+        { role: 'close' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { label: 'Show Ledger', click: () => focusSidebarWindow() },
+        {
+          id: 'view-toggle-sidebar',
+          label: 'Toggle sidebar',
+          type: 'checkbox',
+          checked: sidebarIsVisible,
+          click: () => applySidebarVisibility(!sidebarIsVisible, true),
+        },
+        { type: 'separator' },
+        { label: 'Dashboard', click: () => openModuleWindow('dashboard') },
+        { label: 'Notes', click: () => openModuleWindow('notes') },
+        { label: 'Projects', click: () => openModuleWindow('projects') },
+        { label: 'Calendar', click: () => openModuleWindow('calendar') },
+        { label: 'Ask Ledger', click: () => openModuleWindow('new-tab', null, null, null, null, 'new-tab:ask-ledger') },
+        { label: 'Search', accelerator: isMac ? 'Command+K' : 'Ctrl+K', click: () => dispatchApplicationMenuAction('search.open') },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    { role: 'window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }] },
+    {
+      role: 'help',
+      submenu: [
+        { label: 'Keyboard shortcuts', submenu: buildKeyboardShortcutsMenu() },
+        { type: 'separator' },
+        { role: 'about' },
+      ],
+    },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  syncApplicationMenuState();
 }
 
 function quitLedgerApp() {
@@ -11078,7 +11264,7 @@ function initializeTouchBarController() {
   touchBarContextCoordinator = createTouchBarContextCoordinator((context) => {
     touchBarController?.setContext(context);
   });
-  const actionDispatcher = createLedgerActionDispatcher({
+  ledgerActionDispatcher = createLedgerActionDispatcher({
     openModuleWindow: (kind) => {
       console.log(`[touchbar] Opening ${kind}`);
       openModuleWindow(kind);
@@ -11110,7 +11296,7 @@ function initializeTouchBarController() {
       },
     },
     dispatchAction: (action, context) => {
-      actionDispatcher.dispatchLedgerAction(action, {
+      ledgerActionDispatcher?.dispatchLedgerAction(action, {
         ...context,
         authenticated: currentSidebarMode !== 'auth',
         appReady: Boolean(sidebarWin && !sidebarWin.isDestroyed()),
@@ -11146,6 +11332,7 @@ app.whenReady().then(() => {
     syncSidebarMaterial();
   });
   registerWindowsLoopbackCapture();
+  registerLocalContextProtocol();
   startAppleCalendarWatcher();
   startZoomAccessibilityWatcher();
   if (process.platform === 'darwin') {
@@ -11173,6 +11360,7 @@ app.whenReady().then(() => {
     reclampFloatingMeetingIndicator();
     syncSidebarMaterial();
   });
+  installApplicationMenu();
   createSidebarWindow();
   syncTray();
   processPendingLedgerProtocolUrl();

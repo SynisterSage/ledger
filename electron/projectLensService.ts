@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { ProjectIntelligenceContext } from '../src/features/projects/projectIntelligenceContext.ts';
 import {
   buildProjectLensActionPrompt,
+  buildProjectLensFallback,
   buildProjectLensPrompt,
   buildProjectLensRequest,
   type ProjectLensAction,
@@ -25,7 +26,7 @@ export type ProjectLensGenerationInput = {
 export type ProjectLensActionInput = ProjectLensGenerationInput & { action: ProjectLensAction };
 
 export type ProjectLensGenerationResult =
-  | { status: 'ready'; tier: 'balanced' | 'fast'; result: ProjectLensResult; rejectionReasons?: string[] }
+  | { status: 'ready'; tier: 'balanced' | 'fast' | 'fallback'; result: ProjectLensResult; rejectionReasons?: string[] }
   | { status: 'unavailable'; reason: 'model_unavailable' | 'generation_failed' | 'invalid_context' | 'superseded' };
 
 export type ProjectLensActionResultResponse =
@@ -118,6 +119,7 @@ export class ProjectLensService {
 
     const request = buildProjectLensRequest(context);
     let modelWasAvailable = false;
+    let invalidOutputRejected = false;
     for (const tier of ['fast', 'balanced'] as const) {
       if (!this.isCurrent(requestEpoch)) return { status: 'unavailable', reason: 'superseded' };
       const switchResult = await this.localAI.switchGenerationTier(tier).catch((error) => ({ ok: false, error }));
@@ -130,6 +132,7 @@ export class ProjectLensService {
         const generated = await this.generateWithTier(prompt, requestEpoch);
         const validation = validateProjectLensResult(generated.text, request, context);
         if (!validation.result) {
+          invalidOutputRejected = true;
           console.warn('[project-lens] output rejected', { workspaceId: input.workspaceId, projectId: context.projectId, modelTier: tier, rejectionReasons: validation.rejectionReasons });
           continue;
         }
@@ -139,6 +142,14 @@ export class ProjectLensService {
         if (!this.isCurrent(requestEpoch)) return { status: 'unavailable', reason: 'superseded' };
         console.warn('[project-lens] generation failed', { tier, message: error instanceof Error ? error.message : String(error) });
       }
+    }
+    if (modelWasAvailable && invalidOutputRejected && this.isCurrent(requestEpoch)) {
+      const fallback = buildProjectLensFallback(context);
+      console.warn('[project-lens] using deterministic fallback after invalid model output', {
+        workspaceId: input.workspaceId,
+        projectId: context.projectId,
+      });
+      return { status: 'ready', tier: 'fallback', result: fallback, rejectionReasons: ['invalid_result'] };
     }
     const reason = modelWasAvailable ? 'generation_failed' : 'model_unavailable';
     console.info('[project-lens] unavailable', { workspaceId: input.workspaceId, projectId: context.projectId, reason });

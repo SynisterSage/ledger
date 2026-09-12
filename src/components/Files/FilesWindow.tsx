@@ -3,8 +3,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
   FileText,
-  HardDrive,
+  FileType,
   Link2,
   Plus,
   ShieldCheck,
@@ -33,8 +36,9 @@ import {
   normalizeIntegrationProvider,
 } from '../Common/IntegrationProviderMark';
 import { GoogleDriveIcon } from '../Common/GoogleDriveIcon';
-import { openAskLedgerWithContext } from '../Common/askLedgerContext';
-import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
+import { AskLedgerPanel, type AskLedgerSession } from '../Common/AskLedgerPanel';
+import { SkeletonCompactRow } from '../Common/Skeleton';
+import { routeForCalendarEvent, routeForCalendarReminder, routeForNote, routeForProject, usePlatform } from '../../platform';
 import type { LocalContextFile } from '../../types/localContextLibrary';
 
 type ExternalReference = {
@@ -50,9 +54,14 @@ type LibraryItem =
   | { kind: 'local'; file: LocalContextFile }
   | { kind: 'connected'; reference: ExternalReference };
 type SelectedItem = LibraryItem & { workspaceId: string };
-type LocalFileContextMenu = { x: number; y: number; file: LocalContextFile };
+type LocalFileContextMenu = { x: number; y: number };
+type LinkedTargetDetail = {
+  targetType: LocalContextFile['links'][number]['targetType'];
+  targetId: string;
+  title: string;
+};
 type LocalPreview =
-  | { kind: 'binary'; mimeType: string; dataUrl: string }
+  | { kind: 'binary'; mimeType: string; dataUrl: string; fileUrl?: string }
   | { kind: 'table'; sheets: Array<{ name: string; headers: string[]; rows: string[][] }> }
   | { kind: 'text'; text: string; readOnly?: boolean }
   | { kind: 'unavailable'; message: string };
@@ -83,6 +92,25 @@ const formatBytes = (bytes: number) =>
     : bytes < 1024 ** 2
     ? `${Math.round(bytes / 1024)} KB`
     : `${(bytes / 1024 ** 2).toFixed(bytes >= 10 * 1024 ** 2 ? 0 : 1)} MB`;
+const LocalFileIcon = ({ extension, size = 14, className }: { extension: string; size?: number; className?: string }) => {
+  const normalized = extension.toLowerCase();
+  const Icon = normalized === 'pdf'
+    ? FileType
+    : ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(normalized)
+    ? FileImage
+    : ['csv', 'xlsx'].includes(normalized)
+    ? FileSpreadsheet
+    : ['txt', 'md'].includes(normalized)
+    ? FileCode
+    : FileText;
+  return <Icon size={size} className={className} aria-hidden="true" />;
+};
+const unsupportedFileTypeMessage =
+  'That file type is not supported yet. Add a PDF, image (PNG, JPG, JPEG, WEBP, or GIF), Word document, text or Markdown file, CSV, or Excel file.';
+const formatImportError = (cause: unknown, fallback: string) => {
+  const message = cause instanceof Error ? cause.message : '';
+  return /Unsupported local file type/i.test(message) ? unsupportedFileTypeMessage : message || fallback;
+};
 const ConnectedProviderIcon = ({
   provider,
   size = 14,
@@ -182,8 +210,43 @@ const ConnectedPreview = ({
   );
 };
 
+const FilesContentSkeleton = () => (
+  <div
+    className="flex h-full min-h-full items-center justify-center bg-[var(--ledger-surface-card)] p-8"
+    aria-label="Loading files and links"
+    role="status"
+  >
+    <div className="w-full max-w-xl rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-[var(--ledger-shadow)] animate-pulse">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <div className="h-4 w-28 rounded bg-[var(--ledger-surface-hover)]" />
+          <div className="h-3 w-56 rounded bg-[var(--ledger-surface-hover)]" />
+        </div>
+        <div className="h-8 w-20 rounded-md bg-[var(--ledger-surface-hover)]" />
+      </div>
+      <div className="mt-5 divide-y divide-[color:var(--ledger-border-subtle)]">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="flex items-center gap-3 py-2.5">
+            <div className="h-8 w-8 shrink-0 rounded-md bg-[var(--ledger-surface-hover)]" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div
+                className={`h-3 rounded bg-[var(--ledger-surface-hover)] ${
+                  index % 2 ? 'w-3/5' : 'w-4/5'
+                }`}
+              />
+              <div className="h-2.5 w-2/5 rounded bg-[var(--ledger-surface-hover)]" />
+            </div>
+            <div className="h-3 w-3 rounded bg-[var(--ledger-surface-hover)]" />
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
 export default function FilesWindow({ focusContext }: { focusContext?: string | null } = {}) {
   const api = useApi();
+  const platform = usePlatform();
   const { user } = useAuthContext();
   const { activeWorkspaceId, activeWorkspace } = useWorkspaceContext();
   const { workspaceShellLayout, reduceMotion } = useSidebar();
@@ -194,10 +257,13 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const [filter, setFilter] = useState<LibraryFilter>('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<SelectedItem | null>(null);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<'import' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<'details' | 'ask'>('details');
+  const [askSession, setAskSession] = useState<AskLedgerSession | null>(null);
+  const [askSessionLoading, setAskSessionLoading] = useState(false);
   const [localPreview, setLocalPreview] = useState<LocalPreview | null>(null);
   const [localPreviewLoading, setLocalPreviewLoading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -209,6 +275,8 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const [revisions, setRevisions] = useState<
     Array<{ id: string; createdAt: string; sizeBytes: number }>
   >([]);
+  const [linkedTargetDetails, setLinkedTargetDetails] = useState<LinkedTargetDetail[]>([]);
+  const [linkedTargetDetailsLoading, setLinkedTargetDetailsLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [leftPaneWidth, setLeftPaneWidth] = useState(() =>
     getPaneWidthForViewport(viewportWidth, modulePaneSizing.files.left)
@@ -221,11 +289,23 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [localFileContextMenu, setLocalFileContextMenu] = useState<LocalFileContextMenu | null>(null);
+  const localSelectionAnchorRef = useRef<string | null>(null);
+  const askSessionIdsRef = useRef(new Map<string, string>());
   const loadRequestRef = useRef(0);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
   const activeSelected = selected?.workspaceId === activeWorkspaceId ? selected : null;
   const activeLocalFileId = activeSelected?.kind === 'local' ? activeSelected.file.id : null;
+  const activeAskResource = activeSelected
+    ? {
+        resourceType: activeSelected.kind === 'local' ? 'attachment' : 'external',
+        resourceId: activeSelected.kind === 'local' ? activeSelected.file.id : activeSelected.reference.id,
+        title: activeSelected.kind === 'local' ? activeSelected.file.name : referenceTitle(activeSelected.reference),
+      } as const
+    : null;
+  const activeAskResourceKey = activeAskResource
+    ? `${activeAskResource.resourceType}:${activeAskResource.resourceId}`
+    : null;
   const focusedMatch = String(focusContext ?? '').match(
     /^focus-file:([^:]+)(?::(page|sheet|row):(.+?))?(?::row:(\d+))?$/
   );
@@ -240,11 +320,22 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       ? Number(focusedMatch[4])
       : null;
 
+  const selectedLocalFiles = useMemo(
+    () => files.filter((file) => bulkSelectedIds.has(file.id)),
+    [bulkSelectedIds, files]
+  );
+
   useEffect(() => {
     setLeftPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.files.left));
     setRightPaneWidth((current) => clampPaneWidth(current, viewportWidth, modulePaneSizing.files.right));
     if (viewportWidth < 760) setIsLeftPaneCollapsed(true);
   }, [viewportWidth]);
+
+  useEffect(() => {
+    if (!error) return;
+    const timeout = window.setTimeout(() => setError(null), 6500);
+    return () => window.clearTimeout(timeout);
+  }, [error]);
 
   useEffect(() => {
     if (!isResizingLeftPane) return;
@@ -313,7 +404,58 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   }, [load]);
   useEffect(() => {
     setSelected(null);
+    setBulkSelectedIds(new Set());
+    localSelectionAnchorRef.current = null;
   }, [activeWorkspaceId, user?.id]);
+  useEffect(() => {
+    let canceled = false;
+    if (!activeWorkspaceId || !user?.id || !activeAskResource || !activeAskResourceKey) {
+      setAskSession(null);
+      setAskSessionLoading(false);
+      return;
+    }
+    setAskSession(null);
+    setAskSessionLoading(true);
+    const restore = async () => {
+      let restored: AskLedgerSession | null = null;
+      const knownId = askSessionIdsRef.current.get(activeAskResourceKey);
+      if (knownId) {
+        const [cloudResult, localResult] = await Promise.allSettled([
+          api.getAskLedgerSession(activeWorkspaceId, knownId) as Promise<{ session?: AskLedgerSession }>,
+          window.localAskSessions?.get({ userId: user.id, workspaceId: activeWorkspaceId, sessionId: knownId }),
+        ]);
+        if (cloudResult.status === 'fulfilled' && cloudResult.value?.session)
+          restored = cloudResult.value.session;
+        if (localResult.status === 'fulfilled' && localResult.value?.session)
+          restored = { ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession;
+      } else {
+        const [cloudResult, localResult] = await Promise.allSettled([
+          api.getAskLedgerSessions(activeWorkspaceId, 50) as Promise<{ sessions?: AskLedgerSession[] }>,
+          window.localAskSessions?.list({ userId: user.id, workspaceId: activeWorkspaceId, limit: 50 }),
+        ]);
+        const cloudSessions = cloudResult.status === 'fulfilled' && Array.isArray(cloudResult.value?.sessions)
+          ? cloudResult.value.sessions
+          : [];
+        const localSessions = localResult.status === 'fulfilled' && Array.isArray(localResult.value?.sessions)
+          ? localResult.value.sessions.map((session) => ({ ...session, privacyScope: 'device' as const }) as AskLedgerSession)
+          : [];
+        restored = [...cloudSessions, ...localSessions]
+          .filter((session) =>
+            session.initialContext?.resourceType === activeAskResource.resourceType &&
+            session.initialContext?.resourceId === activeAskResource.resourceId
+          )
+          .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null;
+      }
+      if (canceled) return;
+      if (restored) askSessionIdsRef.current.set(activeAskResourceKey, restored.id);
+      setAskSession(restored);
+      setAskSessionLoading(false);
+    };
+    void restore();
+    return () => {
+      canceled = true;
+    };
+  }, [activeAskResourceKey, activeAskResource?.resourceId, activeAskResource?.resourceType, activeWorkspaceId, api, user?.id]);
   useEffect(() => {
     let canceled = false;
     setLocalPreview(null);
@@ -358,6 +500,58 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     };
   }, [activeLocalFileId, activeSelected?.kind, activeWorkspaceId, user?.id]);
 
+  useEffect(() => {
+    let canceled = false;
+    const links = activeSelected?.kind === 'local' ? activeSelected.file.links : [];
+    if (!links.length || !activeWorkspaceId) {
+      setLinkedTargetDetails([]);
+      setLinkedTargetDetailsLoading(false);
+      return;
+    }
+    setLinkedTargetDetailsLoading(true);
+    const loadLinkedTargets = async () => {
+      try {
+        const types = new Set(links.map((link) => link.targetType));
+        const [notes, projects, events, reminders] = await Promise.all([
+          types.has('note') ? api.getNotes() : Promise.resolve([]),
+          types.has('project') ? api.getProjects({ includeCompleted: true }) : Promise.resolve([]),
+          types.has('event') ? api.getEvents() : Promise.resolve([]),
+          types.has('reminder') ? api.getReminders() : Promise.resolve([]),
+        ]);
+        const records = {
+          note: Array.isArray(notes) ? notes : [],
+          project: Array.isArray(projects) ? projects : [],
+          event: Array.isArray(events) ? events : [],
+          reminder: Array.isArray(reminders) ? reminders : [],
+        } as const;
+        const details = links.map((link) => {
+          const record = link.targetType === 'ask_session'
+            ? null
+            : records[link.targetType]?.find((item) => String((item as { id?: string }).id) === link.targetId);
+          const title = record
+            ? String((record as { title?: string; name?: string }).title ?? (record as { name?: string }).name ?? link.targetId)
+            : link.targetType === 'ask_session'
+            ? 'Ask Ledger session'
+            : link.targetId;
+          return { targetType: link.targetType, targetId: link.targetId, title };
+        });
+        if (!canceled) setLinkedTargetDetails(details);
+      } catch {
+        if (!canceled) setLinkedTargetDetails(links.map((link) => ({
+          targetType: link.targetType,
+          targetId: link.targetId,
+          title: link.targetType === 'ask_session' ? 'Ask Ledger session' : link.targetId,
+        })));
+      } finally {
+        if (!canceled) setLinkedTargetDetailsLoading(false);
+      }
+    };
+    void loadLinkedTargets();
+    return () => {
+      canceled = true;
+    };
+  }, [activeSelected?.kind, activeSelected?.kind === 'local' ? activeSelected.file.id : null, api, activeWorkspaceId]);
+
   const visibleItems = useMemo(() => {
     if (loadedWorkspaceId !== activeWorkspaceId) return [];
     const needle = query.trim().toLowerCase();
@@ -398,7 +592,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       });
       if (!result.canceled) await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not import that file.');
+      setError(formatImportError(cause, 'Could not import that file.'));
     } finally {
       setBusy(null);
     }
@@ -423,7 +617,62 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       if (first) setSelected({ kind: 'local', file: first, workspaceId: activeWorkspaceId });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not import the dropped file.');
+      setError(formatImportError(cause, 'Could not import the dropped file.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const selectLocalFile = (file: LocalContextFile, shiftKey: boolean, additive: boolean) => {
+    const localItems = visibleItems.filter(
+      (item): item is Extract<LibraryItem, { kind: 'local' }> => item.kind === 'local'
+    );
+    const anchorIndex = localSelectionAnchorRef.current
+      ? localItems.findIndex((item) => item.file.id === localSelectionAnchorRef.current)
+      : -1;
+    const clickedIndex = localItems.findIndex((item) => item.file.id === file.id);
+    if (shiftKey && anchorIndex >= 0 && clickedIndex >= 0) {
+      const start = Math.min(anchorIndex, clickedIndex);
+      const end = Math.max(anchorIndex, clickedIndex);
+      setBulkSelectedIds(new Set(localItems.slice(start, end + 1).map((item) => item.file.id)));
+    } else if (additive) {
+      setBulkSelectedIds((current) => {
+        const next = new Set(current);
+        if (next.has(file.id)) next.delete(file.id);
+        else next.add(file.id);
+        return next;
+      });
+      localSelectionAnchorRef.current = file.id;
+    } else {
+      setBulkSelectedIds(new Set([file.id]));
+      localSelectionAnchorRef.current = file.id;
+    }
+    if (activeWorkspaceId) setSelected({ kind: 'local', file, workspaceId: activeWorkspaceId });
+  };
+  const removeLocalFiles = async (filesToRemove: LocalContextFile[]) => {
+    if (!user?.id || !activeWorkspaceId || !window.localContext || !filesToRemove.length) return;
+    const noun = filesToRemove.length === 1 ? 'local copy' : 'local copies';
+    if (
+      !window.confirm(
+        `Remove ${filesToRemove.length === 1 ? `“${filesToRemove[0].name}”` : `${filesToRemove.length} files`} from Ledger? The original files will not be deleted.`
+      )
+    )
+      return;
+    setBusy('remove');
+    try {
+      for (const file of filesToRemove) {
+        await window.localContext.remove({
+          ownerUserId: user.id,
+          workspaceId: activeWorkspaceId,
+          fileId: file.id,
+        });
+      }
+      if (activeSelected?.kind === 'local' && filesToRemove.some((file) => file.id === activeSelected.file.id))
+        setSelected(null);
+      setBulkSelectedIds(new Set());
+      localSelectionAnchorRef.current = null;
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Could not remove the selected ${noun}.`);
     } finally {
       setBusy(null);
     }
@@ -431,26 +680,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const removeLocalFile = async (file: LocalContextFile) => {
     if (!user?.id || !activeWorkspaceId || !window.localContext)
       return;
-    if (
-      !window.confirm(
-        `Remove “${file.name}” from Ledger? The original file will not be deleted.`
-      )
-    )
-      return;
-    setBusy('remove');
-    try {
-      await window.localContext.remove({
-        ownerUserId: user.id,
-        workspaceId: activeWorkspaceId,
-        fileId: file.id,
-      });
-      if (activeSelected?.kind === 'local' && activeSelected.file.id === file.id) setSelected(null);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not remove that local file.');
-    } finally {
-      setBusy(null);
-    }
+    await removeLocalFiles([file]);
   };
   const removeSelectedLocalFile = async () => {
     if (activeSelected?.kind !== 'local') return;
@@ -467,21 +697,6 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       if (!result.ok) setError(result.error ?? 'This local file is no longer available.');
     } else if (activeSelected.kind === 'connected' && activeSelected.reference.external_url)
       await window.desktopWindow?.openExternal(activeSelected.reference.external_url);
-  };
-  const askAboutSelected = (initialQuestion?: string) => {
-    if (!activeSelected || !activeWorkspaceId) return;
-    const context: AskLedgerInitialContext = {
-      resourceType: activeSelected.kind === 'local' ? 'attachment' : 'external',
-      resourceId:
-        activeSelected.kind === 'local' ? activeSelected.file.id : activeSelected.reference.id,
-      title:
-        activeSelected.kind === 'local'
-          ? activeSelected.file.name
-          : referenceTitle(activeSelected.reference),
-      workspaceId: activeWorkspaceId,
-      ...(initialQuestion ? { initialQuestion } : {}),
-    };
-    openAskLedgerWithContext(context);
   };
   const saveEditedText = async () => {
     if (
@@ -615,6 +830,29 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       setSaving(false);
     }
   };
+  const openLinkedTarget = (target: LinkedTargetDetail) => {
+    if (!activeWorkspaceId) return;
+    const route = target.targetType === 'note'
+      ? routeForNote(activeWorkspaceId, target.targetId)
+      : target.targetType === 'project'
+      ? routeForProject(activeWorkspaceId, target.targetId)
+      : target.targetType === 'event'
+      ? routeForCalendarEvent(activeWorkspaceId, target.targetId)
+      : target.targetType === 'reminder'
+      ? routeForCalendarReminder(activeWorkspaceId, target.targetId)
+      : null;
+    if (route) platform.navigation.openRoute(route);
+  };
+  const linkedTargetLabel = (targetType: LinkedTargetDetail['targetType']) =>
+    targetType === 'ask_session'
+      ? 'Ask Ledger'
+      : targetType === 'note'
+      ? 'Note'
+      : targetType === 'project'
+      ? 'Project'
+      : targetType === 'event'
+      ? 'Event'
+      : 'Reminder';
   const scopedFileCount = loadedWorkspaceId === activeWorkspaceId ? files.length : 0;
   const scopedReferenceCount = loadedWorkspaceId === activeWorkspaceId ? references.length : 0;
   const subtitle = activeWorkspace?.name
@@ -685,7 +923,9 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
             <div className={`${viewportWidth < modulePaneSizing.files.left.compactBreakpoint ? 'p-3' : 'p-4'} border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]`}>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
-                  Files & links
+                  {bulkSelectedIds.size > 1
+                    ? `${bulkSelectedIds.size} files selected`
+                    : 'Files & links'}
                 </span>
                 <button
                   type="button"
@@ -707,7 +947,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
             </div>
             <div className="ledger-pane-scrollbar min-h-0 flex-1 overflow-auto p-2.5 space-y-1">
               {loading || loadedWorkspaceId !== activeWorkspaceId ? (
-                <p className="p-4 text-xs text-[var(--ledger-text-muted)]">Loading context…</p>
+                Array.from({ length: 7 }).map((_, index) => <SkeletonCompactRow key={index} />)
               ) : visibleItems.length ? (
                 visibleItems.map((item) => {
                   const isSelected =
@@ -732,25 +972,38 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         item.kind === 'local' ? item.file.id : item.reference.id
                       }`}
                       type="button"
-                      onClick={() =>
-                        activeWorkspaceId &&
-                        setSelected({ ...item, workspaceId: activeWorkspaceId })
-                      }
+                      onClick={(event) => {
+                        if (item.kind === 'local') {
+                          selectLocalFile(item.file, event.shiftKey, event.metaKey || event.ctrlKey);
+                        } else {
+                          setBulkSelectedIds(new Set());
+                          localSelectionAnchorRef.current = null;
+                          if (activeWorkspaceId) setSelected({ ...item, workspaceId: activeWorkspaceId });
+                        }
+                      }}
                       onContextMenu={(event) => {
                         if (item.kind !== 'local') return;
                         event.preventDefault();
                         event.stopPropagation();
-                        setLocalFileContextMenu({ x: event.clientX, y: event.clientY, file: item.file });
+                        if (!bulkSelectedIds.has(item.file.id)) {
+                          setBulkSelectedIds(new Set([item.file.id]));
+                          localSelectionAnchorRef.current = item.file.id;
+                          if (activeWorkspaceId)
+                            setSelected({ kind: 'local', file: item.file, workspaceId: activeWorkspaceId });
+                        }
+                        setLocalFileContextMenu({ x: event.clientX, y: event.clientY });
                       }}
                       className={`group flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-left transition ${
                         isSelected
+                          ? 'bg-[var(--ledger-surface-hover)]'
+                          : item.kind === 'local' && bulkSelectedIds.has(item.file.id)
                           ? 'bg-[var(--ledger-surface-hover)]'
                           : 'bg-transparent hover:bg-[var(--ledger-surface-hover)]'
                       }`}
                     >
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)]">
                         {item.kind === 'local' ? (
-                          <FileText size={14} />
+                          <LocalFileIcon extension={item.file.extension} />
                         ) : (
                           <ConnectedProviderIcon provider={item.reference.provider} />
                         )}
@@ -811,93 +1064,88 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         )}
         <main className="min-w-0 flex-1 overflow-y-auto bg-[var(--ledger-surface-card)]">
           {error ? (
-            <div className="m-5 rounded-lg border border-[color:var(--ledger-danger)]/20 bg-[color:var(--ledger-danger)]/5 px-3 py-2 text-xs text-[var(--ledger-danger)]">
+            <div
+              className="m-5 rounded-lg border border-[color:var(--ledger-danger)]/20 bg-[color:var(--ledger-danger)]/5 px-3 py-2 text-xs text-[var(--ledger-danger)]"
+              role="alert"
+            >
               {error}
             </div>
           ) : null}
-          {activeSelected ? (
+          {loading || loadedWorkspaceId !== activeWorkspaceId ? (
+            <FilesContentSkeleton />
+          ) : activeSelected ? (
             <div className="flex min-h-full flex-col">
-              <div className="flex items-center justify-between border-b border-[color:var(--ledger-border-subtle)] px-6 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[var(--ledger-text-primary)]">
-                    {activeSelected.kind === 'local'
-                      ? activeSelected.file.name
-                      : referenceTitle(activeSelected.reference)}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-[var(--ledger-text-muted)]">
-                    {activeSelected.kind === 'local'
-                      ? activeSelected.file.extension.toUpperCase()
-                      : providerLabel(activeSelected.reference.provider)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void openSelected()}
-                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"
-                >
-                  <ExternalLink size={13} />
-                  {activeSelected.kind === 'local' ? 'Open file' : 'Open original'}
-                </button>
-                {activeSelected.kind === 'local' &&
-                localPreview?.kind === 'text' &&
-                !localPreview.readOnly ? (
-                  <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    disabled={editing}
-                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
-                  >
-                    Edit
-                  </button>
-                ) : null}
-                {activeSelected.kind === 'local' &&
-                activeSelected.file.extension === 'docx' &&
-                localPreview?.kind === 'text' ? (
-                  <button
-                    type="button"
-                    onClick={() => void createDocxTextCopy()}
-                    disabled={saving}
-                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
-                  >
-                    {saving ? 'Creating…' : 'Save text copy'}
-                  </button>
-                ) : null}
-                {activeSelected.kind === 'local' &&
-                localPreview?.kind === 'table' &&
-                activeSelected.file.extension === 'xlsx' ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTableDraft({
-                        kind: 'table',
-                        sheets: localPreview.sheets.map((sheet) => ({
-                          ...sheet,
-                          headers: [...sheet.headers],
-                          rows: sheet.rows.map((row) => [...row]),
-                        })),
-                      });
-                      setTableEditing(true);
-                    }}
-                    disabled={tableEditing}
-                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
-                  >
-                    Edit cells
-                  </button>
-                ) : null}
-              </div>
               <div className="flex flex-1 items-center justify-center bg-[var(--ledger-surface-muted)] p-8">
                 <div className="w-full max-w-xl rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-10 text-center shadow-[var(--ledger-shadow)]">
-                  <div className="mb-5 text-left">
-                    <p className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
-                      {activeSelected.kind === 'local'
-                        ? activeSelected.file.name
-                        : referenceTitle(activeSelected.reference)}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
-                      {activeSelected.kind === 'local'
-                        ? activeSelected.file.extension.toUpperCase()
-                        : providerLabel(activeSelected.reference.provider)}
-                    </p>
+                  <div className="mb-5 flex items-start justify-between gap-4 text-left">
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
+                        {activeSelected.kind === 'local'
+                          ? activeSelected.file.name
+                          : referenceTitle(activeSelected.reference)}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                        {activeSelected.kind === 'local'
+                          ? activeSelected.file.extension.toUpperCase()
+                          : providerLabel(activeSelected.reference.provider)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void openSelected()}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"
+                      >
+                        <ExternalLink size={13} />
+                        {activeSelected.kind === 'local' ? 'Open file' : 'Open original'}
+                      </button>
+                      {activeSelected.kind === 'local' &&
+                      localPreview?.kind === 'text' &&
+                      !localPreview.readOnly ? (
+                        <button
+                          type="button"
+                          onClick={() => setEditing(true)}
+                          disabled={editing}
+                          className="inline-flex h-8 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      {activeSelected.kind === 'local' &&
+                      activeSelected.file.extension === 'docx' &&
+                      localPreview?.kind === 'text' ? (
+                        <button
+                          type="button"
+                          onClick={() => void createDocxTextCopy()}
+                          disabled={saving}
+                          className="inline-flex h-8 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
+                        >
+                          {saving ? 'Creating…' : 'Save text copy'}
+                        </button>
+                      ) : null}
+                      {activeSelected.kind === 'local' &&
+                      localPreview?.kind === 'table' &&
+                      activeSelected.file.extension === 'xlsx' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTableDraft({
+                              kind: 'table',
+                              sheets: localPreview.sheets.map((sheet) => ({
+                                ...sheet,
+                                headers: [...sheet.headers],
+                                rows: sheet.rows.map((row) => [...row]),
+                              })),
+                            });
+                            setTableEditing(true);
+                          }}
+                          disabled={tableEditing}
+                          className="inline-flex h-8 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
+                        >
+                          Edit cells
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   {activeSelected.kind === 'local' && localPreviewLoading ? (
                     <p className="mt-4 text-sm text-[var(--ledger-text-muted)]">Loading preview…</p>
@@ -906,7 +1154,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                       {localPreview.mimeType === 'application/pdf' ? (
                         <iframe
                           title={`Preview of ${activeSelected.file.name}`}
-                          src={`${localPreview.dataUrl}${
+                          src={`${localPreview.fileUrl ?? localPreview.dataUrl}${
                             focusedPage ? `#page=${focusedPage}` : ''
                           }`}
                           className="h-[min(62vh,680px)] w-full"
@@ -1169,7 +1417,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                       >
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-accent)]">
                           {item.kind === 'local' ? (
-                            <HardDrive size={14} />
+                            <LocalFileIcon extension={item.file.extension} size={16} className="text-[var(--ledger-accent)]" />
                           ) : (
                             <ConnectedProviderIcon provider={item.reference.provider} />
                           )}
@@ -1297,13 +1545,33 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                     <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                       Used with
                     </p>
-                    <p className="mt-2 text-[var(--ledger-text-primary)]">
-                      {activeSelected.kind === 'local'
-                        ? `${activeSelected.file.links.length} Ledger item${
-                            activeSelected.file.links.length === 1 ? '' : 's'
-                          }`
-                        : 'Linked context'}
-                    </p>
+                    {linkedTargetDetailsLoading ? (
+                      <div className="mt-2 space-y-2">
+                        <SkeletonCompactRow />
+                      </div>
+                    ) : linkedTargetDetails.length ? (
+                      <div className="mt-2 space-y-1">
+                        {linkedTargetDetails.map((target) => (
+                          <button
+                            key={`${target.targetType}:${target.targetId}`}
+                            type="button"
+                            onClick={() => openLinkedTarget(target)}
+                            disabled={target.targetType === 'ask_session'}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[var(--ledger-surface-hover)] disabled:cursor-default disabled:hover:bg-transparent"
+                            title={target.targetType === 'ask_session' ? 'Ask Ledger session' : `Open ${target.title}`}
+                          >
+                            <span className="min-w-0 flex-1 truncate text-xs text-[var(--ledger-text-primary)]">
+                              {target.title}
+                            </span>
+                            <span className="shrink-0 text-[11px] text-[var(--ledger-text-muted)]">
+                              {linkedTargetLabel(target.targetType)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-[var(--ledger-text-muted)]">Not linked to another Ledger item.</p>
+                    )}
                   </div>
                   {activeSelected.kind === 'local' ? (
                     <button
@@ -1316,7 +1584,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                       Remove local copy
                     </button>
                   ) : null}
-                  {activeSelected.kind === 'local' && !editing ? (
+                  {activeSelected.kind === 'local' && !editing && ['txt', 'md', 'csv'].includes(activeSelected.file.extension) ? (
                     <button
                       type="button"
                       onClick={() => void loadRevisions()}
@@ -1353,54 +1621,37 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                   ) : null}
                 </div>
               ) : (
-                <div className="pt-4">
-                  <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
-                    Ask about this file
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-[var(--ledger-text-muted)]">
-                    Open a file-scoped Ask Ledger session with this item as the starting context.
-                  </p>
-                  <div className="mt-4 space-y-1.5">
-                    <button
-                      type="button"
-                      onClick={() => askAboutSelected('Summarize this file.')}
-                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                    >
-                      Summarize this file
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => askAboutSelected('Find the action items in this file.')}
-                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                    >
-                      Find action items
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        askAboutSelected(
-                          'Extract the key dates, deadlines, and commitments in this file.'
-                        )
-                      }
-                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                    >
-                      Extract dates and commitments
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => askAboutSelected('What should I do next based on this file?')}
-                      className="block w-full rounded-md border border-[color:var(--ledger-border-subtle)] px-2.5 py-2 text-left text-xs text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
-                    >
-                      Suggest next steps
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => askAboutSelected()}
-                      className="mt-2 inline-flex h-8 w-full items-center justify-center rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"
-                    >
-                      Open Ask Ledger
-                    </button>
-                  </div>
+                <div
+                  key={`files-ask-${activeSelected.kind}:${
+                    activeSelected.kind === 'local'
+                      ? activeSelected.file.id
+                      : activeSelected.reference.id
+                  }`}
+                  className="-mx-4 -mb-4 flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--ledger-surface-muted)] [&_.agent-ask-ledger-content]:gap-0 [&_.ask-ledger-composer]:min-h-[76px] [&_.ask-ledger-composer]:!rounded-none [&_.ask-ledger-composer]:px-3 [&_.ask-ledger-composer]:py-2 [&_textarea]:text-[13px] [&_textarea]:leading-5 [&_.ask-ledger-answer]:text-[13px]"
+                >
+                  {askSessionLoading ? (
+                    <div className="flex flex-1 items-center justify-center p-4 text-xs text-[var(--ledger-text-muted)]">
+                      Restoring this conversation…
+                    </div>
+                  ) : activeAskResource ? (
+                    <AskLedgerPanel
+                      workspaceId={activeWorkspaceId}
+                      initialSession={askSession}
+                      initialContext={{
+                        resourceType: activeAskResource.resourceType,
+                        resourceId: activeAskResource.resourceId,
+                        title: activeAskResource.title,
+                        workspaceId: activeWorkspaceId!,
+                      }}
+                      onSessionIdChange={(sessionId) => {
+                        if (sessionId && activeAskResourceKey)
+                          askSessionIdsRef.current.set(activeAskResourceKey, sessionId);
+                      }}
+                      preferredGenerationTier="fast"
+                      compact
+                      hideModelSelector
+                    />
+                  ) : null}
                 </div>
               )}
             </aside>
@@ -1441,11 +1692,13 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         groups={[{
           items: [{
             id: 'remove-local-file',
-            label: 'Remove local copy',
+            label: selectedLocalFiles.length > 1
+              ? `Remove ${selectedLocalFiles.length} local copies`
+              : 'Remove local copy',
             icon: <Trash2 size={14} />,
             destructive: true,
             onClick: () => {
-              if (localFileContextMenu) void removeLocalFile(localFileContextMenu.file);
+              void removeLocalFiles(selectedLocalFiles);
             },
           }],
         }]}
