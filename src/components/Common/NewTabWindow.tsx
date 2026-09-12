@@ -1,6 +1,6 @@
 import { type CSSProperties, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, CalendarDays, ChevronDown, Funnel, Trash2 } from 'lucide-react';
+import { Bell, ChevronDown, Funnel, Trash2 } from 'lucide-react';
 import { ModuleHeaderStripAction, ModuleWindowHeader } from './ModuleWindowHeader';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -14,7 +14,6 @@ const DesktopAskLedgerPanel = lazy(() => import('./AskLedgerPanel').then((module
 import { decodeAskLedgerContext, peekPendingAskLedgerContext, readPendingAskLedgerContext } from './askLedgerContext';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import type { AskLedgerCustomSkill } from '../../types/askLedgerSkills';
-import { LedgerEmptyState } from './LedgerEmptyState';
 
 const recentSessionDate = (value: string) => {
   const date = new Date(value);
@@ -54,7 +53,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const [askResetKey, setAskResetKey] = useState(0);
   const [askSessionTitle, setAskSessionTitle] = useState('Ask Ledger');
   const [recentSessions, setRecentSessions] = useState<AskLedgerSession[]>([]);
-  const [recentSessionsLoaded, setRecentSessionsLoaded] = useState(false);
   const [selectedAskSession, setSelectedAskSession] = useState<AskLedgerSession | null>(null);
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const conversationMenuRef = useRef<HTMLDivElement>(null);
@@ -149,10 +147,8 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
   const loadRecentSessions = async () => {
     if (!activeWorkspaceId || !user) {
       setRecentSessions([]);
-      setRecentSessionsLoaded(true);
       return;
     }
-    setRecentSessionsLoaded(false);
     try {
       const [cloudResult, localResult] = await Promise.allSettled([
         api.getAskLedgerSessions(activeWorkspaceId, 5) as Promise<{ sessions?: AskLedgerSession[] }>,
@@ -167,8 +163,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
       setRecentSessions([...mergedSessions.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 5));
     } catch {
       setRecentSessions([]);
-    } finally {
-      setRecentSessionsLoaded(true);
     }
   };
 
@@ -544,21 +538,6 @@ const DesktopNewTabWindow = ({ onClose, isBrowser = false }: { onClose: () => vo
                 className="ask-ledger-mark pointer-events-none absolute -top-12 left-4 z-20 block h-12 w-12 opacity-80"
               />
             )}
-            {recentSessionsLoaded && recentSessions.length === 0 && !askConversationActive && !askInitialContext && !selectedAskSession ? (
-              <LedgerEmptyState
-                state="first-use"
-                title="Start with today"
-                description="Set a focus item or capture a thought so Ledger has something to help you carry forward."
-                icon={CalendarDays}
-                size="compact"
-                testId="new-tab-first-use"
-                primaryAction={{
-                  label: 'Open today',
-                  onClick: () => void window.desktopWindow?.openModule('dashboard', { kind: 'dashboard', focusSection: 'today' }),
-                }}
-                className="mb-1"
-              />
-            ) : null}
             <Suspense fallback={<div className="min-h-[124px] rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface)]" />}><DesktopAskLedgerPanel workspaceId={activeWorkspaceId} resetKey={askResetKey} initialSession={selectedAskSession} initialContext={askInitialContext} customSkills={customSkills} onEditCustomSkill={editCustomSkill} onConversationChange={setAskConversationActive} onSessionTitleChange={setAskSessionTitle} onSessionIdChange={handleAskSessionIdChange} onSessionPersisted={() => void loadRecentSessions()} /></Suspense>
           </div>
         </div>

@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import type {
   LocalContextFile,
   LocalContextFileStatus,
+  LocalContextFolder,
   LocalContextLink,
   LocalContextLibrarySummary,
   LocalContextTargetType,
@@ -40,6 +41,7 @@ const manifestName = (id: string) => `${id}.json`;
 const indexName = (id: string) => `${id}.index.json`;
 const fileName = (id: string, extension: string) => `${id}.${extension}`;
 const revisionsDirName = 'revisions';
+const foldersManifestName = 'folders.json';
 
 const isWithinRoot = (root: string, candidate: string) => {
   const relative = path.relative(root, candidate);
@@ -96,6 +98,28 @@ export class LocalContextLibrary {
       { mode: 0o600 }
     );
     return blocks;
+  }
+
+  private async readFolders(): Promise<LocalContextFolder[]> {
+    await this.ensureRoot();
+    try {
+      const parsed = JSON.parse(await fs.readFile(path.join(this.root, foldersManifestName), 'utf8'));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async writeFolders(folders: LocalContextFolder[]) {
+    await this.ensureRoot();
+    const temporary = path.join(this.root, `${foldersManifestName}.tmp`);
+    await fs.writeFile(temporary, JSON.stringify(folders), { mode: 0o600 });
+    await fs.rename(temporary, path.join(this.root, foldersManifestName));
+  }
+
+  private validateFolderOwnerAndWorkspace(folder: LocalContextFolder, ownerUserId: string, workspaceId: string) {
+    if (folder.ownerUserId !== ownerUserId || folder.workspaceId !== workspaceId)
+      throw new LocalContextLibraryError('Folder is not available in this workspace.');
   }
 
   private validateOwnerAndWorkspace(
@@ -197,6 +221,7 @@ export class LocalContextLibrary {
         createdAt: timestamp,
         updatedAt: timestamp,
         expiresAt: options?.expiresAt,
+        folderId: null,
         links: [],
       };
       try {
@@ -219,7 +244,7 @@ export class LocalContextLibrary {
     const names = await fs.readdir(this.root);
     const records = await Promise.all(
       names
-        .filter((name) => name.endsWith('.json'))
+        .filter((name) => name.endsWith('.json') && name !== foldersManifestName)
         .map((name) => this.loadRecord(name.slice(0, -5)))
     );
     return records
@@ -230,7 +255,76 @@ export class LocalContextLibrary {
 
   async summary(ownerUserId: string, workspaceId: string): Promise<LocalContextLibrarySummary> {
     const files = await this.list(ownerUserId, workspaceId);
-    return { files, totalBytes: files.reduce((total, record) => total + record.sizeBytes, 0) };
+    const folders = await this.listFolders(ownerUserId, workspaceId);
+    return { files, folders, totalBytes: files.reduce((total, record) => total + record.sizeBytes, 0) };
+  }
+
+  async listFolders(ownerUserId: string, workspaceId: string) {
+    return (await this.readFolders())
+      .filter((folder) => folder.ownerUserId === ownerUserId && folder.workspaceId === workspaceId)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name));
+  }
+
+  async createFolder(name: string, ownerUserId: string, workspaceId: string, parentId?: string | null) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new LocalContextLibraryError('A folder name is required.');
+    const folders = await this.readFolders();
+    const parent = parentId ? folders.find((folder) => folder.id === parentId) : null;
+    if (parent) this.validateFolderOwnerAndWorkspace(parent, ownerUserId, workspaceId);
+    else if (parentId) throw new LocalContextLibraryError('Parent folder not found.');
+    if (folders.some((folder) => folder.ownerUserId === ownerUserId && folder.workspaceId === workspaceId && (folder.parentId ?? null) === (parentId ?? null) && folder.name.toLowerCase() === trimmed.toLowerCase()))
+      throw new LocalContextLibraryError('A folder with that name already exists here.');
+    const siblings = folders.filter((folder) => folder.ownerUserId === ownerUserId && folder.workspaceId === workspaceId && (folder.parentId ?? null) === (parentId ?? null));
+    const timestamp = now();
+    const folder: LocalContextFolder = { id: randomUUID(), ownerUserId, workspaceId, name: trimmed, parentId: parentId ?? null, sortOrder: siblings.length, createdAt: timestamp, updatedAt: timestamp };
+    await this.writeFolders([...folders, folder]);
+    return folder;
+  }
+
+  async renameFolder(id: string, name: string, ownerUserId: string, workspaceId: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new LocalContextLibraryError('A folder name is required.');
+    const folders = await this.readFolders();
+    const folder = folders.find((candidate) => candidate.id === id);
+    if (!folder) throw new LocalContextLibraryError('Folder not found.');
+    this.validateFolderOwnerAndWorkspace(folder, ownerUserId, workspaceId);
+    const updated = { ...folder, name: trimmed, updatedAt: now() };
+    await this.writeFolders(folders.map((candidate) => candidate.id === id ? updated : candidate));
+    return updated;
+  }
+
+  async moveFile(id: string, folderId: string | null, ownerUserId: string, workspaceId: string) {
+    const record = await this.loadRecord(id);
+    if (!record) throw new LocalContextLibraryError('Local file not found.');
+    this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
+    if (folderId) {
+      const folder = (await this.readFolders()).find((candidate) => candidate.id === folderId);
+      if (!folder) throw new LocalContextLibraryError('Folder not found.');
+      this.validateFolderOwnerAndWorkspace(folder, ownerUserId, workspaceId);
+    }
+    const updated = { ...record, folderId, updatedAt: now() };
+    this.records.set(id, updated);
+    await this.writeManifest(updated);
+    return updated;
+  }
+
+  async removeFolder(id: string, ownerUserId: string, workspaceId: string) {
+    const folders = await this.readFolders();
+    const folder = folders.find((candidate) => candidate.id === id);
+    if (!folder) return false;
+    this.validateFolderOwnerAndWorkspace(folder, ownerUserId, workspaceId);
+    const replacement = folder.parentId ?? null;
+    const updatedFiles = (await this.list(ownerUserId, workspaceId)).filter((file) => file.folderId === id);
+    await Promise.all(updatedFiles.map(async (file) => {
+      const updated = { ...file, folderId: replacement, updatedAt: now() };
+      this.records.set(file.id, updated);
+      await this.writeManifest(updated);
+    }));
+    const nextFolders = folders
+      .filter((candidate) => candidate.id !== id)
+      .map((candidate) => candidate.parentId === id ? { ...candidate, parentId: replacement, updatedAt: now() } : candidate);
+    await this.writeFolders(nextFolders);
+    return true;
   }
 
   async contextDocuments(
@@ -240,17 +334,29 @@ export class LocalContextLibrary {
     const records = await this.list(ownerUserId, workspaceId);
     const documents: AskLedgerContextItem[] = [];
     for (const record of records) {
-      if (record.status !== 'ready') continue;
+      // Older local manifests can survive an app update with a missing or
+      // stale sidecar index. Rebuild it on the read path so Files & links can
+      // become Ask Ledger context without requiring the user to re-import.
+      if (record.status && record.status !== 'ready') continue;
       try {
-        const indexed = JSON.parse(
+        let indexed = JSON.parse(
           await fs.readFile(path.join(this.root, indexName(record.id)), 'utf8')
         ) as { fileId?: string; contentHash?: string; blocks?: ExtractedAttachmentBlock[] };
         if (
           indexed.fileId !== record.id ||
           indexed.contentHash !== record.contentHash ||
           !Array.isArray(indexed.blocks)
-        )
-          continue;
+        ) {
+          await this.indexRecord(record);
+          indexed = JSON.parse(
+            await fs.readFile(path.join(this.root, indexName(record.id)), 'utf8')
+          ) as { fileId?: string; contentHash?: string; blocks?: ExtractedAttachmentBlock[] };
+        }
+        if (
+          indexed.fileId !== record.id ||
+          indexed.contentHash !== record.contentHash ||
+          !Array.isArray(indexed.blocks)
+        ) continue;
         indexed.blocks.forEach((block, index) =>
           documents.push({
             workspaceId,
@@ -271,6 +377,22 @@ export class LocalContextLibrary {
       }
     }
     return documents;
+  }
+
+  async saveOcrBlocks(
+    id: string,
+    ownerUserId: string,
+    workspaceId: string,
+    blocks: ExtractedAttachmentBlock[]
+  ) {
+    const record = await this.loadRecord(id);
+    if (!record) throw new LocalContextLibraryError('Local file not found.');
+    this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
+    await fs.writeFile(
+      path.join(this.root, indexName(record.id)),
+      JSON.stringify({ fileId: record.id, contentHash: record.contentHash, blocks }),
+      { mode: 0o600 }
+    );
   }
 
   async pathFor(id: string, ownerUserId: string, workspaceId: string) {
@@ -471,6 +593,7 @@ export class LocalContextLibrary {
       createdAt: now(),
       updatedAt: now(),
       links: [],
+      folderId: null,
     };
     await fs.writeFile(path.join(this.root, copyRecord.relativePath), copyBytes, { mode: 0o600 });
     await this.indexRecord(copyRecord);
@@ -487,7 +610,7 @@ export class LocalContextLibrary {
     const names = await fs.readdir(root).catch(() => [] as string[]);
     const revisions = await Promise.all(
       names
-        .filter((name) => name.endsWith('.json'))
+        .filter((name) => name.endsWith('.json') && name !== foldersManifestName)
         .map(
           async (name) =>
             JSON.parse(await fs.readFile(path.join(root, name), 'utf8')) as {
@@ -618,6 +741,8 @@ export class LocalContextLibrary {
     await Promise.all(
       ownedRecords.map((record) => this.remove(record.id, ownerUserId, record.workspaceId))
     );
+    const folders = await this.readFolders();
+    await this.writeFolders(folders.filter((folder) => folder.ownerUserId !== ownerUserId));
   }
 }
 

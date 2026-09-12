@@ -19,7 +19,15 @@ type StoredProviderKey = {
 };
 
 type StoredKeysFile = Partial<Record<AIProvider, StoredProviderKey>> & { selectedProvider?: 'local' | AIProvider; cloudDataConsent?: boolean };
-const defaultModelFor = (provider: AIProvider) => provider === 'openai' ? 'gpt-5-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'google' ? 'gemini-2.5-flash' : provider === 'perplexity' ? 'sonar-pro' : provider === 'kimi' ? 'kimi-k2.6' : 'deepseek-v4-flash';
+const defaultModelFor = (provider: AIProvider) => provider === 'openai' ? 'gpt-5-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'google' ? 'gemini-3.5-flash-lite' : provider === 'perplexity' ? 'sonar-pro' : provider === 'kimi' ? 'kimi-k2.6' : 'deepseek-v4-flash';
+
+const normalizeSelectedModel = (provider: AIProvider, model: string) => {
+  const normalized = model.replace(/^models\//, '').trim();
+  // Google retired this model for new users. Keep existing installations from
+  // repeatedly sending requests to an endpoint that now returns HTTP 404.
+  if (provider === 'google' && normalized.toLowerCase() === 'gemini-2.5-flash-lite') return 'gemini-3.5-flash-lite';
+  return normalized;
+};
 
 const hasSupportedModelName = (provider: AIProvider, model: string) => {
   const normalized = model.replace(/^models\//, '').trim();
@@ -82,7 +90,8 @@ export class AIProviderKeyStore {
   selectedModel(provider: AIProvider): string {
     const value = this.read()[provider];
     const model = value && typeof value.model === 'string' ? value.model : undefined;
-    return model && hasSupportedModelName(provider, model) ? model : defaultModelFor(provider);
+    const normalized = model ? normalizeSelectedModel(provider, model) : '';
+    return normalized && hasSupportedModelName(provider, normalized) ? normalized : defaultModelFor(provider);
   }
 
   setSelectedModel(provider: AIProvider, model: string) {
@@ -91,9 +100,10 @@ export class AIProviderKeyStore {
     const stored = this.read();
     const entry = stored[provider];
     if (!entry) throw new Error(`No ${provider} API key is connected.`);
-    stored[provider] = { ...entry, model: model.trim() };
+    const normalized = normalizeSelectedModel(provider, model);
+    stored[provider] = { ...entry, model: normalized };
     this.write(stored);
-    return model.trim();
+    return normalized;
   }
 
   async set(provider: AIProvider, apiKey: string): Promise<AIProviderConnection> {

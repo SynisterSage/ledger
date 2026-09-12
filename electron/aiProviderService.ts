@@ -21,6 +21,7 @@ const isLegacyOrUnsupportedModel = (provider: AIProvider, id: string) => {
 };
 const isSupportedGenerationModel = (provider: AIProvider, id: string) => {
   if (!isTextGenerationModel(id) || isLegacyOrUnsupportedModel(provider, id)) return false;
+  if (provider === 'google' && /^gemini-2\.5-flash-lite$/i.test(id)) return false;
   if (provider === 'openai') return /^(gpt-|o[1-9]-|chatgpt-)/i.test(id) && !/realtime/i.test(id);
   if (provider === 'anthropic') return /^claude-/i.test(id);
   if (provider === 'perplexity') return /^(sonar|pplx-)/i.test(id);

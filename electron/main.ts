@@ -49,6 +49,7 @@ import { AIProviderService } from './aiProviderService';
 import { CloudAIProvider } from './cloudAIProvider';
 import { createAskLedgerService } from './askLedgerService';
 import { LocalContextLibrary, LocalContextLibraryError } from './localContextLibrary.ts';
+import type { ExtractedAttachmentBlock } from './askLedgerAttachmentService.ts';
 import {
   LocalAskLedgerSessionStore,
   LocalAskLedgerSessionStoreError,
@@ -322,6 +323,56 @@ const askLedgerService = createAskLedgerService(
 const localContextLibrary = new LocalContextLibrary(
   path.join(app.getPath('userData'), 'local-context-library')
 );
+const scannedPdfOcrAttempts = new Set<string>();
+
+const prepareScannedPdfForAsk = async (
+  filePath: string,
+  fileId: string,
+  ownerUserId: string,
+  workspaceId: string
+) => {
+  if (process.platform !== 'darwin' || path.extname(filePath).toLowerCase() !== '.pdf') return false;
+  const attemptKey = `${ownerUserId}:${workspaceId}:${fileId}`;
+  if (scannedPdfOcrAttempts.has(attemptKey)) return false;
+  scannedPdfOcrAttempts.add(attemptKey);
+  const directory = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'ledger-pdf-ocr-'));
+  try {
+    await execFileAsync('/usr/bin/qlmanage', ['-t', '-s', '2048', '-o', directory, filePath]);
+    const candidates = (await fs.promises.readdir(directory))
+      .filter((name) => /\.(png|jpg|jpeg)$/i.test(name))
+      .map((name) => path.join(directory, name));
+    const imagePath = candidates[0];
+    if (!imagePath) return false;
+    const result = await localNoteOcrService.recognize({
+      imagePath,
+      request: { noteId: `ask-ledger-file:${fileId}`, mode: 'printed' },
+    });
+    const blocks: ExtractedAttachmentBlock[] = (result.blocks?.length
+      ? result.blocks.map((block) => ({
+          text: block.text,
+          source: { pageNumber: 1, section: block.type },
+        }))
+      : result.lines.map((line) => ({ text: line.text, source: { pageNumber: 1 } })))
+      .filter((block) => block.text.trim());
+    if (!blocks.length) return false;
+    await localContextLibrary.saveOcrBlocks(fileId, ownerUserId, workspaceId, blocks);
+    console.info('[local-context] scanned PDF indexed for Ask Ledger', {
+      fileId,
+      pageCount: 1,
+      blockCount: blocks.length,
+      engine: result.engine,
+    });
+    return true;
+  } catch (error) {
+    console.warn('[local-context] scanned PDF OCR unavailable', {
+      fileId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  } finally {
+    await fs.promises.rm(directory, { recursive: true, force: true });
+  }
+};
 const registerLocalContextProtocol = () => {
   protocol.handle(LOCAL_CONTEXT_PROTOCOL, async (request) => {
     try {
@@ -1186,6 +1237,27 @@ ipcMain.handle(
   }
 );
 
+ipcMain.handle('local-context:list-folders', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string') throw new LocalContextLibraryError('Account and workspace are required.');
+  return localContextLibrary.listFolders(payload.ownerUserId, payload.workspaceId);
+});
+ipcMain.handle('local-context:create-folder', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; name?: unknown; parentId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.name !== 'string' || (payload.parentId !== undefined && payload.parentId !== null && typeof payload.parentId !== 'string')) throw new LocalContextLibraryError('A valid folder is required.');
+  return localContextLibrary.createFolder(payload.name, payload.ownerUserId, payload.workspaceId, payload.parentId as string | null | undefined);
+});
+ipcMain.handle('local-context:rename-folder', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; folderId?: unknown; name?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.folderId !== 'string' || typeof payload?.name !== 'string') throw new LocalContextLibraryError('A valid folder is required.');
+  return localContextLibrary.renameFolder(payload.folderId, payload.name, payload.ownerUserId, payload.workspaceId);
+});
+ipcMain.handle('local-context:move-file', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; folderId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || (payload.folderId !== null && typeof payload.folderId !== 'string')) throw new LocalContextLibraryError('A valid file move is required.');
+  return localContextLibrary.moveFile(payload.fileId, payload.folderId as string | null, payload.ownerUserId, payload.workspaceId);
+});
+ipcMain.handle('local-context:remove-folder', async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; folderId?: unknown }) => {
+  if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.folderId !== 'string') throw new LocalContextLibraryError('A valid folder is required.');
+  return { removed: await localContextLibrary.removeFolder(payload.folderId, payload.ownerUserId, payload.workspaceId) };
+});
+
 ipcMain.handle(
   'local-context:cleanup-expired',
   async (
@@ -1593,10 +1665,40 @@ ipcMain.handle(
     )
       throw new Error('Ask Ledger context workspace mismatch.');
     if (typeof payload.ownerUserId === 'string' && payload.ownerUserId.trim()) {
-      const localDocuments = await localContextLibrary.contextDocuments(
+      let localDocuments = await localContextLibrary.contextDocuments(
         payload.ownerUserId,
         payload.workspaceId
       );
+      const rawContext =
+        payload.explicitContext && typeof payload.explicitContext === 'object'
+          ? (payload.explicitContext as Record<string, unknown>)
+          : undefined;
+      const localFileId =
+        rawContext?.resourceType === 'attachment' && typeof rawContext.resourceId === 'string'
+          ? rawContext.resourceId
+          : undefined;
+      if (
+        localFileId &&
+        !localDocuments.some((item) => item.metadata?.localFileId === localFileId)
+      ) {
+        const localFilePath = await localContextLibrary.pathFor(
+          localFileId,
+          payload.ownerUserId,
+          payload.workspaceId
+        );
+        if (localFilePath) {
+          await prepareScannedPdfForAsk(
+            localFilePath,
+            localFileId,
+            payload.ownerUserId,
+            payload.workspaceId
+          );
+          localDocuments = await localContextLibrary.contextDocuments(
+            payload.ownerUserId,
+            payload.workspaceId
+          );
+        }
+      }
       documents = [...documents, ...localDocuments];
     }
     const builtinSkill =

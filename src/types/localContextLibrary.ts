@@ -32,10 +32,23 @@ export type LocalContextFile = {
   updatedAt: string;
   lastUsedAt?: string;
   expiresAt?: string;
+  folderId?: string | null;
   links: LocalContextLink[];
+};
+
+export type LocalContextFolder = {
+  id: string;
+  ownerUserId: string;
+  workspaceId: string;
+  name: string;
+  parentId?: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type LocalContextLibrarySummary = {
   files: LocalContextFile[];
+  folders: LocalContextFolder[];
   totalBytes: number;
 };

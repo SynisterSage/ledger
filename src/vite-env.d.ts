@@ -97,8 +97,14 @@ interface Window {
   localContext?: {
     list: (payload: { ownerUserId: string; workspaceId: string }) => Promise<{
       files: import('./types/localContextLibrary').LocalContextFile[];
+      folders: import('./types/localContextLibrary').LocalContextFolder[];
       totalBytes: number;
     }>;
+    listFolders: (payload: { ownerUserId: string; workspaceId: string }) => Promise<import('./types/localContextLibrary').LocalContextFolder[]>;
+    createFolder: (payload: { ownerUserId: string; workspaceId: string; name: string; parentId?: string | null }) => Promise<import('./types/localContextLibrary').LocalContextFolder>;
+    renameFolder: (payload: { ownerUserId: string; workspaceId: string; folderId: string; name: string }) => Promise<import('./types/localContextLibrary').LocalContextFolder>;
+    moveFile: (payload: { ownerUserId: string; workspaceId: string; fileId: string; folderId: string | null }) => Promise<import('./types/localContextLibrary').LocalContextFile>;
+    removeFolder: (payload: { ownerUserId: string; workspaceId: string; folderId: string }) => Promise<{ removed: boolean }>;
     cleanupExpired: (payload: {
       ownerUserId: string;
       workspaceId: string;

@@ -1812,6 +1812,7 @@ export function DashboardContent({
   const overviewCreateMenuRef = useRef<HTMLDivElement | null>(null);
   const overviewViewMenuRef = useRef<HTMLDivElement | null>(null);
   const overviewDisplayMenuRef = useRef<HTMLDivElement | null>(null);
+  const overviewInspectorMenuRef = useRef<HTMLDivElement | null>(null);
   const [expandedNoteIds, setExpandedNoteIds] = useState<Set<string>>(new Set());
   const [calendarScope, setCalendarScope] = useState<
     'current_workspace' | 'all_accessible_workspaces'
@@ -3782,6 +3783,26 @@ export function DashboardContent({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOverviewViewMenuOpen]);
+
+  useEffect(() => {
+    if (!isOverviewInspectorMenuOpen) return;
+
+    const closeInspectorMenu = (event: MouseEvent | PointerEvent) => {
+      if (overviewInspectorMenuRef.current?.contains(event.target as Node)) return;
+      setIsOverviewInspectorMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOverviewInspectorMenuOpen(false);
+    };
+
+    window.addEventListener('pointerdown', closeInspectorMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', closeInspectorMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOverviewInspectorMenuOpen]);
 
   const saveUpcomingQuickCreate = async () => {
     const title = upcomingQuickTitle.trim();
@@ -7929,7 +7950,7 @@ export function DashboardContent({
                 {!selectedOverviewRow ? (
                   <>
                     <div className="space-y-4">
-                      <div>
+                      <div className="border-b border-[color:var(--ledger-border-subtle)] pb-4">
                         <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
                           {todayLabel}
                         </p>
@@ -7941,7 +7962,10 @@ export function DashboardContent({
                         </p>
                       </div>
 
-                      <section aria-labelledby="overview-attention-heading">
+                      <section
+                        className="border-b border-[color:var(--ledger-border-subtle)] pb-4"
+                        aria-labelledby="overview-attention-heading"
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <p
                             id="overview-attention-heading"
@@ -7982,7 +8006,7 @@ export function DashboardContent({
                       </section>
 
                       <section
-                        className="pt-1"
+                        className="border-b border-[color:var(--ledger-border-subtle)] pb-4 pt-1"
                         aria-labelledby="overview-next-heading"
                       >
                         <p
@@ -8020,7 +8044,7 @@ export function DashboardContent({
                       </section>
 
                       <section
-                        className="space-y-1.5 pt-1"
+                        className="space-y-1.5 border-b border-[color:var(--ledger-border-subtle)] pb-4 pt-1"
                         aria-label="Workspace context"
                       >
                         <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
@@ -8045,7 +8069,7 @@ export function DashboardContent({
                     </div>
                     {!browserMode ? (
                       <section
-                        className="mt-4 pt-1"
+                        className="mt-4 border-b border-[color:var(--ledger-border-subtle)] pb-4 pt-1"
                         aria-labelledby="overview-lens-heading"
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -8149,7 +8173,7 @@ export function DashboardContent({
                         </button>
                       </section>
                     ) : null}
-                    <div className="mt-auto space-y-2 pt-3">
+                    <div className="mt-auto space-y-2 border-t border-[color:var(--ledger-border-subtle)] pt-3">
                       {overviewTryItem && (
                         <button
                           type="button"
@@ -8197,7 +8221,7 @@ export function DashboardContent({
                         <p className="mt-1 text-[11px] leading-5 text-[var(--ledger-text-muted)]">
                           {selectedOverviewRow.meta}
                         </p>
-                        <div className="mt-2 flex flex-wrap gap-1">
+                        <div className="mt-1 flex flex-wrap gap-1">
                           {selectedOverviewRow.chips.map((chip) => (
                             <span
                               key={chip}
@@ -8212,7 +8236,7 @@ export function DashboardContent({
                       {overviewDetailSections.map((section, sectionIndex) => (
                         <section
                           key={section.title}
-                          className={`space-y-1.5 ${sectionIndex > 0 ? 'pt-2.5' : 'pt-1'}`}
+                          className={`space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] ${sectionIndex > 0 ? 'mt-3 pt-3' : 'mt-4 pt-3'}`}
                         >
                           <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                             {section.title}
@@ -8264,7 +8288,7 @@ export function DashboardContent({
                         </div>
                       )}
                       {selectedOverviewOverflowActions.length > 0 && (
-                        <div className="relative mt-1">
+                        <div ref={overviewInspectorMenuRef} className="relative mt-1">
                           <button
                             type="button"
                             onClick={() => setIsOverviewInspectorMenuOpen((open) => !open)}
@@ -8309,7 +8333,10 @@ export function DashboardContent({
           setIsOverviewLinkProjectOpen(false);
           setOverviewLinkTargetNoteId(null);
         }}
-        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
+        backdropBorderRadius="inherit"
+        disablePortal
+        manageWindowChrome={false}
+        classNameContainer="w-full max-w-[420px] overflow-hidden rounded-[var(--ledger-surface-radius)] border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] shadow-[var(--ledger-shadow)]"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--ledger-border-subtle)] px-5 py-4">
           <div className="min-w-0">

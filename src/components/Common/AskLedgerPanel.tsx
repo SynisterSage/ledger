@@ -1097,6 +1097,7 @@ export const AskLedgerPanel = ({
   compact = false,
   meetingChat = false,
   hideModelSelector = false,
+  lockedContext = false,
 }: {
   workspaceId?: string | null;
   resetKey?: number;
@@ -1117,6 +1118,8 @@ export const AskLedgerPanel = ({
   compact?: boolean;
   meetingChat?: boolean;
   hideModelSelector?: boolean;
+  /** Keep this surface scoped to its supplied Ledger resource. */
+  lockedContext?: boolean;
 }) => {
   const api = useApi();
   const { user } = useAuthContext();
@@ -3851,7 +3854,7 @@ export const AskLedgerPanel = ({
               <span className="inline-flex h-8 min-w-0 w-full max-w-[260px] flex-[0_1_260px] items-center gap-1.5 rounded-md bg-[var(--ledger-surface-hover)] px-2 text-xs text-[var(--ledger-text-secondary)]">
                 <FileText size={12} className="shrink-0 text-[var(--ledger-text-muted)]" />
                 <span className="min-w-0 flex-1 truncate">{activeInitialContext.title}</span>
-                <button
+                {!lockedContext && <button
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -3861,7 +3864,7 @@ export const AskLedgerPanel = ({
                   className="ml-0.5 rounded p-0.5 text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface)] hover:text-[var(--ledger-text-primary)]"
                 >
                   ×
-                </button>
+                </button>}
               </span>
             )}
             {selectedSkill && (
@@ -3925,6 +3928,8 @@ export const AskLedgerPanel = ({
             skillPlaceholder(selectedSkill) ??
             (conversationActive
               ? 'Reply...'
+              : lockedContext
+              ? `Ask about ${activeInitialContext?.title ?? 'this resource'}…`
               : meetingChat && activeInitialContext?.contextType === 'meeting'
               ? 'Ask about this meeting…'
               : 'Ask Ledger...')
@@ -4177,7 +4182,7 @@ export const AskLedgerPanel = ({
                 <AlertCircle size={15} />
               </button>
             )}
-            <div ref={attachmentMenuRef} className="relative">
+            {!lockedContext && <div ref={attachmentMenuRef} className="relative">
               <button
                 type="button"
                 onClick={(event) => {
@@ -4279,7 +4284,7 @@ export const AskLedgerPanel = ({
                   )}
                 </div>
               )}
-            </div>
+            </div>}
             {isSubmitting && (
               <button
                 type="button"

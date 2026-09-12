@@ -1278,6 +1278,21 @@ contextBridge.exposeInMainWorld('localContext', {
   list(payload: { ownerUserId: string; workspaceId: string }) {
     return ipcRenderer.invoke('local-context:list', payload);
   },
+  listFolders(payload: { ownerUserId: string; workspaceId: string }) {
+    return ipcRenderer.invoke('local-context:list-folders', payload);
+  },
+  createFolder(payload: { ownerUserId: string; workspaceId: string; name: string; parentId?: string | null }) {
+    return ipcRenderer.invoke('local-context:create-folder', payload);
+  },
+  renameFolder(payload: { ownerUserId: string; workspaceId: string; folderId: string; name: string }) {
+    return ipcRenderer.invoke('local-context:rename-folder', payload);
+  },
+  moveFile(payload: { ownerUserId: string; workspaceId: string; fileId: string; folderId: string | null }) {
+    return ipcRenderer.invoke('local-context:move-file', payload);
+  },
+  removeFolder(payload: { ownerUserId: string; workspaceId: string; folderId: string }) {
+    return ipcRenderer.invoke('local-context:remove-folder', payload);
+  },
   cleanupExpired(payload: { ownerUserId: string; workspaceId: string; retentionDays?: number }) {
     return ipcRenderer.invoke('local-context:cleanup-expired', payload) as Promise<{
       removed: number;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,7 +8,10 @@ import {
   FileSpreadsheet,
   FileText,
   FileType,
+  Folder,
+  FolderPlus,
   Link2,
+  MoreHorizontal,
   Plus,
   ShieldCheck,
   Trash2,
@@ -27,8 +30,6 @@ import { LedgerEmptyState } from '../Common/LedgerEmptyState';
 import { ContextMenu } from '../Common/ContextMenu';
 import {
   ModuleHeaderActionButton,
-  ModuleHeaderSegmentedButton,
-  ModuleHeaderSegmentedGroup,
   ModuleWindowHeader,
 } from '../Common/ModuleWindowHeader';
 import {
@@ -55,6 +56,7 @@ type LibraryItem =
   | { kind: 'connected'; reference: ExternalReference };
 type SelectedItem = LibraryItem & { workspaceId: string };
 type LocalFileContextMenu = { x: number; y: number };
+type LocalFolderContextMenu = { x: number; y: number; folderId: string | null };
 type LinkedTargetDetail = {
   targetType: LocalContextFile['links'][number]['targetType'];
   targetId: string;
@@ -252,13 +254,14 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const { workspaceShellLayout, reduceMotion } = useSidebar();
   const viewportWidth = useViewportWidth();
   const [files, setFiles] = useState<LocalContextFile[]>([]);
+  const [folders, setFolders] = useState<import('../../types/localContextLibrary').LocalContextFolder[]>([]);
   const [references, setReferences] = useState<ExternalReference[]>([]);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
   const [filter, setFilter] = useState<LibraryFilter>('all');
+  const [folderFilterId, setFolderFilterId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<SelectedItem | null>(null);
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(() => new Set());
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<'import' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<'details' | 'ask'>('details');
@@ -289,6 +292,13 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [localFileContextMenu, setLocalFileContextMenu] = useState<LocalFileContextMenu | null>(null);
+  const [localFolderContextMenu, setLocalFolderContextMenu] = useState<LocalFolderContextMenu | null>(null);
+  const [showLibraryActions, setShowLibraryActions] = useState(false);
+  const [newFolderParentId, setNewFolderParentId] = useState<string | null | undefined>(undefined);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('files-folders-collapsed') ?? '[]')); } catch { return new Set(); }
+  });
   const localSelectionAnchorRef = useRef<string | null>(null);
   const askSessionIdsRef = useRef(new Map<string, string>());
   const loadRequestRef = useRef(0);
@@ -338,6 +348,15 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   }, [error]);
 
   useEffect(() => {
+    if (!showLibraryActions) return;
+    const close = () => setShowLibraryActions(false);
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', onKeyDown);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', onKeyDown); };
+  }, [showLibraryActions]);
+
+  useEffect(() => {
     if (!isResizingLeftPane) return;
     const handleMove = (event: MouseEvent) => {
       setLeftPaneWidth(clampPaneWidth(event.clientX, viewportWidth, modulePaneSizing.files.left));
@@ -371,15 +390,11 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     const requestId = ++loadRequestRef.current;
     if (!user?.id || !workspaceId || !window.localContext) {
       setFiles([]);
+      setFolders([]);
       setReferences([]);
       setLoadedWorkspaceId(null);
-      setLoading(false);
       return;
     }
-    setFiles([]);
-    setReferences([]);
-    setLoadedWorkspaceId(workspaceId);
-    setLoading(true);
     setError(null);
     try {
       const [localSummary, connected] = await Promise.all([
@@ -389,14 +404,12 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       if (requestId !== loadRequestRef.current || workspaceId !== activeWorkspaceIdRef.current)
         return;
       setFiles(localSummary.files ?? []);
+      setFolders(localSummary.folders ?? []);
       setReferences(Array.isArray(connected) ? (connected as ExternalReference[]) : []);
       setLoadedWorkspaceId(workspaceId);
     } catch (cause) {
       if (requestId === loadRequestRef.current && workspaceId === activeWorkspaceIdRef.current)
         setError(cause instanceof Error ? cause.message : 'Could not load Files & links.');
-    } finally {
-      if (requestId === loadRequestRef.current && workspaceId === activeWorkspaceIdRef.current)
-        setLoading(false);
     }
   }, [activeWorkspaceId, api, user?.id]);
   useEffect(() => {
@@ -560,11 +573,24 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     };
   }, [activeSelected?.kind, activeSelected?.kind === 'local' ? activeSelected.file.id : null, api, activeWorkspaceId]);
 
+  const folderFilterMap = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders]);
   const visibleItems = useMemo(() => {
     if (loadedWorkspaceId !== activeWorkspaceId) return [];
     const needle = query.trim().toLowerCase();
+    const isInFolderFilter = (file: LocalContextFile) => {
+      if (!folderFilterId) return true;
+      let currentFolderId = file.folderId ?? null;
+      const seen = new Set<string>();
+      while (currentFolderId && !seen.has(currentFolderId)) {
+        if (currentFolderId === folderFilterId) return true;
+        seen.add(currentFolderId);
+        currentFolderId = folderFilterMap.get(currentFolderId)?.parentId ?? null;
+      }
+      return false;
+    };
     const localItems: LibraryItem[] = files
       .filter(() => filter !== 'connected')
+      .filter(isInFolderFilter)
       .filter((file) => !needle || file.name.toLowerCase().includes(needle))
       .map((file) => ({ kind: 'local', file }));
     const connectedItems: LibraryItem[] = references
@@ -578,7 +604,61 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       )
       .map((reference) => ({ kind: 'connected', reference }));
     return [...localItems, ...connectedItems];
-  }, [activeWorkspaceId, files, filter, loadedWorkspaceId, query, references]);
+  }, [activeWorkspaceId, files, filter, folderFilterId, folderFilterMap, loadedWorkspaceId, query, references]);
+
+  const visibleLocalFiles = useMemo(
+    () => files.filter((file) => {
+      if (filter === 'connected' || (query.trim() && !file.name.toLowerCase().includes(query.trim().toLowerCase()))) return false;
+      if (!folderFilterId) return true;
+      let currentFolderId = file.folderId ?? null;
+      const seen = new Set<string>();
+      while (currentFolderId && !seen.has(currentFolderId)) {
+        if (currentFolderId === folderFilterId) return true;
+        seen.add(currentFolderId);
+        currentFolderId = folderFilterMap.get(currentFolderId)?.parentId ?? null;
+      }
+      return false;
+    }),
+    [files, filter, folderFilterId, folderFilterMap, query]
+  );
+  const folderById = folderFilterMap;
+  const folderDepthById = useMemo(() => {
+    const depths = new Map<string, number>();
+    const resolve = (id: string, seen = new Set<string>()): number => {
+      if (depths.has(id)) return depths.get(id) ?? 0;
+      if (seen.has(id)) return 0;
+      seen.add(id);
+      const parentId = folderById.get(id)?.parentId;
+      const depth = parentId && folderById.has(parentId) ? Math.min(resolve(parentId, seen) + 1, 6) : 0;
+      depths.set(id, depth);
+      return depth;
+    };
+    folders.forEach((folder) => resolve(folder.id));
+    return depths;
+  }, [folderById, folders]);
+  const folderChildren = useMemo(() => {
+    const children = new Map<string | null, typeof folders>();
+    folders.forEach((folder) => {
+      const parentId = folder.parentId && folderById.has(folder.parentId) ? folder.parentId : null;
+      const bucket = children.get(parentId) ?? [];
+      bucket.push(folder);
+      children.set(parentId, bucket);
+    });
+    children.forEach((bucket) => bucket.sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name)));
+    return children;
+  }, [folderById, folders]);
+  const matchingFolderIds = useMemo(() => {
+    const ids = new Set<string>();
+    visibleLocalFiles.forEach((file) => {
+      let folderId = file.folderId ?? null;
+      while (folderId) {
+        if (ids.has(folderId)) break;
+        ids.add(folderId);
+        folderId = folderById.get(folderId)?.parentId ?? null;
+      }
+    });
+    return ids;
+  }, [folderById, visibleLocalFiles]);
   useEffect(() => {
     if (!focusedFileId || !activeWorkspaceId || loadedWorkspaceId !== activeWorkspaceId) return;
     const item = visibleItems.find((candidate) =>
@@ -694,6 +774,124 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     if (activeSelected?.kind !== 'local') return;
     await removeLocalFile(activeSelected.file);
   };
+  const toggleFolder = (folderId: string) => {
+    setCollapsedFolderIds((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) next.delete(folderId); else next.add(folderId);
+      try { localStorage.setItem('files-folders-collapsed', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
+  const startNewFolder = (parentId: string | null = null) => {
+    setShowLibraryActions(false);
+    setNewFolderParentId(parentId);
+    setNewFolderName('');
+  };
+  const createFolder = async (name: string, parentId: string | null = null) => {
+    if (!user?.id || !activeWorkspaceId || !window.localContext?.createFolder || !name.trim()) return false;
+    try {
+      const folder = await window.localContext.createFolder({ ownerUserId: user.id, workspaceId: activeWorkspaceId, name, parentId });
+      setFolders((current) => [...current, folder]);
+      if (parentId) setCollapsedFolderIds((current) => new Set([...current].filter((id) => id !== parentId)));
+      setNewFolderParentId(undefined);
+      setNewFolderName('');
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not create that folder.'); return false; }
+  };
+  const renameFolder = async (folderId: string) => {
+    if (!user?.id || !activeWorkspaceId || !window.localContext?.renameFolder) return;
+    const folder = folderById.get(folderId);
+    if (!folder) return;
+    const name = window.prompt('Rename folder', folder.name);
+    if (!name?.trim() || name.trim() === folder.name) return;
+    try {
+      const updated = await window.localContext.renameFolder({ ownerUserId: user.id, workspaceId: activeWorkspaceId, folderId, name });
+      setFolders((current) => current.map((item) => item.id === folderId ? updated : item));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename that folder.'); }
+  };
+  const deleteFolder = async (folderId: string) => {
+    if (!user?.id || !activeWorkspaceId || !window.localContext?.removeFolder) return;
+    const folder = folderById.get(folderId);
+    if (!folder || !window.confirm(`Delete “${folder.name}”? Files and subfolders will be kept.`)) return;
+    try {
+      await window.localContext.removeFolder({ ownerUserId: user.id, workspaceId: activeWorkspaceId, folderId });
+      await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not delete that folder.'); }
+  };
+  const moveFileToFolder = async (fileId: string, folderId: string | null) => {
+    if (!user?.id || !activeWorkspaceId || !window.localContext?.moveFile) return;
+    const file = files.find((candidate) => candidate.id === fileId);
+    if (!file || (file.folderId ?? null) === folderId) return;
+    try {
+      const updated = await window.localContext.moveFile({ ownerUserId: user.id, workspaceId: activeWorkspaceId, fileId, folderId });
+      setFiles((current) => current.map((candidate) => candidate.id === fileId ? updated : candidate));
+      if (activeSelected?.kind === 'local' && activeSelected.file.id === fileId) setSelected({ kind: 'local', file: updated, workspaceId: activeWorkspaceId });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not move that file.'); }
+  };
+  const moveSelectedFile = async () => {
+    if (activeSelected?.kind !== 'local') return;
+    const choices = ['Root', ...folders.map((folder) => `${folder.name} (${folder.id})`)].join(', ');
+    const choice = window.prompt(`Move “${activeSelected.file.name}” to a folder. Enter Root or a folder name.\n\n${choices}`);
+    if (!choice?.trim()) return;
+    const target = choice.trim().toLowerCase() === 'root'
+      ? null
+      : folders.find((folder) => folder.name.toLowerCase() === choice.trim().toLowerCase())?.id ?? undefined;
+    if (target === undefined) { setError('That folder was not found.'); return; }
+    await moveFileToFolder(activeSelected.file.id, target);
+  };
+  const renderFolder = (folder: (typeof folders)[number]): React.ReactNode => {
+    if (query.trim() && !matchingFolderIds.has(folder.id)) return null;
+    const children = folderChildren.get(folder.id) ?? [];
+    const isCollapsed = collapsedFolderIds.has(folder.id);
+    const folderFiles = visibleLocalFiles.filter((file) => (file.folderId ?? null) === folder.id);
+    return (
+      <div key={folder.id} style={{ marginLeft: `${(folderDepthById.get(folder.id) ?? 0) * 12}px` }}>
+        <div
+          className={`group flex items-center gap-1 rounded-md px-1.5 py-1.5 text-left transition hover:bg-[var(--ledger-surface-hover)] ${localFolderContextMenu?.folderId === folder.id ? 'bg-[var(--ledger-surface-hover)]' : ''}`}
+          onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; }}
+          onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const fileId = event.dataTransfer.getData('application/x-ledger-local-file-id'); if (fileId) { const ids = bulkSelectedIds.has(fileId) ? [...bulkSelectedIds] : [fileId]; void Promise.all(ids.map((id) => moveFileToFolder(id, folder.id))); } }}
+          onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setLocalFolderContextMenu({ x: event.clientX, y: event.clientY, folderId: folder.id }); }}
+        >
+          <button type="button" onClick={() => toggleFolder(folder.id)} className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]" aria-expanded={!isCollapsed}>
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--ledger-text-muted)]/55" />
+            <Folder size={14} className="shrink-0 text-[var(--ledger-text-muted)]" />
+            <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+            <ChevronRight size={14} className={`shrink-0 text-[var(--ledger-text-muted)] transition-transform ${!isCollapsed ? 'rotate-90' : ''}`} />
+            <span className="mr-1 text-xs text-[var(--ledger-text-muted)]">{folderFiles.length + children.length}</span>
+          </button>
+          <button type="button" onClick={() => startNewFolder(folder.id)} className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--ledger-text-muted)] opacity-0 transition-opacity hover:bg-[var(--ledger-surface-card)] group-hover:opacity-100 focus-visible:opacity-100" title="New subfolder" aria-label={`New subfolder in ${folder.name}`}><FolderPlus size={12} /></button>
+        </div>
+        {!isCollapsed ? <>
+          {children.map(renderFolder)}
+          {folderFiles.map((file) => renderLocalFile(file))}
+        </> : null}
+      </div>
+    );
+  };
+  const renderLocalFile = (file: LocalContextFile): React.ReactNode => {
+    const item: LibraryItem = { kind: 'local', file };
+    const isSelected = activeSelected?.kind === 'local' && activeSelected.file.id === file.id;
+    return (
+      <button key={`local:${file.id}`} type="button" draggable onDragStart={(event) => { event.dataTransfer.setData('application/x-ledger-local-file-id', file.id); event.dataTransfer.effectAllowed = 'move'; }} onClick={(event) => selectLocalFile(file, event.shiftKey, event.metaKey || event.ctrlKey)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); if (!bulkSelectedIds.has(file.id)) setBulkSelectedIds(new Set([file.id])); if (activeWorkspaceId) setSelected({ ...item, workspaceId: activeWorkspaceId }); setLocalFileContextMenu({ x: event.clientX, y: event.clientY }); }} className={`group flex w-full items-center gap-2.5 rounded-md border border-transparent px-2.5 py-1.5 text-left transition ${isSelected || bulkSelectedIds.has(file.id) ? 'bg-[var(--ledger-surface-hover)]' : 'hover:bg-[var(--ledger-surface-hover)]'}`}>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] text-[var(--ledger-text-muted)]"><LocalFileIcon extension={file.extension} /></span>
+        <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium text-[var(--ledger-text-primary)]">{file.name}</span><span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">On this device · {formatBytes(file.sizeBytes)}</span></span>
+      </button>
+    );
+  };
+  const renderFolderFilterOptions = (parentId: string | null): React.ReactNode =>
+    (folderChildren.get(parentId) ?? []).map((folder) => (
+      <Fragment key={`filter-folder-${folder.id}`}>
+        <button
+          type="button"
+          onClick={() => { setFilter('local'); setFolderFilterId(folder.id); setShowLibraryActions(false); }}
+          className={`w-full rounded-md py-1.5 pr-2 text-left text-xs font-medium transition hover:bg-[var(--ledger-surface-hover)] ${folderFilterId === folder.id ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}
+          style={{ paddingLeft: `${10 + (folderDepthById.get(folder.id) ?? 0) * 12}px` }}
+        >
+          {folder.name}
+        </button>
+        {renderFolderFilterOptions(folder.id)}
+      </Fragment>
+    ));
   const openSelected = async () => {
     if (!activeSelected) return;
     if (activeSelected.kind === 'local' && user?.id && activeWorkspaceId && window.localContext) {
@@ -873,10 +1071,21 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       style={{ scrollbarGutter: 'auto', ...workspaceShellLayout.workspaceShellStyle }}
       onDragOver={(event) => {
         event.preventDefault();
+        if (event.dataTransfer.types.includes('application/x-ledger-local-file-id')) {
+          event.stopPropagation();
+          return;
+        }
         setIsDragging(true);
       }}
       onDragLeave={() => setIsDragging(false)}
-      onDrop={(event) => void importDroppedFiles(event)}
+      onDrop={(event) => {
+        if (event.dataTransfer.types.includes('application/x-ledger-local-file-id')) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        void importDroppedFiles(event);
+      }}
     >
       <ModuleWindowHeader
         eyebrow="Context library"
@@ -888,27 +1097,6 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         onToggleFullscreen={() => void window.desktopWindow?.toggleModuleFullscreen('files')}
         compact
         showBodyHeader={false}
-        viewControls={
-          <ModuleHeaderSegmentedGroup compact>
-            {(['all', 'local', 'connected'] as const).map((value) => (
-              <ModuleHeaderSegmentedButton
-                key={value}
-                compact
-                active={filter === value}
-                title={`Show ${
-                  value === 'all'
-                    ? 'all context'
-                    : value === 'local'
-                    ? 'local files'
-                    : 'connected links'
-                }`}
-                onClick={() => setFilter(value)}
-              >
-                {value === 'all' ? 'All' : value === 'local' ? 'On this device' : 'Connected'}
-              </ModuleHeaderSegmentedButton>
-            ))}
-          </ModuleHeaderSegmentedGroup>
-        }
         actions={
           <ModuleHeaderActionButton
             title="Import a local file"
@@ -929,21 +1117,35 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           <>
           <aside className="ledger-pane-surface ledger-pane-left flex shrink-0 flex-col overflow-hidden border-r border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]" style={{ width: `${leftPaneWidth}px` }}>
             <div className={`${viewportWidth < modulePaneSizing.files.left.compactBreakpoint ? 'p-3' : 'p-4'} border-b border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)]`}>
-              <div className="mb-2 flex items-center justify-between">
+              <div className="relative mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium text-[var(--ledger-text-muted)]">
                   {bulkSelectedIds.size > 1
                     ? `${bulkSelectedIds.size} files selected`
                     : 'Files & links'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setIsLeftPaneCollapsed(true)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"
-                  aria-label="Hide left panel"
-                  title="Hide left panel"
-                >
-                  <ChevronLeft size={13} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={() => setShowLibraryActions((current) => !current)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]" aria-label="Files and links actions" title="Files and links actions"><MoreHorizontal size={13} /></button>
+                  <button type="button" onClick={() => setIsLeftPaneCollapsed(true)} className="flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]" aria-label="Hide left panel" title="Hide left panel"><ChevronLeft size={13} /></button>
+                </div>
+                {showLibraryActions ? (
+                  <div className="absolute right-0 top-8 z-40 min-w-48 overflow-hidden rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+                    <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-[var(--ledger-text-muted)]">Filter files & links</p>
+                    {(['all', 'local', 'connected'] as const).map((value) => (
+                      <button key={value} type="button" onClick={() => { setFilter(value); setFolderFilterId(null); setShowLibraryActions(false); }} className={`w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition hover:bg-[var(--ledger-surface-hover)] ${filter === value && !folderFilterId ? 'text-[var(--ledger-text-primary)]' : 'text-[var(--ledger-text-secondary)]'}`}>
+                        {value === 'all' ? 'All files & links' : value === 'local' ? 'On this device' : 'Connected links'}
+                      </button>
+                    ))}
+                    {folders.length ? (
+                      <>
+                        <div className="my-1 border-t border-[color:var(--ledger-border-subtle)]" />
+                        <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium text-[var(--ledger-text-muted)]">Folders</p>
+                        {renderFolderFilterOptions(null)}
+                      </>
+                    ) : null}
+                    <div className="my-1 h-px bg-[var(--ledger-border-subtle)]" />
+                    <button type="button" onClick={() => startNewFolder()} className="w-full rounded-md px-2.5 py-1.5 text-left text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]">New folder</button>
+                  </div>
+                ) : null}
               </div>
               <input
                 value={query}
@@ -952,12 +1154,48 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                 aria-label="Search files and links"
                 className="h-8 w-full rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] px-2.5 text-xs text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)] focus:border-[var(--ledger-accent)]"
               />
+              {newFolderParentId !== undefined ? (
+                <form
+                  className="mt-2 flex items-center gap-2 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] p-1.5"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void createFolder(newFolderName, newFolderParentId).then((created) => {
+                      if (!created) return;
+                    });
+                  }}
+                >
+                  <FolderPlus size={13} className="ml-1 shrink-0 text-[var(--ledger-text-muted)]" />
+                  <input
+                    autoFocus
+                    value={newFolderName}
+                    onChange={(event) => setNewFolderName(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setNewFolderParentId(undefined); setNewFolderName(''); } }}
+                    placeholder={newFolderParentId ? 'Subfolder name' : 'Folder name'}
+                    aria-label={newFolderParentId ? 'Subfolder name' : 'Folder name'}
+                    className="min-w-0 flex-1 bg-transparent px-1 text-xs text-[var(--ledger-text-primary)] outline-none placeholder:text-[var(--ledger-text-muted)]"
+                  />
+                  <button type="submit" disabled={!newFolderName.trim()} className="h-7 rounded-full bg-[var(--ledger-accent)] px-3 text-[11px] font-semibold text-white transition hover:brightness-105 disabled:opacity-50">Create</button>
+                </form>
+              ) : null}
             </div>
-            <div className="ledger-pane-scrollbar min-h-0 flex-1 overflow-auto p-2.5 space-y-1">
-              {loading || loadedWorkspaceId !== activeWorkspaceId ? (
+            <div className="ledger-pane-scrollbar min-h-0 flex-1 overflow-auto p-2.5 space-y-1.5" onContextMenu={(event) => { if (event.target !== event.currentTarget) return; event.preventDefault(); setLocalFolderContextMenu({ x: event.clientX, y: event.clientY, folderId: null }); }}>
+              {loadedWorkspaceId !== activeWorkspaceId ? (
                 Array.from({ length: 7 }).map((_, index) => <SkeletonCompactRow key={index} />)
-              ) : visibleItems.length ? (
-                visibleItems.map((item) => {
+              ) : visibleItems.length || (!query.trim() && filter !== 'connected' && folders.length) ? (
+                <>
+                {!query.trim() && filter !== 'connected' ? (
+                  <>
+                    <div className="mb-1 flex items-center justify-between px-2 py-1">
+                      <span className="text-[11px] font-medium text-[var(--ledger-text-muted)]">Folders</span>
+                      <button type="button" onClick={() => startNewFolder()} className="flex h-6 w-6 items-center justify-center rounded text-[var(--ledger-text-muted)] hover:bg-[var(--ledger-surface-card)]" title="New folder" aria-label="New folder"><FolderPlus size={13} /></button>
+                    </div>
+                    {(folderChildren.get(null) ?? []).map(renderFolder)}
+                    {visibleLocalFiles.filter((file) => !file.folderId || !folderById.has(file.folderId)).map(renderLocalFile)}
+                    {references.length ? <div className="my-2 border-t border-[color:var(--ledger-border-subtle)]" /> : null}
+                  </>
+                ) : null}
+                {visibleItems.map((item) => {
+                  if (!query.trim() && filter !== 'connected' && item.kind === 'local') return null;
                   const isSelected =
                     activeSelected &&
                     ((item.kind === 'local' &&
@@ -1026,7 +1264,8 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                       </span>
                     </button>
                   );
-                })
+                })}
+                </>
               ) : (
                 <LedgerEmptyState
                   state="first-use"
@@ -1079,12 +1318,27 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
               {error}
             </div>
           ) : null}
-          {loading || loadedWorkspaceId !== activeWorkspaceId ? (
+          {loadedWorkspaceId !== activeWorkspaceId ? (
             <FilesContentSkeleton />
           ) : activeSelected ? (
             <div className="flex min-h-full flex-col">
               <div className="flex flex-1 items-center justify-center bg-[var(--ledger-surface-muted)] p-8">
-                <div className="w-full max-w-xl rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-10 text-center shadow-[var(--ledger-shadow)]">
+                <div className="w-full max-w-xl">
+                  <div className="mb-3 flex justify-start">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelected(null);
+                        setBulkSelectedIds(new Set());
+                        localSelectionAnchorRef.current = null;
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                    >
+                      <ChevronLeft size={13} />
+                      Back to Files & links
+                    </button>
+                  </div>
+                  <div className="rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-10 text-center shadow-[var(--ledger-shadow)]">
                   <div className="mb-5 flex items-start justify-between gap-4 text-left">
                     <div className="min-w-0">
                       <p className="truncate text-base font-semibold text-[var(--ledger-text-primary)]">
@@ -1377,6 +1631,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                       </p>
                     </>
                   )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-3 border-t border-[color:var(--ledger-border-subtle)] px-6 py-3 text-xs text-[var(--ledger-text-muted)]">
@@ -1389,82 +1644,40 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
               </div>
             </div>
           ) : (
-            <div className="flex h-full items-center justify-center p-8">
-              {visibleItems.length ? (
-                <div className="w-full max-w-xl rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-[var(--ledger-shadow)]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
-                        Recent context
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
-                        Pick up where you left off in this workspace.
-                      </p>
+            <div className="flex min-h-full items-start justify-center overflow-y-auto px-8 py-14 lg:py-20">
+              <div className="w-full max-w-[760px]">
+                <div className="flex items-start gap-8 pb-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2.5">
+                      <Link2 size={17} className="shrink-0 text-[var(--ledger-accent)]" />
+                      <h1 className="text-lg font-semibold tracking-[-0.02em] text-[var(--ledger-text-primary)]">Files & links</h1>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void importLocalFiles()}
-                      className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"
-                    >
-                      <Plus size={13} />
-                      Import
-                    </button>
+                    <p className="mt-2 max-w-[520px] text-sm leading-6 text-[var(--ledger-text-muted)]">
+                      Keep the files and references you use to move work forward in one place.
+                    </p>
                   </div>
-                  <div className="mt-5 divide-y divide-[color:var(--ledger-border-subtle)]">
-                    {visibleItems.slice(0, 6).map((item) => (
-                      <button
-                        key={`${item.kind}:${
-                          item.kind === 'local' ? item.file.id : item.reference.id
-                        }`}
-                        type="button"
-                        onClick={() =>
-                          activeWorkspaceId &&
-                          setSelected({ ...item, workspaceId: activeWorkspaceId })
-                        }
-                        className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-[var(--ledger-surface-hover)]"
-                      >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-accent)]">
-                          {item.kind === 'local' ? (
-                            <LocalFileIcon extension={item.file.extension} size={16} className="text-[var(--ledger-accent)]" />
-                          ) : (
-                            <ConnectedProviderIcon provider={item.reference.provider} />
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-xs font-medium text-[var(--ledger-text-primary)]">
-                            {item.kind === 'local'
-                              ? item.file.name
-                              : referenceTitle(item.reference)}
-                          </span>
-                          <span className="mt-0.5 block text-[11px] text-[var(--ledger-text-muted)]">
-                            {item.kind === 'local'
-                              ? `On this device · ${formatBytes(item.file.sizeBytes)}`
-                              : providerLabel(item.reference.provider)}
-                          </span>
-                        </span>
-                        <ExternalLink
-                          size={13}
-                          className="shrink-0 text-[var(--ledger-text-muted)]"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-5 border-t border-[color:var(--ledger-border-subtle)] pt-4 text-center text-[11px] text-[var(--ledger-text-muted)]">
-                    You can also drag a file anywhere into this window.
-                  </p>
                 </div>
-              ) : (
-                <LedgerEmptyState
-                  state="first-use"
-                  testId="files-detail-empty"
-                  title="Choose some context"
-                  description="Select a file or link to see where it lives and how Ledger can use it."
-                  primaryAction={{
-                    label: 'Import local file',
-                    onClick: () => void importLocalFiles(),
-                  }}
-                />
-              )}
+
+                <div className="grid grid-cols-2 divide-x divide-[color:var(--ledger-border-subtle)] py-5 sm:grid-cols-4">
+                  <div className="px-4 first:pl-0"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{files.length}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Local files</p></div>
+                  <div className="px-4"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{folders.length}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Folders</p></div>
+                  <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 pt-4 sm:border-t-0 sm:pt-0"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{references.length}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Connected links</p></div>
+                  <div className="border-t border-[color:var(--ledger-border-subtle)] px-4 pt-4 sm:border-t-0 sm:pt-0"><p className="text-xl font-semibold tracking-[-0.03em] text-[var(--ledger-text-primary)]">{formatBytes(files.reduce((total, file) => total + file.sizeBytes, 0))}</p><p className="mt-1 text-[11px] text-[var(--ledger-text-muted)]">Stored locally</p></div>
+                </div>
+
+                <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-[var(--ledger-text-muted)]">Add files or links when they become useful.</p>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => void importLocalFiles()} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"><Plus size={13} />Import local file</button>
+                    <button type="button" onClick={() => { setIsLeftPaneCollapsed(false); startNewFolder(); }} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)]"><FolderPlus size={13} />New folder</button>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-lg border border-dashed border-[color:var(--ledger-border-strong)] px-6 py-5 text-center">
+                  <p className="text-sm font-medium text-[var(--ledger-text-secondary)]">Drop a file here to add it</p>
+                  <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">It will be available from the tree on the left.</p>
+                </div>
+              </div>
             </div>
           )}
         </main>
@@ -1643,23 +1856,24 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                     </div>
                   ) : activeAskResource ? (
                     <AskLedgerPanel
-                      workspaceId={activeWorkspaceId}
-                      initialSession={askSession}
-                      initialContext={{
-                        resourceType: activeAskResource.resourceType,
-                        resourceId: activeAskResource.resourceId,
-                        title: activeAskResource.title,
-                        workspaceId: activeWorkspaceId!,
-                      }}
-                      onSessionIdChange={(sessionId) => {
-                        if (sessionId && activeAskResourceKey)
-                          askSessionIdsRef.current.set(activeAskResourceKey, sessionId);
-                      }}
-                      onSessionSnapshot={setAskSession}
-                      preferredGenerationTier="fast"
-                      compact
-                      hideModelSelector
-                    />
+                        workspaceId={activeWorkspaceId}
+                        initialSession={askSession}
+                        initialContext={{
+                          resourceType: activeAskResource.resourceType,
+                          resourceId: activeAskResource.resourceId,
+                          title: activeAskResource.title,
+                          workspaceId: activeWorkspaceId!,
+                        }}
+                        onSessionIdChange={(sessionId) => {
+                          if (sessionId && activeAskResourceKey)
+                            askSessionIdsRef.current.set(activeAskResourceKey, sessionId);
+                        }}
+                        onSessionSnapshot={setAskSession}
+                        preferredGenerationTier="fast"
+                        compact
+                        hideModelSelector
+                        lockedContext
+                      />
                   ) : null}
                 </div>
               )}
@@ -1700,6 +1914,16 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
         ariaLabel="Local file actions"
         groups={[{
           items: [{
+            id: 'open-local-file',
+            label: 'Open file',
+            icon: <ExternalLink size={14} />,
+            onClick: () => { setLocalFileContextMenu(null); void openSelected(); },
+          }, {
+            id: 'move-local-file',
+            label: 'Move to folder',
+            icon: <Folder size={14} />,
+            onClick: () => { setLocalFileContextMenu(null); void moveSelectedFile(); },
+          }, {
             id: 'remove-local-file',
             label: selectedLocalFiles.length > 1
               ? `Remove ${selectedLocalFiles.length} local copies`
@@ -1707,9 +1931,24 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
             icon: <Trash2 size={14} />,
             destructive: true,
             onClick: () => {
+              setLocalFileContextMenu(null);
               void removeLocalFiles(selectedLocalFiles);
             },
           }],
+        }]}
+      />
+      <ContextMenu
+        open={Boolean(localFolderContextMenu)}
+        x={localFolderContextMenu?.x ?? 0}
+        y={localFolderContextMenu?.y ?? 0}
+        onClose={() => setLocalFolderContextMenu(null)}
+        ariaLabel="Folder actions"
+        groups={[{
+          items: [
+            { id: 'new-subfolder', label: localFolderContextMenu?.folderId ? 'Create subfolder' : 'New folder', icon: <FolderPlus size={14} />, onClick: () => { startNewFolder(localFolderContextMenu?.folderId ?? null); } },
+            { id: 'rename-folder', label: 'Rename folder', icon: <Folder size={14} />, hidden: !localFolderContextMenu?.folderId, onClick: () => { if (localFolderContextMenu?.folderId) void renameFolder(localFolderContextMenu.folderId); } },
+            { id: 'delete-folder', label: 'Delete folder', icon: <Trash2 size={14} />, destructive: true, hidden: !localFolderContextMenu?.folderId, onClick: () => { if (localFolderContextMenu?.folderId) void deleteFolder(localFolderContextMenu.folderId); } },
+          ],
         }]}
       />
     </div>

@@ -25,6 +25,22 @@ test('imports a managed copy, deduplicates by content, and never modifies the so
   assert.equal((await library.list('user-a', 'workspace-a')).length, 1);
 });
 
+test('persists nested folders, moves files, and keeps contents when a folder is removed', async () => {
+  const dir = await tempDir();
+  const source = path.join(dir, 'brief.txt');
+  await fs.writeFile(source, 'Foldered context');
+  const library = new LocalContextLibrary(path.join(dir, 'library'));
+  const root = await library.createFolder('Work', 'user-a', 'workspace-a');
+  const child = await library.createFolder('Planning', 'user-a', 'workspace-a', root.id);
+  const [file] = await library.importFiles([source], 'user-a', 'workspace-a');
+  const moved = await library.moveFile(file!.id, child.id, 'user-a', 'workspace-a');
+  assert.equal(moved.folderId, child.id);
+  assert.deepEqual(new Set((await library.summary('user-a', 'workspace-a')).folders.map((folder) => folder.name)), new Set(['Work', 'Planning']));
+  await library.removeFolder(root.id, 'user-a', 'workspace-a');
+  assert.equal((await library.list('user-a', 'workspace-a'))[0]?.folderId, child.id);
+  assert.equal((await library.listFolders('user-a', 'workspace-a')).find((folder) => folder.id === child.id)?.parentId, null);
+});
+
 test('returns indexed local content as private Ask Ledger context', async () => {
   const dir = await tempDir();
   const source = path.join(dir, 'syllabus.md');
@@ -39,6 +55,22 @@ test('returns indexed local content as private Ask Ledger context', async () => 
   assert.equal(documents[0]?.metadata?.localFileId, record?.id);
   assert.equal(documents[0]?.provenance, 'Local file library');
   assert.match(documents[0]?.content ?? '', /required text/);
+});
+
+test('rebuilds a stale local index when Ask Ledger reads Files & links', async () => {
+  const dir = await tempDir();
+  const source = path.join(dir, 'brief.txt');
+  await fs.writeFile(source, 'The local brief contains the launch date.');
+  const library = new LocalContextLibrary(path.join(dir, 'library'));
+  const [record] = await library.importFiles([source], 'user-a', 'workspace-a');
+  await fs.writeFile(
+    path.join(dir, 'library', `${record!.id}.index.json`),
+    JSON.stringify({ fileId: record!.id, contentHash: 'stale', blocks: [] })
+  );
+
+  const documents = await library.contextDocuments('user-a', 'workspace-a');
+  assert.equal(documents.length, 1);
+  assert.match(documents[0]?.content ?? '', /launch date/);
 });
 
 test('cleans expired local files without touching another workspace', async () => {
