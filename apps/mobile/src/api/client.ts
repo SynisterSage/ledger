@@ -41,6 +41,33 @@ export type MobileRequestInit = RequestInit & {
   timeoutMs?: number;
 };
 
+let authRecoveryPromise: Promise<boolean> | null = null;
+
+async function recoverMobileSession() {
+  if (authRecoveryPromise) return authRecoveryPromise;
+
+  authRecoveryPromise = (async () => {
+    const client = getSupabaseClient();
+    try {
+      const { data, error } = await client.auth.refreshSession();
+      if (!error && data.session?.access_token) return true;
+    } catch {
+      // A deleted account or invalid refresh token cannot be recovered.
+    }
+
+    try {
+      await client.auth.signOut({ scope: 'local' });
+    } catch {
+      // Local auth state is still cleared by the Supabase client where possible.
+    }
+    return false;
+  })().finally(() => {
+    authRecoveryPromise = null;
+  });
+
+  return authRecoveryPromise;
+}
+
 async function getMobileDeviceId() {
   if (mobileDeviceIdPromise) return mobileDeviceIdPromise;
 
@@ -148,7 +175,11 @@ export async function getMobileAccessToken() {
   return token;
 }
 
-export async function mobileRequest<T>(path: string, init: MobileRequestInit = {}): Promise<T> {
+async function mobileRequestWithAuthRecovery<T>(
+  path: string,
+  init: MobileRequestInit,
+  canRetryAuth: boolean,
+): Promise<T> {
   const baseUrl = getMobileApiBaseUrl();
   const accessToken = await getMobileAccessToken();
   const deviceId = await getMobileDeviceId();
@@ -201,8 +232,17 @@ export async function mobileRequest<T>(path: string, init: MobileRequestInit = {
         payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
           ? String((payload as { error: string }).error)
           : `Request failed with status ${response.status}`;
-      if (response.status === 401 && message === 'SESSION_REVOKED') {
-        await getSupabaseClient().auth.signOut({ scope: 'local' });
+      if (response.status === 401) {
+        failure = message;
+        if (message !== 'SESSION_REVOKED' && canRetryAuth && await recoverMobileSession()) {
+          return mobileRequestWithAuthRecovery<T>(path, init, false);
+        }
+
+        try {
+          await getSupabaseClient().auth.signOut({ scope: 'local' });
+        } catch {
+          // The request should still fail with the original server response.
+        }
       }
       throw new Error(message);
     }
@@ -230,4 +270,8 @@ export async function mobileRequest<T>(path: string, init: MobileRequestInit = {
       failure,
     });
   }
+}
+
+export async function mobileRequest<T>(path: string, init: MobileRequestInit = {}): Promise<T> {
+  return mobileRequestWithAuthRecovery<T>(path, init, true);
 }

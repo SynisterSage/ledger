@@ -54,8 +54,8 @@ export async function getMobileWorkspaces() {
 }
 
 export async function configureMobileWorkspace(payload: { name: string; isPersonal: boolean }) {
-  return mobileRequest<MobileWorkspaceOnboardingResponse>('/api/mobile/onboarding/workspace', {
-    method: 'PATCH',
+  return mobileRequest<MobileWorkspaceOnboardingResponse>('/api/workspaces', {
+    method: 'POST',
     body: JSON.stringify({ name: payload.name, is_personal: payload.isPersonal }),
   });
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { ExternalLink, FileText, HardDrive, Link2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -182,7 +182,13 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [tableEditing, setTableEditing] = useState(false);
+  const [tableDraft, setTableDraft] = useState<(LocalPreview & { kind: 'table' }) | null>(null);
   const [previewSheetIndex, setPreviewSheetIndex] = useState(0);
+  const [revisions, setRevisions] = useState<
+    Array<{ id: string; createdAt: string; sizeBytes: number }>
+  >([]);
+  const [isDragging, setIsDragging] = useState(false);
   const loadRequestRef = useRef(0);
   const activeWorkspaceIdRef = useRef(activeWorkspaceId);
   activeWorkspaceIdRef.current = activeWorkspaceId;
@@ -246,8 +252,11 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     let canceled = false;
     setLocalPreview(null);
     setEditing(false);
+    setTableEditing(false);
+    setTableDraft(null);
     setEditText('');
     setPreviewSheetIndex(0);
+    setRevisions([]);
     if (
       activeSelected?.kind !== 'local' ||
       !user?.id ||
@@ -324,6 +333,31 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       if (!result.canceled) await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not import that file.');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const importDroppedFiles = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    const paths = Array.from(event.dataTransfer.files)
+      .map((file) => (file as File & { path?: string }).path)
+      .filter((filePath): filePath is string => Boolean(filePath));
+    if (!paths.length || !user?.id || !activeWorkspaceId || !window.localContext?.importPaths)
+      return;
+    setBusy('import');
+    setError(null);
+    try {
+      const result = await window.localContext.importPaths({
+        ownerUserId: user.id,
+        workspaceId: activeWorkspaceId,
+        paths,
+      });
+      const first = result.files?.[0];
+      if (first) setSelected({ kind: 'local', file: first, workspaceId: activeWorkspaceId });
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not import the dropped file.');
     } finally {
       setBusy(null);
     }
@@ -406,6 +440,111 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
       setSaving(false);
     }
   };
+  const saveEditedTable = async () => {
+    if (
+      !tableDraft ||
+      activeSelected?.kind !== 'local' ||
+      !user?.id ||
+      !activeWorkspaceId ||
+      !window.localContext?.saveTable
+    )
+      return;
+    setSaving(true);
+    try {
+      const updated = await window.localContext.saveTable({
+        ownerUserId: user.id,
+        workspaceId: activeWorkspaceId,
+        fileId: activeSelected.file.id,
+        sheets: tableDraft.sheets,
+      });
+      setLocalPreview(tableDraft);
+      setSelected({ kind: 'local', file: updated, workspaceId: activeWorkspaceId });
+      setTableEditing(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not save this spreadsheet.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const createDocxTextCopy = async () => {
+    if (
+      activeSelected?.kind !== 'local' ||
+      activeSelected.file.extension !== 'docx' ||
+      !user?.id ||
+      !activeWorkspaceId ||
+      !window.localContext?.createTextCopy
+    )
+      return;
+    setSaving(true);
+    setError(null);
+    try {
+      const copy = await window.localContext.createTextCopy({
+        ownerUserId: user.id,
+        workspaceId: activeWorkspaceId,
+        fileId: activeSelected.file.id,
+      });
+      await load();
+      setSelected({ kind: 'local', file: copy, workspaceId: activeWorkspaceId });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not create an editable copy.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const loadRevisions = async () => {
+    if (
+      activeSelected?.kind !== 'local' ||
+      !user?.id ||
+      !activeWorkspaceId ||
+      !window.localContext?.listRevisions
+    )
+      return;
+    try {
+      setRevisions(
+        await window.localContext.listRevisions({
+          ownerUserId: user.id,
+          workspaceId: activeWorkspaceId,
+          fileId: activeSelected.file.id,
+        })
+      );
+    } catch {
+      setRevisions([]);
+    }
+  };
+  const restoreRevision = async (revisionId: string) => {
+    if (
+      activeSelected?.kind !== 'local' ||
+      !user?.id ||
+      !activeWorkspaceId ||
+      !window.localContext?.restoreRevision
+    )
+      return;
+    setSaving(true);
+    try {
+      const updated = await window.localContext.restoreRevision({
+        ownerUserId: user.id,
+        workspaceId: activeWorkspaceId,
+        fileId: activeSelected.file.id,
+        revisionId,
+      });
+      setSelected({ kind: 'local', file: updated, workspaceId: activeWorkspaceId });
+      const preview = await window.localContext.preview({
+        ownerUserId: user.id,
+        workspaceId: activeWorkspaceId,
+        fileId: updated.id,
+      });
+      if (preview?.kind === 'text') {
+        setLocalPreview(preview);
+        setEditText(preview.text);
+      }
+      await loadRevisions();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not restore this revision.');
+    } finally {
+      setSaving(false);
+    }
+  };
   const scopedFileCount = loadedWorkspaceId === activeWorkspaceId ? files.length : 0;
   const scopedReferenceCount = loadedWorkspaceId === activeWorkspaceId ? references.length : 0;
   const subtitle = activeWorkspace?.name
@@ -413,7 +552,15 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
     : 'Local context and connected references';
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] bg-[var(--ledger-background)]">
+    <div
+      className="relative flex h-screen flex-col overflow-hidden rounded-[var(--ledger-window-radius)] bg-[var(--ledger-background)]"
+      onDragOver={(event) => {
+        event.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={(event) => void importDroppedFiles(event)}
+    >
       <ModuleWindowHeader
         eyebrow="Context library"
         title="Files & links"
@@ -580,6 +727,40 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                     Edit
                   </button>
                 ) : null}
+                {activeSelected.kind === 'local' &&
+                activeSelected.file.extension === 'docx' &&
+                localPreview?.kind === 'text' ? (
+                  <button
+                    type="button"
+                    onClick={() => void createDocxTextCopy()}
+                    disabled={saving}
+                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
+                  >
+                    {saving ? 'Creating…' : 'Save text copy'}
+                  </button>
+                ) : null}
+                {activeSelected.kind === 'local' &&
+                localPreview?.kind === 'table' &&
+                activeSelected.file.extension === 'xlsx' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTableDraft({
+                        kind: 'table',
+                        sheets: localPreview.sheets.map((sheet) => ({
+                          ...sheet,
+                          headers: [...sheet.headers],
+                          rows: sheet.rows.map((row) => [...row]),
+                        })),
+                      });
+                      setTableEditing(true);
+                    }}
+                    disabled={tableEditing}
+                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs font-medium text-[var(--ledger-text-secondary)] disabled:opacity-50"
+                  >
+                    Edit cells
+                  </button>
+                ) : null}
               </div>
               <div className="flex flex-1 items-center justify-center bg-[var(--ledger-surface-muted)] p-8">
                 <div className="w-full max-w-xl rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-10 text-center shadow-[var(--ledger-shadow)]">
@@ -634,8 +815,9 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         </div>
                       ) : null}
                       {(() => {
+                        const activeTable = tableEditing && tableDraft ? tableDraft : localPreview;
                         const sheet =
-                          localPreview.sheets[previewSheetIndex] ?? localPreview.sheets[0];
+                          activeTable.sheets[previewSheetIndex] ?? activeTable.sheets[0];
                         return sheet ? (
                           <div className="max-h-[min(62vh,680px)] overflow-auto">
                             <table className="min-w-full border-collapse text-left text-xs">
@@ -662,13 +844,75 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                                         key={columnIndex}
                                         className="max-w-64 border-b border-r border-[color:var(--ledger-border-subtle)] px-3 py-2 align-top text-[var(--ledger-text-secondary)]"
                                       >
-                                        {row[columnIndex] ?? ''}
+                                        {tableEditing && tableDraft ? (
+                                          <input
+                                            value={row[columnIndex] ?? ''}
+                                            onChange={(event) =>
+                                              setTableDraft((current) =>
+                                                current
+                                                  ? {
+                                                      ...current,
+                                                      sheets: current.sheets.map(
+                                                        (entry, entryIndex) =>
+                                                          entryIndex === previewSheetIndex
+                                                            ? {
+                                                                ...entry,
+                                                                rows: entry.rows.map(
+                                                                  (draftRow, draftRowIndex) =>
+                                                                    draftRowIndex === rowIndex
+                                                                      ? draftRow.map(
+                                                                          (cell, cellIndex) =>
+                                                                            cellIndex ===
+                                                                            columnIndex
+                                                                              ? event.target.value
+                                                                              : cell
+                                                                        )
+                                                                      : draftRow
+                                                                ),
+                                                              }
+                                                            : entry
+                                                      ),
+                                                    }
+                                                  : current
+                                              )
+                                            }
+                                            className="w-full min-w-24 bg-transparent text-xs text-[var(--ledger-text-primary)] outline-none"
+                                            aria-label={`Edit row ${rowIndex + 1}, column ${
+                                              columnIndex + 1
+                                            }`}
+                                          />
+                                        ) : (
+                                          row[columnIndex] ?? ''
+                                        )}
                                       </td>
                                     ))}
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
+                            {tableEditing && tableDraft ? (
+                              <div className="flex items-center justify-end gap-2 border-t border-[color:var(--ledger-border-subtle)] p-3">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTableEditing(false);
+                                    setTableDraft(null);
+                                  }}
+                                  disabled={saving}
+                                  className="rounded-md px-2.5 py-1.5 text-xs text-[var(--ledger-text-muted)]"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void saveEditedTable()}
+                                  disabled={saving}
+                                  className="rounded-md bg-[var(--ledger-accent)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                                >
+                                  {saving ? 'Saving…' : 'Save spreadsheet'}
+                                </button>
+                              </div>
+                            ) : null}
                             {sheet.rows.length === 0 ? (
                               <p className="p-5 text-center text-xs text-[var(--ledger-text-muted)]">
                                 This sheet is empty.
@@ -765,16 +1009,81 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
             </div>
           ) : (
             <div className="flex h-full items-center justify-center p-8">
-              <LedgerEmptyState
-                state="first-use"
-                testId="files-detail-empty"
-                title="Choose some context"
-                description="Select a file or link to see where it lives and how Ledger can use it."
-                primaryAction={{
-                  label: 'Import local file',
-                  onClick: () => void importLocalFiles(),
-                }}
-              />
+              {visibleItems.length ? (
+                <div className="w-full max-w-xl rounded-xl border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-6 shadow-[var(--ledger-shadow)]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--ledger-text-primary)]">
+                        Recent context
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+                        Pick up where you left off in this workspace.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void importLocalFiles()}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--ledger-accent)] px-3 text-xs font-medium text-white"
+                    >
+                      <Plus size={13} />
+                      Import
+                    </button>
+                  </div>
+                  <div className="mt-5 divide-y divide-[color:var(--ledger-border-subtle)]">
+                    {visibleItems.slice(0, 6).map((item) => (
+                      <button
+                        key={`${item.kind}:${
+                          item.kind === 'local' ? item.file.id : item.reference.id
+                        }`}
+                        type="button"
+                        onClick={() =>
+                          activeWorkspaceId &&
+                          setSelected({ ...item, workspaceId: activeWorkspaceId })
+                        }
+                        className="flex w-full items-center gap-3 py-2.5 text-left hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-muted)] text-[var(--ledger-accent)]">
+                          {item.kind === 'local' ? (
+                            <HardDrive size={14} />
+                          ) : (
+                            <ConnectedProviderIcon provider={item.reference.provider} />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium text-[var(--ledger-text-primary)]">
+                            {item.kind === 'local'
+                              ? item.file.name
+                              : referenceTitle(item.reference)}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] text-[var(--ledger-text-muted)]">
+                            {item.kind === 'local'
+                              ? `On this device · ${formatBytes(item.file.sizeBytes)}`
+                              : providerLabel(item.reference.provider)}
+                          </span>
+                        </span>
+                        <ExternalLink
+                          size={13}
+                          className="shrink-0 text-[var(--ledger-text-muted)]"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-5 border-t border-[color:var(--ledger-border-subtle)] pt-4 text-center text-[11px] text-[var(--ledger-text-muted)]">
+                    You can also drag a file anywhere into this window.
+                  </p>
+                </div>
+              ) : (
+                <LedgerEmptyState
+                  state="first-use"
+                  testId="files-detail-empty"
+                  title="Choose some context"
+                  description="Select a file or link to see where it lives and how Ledger can use it."
+                  primaryAction={{
+                    label: 'Import local file',
+                    onClick: () => void importLocalFiles(),
+                  }}
+                />
+              )}
             </div>
           )}
         </main>
@@ -844,6 +1153,41 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                     Remove local copy
                   </button>
                 ) : null}
+                {activeSelected.kind === 'local' && !editing ? (
+                  <button
+                    type="button"
+                    onClick={() => void loadRevisions()}
+                    className="mt-3 inline-flex h-8 items-center rounded-md border border-[color:var(--ledger-border-subtle)] px-3 text-xs text-[var(--ledger-text-secondary)]"
+                  >
+                    History{revisions.length ? ` · ${revisions.length}` : ''}
+                  </button>
+                ) : null}
+                {activeSelected.kind === 'local' && revisions.length > 0 ? (
+                  <div className="mt-3 space-y-1 border-t border-[color:var(--ledger-border-subtle)] pt-3">
+                    <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--ledger-text-muted)]">
+                      Previous versions
+                    </p>
+                    {revisions.slice(0, 5).map((revision) => (
+                      <button
+                        key={revision.id}
+                        type="button"
+                        onClick={() => void restoreRevision(revision.id)}
+                        disabled={saving}
+                        className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--ledger-text-secondary)] hover:bg-[var(--ledger-surface-hover)]"
+                      >
+                        <span>
+                          {new Date(revision.createdAt).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        <span className="text-[var(--ledger-text-muted)]">Restore</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="p-4">
@@ -881,6 +1225,18 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           </aside>
         ) : null}
       </div>
+      {isDragging ? (
+        <div className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-[var(--ledger-accent)] bg-[color:rgba(255,247,237,0.94)]">
+          <div className="rounded-lg bg-[var(--ledger-surface-card)] px-6 py-5 text-center shadow-[var(--ledger-shadow)]">
+            <p className="text-sm font-medium text-[var(--ledger-text-primary)]">
+              Add to Files & links
+            </p>
+            <p className="mt-1 text-xs text-[var(--ledger-text-muted)]">
+              Stored on this device for {activeWorkspace?.name ?? 'this workspace'}
+            </p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

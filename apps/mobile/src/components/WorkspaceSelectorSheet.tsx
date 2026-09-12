@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Modal,
@@ -45,6 +45,12 @@ export function WorkspaceSelectorSheet({
   const dragY = useRef(new Animated.Value(0)).current;
   const closingRef = useRef(false);
   const animationIdRef = useRef(0);
+  const mountedRef = useRef(visible);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const animationId = animationIdRef.current + 1;
@@ -55,6 +61,7 @@ export function WorkspaceSelectorSheet({
 
     if (visible) {
       setMounted(true);
+      mountedRef.current = true;
       closingRef.current = false;
       dragY.setValue(0);
       Animated.timing(progress, {
@@ -77,6 +84,7 @@ export function WorkspaceSelectorSheet({
     }).start(({ finished }) => {
       if (finished && animationIdRef.current === animationId) {
         setMounted(false);
+        mountedRef.current = false;
       }
     });
     Animated.timing(backdropProgress, {
@@ -86,8 +94,8 @@ export function WorkspaceSelectorSheet({
     }).start();
   }, [dragY, progress, visible]);
 
-  const closeSheet = () => {
-    if (!mounted) return;
+  const closeSheet = useCallback(() => {
+    if (!mountedRef.current) return;
     if (closingRef.current) return;
 
     closingRef.current = true;
@@ -115,9 +123,9 @@ export function WorkspaceSelectorSheet({
     ]).start(() => {
       if (animationIdRef.current !== animationId) return;
       closingRef.current = false;
-      onClose();
+      onCloseRef.current();
     });
-  };
+  }, [backdropProgress, dragY, progress]);
 
   const handleSelect = (workspaceId: string) => {
     onSelect(workspaceId);
@@ -168,7 +176,7 @@ export function WorkspaceSelectorSheet({
   }
 
   return (
-    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
+    <Modal visible={visible && mounted} transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
       <View style={styles.portal} pointerEvents="box-none">
         <Pressable accessibilityRole="button" onPress={closeSheet} style={styles.backdropPressable}>
           <Animated.View

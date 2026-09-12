@@ -1,4 +1,5 @@
-import { Image, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
 
 import { useLedgerTheme } from '@/theme';
 
@@ -6,6 +7,9 @@ export function AuthProductMockup({ height = 190, contained = false, bleed = fal
   const theme = useLedgerTheme();
   const { width: windowWidth } = useWindowDimensions();
   const isDark = theme.scheme === 'dark';
+  const [isLoaded, setIsLoaded] = useState(false);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.985)).current;
   // The current product exports are square transparent compositions, with the
   // angled phone already positioned inside the canvas.
   const aspectRatio = 1;
@@ -13,20 +17,51 @@ export function AuthProductMockup({ height = 190, contained = false, bleed = fal
     ? Math.min(height * 1.1, (windowWidth - 40) / aspectRatio)
     : height * 1.34;
 
+  useEffect(() => {
+    setIsLoaded(false);
+    opacity.stopAnimation();
+    scale.stopAnimation();
+    opacity.setValue(0);
+    scale.setValue(0.985);
+  }, [isDark, opacity, scale]);
+
+  const revealImage = () => {
+    if (isLoaded) return;
+    setIsLoaded(true);
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 260,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, {
+        toValue: 1,
+        duration: 320,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
   return (
     <View
       style={[styles.stage, { height, width: bleed ? windowWidth : '100%' }]}
       pointerEvents="none"
     >
-      <Image
+      <Animated.Image
         source={
           isDark
-            ? require('../../../../public/iphone_4x_dark.webp')
-            : require('../../../../public/group_4x_light.webp')
+            ? require('../../assets/images/auth-product-dark.png')
+            : require('../../assets/images/auth-product-light.png')
         }
         resizeMode="contain"
         accessibilityLabel="Ledger calendar preview"
-        style={[styles.image, contained ? styles.containedImage : bleed ? styles.bleedImage : styles.clippedImage, { height: mockupHeight, width: mockupHeight * aspectRatio }]}
+        onLoad={revealImage}
+        onError={revealImage}
+        style={[
+          styles.image,
+          contained ? styles.containedImage : bleed ? styles.bleedImage : styles.clippedImage,
+          { height: mockupHeight, width: mockupHeight * aspectRatio, opacity, transform: [{ scale }] },
+        ]}
       />
     </View>
   );

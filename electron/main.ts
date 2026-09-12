@@ -1213,6 +1213,27 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
+  'local-context:import-paths',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; paths?: unknown }) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      !Array.isArray(payload?.paths) ||
+      !payload.paths.every((value) => typeof value === 'string')
+    )
+      throw new LocalContextLibraryError('Dropped local files are invalid.');
+    return {
+      canceled: false,
+      files: await localContextLibrary.importFiles(
+        payload.paths as string[],
+        payload.ownerUserId,
+        payload.workspaceId
+      ),
+    };
+  }
+);
+
+ipcMain.handle(
   'local-context:open',
   async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
     if (
@@ -1247,10 +1268,106 @@ ipcMain.handle(
 
 ipcMain.handle(
   'local-context:save-text',
-  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; text?: unknown }) => {
-    if (typeof payload?.ownerUserId !== 'string' || typeof payload?.workspaceId !== 'string' || typeof payload?.fileId !== 'string' || typeof payload?.text !== 'string')
+  async (
+    _event,
+    payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; text?: unknown }
+  ) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string' ||
+      typeof payload?.text !== 'string'
+    )
       throw new LocalContextLibraryError('A local text file is required.');
-    return localContextLibrary.saveText(payload.fileId, payload.ownerUserId, payload.workspaceId, payload.text);
+    return localContextLibrary.saveText(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId,
+      payload.text
+    );
+  }
+);
+
+ipcMain.handle(
+  'local-context:save-table',
+  async (
+    _event,
+    payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown; sheets?: unknown }
+  ) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string' ||
+      !Array.isArray(payload?.sheets)
+    )
+      throw new LocalContextLibraryError('A local spreadsheet is required.');
+    return localContextLibrary.saveTable(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId,
+      payload.sheets as Array<{ name: string; headers: string[]; rows: string[][] }>
+    );
+  }
+);
+
+ipcMain.handle(
+  'local-context:create-text-copy',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string'
+    )
+      throw new LocalContextLibraryError('A local DOCX file is required.');
+    return localContextLibrary.createTextCopy(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId
+    );
+  }
+);
+
+ipcMain.handle(
+  'local-context:list-revisions',
+  async (_event, payload: { ownerUserId?: unknown; workspaceId?: unknown; fileId?: unknown }) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string'
+    )
+      throw new LocalContextLibraryError('A local file is required.');
+    return localContextLibrary.listRevisions(
+      payload.fileId,
+      payload.ownerUserId,
+      payload.workspaceId
+    );
+  }
+);
+
+ipcMain.handle(
+  'local-context:restore-revision',
+  async (
+    _event,
+    payload: {
+      ownerUserId?: unknown;
+      workspaceId?: unknown;
+      fileId?: unknown;
+      revisionId?: unknown;
+    }
+  ) => {
+    if (
+      typeof payload?.ownerUserId !== 'string' ||
+      typeof payload?.workspaceId !== 'string' ||
+      typeof payload?.fileId !== 'string' ||
+      typeof payload?.revisionId !== 'string'
+    )
+      throw new LocalContextLibraryError('A local revision is required.');
+    return localContextLibrary.restoreRevision(
+      payload.fileId,
+      payload.revisionId,
+      payload.ownerUserId,
+      payload.workspaceId
+    );
   }
 );
 
@@ -1602,9 +1719,17 @@ ipcMain.handle(
     // workspace document corpus to broaden the answer.
     if (explicitContext?.resourceType === 'attachment') {
       const localPrefix = `local:${explicitContext.resourceId}:`;
-      documents = documents.filter((item) => item.resourceType === 'attachment' && (String(item.resourceId) === explicitContext.resourceId || String(item.resourceId).startsWith(localPrefix)));
+      documents = documents.filter(
+        (item) =>
+          item.resourceType === 'attachment' &&
+          (String(item.resourceId) === explicitContext.resourceId ||
+            String(item.resourceId).startsWith(localPrefix))
+      );
     } else if (explicitContext?.resourceType === 'external') {
-      documents = documents.filter((item) => item.resourceType === 'external' && String(item.resourceId) === explicitContext.resourceId);
+      documents = documents.filter(
+        (item) =>
+          item.resourceType === 'external' && String(item.resourceId) === explicitContext.resourceId
+      );
     }
     if (
       skill &&

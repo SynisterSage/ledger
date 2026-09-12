@@ -1,28 +1,48 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Keyboard, Pressable, TouchableWithoutFeedback, View } from 'react-native';
 
 import { configureMobileWorkspace } from '@/api/workspaces';
+import { updateMobileUserSettings } from '@/api/userSettings';
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
 import { AppTextInput } from '@/components/AppTextInput';
 import { AuthHeader } from '@/components/AuthHeader';
 import { Screen } from '@/components/Screen';
 import { completeWorkspaceSetup } from '@/store/notificationOnboardingStore';
-import { useAuthState } from '@/store/sessionStore';
-import { bootstrapWorkspaceState } from '@/store/workspaceStore';
+import { getWorkspaceState, selectWorkspace, setWorkspaceState } from '@/store/workspaceStore';
 import { concentricRadius, useLedgerTheme } from '@/theme';
 
 type WorkspaceKind = 'personal' | 'team';
 
+const setupStatusMessages = [
+  'Setting up your space…',
+  'Giving it a little structure…',
+  'Making room for what matters…',
+  'Opening your day…',
+];
+
 export default function WorkspaceOnboardingScreen() {
   const router = useRouter();
   const theme = useLedgerTheme();
-  const auth = useAuthState();
   const [name, setName] = useState('');
   const [kind, setKind] = useState<WorkspaceKind>('personal');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [setupStatusIndex, setSetupStatusIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSubmitting) {
+      setSetupStatusIndex(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setSetupStatusIndex((current) => (current + 1) % setupStatusMessages.length);
+    }, 700);
+
+    return () => clearInterval(interval);
+  }, [isSubmitting]);
 
   const handleContinue = async () => {
     const trimmedName = name.trim();
@@ -35,13 +55,33 @@ export default function WorkspaceOnboardingScreen() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await configureMobileWorkspace({
+      const result = await configureMobileWorkspace({
         name: trimmedName,
         isPersonal: kind === 'personal',
       });
-      await bootstrapWorkspaceState(auth.user?.id ?? undefined);
+      await updateMobileUserSettings({
+        active_workspace_id: result.workspace_id,
+        onboarding_completed: true,
+      });
+      const currentWorkspaceState = getWorkspaceState();
+      const workspaceOption = {
+        id: result.workspace_id,
+        name: result.workspace.name,
+        type: result.workspace.is_personal ? ('personal' as const) : ('workspace' as const),
+        role: 'owner' as const,
+        isDefault: true,
+      };
+      setWorkspaceState({
+        isLoading: false,
+        isHydrated: true,
+        options: [
+          ...currentWorkspaceState.options.filter((option) => option.id !== result.workspace_id),
+          workspaceOption,
+        ],
+      });
+      selectWorkspace(result.workspace_id);
       completeWorkspaceSetup();
-      router.replace('/(tabs)/today');
+      router.replace({ pathname: '/(tabs)/today', params: { showTour: '1' } });
     } catch (workspaceError) {
       setError(workspaceError instanceof Error ? workspaceError.message : 'Could not create workspace.');
     } finally {
@@ -118,7 +158,7 @@ export default function WorkspaceOnboardingScreen() {
 
           <View style={styles.actions}>
             <AppButton
-              title={isSubmitting ? 'Creating…' : 'Continue'}
+              title={isSubmitting ? setupStatusMessages[setupStatusIndex] : 'Continue'}
               size="lg"
               onPress={() => void handleContinue()}
               disabled={isSubmitting}

@@ -37,6 +37,7 @@ const now = () => new Date().toISOString();
 const manifestName = (id: string) => `${id}.json`;
 const indexName = (id: string) => `${id}.index.json`;
 const fileName = (id: string, extension: string) => `${id}.${extension}`;
+const revisionsDirName = 'revisions';
 
 const isWithinRoot = (root: string, candidate: string) => {
   const relative = path.relative(root, candidate);
@@ -290,10 +291,21 @@ export class LocalContextLibrary {
     if (record.extension === 'csv' || record.extension === 'xlsx') {
       const workbook = XLSX.read(bytes, { type: 'buffer', cellDates: true });
       const sheets = workbook.SheetNames.slice(0, 20).map((name) => {
-        const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[name], { header: 1, raw: false, defval: '', blankrows: false }).slice(0, 201) as unknown[][];
+        const matrix = XLSX.utils
+          .sheet_to_json<unknown[]>(workbook.Sheets[name], {
+            header: 1,
+            raw: false,
+            defval: '',
+            blankrows: false,
+          })
+          .slice(0, 201) as unknown[][];
         const width = Math.min(30, Math.max(1, ...matrix.map((row) => row.length)));
-        const headers = Array.from({ length: width }, (_, index) => String(matrix[0]?.[index] ?? `Column ${index + 1}`));
-        const rows = matrix.slice(1).map((row) => Array.from({ length: width }, (_, index) => String(row[index] ?? '')));
+        const headers = Array.from({ length: width }, (_, index) =>
+          String(matrix[0]?.[index] ?? `Column ${index + 1}`)
+        );
+        const rows = matrix
+          .slice(1)
+          .map((row) => Array.from({ length: width }, (_, index) => String(row[index] ?? '')));
         return { name, headers, rows };
       });
       return { kind: 'table' as const, sheets };
@@ -322,18 +334,171 @@ export class LocalContextLibrary {
     const record = await this.loadRecord(id);
     if (!record) throw new LocalContextLibraryError('Local file not found.');
     this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
-    if (!['txt', 'md', 'csv'].includes(record.extension)) throw new LocalContextLibraryError('This file type is read-only in Ledger.');
+    if (!['txt', 'md', 'csv'].includes(record.extension))
+      throw new LocalContextLibraryError('This file type is read-only in Ledger.');
     const bytes = Buffer.from(text, 'utf8');
-    if (bytes.byteLength > MAX_FILE_BYTES) throw new LocalContextLibraryError('This file must be 50 MB or smaller.');
+    if (bytes.byteLength > MAX_FILE_BYTES)
+      throw new LocalContextLibraryError('This file must be 50 MB or smaller.');
     const absolutePath = path.resolve(this.root, record.relativePath);
+    const previous = await fs.readFile(absolutePath).catch(() => null);
+    if (previous) {
+      const revisionId = randomUUID();
+      const revisionsRoot = path.join(this.root, revisionsDirName);
+      await fs.mkdir(revisionsRoot, { recursive: true, mode: 0o700 });
+      await fs.writeFile(path.join(revisionsRoot, `${revisionId}.txt`), previous, { mode: 0o600 });
+      await fs.writeFile(
+        path.join(revisionsRoot, `${revisionId}.json`),
+        JSON.stringify({
+          id: revisionId,
+          fileId: id,
+          ownerUserId,
+          workspaceId,
+          createdAt: now(),
+          sizeBytes: previous.byteLength,
+        }),
+        { mode: 0o600 }
+      );
+    }
     const temporaryPath = `${absolutePath}.tmp`;
     await fs.writeFile(temporaryPath, bytes, { mode: 0o600 });
     await fs.rename(temporaryPath, absolutePath);
-    const updated: LocalContextFile = { ...record, sizeBytes: bytes.byteLength, contentHash: createHash('sha256').update(bytes).digest('hex'), updatedAt: now(), status: 'ready' };
+    const updated: LocalContextFile = {
+      ...record,
+      sizeBytes: bytes.byteLength,
+      contentHash: createHash('sha256').update(bytes).digest('hex'),
+      updatedAt: now(),
+      status: 'ready',
+    };
     await this.indexRecord(updated);
     await this.writeManifest(updated);
     this.records.set(id, updated);
     return updated;
+  }
+
+  async saveTable(
+    id: string,
+    ownerUserId: string,
+    workspaceId: string,
+    sheets: Array<{ name: string; headers: string[]; rows: string[][] }>
+  ) {
+    const record = await this.loadRecord(id);
+    if (!record) throw new LocalContextLibraryError('Local file not found.');
+    this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
+    if (record.extension !== 'xlsx')
+      throw new LocalContextLibraryError('Only XLSX spreadsheets can be edited here.');
+    if (!sheets.length)
+      throw new LocalContextLibraryError('A spreadsheet needs at least one sheet.');
+    const workbook = XLSX.utils.book_new();
+    sheets.slice(0, 20).forEach((sheet, index) => {
+      const width = Math.max(1, Math.min(30, sheet.headers.length));
+      const matrix = [
+        sheet.headers.slice(0, width),
+        ...sheet.rows
+          .slice(0, 200)
+          .map((row) => Array.from({ length: width }, (_, column) => row[column] ?? '')),
+      ];
+      XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.aoa_to_sheet(matrix),
+        (sheet.name || `Sheet ${index + 1}`).slice(0, 31)
+      );
+    });
+    const bytes = Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+    if (bytes.byteLength > MAX_FILE_BYTES)
+      throw new LocalContextLibraryError('This file must be 50 MB or smaller.');
+    const absolutePath = path.resolve(this.root, record.relativePath);
+    const temporaryPath = `${absolutePath}.tmp`;
+    await fs.writeFile(temporaryPath, bytes, { mode: 0o600 });
+    await fs.rename(temporaryPath, absolutePath);
+    const updated: LocalContextFile = {
+      ...record,
+      sizeBytes: bytes.byteLength,
+      contentHash: createHash('sha256').update(bytes).digest('hex'),
+      updatedAt: now(),
+      status: 'ready',
+    };
+    await this.indexRecord(updated);
+    await this.writeManifest(updated);
+    this.records.set(id, updated);
+    return updated;
+  }
+
+  async createTextCopy(id: string, ownerUserId: string, workspaceId: string) {
+    const record = await this.loadRecord(id);
+    if (!record) throw new LocalContextLibraryError('Local file not found.');
+    this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
+    if (record.extension !== 'docx')
+      throw new LocalContextLibraryError('Only DOCX files can be copied as editable text.');
+    const bytes = await fs.readFile(path.resolve(this.root, record.relativePath));
+    const copyBytes = Buffer.from(
+      extractAttachmentBlocks(bytes, record.name)
+        .map((block) => block.text)
+        .join('\n\n'),
+      'utf8'
+    );
+    const copyId = randomUUID();
+    const copyRecord: LocalContextFile = {
+      id: copyId,
+      ownerUserId,
+      workspaceId,
+      name: `${path.basename(record.name, path.extname(record.name))}.txt`,
+      extension: 'txt',
+      mimeType: 'text/plain',
+      sizeBytes: copyBytes.byteLength,
+      contentHash: createHash('sha256').update(copyBytes).digest('hex'),
+      status: 'ready',
+      relativePath: fileName(copyId, 'txt'),
+      createdAt: now(),
+      updatedAt: now(),
+      links: [],
+    };
+    await fs.writeFile(path.join(this.root, copyRecord.relativePath), copyBytes, { mode: 0o600 });
+    await this.indexRecord(copyRecord);
+    await this.writeManifest(copyRecord);
+    this.records.set(copyId, copyRecord);
+    return copyRecord;
+  }
+
+  async listRevisions(id: string, ownerUserId: string, workspaceId: string) {
+    const record = await this.loadRecord(id);
+    if (!record) throw new LocalContextLibraryError('Local file not found.');
+    this.validateOwnerAndWorkspace(record, ownerUserId, workspaceId);
+    const root = path.join(this.root, revisionsDirName);
+    const names = await fs.readdir(root).catch(() => [] as string[]);
+    const revisions = await Promise.all(
+      names
+        .filter((name) => name.endsWith('.json'))
+        .map(
+          async (name) =>
+            JSON.parse(await fs.readFile(path.join(root, name), 'utf8')) as {
+              id: string;
+              fileId: string;
+              ownerUserId: string;
+              workspaceId: string;
+              createdAt: string;
+              sizeBytes: number;
+            }
+        )
+    );
+    return revisions
+      .filter(
+        (revision) =>
+          revision.fileId === id &&
+          revision.ownerUserId === ownerUserId &&
+          revision.workspaceId === workspaceId
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  async restoreRevision(id: string, revisionId: string, ownerUserId: string, workspaceId: string) {
+    const revisions = await this.listRevisions(id, ownerUserId, workspaceId);
+    const revision = revisions.find((entry) => entry.id === revisionId);
+    if (!revision) throw new LocalContextLibraryError('Revision not found.');
+    const content = await fs.readFile(
+      path.join(this.root, revisionsDirName, `${revisionId}.txt`),
+      'utf8'
+    );
+    return this.saveText(id, ownerUserId, workspaceId, content);
   }
 
   async markUsed(id: string, ownerUserId: string, workspaceId: string) {

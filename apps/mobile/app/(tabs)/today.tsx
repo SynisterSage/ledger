@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import { Alert, Animated, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 
 import { AppButton } from '@/components/AppButton';
 import { AppText } from '@/components/AppText';
@@ -31,7 +32,9 @@ import { deleteAllMobileTeamActivity, deleteMobileTeamActivity } from '@/api/tea
 import { createMobileTask } from '@/api/captures';
 import { useMobileUnreadNotificationCount } from '@/features/notifications/useMobileUnreadNotificationCount';
 import { NotificationPermissionSheet } from '@/features/notifications/NotificationPermissionSheet';
+import { MobileTourSheet } from '@/features/onboarding/MobileTourSheet';
 import { useNotificationOnboardingState } from '@/store/notificationOnboardingStore';
+import { useAuthState } from '@/store/sessionStore';
 import { useLedgerTheme } from '@/theme';
 import { getFloatingTabBarScrollOffset, useFloatingTabBarScroll } from '@/components/FloatingTabBarScrollContext';
 import { formatDateToLocalIsoDate } from '@/utils/captureDates';
@@ -64,15 +67,18 @@ const EMPTY_TODAY: MobileTodayResponse = {
 };
 
 const todayCacheKey = (workspaceId: string) => `mobile:today:${workspaceId}:${formatDateToLocalIsoDate(new Date())}`;
+const mobileTourSeenKey = (userId: string, workspaceId: string) => `ledger-mobile-tour-v1-seen:${userId}:${workspaceId}`;
 
 export default function TodayScreen() {
   const router = useRouter();
+  const { showTour } = useLocalSearchParams<{ showTour?: string }>();
   const theme = useLedgerTheme();
   const scrollY = useRef(new Animated.Value(0)).current;
   const loadTokenRef = useRef(0);
   const hasLoadedRef = useRef(false);
   const actionInFlightRef = useRef(false);
   const actionErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mobileTourHandoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspaceState = useWorkspaceState();
   const { openFollowUpSheet } = useFollowUpSheet();
   const { openQuickNoteSheet } = useQuickNoteSheet();
@@ -88,7 +94,11 @@ export default function TodayScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const unreadNotificationCount = useMobileUnreadNotificationCount(workspaceState.selectedWorkspaceId);
   const notificationOnboarding = useNotificationOnboardingState();
+  const auth = useAuthState();
   const [notificationPromptDismissed, setNotificationPromptDismissed] = useState(false);
+  const [mobileTourOpen, setMobileTourOpen] = useState(false);
+  const [mobileTourChecked, setMobileTourChecked] = useState(false);
+  const [mobileTourHandoffActive, setMobileTourHandoffActive] = useState(false);
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
   const [surfaceSection, setSurfaceSection] = useState<'today' | 'attention' | 'next-up' | null>(null);
@@ -102,10 +112,54 @@ export default function TodayScreen() {
   const selectedScopeLabel = useMemo(() => {
     return getWorkspaceLabel(workspaceState.selectedWorkspaceId, workspaceState.options);
   }, [workspaceState.options, workspaceState.selectedWorkspaceId]);
+  const mobileTourEligible =
+    notificationOnboarding.workspaceSetupCompletedThisSession || showTour === '1';
 
   useEffect(() => {
     void bootstrapWorkspaceState();
   }, []);
+
+  useEffect(() => {
+    if (
+      mobileTourChecked ||
+      !mobileTourEligible ||
+      !auth.user?.id ||
+      workspaceState.selectedWorkspaceId === 'all'
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    void SecureStore.getItemAsync(mobileTourSeenKey(auth.user.id, workspaceState.selectedWorkspaceId))
+      .catch(() => null)
+      .then((value) => {
+        if (cancelled) return;
+        setMobileTourOpen(value !== 'true');
+        setMobileTourChecked(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.user?.id, mobileTourChecked, mobileTourEligible, workspaceState.selectedWorkspaceId]);
+
+  const finishMobileTour = () => {
+    if (auth.user?.id && workspaceState.selectedWorkspaceId !== 'all') {
+      void SecureStore.setItemAsync(
+        mobileTourSeenKey(auth.user.id, workspaceState.selectedWorkspaceId),
+        'true',
+      ).catch(() => null);
+    }
+    setMobileTourOpen(false);
+    setMobileTourHandoffActive(true);
+    if (mobileTourHandoffTimerRef.current) {
+      clearTimeout(mobileTourHandoffTimerRef.current);
+    }
+    mobileTourHandoffTimerRef.current = setTimeout(() => {
+      mobileTourHandoffTimerRef.current = null;
+      setMobileTourHandoffActive(false);
+    }, 320);
+  };
 
   useEffect(() => {
     const cached = readMobileResource<MobileTodayResponse>(todayCacheKey(workspaceState.selectedWorkspaceId));
@@ -202,6 +256,9 @@ export default function TodayScreen() {
     return () => {
       if (actionErrorTimerRef.current) {
         clearTimeout(actionErrorTimerRef.current);
+      }
+      if (mobileTourHandoffTimerRef.current) {
+        clearTimeout(mobileTourHandoffTimerRef.current);
       }
     };
   }, []);
@@ -602,6 +659,9 @@ export default function TodayScreen() {
       <View style={{ flex: 1 }}>
         <NotificationPermissionSheet
           visible={
+            (!mobileTourEligible || mobileTourChecked) &&
+            !mobileTourOpen &&
+            !mobileTourHandoffActive &&
             !notificationPromptDismissed &&
             notificationOnboarding.isHydrated &&
             !notificationOnboarding.isLoading &&
@@ -609,6 +669,7 @@ export default function TodayScreen() {
           }
           onDismiss={() => setNotificationPromptDismissed(true)}
         />
+        <MobileTourSheet visible={mobileTourOpen} onClose={finishMobileTour} />
         <TodayHeader
           workspaceLabel={workspaceState.isLoading ? 'Loading workspaces…' : selectedScopeLabel}
           workspaceLoading={workspaceState.isLoading}

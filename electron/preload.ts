@@ -1248,6 +1248,9 @@ contextBridge.exposeInMainWorld('localContext', {
   importFiles(payload: { ownerUserId: string; workspaceId: string }) {
     return ipcRenderer.invoke('local-context:import', payload);
   },
+  importPaths(payload: { ownerUserId: string; workspaceId: string; paths: string[] }) {
+    return ipcRenderer.invoke('local-context:import-paths', payload);
+  },
   open(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
     return ipcRenderer.invoke('local-context:open', payload) as Promise<{
       ok: boolean;
@@ -1265,6 +1268,28 @@ contextBridge.exposeInMainWorld('localContext', {
   },
   saveText(payload: { ownerUserId: string; workspaceId: string; fileId: string; text: string }) {
     return ipcRenderer.invoke('local-context:save-text', payload);
+  },
+  saveTable(payload: {
+    ownerUserId: string;
+    workspaceId: string;
+    fileId: string;
+    sheets: Array<{ name: string; headers: string[]; rows: string[][] }>;
+  }) {
+    return ipcRenderer.invoke('local-context:save-table', payload);
+  },
+  createTextCopy(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
+    return ipcRenderer.invoke('local-context:create-text-copy', payload);
+  },
+  listRevisions(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
+    return ipcRenderer.invoke('local-context:list-revisions', payload);
+  },
+  restoreRevision(payload: {
+    ownerUserId: string;
+    workspaceId: string;
+    fileId: string;
+    revisionId: string;
+  }) {
+    return ipcRenderer.invoke('local-context:restore-revision', payload);
   },
   remove(payload: { ownerUserId: string; workspaceId: string; fileId: string }) {
     return ipcRenderer.invoke('local-context:remove', payload) as Promise<{ removed: boolean }>;

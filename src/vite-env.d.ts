@@ -82,11 +82,7 @@ interface Window {
       workspaceId: string;
       limit?: number;
     }) => Promise<{ sessions: import('./types/localAskLedgerSession').LocalAskLedgerSession[] }>;
-    get: (payload: {
-      userId: string;
-      workspaceId: string;
-      sessionId: string;
-    }) => Promise<{
+    get: (payload: { userId: string; workspaceId: string; sessionId: string }) => Promise<{
       session: import('./types/localAskLedgerSession').LocalAskLedgerSession | null;
     }>;
     save: (
@@ -99,10 +95,7 @@ interface Window {
     }) => Promise<{ removed: boolean }>;
   };
   localContext?: {
-    list: (payload: {
-      ownerUserId: string;
-      workspaceId: string;
-    }) => Promise<{
+    list: (payload: { ownerUserId: string; workspaceId: string }) => Promise<{
       files: import('./types/localContextLibrary').LocalContextFile[];
       totalBytes: number;
     }>;
@@ -111,9 +104,14 @@ interface Window {
       workspaceId: string;
       retentionDays?: number;
     }) => Promise<{ removed: number }>;
-    importFiles: (payload: {
+    importFiles: (payload: { ownerUserId: string; workspaceId: string }) => Promise<{
+      canceled: boolean;
+      files: import('./types/localContextLibrary').LocalContextFile[];
+    }>;
+    importPaths: (payload: {
       ownerUserId: string;
       workspaceId: string;
+      paths: string[];
     }) => Promise<{
       canceled: boolean;
       files: import('./types/localContextLibrary').LocalContextFile[];
@@ -139,6 +137,28 @@ interface Window {
       workspaceId: string;
       fileId: string;
       text: string;
+    }) => Promise<import('./types/localContextLibrary').LocalContextFile>;
+    saveTable: (payload: {
+      ownerUserId: string;
+      workspaceId: string;
+      fileId: string;
+      sheets: Array<{ name: string; headers: string[]; rows: string[][] }>;
+    }) => Promise<import('./types/localContextLibrary').LocalContextFile>;
+    createTextCopy: (payload: {
+      ownerUserId: string;
+      workspaceId: string;
+      fileId: string;
+    }) => Promise<import('./types/localContextLibrary').LocalContextFile>;
+    listRevisions: (payload: {
+      ownerUserId: string;
+      workspaceId: string;
+      fileId: string;
+    }) => Promise<Array<{ id: string; createdAt: string; sizeBytes: number }>>;
+    restoreRevision: (payload: {
+      ownerUserId: string;
+      workspaceId: string;
+      fileId: string;
+      revisionId: string;
     }) => Promise<import('./types/localContextLibrary').LocalContextFile>;
     remove: (payload: {
       ownerUserId: string;

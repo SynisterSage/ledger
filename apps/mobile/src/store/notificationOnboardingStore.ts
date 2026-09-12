@@ -13,6 +13,7 @@ type NotificationOnboardingState = {
   isHydrated: boolean;
   isComplete: boolean;
   workspaceSetupComplete: boolean;
+  workspaceSetupCompletedThisSession: boolean;
   choice: NotificationPermissionChoice;
   userId: string | null;
   error: string | null;
@@ -23,6 +24,7 @@ const initialState: NotificationOnboardingState = {
   isHydrated: false,
   isComplete: false,
   workspaceSetupComplete: false,
+  workspaceSetupCompletedThisSession: false,
   choice: null,
   userId: null,
   error: null,
@@ -171,7 +173,7 @@ export async function setNotificationOnboardingChoice(
 }
 
 export function completeWorkspaceSetup() {
-  setState({ workspaceSetupComplete: true });
+  setState({ workspaceSetupComplete: true, workspaceSetupCompletedThisSession: true });
 }
 
 export function resetNotificationOnboardingState() {
