@@ -91,7 +91,7 @@ import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useWorkspaceRouteHistory } from '../../hooks/useWorkspaceRouteHistory';
 import { routeForCalendarEvent, routeForHome, routeForNote, usePlatform } from '../../platform';
 import { openAskLedgerWithContext } from '../Common/askLedgerContext';
-import { AskLedgerPanel } from '../Common/AskLedgerPanel';
+import { AskLedgerPanel, type AskLedgerSession } from '../Common/AskLedgerPanel';
 import { LocalAIUnavailableState } from '../Common/LocalAIUnavailableState';
 import type { AskLedgerInitialContext } from '../../types/askLedgerContext';
 import { CreateNoteModal } from './CreateNoteModal';
@@ -2805,10 +2805,65 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
   const [rightPaneMode, setRightPaneMode] = useState<'inspector' | 'ask'>('inspector');
   const [meetingAskContext, setMeetingAskContext] = useState<AskLedgerInitialContext | null>(null);
   const [askPaneResetKey, setAskPaneResetKey] = useState(0);
+  const [askSession, setAskSession] = useState<AskLedgerSession | null>(null);
+  const [askSessionLoading, setAskSessionLoading] = useState(false);
+  const askSessionIdsRef = useRef(new Map<string, string>());
   useEffect(() => {
     setRightPaneMode('inspector');
     setMeetingAskContext(null);
   }, [selectedNoteId]);
+  const askResourceKey = meetingAskContext
+    ? `${meetingAskContext.resourceType}:${meetingAskContext.resourceId}`
+    : null;
+  useEffect(() => {
+    let canceled = false;
+    if (!activeWorkspaceId || !user?.id || !meetingAskContext || !askResourceKey) {
+      setAskSession(null);
+      setAskSessionLoading(false);
+      return;
+    }
+    setAskSession(null);
+    setAskSessionLoading(true);
+    const restore = async () => {
+      let restored: AskLedgerSession | null = null;
+      const knownId = askSessionIdsRef.current.get(askResourceKey);
+      if (knownId) {
+        const [cloudResult, localResult] = await Promise.allSettled([
+          api.getAskLedgerSession(activeWorkspaceId, knownId) as Promise<{ session?: AskLedgerSession }>,
+          window.localAskSessions?.get({ userId: user.id, workspaceId: activeWorkspaceId, sessionId: knownId }),
+        ]);
+        if (cloudResult.status === 'fulfilled' && cloudResult.value?.session)
+          restored = cloudResult.value.session;
+        if (localResult.status === 'fulfilled' && localResult.value?.session)
+          restored = { ...localResult.value.session, privacyScope: 'device' } as AskLedgerSession;
+      } else {
+        const [cloudResult, localResult] = await Promise.allSettled([
+          api.getAskLedgerSessions(activeWorkspaceId, 50) as Promise<{ sessions?: AskLedgerSession[] }>,
+          window.localAskSessions?.list({ userId: user.id, workspaceId: activeWorkspaceId, limit: 50 }),
+        ]);
+        const cloudSessions = cloudResult.status === 'fulfilled' && Array.isArray(cloudResult.value?.sessions)
+          ? cloudResult.value.sessions
+          : [];
+        const localSessions = localResult.status === 'fulfilled' && Array.isArray(localResult.value?.sessions)
+          ? localResult.value.sessions.map((session) => ({ ...session, privacyScope: 'device' as const }) as AskLedgerSession)
+          : [];
+        restored = [...cloudSessions, ...localSessions]
+          .filter((session) =>
+            session.initialContext?.resourceType === meetingAskContext.resourceType &&
+            session.initialContext?.resourceId === meetingAskContext.resourceId
+          )
+          .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null;
+      }
+      if (canceled) return;
+      if (restored) askSessionIdsRef.current.set(askResourceKey, restored.id);
+      setAskSession(restored);
+      setAskSessionLoading(false);
+    };
+    void restore();
+    return () => {
+      canceled = true;
+    };
+  }, [activeWorkspaceId, api, askResourceKey, meetingAskContext, user?.id]);
   const [isResizingLeftPane, setIsResizingLeftPane] = useState(false);
   const [isResizingRightPane, setIsResizingRightPane] = useState(false);
   const [noteContextMenu, setNoteContextMenu] = useState<NoteContextMenuState | null>(null);
@@ -11307,14 +11362,26 @@ export const NotesWindow = ({ focusContext, initialView }: { focusContext?: stri
 
                 {rightPaneMode === 'ask' && (
                   <div className="notes-ask-ledger-pane absolute inset-x-0 bottom-0 top-[82px] z-10 overflow-hidden bg-[var(--ledger-surface-muted)] [&_.agent-ask-ledger-content]:gap-0 [&_.ask-ledger-composer]:min-h-[76px] [&_.ask-ledger-composer]:!rounded-none [&_.ask-ledger-composer]:px-3 [&_.ask-ledger-composer]:py-2 [&_textarea]:text-[13px] [&_textarea]:leading-5 [&_.ask-ledger-answer]:text-[13px]">
-                    <AskLedgerPanel
-                      workspaceId={activeWorkspaceId}
-                      resetKey={askPaneResetKey}
-                      initialContext={meetingAskContext}
-                      preferredGenerationTier="fast"
-                      compact
-                      meetingChat={meetingAskContext?.contextType === 'meeting'}
-                    />
+                    {askSessionLoading ? (
+                      <div className="flex h-full items-center justify-center p-4 text-xs text-[var(--ledger-text-muted)]">
+                        Restoring this conversation…
+                      </div>
+                    ) : meetingAskContext ? (
+                      <AskLedgerPanel
+                        workspaceId={activeWorkspaceId}
+                        resetKey={askPaneResetKey}
+                        initialSession={askSession}
+                        initialContext={meetingAskContext}
+                        preferredGenerationTier="fast"
+                        compact
+                        meetingChat={meetingAskContext.contextType === 'meeting'}
+                        onSessionIdChange={(sessionId) => {
+                          if (sessionId && askResourceKey)
+                            askSessionIdsRef.current.set(askResourceKey, sessionId);
+                        }}
+                        onSessionSnapshot={setAskSession}
+                      />
+                    ) : null}
                   </div>
                 )}
 

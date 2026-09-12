@@ -4461,29 +4461,110 @@ const getNotificationDisplayTitle = (item: NotificationSchedulerItem) => {
 const getNotificationDisplayBody = (item: NotificationSchedulerItem) => {
   const body = item.body?.trim() || '';
   const context = item.context?.trim() || '';
+  const typeLabel =
+    item.sourceType === 'reminder'
+      ? 'Reminder'
+      : item.sourceType === 'event'
+      ? 'Calendar event'
+      : item.sourceType === 'task'
+      ? item.notificationType === 'overdue_item'
+        ? 'Overdue task'
+        : 'Task'
+      : item.sourceType === 'project'
+      ? 'Project'
+      : item.sourceType === 'inbox'
+      ? 'Intake'
+      : item.sourceType === 'workspace_invite'
+      ? 'Workspace invite'
+      : 'Ledger';
 
-  if (item.sourceType === 'reminder' || item.sourceType === 'event') {
-    return body || context || null;
+  const detailParts = [typeLabel, body, context, item.workspaceName?.trim()];
+  return detailParts.filter((part, index, parts) => {
+    if (!part) return false;
+    return parts.findIndex((candidate) => candidate === part) === index;
+  }).join(' · ') || null;
+};
+
+const getNotificationTypeBadge = (item: NotificationSchedulerItem) => {
+  const badgeByType: Record<string, { letter: string; color: string }> = {
+    reminder: { letter: 'R', color: '#FF5F40' },
+    event: { letter: 'E', color: '#5B7CFA' },
+    task: { letter: 'T', color: '#20A46B' },
+    project: { letter: 'P', color: '#8B5CF6' },
+    inbox: { letter: 'I', color: '#D97706' },
+    workspace_invite: { letter: 'W', color: '#0F766E' },
+  };
+  const badge = badgeByType[item.sourceType] ?? { letter: 'L', color: '#111827' };
+  const color = badge.color.slice(1);
+  const red = Number.parseInt(color.slice(0, 2), 16);
+  const green = Number.parseInt(color.slice(2, 4), 16);
+  const blue = Number.parseInt(color.slice(4, 6), 16);
+  const pixels = Buffer.alloc(64 * 64 * 4);
+  const glyphs: Record<string, string[]> = {
+    R: ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+    E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+    T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+    P: ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+    I: ['11111', '00100', '00100', '00100', '00100', '00100', '11111'],
+    W: ['10001', '10001', '10001', '10101', '10101', '11011', '10001'],
+    L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+  };
+  for (let y = 0; y < 64; y += 1) {
+    for (let x = 0; x < 64; x += 1) {
+      const distanceFromCenter = Math.hypot(x - 31.5, y - 31.5);
+      const offset = (y * 64 + x) * 4;
+      pixels[offset] = blue;
+      pixels[offset + 1] = green;
+      pixels[offset + 2] = red;
+      pixels[offset + 3] = distanceFromCenter <= 30 ? 255 : 0;
+    }
   }
-
-  return body || context || null;
+  const glyph = glyphs[badge.letter] ?? glyphs.L;
+  glyph.forEach((row, rowIndex) => {
+    [...row].forEach((filled, columnIndex) => {
+      if (filled !== '1') return;
+      for (let y = 0; y < 5; y += 1) {
+        for (let x = 0; x < 5; x += 1) {
+          const pixelX = 19 + columnIndex * 5 + x;
+          const pixelY = 14 + rowIndex * 5 + y;
+          const offset = (pixelY * 64 + pixelX) * 4;
+          pixels[offset] = 255;
+          pixels[offset + 1] = 255;
+          pixels[offset + 2] = 255;
+          pixels[offset + 3] = 255;
+        }
+      }
+    });
+  });
+  try {
+    return nativeImage.createFromBitmap(pixels, { width: 64, height: 64 });
+  } catch {
+    return nativeImage.createFromPath(getDesktopNotificationIconPath());
+  }
 };
 
 const deliverDesktopNotification = (item: NotificationSchedulerItem) => {
   try {
     if (!Notification.isSupported()) return;
-    const iconPath = getDesktopNotificationIconPath();
     const subtitle =
       [item.context?.trim(), item.workspaceName?.trim()].filter(Boolean).join(' · ') || undefined;
     const body = getNotificationDisplayBody(item);
     const notification = new Notification({
       title: getNotificationDisplayTitle(item),
       subtitle,
-      body: body || item.workspaceName?.trim() || undefined,
-      icon: iconPath,
-      silent: true,
+      body: body || undefined,
+      icon: getNotificationTypeBadge(item),
+      silent: false,
     });
     notification.on('click', () => {
+      if (notificationAccessToken) {
+        void fetchLedgerApi(`/api/notifications/${encodeURIComponent(item.id)}/action`, notificationAccessToken, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'open' }),
+        }).catch(() => {
+          // Opening the target remains useful if action telemetry is unavailable.
+        });
+      }
       // ensure workspace is switched before launching target
       if (item.workspaceId) {
         try {
@@ -4607,16 +4688,34 @@ const runNotificationScheduler = async () => {
       return;
     }
 
-    const notifications = await fetchLedgerApi<NotificationSchedulerItem[]>(
-      '/api/notifications/check',
-      notificationAccessToken,
-      { method: 'POST' }
-    );
+    const notificationBatches = await Promise.all([
+      shouldDeliverInApp
+        ? fetchLedgerApi<NotificationSchedulerItem[]>(
+            '/api/notifications/check?delivery=in_app',
+            notificationAccessToken,
+            { method: 'POST' }
+          )
+        : Promise.resolve([]),
+      shouldDeliverDesktop && Notification.isSupported()
+        ? fetchLedgerApi<NotificationSchedulerItem[]>(
+            '/api/notifications/check?delivery=desktop',
+            notificationAccessToken,
+            { method: 'POST' }
+          )
+        : Promise.resolve([]),
+    ]);
     const summary = await fetchLedgerApi<{ counts?: { active?: number; unread?: number } }>(
       '/api/notifications/summary',
       notificationAccessToken
     );
-    const activeItems = Array.isArray(notifications) ? notifications : [];
+    const activeItems = Array.from(
+      new Map(
+        notificationBatches
+          .flat()
+          .filter((item) => item?.id)
+          .map((item) => [item.id, item])
+      ).values()
+    );
     if (shouldDeliverInApp || shouldDeliverDesktop) {
       const currentNamespace = getNotificationNamespace(
         notificationApiUrl,

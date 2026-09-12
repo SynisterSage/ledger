@@ -441,8 +441,16 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
           : [];
         restored = [...cloudSessions, ...localSessions]
           .filter((session) =>
-            session.initialContext?.resourceType === activeAskResource.resourceType &&
-            session.initialContext?.resourceId === activeAskResource.resourceId
+            (session.initialContext?.resourceType === activeAskResource.resourceType &&
+              session.initialContext?.resourceId === activeAskResource.resourceId) ||
+            (activeAskResource.resourceType === 'attachment' &&
+              session.messages.some((message) =>
+                message.attachments?.some(
+                  (attachment) =>
+                    attachment.kind === 'file' &&
+                    attachment.attachment.localFileId === activeAskResource.resourceId
+                )
+              ))
           )
           .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())[0] ?? null;
       }
@@ -1647,6 +1655,7 @@ export default function FilesWindow({ focusContext }: { focusContext?: string | 
                         if (sessionId && activeAskResourceKey)
                           askSessionIdsRef.current.set(activeAskResourceKey, sessionId);
                       }}
+                      onSessionSnapshot={setAskSession}
                       preferredGenerationTier="fast"
                       compact
                       hideModelSelector

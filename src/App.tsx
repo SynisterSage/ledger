@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CircleAlert,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Check,
@@ -1933,6 +1934,7 @@ export function DashboardContent({
   >(null);
   const [isOverviewRescheduleOpen, setIsOverviewRescheduleOpen] = useState(false);
   const [overviewRescheduleDate, setOverviewRescheduleDate] = useState('');
+  const [isOverviewInspectorMenuOpen, setIsOverviewInspectorMenuOpen] = useState(false);
   const currentDashboardSection =
     initialSection ??
     new URLSearchParams(window.location.search).get('section')?.trim() ??
@@ -4281,6 +4283,7 @@ export function DashboardContent({
       setFollowUpTasks((prev) => prev.filter((item) => item.id !== row.sourceId));
     }
 
+    clearSelectedOverviewRowForSource(row.sourceId);
     setDashboardContextMenu(null);
 
     try {
@@ -4293,6 +4296,36 @@ export function DashboardContent({
       }
       handleDashboardWorkspaceRefresh();
       void refreshTodayTasks();
+      toast.show(row.kind === 'reminder' ? 'Reminder complete' : 'Task complete', {
+        detail: target.title,
+        variant: 'success',
+        actions: [
+          {
+            label: 'Undo',
+            onClick: async () => {
+              try {
+                if (row.kind === 'reminder') {
+                  await api.updateReminder(row.sourceId, {
+                    status: target.status ?? 'active',
+                    is_done: false,
+                  });
+                } else if (target.workspace_id) {
+                  await api.updateTaskInWorkspace(row.sourceId, target.workspace_id, {
+                    status: target.status ?? 'todo',
+                  });
+                } else {
+                  await api.updateTask(row.sourceId, { status: target.status ?? 'todo' });
+                }
+                handleDashboardWorkspaceRefresh();
+                void refreshTodayTasks();
+              } catch (error) {
+                console.error('Failed to undo overview completion:', error);
+                toast.show('Could not undo completion', { variant: 'error' });
+              }
+            },
+          },
+        ],
+      });
       if (row.kind === 'task' && target.starter_key) {
         setStarterTasks((current) =>
           current.map((task) => (task.id === target.id ? { ...task, status: 'completed' } : task))
@@ -6109,6 +6142,20 @@ export function DashboardContent({
   const selectedOverviewRow =
     visibleOverviewRows.find((row) => row.id === selectedOverviewRowId) ?? null;
 
+  useEffect(() => {
+    setIsOverviewInspectorMenuOpen(false);
+  }, [selectedOverviewRowId]);
+
+  // The right pane is a decision surface when nothing is selected: show the
+  // smallest useful set of signals, and let each signal focus the matching row
+  // in the center pane instead of presenting passive workspace statistics.
+  const overviewAttentionRows = visibleOverviewRows
+    .filter((row) => row.group === 'Needs attention')
+    .slice(0, 3);
+  const overviewNextRows = visibleOverviewRows
+    .filter((row) => row.group === 'Upcoming' || row.group === 'Today')
+    .slice(0, 2);
+
   const overviewEmptyState = (() => {
     if (overviewTab === 'today') {
       return {
@@ -6171,73 +6218,111 @@ export function DashboardContent({
       ? 'Reminder'
       : selectedOverviewRow.kind
     : '';
-  const overviewDetailSections = selectedOverviewRow
-    ? [
+  const selectedOverviewProject = selectedOverviewRow?.linkedContext?.find(
+    ([label]) => label === 'Project'
+  )?.[1];
+  const selectedOverviewPriority = selectedOverviewRow?.filterValues.priority?.[0];
+  const selectedOverviewPriorityLabel =
+    selectedOverviewPriority && selectedOverviewPriority !== 'no_priority'
+      ? selectedOverviewPriority.replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+      : null;
+  const overviewDetailSections = (() => {
+    if (!selectedOverviewRow) return [];
+
+    if (selectedOverviewRow.kind === 'project') {
+      return [
         {
-          title: 'Details',
+          title: 'Project health',
           rows: [
+            ['Status', selectedOverviewRow.chips[0] ?? selectedOverviewRow.group],
             [
-              'Type',
-              selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-                ? selectedOverviewRow.taskTypeLabel ?? selectedOverviewTypeLabel
-                : selectedOverviewTypeLabel,
+              'Progress',
+              typeof selectedOverviewRow.progress === 'number'
+                ? `${selectedOverviewRow.progress}%`
+                : 'Not set',
             ],
-            [
-              'Status',
-              selectedOverviewRow.kind === 'note'
-                ? 'Recent note'
-                : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-                ? selectedOverviewRow.taskStatusLabel ?? selectedOverviewRow.group
-                : selectedOverviewRow.group,
-            ],
-            ['Workspace', activeWorkspace?.name ?? 'Workspace'],
-            ['Date', selectedOverviewRow.dateLabel ?? 'Not set'],
+            ['Due', selectedOverviewRow.dateLabel ?? 'No due date'],
           ],
         },
         {
-          title: selectedOverviewRow.kind === 'project' ? 'Project context' : 'Linked context',
-          rows:
-            selectedOverviewRow.kind === 'project'
-              ? [
-                  [
-                    'Progress',
-                    typeof selectedOverviewRow.progress === 'number'
-                      ? `${selectedOverviewRow.progress}%`
-                      : 'Not set',
-                  ],
-                  ['Team', selectedOverviewRow.ownerTeam?.name || 'None'],
-                  ['Lead', selectedOverviewRow.leadName || 'None'],
-                  [
-                    'Active actions',
-                    String(projectOpenActionCountById.get(selectedOverviewRow.sourceId) ?? 0),
-                  ],
-                  [
-                    'Milestones',
-                    String(projectMilestoneProxyCountById.get(selectedOverviewRow.sourceId) ?? 0),
-                  ],
-                  [
-                    'Recent notes',
-                    String(projectNoteCountById.get(selectedOverviewRow.sourceId) ?? 0),
-                  ],
-                ]
-              : selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder'
-              ? selectedOverviewRow.linkedContext?.length
-                ? selectedOverviewRow.linkedContext
-                : [['Linked', 'None']]
-              : selectedOverviewRow.kind === 'event'
-              ? selectedOverviewRow.linkedContext?.length
-                ? selectedOverviewRow.linkedContext
-                : [['Linked', 'None']]
-              : selectedOverviewRow.kind === 'note'
-              ? selectedOverviewRow.linkedContext?.length
-                ? selectedOverviewRow.linkedContext
-                : [['Linked', 'None']]
-              : selectedOverviewRow.linkedContext?.length
-              ? selectedOverviewRow.linkedContext
-              : [['Linked', 'None']],
+          title: 'Next context',
+          rows: [
+            ['Lead', selectedOverviewRow.leadName || 'Unassigned'],
+            ['Team', selectedOverviewRow.ownerTeam?.name || 'No team'],
+            [
+              'Open actions',
+              String(projectOpenActionCountById.get(selectedOverviewRow.sourceId) ?? 0),
+            ],
+            ['Linked notes', String(projectNoteCountById.get(selectedOverviewRow.sourceId) ?? 0)],
+          ],
         },
-      ]
-    : [];
+      ];
+    }
+
+    if (selectedOverviewRow.kind === 'task' || selectedOverviewRow.kind === 'reminder') {
+      return [
+        {
+          title: selectedOverviewRow.kind === 'reminder' ? 'Reminder details' : 'Next action',
+          rows: [
+            ['Status', selectedOverviewRow.taskStatusLabel ?? selectedOverviewRow.group],
+            [selectedOverviewRow.kind === 'reminder' ? 'When' : 'Due', selectedOverviewRow.dateLabel ?? 'Not set'],
+            ...(selectedOverviewPriorityLabel ? [['Priority', selectedOverviewPriorityLabel]] : []),
+          ],
+        },
+        {
+          title: 'Context',
+          rows: selectedOverviewRow.linkedContext?.length
+            ? selectedOverviewRow.linkedContext
+            : [['Linked', 'Nothing linked yet']],
+        },
+      ];
+    }
+
+    if (selectedOverviewRow.kind === 'note') {
+      return [
+        {
+          title: 'Note context',
+          rows: [
+            ['Updated', selectedOverviewRow.dateLabel ?? 'Recently'],
+            ['Projects', selectedOverviewProject ?? 'Not linked'],
+          ],
+        },
+        {
+          title: 'Next step',
+          rows: [['Workspace', activeWorkspace?.name ?? 'Workspace']],
+        },
+      ];
+    }
+
+    if (selectedOverviewRow.kind === 'event') {
+      return [
+        {
+          title: 'Event details',
+          rows: [
+            ['When', selectedOverviewRow.dateLabel ?? 'Time not set'],
+            ['Status', selectedOverviewRow.group === 'Today' ? 'Today' : 'Upcoming'],
+          ],
+        },
+        {
+          title: 'Context',
+          rows: selectedOverviewRow.linkedContext?.length
+            ? selectedOverviewRow.linkedContext
+            : [['Linked', 'Nothing linked yet']],
+        },
+      ];
+    }
+
+    return [
+      {
+        title: 'Details',
+        rows: [
+          ['Type', selectedOverviewTypeLabel],
+          ['Status', selectedOverviewRow.group],
+          ['Date', selectedOverviewRow.dateLabel ?? 'Not set'],
+        ],
+      },
+    ];
+  })() as Array<{ title: string; rows: Array<[string, string]> }>;
 
   const renderOverviewDetailRow = (label: string, value: string) => (
     <div key={label} className="flex items-center justify-between gap-3 rounded-md px-1 py-1">
@@ -6412,12 +6497,6 @@ export function DashboardContent({
                 action: openQuickTask,
                 disabled: false,
               },
-              {
-                label: 'Add milestone',
-                icon: <Plus size={13} />,
-                action: () => undefined,
-                disabled: true,
-              },
             ]
           : selectedOverviewRow.kind === 'note'
           ? [
@@ -6443,6 +6522,18 @@ export function DashboardContent({
         },
       ]
     : [];
+
+  const selectedOverviewPrimaryAction = selectedOverviewQuickActions[0] ?? null;
+  const selectedOverviewSecondaryActions = selectedOverviewQuickActions
+    .slice(1)
+    .filter((action) => !['Delete task', 'Clear selection'].includes(action.label))
+    .slice(0, 2);
+  const selectedOverviewOverflowActions = selectedOverviewQuickActions
+    .slice(1)
+    .filter(
+      (action) =>
+        !selectedOverviewSecondaryActions.some((secondary) => secondary.label === action.label)
+    );
 
   const toggleOverviewGroup = (groupId: string) => {
     setCollapsedOverviewGroups((previous) => {
@@ -7843,58 +7934,118 @@ export function DashboardContent({
                           {todayLabel}
                         </p>
                         <h3 className="mt-1 text-[17px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
-                          {activeWorkspace?.name ?? 'Workspace'}
+                          What needs your attention?
                         </h3>
+                        <p className="mt-1 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                          A short list of the next useful moves in {activeWorkspace?.name ?? 'this workspace'}.
+                        </p>
                       </div>
-                      <div className="space-y-1.5">
-                        {[
-                          [
-                            'Today',
-                            `${Math.max(0, completedFocusTasks.length)}/${Math.max(
-                              1,
-                              todayTasks.length
-                            )} complete`,
-                          ],
-                          [
-                            'Long-term',
-                            `${
-                              workspaceTasks.filter((task) => task.task_horizon === 'long_term')
-                                .length
-                            } tasks`,
-                          ],
-                          [
-                            'Assigned to me',
-                            `${
-                              todayTasks.filter((task) => task.assigned_to || task.project_name)
-                                .length
-                            } tasks`,
-                          ],
-                          ['Active projects', `${attentionProjects.length} active`],
-                          ['Upcoming', `${upcoming.length} events`],
-                        ]
-                          .filter(([label]) => !isPersonalWorkspace || label !== 'Assigned to me')
-                          .map(([label, value], index, rows) => (
-                            <div
-                              key={label}
-                              className={`flex items-center justify-between py-1.5 ${
-                                index < rows.length - 1
-                                  ? 'border-b border-[color:var(--ledger-border-subtle)]'
-                                  : ''
-                              }`}
-                            >
-                              <span className="text-[11px] text-[var(--ledger-text-muted)]">
-                                {label}
-                              </span>
-                              <span className="text-[12px] font-medium text-[var(--ledger-text-primary)]">
-                                {value}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
+
+                      <section aria-labelledby="overview-attention-heading">
+                        <div className="flex items-center justify-between gap-2">
+                          <p
+                            id="overview-attention-heading"
+                            className="text-[10px] font-medium text-[var(--ledger-text-muted)]"
+                          >
+                            Needs attention
+                          </p>
+                          <span className="text-[10px] text-[var(--ledger-text-muted)]">
+                            {overviewAttentionRows.length}
+                          </span>
+                        </div>
+                        {overviewAttentionRows.length ? (
+                          <div className="mt-1.5 space-y-1">
+                            {overviewAttentionRows.map((row) => (
+                              <button
+                                key={row.id}
+                                type="button"
+                                onClick={() => setSelectedOverviewRowId(row.id)}
+                                className="flex w-full items-start gap-2 py-2 text-left transition hover:text-[var(--ledger-text-primary)]"
+                              >
+                                <CircleAlert size={13} className="mt-0.5 shrink-0 text-[var(--ledger-accent)]" />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                                    {row.title}
+                                  </span>
+                                  <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                                    {row.meta || row.dateLabel || 'Open to review'}
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                            Nothing needs attention right now.
+                          </p>
+                        )}
+                      </section>
+
+                      <section
+                        className="pt-1"
+                        aria-labelledby="overview-next-heading"
+                      >
+                        <p
+                          id="overview-next-heading"
+                          className="text-[10px] font-medium text-[var(--ledger-text-muted)]"
+                        >
+                          Next up
+                        </p>
+                        {overviewNextRows.length ? (
+                          <div className="mt-1.5 space-y-1">
+                            {overviewNextRows.map((row) => (
+                              <button
+                                key={row.id}
+                                type="button"
+                                onClick={() => setSelectedOverviewRowId(row.id)}
+                                className="flex w-full items-start gap-2 py-2 text-left transition hover:text-[var(--ledger-text-primary)]"
+                              >
+                                <CalendarDays size={13} className="mt-0.5 shrink-0 text-[var(--ledger-text-muted)]" />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
+                                    {row.title}
+                                  </span>
+                                  <span className="mt-0.5 block truncate text-[11px] text-[var(--ledger-text-muted)]">
+                                    {row.dateLabel || row.meta || 'Open to plan'}
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1.5 text-[12px] leading-5 text-[var(--ledger-text-muted)]">
+                            Nothing scheduled next.
+                          </p>
+                        )}
+                      </section>
+
+                      <section
+                        className="space-y-1.5 pt-1"
+                        aria-label="Workspace context"
+                      >
+                        <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
+                          Workspace context
+                        </p>
+                        <div className="flex items-center justify-between text-[12px]">
+                          <span className="text-[var(--ledger-text-muted)]">Active projects</span>
+                          <span className="font-medium text-[var(--ledger-text-primary)]">{attentionProjects.length}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openOverviewRecentNote}
+                          disabled={!recentNotes[0]}
+                          className="flex w-full items-center justify-between gap-2 text-left text-[12px] disabled:cursor-default disabled:opacity-60"
+                        >
+                          <span className="truncate text-[var(--ledger-text-muted)]">Recent note</span>
+                          <span className="max-w-36 truncate font-medium text-[var(--ledger-text-primary)]">
+                            {recentNotes[0]?.title ?? 'None yet'}
+                          </span>
+                        </button>
+                      </section>
                     </div>
                     {!browserMode ? (
                       <section
-                        className="border-t border-[color:var(--ledger-border-subtle)] pt-3"
+                        className="mt-4 pt-1"
                         aria-labelledby="overview-lens-heading"
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -7946,8 +8097,8 @@ export function DashboardContent({
                             Lens is unavailable right now.
                           </p>
                         ) : overviewFocusResult?.insights.length ? (
-                          <div className="mt-2 space-y-3">
-                            {overviewFocusResult.insights.map((insight) => {
+                          <div className="mt-2 space-y-2">
+                            {overviewFocusResult.insights.slice(0, 2).map((insight) => {
                               const primaryResource = getOverviewFocusPrimaryResource(
                                 insight,
                                 overviewFocusSnapshot
@@ -7957,7 +8108,7 @@ export function DashboardContent({
                                   <p className="break-words text-left text-[12px] font-medium leading-4 text-[var(--ledger-text-primary)]">
                                     {insight.title}
                                   </p>
-                                  <p className="mt-0.5 break-words text-left text-[11px] leading-4 text-[var(--ledger-text-muted)]">
+                                  <p className="mt-0.5 line-clamp-2 break-words text-left text-[11px] leading-4 text-[var(--ledger-text-muted)]">
                                     {insight.summary}
                                   </p>
                                 </>
@@ -7999,21 +8150,6 @@ export function DashboardContent({
                       </section>
                     ) : null}
                     <div className="mt-auto space-y-2 pt-3">
-                      {recentNotes[0] && (
-                        <button
-                          type="button"
-                          onClick={openOverviewRecentNote}
-                          className="block w-full border-t border-[color:var(--ledger-border-subtle)] pt-2.5 text-left transition hover:text-[var(--ledger-text-primary)]"
-                        >
-                          <p className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--ledger-text-muted)]">
-                            <StickyNote size={11} className="shrink-0" aria-hidden="true" />
-                            Recent note
-                          </p>
-                          <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--ledger-text-primary)]">
-                            {recentNotes[0].title}
-                          </p>
-                        </button>
-                      )}
                       {overviewTryItem && (
                         <button
                           type="button"
@@ -8038,13 +8174,26 @@ export function DashboardContent({
                 ) : (
                   <>
                     <div className="pb-32">
-                      <div className="pb-2.5">
-                        <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
-                          {selectedOverviewTypeLabel}
-                        </p>
-                        <h3 className="mt-1.5 text-[17px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
-                          {selectedOverviewRow.title}
-                        </h3>
+                      <div className="flex items-start gap-2 pb-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-medium text-[var(--ledger-text-muted)]">
+                            {selectedOverviewTypeLabel}
+                          </p>
+                          <h3 className="mt-1.5 text-[17px] font-semibold leading-6 text-[var(--ledger-text-primary)]">
+                            {selectedOverviewRow.title}
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOverviewRowId(null)}
+                          className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)]"
+                          aria-label="Back to overview"
+                          title="Back to overview"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                      </div>
+                      <div>
                         <p className="mt-1 text-[11px] leading-5 text-[var(--ledger-text-muted)]">
                           {selectedOverviewRow.meta}
                         </p>
@@ -8078,7 +8227,7 @@ export function DashboardContent({
                     </div>
 
                     <section
-                      className="sticky bottom-0 z-10 mt-auto space-y-1.5 border-t border-[color:var(--ledger-border-subtle)] pt-2.5 pb-2"
+                      className="sticky bottom-0 z-10 mt-auto space-y-1.5 pt-2.5 pb-2"
                       style={{
                         backgroundColor:
                           'color-mix(in srgb, var(--ledger-surface-muted) 35%, var(--ledger-surface-card))',
@@ -8087,8 +8236,20 @@ export function DashboardContent({
                       <p className="text-[10px] font-medium text-[var(--ledger-text-muted)]">
                         Quick actions
                       </p>
-                      <div className="space-y-1">
-                        {selectedOverviewQuickActions.map((action) => (
+                      {selectedOverviewPrimaryAction && (
+                        <button
+                          type="button"
+                          onClick={() => selectedOverviewPrimaryAction.action()}
+                          disabled={selectedOverviewPrimaryAction.disabled}
+                          className="flex h-8 w-full items-center justify-between rounded-md bg-[var(--ledger-accent)] px-2.5 text-left text-[12px] font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span>{selectedOverviewPrimaryAction.label}</span>
+                          {selectedOverviewPrimaryAction.icon}
+                        </button>
+                      )}
+                      {selectedOverviewSecondaryActions.length > 0 && (
+                        <div className="mt-1 space-y-0.5">
+                          {selectedOverviewSecondaryActions.map((action) => (
                           <button
                             key={action.label}
                             type="button"
@@ -8099,8 +8260,41 @@ export function DashboardContent({
                             <span>{action.label}</span>
                             {action.icon}
                           </button>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
+                      {selectedOverviewOverflowActions.length > 0 && (
+                        <div className="relative mt-1">
+                          <button
+                            type="button"
+                            onClick={() => setIsOverviewInspectorMenuOpen((open) => !open)}
+                            className="flex h-7 w-full items-center justify-between rounded-md px-2 text-left text-[12px] font-medium text-[var(--ledger-text-muted)] transition hover:bg-[var(--ledger-surface-card)] hover:text-[var(--ledger-text-primary)]"
+                            aria-expanded={isOverviewInspectorMenuOpen}
+                          >
+                            <span>More actions</span>
+                            <MoreHorizontal size={13} />
+                          </button>
+                          {isOverviewInspectorMenuOpen && (
+                            <div className="absolute bottom-8 left-0 right-0 z-20 rounded-lg border border-[color:var(--ledger-border-subtle)] bg-[var(--ledger-surface-card)] p-1 shadow-[var(--ledger-shadow)]">
+                              {selectedOverviewOverflowActions.map((action) => (
+                                <button
+                                  key={action.label}
+                                  type="button"
+                                  onClick={() => {
+                                    setIsOverviewInspectorMenuOpen(false);
+                                    action.action();
+                                  }}
+                                  disabled={action.disabled}
+                                  className="flex h-7 w-full items-center justify-between rounded-md px-2 text-left text-[12px] text-[var(--ledger-text-secondary)] transition hover:bg-[var(--ledger-surface-hover)] hover:text-[var(--ledger-text-primary)] disabled:opacity-50"
+                                >
+                                  <span>{action.label}</span>
+                                  {action.icon}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </section>
                   </>
                 )}

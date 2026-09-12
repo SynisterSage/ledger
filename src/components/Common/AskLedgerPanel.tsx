@@ -1088,6 +1088,7 @@ export const AskLedgerPanel = ({
   onConversationChange,
   onSessionTitleChange,
   onSessionPersisted,
+  onSessionSnapshot,
   onSessionIdChange,
   onQuestionChange,
   onQuestionSubmitted,
@@ -1107,6 +1108,7 @@ export const AskLedgerPanel = ({
   onConversationChange?: (active: boolean) => void;
   onSessionTitleChange?: (title: string) => void;
   onSessionPersisted?: () => void;
+  onSessionSnapshot?: (session: AskLedgerSession) => void;
   onSessionIdChange?: (id: string | null) => void;
   onQuestionChange?: (question: string) => void;
   onQuestionSubmitted?: (question: string) => void;
@@ -1274,6 +1276,11 @@ export const AskLedgerPanel = ({
   );
   const pendingSkillIdRef = useRef<AskLedgerSkillRef | undefined>(skillId);
   const initialContextRef = useRef<AskLedgerInitialContext | null>(initialContext ?? null);
+  // The composer context is one-shot, but the session still needs a stable
+  // resource anchor so resource-scoped inspectors can restore this thread.
+  const sessionInitialContextRef = useRef<AskLedgerInitialContext | null>(
+    initialSession?.initialContext ?? initialContext ?? null
+  );
   const autoSubmittedContextRef = useRef<string | null>(null);
   const sessionSaveChainRef = useRef<Promise<void>>(Promise.resolve());
   const questionRef = useRef(question);
@@ -1678,6 +1685,7 @@ export const AskLedgerPanel = ({
     // when Lens opens a fresh Ask Ledger tab. Preserve that incoming context;
     // only clear it when the parent actually starts an unanchored chat.
     initialContextRef.current = initialContext ?? null;
+    sessionInitialContextRef.current = initialContext ?? null;
     setActiveInitialContext(initialContext ?? null);
     recentTurnsRef.current = [];
     messagesRef.current = [];
@@ -1724,6 +1732,7 @@ export const AskLedgerPanel = ({
     setSkillPickerOpen(false);
     sessionTitleRef.current = initialSession.title || 'Ask Ledger';
     initialContextRef.current = initialSession.initialContext ?? null;
+    sessionInitialContextRef.current = initialSession.initialContext ?? null;
     setActiveInitialContext(initialSession.initialContext ?? null);
     recentTurnsRef.current = restoredMessages
       .reduce<AskLedgerConversationTurn[]>((turns, message, index) => {
@@ -1778,6 +1787,7 @@ export const AskLedgerPanel = ({
   useEffect(() => {
     if (initialSession) return;
     initialContextRef.current = initialContext ?? null;
+    if (!sessionIdRef.current) sessionInitialContextRef.current = initialContext ?? null;
     setActiveInitialContext(initialContext ?? null);
     conversationRef.current = conversationRef.current
       ? { ...conversationRef.current, initialContext: initialContextRef.current ?? undefined }
@@ -2212,7 +2222,19 @@ export const AskLedgerPanel = ({
             createdAt: sessionCreatedAtRef.current,
             updatedAt: new Date().toISOString(),
             messages: nextMessages,
-            initialContext: initialContextRef.current,
+            initialContext: sessionInitialContextRef.current,
+            skillId: sessionSkillIdRef.current,
+            privacyScope: 'device',
+          });
+          onSessionSnapshot?.({
+            id: sessionId,
+            workspaceId,
+            userId: user.id,
+            title: title || 'Ask Ledger',
+            createdAt: sessionCreatedAtRef.current,
+            updatedAt: new Date().toISOString(),
+            messages: nextMessages,
+            initialContext: sessionInitialContextRef.current ?? undefined,
             skillId: sessionSkillIdRef.current,
             privacyScope: 'device',
           });
@@ -2224,7 +2246,7 @@ export const AskLedgerPanel = ({
           const created = (await api.createAskLedgerSession(workspaceId, {
             title,
             messages: nextMessages,
-            initialContext: initialContextRef.current,
+            initialContext: sessionInitialContextRef.current,
             skillId: sessionSkillIdRef.current,
           })) as { session?: AskLedgerSession };
           sessionId = created.session?.id ?? null;
@@ -2235,8 +2257,20 @@ export const AskLedgerPanel = ({
         await api.updateAskLedgerSession(workspaceId, sessionId, {
           title,
           messages: nextMessages,
-          initialContext: initialContextRef.current,
+          initialContext: sessionInitialContextRef.current,
           skillId: sessionSkillIdRef.current,
+        });
+        onSessionSnapshot?.({
+          id: sessionId,
+          workspaceId,
+          userId: user.id,
+          title: title || 'Ask Ledger',
+          createdAt: sessionCreatedAtRef.current,
+          updatedAt: new Date().toISOString(),
+          messages: nextMessages,
+          initialContext: sessionInitialContextRef.current ?? undefined,
+          skillId: sessionSkillIdRef.current,
+          privacyScope: 'synced',
         });
         onSessionPersisted?.();
       })
@@ -3015,6 +3049,7 @@ export const AskLedgerPanel = ({
 
   const removeInitialContext = () => {
     initialContextRef.current = null;
+    sessionInitialContextRef.current = null;
     setActiveInitialContext(null);
     if (sessionIdRef.current && messagesRef.current.length) queueSessionSave(messagesRef.current);
   };

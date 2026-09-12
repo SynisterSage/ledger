@@ -12955,6 +12955,10 @@ app.delete('/api/mobile/push-tokens', authMiddleware, rateLimit('write'), async 
 
 app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (req, res) => {
   try {
+    const delivery = String(req.query?.delivery ?? 'in_app').trim().toLowerCase();
+    if (delivery !== 'in_app' && delivery !== 'desktop') {
+      return res.status(400).json({ error: 'Unsupported notification delivery channel.' });
+    }
     const prefsRow = await getOrCreateNotificationPreferences(req.authUser.id);
     const prefs = normalizeNotificationPreferences(mapNotificationPreferencesRow(prefsRow));
     if (prefs.paused) {
@@ -12992,7 +12996,30 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
 
     if (insertError) throw insertError;
 
-    const eventRows = Array.isArray(insertedRows) ? insertedRows : [];
+    let eventRows = Array.isArray(insertedRows) ? insertedRows : [];
+    if (!eventRows.length) {
+      const sourceTypes = Array.from(new Set(candidates.map((candidate) => candidate.source_type)));
+      const sourceIds = Array.from(new Set(candidates.map((candidate) => String(candidate.source_id))));
+      const notificationTypes = Array.from(new Set(candidates.map((candidate) => candidate.notification_type)));
+      const { data: existingRows, error: existingRowsError } = await supabase
+        .from('notification_events')
+        .select(
+          'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata'
+        )
+        .eq('user_id', req.authUser.id)
+        .in('source_type', sourceTypes)
+        .in('source_id', sourceIds)
+        .in('notification_type', notificationTypes);
+      if (existingRowsError) throw existingRowsError;
+      const candidateKeys = new Set(
+        candidates.map((candidate) =>
+          [candidate.source_type, candidate.source_id, candidate.notification_type, candidate.scheduled_for].join('|')
+        )
+      );
+      eventRows = (Array.isArray(existingRows) ? existingRows : []).filter((row) =>
+        candidateKeys.has([row.source_type, row.source_id, row.notification_type, row.scheduled_for].join('|'))
+      );
+    }
     const eventIds = eventRows.map((row) => row.id).filter(Boolean);
 
     if (!eventIds.length) {
@@ -13022,11 +13049,12 @@ app.post('/api/notifications/check', authMiddleware, rateLimit('read'), async (r
       ])
     );
 
+    const deliveryColumn = delivery === 'desktop' ? 'delivered_desktop_at' : 'delivered_in_app_at';
     const { data: claimedRows, error: claimError } = await supabase
       .from('notification_events')
-      .update({ delivered_in_app_at: nowIso, updated_at: nowIso })
+      .update({ [deliveryColumn]: nowIso, updated_at: nowIso })
       .in('id', eventIds)
-      .is('delivered_in_app_at', null)
+      .is(deliveryColumn, null)
       .is('dismissed_at', null)
       .select(
         'id, user_id, workspace_id, source_type, source_id, notification_type, scheduled_for, delivered_in_app_at, delivered_desktop_at, dismissed_at, read_at, action_taken, metadata'
